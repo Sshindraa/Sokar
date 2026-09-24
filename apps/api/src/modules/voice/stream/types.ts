@@ -16,10 +16,10 @@ export type SlotProvenanceSource = 'explicit' | 'contextual' | 'confirmation' | 
 
 export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confirming' | 'confirmed';
 
-/** Réponse métier attendue après la dernière question de l'agent. */
 /** Moment de la journée exprimé par l'appelant. */
 export type DayPeriod = 'lunch' | 'dinner';
 
+/** Réponse métier attendue après la dernière question de l'agent. */
 export type PendingQuestion =
   | 'date'
   | 'time'
@@ -386,6 +386,13 @@ export interface CallSession {
     languageCode?: string;
     timer: ReturnType<typeof setTimeout>;
   } | null;
+  /** Dernière phrase appelant envoyée au traitement (déterministe ou LLM). */
+  lastProcessedTranscript?: string;
+  /**
+   * Phrase dont la réponse a été annulée par une reprise de parole. Elle est
+   * fusionnée avec la suite, ou retraitée seule si aucune suite n'arrive.
+   */
+  interruptedTurn?: { transcript: string; timer: ReturnType<typeof setTimeout> } | null;
   /** Timer de grâce pour une fin de tour reçue pendant une épellation. */
   sttEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
   /** Fin de tour retenue parce que la phrase semble inachevée. */

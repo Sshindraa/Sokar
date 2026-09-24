@@ -19,7 +19,7 @@ import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { appendDebugSpeechText, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
-import { redactPii } from './pii-redact';
+import { describeTranscript, redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
   createCartesiaContextTurn,
@@ -74,6 +74,7 @@ import {
 import {
   buildAvailabilityErrorPlan,
   buildLlmFailurePlan,
+  buildRecapRejectionPlan,
   extractSpokenTimes,
   violatesAvailabilityReplyGuard,
   getOpenAvailabilityRequest,
@@ -290,6 +291,56 @@ function speculativeTranscriptMatches(a: string, b: string): boolean {
   return transcriptsMatch(normA, normB);
 }
 
+/** Délai sans nouvelle transcription avant de retraiter une phrase interrompue. */
+export const INTERRUPTED_TURN_RESUME_MS = 1_500;
+
+/**
+ * Une reprise de parole annule la réponse en cours. Si elle ne produit aucune
+ * transcription (souffle, bruit), la phrase de l'appelant était perdue et il
+ * attendait en silence (appel du 24/09, 6 s). On la conserve : fusionnée avec
+ * la suite si elle arrive, retraitée seule sinon.
+ */
+function holdInterruptedTurn(session: CallSession, mgr: CallSessionManager): void {
+  const transcript = session.lastProcessedTranscript;
+  if (!transcript) return;
+  if (session.interruptedTurn) clearTimeout(session.interruptedTurn.timer);
+  session.interruptedTurn = {
+    transcript,
+    timer: armInterruptedTurnTimer(session, mgr, transcript),
+  };
+}
+
+function armInterruptedTurnTimer(
+  session: CallSession,
+  mgr: CallSessionManager,
+  transcript: string,
+): ReturnType<typeof setTimeout> {
+  return setTimeout(() => {
+    if (session.interruptedTurn?.transcript !== transcript) return;
+    session.interruptedTurn = null;
+    if (session.ended || session.ending || session.state !== 'LISTENING') return;
+    processTranscriptStreaming(session, transcript, mgr).catch((err) =>
+      logger.error({ err, callId: session.callControlId }, '[stt] interrupted turn resume failed'),
+    );
+  }, INTERRUPTED_TURN_RESUME_MS);
+}
+
+/** Tant que l'appelant parle encore, on repousse la reprise de la phrase interrompue. */
+function extendInterruptedTurn(session: CallSession, mgr: CallSessionManager): void {
+  const held = session.interruptedTurn;
+  if (!held) return;
+  clearTimeout(held.timer);
+  held.timer = armInterruptedTurnTimer(session, mgr, held.transcript);
+}
+
+function takeInterruptedTranscript(session: CallSession): string | null {
+  const held = session.interruptedTurn;
+  if (!held) return null;
+  clearTimeout(held.timer);
+  session.interruptedTurn = null;
+  return held.transcript;
+}
+
 /**
  * Gère les événements provenant de ElevenLabs Scribe.
  */
@@ -304,6 +355,7 @@ export function handleSttEvent(
       cancelScheduledFiller(session);
       if (session.currentTurn && session.state === 'PROCESSING') {
         recordVoiceTurnEvent(session, 'llm_interrupted', { reason: 'speech_resumed' });
+        holdInterruptedTurn(session, mgr);
       }
       // Démarrer le chronomètre avant le commit final afin d'inclure le silence VAD.
       startVoiceTurn(session);
@@ -336,6 +388,7 @@ export function handleSttEvent(
         session.abortController = null;
       }
       if (session.state === 'PROCESSING') {
+        holdInterruptedTurn(session, mgr);
         session.responseGeneration++;
         session.conversation.toolInFlight = null;
         session.speculativeLlm = null;
@@ -347,6 +400,7 @@ export function handleSttEvent(
     }
 
     case 'InterimHighConfidence': {
+      extendInterruptedTurn(session, mgr);
       // Spéculation LLM : lancer le LLM sans attendre la fin de l'utterance
       // Stocker la promise pour la réutiliser si l'utterance finale correspond
       if (!isSpeculativeLlmEnabled(session)) break;
@@ -396,7 +450,7 @@ export function handleSttEvent(
           );
           captureException(err, {
             tags: { service: 'handler', action: 'speculative-llm' },
-            extra: { callId: session.callControlId, transcript: redactPii(event.transcript) },
+            extra: { callId: session.callControlId, ...describeTranscript(event.transcript) },
           });
           session.speculativeLlm = null;
           session.speculativeResult = null;
@@ -406,6 +460,10 @@ export function handleSttEvent(
     }
 
     case 'UtteranceEnd': {
+      const interruptedTranscript = takeInterruptedTranscript(session);
+      if (interruptedTranscript) {
+        event.transcript = `${interruptedTranscript} ${event.transcript}`;
+      }
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
       if (detectedLanguage) {
         const previousLanguage = effectiveVoiceLanguage(session);
@@ -653,7 +711,7 @@ async function processTranscript(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscript' },
-      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
+      extra: { callId: session.callControlId, ...describeTranscript(transcript) },
     });
     mgr.transition(session, 'LISTENING');
   } finally {
@@ -672,6 +730,7 @@ export async function processTranscriptStreaming(
 ): Promise<void> {
   const transcript = normalizeSttTranscript(rawTranscript);
   if (!transcript.trim()) return;
+  session.lastProcessedTranscript = transcript;
   if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);
     return;
@@ -759,6 +818,21 @@ export async function processTranscriptStreaming(
   const affirmativeConfirmation = confirmationTurn && isAffirmativeShortResponse(transcript);
   const negativeConfirmation = confirmationTurn && isNegativeShortResponse(transcript);
   if (negativeConfirmation) clearReservationConfirmation(session);
+
+  const recapRejectionPlan =
+    confirmationTurn && deterministicLanguage ? buildRecapRejectionPlan(session, transcript) : null;
+  if (recapRejectionPlan) {
+    clearReservationConfirmation(session);
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: recapRejectionPlan.reply },
+    );
+    recordAssistantReplyWithPolicy(session, recapRejectionPlan.reply, recapRejectionPlan.proposal);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, recapRejectionPlan.reply);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
 
   if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
     const question = session.conversation.lastAssistantQuestion;
@@ -1565,7 +1639,7 @@ export async function processTranscriptStreaming(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
-      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
+      extra: { callId: session.callControlId, ...describeTranscript(transcript) },
     });
     session.conversation.llmFailureStreak = (session.conversation.llmFailureStreak ?? 0) + 1;
     // Un silence fait raccrocher : sans audio déjà émis pour ce tour, on

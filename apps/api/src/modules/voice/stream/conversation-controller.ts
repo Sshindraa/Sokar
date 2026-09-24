@@ -2267,6 +2267,67 @@ export function buildLlmFailurePlan(session: CallSession): AssistantReplyEmissio
   return buildExplicitInteractionReplyPlan(session, reply, 'open');
 }
 
+/**
+ * « Non » au récapitulatif sans nouvelle valeur exploitable.
+ *
+ * Le LLM concluait parfois sans question (« je garde donc … », appel du
+ * 24/09) : l'appelant ne savait plus quoi dire. Quand le refus vise le nom
+ * (mot « nom », épellation, ou nom répété), on repart sur une épellation
+ * lettre par lettre ; sinon on demande ce qu'il faut corriger. La réponse
+ * finit toujours par une question.
+ */
+export function buildRecapRejectionPlan(
+  session: CallSession,
+  transcript: string,
+): AssistantReplyEmissionPlan | null {
+  const normalized = normalizeTranscript(transcript);
+  if (
+    !/^(?:non|pas du tout|c est pas ca|ce n est pas ca|c est faux|no|that s wrong)\b/.test(
+      normalized,
+    )
+  )
+    return null;
+  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+  // Une nouvelle date, heure ou taille de groupe est une correction que le
+  // flux normal applique : ce n'est pas un refus sans valeur.
+  if (extracted.date || extracted.time || extracted.partySize) return null;
+
+  const language = effectiveVoiceLanguage(session);
+  const collection = ensureNameCollection(session);
+  const currentName = collection.confirmedName ?? session.conversation.slots.customerName ?? '';
+  const normalizedName = normalizeTranscript(currentName);
+  const targetsName =
+    /\b(?:nom|epel\w*|epell\w*|lettre|orthographe|name|spell\w*)\b/.test(normalized) ||
+    (normalizedName.length > 0 && normalized.includes(normalizedName.split(' ')[0]));
+
+  if (targetsName) {
+    if (collection.state === 'confirmed' || collection.confirmedName)
+      invalidateConfirmedName(session);
+    session.conversation.slots.customerName = undefined;
+    collection.state = 'collecting';
+    collection.presentedCandidate = null;
+    collection.confirmedName = null;
+    collection.tokens = [];
+    collection.partialCandidate = '';
+    collection.ambiguousPositions = [];
+    collection.clarificationCount = 0;
+    collection.awaitingCorrection = false;
+    collection.fallbackRecorded = false;
+    session.conversation.spellingCandidate = null;
+    const reply =
+      language === 'en'
+        ? 'Sorry about that. Could you spell your name for me, letter by letter?'
+        : "Pardon. Pouvez-vous m'épeler votre nom, lettre par lettre ?";
+    return buildExplicitInteractionReplyPlan(session, reply, 'customerName');
+  }
+
+  const reply =
+    language === 'en'
+      ? 'All right. What should I correct: the date, the time, the number of people or the name?'
+      : "D'accord. Qu'est-ce que je dois corriger : la date, l'heure, le nombre de personnes ou le nom ?";
+  return buildExplicitInteractionReplyPlan(session, reply, 'open');
+}
+
 const CUSTOMER_NAME_STOP_WORDS = new Set([
   'a',
   'au',
@@ -2725,13 +2786,25 @@ function isExploratoryUtterance(transcript: string): boolean {
 
 function isAmbiguousPartySizeReply(session: CallSession, transcript: string): boolean {
   if (session.conversation.pendingQuestion !== 'partySize') return false;
-  if (extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris').partySize)
-    return false;
+  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+  if (extracted.partySize) return false;
+  // Une autre information (date, heure) fait avancer la réservation : ce n'est
+  // pas une réponse incomprise.
+  if (extracted.date || extracted.time) return false;
 
   const normalized = normalizeTranscript(transcript);
-  return /\b(?:personne|personnes|on sera|nous serons|combien|people|guests|party|how many)\b/.test(
-    normalized,
-  );
+  if (
+    /\b(?:personne|personnes|on sera|nous serons|combien|people|guests|party|how many)\b/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+  // Réponse courte sans aucun fait exploitable, souvent un nombre mal transcrit
+  // (« six personnes » → « super femme », appel du 24/09) : on redemande le
+  // nombre au lieu de passer à la question suivante.
+  const wordCount = normalized.split(' ').filter(Boolean).length;
+  return wordCount > 0 && wordCount <= 5 && !isExploratoryUtterance(transcript);
 }
 
 /**
@@ -2849,7 +2922,7 @@ export function pendingQuestionFrom(question: string): PendingQuestion {
   if (/\b(?:telephone|numero|phone|telephone number|mobile)/.test(normalized))
     return 'customerPhone';
   if (
-    /\b(?:vous me confirmez|confirmez[- ]vous|est[- ]ce correct|c est bien ca|c est bien cela|ca vous convient|cela vous convient|ca vous va|cela vous va|ca vous irait|cela vous irait|ca marche|c est bon pour vous|on part la dessus|on valide|vous validez|je peux confirmer|je peux la reserver|je la reserve|je note|je valide|voulez[- ]vous que je reserve|souhaitez[- ]vous que je reserve|je lance la reservation|je cree la reservation|shall i book|may i confirm|should i book|is that correct|does that work)\b/.test(
+    /\b(?:vous me confirmez|confirmez[- ]vous|est[- ]ce correct|c est bien ca|c est bien cela|ca vous convient|cela vous convient|ca vous va|cela vous va|ca vous irait|cela vous irait|ca marche|c est bon(?: pour vous)?|c est correct|tout est bon|je confirme|on part la dessus|on valide|vous validez|je peux confirmer|je peux la reserver|je la reserve|je note|je valide|voulez[- ]vous que je reserve|souhaitez[- ]vous que je reserve|je lance la reservation|je cree la reservation|shall i book|may i confirm|should i book|is that correct|does that work)\b/.test(
       normalized,
     )
   )

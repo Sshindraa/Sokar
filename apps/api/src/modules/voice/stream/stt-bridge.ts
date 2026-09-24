@@ -7,7 +7,7 @@ import { isNameCollectionBlocking } from './conversation-controller';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
-import { redactPii } from './pii-redact';
+import { describeTranscript } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
 
@@ -493,7 +493,7 @@ function dispatchUtteranceEnd(
   logger.info(
     {
       callId: session.callControlId,
-      transcript: redactPii(cleanTranscript.slice(0, 100)),
+      ...describeTranscript(cleanTranscript),
       ...(languageCode ? { languageCode } : {}),
     },
     '[stt] End of turn',
@@ -798,7 +798,7 @@ function handleBargeInFromTranscript(
     return;
   }
   logger.info(
-    { callId: session.callControlId, transcript: redactPii(transcript.trim()) },
+    { callId: session.callControlId, ...describeTranscript(transcript.trim()) },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
   );
   session.abortController?.abort();

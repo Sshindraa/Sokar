@@ -74,6 +74,12 @@ describe('classifyVoiceSpeechAct', () => {
   it('reconnaît les attentes de confirmation, de créneau et de téléphone', () => {
     expect(pendingQuestionFrom('Vous me confirmez ?')).toBe('confirmation');
     expect(pendingQuestionFrom('Ça vous va pour samedi ?')).toBe('confirmation');
+    // Récapitulatif réel du LLM, appel du 24/09.
+    expect(
+      pendingQuestionFrom(
+        'Je confirme : réservation pour 6 personnes demain, vendredi 25 septembre, à 22 h 30, au nom de Akif Adebayor. C’est bon ?',
+      ),
+    ).toBe('confirmation');
     expect(pendingQuestionFrom('Je peux la réserver ?')).toBe('confirmation');
     expect(pendingQuestionFrom('Quel horaire vous conviendrait ?')).toBe('timeChoice');
     expect(pendingQuestionFrom('Quel créneau préférez-vous ?')).toBe('timeChoice');
