@@ -1,0 +1,78 @@
+[
+  {
+    "id": "info-01",
+    "category": "practical_question",
+    "pr": true,
+    "restaurant": "standard",
+    "persona": "Homme curieux.",
+    "goal": "Demander si le restaurant est ouvert dimanche. Il est fermé ce jour-là : remercie et raccroche.",
+    "expected": {
+      "mustSay": ["ferm"],
+      "mustNotSay": ["dimanche[^.?!]*ouvert"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 4
+    }
+  },
+  {
+    "id": "info-02",
+    "category": "practical_question",
+    "pr": true,
+    "restaurant": "open_sunday",
+    "persona": "Femme qui prévoit un déjeuner en famille.",
+    "goal": "Demander si le restaurant est ouvert dimanche. Écoute la réponse, remercie et raccroche sans réserver.",
+    "expected": {
+      "mustSay": ["(ouvert|oui)"],
+      "mustNotSay": ["dimanche[^.?!]*ferm", "ferm[^.?!]*dimanche"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 4
+    }
+  },
+  {
+    "id": "info-03",
+    "category": "practical_question",
+    "restaurant": "open_sunday",
+    "persona": "Homme pressé.",
+    "goal": "Demander « vous êtes ouverts dimanche midi ? ». Remercie et raccroche.",
+    "expected": {
+      "mustNotSay": ["ferm"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 4
+    }
+  },
+  {
+    "id": "info-04",
+    "category": "practical_question",
+    "restaurant": "standard",
+    "persona": "Femme qui veut venir en terrasse.",
+    "goal": "Demander s'il y a une terrasse. Si l'assistant ne sait pas, accepte ou refuse poliment qu'il prenne un message, puis raccroche.",
+    "expected": {
+      "mustNotSay": ["(nous avons|on a|il y a) une (belle |grande |jolie )?terrasse"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 6
+    }
+  },
+  {
+    "id": "info-05",
+    "category": "practical_question",
+    "restaurant": "standard",
+    "persona": "Homme qui vient en voiture.",
+    "goal": "Demander s'il y a un parking et quels sont les prix des menus. N'accepte ni transfert ni message ; remercie et raccroche.",
+    "expected": {
+      "mustNotSay": ["\\d+\\s*(€|euros)", "(nous avons|il y a) un parking"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 5
+    }
+  },
+  {
+    "id": "info-06",
+    "category": "practical_question",
+    "restaurant": "standard",
+    "persona": "Femme allergique.",
+    "goal": "Demander si les plats peuvent être sans gluten. N'accepte pas de transfert ; remercie et raccroche.",
+    "expected": {
+      "mustNotSay": ["(tous nos plats|la plupart de nos plats) (sont|peuvent)"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 5
+    }
+  }
+]

@@ -1,0 +1,80 @@
+[
+  {
+    "id": "en-01",
+    "category": "english",
+    "pr": true,
+    "persona": "British tourist, polite.",
+    "goal": "Book a table for 2 tomorrow at 8 pm. Your name is Smith; spell it if asked. Confirm the summary with « yes ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "language": "en"
+  },
+  {
+    "id": "en-02",
+    "category": "english",
+    "persona": "American businessman, direct.",
+    "goal": "Book a table for 4 the day after tomorrow at 7:30 pm. Your name is Johnson; spell it if asked. Confirm the summary with « yes ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "19:30",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "language": "en"
+  },
+  {
+    "id": "en-03",
+    "category": "english",
+    "persona": "Young traveller, casual.",
+    "goal": "Book for 3 people tomorrow at 12:30 pm (lunch). Your name is Brown; spell it if asked. Confirm the summary with « yes ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:30",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "language": "en"
+  },
+  {
+    "id": "en-04",
+    "category": "english",
+    "persona": "Tourist who corrects herself.",
+    "goal": "Book for 2 tomorrow at 9 pm, then correct to 9:30 pm. Your name is Taylor; spell it if asked. Confirm the summary with « yes ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "21:30",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "language": "en"
+  },
+  {
+    "id": "en-05",
+    "category": "english",
+    "language": "en",
+    "restaurant": "standard",
+    "persona": "Tourist planning ahead.",
+    "goal": "Ask whether the restaurant is open on Sunday. It is closed that day: thank them and hang up.",
+    "expected": {
+      "mustSay": ["closed"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 4
+    }
+  }
+]

@@ -1,0 +1,123 @@
+[
+  {
+    "id": "simple-01",
+    "category": "reservation_simple",
+    "pr": true,
+    "persona": "Femme de 40 ans, pressée mais aimable.",
+    "goal": "Réserver une table pour 2 personnes demain à 20 h. Ton nom est Martin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-02",
+    "category": "reservation_simple",
+    "persona": "Homme de 60 ans, poli, parle lentement.",
+    "goal": "Réserver pour 4 personnes demain à 19 h 30. Ton nom est Bernard ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:30",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-03",
+    "category": "reservation_simple",
+    "persona": "Étudiante, décontractée.",
+    "goal": "Réserver une table pour 3 demain midi, à 12 h 30. Ton nom est Leroy ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:30",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-04",
+    "category": "reservation_simple",
+    "persona": "Cadre, très direct, donne tout d'un coup.",
+    "goal": "Réserver pour 6 personnes après-demain à 21 h. Ton nom est Petit ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "21:00",
+        "partySize": 6
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-05",
+    "category": "reservation_simple",
+    "persona": "Retraité chaleureux.",
+    "goal": "Réserver pour 2 personnes après-demain à 13 h. Ton nom est Moreau ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "13:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-06",
+    "category": "reservation_simple",
+    "persona": "Jeune père, un peu distrait.",
+    "goal": "Réserver pour 5 personnes demain à 19 h. Ton nom est Garcia ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:00",
+        "partySize": 5
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-07",
+    "category": "reservation_simple",
+    "persona": "Femme d'affaires, formelle.",
+    "goal": "Réserver une table pour 2 demain à 12 h. Ton nom est Dubois ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "simple-08",
+    "category": "reservation_simple",
+    "persona": "Client habitué, familier.",
+    "goal": "Réserver pour 4 demain à 20 h 30. Ton nom est Roux ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:30",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  }
+]

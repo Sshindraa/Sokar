@@ -379,6 +379,10 @@ export async function playFiller(
     purpose === 'generic' && options.randomize
       ? selectRandomFillerText(style)
       : selectFillerText(style, purpose, language);
+  if (session?.speechSink) {
+    session.speechSink(text, 'filler');
+    return;
+  }
   const debugEntry = session ? recordDebugAgentSpeech(session, text, 'filler') : null;
   let fillerFramesSent = 0;
   let fillerCompleted = false;

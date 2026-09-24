@@ -1,0 +1,64 @@
+[
+  {
+    "id": "allo-01",
+    "category": "allo",
+    "pr": true,
+    "persona": "Homme dans un endroit bruyant.",
+    "goal": "Réserver pour 2 demain à 20 h. Après la première question de l'assistant, dis seulement « allô ? » comme si la ligne avait coupé, puis continue. Ton nom est Simon ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "allo-02",
+    "category": "allo",
+    "persona": "Femme en voiture, réseau instable.",
+    "goal": "Réserver pour 4 demain à 19 h. Dis « allô, vous êtes là ? » deux fois pendant l'appel, à deux moments différents. Ton nom est Laurent ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:00",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 14
+    }
+  },
+  {
+    "id": "allo-03",
+    "category": "allo",
+    "persona": "Homme âgé qui entend mal.",
+    "goal": "Réserver pour 3 après-demain à 12 h 30. Dis « allô ? » une fois au milieu de l'appel. Ton nom est Michel ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "12:30",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 14
+    }
+  },
+  {
+    "id": "allo-04",
+    "category": "allo",
+    "persona": "Jeune femme dans le métro.",
+    "goal": "Réserver pour 2 demain à 21 h 30. Commence l'appel par « allô ? » avant de parler. Ton nom est Roche ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "21:30",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "opening": "Allô ?"
+  }
+]

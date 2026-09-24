@@ -875,7 +875,15 @@ export class CallSessionManager {
     session.history.push({ role: 'user', content: transcript });
 
     const signal = session.abortController?.signal;
-    const fullText = await this.callLlmStreaming(session, onPhrase, signal, options);
+    let fullText: string;
+    if (process.env.SOKAR_SIMULATE_MOCK_LLM === 'true') {
+      // Mode simulation sans clé LLM (route de test) : réponse fixe, même
+      // chemin de sortie que le streaming.
+      fullText = await this.mockLlmResponse(session, transcript);
+      await onPhrase(fullText);
+    } else {
+      fullText = await this.callLlmStreaming(session, onPhrase, signal, options);
+    }
 
     if (!signal?.aborted && session.responseGeneration === responseGeneration) {
       this.transition(session, 'SPEAKING');
@@ -2438,8 +2446,12 @@ export class CallSessionManager {
     if (!session) throw new Error(`Session ${callControlId} not found`);
     if (session.ended) throw new Error(`Session ${callControlId} already ended`);
 
-    session.transcript += (session.transcript ? ' ' : '') + transcript;
-    return this.processUtterance(session, transcript);
+    // Même chemin qu'un vrai appel (événements Scribe → contrôleur → LLM),
+    // avec la parole captée au lieu d'être synthétisée. Import dynamique :
+    // le simulateur dépend lui-même du manager.
+    const { simulateCallerUtterance } = await import('./simulator');
+    const turn = await simulateCallerUtterance(session, transcript, { mgr: this });
+    return turn.speech.join(' ');
   }
 }
 

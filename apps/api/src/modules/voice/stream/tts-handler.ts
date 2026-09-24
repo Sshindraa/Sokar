@@ -235,6 +235,10 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
  * donc naturellement les fragments encore en attente.
  */
 export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
+  if (session.speechSink) {
+    session.speechSink(text, 'speech');
+    return;
+  }
   const debugEntry = recordDebugAgentSpeech(session, text);
   const previousPlayback = session.ttsPlayback ?? Promise.resolve();
   const generation = session.ttsGeneration ?? 0;
