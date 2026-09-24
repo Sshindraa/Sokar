@@ -264,7 +264,7 @@ async function main() {
 }
 
 // Réutilisé par `second-opinion.cjs` : même synthèse, même dégradation, même Scribe Realtime.
-module.exports = { degrade, synthesize, transcribe };
+module.exports = { degrade, synthesize, transcribe, requireBenchConfig, checkElevenLabsAccess };
 
 if (require.main === module) {
   main().catch((err) => {

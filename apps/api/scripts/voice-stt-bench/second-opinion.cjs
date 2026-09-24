@@ -13,7 +13,13 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { degrade, synthesize, transcribe } = require('./transcribe.cjs');
+const {
+  checkElevenLabsAccess,
+  degrade,
+  requireBenchConfig,
+  synthesize,
+  transcribe,
+} = require('./transcribe.cjs');
 
 const apiRoot = path.resolve(__dirname, '../..');
 const { buildSttKeyterms } = require(path.join(apiRoot, 'dist/modules/voice/stream/stt-bridge.js'));
@@ -40,7 +46,7 @@ function toWav(pcm) {
 }
 
 /** Scribe batch, français, mêmes termes que la production. */
-async function transcribeBatch(pcm) {
+async function transcribeBatch(pcm, elevenLabsBenchKey) {
   const form = new FormData();
   form.append('model_id', BATCH_MODEL);
   form.append('language_code', 'fr');
@@ -52,7 +58,7 @@ async function transcribeBatch(pcm) {
   const started = Date.now();
   const response = await fetch(`https://${host}/v1/speech-to-text`, {
     method: 'POST',
-    headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY },
+    headers: { 'xi-api-key': elevenLabsBenchKey },
     body: form,
   });
   const latencyMs = Date.now() - started;
@@ -69,6 +75,10 @@ async function transcribeBatch(pcm) {
 async function main() {
   const phrases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   const audioDir = process.argv[3];
+  if (!audioDir) throw new Error('An audio output directory is required');
+  const { elevenLabsBenchKey, cartesiaBenchKey } = requireBenchConfig(phrases);
+  await synthesize({ ...phrases[0], cartesiaBenchKey });
+  await checkElevenLabsAccess(elevenLabsBenchKey);
   fs.mkdirSync(audioDir, { recursive: true });
   const results = new Array(phrases.length);
   let next = 0;
@@ -78,9 +88,15 @@ async function main() {
       const phrase = phrases[index];
       const file = path.join(audioDir, `${phrase.id}.pcm`);
       try {
-        if (!fs.existsSync(file)) fs.writeFileSync(file, degrade(await synthesize(phrase), phrase));
+        if (!fs.existsSync(file)) {
+          const audio = await synthesize({ ...phrase, cartesiaBenchKey });
+          fs.writeFileSync(file, degrade(audio, phrase));
+        }
         const audio = fs.readFileSync(file);
-        const [realtime, batch] = await Promise.all([transcribe(audio), transcribeBatch(audio)]);
+        const [realtime, batch] = await Promise.all([
+          transcribe(audio, elevenLabsBenchKey),
+          transcribeBatch(audio, elevenLabsBenchKey),
+        ]);
         results[index] = { id: phrase.id, durationMs: audio.length / 16, realtime, batch };
       } catch (err) {
         results[index] = { id: phrase.id, error: err.message };

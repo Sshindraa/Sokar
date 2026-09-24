@@ -61,6 +61,10 @@ Question : quand Scribe batch (B) n'est pas d'accord avec Scribe Realtime (A) su
 une valeur, cette valeur est-elle fausse ? Le désaccord détecte-t-il mieux les
 erreurs que la confiance ?
 
+Le script exige les clés dédiées ELEVENLABS_BENCH_API_KEY et CARTESIA_BENCH_API_KEY,
+refuse les clés de production et vérifie BENCH_MAX_CREDITS avant les appels de pré-vérification
+et de transcription. Le budget estime deux appels STT par phrase et la synthèse Cartesia.
+
 ```bash
 # Sur le serveur (crédits Cartesia + Scribe Realtime + Scribe batch : demander l'accord).
 # L'audio dégradé est écrit une fois dans audio-dir puis relu pour les deux moteurs.
