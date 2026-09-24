@@ -45,6 +45,7 @@ import {
   type QueueStateCounts,
   type SystemFinding,
   type TelnyxWebhookSnapshot,
+  DEAD_LETTER_BACKLOG_COOLDOWN_SECONDS,
 } from '../../observability/system-checks';
 
 export type SystemHealthJobData = Record<string, never>;
@@ -60,6 +61,43 @@ const SMS_SINCE_TTL_SECONDS = 30 * 24 * 3600;
 /** Snapshot précédent du compteur webhook Telnyx (fenêtre de 5 min). */
 const WEBHOOK_SNAPSHOT_KEY = 'sokar:system-health:webhook-snapshot';
 const WEBHOOK_SNAPSHOT_TTL_SECONDS = 900;
+const DEAD_LETTER_BACKLOG_COOLDOWN_KEY = 'sokar:system-health:dead-letter-alerted-count';
+const CLAIM_DEAD_LETTER_ALERT_SCRIPT = [
+  'local previous = tonumber(redis.call("GET", KEYS[1]) or "-1")',
+  'local current = tonumber(ARGV[1])',
+  'if previous >= current then return 0 end',
+  'redis.call("SET", KEYS[1], tostring(current), "EX", tonumber(ARGV[2]))',
+  'return 1',
+].join('\n');
+
+async function claimDeadLetterBacklogAlert(count: number): Promise<boolean> {
+  try {
+    return (
+      Number(
+        await redisCache.eval(
+          CLAIM_DEAD_LETTER_ALERT_SCRIPT,
+          1,
+          DEAD_LETTER_BACKLOG_COOLDOWN_KEY,
+          count,
+          DEAD_LETTER_BACKLOG_COOLDOWN_SECONDS,
+        ),
+      ) === 1
+    );
+  } catch (err) {
+    // Keep the existing noisy-on-Redis-error behavior; the email dispatcher
+    // independently enforces its daily cap.
+    logger.warn({ err }, '[system-health] Dead-letter cooldown unavailable');
+    return true;
+  }
+}
+
+async function clearDeadLetterBacklogAlert(): Promise<void> {
+  try {
+    await redisCache.del(DEAD_LETTER_BACKLOG_COOLDOWN_KEY);
+  } catch (err) {
+    logger.warn({ err }, '[system-health] Failed to clear dead-letter cooldown');
+  }
+}
 
 async function loadWebhookSnapshot(): Promise<TelnyxWebhookSnapshot | null> {
   try {
@@ -120,7 +158,12 @@ async function dispatchFindings(
   let suppressed = 0;
   for (const finding of findings) {
     try {
-      if (await redisCooldown.shouldSuppress(finding.kind, finding.identifier)) {
+      const isDeadLetterBacklog = finding.kind === 'dead_letter_backlog';
+      const shouldDispatch = isDeadLetterBacklog
+        ? typeof finding.deadLetterCount === 'number' &&
+          (await claimDeadLetterBacklogAlert(finding.deadLetterCount))
+        : !(await redisCooldown.shouldSuppress(finding.kind, finding.identifier));
+      if (!shouldDispatch) {
         suppressed++;
         continue;
       }
@@ -130,7 +173,9 @@ async function dispatchFindings(
         summary: finding.summary,
         detail: finding.detail,
       });
-      await redisCooldown.markFired(finding.kind, finding.identifier);
+      if (!isDeadLetterBacklog) {
+        await redisCooldown.markFired(finding.kind, finding.identifier);
+      }
       dispatched++;
     } catch (err) {
       // dispatchAlert ne throw pas ; sécurité supplémentaire pour le cooldown.
@@ -168,6 +213,9 @@ export const systemHealthWorker = new Worker(
     // 1. Files BullMQ : inaccessibles, failed, dead-letter, backlog.
     const states = await collectQueueStates();
     publishQueueGauges(states);
+    if (states['dead-letter']?.waiting === 0) {
+      await clearDeadLetterBacklogAlert();
+    }
     findings.push(...evaluateQueueStates(states));
 
     // 2. Webhooks Telnyx en erreur / rejetés (delta sur 5 min).

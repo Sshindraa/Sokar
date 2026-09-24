@@ -39,6 +39,8 @@ export interface SystemFinding {
   identifier: string;
   summary: string;
   detail: string;
+  /** Current dead-letter count, used to re-alert immediately when it grows. */
+  deadLetterCount?: number;
 }
 
 // ─── Seuils ────────────────────────────────────────────────
@@ -59,6 +61,15 @@ export const SMS_GRACE_MINUTES = 30;
 export const CALLS_CRITICAL_COUNT = 3;
 /** Webhooks Telnyx en erreur/rejetés sur une fenêtre de 5 min avant alerte. */
 export const TELNYX_WEBHOOK_ERROR_THRESHOLD = 5;
+/** Repeated dead-letter alerts are suppressed for six hours unless the queue grows. */
+export const DEAD_LETTER_BACKLOG_COOLDOWN_SECONDS = 6 * 60 * 60;
+
+export function shouldSuppressDeadLetterBacklogAlert(
+  lastAlertedCount: number | null,
+  currentCount: number,
+): boolean {
+  return lastAlertedCount !== null && currentCount <= lastAlertedCount;
+}
 
 /** Événement d'audit écrit par outbound-confirm.worker après envoi du SMS. */
 export const CONFIRMATION_SMS_SENT_EVENT = 'reservation_confirmation_sms_sent';
@@ -121,6 +132,7 @@ export function evaluateQueueStates(
           kind: 'dead_letter_backlog',
           severity: 'critical',
           identifier: 'dead-letter',
+          deadLetterCount: counts.waiting,
           summary: `${counts.waiting} job(s) en dead-letter`,
           detail: [
             `La file dead-letter contient ${counts.waiting} job(s) ayant épuisé toutes leurs tentatives.`,

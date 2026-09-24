@@ -72,6 +72,29 @@ s'éditent pas dans l'interface, toute modification passe par le dépôt :
    inexistante ne se déclenche jamais, silencieusement.
 3. Mettre à jour le dashboard concerné si la règle introduit une nouvelle métrique.
 
+## Email d’alerte et plafond journalier
+
+Les alertes et les emails transactionnels passent par le même transport Resend et la même clé
+RESEND_API_KEY via shared/email. Pour protéger les emails clients, le dispatcher réserve au plus
+20 emails d’alerte par jour UTC avec un compteur Redis. Au premier dépassement, une seule
+notification de plafond atteint est envoyée (21 emails d’alerte au maximum) ; les alertes suivantes
+restent visibles dans les logs, Sentry, webhook et SMS configurés, mais n’ajoutent pas d’email.
+Si Redis est indisponible, l’email d’alerte est suspendu pour ce dispatch.
+
+L’alerte dead_letter_backlog est répétée au plus toutes les six heures. Une hausse du nombre de
+jobs déclenche immédiatement une nouvelle alerte et redémarre le délai ; le compteur de cooldown
+est effacé quand la file revient à zéro.
+
+## Tester manuellement l’email d’alerte
+
+Depuis la racine du dépôt, avec ALERT_EMAIL_TO configuré dans apps/api/.env :
+
+    pnpm --filter @sokar/api ops:alert-test
+
+La commande envoie une seule alerte de sévérité warning au premier destinataire configuré, sans
+webhook ni SMS. Elle consomme le plafond journalier normal et ne sera pas envoyée si celui-ci est
+déjà atteint. Ne pas l’exécuter dans le cadre d’un diagnostic sans demande explicite.
+
 ## Limites connues
 
 - Le test des règles valide les **noms** de métriques, pas le fait qu'elles soient peuplées dans le

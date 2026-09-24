@@ -18,6 +18,7 @@
     "usage:telnyx:fetch": "node --import tsx scripts/fetch-telnyx-usage-invoice.ts",
     "usage:accounting:package": "node --import tsx scripts/build-usage-accounting-package.ts",
     "ops:dead-letter": "node --env-file=.env --import tsx scripts/dead-letter.ts",
+    "ops:alert-test": "node --env-file=.env --import tsx scripts/alert-test.ts",
     "ops:billing-interval-backfill": "node --env-file=.env --import tsx scripts/backfill-billing-interval.ts",
     "ops:phone-reservation-timezone": "node --env-file=.env --import tsx scripts/fix-phone-reservation-timezone.ts",
     "clean": "rm -rf .turbo dist"
