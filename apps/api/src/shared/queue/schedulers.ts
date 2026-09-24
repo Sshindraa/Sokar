@@ -202,6 +202,16 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Snapshot SQL en lecture seule des réservations vocales, indépendant des
+  // alertes système et limité à un rafraîchissement toutes les 15 minutes.
+  await register('voice-quality/15min', () =>
+    queues.systemHealth.upsertJobScheduler(
+      'voice-quality-metrics-15min',
+      { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+      { name: 'voice-quality-gauges' },
+    ),
+  );
+
   // Solde ElevenLabs : une lecture de subscription par heure, sans stocker ni
   // journaliser la clé et sans envoyer de transcription.
   await register('elevenlabs-subscription/hourly', () =>

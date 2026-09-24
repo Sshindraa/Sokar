@@ -65,5 +65,10 @@ describe('registerJobSchedulers', () => {
       { pattern: '0 * * * *', tz: 'Europe/Paris' },
       { name: 'refresh-subscription' },
     );
+    expect(mocks.genericQueue.upsertJobScheduler).toHaveBeenCalledWith(
+      'voice-quality-metrics-15min',
+      { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+      { name: 'voice-quality-gauges' },
+    );
   });
 });

@@ -17,6 +17,7 @@ import {
   voiceFalseEndOfTurnTotal,
   voiceFillerEventsTotal,
   voiceTurnPlanShadowByRestaurantTotal,
+  recordVoiceQualityTurnEvent,
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { recordDebugCallerText, recordDebugSpeechAct } from './debug-dialogue';
@@ -357,6 +358,9 @@ export function recordVoiceTurnEvent(
   const compactFields = Object.fromEntries(
     Object.entries(fields).filter(([, value]) => value !== undefined),
   );
+  if (event === 'expected_answer' || event === 'slot_confidence') {
+    recordVoiceQualityTurnEvent(event, fields);
+  }
   const phase = phaseForEvent(event);
 
   // Le runtime conserve les jalons utiles au dernier tour pour la persistance

@@ -1,0 +1,193 @@
+{
+  "uid": "sokar-voice-quality",
+  "title": "Sokar — Qualité des réservations vocales",
+  "tags": ["sokar", "voice", "quality"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environnement",
+        "type": "custom",
+        "query": "production,staging",
+        "current": { "text": "production", "value": "production" },
+        "includeAll": true,
+        "multi": true,
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Relectures corrigées par champ (7 j)",
+      "description": "Pourcentage des champs relus que l’appelant corrige au tour suivant ; une hausse signale des erreurs rattrapées.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (kind) (increase(sokar_voice_readback_corrected_total{env=~\"$env\"}[7d])) / clamp_min(sum by (kind) (increase(sokar_voice_readback_total{env=~\"$env\"}[7d])), 1)",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Issues de la réponse attendue (7 j)",
+      "description": "Compare les réponses acceptées, les choix proposés et les réponses non résolues par champ.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, status) (increase(sokar_voice_expected_answer_total{env=~\"$env\"}[7d]))",
+          "legendFormat": "{{kind}} · {{status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Réponses aux choix « X ou Y ? » (7 j)",
+      "description": "Montre si l’appelant choisit la première ou la seconde option, rejette les deux ou répond autrement.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (increase(sokar_voice_choice_answer_total{env=~\"$env\"}[7d]))",
+          "legendFormat": "{{kind}} · {{outcome}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Taux de questions reposées (7 j)",
+      "description": "Part des questions de créneau répétées, par champ ; le dénominateur compte les questions émises.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (kind) (increase(sokar_voice_reprompt_total{env=~\"$env\"}[7d])) / clamp_min(sum by (kind) (increase(sokar_voice_question_total{env=~\"$env\"}[7d])), 1)",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Réservations vocales modifiées sous 48 h (7 j)",
+      "description": "Part des réservations vocales créées sur 7 jours puis modifiées sous 48 h, ventilée par champ.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sokar_voice_reservations_changed_after_call_7d{env=~\"$env\",process=\"workers\"} / clamp_min(sokar_voice_reservations_created_7d{env=~\"$env\",process=\"workers\"}, 1)",
+          "legendFormat": "{{field}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Questions reposées par cohorte (7 j)",
+      "description": "Compare le taux de relance quand le flag expected-answer est activé ou désactivé pour le restaurant.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (cohort) (increase(sokar_voice_reprompt_total{env=~\"$env\"}[7d])) / clamp_min(sum by (cohort) (increase(sokar_voice_question_total{env=~\"$env\"}[7d])), 1)",
+          "legendFormat": "{{cohort}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Utilisation du quota ElevenLabs",
+      "description": "Affiche les caractères consommés en pourcentage de la limite exposée par le worker subscription.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sokar_elevenlabs_character_count{env=~\"$env\",process=\"workers\"} / clamp_min(sokar_elevenlabs_character_limit{env=~\"$env\",process=\"workers\"}, 1)",
+          "legendFormat": "{{env}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Réservations vocales créées (7 j)",
+      "description": "Nombre de réservations PHONE associées à un appel pendant les sept derniers jours.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sokar_voice_reservations_created_7d{env=~\"$env\",process=\"workers\"}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "graphMode": "none"
+      },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Réservations vocales annulées (cohorte 7 j)",
+      "description": "Nombre de réservations de la cohorte créée sur 7 jours annulées depuis leur création.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 24 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sokar_voice_reservations_cancelled_after_call_7d{env=~\"$env\",process=\"workers\"}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "graphMode": "none"
+      },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Décisions de confiance de slot (7 j)",
+      "description": "Compare les décisions réellement appliquées aux décisions shadow wouldBe… par champ.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 31 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, decision) (increase(sokar_voice_slot_confidence_total{env=~\"$env\"}[7d]))",
+          "legendFormat": "{{kind}} · {{decision}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] }
+    }
+  ]
+}

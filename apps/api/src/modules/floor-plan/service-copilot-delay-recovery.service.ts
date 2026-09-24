@@ -385,6 +385,7 @@ export class ServiceCopilotDelayRecoveryService {
           actor: args.actor,
           correlationId: operationId,
           metadata: {
+            changedFields: ['time'],
             alternativeTableId: alternativeTable.id,
             delayMinutes: args.delayMinutes,
             waitingListEntryId: entry.id,
@@ -634,6 +635,7 @@ export class ServiceCopilotDelayRecoveryService {
           actor: args.actor,
           correlationId: `revert:${args.operationId}`,
           metadata: {
+            changedFields: ['time'],
             operationId: args.operationId,
             restoredTableId: snapshot.originalTableId,
             restoredStartsAt: snapshot.originalStartsAt.toISOString(),

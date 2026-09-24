@@ -356,7 +356,37 @@ describe('résilience STT', () => {
     expect(finishCall).toHaveBeenCalledWith(
       session,
       manager,
-      "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement. Je ne peux pas vous transférer pour le moment. Vous pouvez réserver en ligne. Au revoir.",
+      'Je ne peux pas vous transférer pour le moment. Vous pouvez réserver en ligne. Au revoir.',
     );
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement. Je vous passe le restaurant.",
+    );
+  });
+
+  it("ne répète pas l'ouverture si la tentative de transfert échoue sans exception", async () => {
+    const session = makeSession('+33100000002');
+    session.voiceLanguageCode = 'en';
+    const manager = makeManager();
+    manager.handoffToManager.mockImplementation(async () => 'Transfer unavailable');
+
+    handleSttEvent(
+      { type: 'Unavailable', reason: 'connection', message: 'connection' },
+      session,
+      manager as never,
+    );
+    await flushMicrotasks();
+
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "I'm sorry, I'm having a technical problem and I can't hear you clearly. I'll put you through to the restaurant.",
+    );
+    expect(finishCall).toHaveBeenCalledWith(
+      session,
+      manager,
+      "I couldn't put you through. Please call back a little later. Goodbye.",
+    );
+    const spokenFinal = vi.mocked(finishCall).mock.calls.at(-1)?.[2] ?? '';
+    expect(spokenFinal).not.toContain("I'm sorry, I'm having a technical problem");
   });
 });

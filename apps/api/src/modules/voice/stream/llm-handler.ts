@@ -362,8 +362,8 @@ function buildSttUnavailableCopy(session: CallSession): {
   return {
     noManager: `${opening} ${closing}`,
     manager: `${opening} ${english ? "I'll put you through to the restaurant." : 'Je vous passe le restaurant.'}`,
-    transferFailed: `${opening} ${english ? "I couldn't put you through." : "Je n'ai pas réussi à vous transférer."} ${closing}`,
-    transferUnavailable: `${opening} ${english ? "I can't transfer you right now." : 'Je ne peux pas vous transférer pour le moment.'} ${closing}`,
+    transferFailed: `${english ? "I couldn't put you through." : "Je n'ai pas réussi à vous transférer."} ${closing}`,
+    transferUnavailable: `${english ? "I can't transfer you right now." : 'Je ne peux pas vous transférer pour le moment.'} ${closing}`,
   };
 }
 

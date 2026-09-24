@@ -27,6 +27,13 @@ import {
 } from './slot-confidence';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import {
+  observeVoiceReadbackResponse,
+  recordVoiceChoiceResponse,
+  recordVoiceQuestionForTurn,
+  recordVoiceReadbackForTurn,
+} from './voice-quality';
+import type { VoiceQualityKind } from '../../../shared/observability/metrics';
+import {
   decideAssistantInteractionPolicy,
   decideTurnPolicy,
   type AssistantInteractionPolicyDecision,
@@ -111,6 +118,16 @@ export function activatePendingInteraction(
 ): PendingInteraction {
   const { pendingInteractions } = session.conversation;
   const active = getActivePendingInteraction(session);
+  const qualityKind = voiceQualityKindForInteraction(kind);
+  if (qualityKind) {
+    const repeated = voiceQualityKindForInteraction(active?.kind) === qualityKind;
+    recordVoiceQuestionForTurn(
+      session,
+      qualityKind,
+      isExpectedAnswerEnabled(session) ? 'flag_on' : 'flag_off',
+      repeated,
+    );
+  }
   if (active?.kind === kind) {
     active.prompt = prompt;
     active.resumePolicy = null;
@@ -174,6 +191,15 @@ export function activatePendingInteraction(
     pendingInteractions.splice(0, pendingInteractions.length - 64);
   syncPendingInteractionProjection(session);
   return interaction;
+}
+
+function voiceQualityKindForInteraction(
+  kind: PendingInteractionKind | null | undefined,
+): VoiceQualityKind | null {
+  if (kind === 'partySize' || kind === 'partySizeConfirmation') return 'party_size';
+  if (kind === 'date') return 'date';
+  if (kind === 'time' || kind === 'timeChoice') return 'time';
+  return null;
 }
 
 /** Suspend une question pendant une digression, en définissant si elle peut reprendre. */
@@ -3129,6 +3155,7 @@ export function recordUserTurn(
   now = new Date(),
 ): void {
   if (speechAct === 'closing') {
+    observeVoiceReadbackResponse(session, {}, speechAct);
     const closingInteraction = getActivePendingInteraction(session);
     const decision = decideTurnPolicy(
       {
@@ -3213,6 +3240,8 @@ export function recordUserTurn(
     }
   }
 
+  observeVoiceReadbackResponse(session, extracted, speechAct);
+
   const previousChoice = session.conversation.answerChoice ?? null;
   const previousGroup = session.conversation.groupRequest ?? null;
   session.conversation.answerChoice = null;
@@ -3233,6 +3262,24 @@ export function recordUserTurn(
       previousChoice,
     );
     if (resolved === 'partySize') partySizeEvidence = 'contextual';
+  }
+  if (previousChoice) {
+    const selectedValue =
+      previousChoice.kind === 'partySize'
+        ? extracted.partySize
+        : previousChoice.kind === 'weekday'
+          ? extracted.date
+            ? weekdayOfDate(extracted.date)
+            : undefined
+          : extracted.time;
+    const normalizedChoiceResponse = normalizeTranscript(transcript);
+    const explicitlyNeither =
+      /\b(?:aucun(?:e)?(?: des deux)?|ni l un ni l autre|neither|none of those)\b/u.test(
+        normalizedChoiceResponse,
+      );
+    recordVoiceChoiceResponse(previousChoice, selectedValue, speechAct, explicitlyNeither);
+  }
+  if (speechAct === 'content' || speechAct === 'correction') {
     applyTimePlausibility(session, extracted, previousChoice);
     applySlotConfidence(session, transcript, extracted, now);
   }
@@ -3479,7 +3526,9 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
   const { partySize, date } = session.conversation.slots;
   const en = effectiveVoiceLanguage(session) === 'en';
   const parts: string[] = [];
+  const readBacks: Array<{ kind: VoiceQualityKind; value: string | number }> = [];
   if (filled.partySize && partySize) {
+    readBacks.push({ kind: 'party_size', value: partySize });
     parts.push(
       en
         ? `${partySize} ${partySize === 1 ? 'person' : 'people'}`
@@ -3489,6 +3538,7 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
     );
   }
   if (filled.date && date) {
+    readBacks.push({ kind: 'date', value: date });
     parts.push(
       new Date(`${date}T12:00:00Z`).toLocaleDateString(en ? 'en-GB' : 'fr-FR', {
         weekday: 'long',
@@ -3502,10 +3552,14 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
   // cette relecture que pour le jour : pas de double relecture.
   const time = session.conversation.slots.time;
   if (filled.time && time) {
+    readBacks.push({ kind: 'time', value: time });
     const spoken = formatAvailabilitySlot(time, en ? 'en' : 'fr');
     parts.push(parts.length ? `${en ? 'at' : 'à'} ${spoken}` : spoken);
   }
   if (!parts.length) return '';
+  for (const readBack of readBacks) {
+    recordVoiceReadbackForTurn(session, readBack.kind, readBack.value);
+  }
   const phrase = parts.join(' ');
   return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}, ${en ? 'great' : 'très bien'}. `;
 }
