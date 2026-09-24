@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactPii } from '../stream/pii-redact';
+import { describeTranscript, redactPii } from '../stream/pii-redact';
 
 describe('redactPii', () => {
   it('redacte les numéros de téléphone', () => {
@@ -27,5 +27,15 @@ describe('redactPii', () => {
 
   it('ne redacte pas les nombres courts (pas des téléphones)', () => {
     expect(redactPii('Pour 4 personnes à 19h30')).toBe('Pour 4 personnes à 19h30');
+  });
+});
+
+describe('describeTranscript', () => {
+  it('décrit une transcription sans exposer son contenu', () => {
+    const described = describeTranscript("C'est au nom de Akif Adebayor.");
+
+    expect(described.transcriptLength).toBe(30);
+    expect(described.transcriptFingerprint).toMatch(/^[0-9a-f]{12}$/);
+    expect(JSON.stringify(described)).not.toContain('Adebayor');
   });
 });

@@ -186,6 +186,112 @@ describe('farewell playback and hangup', () => {
     expect(session.state).toBe('LISTENING');
   });
 
+  it('redemande le nombre de personnes quand la réponse est mal transcrite (appel du 24/09)', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(
+      session,
+      'Avec plaisir ! Pour combien de personnes serait la réservation ?',
+    );
+
+    await processTranscriptStreaming(session, 'Pour super femme.', mgr);
+
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?",
+    );
+    expect(session.conversation.pendingQuestion).toBe('partySize');
+  });
+
+  it('relance l’épellation quand l’appelant refuse le nom du récapitulatif (appel du 24/09)', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-25',
+      time: '22:30',
+      partySize: 6,
+      customerName: 'Akif Adebayor',
+    };
+    recordAssistantReply(
+      session,
+      'Je confirme : réservation pour 6 personnes demain, vendredi 25 septembre, à 22 h 30, au nom de Akif Adebayor. C’est bon ?',
+    );
+    expect(session.conversation.pendingQuestion).toBe('confirmation');
+
+    await processTranscriptStreaming(
+      session,
+      "Non, non, non. Akif Adebayor. J'ai juste épelé le nom de famille.",
+      mgr,
+    );
+
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "Pardon. Pouvez-vous m'épeler votre nom, lettre par lettre ?",
+    );
+    expect(session.conversation.slots.customerName).toBeUndefined();
+    expect(session.conversation.nameCollection?.state).toBe('collecting');
+    expect(session.conversation.pendingReservationConfirmationKey).toBeNull();
+  });
+
+  it('demande quoi corriger quand le récapitulatif est refusé sans précision', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-25',
+      time: '22:30',
+      partySize: 6,
+      customerName: 'Martin',
+    };
+    recordAssistantReply(
+      session,
+      'Je confirme : réservation pour 6 personnes vendredi 25 septembre à 22 h 30, au nom de Martin. C’est bon ?',
+    );
+
+    await processTranscriptStreaming(session, 'Non, ce n’est pas ça du tout.', mgr);
+
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "D'accord. Qu'est-ce que je dois corriger : la date, l'heure, le nombre de personnes ou le nom ?",
+    );
+  });
+
+  it('retraite la phrase quand une reprise de parole ne produit aucune transcription (appel du 24/09)', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-25';
+    session.currentTurn = {} as NonNullable<CallSession['currentTurn']>;
+    session.lastProcessedTranscript = 'Pour quatre personnes';
+    session.state = 'PROCESSING';
+
+    handleSttEvent({ type: 'UtteranceStart' }, session, mgr);
+    expect(session.state).toBe('LISTENING');
+    expect(speakTtsStreamed).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
+    expect(session.interruptedTurn).toBeNull();
+  });
+
+  it('fusionne la phrase interrompue avec la suite quand elle arrive', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.currentTurn = {} as NonNullable<CallSession['currentTurn']>;
+    session.lastProcessedTranscript = 'Je voudrais réserver pour quatre personnes';
+    session.state = 'PROCESSING';
+
+    handleSttEvent({ type: 'UtteranceStart' }, session, mgr);
+    handleSttEvent({ type: 'UtteranceEnd', transcript: 'demain soir' }, session, mgr);
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(session.conversation.slots.partySize).toBe(4);
+    expect(session.conversation.slots.date).toBeDefined();
+    expect(session.conversation.dayPeriod).toBe('dinner');
+    expect(session.interruptedTurn).toBeNull();
+  });
+
   it('ne délègue pas au LLM la collecte des slots de réservation', async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';
