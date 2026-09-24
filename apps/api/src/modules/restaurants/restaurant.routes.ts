@@ -17,7 +17,10 @@ import {
   type OnboardingTaskState,
   UpdateOnboardingSchema,
 } from './onboarding.service';
-import { invalidateRestaurantContextCache } from './restaurant.service';
+import {
+  DEFAULT_VOICE_MAX_PARTY_SIZE,
+  invalidateRestaurantContextCache,
+} from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
 import {
   createCustomHostname,
@@ -766,7 +769,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (capacitySpecials) {
       const currentSettings = await app.db.restaurantExposureSettings.upsert({
         where: { restaurantId: id },
-        create: { restaurantId: id },
+        create: { restaurantId: id, maxPartySize: DEFAULT_VOICE_MAX_PARTY_SIZE },
         update: {},
       });
       const mergedCapacitySpecials = {
@@ -1051,7 +1054,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     // 2. Fetch existing settings to merge capacitySpecials
     const currentSettings = await app.db.restaurantExposureSettings.upsert({
       where: { restaurantId },
-      create: { restaurantId },
+      create: { restaurantId, maxPartySize: DEFAULT_VOICE_MAX_PARTY_SIZE },
       update: {},
     });
 

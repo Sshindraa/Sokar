@@ -14,7 +14,7 @@ import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 
 /** Seuil téléphonique historique, utilisé sans ligne `RestaurantExposureSettings`. */
-const DEFAULT_VOICE_MAX_PARTY_SIZE = 7;
+export const DEFAULT_VOICE_MAX_PARTY_SIZE = 7;
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;

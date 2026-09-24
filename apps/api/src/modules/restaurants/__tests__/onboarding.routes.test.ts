@@ -373,6 +373,11 @@ describe('restaurant.routes - onboarding', () => {
       });
 
       expect(res.statusCode).toBe(200);
+      expect(db.restaurantExposureSettings.upsert).toHaveBeenCalledWith({
+        where: { restaurantId: 'test-rest-1' },
+        create: { restaurantId: 'test-rest-1', maxPartySize: 7 },
+        update: {},
+      });
       expect(res.json()).toEqual({
         restaurant: expect.objectContaining({ slug: 'nouveau-slug', description: 'Bistrot sympa' }),
         exposureSettings: expect.objectContaining({ maxPartySize: 8, connectPublished: true }),

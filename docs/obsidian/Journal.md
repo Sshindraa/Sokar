@@ -799,3 +799,8 @@ Log automatique des tâches Hermes.
 - `VOICE_CONFIDENCE_CONFIRM_SLOTS` (défaut `partySize`) : la confiance n'agit que sur les types listés, les autres sont observés (`wouldBe…`).
 - Vraisemblance des heures sous `VOICE_EXPECTED_ANSWER_ENABLED` : heure hors horaires → « X ou Y ? » avec l'heure ouverte la plus proche à l'oreille, sinon relance qui cite les horaires (hv242).
 - « Pour demain midi, quatre personnes. » : pas de 12:00 deviné, pas de boucle ; l'agent demande l'heure une fois au lieu de proposer les créneaux du midi (non corrigé, consigne : seulement si boucle).
+
+### 2026-09-24 — Vérification du seuil de groupe
+
+- Sans réglage explicite, le téléphone et l'agentique utilisent désormais le même seuil historique de 7 personnes. Les formulaires d’exposition et d’onboarding affichent 7 ; les routes qui créent les réglages Connect l’écrivent explicitement pour ne pas tomber sur le défaut Prisma historique de 8.
+- Le handler vocal couvre maintenant la décision de groupe confirmé : transfert si la ligne du gérant existe, prise de message sinon. La mise à jour du seuil invalide l’entrée Redis du contexte téléphonique par numéro, immédiatement (TTL de secours : 300 s).

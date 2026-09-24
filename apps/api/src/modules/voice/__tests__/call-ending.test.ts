@@ -56,6 +56,9 @@ function fixture() {
     handoffToManager: vi
       .fn()
       .mockResolvedValue('Je lance le transfert vers le gérant, un instant.'),
+    recordGroupRequestMessage: vi
+      .fn()
+      .mockResolvedValue("J'ai bien noté votre demande pour le gérant."),
     recordDialogueFallbackMessage: vi
       .fn()
       .mockResolvedValue("J'ai bien noté votre message pour le gérant."),
@@ -896,6 +899,47 @@ describe('dialogue loop guard', () => {
     );
     expect(session.conversation.pendingQuestion).toBeNull();
     expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('transfère au gérant après confirmation d’un groupe supérieur au seuil', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.managerPhone = '+33600000000';
+    session.maxPartySize = 7;
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-26';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    await processTranscriptStreaming(session, 'Nous serons douze.', mgr);
+    expect(session.conversation.groupRequest).toMatchObject({ partySize: 12, confirmed: false });
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, "Douze personnes, c'est bien ça ?");
+
+    await processTranscriptStreaming(session, 'Oui.', mgr);
+
+    expect(mgr.handoffToManager).toHaveBeenCalledOnce();
+    expect(mgr.handoffToManager).toHaveBeenCalledWith(session, {
+      kind: 'group_size',
+      choice: 'transfer',
+    });
+    expect(mgr.recordGroupRequestMessage).not.toHaveBeenCalled();
+    expect(session.conversation.groupRequest).toBeNull();
+  });
+
+  it('enregistre un message si aucun numéro du gérant n’est configuré', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.maxPartySize = 7;
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-26';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    await processTranscriptStreaming(session, 'Nous serons douze.', mgr);
+    await processTranscriptStreaming(session, 'Oui.', mgr);
+
+    expect(mgr.recordGroupRequestMessage).toHaveBeenCalledOnce();
+    expect(mgr.recordGroupRequestMessage).toHaveBeenCalledWith(session, 12);
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(session.conversation.groupRequest).toBeNull();
   });
 
   it('exécute réellement le transfert seulement quand la ligne gérant existe', async () => {
