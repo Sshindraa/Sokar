@@ -73,6 +73,9 @@ import {
 } from './voice-language';
 import {
   buildAvailabilityErrorPlan,
+  buildLlmFailurePlan,
+  extractSpokenTimes,
+  violatesAvailabilityReplyGuard,
   getOpenAvailabilityRequest,
   buildOpenAvailabilityReply,
   buildAvailabilityLlmContext,
@@ -1390,6 +1393,14 @@ export async function processTranscriptStreaming(
   };
   const abortController = new AbortController();
   const llmStartedAt = Date.now();
+  // Garde-fou disponibilité : les horaires prononcés doivent venir de la
+  // vérification. Au premier écart, la suite n'est pas envoyée au TTS et une
+  // réponse déterministe prend le relais.
+  const guardAvailability = availabilityContext
+    ? session.conversation.lastAvailabilityResult
+    : null;
+  const spokenTimes = new Set<string>();
+  let availabilityGuardTripped = false;
   recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_started', {
     mode: availabilityContext ? 'availability_context' : 'live',
   });
@@ -1409,7 +1420,24 @@ export async function processTranscriptStreaming(
         });
 
         const cleanPhrase = stripRepeatedGreeting(phrase, session);
-        if (!cleanPhrase) return;
+        if (!cleanPhrase || availabilityGuardTripped) return;
+        if (guardAvailability) {
+          for (const time of extractSpokenTimes(cleanPhrase)) spokenTimes.add(time);
+          if (
+            violatesAvailabilityReplyGuard(
+              [...spokenTimes],
+              guardAvailability,
+              guardAvailability.slots,
+            )
+          ) {
+            availabilityGuardTripped = true;
+            recordVoiceTurnEvent(session, 'dialogue_guard', {
+              guard: 'availability_reply_times',
+              spokenTimeCount: spokenTimes.size,
+            });
+            return;
+          }
+        }
 
         if (session.state !== 'SPEAKING') {
           mgr.transition(session, 'SPEAKING');
@@ -1446,9 +1474,11 @@ export async function processTranscriptStreaming(
       durationMs: Date.now() - llmStartedAt,
       characterCount: fullResponse.length,
     });
-    if (!fullResponse.trim() && availabilityContext) {
+    session.conversation.llmFailureStreak = 0;
+    if ((!fullResponse.trim() || availabilityGuardTripped) && availabilityContext) {
       // Le LLM reste responsable de la formulation ; ce repli ne sert qu'en
-      // cas de réponse vide du transport et reprend les faits vérifiés.
+      // cas de réponse vide du transport ou d'horaires non vérifiés, et
+      // reprend les faits vérifiés.
       const fallbackPlan = buildAvailabilityReplyPlan(
         session,
         availabilityRequest ?? {
@@ -1460,6 +1490,16 @@ export async function processTranscriptStreaming(
         language,
       );
       const fallbackResponse = fallbackPlan.reply;
+      // La réponse rejetée par le garde-fou ne doit pas rester dans l'historique
+      // du LLM, sinon il la reprendrait au tour suivant.
+      const lastMessage = session.history.at(-1);
+      if (
+        availabilityGuardTripped &&
+        lastMessage?.role === 'assistant' &&
+        lastMessage.content === fullResponse
+      ) {
+        session.history.pop();
+      }
       session.history.push({ role: 'assistant', content: fallbackResponse });
       recordAssistantReplyWithPolicy(session, fallbackResponse, fallbackPlan.proposal);
       recordTurnPlanObservation();
@@ -1527,6 +1567,26 @@ export async function processTranscriptStreaming(
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
       extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
+    session.conversation.llmFailureStreak = (session.conversation.llmFailureStreak ?? 0) + 1;
+    // Un silence fait raccrocher : sans audio déjà émis pour ce tour, on
+    // prononce une réponse déterministe. Après un audio partiel, on évite un doublon.
+    const audioAlreadySent = ttsPromises.length > 0 || contextTtsRef.current?.hasAudioOutput;
+    if (!audioAlreadySent && isSessionActiveForTts(session)) {
+      const failurePlan = buildLlmFailurePlan(session);
+      // processUtteranceStreaming a déjà ajouté le tour utilisateur à l'historique.
+      session.history.push({ role: 'assistant', content: failurePlan.reply });
+      recordAssistantReplyWithPolicy(session, failurePlan.reply, failurePlan.proposal);
+      mgr.transition(session, 'SPEAKING');
+      try {
+        await speakTtsStreamed(session, failurePlan.reply);
+      } catch (ttsErr) {
+        logger.error(
+          { err: ttsErr, callId: session.callControlId },
+          '[pipeline] LLM failure reply TTS failed',
+        );
+      }
+      if (!isCurrentResponse()) return;
+    }
     mgr.transition(session, 'LISTENING');
   } finally {
     // Réponse abandonnée (erreur, interruption) : ce qui n'a pas été fixé l'est ici.

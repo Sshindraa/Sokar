@@ -8,6 +8,11 @@ import {
   buildAvailabilityErrorPlan,
   buildAvailabilityLlmContext,
   buildAvailabilityReply,
+  buildLlmFailurePlan,
+  buildOpenAvailabilityReply,
+  extractDayPeriod,
+  extractSpokenTimes,
+  violatesAvailabilityReplyGuard,
   buildHumanFallbackClarification,
   buildHumanFallbackOffer,
   classifyVoiceSpeechAct,
@@ -1312,5 +1317,186 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'What name should I book it under?');
     const name = handleCustomerNameTurn(session, 'My name is A bee K I F');
     expect(name.response).toContain('is that correct?');
+  });
+});
+
+// Appels réels du restaurant de démo, 23-24/09/2026 : 22 créneaux entre 12 h et 22 h 30.
+const DEMO_DAY_SLOTS = [
+  '12:00',
+  '12:30',
+  '13:00',
+  '13:30',
+  '14:00',
+  '14:30',
+  '15:00',
+  '15:30',
+  '16:00',
+  '16:30',
+  '17:00',
+  '17:30',
+  '18:00',
+  '18:30',
+  '19:00',
+  '19:30',
+  '20:00',
+  '20:30',
+  '21:00',
+  '21:30',
+  '22:00',
+  '22:30',
+];
+
+describe('moment de la journée demandé', () => {
+  it.each([
+    ['Est-ce que c’est possible pour quatre personnes demain soir ?', 'dinner'],
+    ['Vous avez de la disponibilité, euh, le soir ou pas ?', 'dinner'],
+    ['Pour un dîner samedi', 'dinner'],
+    ['Plutôt à midi', 'lunch'],
+    ['Un déjeuner jeudi', 'lunch'],
+    ['Dans l’après-midi', null],
+    ['Pour quatre personnes', null],
+  ] as const)('« %s » → %s', (transcript, expected) => {
+    expect(extractDayPeriod(transcript)).toBe(expected);
+  });
+
+  it('ne propose que des créneaux du soir quand l’appelant dit « demain soir »', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordUserTurn(
+      session,
+      'Est-ce que c’est possible pour quatre personnes demain soir ?',
+      'content',
+      new Date('2026-09-23T21:49:00Z'),
+    );
+
+    const reply = buildOpenAvailabilityReply(session, DEMO_DAY_SLOTS);
+
+    expect(reply).toBe(
+      'Je peux vous proposer 18 h ou 20 h 30 ou 22 h 30. Quel horaire vous convient ?',
+    );
+    expect(session.conversation.offeredAvailability?.slots).toEqual(['18:00', '20:30', '22:30']);
+  });
+
+  it('garde le moment demandé d’un tour à l’autre', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    const now = new Date('2026-09-23T21:52:00Z');
+    recordUserTurn(session, 'Je voudrais réserver pour demain', 'content', now);
+    recordUserTurn(session, 'Six personnes', 'content', now);
+    recordUserTurn(session, 'Vous avez de la disponibilité le soir ou pas ?', 'content', now);
+
+    expect(buildOpenAvailabilityReply(session, DEMO_DAY_SLOTS)).toContain(
+      '18 h ou 20 h 30 ou 22 h 30',
+    );
+  });
+
+  it('le dit quand le moment demandé est complet, puis propose le reste de la journée', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordUserTurn(
+      session,
+      'Pour quatre personnes demain soir',
+      'content',
+      new Date('2026-09-23T21:49:00Z'),
+    );
+
+    const reply = buildOpenAvailabilityReply(session, ['12:00', '12:30', '13:00']);
+
+    expect(reply).toBe(
+      "Je n'ai plus rien le soir ce jour-là, mais je peux vous proposer 12 h ou 12 h 30 ou 13 h. L'un de ces horaires vous convient ?",
+    );
+  });
+});
+
+describe('contexte LLM après vérification de disponibilité', () => {
+  it('ne transmet pas la liste de la journée quand le créneau demandé est libre', () => {
+    const context = buildAvailabilityLlmContext({
+      request: { date: '2026-09-25', time: '22:30', partySize: 4 },
+      availableSlots: DEMO_DAY_SLOTS,
+    });
+
+    expect(context).toContain('créneau demandé disponible');
+    expect(context).toContain("N'annonce aucun autre horaire");
+    expect(context).not.toContain('12 h');
+    expect(context).not.toContain('17 h 30');
+  });
+
+  it('ne transmet que les trois alternatives les plus proches quand il est complet', () => {
+    const context = buildAvailabilityLlmContext({
+      request: { date: '2026-09-25', time: '20:15', partySize: 4 },
+      availableSlots: DEMO_DAY_SLOTS,
+    });
+
+    expect(context).toContain('seuls horaires annonçables');
+    expect(context).not.toContain('12 h');
+  });
+});
+
+describe('garde-fou des horaires prononcés', () => {
+  it('lit les horaires d’une phrase parlée', () => {
+    expect(
+      extractSpokenTimes('Très bien, 22 h 30. Je vous propose aussi 12 h, 12h30 ou 13:15.'),
+    ).toEqual(['22:30', '12:00', '12:30', '13:15']);
+    expect(extractSpokenTimes('Pour 4 personnes, à quel nom ?')).toEqual([]);
+  });
+
+  it('rejette l’énumération de l’appel du 24/09 après confirmation de 22 h 30', () => {
+    const spoken = extractSpokenTimes(
+      'Très bien, 22 h 30. Je vous propose aussi 12 h, 12 h 30, 13 h, 13 h 30, 14 h.',
+    );
+
+    expect(violatesAvailabilityReplyGuard(spoken, { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(true);
+  });
+
+  it('accepte le créneau confirmé, et le créneau complet cité avec ses alternatives', () => {
+    expect(violatesAvailabilityReplyGuard(['22:30'], { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(
+      false,
+    );
+    expect(
+      violatesAvailabilityReplyGuard(['19:30', '20:00', '18:30'], { time: '19:30' }, [
+        '18:30',
+        '20:00',
+      ]),
+    ).toBe(false);
+  });
+
+  it('rejette un horaire que la vérification n’a pas renvoyé', () => {
+    expect(violatesAvailabilityReplyGuard(['21:00'], { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(true);
+  });
+});
+
+describe('réponse parlée après un échec LLM', () => {
+  it('reprend le créneau vérifié et demande le nom au lieu de se taire', () => {
+    const session = makeSession();
+    session.conversation.slots = { date: '2026-09-25', time: '22:30', partySize: 4 };
+    session.conversation.lastAvailabilityResult = {
+      key: '2026-09-25:22:30:4',
+      date: '2026-09-25',
+      time: '22:30',
+      partySize: 4,
+      slots: DEMO_DAY_SLOTS,
+    };
+
+    expect(buildLlmFailurePlan(session).reply).toBe(
+      'Oui, nous avons de la place pour 4 personnes à 22 h 30. À quel nom je réserve ?',
+    );
+  });
+
+  it('demande de répéter quand aucun fait vérifié ne permet de répondre', () => {
+    const session = makeSession();
+
+    expect(buildLlmFailurePlan(session).reply).toBe(
+      "Pardon, je n'ai pas bien saisi. Pouvez-vous répéter ?",
+    );
+  });
+
+  it('propose le gérant après deux échecs consécutifs', () => {
+    const session = makeSession();
+    session.managerPhone = '+33100000000';
+    session.conversation.llmFailureStreak = 2;
+
+    expect(buildLlmFailurePlan(session).reply).toBe(
+      'Je rencontre un petit souci technique. Je peux vous passer le gérant ou prendre un message. Que préférez-vous ?',
+    );
   });
 });

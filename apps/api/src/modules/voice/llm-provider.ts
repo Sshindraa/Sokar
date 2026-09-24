@@ -1,27 +1,35 @@
 /**
  * Provider LLM vocal — source de vérité unique.
  *
- * Un seul provider depuis le 22 septembre 2026 : Groq en direct. Le chemin
- * vocal n'effectue aucun routage secondaire.
+ * Un seul provider actif à la fois, choisi par `VOICE_LLM_PROVIDER` (Groq par
+ * défaut, Cerebras en option). Les deux exposent une API OpenAI-compatible ;
+ * le chemin vocal n'effectue aucun routage secondaire ni repli entre eux.
  *
  * Les métadonnées d'appel (SafeProviderConfig, `Call.llmProvider`) doivent
  * refléter ce provider ; le modèle est exposé séparément par
  * `getVoiceLlmModel()`. Un mélange modèle/provider rend les compteurs
  * mensuels inexploitables.
  */
+import type { VoiceLlmProviderName } from '@sokar/config';
 import { voiceConfig } from '../../env';
 
-export const VOICE_LLM_PROVIDER = 'groq' as const;
-
-export type VoiceLlmProvider = typeof VOICE_LLM_PROVIDER;
+export type VoiceLlmProvider = VoiceLlmProviderName;
 
 export function getVoiceLlmProvider(): VoiceLlmProvider {
-  return VOICE_LLM_PROVIDER;
+  return voiceConfig.VOICE_LLM_PROVIDER;
 }
 
-/** Modèle réellement envoyé à l'API Groq pour les appels vocaux. */
+/** Modèle réellement envoyé au provider actif pour les appels vocaux. */
 export function getVoiceLlmModel(): string {
   return voiceConfig.VOICE_LLM_MODEL;
+}
+
+/** URL de base et clé du provider actif. */
+export function getVoiceLlmEndpoint(): { baseUrl: string; apiKey: string | undefined } {
+  if (getVoiceLlmProvider() === 'cerebras') {
+    return { baseUrl: voiceConfig.CEREBRAS_BASE_URL, apiKey: voiceConfig.CEREBRAS_API_KEY };
+  }
+  return { baseUrl: voiceConfig.GROQ_BASE_URL, apiKey: voiceConfig.GROQ_API_KEY };
 }
 
 /**
@@ -40,9 +48,8 @@ export function getVoiceLlmRuntimeInfo(): {
     provider,
     model: getVoiceLlmModel(),
     openrouterKeyConfigured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
-    // Keep this comparison explicit even though the active provider type is
-    // currently narrowed to Groq; it documents the operational distinction
-    // and remains correct if a provider is added later.
+    // OpenRouter ne fait pas partie des providers vocaux ; la comparaison reste
+    // explicite pour documenter la distinction opérationnelle.
     openrouterUsed: String(provider) === 'openrouter',
   };
 }

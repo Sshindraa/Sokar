@@ -170,6 +170,22 @@ describe('farewell playback and hangup', () => {
     expect(session.state).toBe('LISTENING');
   });
 
+  it('répond au lieu de se taire quand le LLM échoue (429 du 23/09)', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.processUtteranceStreaming).mockRejectedValueOnce(
+      new Error('LLM 429: rate_limit_exceeded'),
+    );
+
+    await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "Pardon, je n'ai pas bien saisi. Pouvez-vous répéter ?",
+    );
+    expect(session.conversation.llmFailureStreak).toBe(1);
+    expect(session.state).toBe('LISTENING');
+  });
+
   it('ne délègue pas au LLM la collecte des slots de réservation', async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';

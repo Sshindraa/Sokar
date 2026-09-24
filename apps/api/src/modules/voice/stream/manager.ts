@@ -28,7 +28,12 @@ import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-pol
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
 import { recordDebugTool } from './debug-dialogue';
 import { cancelScheduledFiller } from './filler-scheduler';
-import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import {
+  getVoiceLlmEndpoint,
+  getVoiceLlmModel,
+  getVoiceLlmProvider,
+  type VoiceLlmProvider,
+} from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import { parseTurnPlan, type TurnPlanContext } from './turn-plan';
 import type { InBandTurnPlanResult } from './turn-plan-shadow';
@@ -66,11 +71,10 @@ function recordVoiceTransfer(
 }
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
-// Un seul provider LLM depuis le 22 septembre 2026 : Groq. Le label reste
-// présent dans la métrique pour ne pas casser les dashboards historiques, et
-// pour permettre un second provider le jour où on en ajoute un.
+// Un seul provider LLM actif à la fois (`VOICE_LLM_PROVIDER`) : le label de la
+// métrique porte son nom pour distinguer Groq et Cerebras dans les dashboards.
 
-type LlmProvider = 'groq';
+type LlmProvider = VoiceLlmProvider;
 
 function classifyLlmHttpStatus(status: number): string {
   if (status === 429) return '429';
@@ -317,9 +321,23 @@ function terminalToolReply(
   return reply;
 }
 
-/** URL de base Groq (API OpenAI-compatible), surchargeable pour les tests. */
-function getGroqBaseUrl(): string {
-  return voiceConfig.GROQ_BASE_URL;
+/**
+ * Regroupe tous les messages `system` en un seul, placé en tête.
+ *
+ * Le prompt, la consigne de langue et le contexte éphémère sont des messages
+ * `system` distincts. Groq les accepte, mais le template de chat Qwen de
+ * Cerebras refuse tout message `system` qui n'est pas le premier (400
+ * `System message must be at the beginning`). L'ordre des consignes est
+ * conservé ; les autres messages ne sont pas modifiés.
+ */
+export function mergeSystemMessages(messages: ChatMessage[]): ChatMessage[] {
+  const systemContents = messages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+  const rest = messages.filter((message) => message.role !== 'system');
+  if (systemContents.length === 0) return rest;
+  return [{ role: 'system', content: systemContents.join('\n\n') }, ...rest];
 }
 
 function normalizeVoiceIdentity(value: string): string {
@@ -390,8 +408,9 @@ interface CircuitBreakerState {
 const CIRCUIT_BREAKER_THRESHOLD = 3; // 3 échecs consécutifs → open
 const CIRCUIT_BREAKER_COOLDOWN_MS = 30_000; // 30s de cooldown
 
-const circuitBreakers: Record<string, CircuitBreakerState> = {
+const circuitBreakers: Record<LlmProvider, CircuitBreakerState> = {
   groq: { failures: 0, openedAt: null },
+  cerebras: { failures: 0, openedAt: null },
 };
 
 function isCircuitBreakerOpen(provider: LlmProvider): boolean {
@@ -441,6 +460,7 @@ function resetCircuitBreaker(provider: LlmProvider): void {
 // Exporté pour les tests
 export function _resetCircuitBreakersForTesting(): void {
   resetCircuitBreaker('groq');
+  resetCircuitBreaker('cerebras');
 }
 
 /**
@@ -1034,7 +1054,7 @@ export class CallSessionManager {
 
   /**
    * Observation TurnPlan d'un tour répondu sans LLM : appel séparé, hors du
-   * chemin de réponse, borné en durée. Il ne passe pas par le disjoncteur Groq
+   * chemin de réponse, borné en durée. Il ne passe pas par le disjoncteur LLM
    * pour qu'une observation lente ne coupe jamais le LLM des appels réels, et il
    * ne peut rien modifier : le résultat sert uniquement au shadow.
    */
@@ -1045,10 +1065,10 @@ export class CallSessionManager {
     telemetryTurnId: string | undefined,
   ): Promise<InBandTurnPlanResult> {
     const startedAt = Date.now();
-    if (isCircuitBreakerOpen('groq')) return { status: 'failed', durationMs: 0 };
+    if (isCircuitBreakerOpen(getVoiceLlmProvider())) return { status: 'failed', durationMs: 0 };
     const messages = buildTurnPlanObservationMessages(context, spokenReply);
     try {
-      const response = await this.fetchGroqCompletion(
+      const response = await this.fetchProviderCompletion(
         messages,
         {
           tools: [buildTurnPlanShadowTool()],
@@ -1089,10 +1109,10 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM completion — chemin unique, Groq en direct.
+   * Fetch LLM completion — chemin unique, provider actif (`VOICE_LLM_PROVIDER`).
    *
-   * Il n'y a plus de provider alternatif ni de repli : une erreur remonte à
-   * l'appelant, qui dégrade l'appel vers le message d'excuse parlé. Le circuit
+   * Il n'y a pas de provider alternatif ni de repli : une erreur remonte à
+   * l'appelant, qui dégrade l'appel vers une réponse parlée. Le circuit
    * breaker reste en place pour ne pas marteler un provider en panne pendant
    * 30 s.
    */
@@ -1105,38 +1125,39 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<Response> {
-    if (isCircuitBreakerOpen('groq')) {
-      logger.warn({ provider: 'groq' }, '[circuit-breaker] Groq open, requête ignorée');
+    const provider = getVoiceLlmProvider();
+    if (isCircuitBreakerOpen(provider)) {
+      logger.warn({ provider }, '[circuit-breaker] provider LLM open, requête ignorée');
       throw new Error('LLM provider unavailable (circuit open)');
     }
 
     try {
-      const response = await this.fetchGroqCompletion(messages, opts, getVoiceLlmModel());
+      const response = await this.fetchProviderCompletion(messages, opts, getVoiceLlmModel());
       if (response.ok) {
-        recordProviderSuccess('groq');
+        recordProviderSuccess(provider);
         return response;
       }
-      recordProviderFailure('groq');
-      recordLlmHttpError('groq', response.status);
+      recordProviderFailure(provider);
+      recordLlmHttpError(provider, response.status);
       return response;
     } catch (err) {
       // Session abort (barge-in, raccroché) : ni failure ni alerte.
       if (isSessionAbortError(err, opts.signal)) {
-        recordLlmException('groq', err, opts.signal);
+        recordLlmException(provider, err, opts.signal);
         throw err;
       }
-      recordProviderFailure('groq');
-      recordLlmException('groq', err, opts.signal);
+      recordProviderFailure(provider);
+      recordLlmException(provider, err, opts.signal);
       throw err;
     }
   }
 
   /**
-   * Fetch LLM completion via Groq direct API.
+   * Fetch LLM completion via l'API OpenAI-compatible du provider actif.
    * Qwen 3.8 est utilisé en mode instruct (reasoning désactivé) afin de
    * préserver le temps de réponse vocal ; le modèle supporte le tool use.
    */
-  private async fetchGroqCompletion(
+  private async fetchProviderCompletion(
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
@@ -1149,21 +1170,22 @@ export class CallSessionManager {
   ): Promise<Response> {
     const body = {
       model,
-      messages,
+      messages: mergeSystemMessages(messages),
       max_tokens: opts.maxTokens,
       temperature: opts.temperature,
       top_p: 0.8,
-      // Qwen 3.8 est par défaut en mode instruct ; l'expliciter évite qu'une
-      // modification du défaut fournisseur ne fasse remonter des tokens de raisonnement.
+      // Qwen 3.8 raisonne par défaut chez certains providers (Cerebras) ;
+      // l'expliciter évite que des tokens de raisonnement retardent la voix.
       reasoning_effort: 'none',
       ...(opts.tools ? { tools: opts.tools, tool_choice: opts.toolChoice ?? 'auto' } : {}),
     };
 
-    return fetch(`${getGroqBaseUrl()}/chat/completions`, {
+    const { baseUrl, apiKey } = getVoiceLlmEndpoint();
+    return fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${voiceConfig.GROQ_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -1171,7 +1193,7 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM streaming — chemin unique, Groq en direct.
+   * Fetch LLM streaming — chemin unique, provider actif.
    */
   private async fetchLlmStreaming(
     messages: ChatMessage[],
@@ -1182,35 +1204,36 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<{ response: Response; provider: LlmProvider }> {
-    if (isCircuitBreakerOpen('groq')) {
-      logger.warn({ provider: 'groq' }, '[circuit-breaker] Groq open, streaming ignoré');
+    const provider = getVoiceLlmProvider();
+    if (isCircuitBreakerOpen(provider)) {
+      logger.warn({ provider }, '[circuit-breaker] provider LLM open, streaming ignoré');
       throw new Error('LLM provider unavailable (circuit open)');
     }
 
     try {
-      const response = await this.fetchGroqStreaming(messages, opts, getVoiceLlmModel());
+      const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
       if (response.ok) {
-        recordProviderSuccess('groq');
-        return { response, provider: 'groq' };
+        recordProviderSuccess(provider);
+        return { response, provider };
       }
-      recordProviderFailure('groq');
-      recordLlmHttpError('groq', response.status);
-      return { response, provider: 'groq' };
+      recordProviderFailure(provider);
+      recordLlmHttpError(provider, response.status);
+      return { response, provider };
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) {
-        recordLlmException('groq', err, opts.signal);
+        recordLlmException(provider, err, opts.signal);
         throw err;
       }
-      recordProviderFailure('groq');
-      recordLlmException('groq', err, opts.signal);
+      recordProviderFailure(provider);
+      recordLlmException(provider, err, opts.signal);
       throw err;
     }
   }
 
   /**
-   * Fetch LLM streaming via Groq direct API.
+   * Fetch LLM streaming via l'API OpenAI-compatible du provider actif.
    */
-  private async fetchGroqStreaming(
+  private async fetchProviderStreaming(
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
@@ -1222,7 +1245,7 @@ export class CallSessionManager {
   ): Promise<Response> {
     const body = {
       model,
-      messages,
+      messages: mergeSystemMessages(messages),
       max_tokens: opts.maxTokens,
       temperature: opts.temperature,
       top_p: 0.8,
@@ -1232,11 +1255,12 @@ export class CallSessionManager {
       stream_options: { include_usage: true },
     };
 
-    return fetch(`${getGroqBaseUrl()}/chat/completions`, {
+    const { baseUrl, apiKey } = getVoiceLlmEndpoint();
+    return fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${voiceConfig.GROQ_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),

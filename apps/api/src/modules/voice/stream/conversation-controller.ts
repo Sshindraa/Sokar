@@ -1,6 +1,7 @@
 import type {
   CallSession,
   ConversationState,
+  DayPeriod,
   DialogueStallLevel,
   HumanFallbackMode,
   PendingInteraction,
@@ -2115,13 +2116,59 @@ function formatExactReservationDate(date: string): string {
  * Les faits et les garde-fous restent déterministes ; seule la formulation
  * vocale est confiée au modèle.
  */
+/**
+ * Horaires qu'une réponse de disponibilité peut prononcer : le créneau demandé
+ * s'il est libre, sinon les trois alternatives vérifiées les plus proches.
+ */
+export function allowedAvailabilityReplyTimes(
+  request: { time: string },
+  availableSlots: string[],
+): string[] {
+  if (availableSlots.includes(request.time)) return [request.time];
+  return selectClosestAvailabilitySlots(request.time, availableSlots);
+}
+
+/** Horaires « HH:MM » prononcés dans une phrase (« 22 h 30 », « 19h », « 12:15 »). */
+export function extractSpokenTimes(phrase: string): string[] {
+  const times = new Set<string>();
+  for (const match of phrase.matchAll(/\b(\d{1,2})\s*(?:h|:)\s*(\d{2})?(?!\d)/giu)) {
+    const hour = Number(match[1]);
+    const minute = match[2] ? Number(match[2]) : 0;
+    if (hour > 23 || minute > 59) continue;
+    times.add(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+  }
+  return [...times];
+}
+
+/**
+ * Garde-fou sur une réponse LLM après vérification de disponibilité : aucun
+ * horaire hors liste autorisée (le créneau demandé peut être cité même complet),
+ * et jamais plus de trois horaires.
+ */
+export function violatesAvailabilityReplyGuard(
+  spokenTimes: string[],
+  request: { time: string },
+  availableSlots: string[],
+): boolean {
+  if (spokenTimes.length > 3) return true;
+  const allowed = new Set([
+    request.time,
+    ...allowedAvailabilityReplyTimes(request, availableSlots),
+  ]);
+  return spokenTimes.some((time) => !allowed.has(time));
+}
+
 export function buildAvailabilityLlmContext({
   request,
   availableSlots,
   knownCustomerName,
 }: AvailabilityLlmContextInput): string {
   const requestedSlotAvailable = availableSlots.includes(request.time);
-  const allowedSlots = availableSlots.map((slot) => formatAvailabilitySlot(slot));
+  // Seuls les horaires que le LLM a le droit d'annoncer lui sont transmis : la
+  // liste complète de la journée l'incitait à tout énumérer (appel du 24/09).
+  const allowedSlots = allowedAvailabilityReplyTimes(request, availableSlots).map((slot) =>
+    formatAvailabilitySlot(slot),
+  );
   const closestAlternatives = selectClosestAvailabilitySlots(request.time, availableSlots).map(
     (slot) => formatAvailabilitySlot(slot),
   );
@@ -2141,7 +2188,9 @@ export function buildAvailabilityLlmContext({
   return [
     'CONTEXTE MÉTIER INTERNE — vérification de disponibilité terminée.',
     `Demande vérifiée : date exacte ${request.date} (${formatExactReservationDate(request.date)}), heure ${request.time}, ${request.partySize} personne${request.partySize > 1 ? 's' : ''}.`,
-    `Résultat de l'outil : créneau demandé ${requestedSlotAvailable ? 'disponible' : 'indisponible'} ; créneaux renvoyés : ${allowedSlots.join(', ') || 'aucun'}.`,
+    requestedSlotAvailable
+      ? `Résultat de l'outil : créneau demandé disponible. N'annonce aucun autre horaire.`
+      : `Résultat de l'outil : créneau demandé indisponible ; seuls horaires annonçables : ${allowedSlots.join(', ') || 'aucun'}.`,
     `Nom déjà connu : ${knownCustomerName || 'non'}.`,
     `Objectif du prochain tour : ${nextObjective}`,
     'Réponds en français, avec une formulation chaleureuse et une seule question utile. Dans le récapitulatif, prononce la date complète (jour, numéro et mois) plutôt que « demain » ou « demain soir » seul. Les créneaux annoncés doivent provenir exclusivement de cette vérification.',
@@ -2173,6 +2222,49 @@ export function buildAvailabilityErrorPlan(session: CallSession): AssistantReply
     Boolean(session.managerPhone?.trim()),
   );
   return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
+}
+
+/**
+ * Réponse parlée quand le LLM échoue (429, 5xx, timeout, requête refusée).
+ *
+ * Un silence fait raccrocher l'appelant : on répond toujours, de façon
+ * déterministe, à partir de l'état vérifié. Si une disponibilité vient d'être
+ * vérifiée pour la demande en cours, on reprend exactement ce résultat ; après
+ * deux échecs consécutifs, on propose le gérant ou un message.
+ */
+export function buildLlmFailurePlan(session: CallSession): AssistantReplyEmissionPlan {
+  const language = effectiveVoiceLanguage(session);
+  const streak = session.conversation.llmFailureStreak ?? 0;
+  const managerConfigured = Boolean(session.managerPhone?.trim());
+
+  if (streak >= 2) {
+    const reply =
+      language === 'en'
+        ? managerConfigured
+          ? "I'm having a technical issue. I can put you through to the manager or take a message. Which do you prefer?"
+          : "I'm having a technical issue, but I can take a message for the manager. Would you like me to do that?"
+        : managerConfigured
+          ? 'Je rencontre un petit souci technique. Je peux vous passer le gérant ou prendre un message. Que préférez-vous ?'
+          : 'Je rencontre un petit souci technique, mais je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?';
+    return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
+  }
+
+  const { date, time, partySize } = session.conversation.slots;
+  const lastAvailability = session.conversation.lastAvailabilityResult;
+  if (date && time && partySize && lastAvailability?.key === `${date}:${time}:${partySize}`) {
+    return buildAvailabilityReplyPlan(
+      session,
+      { date, time, partySize },
+      lastAvailability.slots,
+      language,
+    );
+  }
+
+  const reply =
+    language === 'en'
+      ? "Sorry, I didn't quite catch that. Could you say it again?"
+      : "Pardon, je n'ai pas bien saisi. Pouvez-vous répéter ?";
+  return buildExplicitInteractionReplyPlan(session, reply, 'open');
 }
 
 const CUSTOMER_NAME_STOP_WORDS = new Set([
@@ -2241,6 +2333,24 @@ export function extractPlainCustomerName(transcript: string, expectName = false)
   return candidate;
 }
 
+/**
+ * Moment de la journée exprimé par l'appelant (« demain soir », « à midi »).
+ * « après-midi » n'est pas un service : il n'oriente pas les propositions.
+ */
+export function extractDayPeriod(transcript: string): DayPeriod | null {
+  const text = normalizeTranscript(transcript).replace(/\bapres[\s-]midi\b/g, ' ');
+  const dinner = /\b(?:soir|soiree|diner|dinner|tonight|evening)\b/.test(text);
+  const lunch = /\b(?:midi|dejeuner|lunch|noon)\b/.test(text);
+  if (dinner === lunch) return null;
+  return dinner ? 'dinner' : 'lunch';
+}
+
+/** Créneaux compatibles avec le moment demandé : service du midi avant 15 h, du soir dès 18 h. */
+export function filterSlotsByDayPeriod(slots: string[], period: DayPeriod | undefined): string[] {
+  if (!period) return slots;
+  return slots.filter((slot) => (period === 'lunch' ? slot < '15:00' : slot >= '18:00'));
+}
+
 export function asksForAvailabilityOptions(transcript: string): boolean {
   const text = normalizeTranscript(transcript);
   return /\b(?:disponib|creneaux?|horaires?|possible|available|availability|slots?)|\b(?:quelle heure|quand|what time)\b/.test(
@@ -2256,13 +2366,20 @@ export function getOpenAvailabilityRequest(session: CallSession) {
   return { date: slots.date, partySize: slots.partySize };
 }
 
+/** Trois créneaux répartis sur la plage plutôt que trois quarts d'heure consécutifs. */
+function spreadSlots(slots: string[]): string[] {
+  return slots.length <= 3
+    ? slots
+    : [slots[0], slots[Math.floor(slots.length / 2)], slots[slots.length - 1]];
+}
+
 export function buildOpenAvailabilityReply(session: CallSession, availableSlots: string[]): string {
   const slots = [...new Set(availableSlots)].sort();
-  // Répartir les propositions sur la journée plutôt que trois quarts d'heure consécutifs.
-  const offered =
-    slots.length <= 3
-      ? slots
-      : [slots[0], slots[Math.floor(slots.length / 2)], slots[slots.length - 1]];
+  const period = session.conversation.dayPeriod;
+  const periodSlots = filterSlotsByDayPeriod(slots, period);
+  // Rien au moment demandé : on le dit, puis on propose le reste de la journée.
+  const periodUnavailable = Boolean(period) && periodSlots.length === 0 && slots.length > 0;
+  const offered = spreadSlots(periodUnavailable ? slots : periodSlots);
   const { date, partySize } = session.conversation.slots;
   session.conversation.offeredAvailability = { date: date!, partySize: partySize!, slots: offered };
   const en = effectiveVoiceLanguage(session) === 'en';
@@ -2273,6 +2390,18 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
   const choices = offered
     .map((slot) => formatAvailabilitySlot(slot, en ? 'en' : 'fr'))
     .join(en ? ' or ' : ' ou ');
+  if (periodUnavailable) {
+    const periodLabel = en
+      ? period === 'lunch'
+        ? 'at lunchtime'
+        : 'in the evening'
+      : period === 'lunch'
+        ? 'à midi'
+        : 'le soir';
+    return en
+      ? `I have nothing left ${periodLabel} that day, but I can offer ${choices}. Would one of those work?`
+      : `Je n'ai plus rien ${periodLabel} ce jour-là, mais je peux vous proposer ${choices}. L'un de ces horaires vous convient ?`;
+  }
   return en
     ? `I can offer ${choices}. Which one works for you?`
     : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`;
@@ -2396,6 +2525,8 @@ export function recordUserTurn(
   if (decision.disposition === 'ignore') return;
 
   session.conversation.closing = false;
+  const dayPeriod = extractDayPeriod(transcript);
+  if (dayPeriod) session.conversation.dayPeriod = dayPeriod;
   if (decision.clearReservationConfirmation) clearReservationConfirmation(session);
   if (decision.intent) session.conversation.intent = decision.intent;
   if (decision.wantsAvailabilityOptions) session.conversation.wantsAvailabilityOptions = true;

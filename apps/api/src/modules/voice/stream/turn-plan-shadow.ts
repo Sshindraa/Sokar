@@ -2,7 +2,7 @@ import type { CallSession, PendingInteractionKind, PendingInteractionStatus } fr
 import type { TurnPlan, TurnPlanContext, TurnPlanSlot } from './turn-plan';
 import { decideTurnPlanPolicy } from './turn-policy';
 import { isCurrentVoiceTurn, recordVoiceTurnEventIfCurrent } from './turn-telemetry';
-import { getVoiceLlmModel } from '../llm-provider';
+import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import {
   recordVoiceTurnPlanShadowDimension,
   recordVoiceTurnPlanShadowObservation,
@@ -178,7 +178,7 @@ export function recordInBandTurnPlanShadow(
     path,
     policyAccepted: policyDecision ? policyDecision.status === 'accepted' : null,
     policyRejectionReason: policyDecision?.status === 'rejected' ? policyDecision.reason : null,
-    provider: 'groq',
+    provider: getVoiceLlmProvider(),
     model: getVoiceLlmModel(),
     durationMs: result.durationMs,
     agrees: comparison?.agrees ?? null,

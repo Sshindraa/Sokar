@@ -17,6 +17,9 @@ export type SlotProvenanceSource = 'explicit' | 'contextual' | 'confirmation' | 
 export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confirming' | 'confirmed';
 
 /** Réponse métier attendue après la dernière question de l'agent. */
+/** Moment de la journée exprimé par l'appelant. */
+export type DayPeriod = 'lunch' | 'dinner';
+
 export type PendingQuestion =
   | 'date'
   | 'time'
@@ -133,6 +136,10 @@ export interface ConversationState {
   >;
   /** Demande d'horaires conservée pendant la collecte date/couverts. */
   wantsAvailabilityOptions?: boolean;
+  /** Créneau de journée demandé (« le soir », « à midi »), utilisé pour filtrer les propositions. */
+  dayPeriod?: DayPeriod;
+  /** Échecs LLM consécutifs, remis à zéro par une réponse LLM réussie. */
+  llmFailureStreak?: number;
   offeredAvailability?: { date: string; partySize: number; slots: string[] };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
