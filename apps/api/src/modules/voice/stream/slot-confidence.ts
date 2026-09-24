@@ -18,12 +18,16 @@ export interface SlotWord {
   confidence?: number;
 }
 
-/** Seuils calibrés sur le banc « difficile » (jeu de calibration uniquement). */
+/**
+ * Seuils réglés sur le banc « difficile », jeu de calibration uniquement (24/09) :
+ * au téléphone, Scribe donne des confiances basses même aux mots justes, d'où
+ * des valeurs bien plus faibles qu'attendu.
+ */
 export const SLOT_CONFIDENCE_THRESHOLDS = {
   /** En dessous, une valeur qui a un voisin confusable est proposée en choix. */
-  low: 0.5,
+  low: 0.25,
   /** En dessous, une valeur sans voisin est redemandée. */
-  veryLow: 0.25,
+  veryLow: 0.1,
 };
 
 /** Paires que le téléphone confond : « six/dix/seize », « deux/douze »… */

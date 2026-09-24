@@ -1750,7 +1750,7 @@ describe('confirmation guidée par la confiance', () => {
 
   it('demande « six ou dix ? » quand « six » est peu sûr', () => {
     const session = partySizeTurn('Six personnes', [
-      { word: 'Six', confidence: 0.3 },
+      { word: 'Six', confidence: 0.2 },
       { word: 'personnes', confidence: 0.9 },
     ]);
     expect(session.conversation.slots.partySize).toBeUndefined();
@@ -1771,7 +1771,7 @@ describe('confirmation guidée par la confiance', () => {
 
   it('redemande autrement une valeur très douteuse sans voisin', () => {
     const session = partySizeTurn('Quatre personnes', [
-      { word: 'Quatre', confidence: 0.1 },
+      { word: 'Quatre', confidence: 0.05 },
       { word: 'personnes', confidence: 0.9 },
     ]);
     expect(session.conversation.slots.partySize).toBeUndefined();
@@ -1805,7 +1805,7 @@ describe('confirmation guidée par la confiance', () => {
   });
 
   it('retient la réponse courte à « six ou dix ? »', () => {
-    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.3 }]);
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.2 }]);
     const plan = buildAnswerChoicePlan(session)!;
     recordAssistantReplyWithPolicy(session, plan.reply, plan.proposal);
     session.sttEvidence = null;
@@ -1816,12 +1816,12 @@ describe('confirmation guidée par la confiance', () => {
   });
 
   it('publie une télémétrie sans texte ni valeur', () => {
-    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.333 }]);
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.123 }]);
     const [entry] = session.conversation.lastSlotConfidence!;
     expect(Object.keys(entry).sort()).toEqual(['confidence', 'decision', 'kind', 'unstable']);
     expect(entry).toEqual({
       kind: 'partySize',
-      confidence: 0.33,
+      confidence: 0.12,
       unstable: false,
       decision: 'choice',
     });

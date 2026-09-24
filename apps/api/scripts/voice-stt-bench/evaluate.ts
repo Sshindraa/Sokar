@@ -24,7 +24,10 @@ import {
   recordAssistantReplyFromLlmTextFallback,
   recordUserTurn,
 } from '../../src/modules/voice/stream/conversation-controller';
-import { valueConfidence } from '../../src/modules/voice/stream/slot-confidence';
+import {
+  SLOT_CONFIDENCE_THRESHOLDS,
+  valueConfidence,
+} from '../../src/modules/voice/stream/slot-confidence';
 import type { CallSession } from '../../src/modules/voice/stream/types';
 import type { BenchPhrase } from './phrases';
 
@@ -291,6 +294,11 @@ function withFlag<T>(enabled: boolean, run: () => T): T {
 }
 
 function main(): void {
+  // Réglage des seuils (jeu de calibration uniquement) : BENCH_THRESHOLDS=bas,très-bas
+  if (process.env.BENCH_THRESHOLDS) {
+    const [low, veryLow] = process.env.BENCH_THRESHOLDS.split(',').map(Number);
+    Object.assign(SLOT_CONFIDENCE_THRESHOLDS, { low, veryLow });
+  }
   const [phrasesPath, transcriptsPath] = process.argv.slice(2);
   const phrases = JSON.parse(readFileSync(phrasesPath, 'utf8')) as BenchPhrase[];
   const transcripts = new Map(

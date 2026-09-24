@@ -2796,7 +2796,8 @@ function partialPartySize(partial: string | undefined): string | undefined {
   let found: number | undefined;
   for (const token of normalizeTranscript(partial).split(' ')) {
     const value = /^\d{1,2}$/.test(token) ? Number(token) : PARTIAL_NUMBER_WORDS[token];
-    if (value !== undefined && value >= 1 && value <= 16) found = value;
+    // « un / une » est presque toujours l'article (« une table ») : ignoré.
+    if (value !== undefined && value >= 2 && value <= 16) found = value;
   }
   return found === undefined ? undefined : String(found);
 }

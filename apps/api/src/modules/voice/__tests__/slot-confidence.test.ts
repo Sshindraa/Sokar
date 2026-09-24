@@ -53,7 +53,7 @@ describe('decideSlotConfidence', () => {
   });
 
   it('propose le voisin confusable quand la confiance est basse', () => {
-    expect(decideSlotConfidence({ ...base, confidence: 0.3 })).toMatchObject({
+    expect(decideSlotConfidence({ ...base, confidence: 0.2 })).toMatchObject({
       decision: 'choice',
       choice: ['6', '10'],
     });
@@ -73,7 +73,7 @@ describe('decideSlotConfidence', () => {
       decideSlotConfidence({
         kind: 'partySize',
         value: '4',
-        confidence: 0.1,
+        confidence: 0.05,
         partialAlternatives: [],
       }).decision,
     ).toBe('reprompt');
