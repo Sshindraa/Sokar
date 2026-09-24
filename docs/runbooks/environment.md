@@ -289,6 +289,29 @@ suspens (« demain à », « au nom de », « je suis »), 600 ms pour une corre
 suite est fusionnée dans le même tour. Comparer avant/après avec
 `sokar_voice_end_of_speech_to_first_audio_ms` et `sokar_voice_false_end_of_turn_total`.
 
+`VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi à
+Scribe. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
+son propre message. Une valeur multiple de 20 entre `40` et `200` accumule les trames
+décodées et n'envoie qu'un message quand la durée cible est atteinte. Le regroupement ne
+change pas le format audio : `pcm_8000` avec PCMA, `pcm_16000` avec L16.
+Le tampon est vidé avant tout commit manuel, une fin de tour, un barge-in, la fermeture ou la
+reconnexion de la session, et la fin d'appel ; un timer de sécurité (`valeur + 20 ms`) envoie
+un tampon partiel si le flux s'interrompt. Un couple de trames est donc retardé d'au plus la
+valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → commit). Toute autre
+valeur fait échouer le démarrage (validation Zod). Suivre
+`sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
+
+`VOICE_TELNYX_CODEC` (défaut `PCMA`, valeurs `PCMA` ou `L16`) sélectionne le codec
+entrant et sortant du Media Stream Telnyx. Avec `L16`, demander 16 kHz dans les deux
+sens, envoyer le PCM16 à Scribe en `pcm_16000`, et générer le TTS Cartesia en PCM16 16 kHz.
+Le cache TTS est séparé par codec. `sokar_voice_wideband_detected_total{detected,codec}`
+indique la présence d'énergie au-dessus de 4 kHz au début de chaque appel L16. Avant
+activation, vérifier en staging par un appel réel que l'endianness du payload WebSocket
+est bien big-endian (convention RTP L16) et que le retour TTS est audible. Le log
+unique `[stream] L16 endian probe` contient `media_format`, `bigEndianRms` et
+`littleEndianRms` sur les premières 500 ms de parole, sans contenu audio. Le flag
+reste à `PCMA` par défaut.
+
 `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` (IDs séparés par des virgules, **vide = désactivé**)
 enregistre le dialogue de chaque tour pour ces seuls restaurants de test : paroles du client,
 réponses et fillers de l'agent, outils appelés, type de tour. Table `voice_debug_turns`, texte

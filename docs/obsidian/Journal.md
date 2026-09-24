@@ -757,3 +757,15 @@ Log automatique des tâches Hermes.
 2026-09-24 — [voice, tts, prod-config] **Clé Cartesia remplacée** — Appel 00:27 UTC : Cartesia 402 en cours de phrase. Nouvelle clé posée par l'utilisateur (sauvegarde `.env.bak.pre-cartesia.*`), testée sur une phrase complète (200), API et workers recréés depuis l'ecosystem. LLM vocal : Cerebras.
 
 2026-09-24 — [voice, dialogue, pii] **Correctifs de l'appel test Cerebras** — (1) réponse courte sans fait exploitable à « combien de personnes ? » → relance du nombre (« super femme » pour « six personnes »). (2) « C'est bon ? » reconnu comme demande de confirmation ; un « non » au récapitulatif sans nouvelle valeur relance l'épellation du nom (`buildRecapRejectionPlan`) ou demande quoi corriger — toujours une question. (3) Reprise de parole sans transcription : la phrase interrompue est retraitée après 1,5 s (repoussé par les interims) ou fusionnée avec la suite (`interruptedTurn`). (4) Logs `[stt] End of turn`, `[barge-in]` et extras Sentry : longueur + empreinte au lieu du texte (`describeTranscript`) ; les noms n'étaient pas masqués par `redactPii()`.
+
+2026-09-25 — [voice, STT, Telnyx] **Banc narrowband et préparation L16** — Scoring corrigé, 93 sessions fixes par cellule ; sessions vides/erreurs comptées comme échecs.
+
+| Condition                    |         Propre |          Bruit |
+| ---------------------------- | -------------: | -------------: |
+| A, 16 kHz natif              | 73/93 (78,5 %) | 46/93 (49,5 %) |
+| B, PCMA 8 kHz                | 73/93 (78,5 %) | 35/93 (37,6 %) |
+| C, upsample 8→16 kHz         | 65/93 (69,9 %) | 35/93 (37,6 %) |
+| D, B en chunks 100 ms        | 74/93 (79,6 %) | 39/93 (41,9 %) |
+| E, B avec `language_code=fr` | 72/93 (77,4 %) | 36/93 (38,7 %) |
+
+Décisions : écarter l'upsample (aucun gain en bruit) ; écarter le verrouillage FR seul (+1,1 point en bruit et −1,1 point propre, avec encore une sortie anglaise) ; retenir `VOICE_STT_CHUNK_MS=100` ; garder L16 en attente de l'essai staging et de confirmation de l'endianness. Flags livrés avec défauts `VOICE_STT_CHUNK_MS=20` et `VOICE_TELNYX_CODEC=PCMA`. Les clés/cache PCMA et le comptage STT historique sont figés par tests. Aucun changement de configuration staging/production.

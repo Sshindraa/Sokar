@@ -8,6 +8,10 @@
 
 ## TODOs actifs
 
+- [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
+- [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
+- [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
+- [ ] Étudier le débruitage et le parser par étape.
 - [ ] **Observabilité R1-6 / TurnPlan shadow** : Prometheus scrape les quatre cibles production/staging ; Grafana est actif en production, loopback-only et accessible en lecture via tunnel SSH. Le shadow TurnPlan est activé globalement sans autorité métier ; attendre des appels réels éligibles et lire l’accord **par dimension** avant d’activer `VOICE_TURN_PLAN_AUTHORITY_ENABLED` sur un restaurant pilote via `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` (canary additif, défaut off). Suivants : opération/provenance des faits, reprise scope-safe, proposal→confirm→commit pour annulation et carte cadeau, barrière de parole, cycle Telnyx du transfert.
 - [ ] **Staging email / dead-letter** : Resend reste désactivé. `EVENING_REPORTS_ENABLED=false` est posé en staging ; après PR #215, le garde-fou scheduler/worker est déployé en staging et production. Les 14 schedulers et 270 rapports périmés ont été retirés, dead-letter staging vide et alerte résolue. Aucun rejeu ni clé de production copiée ; prévoir un fournisseur dédié et une destination de test avant d’activer les emails.
 - [ ] **Production dead-letter** : 7 entrées (2 `confirmation-sms`, 5 origine inconnue), datées du 4 au 10 septembre ; triage à faire, aucune modification à ce stade.
