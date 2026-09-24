@@ -192,6 +192,26 @@ describe('handleSttMessage', () => {
     expect(session.turnTranscript).toBe('');
   });
 
+  it('convertit la log-probabilité Scribe en confiance de mot', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'six personnes' });
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'six personnes',
+      words: [
+        { text: 'six', start: 0.2, end: 0.5, logprob: Math.log(0.58) },
+        { text: 'personnes', start: 0.5, end: 1.1, logprob: Math.log(0.33) },
+      ],
+    });
+
+    const end = onEvent.mock.calls.at(-1)?.[0] as { words: Array<{ confidence?: number }> };
+    expect(end.words[0].confidence).toBeCloseTo(0.58, 5);
+    expect(end.words[1].confidence).toBeCloseTo(0.33, 5);
+  });
+
   it('interrompt le TTS dès qu’un partial est reçu', () => {
     const session = makeSession();
     const mgr = CallSessionManager.getInstance();

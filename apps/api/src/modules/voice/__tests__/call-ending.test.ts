@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { acknowledgeCallEnding, finishCall, isExplicitCallEnd } from '../stream/call-ending';
-import { handleSttEvent, processTranscriptStreaming } from '../stream/llm-handler';
+import { handleDtmfDigit, handleSttEvent, processTranscriptStreaming } from '../stream/llm-handler';
 import {
   createConversationState,
   recordAssistantReplyFromLlmTextFallback as recordAssistantReply,
@@ -199,7 +199,7 @@ describe('farewell playback and hangup', () => {
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     expect(speakTtsStreamed).toHaveBeenCalledWith(
       session,
-      "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?",
+      "Je n'ai pas bien compris le nombre de personnes. Vous pouvez aussi le taper sur le clavier de votre téléphone. Vous serez combien ?",
     );
     expect(session.conversation.pendingQuestion).toBe('partySize');
   });
@@ -290,6 +290,47 @@ describe('farewell playback and hangup', () => {
     expect(session.conversation.slots.date).toBeDefined();
     expect(session.conversation.dayPeriod).toBe('dinner');
     expect(session.interruptedTurn).toBeNull();
+  });
+
+  it('accepte le nombre de personnes tapé au clavier', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-25';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    handleDtmfDigit(session, '6', mgr);
+    expect(speakTtsStreamed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(session.conversation.slots.partySize).toBe(6);
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
+  });
+
+  it('valide tout de suite la saisie suivie de #', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-25';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    handleDtmfDigit(session, '4', mgr);
+    handleDtmfDigit(session, '#', mgr);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(session.conversation.slots.partySize).toBe(4);
+    expect(session.dtmfBuffer).toBeNull();
+  });
+
+  it('ignore le clavier en dehors de la question sur le nombre de personnes', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Pour quel jour ?');
+
+    handleDtmfDigit(session, '6', mgr);
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(session.dtmfBuffer).toBeUndefined();
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(speakTtsStreamed).not.toHaveBeenCalled();
   });
 
   it('ne délègue pas au LLM la collecte des slots de réservation', async () => {

@@ -31,7 +31,7 @@ import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { persistSttCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
-import { handleSttEvent, extractRestaurantName } from './llm-handler';
+import { handleDtmfDigit, handleSttEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
@@ -312,8 +312,12 @@ function handleTelnyxMessage(
       return;
     }
 
-    case 'dtmf':
+    case 'dtmf': {
+      const session = mgr.get(callId);
+      const digit = msg.dtmf?.digit;
+      if (session && typeof digit === 'string') handleDtmfDigit(session, digit, mgr);
       return;
+    }
 
     case 'error':
       logger.error({ callId, msg }, '[stream] Telnyx error event');

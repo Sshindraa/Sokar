@@ -21,7 +21,10 @@ const STT_PROVIDER_LABEL = 'elevenlabs_stt';
  * améliore l'identification sur un appel court et évite de promettre une
  * couverture que le restaurant n'a pas validée.
  */
-export const DEFAULT_STT_LANGUAGES = ['fr', 'en', 'es', 'it', 'de', 'pt', 'nl'] as const;
+// Banc du 24/09/2026 (voix téléphonique A-law 8 kHz, 21 essais) : toutes les
+// langues → 33 % d'informations critiques justes (Scribe transcrit en allemand,
+// néerlandais…), fr+en → 76 %. Chaque langue ajoutée augmente les confusions.
+export const DEFAULT_STT_LANGUAGES = ['fr', 'en'] as const;
 const STT_LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}$/u;
 
 /**
@@ -587,6 +590,8 @@ export interface ElevenLabsSttMessage {
     start?: number;
     end?: number;
     confidence?: number;
+    /** Scribe Realtime envoie une log-probabilité, pas une confiance. */
+    logprob?: number;
     type?: string;
   }>;
 }
@@ -635,6 +640,18 @@ function getMessageLanguageCode(msg: ElevenLabsSttMessage): string | undefined {
   return languageCode && STT_LANGUAGE_CODE_PATTERN.test(languageCode) ? languageCode : undefined;
 }
 
+/**
+ * Confiance d'un mot entre 0 et 1. Scribe Realtime ne fournit que `logprob` :
+ * sans cette conversion, aucune confiance n'était jamais conservée.
+ */
+function wordConfidence(word: { confidence?: number; logprob?: number }): { confidence?: number } {
+  if (typeof word.confidence === 'number') return { confidence: word.confidence };
+  if (typeof word.logprob === 'number' && Number.isFinite(word.logprob)) {
+    return { confidence: Math.min(1, Math.max(0, Math.exp(word.logprob))) };
+  }
+  return {};
+}
+
 function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
   if (!msg.words?.length) return undefined;
   const words = msg.words
@@ -643,7 +660,7 @@ function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
       if (!text) return null;
       return {
         word: text,
-        ...(typeof word.confidence === 'number' ? { confidence: word.confidence } : {}),
+        ...wordConfidence(word),
         ...(typeof word.start === 'number' ? { start: word.start } : {}),
         ...(typeof word.end === 'number' ? { end: word.end } : {}),
       };
