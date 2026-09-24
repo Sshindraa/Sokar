@@ -8,6 +8,8 @@ import {
   VOICE_LLM_MODEL_DEFAULT,
   VOICE_LLM_PROVIDERS,
 } from '@sokar/config';
+import { sttChunkMsSchema } from './shared/stt-chunking';
+import { telnyxCodecSchema } from './modules/voice/stream/telnyx-codec';
 
 function isValidCorsOrigins(val: string): boolean {
   return val
@@ -216,6 +218,12 @@ const EnvSchema = z
     // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
     // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
     VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Regroupement des trames audio avant envoi à Scribe : 20 (défaut, envoi
+    // immédiat trame par trame) ou un multiple de 20 entre 40 et 200.
+    VOICE_STT_CHUNK_MS: sttChunkMsSchema,
+    // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
+    // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
+    VOICE_TELNYX_CODEC: telnyxCodecSchema,
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     // Stripe Billing — recurring base prices plus Multi-site establishment add-ons.
