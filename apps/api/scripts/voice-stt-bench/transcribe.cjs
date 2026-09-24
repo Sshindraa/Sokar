@@ -263,7 +263,12 @@ async function main() {
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`, () => process.exit(0));
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Réutilisé par `second-opinion.cjs` : même synthèse, même dégradation, même Scribe Realtime.
+module.exports = { degrade, synthesize, transcribe };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

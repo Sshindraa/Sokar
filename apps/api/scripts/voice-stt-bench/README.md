@@ -54,3 +54,27 @@ Les scripts de banc utilisent des clés dédiées (`ELEVENLABS_BENCH_API_KEY` et
 Ils refusent les clés de production. Les étapes de synthèse et transcription consomment
 les fournisseurs ; `evaluate.ts` reste hors ligne. Aucun banc ne doit être lancé sans
 validation explicite du budget et du compte dédié.
+
+## Deuxième transcription (expérience, hors production)
+
+Question : quand Scribe batch (B) n'est pas d'accord avec Scribe Realtime (A) sur
+une valeur, cette valeur est-elle fausse ? Le désaccord détecte-t-il mieux les
+erreurs que la confiance ?
+
+```bash
+# Sur le serveur (crédits Cartesia + Scribe Realtime + Scribe batch : demander l'accord).
+# L'audio dégradé est écrit une fois dans audio-dir puis relu pour les deux moteurs.
+node --env-file=.env scripts/voice-stt-bench/second-opinion.cjs \
+  scripts/voice-stt-bench/.data/hard-validation-phrases.json \
+  scripts/voice-stt-bench/.data/audio/hard-validation > hard-validation-second-opinion.json
+
+# En local (gratuit) : précision A / B, accord, rappel et fausses alertes du
+# désaccord, confiance à fausses alertes égales, délai p50 / p95 du batch.
+pnpm exec tsx scripts/voice-stt-bench/second-opinion-eval.ts \
+  .data/hard-validation-phrases.json .data/hard-validation-second-opinion.json
+```
+
+B : `POST /v1/speech-to-text`, `model_id=scribe_v2` (`BENCH_BATCH_MODEL` pour
+changer), `language_code=fr`, mêmes `keyterms` que la production
+(`buildSttKeyterms('Chez Sokar')`, +20 % sur le prix du batch), WAV PCM 8 kHz.
+L'audio reste sur le serveur, jamais commité.
