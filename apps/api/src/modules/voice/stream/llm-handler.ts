@@ -341,53 +341,6 @@ function takeInterruptedTranscript(session: CallSession): string | null {
   return held.transcript;
 }
 
-/** Délai après la dernière touche avant de valider un nombre tapé au clavier. */
-export const DTMF_ENTRY_TIMEOUT_MS = 1_500;
-const MAX_DTMF_PARTY_SIZE = 30;
-
-/**
- * Nombre de personnes tapé au clavier. Le DTMF reste fiable quand la parole
- * est mal transcrite à 8 kHz (« six personnes » → « super femme »). Les
- * touches ne sont lues que pendant la question sur le nombre de personnes ;
- * « # » valide tout de suite, sinon la saisie est validée après 1,5 s.
- */
-export function handleDtmfDigit(
-  session: CallSession,
-  digit: string,
-  mgr: CallSessionManager,
-): void {
-  if (session.ended || session.ending) return;
-  if (session.conversation.pendingQuestion !== 'partySize') return;
-  const held = session.dtmfBuffer;
-  if (held) clearTimeout(held.timer);
-  if (digit === '#') {
-    session.dtmfBuffer = null;
-    if (held?.digits) submitDtmfPartySize(session, held.digits, mgr);
-    return;
-  }
-  if (!/^\d$/.test(digit)) return;
-  const digits = `${held?.digits ?? ''}${digit}`.slice(-2);
-  session.dtmfBuffer = {
-    digits,
-    timer: setTimeout(() => {
-      if (session.dtmfBuffer?.digits !== digits) return;
-      session.dtmfBuffer = null;
-      submitDtmfPartySize(session, digits, mgr);
-    }, DTMF_ENTRY_TIMEOUT_MS),
-  };
-}
-
-function submitDtmfPartySize(session: CallSession, digits: string, mgr: CallSessionManager): void {
-  const partySize = Number(digits);
-  if (!Number.isInteger(partySize) || partySize < 1 || partySize > MAX_DTMF_PARTY_SIZE) return;
-  if (session.ended || session.ending || session.conversation.pendingQuestion !== 'partySize')
-    return;
-  // La saisie passe par le même traitement qu'une réponse parlée explicite.
-  processTranscriptStreaming(session, `${partySize} personnes`, mgr).catch((err) =>
-    logger.error({ err, callId: session.callControlId }, '[dtmf] party size submission failed'),
-  );
-}
-
 /**
  * Gère les événements provenant de ElevenLabs Scribe.
  */

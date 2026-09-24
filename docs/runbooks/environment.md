@@ -336,9 +336,6 @@ Chaque tour publie la confiance Scribe (`minWordConfidence`,
 sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
 confiance entre 0 et 1.
 
-Pendant la question « combien de personnes ? », l'appelant peut taper le
-nombre au clavier (DTMF Telnyx, `#` pour valider, sinon 1,5 s).
-
 ## Demo restaurant
 
 The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):
