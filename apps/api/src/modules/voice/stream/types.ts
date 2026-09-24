@@ -140,6 +140,13 @@ export interface ConversationState {
   dayPeriod?: DayPeriod;
   /** Échecs LLM consécutifs, remis à zéro par une réponse LLM réussie. */
   llmFailureStreak?: number;
+  /**
+   * Deux valeurs phonétiquement proches pour la question en cours (« six ou
+   * dix ? »). Posé par `recordUserTurn`, consommé par la réponse du tour.
+   */
+  answerChoice?: { kind: 'partySize' | 'weekday' | 'time'; values: [string, string] } | null;
+  /** Valeurs retenues au dernier tour, relues naturellement dans la question suivante. */
+  justFilled?: { partySize?: boolean; date?: boolean } | null;
   offeredAvailability?: { date: string; partySize: number; slots: string[] };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;

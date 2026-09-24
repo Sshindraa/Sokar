@@ -12,6 +12,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
+import { resolveExpectedAnswer } from './expected-answer';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import {
   decideAssistantInteractionPolicy,
@@ -1879,6 +1880,17 @@ function parseFrenchNumberWords(value: string): number | null {
   return null;
 }
 
+/** « midi », « midi et demi », « midi et quart », « midi trente », « midi quinze ». */
+function extractNoonTime(normalized: string): string {
+  const tail = normalized.match(
+    /\bmidi\s+(et\s+demie?|et\s+quart|trente|quinze|quarante cinq)\b/u,
+  )?.[1];
+  if (!tail) return '12:00';
+  if (/demi|trente/.test(tail)) return '12:30';
+  if (/quart|quinze/.test(tail)) return '12:15';
+  return '12:45';
+}
+
 /**
  * ElevenLabs restitue parfois les heures en toutes lettres (« vers vingt
  * heures »). Cette forme doit être traitée comme une heure numérique avant de
@@ -1915,7 +1927,8 @@ function extractSpokenClockTime(normalized: string): string | null {
       hour = (hour + 23) % 24;
       minute = 45;
     } else {
-      for (let length = 1; length <= 3; length++) {
+      // Forme la plus longue d'abord : « quarante cinq » vaut 45, pas 40.
+      for (let length = 3; length >= 1; length--) {
         const candidate = parseFrenchNumberWords(
           tokens.slice(hourIndex + 1, hourIndex + 1 + length).join(' '),
         );
@@ -1990,9 +2003,15 @@ export function extractConversationSlots(
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
+  // Scribe écrit « vingt et une heures » en « 20 et 1 heure » : sans cette
+  // réécriture, l'heure lue était 01:00 (banc STT du 24/09).
+  const timeTranscript = correctedTranscript.replace(
+    /\b(20|30|40|50)\s+et\s+(?:1|un|une)(?=\s*h|\s|$)/gu,
+    (_, tens: string) => String(Number(tens) + 1),
+  );
   const timeMatch = slots.time
     ? null
-    : correctedTranscript.match(
+    : timeTranscript.match(
         /\b(?:a|vers|at|around)?\s*([01]?\d|2[0-3])(?:(?:\s*(?::|h(?:eures?)?)\s*)([0-5]\d)?|\s+([0-5]\d))\b/,
       );
   if (timeMatch) {
@@ -2000,13 +2019,13 @@ export function extractConversationSlots(
     const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   } else {
-    const spokenClockTime = extractSpokenClockTime(correctedTranscript);
+    const spokenClockTime = extractSpokenClockTime(timeTranscript);
     if (spokenClockTime) {
       slots.time = spokenClockTime;
     } else if (/\b(?:a|vers)?\s*midi\b/.test(correctedTranscript)) {
       // « à midi » est la formulation la plus courante au téléphone ; elle
       // doit déclencher la même vérification qu'une heure numérique.
-      slots.time = '12:00';
+      slots.time = extractNoonTime(correctedTranscript);
     } else if (/\b(?:a|vers)?\s*minuit\b/.test(correctedTranscript)) {
       slots.time = '00:00';
     }
@@ -2468,6 +2487,149 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
     : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`;
 }
 
+/** Interrupteur d'exploitation du rapprochement phonétique (actif par défaut). */
+function expectedAnswerResolutionEnabled(): boolean {
+  return process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'false';
+}
+
+const WEEKDAY_TOKENS = new Set([
+  'lundi',
+  'mardi',
+  'mercredi',
+  'jeudi',
+  'vendredi',
+  'samedi',
+  'dimanche',
+  'demain',
+  'aujourd',
+]);
+
+/** Au-delà, la phrase dit autre chose qu'une réponse courte à la question. */
+const MAX_EXPECTED_ANSWER_WORDS = 8;
+
+/**
+ * Quand la réponse à une question fermée n'a donné aucune valeur exploitable,
+ * cherche la réponse attendue la plus proche phonétiquement. Une valeur nette
+ * est retenue ; deux valeurs proches donnent une question « X ou Y ? ».
+ * Retourne le champ rempli, s'il y en a un.
+ */
+function applyExpectedAnswer(
+  session: CallSession,
+  activeKind: PendingInteractionKind | null,
+  transcript: string,
+  extracted: ConversationState['slots'],
+  now: Date,
+): 'partySize' | 'date' | 'time' | null {
+  if (!expectedAnswerResolutionEnabled()) return null;
+  if (extracted.partySize || extracted.date || extracted.time) return null;
+  if (isExploratoryUtterance(transcript)) return null;
+  if (normalizeTranscript(transcript).split(' ').length > MAX_EXPECTED_ANSWER_WORDS) return null;
+
+  const kind =
+    activeKind === 'partySize'
+      ? 'partySize'
+      : activeKind === 'date'
+        ? 'weekday'
+        : activeKind === 'time'
+          ? 'time'
+          : null;
+  if (!kind) return null;
+  // Un nombre ou un jour déjà reconnaissable dans la phrase a été lu (ou
+  // écarté) par l'analyseur normal : « nos trois enfants » ne veut pas dire
+  // trois personnes. Le rapprochement ne sert qu'aux phrases sans valeur lisible.
+  const tokens = normalizeTranscript(transcript).split(' ');
+  if (
+    kind === 'partySize' &&
+    tokens.some(
+      (token) =>
+        /^\d+$/.test(token) ||
+        FRENCH_NUMBER_UNITS[token] !== undefined ||
+        FRENCH_NUMBER_TENS[token] !== undefined,
+    )
+  )
+    return null;
+  if (kind === 'weekday' && tokens.some((token) => WEEKDAY_TOKENS.has(token))) return null;
+
+  const allowedTimes =
+    kind === 'time'
+      ? filterSlotsByDayPeriod(
+          session.conversation.lastAvailabilityResult?.slots ?? [],
+          session.conversation.dayPeriod,
+        )
+      : undefined;
+  const decision = resolveExpectedAnswer(transcript, kind, allowedTimes);
+  // Au-delà de 7 personnes, la réservation vocale ne retient pas le nombre :
+  // ni valeur ni « huit ou neuf ? », le parcours groupe existant s'applique.
+  const beyondVoiceLimit = (value: string) => kind === 'partySize' && Number(value) > 7;
+  if (decision.status === 'choice' && decision.values.some(beyondVoiceLimit)) return null;
+  if (decision.status === 'accepted' && beyondVoiceLimit(decision.value)) return null;
+  if (decision.status === 'choice') {
+    session.conversation.answerChoice = { kind, values: decision.values };
+    return null;
+  }
+  if (decision.status !== 'accepted') return null;
+
+  if (kind === 'partySize') {
+    extracted.partySize = Number(decision.value);
+    return 'partySize';
+  }
+  if (kind === 'weekday') {
+    const date = extractConversationSlots(
+      decision.value,
+      session.timezone ?? 'Europe/Paris',
+      now,
+    ).date;
+    if (!date) return null;
+    extracted.date = date;
+    return 'date';
+  }
+  extracted.time = decision.value;
+  return 'time';
+}
+
+/** « Six ou dix ? » : question fermée entre les deux valeurs les plus proches. */
+function spokenChoiceValue(
+  kind: 'partySize' | 'weekday' | 'time',
+  value: string,
+  en: boolean,
+): string {
+  if (kind === 'partySize') {
+    const n = Number(value);
+    return en ? String(n) : (FRENCH_PARTY_SIZE_WORDS[n] ?? String(n));
+  }
+  if (kind === 'weekday') return value;
+  return formatAvailabilitySlot(value, en ? 'en' : 'fr');
+}
+
+const FRENCH_PARTY_SIZE_WORDS: Record<number, string> = {
+  1: 'une',
+  2: 'deux',
+  3: 'trois',
+  4: 'quatre',
+  5: 'cinq',
+  6: 'six',
+  7: 'sept',
+  8: 'huit',
+  9: 'neuf',
+  10: 'dix',
+  11: 'onze',
+  12: 'douze',
+};
+
+export function buildAnswerChoicePlan(session: CallSession): AssistantReplyEmissionPlan | null {
+  const choice = session.conversation.answerChoice;
+  if (!choice) return null;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const [first, second] = choice.values.map((value) => spokenChoiceValue(choice.kind, value, en));
+  const suffix = choice.kind === 'partySize' ? (en ? ' people' : ' personnes') : '';
+  const primary = en
+    ? `Sorry, ${first} or ${second}${suffix}?`
+    : `Pardon, ${first} ou ${second}${suffix} ?`;
+  const key =
+    choice.kind === 'partySize' ? 'partySize' : choice.kind === 'weekday' ? 'date' : 'time';
+  return guardDialogueRepromptPlan(session, key, primary);
+}
+
 export function recordUserTurn(
   session: CallSession,
   transcript: string,
@@ -2559,6 +2721,13 @@ export function recordUserTurn(
     }
   }
 
+  session.conversation.answerChoice = null;
+  session.conversation.justFilled = null;
+  if (speechAct === 'content' || speechAct === 'correction') {
+    const resolved = applyExpectedAnswer(session, activeKind, transcript, extracted, now);
+    if (resolved === 'partySize') partySizeEvidence = 'contextual';
+  }
+
   const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
   const plainCustomerName = extractPlainCustomerName(
     transcript,
@@ -2596,6 +2765,11 @@ export function recordUserTurn(
     session.conversation.lastAvailabilityResult = null;
     session.conversation.lastAvailabilityCheck = null;
   }
+  session.conversation.justFilled = {
+    partySize:
+      decision.slots.partySize !== undefined && decision.slots.partySize !== current.partySize,
+    date: decision.slots.date !== undefined && decision.slots.date !== current.date,
+  };
   Object.assign(current, decision.slots);
   for (const slot of ['date', 'time', 'partySize'] as const) {
     const value = decision.slots[slot];
@@ -2742,27 +2916,65 @@ export function buildReservationProgressPlan(
   }
 
   const language = effectiveVoiceLanguage(session);
+  const readBack = buildNaturalReadBack(session);
   if (!slots.date)
     return guardDialogueRepromptPlan(
       session,
       'date',
-      language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?',
+      readBack + (language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?'),
     );
   if (!slots.partySize)
     return guardDialogueRepromptPlan(
       session,
       'partySize',
-      language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?',
+      readBack + (language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?'),
     );
   if (!slots.time)
     return guardDialogueRepromptPlan(
       session,
       'time',
-      language === 'en'
-        ? 'What time would you like to come?'
-        : 'Vous voulez venir vers quelle heure ?',
+      readBack +
+        (language === 'en'
+          ? 'What time would you like to come?'
+          : 'Vous voulez venir vers quelle heure ?'),
     );
   return null;
+}
+
+/**
+ * Relecture naturelle des valeurs comprises au tour précédent, glissée devant
+ * la question suivante (« Six personnes, très bien. Pour quel jour ? »). Une
+ * erreur de transcription (« cinq » pour « sept ») s'entend et se corrige tout
+ * de suite, sans tour supplémentaire. La date est relue avec son numéro, pour
+ * qu'une confusion de jour soit audible.
+ */
+function buildNaturalReadBack(session: CallSession): string {
+  const filled = session.conversation.justFilled;
+  if (!filled) return '';
+  const { partySize, date } = session.conversation.slots;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const parts: string[] = [];
+  if (filled.partySize && partySize) {
+    parts.push(
+      en
+        ? `${partySize} ${partySize === 1 ? 'person' : 'people'}`
+        : partySize === 1
+          ? 'une personne'
+          : `${FRENCH_PARTY_SIZE_WORDS[partySize] ?? partySize} personnes`,
+    );
+  }
+  if (filled.date && date) {
+    parts.push(
+      new Date(`${date}T12:00:00Z`).toLocaleDateString(en ? 'en-GB' : 'fr-FR', {
+        weekday: 'long',
+        day: 'numeric',
+        timeZone: 'UTC',
+      }),
+    );
+  }
+  if (!parts.length) return '';
+  const phrase = parts.join(' ');
+  return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}, ${en ? 'great' : 'très bien'}. `;
 }
 
 export function buildReservationProgressResponse(
@@ -2847,7 +3059,7 @@ function partySizeFromNumberToken(token: string): number | null {
 function extractContextualPartySize(transcript: string): number | null {
   const normalized = normalizeTranscript(transcript);
   const contextualPattern = new RegExp(
-    `\\b(?:on (?:serait|sera|serons|est|ferait|fait|vient)|nous (?:serions|serons|sommes|ferions|faisons|venons)|vous (?:etes|seriez|serez)|we (?:are|will be)|there (?:will be|are))\\s+(?:bien\\s+)?(?:a|pour)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\b`,
+    `\\b(?:on (?:serait|sera|serons|est|ferait|fera|fait|vient)|nous (?:serions|serons|sommes|ferions|faisons|venons)|vous (?:etes|seriez|serez)|we (?:are|will be)|there (?:will be|are))\\s+(?:bien\\s+)?(?:a|pour)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\b`,
     'g',
   );
   // « on sera une petite tablée », « on est un groupe » : un/une suivi d'un
@@ -2869,7 +3081,7 @@ function extractContextualPartySize(transcript: string): number | null {
 
   const bareAnswer = normalized.match(
     new RegExp(
-      `^(?:oui |ouais |alors |ben |non |plutot |en fait )?${SPOKEN_PARTY_SIZE_PATTERN}(?: personnes?| people| guests?)?$`,
+      `^(?:oui |ouais |alors |ben |non |plutot |en fait )?(?:pour |for )?${SPOKEN_PARTY_SIZE_PATTERN}(?: personnes?| people| guests?)?(?: s il vous plait| svp| merci| please)?$`,
     ),
   );
   return bareAnswer ? partySizeFromNumberToken(bareAnswer[1]) : null;
@@ -3430,6 +3642,8 @@ export function buildDeterministicTurnPlan(
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
+    const answerChoicePlan = buildAnswerChoicePlan(session);
+    if (answerChoicePlan) return answerChoicePlan;
     // Canary TurnPlan : une réponse que les extracteurs n'ont pas comprise va
     // au modèle au lieu d'une relance mécanique de la même question.
     if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {

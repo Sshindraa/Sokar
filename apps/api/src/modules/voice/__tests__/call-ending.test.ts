@@ -186,7 +186,7 @@ describe('farewell playback and hangup', () => {
     expect(session.state).toBe('LISTENING');
   });
 
-  it('redemande le nombre de personnes quand la réponse est mal transcrite (appel du 24/09)', async () => {
+  it('propose « six ou cinq ? » quand la réponse est mal transcrite (appel du 24/09)', async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';
     recordAssistantReply(
@@ -196,11 +196,10 @@ describe('farewell playback and hangup', () => {
 
     await processTranscriptStreaming(session, 'Pour super femme.', mgr);
 
+    // « super femme » est phonétiquement proche de « six personnes » : l'agent
+    // propose les deux valeurs les plus proches au lieu d'une question ouverte.
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
-    expect(speakTtsStreamed).toHaveBeenCalledWith(
-      session,
-      "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?",
-    );
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Pardon, six ou cinq personnes ?');
     expect(session.conversation.pendingQuestion).toBe('partySize');
   });
 
@@ -271,7 +270,10 @@ describe('farewell playback and hangup', () => {
 
     await vi.advanceTimersByTimeAsync(1_500);
 
-    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      'Quatre personnes, très bien. Vous voulez venir vers quelle heure ?',
+    );
     expect(session.interruptedTurn).toBeNull();
   });
 
@@ -300,7 +302,10 @@ describe('farewell playback and hangup', () => {
     await processTranscriptStreaming(session, 'Pour quatre personnes', mgr);
 
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
-    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      'Quatre personnes, très bien. Vous voulez venir vers quelle heure ?',
+    );
     expect(session.conversation.pendingQuestion).toBe('time');
   });
 
@@ -754,7 +759,11 @@ describe('dialogue loop guard', () => {
     session.timezone = 'Europe/Paris';
 
     await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
-    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Vous serez combien ?');
+    // La date comprise (« demain ») est relue avec son jour et son numéro.
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      expect.stringMatching(/^[A-Z][a-z]+ \d{1,2}, très bien\. Vous serez combien \?$/),
+    );
 
     await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
     expect(speakTtsStreamed).toHaveBeenLastCalledWith(

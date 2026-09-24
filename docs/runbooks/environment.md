@@ -331,6 +331,16 @@ Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
 Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
 réellement, et remesurer.
 
+Réponses attendues : quand l'agent pose une question fermée (nombre de
+personnes, jour, heure) et que la réponse ne contient aucune valeur lisible, la
+transcription est rapprochée phonétiquement des réponses possibles
+(`stream/expected-answer.ts`) : une valeur nette est retenue, deux valeurs
+proches donnent « Pardon, six ou cinq personnes ? ». Les valeurs comprises sont
+relues dans la question suivante (« Six personnes, très bien. Pour quel jour ? »).
+`VOICE_EXPECTED_ANSWER_ENABLED=false` coupe le rapprochement (défaut : actif).
+Banc : `apps/api/scripts/voice-stt-bench/` (phrases, transcription sur le
+serveur, évaluation avec le code de dialogue réel).
+
 Chaque tour publie la confiance Scribe (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,
 sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
