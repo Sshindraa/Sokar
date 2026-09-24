@@ -795,4 +795,4 @@ Log automatique des tâches Hermes.
 ### 2026-09-24 — Phase 3 B : banc « deuxième transcription » (expérience)
 
 - Scripts du banc seulement (`second-opinion.cjs`, `second-opinion-eval.ts`), aucun code de production. B = Scribe batch `scribe_v2`, français, mêmes keyterms que la prod, même audio exact que A (audio dégradé conservé sur le serveur, `.data/audio/`).
-- En attente de l'accord pour lancer (crédits) ; résultats à consigner ici.
+- Contrôle 3/3 réussi, puis synthèse des 992 phrases terminée ; les audios restent sur le serveur. Seulement 239 paires A/B exploitables, toutes dans la validation standard ; batch renvoie ensuite HTTP 401 (quota 10 000, 0 restant, 2 requis) et les 688 phrases difficiles n'ont aucune transcription. Résultats partiels et reprise documentés dans [`voice-stt-phase-3-second-opinion.md`](../voice-stt-phase-3-second-opinion.md). Aucun résultat ne permet de conclure sur le jeu difficile tenu à part.
