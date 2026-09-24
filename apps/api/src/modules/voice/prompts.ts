@@ -1,3 +1,5 @@
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+
 type DaySlot = { open: string; close: string } | null;
 export type OpeningHours = {
   mon?: DaySlot;
@@ -52,7 +54,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): s
     ? `\nCLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${ctx.customerGreeting}".`
     : '';
   const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
-  const groupThreshold = (ctx.maxPartySize ?? 7) + 1;
+  const groupThreshold = (ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE) + 1;
   const timezone = ctx.timezone ?? 'Europe/Paris';
   const currentDate = new Intl.DateTimeFormat('fr-FR', {
     dateStyle: 'full',

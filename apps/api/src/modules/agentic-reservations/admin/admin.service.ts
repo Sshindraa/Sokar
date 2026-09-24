@@ -16,11 +16,8 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { logger } from '../../../shared/logger/pino';
 import { hashApiKey } from '../../../shared/crypto/api-key-hash';
-import {
-  DEFAULT_MAX_PARTY_SIZE,
-  PolicyValidationError,
-  validateExposureSettings,
-} from '../core/policies.service.js';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { PolicyValidationError, validateExposureSettings } from '../core/policies.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
 import {
   type AgentClientCreateInput,

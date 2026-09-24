@@ -67,7 +67,9 @@ function makeFakes() {
         update: Record<string, unknown>;
       }) => {
         const existing = settings.get(where.restaurantId);
-        const merged = { ...(existing ?? create ?? {}), ...(update ?? {}) };
+        const merged = existing
+          ? { ...existing, ...(update ?? {}) }
+          : { ...(create ?? {}), maxPartySize: create.maxPartySize ?? 7, ...(update ?? {}) };
         settings.set(where.restaurantId, merged);
         return merged;
       },
@@ -157,6 +159,7 @@ describe('agentic admin service', () => {
       const r = fakes.restaurants.get('r-1')!;
       expect(r.agenticOptIn).toBe(true);
       expect(r.openaiReserveEnabled).toBe(false);
+      expect(fakes.settings.get('r-1')?.maxPartySize).toBe(7);
       expect(fakes.audits).toHaveLength(1);
       expect(fakes.audits[0].event).toBe('opt_in_changed');
     });
@@ -292,6 +295,15 @@ describe('agentic admin service', () => {
       });
       const s = fakes.settings.get('r-1')!;
       expect(s.maxPartySize).toBe(8);
+    });
+
+    it('utilise le défaut partagé de 7 si la limite est absente', async () => {
+      await fakes.service.setExposureSettings({
+        restaurantId: 'r-1',
+        input: {},
+        actor: 'user:test',
+      });
+      expect(fakes.settings.get('r-1')?.maxPartySize).toBe(7);
     });
 
     it('met à jour les settings existants', async () => {

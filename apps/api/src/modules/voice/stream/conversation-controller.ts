@@ -12,6 +12,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import {
   EXPECTED_ANSWER_THRESHOLDS,
   rankExpectedAnswers,
@@ -3590,14 +3591,11 @@ function partySizeFromNumberToken(token: string): number | null {
   return value !== null && value >= 1 && value <= MAX_SPOKEN_PARTY_SIZE ? value : null;
 }
 
-/** Seuil de réservation automatique au téléphone (`maxPartySize` du restaurant, sinon 7). */
-export const DEFAULT_VOICE_MAX_PARTY_SIZE = 7;
-
 export function voiceMaxPartySize(session: Pick<CallSession, 'maxPartySize'>): number {
   const value = session.maxPartySize;
   return typeof value === 'number' && Number.isInteger(value) && value >= 1
     ? Math.min(value, MAX_SPOKEN_PARTY_SIZE)
-    : DEFAULT_VOICE_MAX_PARTY_SIZE;
+    : DEFAULT_MAX_PARTY_SIZE;
 }
 
 /** Lit un nombre sans unité quand la question active attend explicitement les couverts. */

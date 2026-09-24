@@ -804,3 +804,5 @@ Log automatique des tâches Hermes.
 
 - Sans réglage explicite, le téléphone et l'agentique utilisent désormais le même seuil historique de 7 personnes. Les formulaires d’exposition et d’onboarding affichent 7 ; les routes qui créent les réglages Connect l’écrivent explicitement pour ne pas tomber sur le défaut Prisma historique de 8.
 - Le handler vocal couvre maintenant la décision de groupe confirmé : transfert si la ligne du gérant existe, prise de message sinon. La mise à jour du seuil invalide l’entrée Redis du contexte téléphonique par numéro, immédiatement (TTL de secours : 300 s).
+
+2026-09-24 — [reservations, voice, prisma] **Défaut de groupe aligné à 7** — Décision : défaut 7 partout, migration du défaut uniquement. Une seule constante partagée alimente les parcours vocal et agentique ; les nouveaux réglages utilisent le défaut Prisma 7, tandis que les valeurs déjà enregistrées ne sont pas modifiées par cette migration.

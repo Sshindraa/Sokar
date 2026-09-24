@@ -375,7 +375,7 @@ describe('restaurant.routes - onboarding', () => {
       expect(res.statusCode).toBe(200);
       expect(db.restaurantExposureSettings.upsert).toHaveBeenCalledWith({
         where: { restaurantId: 'test-rest-1' },
-        create: { restaurantId: 'test-rest-1', maxPartySize: 7 },
+        create: { restaurantId: 'test-rest-1' },
         update: {},
       });
       expect(res.json()).toEqual({

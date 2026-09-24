@@ -11,10 +11,8 @@ import {
 import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
-
-/** Seuil téléphonique historique, utilisé sans ligne `RestaurantExposureSettings`. */
-export const DEFAULT_VOICE_MAX_PARTY_SIZE = 7;
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -129,7 +127,7 @@ function toCachedRestaurantContext(restaurant: {
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
     googleCalendarId: restaurant.googleCalendarId,
     giftCardMinimumAmount: restaurant.giftCardMinimumAmount,
-    maxPartySize: restaurant.exposureSettings?.maxPartySize ?? DEFAULT_VOICE_MAX_PARTY_SIZE,
+    maxPartySize: restaurant.exposureSettings?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
     personality: restaurant.personality,
     providerConfig: buildProviderConfig(restaurant),
   };
