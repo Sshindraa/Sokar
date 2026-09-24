@@ -4,8 +4,11 @@ import { renderMetrics, alertsSentTotal } from '../metrics';
 import { sendEmail } from '../../email';
 import { sendSms } from '../../telnyx/client';
 
+const redisMocks = vi.hoisted(() => ({ eval: vi.fn() }));
+
 vi.mock('../../email', () => ({ sendEmail: vi.fn() }));
 vi.mock('../../telnyx/client', () => ({ sendSms: vi.fn() }));
+vi.mock('../../redis/client', () => ({ redisCache: redisMocks }));
 vi.mock('../../sentry/client', () => ({
   captureException: vi.fn(),
   captureMessage: vi.fn(),
@@ -20,6 +23,7 @@ describe('dispatchAlert', () => {
   beforeEach(() => {
     vi.mocked(sendEmail).mockReset().mockResolvedValue(undefined);
     vi.mocked(sendSms).mockReset().mockResolvedValue(undefined);
+    redisMocks.eval.mockReset().mockResolvedValue(1);
     alertsSentTotal.reset();
     for (const key of ALERT_VARS) delete process.env[key];
     vi.unstubAllGlobals();
@@ -60,6 +64,62 @@ describe('dispatchAlert', () => {
     expect(call.subject).toContain('5 jobs en échec');
     expect(call.html).toContain('file sms-client');
     expect(results).toEqual([{ channel: 'email', ok: true }]);
+    expect(redisMocks.eval).toHaveBeenCalledOnce();
+    expect(redisMocks.eval.mock.calls[0][2]).toMatch(/^sokar:alert:email:daily:\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('envoie 20 alertes puis une seule notification de plafond et supprime les emails suivants', async () => {
+    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    for (let index = 0; index < 20; index++) {
+      await dispatchAlert({
+        kind: 'failed_jobs',
+        severity: 'critical',
+        summary: 'Alerte répétée',
+        detail: 'Détail',
+      });
+    }
+
+    redisMocks.eval.mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+    const limitNotice = await dispatchAlert({
+      kind: 'dead_letter_backlog',
+      severity: 'critical',
+      summary: 'File dead-letter',
+      detail: 'Backlog présent',
+    });
+    const suppressed = await dispatchAlert({
+      kind: 'dead_letter_backlog',
+      severity: 'critical',
+      summary: 'File dead-letter',
+      detail: 'Backlog toujours présent',
+    });
+
+    expect(sendEmail).toHaveBeenCalledTimes(21);
+    expect(sendEmail).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        subject: expect.stringContaining('Plafond journalier des alertes email atteint'),
+      }),
+    );
+    expect(limitNotice).toEqual([{ channel: 'email', ok: true }]);
+    expect(suppressed).toEqual([
+      { channel: 'email', ok: false, error: 'Daily alert email limit reached' },
+    ]);
+  });
+
+  it('supprime les emails si le compteur Redis est indisponible', async () => {
+    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    redisMocks.eval.mockRejectedValue(new Error('Redis unavailable'));
+
+    const results = await dispatchAlert({
+      kind: 'failed_jobs',
+      severity: 'critical',
+      summary: 'Alerte',
+      detail: 'Détail',
+    });
+
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      { channel: 'email', ok: false, error: 'Daily alert email limit unavailable' },
+    ]);
   });
 
   it('envoie un webhook Slack-format quand ALERT_WEBHOOK_URL est défini', async () => {

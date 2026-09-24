@@ -11,6 +11,8 @@ import {
   CONFIRMATION_SMS_SENT_EVENT,
   FAILED_JOBS_THRESHOLD,
   TELNYX_WEBHOOK_ERROR_THRESHOLD,
+  DEAD_LETTER_BACKLOG_COOLDOWN_SECONDS,
+  shouldSuppressDeadLetterBacklogAlert,
   type QueueStateCounts,
 } from '../system-checks';
 import { telnyxWebhookEventsTotal } from '../metrics';
@@ -75,6 +77,15 @@ describe('evaluateQueueStates', () => {
     });
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ kind: 'dead_letter_backlog', severity: 'critical' });
+    expect(findings[0]).toHaveProperty('deadLetterCount', 2);
+  });
+
+  it('dead-letter : cooldown de six heures, sauf si le nombre de jobs augmente', () => {
+    expect(DEAD_LETTER_BACKLOG_COOLDOWN_SECONDS).toBe(6 * 60 * 60);
+    expect(shouldSuppressDeadLetterBacklogAlert(null, 7)).toBe(false);
+    expect(shouldSuppressDeadLetterBacklogAlert(7, 7)).toBe(true);
+    expect(shouldSuppressDeadLetterBacklogAlert(7, 6)).toBe(true);
+    expect(shouldSuppressDeadLetterBacklogAlert(7, 8)).toBe(false);
   });
 
   it('backlog ≥ 100 → warning queue_backlog', () => {

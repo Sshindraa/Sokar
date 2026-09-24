@@ -3,7 +3,7 @@
  *
  * Canaux (tous optionnels, configurés par env) :
  *   - logs Pino + Sentry    : toujours actifs (Sentry no-op si SENTRY_DSN absent)
- *   - ALERT_EMAIL_TO        : email(s) via le transport SMTP existant (virgules)
+ *   - ALERT_EMAIL_TO        : email(s) via le transport Resend partagé (virgules)
  *   - ALERT_WEBHOOK_URL     : webhook Slack/Discord ({ "text": "..." })
  *   - ALERT_SMS_TO          : SMS Telnyx — réservé aux alertes critiques
  *
@@ -15,12 +15,27 @@
  */
 
 import { sendEmail } from '../email';
+import { redisCache } from '../redis/client';
 import { sendSms } from '../telnyx/client';
 import { captureMessage } from '../sentry/client';
 import { logger } from '../logger/pino';
 import { alertsSentTotal } from './metrics';
 
 export type AlertSeverity = 'warning' | 'critical';
+
+export const ALERT_EMAIL_DAILY_LIMIT = 20;
+const ALERT_EMAIL_COUNTER_TTL_SECONDS = 48 * 60 * 60;
+const ALERT_EMAIL_COUNTER_KEY_PREFIX = 'sokar:alert:email:daily';
+
+const CLAIM_ALERT_EMAIL_SLOT_SCRIPT = [
+  'local current = tonumber(redis.call("GET", KEYS[1]) or "0")',
+  'local limit = tonumber(ARGV[1])',
+  'if current >= limit + 1 then return 0 end',
+  'local next = redis.call("INCR", KEYS[1])',
+  'if next == 1 then redis.call("EXPIRE", KEYS[1], tonumber(ARGV[2])) end',
+  'if next == limit + 1 then return 2 end',
+  'return 1',
+].join('\n');
 
 export interface AlertPayload {
   /** Identifiant stable de l'alerte (ex: 'calls_without_transcript'). */
@@ -59,6 +74,67 @@ function track(kind: string, channel: ChannelResult['channel'], ok: boolean): vo
   } catch {
     // La métrique ne doit jamais casser le dispatch.
   }
+}
+
+type AlertEmailSlot = 'send' | 'limit_notice' | 'suppressed' | 'unavailable';
+
+async function claimAlertEmailSlot(): Promise<AlertEmailSlot> {
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    const result = Number(
+      await redisCache.eval(
+        CLAIM_ALERT_EMAIL_SLOT_SCRIPT,
+        1,
+        ALERT_EMAIL_COUNTER_KEY_PREFIX + ':' + day,
+        ALERT_EMAIL_DAILY_LIMIT,
+        ALERT_EMAIL_COUNTER_TTL_SECONDS,
+      ),
+    );
+    if (result === 1) return 'send';
+    if (result === 2) return 'limit_notice';
+    return 'suppressed';
+  } catch (err) {
+    // Fail closed for alert email so a Redis outage cannot consume the
+    // transactional email quota through an unbounded alert loop.
+    logger.error(
+      { err },
+      '[alert-dispatcher] Daily email limit unavailable; suppressing alert email',
+    );
+    return 'unavailable';
+  }
+}
+
+async function sendAlertEmail(payload: AlertPayload, recipients: string): Promise<ChannelResult> {
+  const slot = await claimAlertEmailSlot();
+  if (slot === 'send') {
+    const result = await tryEmail(payload, recipients);
+    track(payload.kind, 'email', result.ok);
+    return result;
+  }
+
+  if (slot === 'limit_notice') {
+    const notice: AlertPayload = {
+      kind: 'alert_email_daily_limit',
+      severity: 'warning',
+      summary: 'Plafond journalier des alertes email atteint',
+      detail:
+        'Le plafond de ' +
+        ALERT_EMAIL_DAILY_LIMIT +
+        ' emails d’alerte a été atteint pour aujourd’hui (UTC). ' +
+        'Les emails d’alerte suivants sont suspendus jusqu’au prochain jour UTC.',
+      sms: false,
+    };
+    const result = await tryEmail(notice, recipients);
+    track(notice.kind, 'email', result.ok);
+    return result;
+  }
+
+  const error =
+    slot === 'suppressed'
+      ? 'Daily alert email limit reached'
+      : 'Daily alert email limit unavailable';
+  track(payload.kind, 'email', false);
+  return { channel: 'email', ok: false, error };
 }
 
 async function tryEmail(payload: AlertPayload, recipients: string): Promise<ChannelResult> {
@@ -145,12 +221,10 @@ export async function dispatchAlert(payload: AlertPayload): Promise<ChannelResul
     results.push(result);
   }
 
-  // 3. Email SMTP (destinataires séparés par des virgules).
+  // 3. Email Resend (destinataires séparés par des virgules).
   const emailTo = process.env.ALERT_EMAIL_TO;
   if (emailTo) {
-    const result = await tryEmail(payload, emailTo);
-    track(payload.kind, 'email', result.ok);
-    results.push(result);
+    results.push(await sendAlertEmail(payload, emailTo));
   }
 
   // 4. SMS — critiques uniquement par défaut.
