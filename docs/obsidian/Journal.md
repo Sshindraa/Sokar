@@ -767,3 +767,22 @@ Log automatique des tâches Hermes.
 2026-09-24 — [voice, stt, prod-config] **Scribe limité à fr,en + confiance STT** — Banc STT (7 phrases, 3 passages, A-law 8 kHz) : toutes langues 7/21, fr+en 16/21, fr imposé 11/21, fr+mots-clés 15/21, MAI Voice Live 16/21. Prod : `ELEVENLABS_STT_ALL_LANGUAGES=false`, `ELEVENLABS_STT_LANGUAGES=fr,en` (sauvegarde `.env.bak.pre-stt-languages.*`), processus recréés. Code : défaut `DEFAULT_STT_LANGUAGES` = fr,en ; `logprob` Scribe converti en confiance (jamais lue avant) et publié par tour. Voice Live abandonné (pas de gain, US, préversion) : ressource `sokar-voicelive-eus` à supprimer. Saisie au clavier (DTMF) écartée à la demande de l'utilisateur : le parcours doit rester conversationnel.
 
 2026-09-24 — [voice, stt, dialogue] **Réponses attendues + relecture naturelle** — Banc `scripts/voice-stt-bench` (111 phrases, 4 voix FR, A-law 8 kHz, bruit 15-30 dB, 0-3 % de pertes, évaluation via `recordUserTurn`). Scribe fr,en transcrit bien ; les erreurs venaient surtout de l'analyseur : « midi et demi » → 12:00, « quarante-cinq » → 40, « 20 et 1 h 30 » → 01:30, « pour deux, s'il vous plaît » et « on fera six » non lus. Référence → après : personnes (≤ 7) 89 → 97 %, jour 95 → 95 %, heure 77 → 92 % (faux sans alerte 21 → 6 %). Rapprochement phonétique (`expected-answer.ts`) seulement sans valeur lisible et avec un indice de réponse ; choix « six ou cinq ? » ; relecture « Six personnes, très bien. » / « Samedi 27, très bien. ». Kill switch `VOICE_EXPECTED_ANSWER_ENABLED`. À traiter : > 7 personnes redemandé en boucle au lieu d'orienter vers le responsable.
+
+2026-09-24 — [voice, stt, incident] **Quota ElevenLabs épuisé par le banc, clé
+remplacée** — Le banc STT (phase 3 B) a consommé les 10 000 crédits du compte gratuit
+partagé par la production et le staging : plus aucune transcription sur les appels
+réels, sans alerte. 20:11 : nouvelle clé (compte gratuit, 6 172 / 10 000,
+réinitialisation le 25/10) installée en prod et en staging (sauvegardes
+`.env.bak.pre-elevenlabs-key.20260924-201122`), API et workers redémarrés, health 200.
+Solution temporaire : passer un compte payant, une clé par environnement, alerte sur le
+solde, banc interdit sur la clé de prod.
+
+2026-09-24 — [voice, stt, resilience] **Repli STT sans tempête de reconnexion** — Les
+échecs de connexion utilisent un backoff 500 ms → 1 s → 2 s, avec quatre échecs maximum
+et une échéance de 10 s ; auth, quota, conditions non acceptées et HTTP 401/403 arrêtent
+les tentatives. Le repli parle une seule fois, transfère au gérant configuré ou termine
+proprement l'appel avec une invitation à rappeler ou réserver en ligne. Ajout des alertes
+Prometheus, du relevé horaire du solde ElevenLabs et de garde-fous séparant les clés de
+banc des clés de production. Les scripts de banc n'ont pas été exécutés ; un premier
+test a pu tenter un handshake ElevenLabs avec une clé factice de test, sans audio. La
+réception côté fournisseur reste invérifiable.

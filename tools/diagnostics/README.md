@@ -16,26 +16,31 @@ Non exécutés en CI — usage développeur local uniquement.
 
 ## Variables d'environnement
 
-| Variable                 | Script(s)                                             | Défaut                                        | Rôle                                          |
-| ------------------------ | ----------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
-| `ELEVENLABS_API_KEY`     | test-stt-tts                                          | —                                             | Clé API ElevenLabs                            |
-| `CARTESIA_API_KEY`       | test-stt-tts                                          | —                                             | Clé API Cartesia                              |
-| `GROQ_API_KEY`           | test-stt-tts                                          | —                                             | Clé API Groq                                  |
-| `GROQ_BASE_URL`          | test-stt-tts                                          | `https://api.groq.com/openai/v1`              | Endpoint Groq OpenAI-compatible               |
-| `VOICE_LLM_MODEL`        | test-stt-tts                                          | `qwen/qwen3.8-27b`                            | Modèle LLM vocal                              |
-| `CARTESIA_VOICE_ID`      | test-stt-tts                                          | `f786b574-...`                                | ID de voix Cartesia                           |
-| `ELEVENLABS_STT_MODEL`   | test-stt-tts                                          | `scribe_v2_realtime`                          | Modèle STT                                    |
-| `CARTESIA_MODEL`         | test-stt-tts                                          | `sonic-3.6`                                   | Modèle TTS                                    |
-| `CARTESIA_BENCHMARK_DIR` | benchmark-cartesia-voices                             | `/private/tmp/sokar-cartesia-voice-benchmark` | Répertoire temporaire des MP3 et du manifeste |
-| `SOKAR_API_BASE`         | simulate-voice-call, test-mcp-client, sokar-mcp-stdio | `http://localhost:4000`                       | URL de base de l'API                          |
-| `SOKAR_MCP_KEY`          | test-mcp-client, sokar-mcp-stdio                      | obligatoire                                   | Clé MCP locale générée par le dashboard       |
-| `SOKAR_CALLER_PHONE`     | simulate-voice-call                                   | `+336****5678`                                | Numéro appelant simulé                        |
-| `SOKAR_SIMULATE_MODE`    | simulate-voice-call                                   | `mock`                                        | Mode de simulation (`auto` ou `mock`)         |
-| `SOKAR_DOGFOOD_URL`      | dogfood-sokar                                         | `https://sokar.tech`                          | URL cible dogfood                             |
-| `SOKAR_DOGFOOD_OUTPUT`   | dogfood-sokar                                         | `$REPO_ROOT/.hermes/dogfood`                  | Répertoire de sortie                          |
+| Variable                   | Script(s)                                                | Défaut                                        | Rôle                                                      |
+| -------------------------- | -------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
+| `ELEVENLABS_BENCH_API_KEY` | test-stt-tts, voice-stt-bench                            | obligatoire                                   | Clé ElevenLabs dédiée, différente de la clé de production |
+| `CARTESIA_BENCH_API_KEY`   | test-stt-tts, voice-stt-bench, benchmark-cartesia-voices | obligatoire                                   | Clé Cartesia dédiée, différente de la clé de production   |
+| `GROQ_BENCH_API_KEY`       | test-stt-tts                                             | obligatoire                                   | Clé Groq dédiée, différente de la clé de production       |
+| `OPENROUTER_BENCH_API_KEY` | benchmark-voice-llms                                     | obligatoire                                   | Clé OpenRouter dédiée, différente de la clé de production |
+| `BENCH_MAX_CREDITS`        | diagnostics et bancs                                     | entier positif obligatoire                    | Plafond estimé en unités natives par fournisseur          |
+| `GROQ_BASE_URL`            | test-stt-tts                                             | `https://api.groq.com/openai/v1`              | Endpoint Groq OpenAI-compatible                           |
+| `VOICE_LLM_MODEL`          | test-stt-tts                                             | `qwen/qwen3.8-27b`                            | Modèle LLM vocal                                          |
+| `CARTESIA_VOICE_ID`        | test-stt-tts                                             | `f786b574-...`                                | ID de voix Cartesia                                       |
+| `ELEVENLABS_STT_MODEL`     | test-stt-tts                                             | `scribe_v2_realtime`                          | Modèle STT                                                |
+| `CARTESIA_MODEL`           | test-stt-tts                                             | `sonic-3.6`                                   | Modèle TTS                                                |
+| `CARTESIA_BENCHMARK_DIR`   | benchmark-cartesia-voices                                | `/private/tmp/sokar-cartesia-voice-benchmark` | Répertoire temporaire des MP3 et du manifeste             |
+| `SOKAR_API_BASE`           | simulate-voice-call, test-mcp-client, sokar-mcp-stdio    | `http://localhost:4000`                       | URL de base de l'API                                      |
+| `SOKAR_MCP_KEY`            | test-mcp-client, sokar-mcp-stdio                         | obligatoire                                   | Clé MCP locale générée par le dashboard                   |
+| `SOKAR_CALLER_PHONE`       | simulate-voice-call                                      | `+336****5678`                                | Numéro appelant simulé                                    |
+| `SOKAR_SIMULATE_MODE`      | simulate-voice-call                                      | `mock`                                        | Mode de simulation (`auto` ou `mock`)                     |
+| `SOKAR_DOGFOOD_URL`        | dogfood-sokar                                            | `https://sokar.tech`                          | URL cible dogfood                                         |
+| `SOKAR_DOGFOOD_OUTPUT`     | dogfood-sokar                                            | `$REPO_ROOT/.hermes/dogfood`                  | Répertoire de sortie                                      |
 
 ## Notes
 
 - Les scripts MCP (`test-mcp-client.ts`, `sokar-mcp-stdio.ts`) nécessitent le contexte `apps/api` pour résoudre `@modelcontextprotocol/sdk`. Les commandes `pnpm test:mcp:*` gèrent cela automatiquement via `pnpm --filter @sokar/api exec`.
 - Voir `docs/sokar-mcp-integrator-guide.md` pour le guide d'intégration MCP complet.
-- `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+).
+- `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+), mais n'utilise
+  que les trois clés `*_BENCH_API_KEY`. Il refuse toute clé absente, identique à la clé
+  de production ou dépassant `BENCH_MAX_CREDITS`. Les unités du plafond sont affichées
+  séparément pour ElevenLabs (caractères), Cartesia (caractères) et Groq (tokens).

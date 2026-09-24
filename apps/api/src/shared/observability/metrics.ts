@@ -269,6 +269,19 @@ export const voiceProviderErrorsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+/** État du quota ElevenLabs observé via l'endpoint subscription. */
+export const elevenLabsCharacterCount = new Gauge({
+  name: 'sokar_elevenlabs_character_count',
+  help: 'Nombre de caractères consommés sur le compte ElevenLabs',
+  registers: [getRegistry()],
+});
+
+export const elevenLabsCharacterLimit = new Gauge({
+  name: 'sokar_elevenlabs_character_limit',
+  help: 'Limite de caractères du compte ElevenLabs',
+  registers: [getRegistry()],
+});
+
 export type VoiceTurnPlanShadowStatus =
   | 'valid'
   | 'invalid'
@@ -512,6 +525,8 @@ export function __resetMetrics(): void {
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  elevenLabsCharacterCount.reset();
+  elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();

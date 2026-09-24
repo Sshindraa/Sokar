@@ -323,6 +323,35 @@ uniquement par tunnel SSH ; ne publiez pas son port.
 
 ## Voice STT (ElevenLabs Scribe)
 
+### Clé et quota (état temporaire au 24/09/2026)
+
+La production et le staging partagent actuellement une seule clé ElevenLabs sur un
+compte gratuit. Le solde communiqué est de 6 172 caractères sur 10 000, avec une
+réinitialisation le 25/10/2026. Cette configuration est temporaire : la cible est un
+compte payant avec une clé distincte par environnement.
+
+L'API et le worker utilisent **ELEVENLABS_API_KEY**, conservée uniquement dans le
+gestionnaire de secrets de chaque environnement. Le worker interroge
+GET https://api.elevenlabs.io/v1/user/subscription une fois par heure et publie
+**sokar_elevenlabs_character_count** et **sokar_elevenlabs_character_limit**. Les seuils
+80 % et 95 % sont définis dans infra/prometheus/alerts.yml.
+
+Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
+
+| Variable                     | Usage                                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| **ELEVENLABS_BENCH_API_KEY** | Clé dédiée du banc STT, différente de ELEVENLABS_API_KEY                                     |
+| **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
+| **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
+| **GROQ_BENCH_API_KEY**       | Clé dédiée du diagnostic vocal manuel, différente de GROQ_API_KEY                            |
+| **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
+
+Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
+requête de contrôle par fournisseur. Pour Scribe, le contrôle ouvre la socket Realtime et
+n'envoie aucun audio. Le banc STT détaillé et ses limites sont documentés dans
+apps/api/scripts/voice-stt-bench/README.md. N'exécutez jamais un banc avec une clé
+identique à celle de production.
+
 Scribe détecte la langue parmi `ELEVENLABS_STT_LANGUAGES` (défaut `fr,en`).
 `ELEVENLABS_STT_ALL_LANGUAGES` doit rester `false` : au téléphone (A-law 8 kHz),
 Scribe se trompe alors de langue et transcrit « six personnes » en « sechs
@@ -345,6 +374,13 @@ Chaque tour publie la confiance Scribe (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,
 sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
 confiance entre 0 et 1.
+
+En cas d'authentification, de quota ou de conditions ElevenLabs refusés, ou si Scribe ne
+se connecte pas après quatre échecs/10 secondes, l'appel ne relance pas le provider en
+boucle : Sokar transfère au gérant si son numéro est configuré, sinon annonce un rappel
+ultérieur ou une réservation en ligne puis termine l'appel. Les erreurs WebSocket
+transitoires utilisent un backoff de 500 ms, 1 s puis 2 s. Les détails des alertes et du
+worker de solde sont dans docs/runbooks/observability.md.
 
 ## Demo restaurant
 

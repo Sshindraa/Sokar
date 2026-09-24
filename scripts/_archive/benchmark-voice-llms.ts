@@ -1,23 +1,29 @@
 /* eslint-disable no-console -- CLI benchmark intentionally reports live progress and results. */
 import { writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv({ path: resolve(process.cwd(), '.env') });
 loadEnv({ path: resolve(process.cwd(), 'apps/api/.env'), override: false });
 loadEnv({ path: resolve(process.cwd(), '.env.local'), override: false });
-if (
-  !process.env.OPENROUTER_API_KEY?.startsWith('sk-or-') ||
-  process.env.OPENROUTER_API_KEY.length < 40
-) {
-  loadEnv({ path: resolve(homedir(), '.hermes/.env'), override: true });
+
+const apiKey = process.env.OPENROUTER_BENCH_API_KEY;
+if (!apiKey) throw new Error('OPENROUTER_BENCH_API_KEY is required');
+if (process.env.OPENROUTER_API_KEY && apiKey === process.env.OPENROUTER_API_KEY) {
+  throw new Error('OPENROUTER_BENCH_API_KEY must differ from OPENROUTER_API_KEY');
+}
+if (!apiKey.startsWith('sk-or-') || apiKey.length < 40) {
+  throw new Error('OPENROUTER_BENCH_API_KEY is invalid');
+}
+const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
+if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
+  throw new Error('BENCH_MAX_CREDITS must be a positive integer');
 }
 
-const apiKey = process.env.OPENROUTER_API_KEY;
-if (!apiKey) throw new Error('OPENROUTER_API_KEY is required');
-
 const RUNS = Number.parseInt(process.env.BENCHMARK_RUNS ?? '3', 10);
+if (!Number.isSafeInteger(RUNS) || RUNS <= 0) {
+  throw new Error('BENCHMARK_RUNS must be a positive integer');
+}
 const OUTPUT_PATH =
   process.env.BENCHMARK_OUTPUT ?? '/tmp/sokar-voice-llm-benchmark-2026-07-22.json';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -337,6 +343,28 @@ const tools = [
   },
 ];
 
+function estimateBenchmarkCreditsCents(): number {
+  const maximumScenarioCharacters = Math.max(
+    ...scenarios.map((scenario) => scenario.user.length + scenario.toolResult.length),
+  );
+  const promptTokens = Math.ceil(
+    (systemPrompt.length +
+      'Bonjour, Chez Sokar, comment puis-je vous aider ?'.length +
+      maximumScenarioCharacters +
+      JSON.stringify(tools).length +
+      150 * 4) /
+      4,
+  );
+  const estimatedUsd = models.reduce((total, model) => {
+    const requests = RUNS * scenarios.length * 2 + (model === models[0] ? 1 : 0);
+    const perRequest =
+      (promptTokens * model.inputPerMillion + 150 * model.outputPerMillion) / 1_000_000;
+    return total + requests * perRequest;
+  }, 0);
+  // Double the static-price estimate to absorb tokenizer and provider-price variance.
+  return Math.ceil(estimatedUsd * 200);
+}
+
 function percentile(values: number[], quantile: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((left, right) => left - right);
@@ -567,6 +595,25 @@ async function runScenario(model: (typeof models)[number], scenario: Scenario, r
 }
 
 async function main() {
+  const estimatedCredits = estimateBenchmarkCreditsCents();
+  console.log(
+    'Conservative budget estimate: ' +
+      estimatedCredits +
+      ' credits (US cents), limit BENCH_MAX_CREDITS=' +
+      maximumCredits,
+  );
+  if (estimatedCredits > maximumCredits) {
+    throw new Error('Estimated credits exceed BENCH_MAX_CREDITS; no provider request was sent');
+  }
+
+  const accessCheck = await streamCompletion(models[0], [
+    { role: 'system', content: 'Répondez uniquement par le mot prêt.' },
+    { role: 'user', content: 'Prêt ?' },
+  ]);
+  if (accessCheck.error) {
+    throw new Error('OpenRouter access check failed: ' + accessCheck.error);
+  }
+
   // eslint-disable-next-line no-console
   console.log(
     `Sokar voice benchmark: ${models.length} models × ${scenarios.length} scenarios × ${RUNS} runs`,

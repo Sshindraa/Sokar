@@ -83,3 +83,22 @@ s'éditent pas dans l'interface, toute modification passe par le dépôt :
 - Les alertes in-app (`system-health`, `alert-evaluation`) envoient les notifications configurées
   par email/webhook/SMS. Les règles Prometheus évaluent et historisent les conditions ; Grafana les
   visualise. Une règle Prometheus seule n'envoie pas de notification.
+
+## Quota ElevenLabs pour le STT
+
+Le worker BullMQ `elevenlabs-subscription` lit `GET /v1/user/subscription` une fois par heure
+et publie `sokar_elevenlabs_character_count` et `sokar_elevenlabs_character_limit`. Il ne
+transcrit aucun audio et ne journalise jamais la clé. Les dernières jauges restent visibles
+jusqu'au prochain relevé réussi ; les erreurs réseau ou HTTP suivent les retries BullMQ.
+
+Le groupe Prometheus `sokar-voice-providers` évalue les règles toutes les 15 secondes :
+
+- `ElevenLabsSttTerminalError` : première hausse observée de quota, authentification ou
+  conditions refusées en 5 minutes ; sévérité critique.
+- `ElevenLabsSttWebSocketErrors` : plus de cinq erreurs WebSocket en 5 minutes pendant
+  2 minutes ; sévérité warning.
+- `ElevenLabsCharacterUsage80Percent` et `ElevenLabsCharacterUsage95Percent` : alertes de
+  consommation à 80 % et 95 %.
+
+La clé partagée staging/production et les consignes de banc sont documentées dans
+`docs/runbooks/environment.md`.

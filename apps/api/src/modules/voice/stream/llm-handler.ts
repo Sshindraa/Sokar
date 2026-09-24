@@ -639,6 +639,78 @@ export function handleSttEvent(
       mgr.transition(session, 'LISTENING');
       break;
     }
+
+    case 'Unavailable': {
+      if (session.sttFallbackSpoken) break;
+      session.sttFallbackSpoken = true;
+      logger.error(
+        { callId: session.callControlId, reason: event.reason },
+        '[stt] Transcription unavailable; starting call fallback',
+      );
+      cancelScheduledFiller(session);
+      session.abortController?.abort();
+      session.abortController = null;
+      session.responseGeneration++;
+      session.speculativeLlm = null;
+      session.speculativeResult = null;
+      session.speculativeTranscript = '';
+
+      const managerConfigured = Boolean(session.managerPhone?.trim());
+      if (!managerConfigured) {
+        finishCall(
+          session,
+          mgr,
+          'Je suis désolé, la transcription est temporairement indisponible. Vous pouvez rappeler un peu plus tard ou réserver en ligne. Au revoir.',
+        ).catch((err) =>
+          logger.error(
+            { err, callId: session.callControlId },
+            '[stt] Could not finish call after transcription outage',
+          ),
+        );
+        break;
+      }
+
+      session.ttsGeneration++;
+      session.ttsContext?.cancel();
+      session.ttsContext = null;
+      if (session.telnyxWs.readyState === WebSocket.OPEN) {
+        session.telnyxWs.send(JSON.stringify({ event: 'clear' }));
+      }
+      if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
+      if (session.state !== 'SPEAKING') mgr.transition(session, 'SPEAKING');
+      (async () => {
+        await speakTtsStreamed(
+          session,
+          'Je suis désolé, la transcription est temporairement indisponible. Je vous mets en relation avec le gérant.',
+        );
+        if (session.ended || session.ending) return;
+        await mgr.handoffToManager(session);
+        if (session.handoffInProgress || session.ended || session.ending) return;
+        await finishCall(
+          session,
+          mgr,
+          "Je suis désolé, je n'ai pas réussi à joindre le gérant. Vous pouvez rappeler un peu plus tard ou réserver en ligne. Au revoir.",
+        );
+      })().catch((err) => {
+        logger.error(
+          { err, callId: session.callControlId },
+          '[stt] Manager fallback after transcription outage failed',
+        );
+        if (!session.ended && !session.ending) {
+          finishCall(
+            session,
+            mgr,
+            'Je suis désolé, je ne peux pas vous mettre en relation pour le moment. Vous pouvez rappeler plus tard ou réserver en ligne. Au revoir.',
+          ).catch((finishErr) =>
+            logger.error(
+              { err: finishErr, callId: session.callControlId },
+              '[stt] Could not finish call after manager fallback failed',
+            ),
+          );
+        }
+      });
+      break;
+    }
   }
 }
 

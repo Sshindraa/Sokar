@@ -187,3 +187,49 @@ groups:
         annotations:
           summary: 'Fail-open Redis/cache en rafale ({{ $value }} en 5min)'
           description: "sokar_fail_open_total a augmenté de plus de 10 sur 5 minutes. Un service Redis/cache (rate limiter MCP, connect rate limit, cache OpenAI Reserve, idempotency) est probablement down. Vérifier l'état Redis et les logs API (grep 'fail_open')."
+
+  - name: sokar-voice-providers
+    interval: 15s
+    rules:
+      # Un seul échec d'authentification, de quota ou de conditions suffit à
+      # rendre les nouvelles transcriptions indisponibles.
+      - alert: ElevenLabsSttTerminalError
+        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type=~"quota|auth|terms"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'ElevenLabs STT refuse la transcription ({{ $labels.type }})'
+          description: 'Au moins une erreur terminale ElevenLabs STT a été observée en 5 minutes. Vérifier le compte, les conditions acceptées et la clé sans l’afficher dans les logs.'
+
+      # >5 erreurs WebSocket sur 5 minutes est anormal pour les connexions STT.
+      - alert: ElevenLabsSttWebSocketErrors
+        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type="ws_error"}[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Rafale d’erreurs WebSocket ElevenLabs STT'
+          description: 'Plus de cinq erreurs de connexion Scribe ont été comptées sur 5 minutes pendant 2 minutes. Vérifier la connectivité, le statut du fournisseur et les logs API.'
+
+      - alert: ElevenLabsCharacterUsage80Percent
+        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.80
+        for: 0s
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Compte ElevenLabs à {{ $value | humanizePercentage }}'
+          description: 'Le compte ElevenLabs a consommé au moins 80 % de sa limite de caractères. Vérifier le solde et arrêter les benchmarks.'
+
+      - alert: ElevenLabsCharacterUsage95Percent
+        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.95
+        for: 0s
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'Compte ElevenLabs presque épuisé ({{ $value | humanizePercentage }})'
+          description: 'Le compte ElevenLabs a consommé au moins 95 % de sa limite de caractères. Traiter le quota avant toute nouvelle campagne de benchmarks.'
