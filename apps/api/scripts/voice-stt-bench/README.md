@@ -78,3 +78,6 @@ B : `POST /v1/speech-to-text`, `model_id=scribe_v2` (`BENCH_BATCH_MODEL` pour
 changer), `language_code=fr`, mêmes `keyterms` que la production
 (`buildSttKeyterms('Chez Sokar')`, +20 % sur le prix du batch), WAV PCM 8 kHz.
 L'audio reste sur le serveur, jamais commité.
+
+Résultats de l'exécution du 24/09/2026 (partiels, quota ElevenLabs épuisé) :
+[`rapport Phase 3 B`](../../../../docs/voice-stt-phase-3-second-opinion.md).
