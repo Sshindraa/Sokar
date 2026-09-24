@@ -1173,7 +1173,7 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'Vous serez combien ?');
 
     expect(buildDeterministicTurnResponse(session, 'content', "Je s'en sera pas de personne")).toBe(
-      "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?",
+      "Je n'ai pas bien compris le nombre de personnes. Vous pouvez aussi le taper sur le clavier de votre téléphone. Vous serez combien ?",
     );
   });
 

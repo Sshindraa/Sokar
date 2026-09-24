@@ -619,6 +619,8 @@ export class CallSessionManager {
     session.sttSemanticHold = null;
     if (session.interruptedTurn?.timer) clearTimeout(session.interruptedTurn.timer);
     session.interruptedTurn = null;
+    if (session.dtmfBuffer?.timer) clearTimeout(session.dtmfBuffer.timer);
+    session.dtmfBuffer = null;
     if (session.abortController) {
       session.abortController.abort();
       session.abortController = null;

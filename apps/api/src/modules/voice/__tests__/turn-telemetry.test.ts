@@ -7,7 +7,7 @@ vi.mock('../../../shared/logger/pino', () => ({
 
 import { logger } from '../../../shared/logger/pino';
 import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
-import { markVoiceTurnAudioSent } from '../stream/turn-telemetry';
+import { markVoiceTurnAudioSent, wordConfidenceStats } from '../stream/turn-telemetry';
 import {
   completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
@@ -232,5 +232,21 @@ describe('voice turn telemetry', () => {
         'sokar_voice_turn_plan_shadow_by_restaurant_total{status="speech_missing",restaurant_id="resto-1"} 1',
       );
     });
+  });
+});
+
+describe('wordConfidenceStats', () => {
+  it('résume la confiance STT d’un tour sans le texte', () => {
+    expect(
+      wordConfidenceStats([
+        { word: 'six', confidence: 0.58 },
+        { word: 'personnes', confidence: 0.33 },
+        { word: 'demain', confidence: 0.9 },
+      ]),
+    ).toEqual({ minWordConfidence: 0.33, meanWordConfidence: 0.603, lowConfidenceWordCount: 1 });
+  });
+
+  it('ne publie rien quand Scribe ne fournit pas de confiance', () => {
+    expect(wordConfidenceStats([{ word: 'six' }])).toEqual({});
   });
 });

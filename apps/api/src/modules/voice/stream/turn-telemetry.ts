@@ -221,7 +221,26 @@ export function completeVoiceTurnInput(
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
     speechDurationMs: session.latencyTrace?.speechDurationMs ?? null,
     transcriptLength: transcript.length,
+    ...wordConfidenceStats(words),
   });
+}
+
+/** Confiance STT du tour (min, moyenne, mots sous 0,5), sans le texte. */
+export function wordConfidenceStats(words: SttWord[]): {
+  minWordConfidence?: number;
+  meanWordConfidence?: number;
+  lowConfidenceWordCount?: number;
+} {
+  const values = words
+    .map((word) => word.confidence)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (!values.length) return {};
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  return {
+    minWordConfidence: round(Math.min(...values)),
+    meanWordConfidence: round(values.reduce((sum, value) => sum + value, 0) / values.length),
+    lowConfidenceWordCount: values.filter((value) => value < 0.5).length,
+  };
 }
 
 export function recordVoiceTurnClassification(

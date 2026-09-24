@@ -321,6 +321,24 @@ de réservation et la disponibilité. La provenance est stockée dans
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
+## Voice STT (ElevenLabs Scribe)
+
+Scribe détecte la langue parmi `ELEVENLABS_STT_LANGUAGES` (défaut `fr,en`).
+`ELEVENLABS_STT_ALL_LANGUAGES` doit rester `false` : au téléphone (A-law 8 kHz),
+Scribe se trompe alors de langue et transcrit « six personnes » en « sechs
+Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
+33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %, MAI via
+Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
+réellement, et remesurer.
+
+Chaque tour publie la confiance Scribe (`minWordConfidence`,
+`meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,
+sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
+confiance entre 0 et 1.
+
+Pendant la question « combien de personnes ? », l'appelant peut taper le
+nombre au clavier (DTMF Telnyx, `#` pour valider, sinon 1,5 s).
+
 ## Demo restaurant
 
 The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):

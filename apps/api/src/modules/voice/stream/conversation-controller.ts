@@ -3435,8 +3435,8 @@ export function buildDeterministicTurnPlan(
     if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {
       const primary =
         effectiveVoiceLanguage(session) === 'en'
-          ? "I didn't catch the number of people. How many will there be?"
-          : "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
+          ? "I didn't catch the number of people. You can also type it on your keypad. How many will there be?"
+          : "Je n'ai pas bien compris le nombre de personnes. Vous pouvez aussi le taper sur le clavier de votre téléphone. Vous serez combien ?";
       return guardDialogueRepromptPlan(session, 'partySize', primary);
     }
     // Followup de disponibilité : alternatives proposées par l'outil
