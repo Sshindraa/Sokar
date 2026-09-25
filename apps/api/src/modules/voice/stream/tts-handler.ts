@@ -26,7 +26,7 @@ import { logger } from '../../../shared/logger/pino';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { redactPii } from './pii-redact';
+import { describeTranscript } from './pii-redact';
 import { persistLatencyTrace } from './session-persistence';
 import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
 import {
@@ -180,7 +180,7 @@ export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
   writeDebugLog(
-    `[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${redactPii(text)}"`,
+    `[speakTelnyxNative] Sending native Telnyx TTS speak command ${JSON.stringify(describeTranscript(text))}`,
   );
   if (session.ending?.nativePlayback) return;
   if (session.ending) session.ending.nativePlayback = true;
@@ -291,7 +291,7 @@ async function speakTtsFragment(
   }
 
   writeDebugLog(
-    `[speakTtsStreamed] Starting synthesis for text: "${redactPii(cleanedText)}" (original: "${redactPii(text)}")`,
+    `[speakTtsStreamed] Starting synthesis ${JSON.stringify(describeTranscript(cleanedText))}`,
   );
   const synthesisStartedAt = Date.now();
   recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_started', {
@@ -363,7 +363,7 @@ async function speakTtsFragment(
     }
 
     if (cachedBuffer) {
-      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
+      writeDebugLog(`[speakTtsStreamed] Cache HIT ${JSON.stringify(describeTranscript(trimmed))}`);
       markVoiceTurnTtsSynthesisFirstByte(session, 'cache', turnId);
 
       const framesSent = await sendPacedAudioFrames(
@@ -464,7 +464,7 @@ async function speakTtsFragment(
         const err = new Error(`Cartesia stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
-          extra: { callId: session.callControlId, status, sentence: redactPii(trimmed) },
+          extra: { callId: session.callControlId, status, ...describeTranscript(trimmed) },
         });
         if (!isSessionActiveForTts(session, generation)) return;
         await speakTelnyxNative(
@@ -609,7 +609,7 @@ async function speakTtsFragment(
       voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: 'ws_error' });
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
-        extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
+        extra: { callId: session.callControlId, ...describeTranscript(trimmed) },
       });
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_interrupted', {
         reason: isSessionActiveForTts(session, generation) ? 'error' : 'barge_in',

@@ -25,8 +25,11 @@ export function getVoiceLlmModel(): string {
 }
 
 /** URL de base et clé du provider actif. */
-export function getVoiceLlmEndpoint(): { baseUrl: string; apiKey: string | undefined } {
-  if (getVoiceLlmProvider() === 'cerebras') {
+export function getVoiceLlmEndpoint(provider: VoiceLlmProvider = getVoiceLlmProvider()): {
+  baseUrl: string;
+  apiKey: string | undefined;
+} {
+  if (provider === 'cerebras') {
     return { baseUrl: voiceConfig.CEREBRAS_BASE_URL, apiKey: voiceConfig.CEREBRAS_API_KEY };
   }
   return { baseUrl: voiceConfig.GROQ_BASE_URL, apiKey: voiceConfig.GROQ_API_KEY };

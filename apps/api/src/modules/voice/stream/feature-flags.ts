@@ -51,3 +51,9 @@ export function resolveVoiceFeatureSnapshot(
   session.voiceFeatureSnapshot = snapshot;
   return snapshot;
 }
+
+/** Les améliorations de latence coûteuses restent limitées au pilote Deepgram + Dialogue V2. */
+export function isVoiceDeepgramDialoguePilot(session: CallSession): boolean {
+  const snapshot = resolveVoiceFeatureSnapshot(session);
+  return snapshot.sttProvider === 'deepgram' && snapshot.dialogueListeningV2Enabled;
+}

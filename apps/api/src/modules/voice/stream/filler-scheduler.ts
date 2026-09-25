@@ -19,6 +19,8 @@ interface FillerSchedule {
   started: boolean;
   playbackSettled: boolean;
   interruptionRecorded: boolean;
+  completion: Promise<void>;
+  resolveCompletion: () => void;
 }
 
 export interface ThinkingFillerScheduleOptions {
@@ -52,7 +54,25 @@ export function cancelScheduledFiller(session: CallSession): void {
     schedule.interruptionRecorded = true;
     recordVoiceTurnEvent(session, 'filler_interrupted', { purpose: 'thinking' });
   }
+  schedule.resolveCompletion();
   schedules.delete(session);
+}
+
+/** Annule uniquement le timer : un filler déjà audible est laissé se terminer. */
+export function cancelPendingThinkingFiller(session: CallSession): void {
+  const schedule = schedules.get(session);
+  if (!schedule || schedule.started) return;
+  if (schedule.timer) clearTimeout(schedule.timer);
+  schedule.timer = null;
+  schedule.playbackSettled = true;
+  schedule.resolveCompletion();
+  schedules.delete(session);
+}
+
+/** La première phrase LLM attend un filler déjà commencé au lieu de le couper. */
+export function waitForStartedThinkingFiller(session: CallSession): Promise<void> {
+  const schedule = schedules.get(session);
+  return schedule?.started && !schedule.playbackSettled ? schedule.completion : Promise.resolve();
 }
 
 /**
@@ -77,12 +97,18 @@ export function scheduleThinkingFiller(
   if (Date.now() - previousStart < cooldownMs) return;
 
   const controller = new AbortController();
+  let resolveCompletion: () => void = () => {};
+  const completion = new Promise<void>((resolve) => {
+    resolveCompletion = resolve;
+  });
   const schedule: FillerSchedule = {
     timer: null,
     controller,
     started: false,
     playbackSettled: false,
     interruptionRecorded: false,
+    completion,
+    resolveCompletion,
   };
   schedules.set(session, schedule);
   const delayMs = Math.max(0, options.delayMs ?? THINKING_FILLER_DELAY_MS);
@@ -117,6 +143,7 @@ export function scheduleThinkingFiller(
         }
       })
       .finally(() => {
+        schedule.resolveCompletion();
         if (schedules.get(session) === schedule) schedules.delete(session);
       });
   }, delayMs);

@@ -16,12 +16,22 @@ import type { SttEvent, CallSession, DebugSpeechEntry } from './types';
 import type { CallSessionManager } from './manager';
 import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
-import { cancelScheduledFiller, scheduleThinkingFiller } from './filler-scheduler';
+import {
+  cancelPendingThinkingFiller,
+  cancelScheduledFiller,
+  scheduleThinkingFiller,
+  waitForStartedThinkingFiller,
+} from './filler-scheduler';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { appendDebugSpeechText, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
-import { describeTranscript, redactPii } from './pii-redact';
+import {
+  appendDebugSpeechText,
+  recordDebugAgentSpeech,
+  rememberRecentAgentSpeech,
+  settleDebugSpeech,
+} from './debug-dialogue';
+import { describeTranscript } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
   createCartesiaContextTurn,
@@ -40,7 +50,7 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
-import { resolveVoiceFeatureSnapshot } from './feature-flags';
+import { isVoiceDeepgramDialoguePilot, resolveVoiceFeatureSnapshot } from './feature-flags';
 import {
   getActivePendingInteraction,
   extractConversationSlots,
@@ -89,6 +99,7 @@ import {
 import {
   buildAvailabilityErrorPlan,
   buildLlmFailurePlan,
+  buildVoiceStageFailurePlan,
   buildRecapRejectionPlan,
   extractSpokenTimes,
   violatesAvailabilityReplyGuard,
@@ -116,6 +127,8 @@ import {
   suspendPendingInteractionForDetour,
   resetNameCollectionAfterFallback,
 } from './conversation-controller';
+import { voiceConfig } from '../../../env';
+import { voiceLlmSpokenFallbackTotal } from '../../../shared/observability/metrics';
 
 const recentTranscripts = new WeakMap<
   CallSession,
@@ -466,6 +479,26 @@ function takeInterruptedTranscript(session: CallSession): string | null {
   return held.transcript;
 }
 
+export function invalidatePendingVoiceResponse(
+  session: CallSession,
+  mgr: CallSessionManager,
+): boolean {
+  if (session.state !== 'PROCESSING') return false;
+  cancelScheduledFiller(session);
+  session.abortController?.abort();
+  session.abortController = null;
+  session.responseGeneration++;
+  session.ttsGeneration++;
+  session.ttsContext?.cancel();
+  session.ttsContext = null;
+  session.conversation.toolInFlight = null;
+  session.speculativeLlm = null;
+  session.speculativeResult = null;
+  session.speculativeTranscript = '';
+  mgr.transition(session, 'LISTENING');
+  return true;
+}
+
 function buildSttUnavailableCopy(session: CallSession): {
   readonly noManager: string;
   readonly manager: string;
@@ -615,6 +648,32 @@ export function handleSttEvent(
       if (interruptedTranscript) {
         event.transcript = `${interruptedTranscript} ${event.transcript}`;
       }
+      const dialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
+      const sameRecentTranscript =
+        !interruptedTranscript &&
+        normalizeTranscriptForDedupe(session.lastProcessedTranscript ?? '') ===
+          normalizeTranscriptForDedupe(event.transcript) &&
+        session.lastProcessedDialogueContext === dialogueContext &&
+        session.lastProcessedAt !== undefined &&
+        Date.now() - session.lastProcessedAt < TRANSCRIPT_DEDUPE_WINDOW_MS;
+      if (sameRecentTranscript) {
+        logger.debug(
+          { callId: session.callControlId, ...describeTranscript(event.transcript) },
+          '[stt] Ignoring duplicate final for the current dialogue step',
+        );
+        break;
+      }
+
+      const hasPreviousFinal = session.latencyTrace?.sttFinalAt !== undefined;
+      const distinctFinal =
+        hasPreviousFinal &&
+        (Boolean(interruptedTranscript) ||
+          normalizeTranscriptForDedupe(session.lastProcessedTranscript ?? '') !==
+            normalizeTranscriptForDedupe(event.transcript));
+      if (distinctFinal) {
+        invalidatePendingVoiceResponse(session, mgr);
+        startVoiceTurn(session, event.transcript);
+      }
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
       applyVoiceLanguageLock(session, event.transcript, event.languageCode);
       if (!session.languageLocked && detectedLanguage) {
@@ -755,8 +814,8 @@ export function handleSttEvent(
           logger.info(
             {
               callId: session.callControlId,
-              interim: speculativeTranscript,
-              final: event.transcript,
+              interim: describeTranscript(speculativeTranscript),
+              final: describeTranscript(event.transcript),
             },
             '[speculative] Mismatch or disabled. Clearing speculative state',
           );
@@ -886,11 +945,15 @@ async function processTranscript(
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
-    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${redactPii(transcript)}"`);
+    writeDebugLog(
+      `[processTranscript] Skipping duplicate transcript ${JSON.stringify(describeTranscript(transcript))}`,
+    );
     return;
   }
 
-  writeDebugLog(`[processTranscript] Received transcript: "${redactPii(transcript)}"`);
+  writeDebugLog(
+    `[processTranscript] Received transcript ${JSON.stringify(describeTranscript(transcript))}`,
+  );
   try {
     session.abortController = new AbortController();
     writeDebugLog(`[processTranscript] Calling LLM...`);
@@ -898,7 +961,9 @@ async function processTranscript(
 
     markVoiceTurnLlmFirstToken(session, session.currentTurn?.id);
     const ttsResponse = stripRepeatedGreeting(llmResponse, session);
-    writeDebugLog(`[processTranscript] LLM responded: "${redactPii(llmResponse)}"`);
+    writeDebugLog(
+      `[processTranscript] LLM responded ${JSON.stringify(describeTranscript(llmResponse))}`,
+    );
 
     if (!ttsResponse) {
       writeDebugLog(`[processTranscript] LLM response empty after greeting strip, skipping TTS`);
@@ -948,20 +1013,23 @@ export async function processTranscriptStreaming(
   const forceFrenchReprompt = session.forceFrenchReprompt === true;
   session.forceFrenchReprompt = false;
   if (!transcript.trim()) return;
-  session.lastProcessedTranscript = transcript;
   if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
     writeDebugLog(
-      `[processTranscriptStreaming] Skipping duplicate transcript: "${redactPii(transcript)}"`,
+      `[processTranscriptStreaming] Skipping duplicate transcript ${JSON.stringify(describeTranscript(transcript))}`,
     );
     return;
   }
+  session.lastProcessedTranscript = transcript;
+  session.lastProcessedAt = Date.now();
+  session.lastProcessedDialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
 
   const responseGeneration = ++session.responseGeneration;
   const dialogueV2Enabled = resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled;
+  const latencyPilotEnabled = isVoiceDeepgramDialoguePilot(session);
   const language = effectiveVoiceLanguage(session);
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;
@@ -1193,7 +1261,7 @@ export async function processTranscriptStreaming(
   }
   if (livenessResponse && !routeToModel) {
     writeDebugLog(
-      `[processTranscriptStreaming] Resuming the previous turn after liveness check: "${transcript}"`,
+      `[processTranscriptStreaming] Resuming the previous turn after liveness check ${JSON.stringify(describeTranscript(transcript))}`,
     );
     session.turnCount++;
     session.history.push(
@@ -1224,7 +1292,7 @@ export async function processTranscriptStreaming(
     // l'état en SPEAKING ni bloquer le tour suivant.
     if (!isCurrentResponse()) return;
     writeDebugLog(
-      `[processTranscriptStreaming] Handling customer-name spelling without LLM: "${redactPii(transcript)}"`,
+      `[processTranscriptStreaming] Handling customer-name spelling without LLM ${JSON.stringify(describeTranscript(transcript))}`,
     );
     session.turnCount++;
     let response = customerNameTurn.response;
@@ -1498,7 +1566,7 @@ export async function processTranscriptStreaming(
   if (deterministicResponse) {
     if (!isCurrentResponse()) return;
     writeDebugLog(
-      `[processTranscriptStreaming] Handling ${speechAct} without LLM: "${transcript}"`,
+      `[processTranscriptStreaming] Handling ${speechAct} without LLM ${JSON.stringify(describeTranscript(transcript))}`,
     );
     session.turnCount++;
     session.history.push(
@@ -1667,7 +1735,9 @@ export async function processTranscriptStreaming(
     }
   }
 
-  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${redactPii(transcript)}"`);
+  writeDebugLog(
+    `[processTranscriptStreaming] Starting LLM stream ${JSON.stringify(describeTranscript(transcript))}`,
+  );
   // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
@@ -1718,6 +1788,7 @@ export async function processTranscriptStreaming(
         }
       : {}),
     telemetryTurnId,
+    ...(latencyPilotEnabled ? { onFirstToken: () => cancelPendingThinkingFiller(session) } : {}),
   };
   const recordTurnPlanObservation = (
     result = inBandTurnPlanResult,
@@ -1801,7 +1872,9 @@ export async function processTranscriptStreaming(
   // Le délai et la probabilité sont gérés par le scheduler ; une phrase rapide
   // ou une reprise de parole annule le filler avant tout audio.
   if (isCurrentResponse()) {
-    scheduleThinkingFiller(session, session.personality?.fillerStyle ?? 'CASUAL');
+    scheduleThinkingFiller(session, session.personality?.fillerStyle ?? 'CASUAL', {
+      ...(latencyPilotEnabled ? { delayMs: voiceConfig.VOICE_LLM_FILLER_DELAY_MS } : {}),
+    });
   }
 
   // Le TTS Context V2 garde son ciblage ConfigCat indépendant du shadow TurnPlan.
@@ -1845,10 +1918,18 @@ export async function processTranscriptStreaming(
     const generatedResponse = await mgr.processUtteranceStreaming(
       session,
       transcriptForLlm,
-      (phrase: string) => {
+      async (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
-        cancelScheduledFiller(session);
-        writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
+        if (latencyPilotEnabled) {
+          cancelPendingThinkingFiller(session);
+          await waitForStartedThinkingFiller(session);
+          if (!isCurrentResponse() || abortController.signal.aborted) return;
+        } else {
+          cancelScheduledFiller(session);
+        }
+        writeDebugLog(
+          `[processTranscriptStreaming] Phrase received ${JSON.stringify(describeTranscript(phrase))}`,
+        );
         markVoiceTurnLlmFirstPhrase(session, telemetryTurnId);
         recordVoiceTurnEvent(session, 'llm_phrase_generated', {
           characterCount: phrase.length,
@@ -1889,15 +1970,20 @@ export async function processTranscriptStreaming(
         // contexte échoue avant le premier audio.
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
-          if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, cleanPhrase);
-          else contextDebugEntry = recordDebugAgentSpeech(session, cleanPhrase);
+          if (contextDebugEntry) {
+            appendDebugSpeechText(contextDebugEntry, cleanPhrase);
+            rememberRecentAgentSpeech(session, cleanPhrase);
+          } else contextDebugEntry = recordDebugAgentSpeech(session, cleanPhrase);
           contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));
           return;
         }
 
         // Lancer TTS en background pour ne pas bloquer le stream LLM
         const ttsPromise = speakTtsStreamed(session, cleanPhrase).catch((err: unknown) => {
-          writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
+          writeDebugLog(
+            `[processTranscriptStreaming] TTS phrase failed ${JSON.stringify(describeTranscript(cleanPhrase))}`,
+            err,
+          );
         });
         ttsPromises.push(ttsPromise);
       },
@@ -2066,7 +2152,14 @@ export async function processTranscriptStreaming(
     // prononce une réponse déterministe. Après un audio partiel, on évite un doublon.
     const audioAlreadySent = ttsPromises.length > 0 || contextTtsRef.current?.hasAudioOutput;
     if (!audioAlreadySent && isSessionActiveForTts(session)) {
-      const failurePlan = buildLlmFailurePlan(session);
+      if (latencyPilotEnabled) {
+        cancelPendingThinkingFiller(session);
+        await waitForStartedThinkingFiller(session);
+        if (!isCurrentResponse() || abortController.signal.aborted) return;
+      }
+      const failurePlan = latencyPilotEnabled
+        ? buildVoiceStageFailurePlan(session)
+        : buildLlmFailurePlan(session);
       const failureReply = correctionTurn
         ? buildVoiceCorrectionClarification(session, transcript)
         : dialogueLoopRecovery
@@ -2082,6 +2175,7 @@ export async function processTranscriptStreaming(
       mgr.transition(session, 'SPEAKING');
       try {
         await speakTtsStreamed(session, failureReply);
+        voiceLlmSpokenFallbackTotal.inc();
       } catch (ttsErr) {
         logger.error(
           { err: ttsErr, callId: session.callControlId },

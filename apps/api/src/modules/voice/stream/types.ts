@@ -442,6 +442,8 @@ export interface CallSession {
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */
   sttModel?: string;
+  /** Fournisseur STT réellement ouvert, après un éventuel fallback de handshake. */
+  sttProviderUsed?: string;
   /** Adaptateur de transport STT actif, figé après le handshake initial. */
   sttAdapter?: import('./stt-provider-adapter').SttProviderAdapter;
   sttProviderOpenedOnce?: boolean;
@@ -515,6 +517,8 @@ export interface CallSession {
   sttEvidence?: { transcript: string; words?: SttWord[]; partials: string[] } | null;
   /** Dernière phrase appelant envoyée au traitement (déterministe ou LLM). */
   lastProcessedTranscript?: string;
+  lastProcessedAt?: number;
+  lastProcessedDialogueContext?: string;
   /**
    * Phrase dont la réponse a été annulée par une reprise de parole. Elle est
    * fusionnée avec la suite, ou retraitée seule si aucune suite n'arrive.
@@ -552,6 +556,11 @@ export interface CallSession {
   ttsGeneration: number;
   /** Invalide une réponse en préparation dès que l'appelant reprend la parole. */
   responseGeneration: number;
+  /** Texte agent récent conservé en mémoire uniquement pour filtrer l'écho STT. */
+  recentAgentSpeechText?: string;
+  recentAgentSpeechTurnId?: string;
+  agentAudioActive?: boolean;
+  agentAudioEndedAt?: number;
   /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
   /** Tour utilisateur courant, créé à la finalisation STT. */

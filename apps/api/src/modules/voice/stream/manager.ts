@@ -48,9 +48,12 @@ import {
   voiceActiveSessionsGauge,
   voiceCallsTotal,
   voiceTransfersTotal,
+  voiceLlmHedgeTotal,
   type VoiceTransferMotive,
   type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+import { isVoiceDeepgramDialoguePilot } from './feature-flags';
+import { raceFirstTokenResponses } from './first-token-hedge';
 
 function recordVoiceTransfer(
   session: CallSession,
@@ -144,6 +147,8 @@ interface LlmRequestOptions {
   /** Canary-only context enabling non-authoritative metadata in this same completion. */
   turnPlanShadowContext?: TurnPlanContext;
   onTurnPlanShadowResult?: (result: InBandTurnPlanResult) => void;
+  /** Premier token de contenu reçu, avant que la phrase soit terminée. */
+  onFirstToken?: () => void;
 }
 
 const TURN_PLAN_SHADOW_TOOL_NAME = 'proposeTurnPlanShadow';
@@ -1274,6 +1279,7 @@ export class CallSessionManager {
    * Fetch LLM streaming — chemin unique, provider actif.
    */
   private async fetchLlmStreaming(
+    session: CallSession,
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
@@ -1283,18 +1289,68 @@ export class CallSessionManager {
     },
   ): Promise<{ response: Response; provider: LlmProvider }> {
     const provider = getVoiceLlmProvider();
-    if (isCircuitBreakerOpen(provider)) {
+    const hedgeEnabled = Boolean(
+      provider === 'cerebras' &&
+      voiceConfig.GROQ_API_KEY &&
+      isVoiceDeepgramDialoguePilot(session) &&
+      !isCircuitBreakerOpen('groq'),
+    );
+    const primaryCircuitOpen = isCircuitBreakerOpen(provider);
+    if (primaryCircuitOpen && !hedgeEnabled) {
       logger.warn({ provider }, '[circuit-breaker] provider LLM open, streaming ignoré');
       throw new Error('LLM provider unavailable (circuit open)');
     }
 
     try {
-      const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
+      if (hedgeEnabled) {
+        return await raceFirstTokenResponses(
+          'cerebras',
+          (signal) =>
+            this.fetchProviderStreaming(
+              messages,
+              { ...opts, signal },
+              getVoiceLlmModel(),
+              'cerebras',
+            ),
+          'groq',
+          (signal) =>
+            this.fetchProviderStreaming(
+              messages,
+              { ...opts, signal },
+              voiceConfig.VOICE_LLM_HEDGE_MODEL,
+              'groq',
+            ),
+          {
+            delayMs: voiceConfig.VOICE_LLM_HEDGE_DELAY_MS,
+            timeoutMs: voiceConfig.VOICE_LLM_HEDGE_TIMEOUT_MS,
+            startBackupImmediately: primaryCircuitOpen,
+            signal: opts.signal,
+            onWinner: (winner) => {
+              recordProviderSuccess(winner as LlmProvider);
+              voiceLlmHedgeTotal.inc({ winner });
+            },
+            onFailure: (failedProvider, _error, statusCode) => {
+              recordProviderFailure(failedProvider as LlmProvider);
+              if (statusCode !== undefined) {
+                recordLlmHttpError(failedProvider as LlmProvider, statusCode);
+              }
+            },
+            onTimeout: () => voiceLlmHedgeTotal.inc({ winner: 'timeout' }),
+          },
+        );
+      }
+
+      const response = await this.fetchProviderStreaming(
+        messages,
+        opts,
+        getVoiceLlmModel(),
+        provider,
+      );
       if (response.ok) {
         recordProviderSuccess(provider);
         return { response, provider };
       }
-      recordProviderFailure(provider);
+      if (!hedgeEnabled) recordProviderFailure(provider);
       recordLlmHttpError(provider, response.status);
       return { response, provider };
     } catch (err) {
@@ -1320,6 +1376,7 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
     model: string,
+    provider: LlmProvider = getVoiceLlmProvider(),
   ): Promise<Response> {
     const body = {
       model,
@@ -1333,7 +1390,7 @@ export class CallSessionManager {
       stream_options: { include_usage: true },
     };
 
-    const { baseUrl, apiKey } = getVoiceLlmEndpoint();
+    const { baseUrl, apiKey } = getVoiceLlmEndpoint(provider);
     return fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -1389,6 +1446,7 @@ export class CallSessionManager {
       return plan ? { status: 'valid', plan, durationMs: 0 } : { status: 'invalid', durationMs: 0 };
     };
     const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
+    let firstContentTokenNotified = false;
     const shadowContext = options.turnPlanShadowContext
       ? buildTurnPlanShadowInstruction(options.turnPlanShadowContext)
       : undefined;
@@ -1406,7 +1464,7 @@ export class CallSessionManager {
           ? [buildTurnPlanShadowTool()]
           : []),
       ];
-      const { response, provider: providerUsed } = await this.fetchLlmStreaming(messages, {
+      const { response, provider: providerUsed } = await this.fetchLlmStreaming(session, messages, {
         tools: tools.length ? tools : undefined,
         maxTokens: options.maxTokens ?? 200,
         temperature: options.temperature ?? 0.7,
@@ -1434,16 +1492,22 @@ export class CallSessionManager {
       let reportedOutputTokens: number | undefined;
       let usageReported = false;
       const usageProvider: LlmProvider = providerUsed;
+      const phrasePromises: Promise<void>[] = [];
+      const enqueuePhrase = (phrase: string) => {
+        phrasesYielded = true;
+        phrasePromises.push(
+          Promise.resolve(onPhrase(phrase)).catch((err) => {
+            logger.error({ err }, 'onPhrase failed in LLM stream');
+          }),
+        );
+      };
       const emitCompletePhrases = () => {
         let match: RegExpMatchArray | null;
         while ((match = sentenceBuffer.match(/^([\s\S]+?(?:\?|[.!](?=\s|$)))\s*/))) {
           const phrase = match[1].trim();
           sentenceBuffer = sentenceBuffer.slice(match[0].length);
           if (!phrase) continue;
-          phrasesYielded = true;
-          Promise.resolve(onPhrase(phrase)).catch((err) =>
-            logger.error({ err }, 'onPhrase failed in LLM stream'),
-          );
+          enqueuePhrase(phrase);
           if (phrase.endsWith('?')) {
             questionReached = true;
             fullText = fullText.slice(0, fullText.indexOf('?') + 1);
@@ -1533,6 +1597,11 @@ export class CallSessionManager {
               const token = delta.content ?? '';
               if (!token || questionReached) continue;
 
+              if (!firstContentTokenNotified) {
+                firstContentTokenNotified = true;
+                options.onFirstToken?.();
+              }
+
               markVoiceTurnLlmFirstToken(session, options.telemetryTurnId);
 
               sentenceBuffer += token;
@@ -1599,6 +1668,7 @@ export class CallSessionManager {
       } finally {
         reader.releaseLock();
       }
+      await Promise.all(phrasePromises);
 
       const estimatedStreamOutputTokens =
         estimateTokenCount(fullText) +

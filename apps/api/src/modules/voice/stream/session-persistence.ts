@@ -31,6 +31,7 @@ export async function persistSttCall(session: CallSession): Promise<void> {
       update: {
         durationSec,
         ...(transcript ? { transcript } : {}),
+        ...(session.sttProviderUsed ? { sttProvider: session.sttProviderUsed } : {}),
         carrier: 'telnyx',
       },
       create: {
@@ -38,6 +39,7 @@ export async function persistSttCall(session: CallSession): Promise<void> {
         restaurantId: session.restaurantId,
         durationSec,
         transcript,
+        ...(session.sttProviderUsed ? { sttProvider: session.sttProviderUsed } : {}),
         carrier: 'telnyx',
       },
     });
@@ -91,7 +93,11 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
     }
 
     const callProviders = {
-      sttProvider: callRecord.sttProvider ?? session.sttModel ?? 'elevenlabs-scribe-v2-realtime',
+      sttProvider:
+        session.sttProviderUsed ??
+        callRecord.sttProvider ??
+        session.sttModel ??
+        'elevenlabs-scribe-v2-realtime',
       // Le stream courant est toujours routé par le provider canonique. Ne
       // recopions pas une valeur éventuellement fournie par un ancien webhook
       // dans la télémétrie de cette session.

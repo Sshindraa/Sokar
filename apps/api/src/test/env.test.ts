@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CEREBRAS_BASE_URL, GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
-import { VoiceConfigSchema, optionalUrlSchema } from '../env';
+import { VoiceConfigSchema, VoiceDeepgramConfigSchema, optionalUrlSchema } from '../env';
 
 /**
  * Incident du 2026-09-22 : `pm2` transmet à ses process l'environnement du
@@ -37,6 +37,13 @@ describe('VoiceConfigSchema', () => {
     expect(config).toMatchObject({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
+      VOICE_LLM_HEDGE_DELAY_MS: 1000,
+      VOICE_LLM_HEDGE_TIMEOUT_MS: 3000,
+      VOICE_LLM_HEDGE_MODEL: 'qwen/qwen3.8-27b',
+      VOICE_LLM_FILLER_DELAY_MS: 1200,
+      VOICE_DEEPGRAM_ENDPOINTING_MS: 300,
+      VOICE_DEEPGRAM_UTTERANCE_END_MS: 1000,
+      VOICE_DEEPGRAM_SPELLING_SILENCE_MS: 800,
       GROQ_BASE_URL,
     });
     expect(config.GROQ_API_KEY).toBeUndefined();
@@ -50,7 +57,7 @@ describe('VoiceConfigSchema', () => {
       GROQ_API_KEY: 'gsk-key',
     });
 
-    expect(config).toEqual({
+    expect(config).toMatchObject({
       VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
       VOICE_LLM_TIMEOUT_MS: 1250,
       VOICE_LLM_PROVIDER: 'groq',
@@ -89,7 +96,7 @@ describe('VoiceConfigSchema', () => {
       OPENROUTER_API_KEY: 'or-key',
     });
 
-    expect(config).toEqual({
+    expect(config).toMatchObject({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
       VOICE_LLM_PROVIDER: 'groq',
@@ -108,5 +115,17 @@ describe('VoiceConfigSchema', () => {
     const result = VoiceConfigSchema.safeParse({ GROQ_BASE_URL: 'not-a-url' });
 
     expect(result.success).toBe(false);
+  });
+
+  it.each(['30', '2001'])('rejette endpointing Deepgram invalide (%s)', (value) => {
+    expect(
+      VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_ENDPOINTING_MS: value }).success,
+    ).toBe(false);
+  });
+
+  it('rejette un silence d’épellation hors limites', () => {
+    expect(
+      VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_SPELLING_SILENCE_MS: '300' }).success,
+    ).toBe(false);
   });
 });
