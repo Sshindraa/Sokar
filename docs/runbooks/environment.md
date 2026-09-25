@@ -198,6 +198,48 @@ tokens d'entrée par minute, soit environ un tour LLM par minute.
 hors production. Elle n'est pas lue par le pipeline vocal et ne constitue pas
 un mécanisme de repli.
 
+### Latence Deepgram et secours LLM
+
+Les seuils Deepgram ne sont utilisés que par les sockets Deepgram ; ils ne
+changent pas les paramètres de Scribe. `speech_final` déclenche le commit
+immédiat, et `UtteranceEnd` reste un filet de sécurité. Valeurs validées au
+démarrage par Zod :
+
+```dotenv
+VOICE_DEEPGRAM_ENDPOINTING_MS="300"
+VOICE_DEEPGRAM_UTTERANCE_END_MS="1000"
+VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
+```
+
+L'épellation attend 800 ms de silence total, en tenant compte de
+`endpointing`; elle ne cumule pas un hold hybride. Les valeurs autorisées sont
+respectivement 100–1000 ms, 500–3000 ms et 400–2000 ms.
+
+Le hedge Cerebras → Groq et le filler différé ne sont actifs que pour une
+session Deepgram + Dialogue V2. Le provider global reste inchangé pour les
+autres restaurants. Le hedge choisit le premier delta de texte, démarre Groq
+après 1000 ms et abandonne les deux requêtes si aucun delta n'arrive sous
+3000 ms. Un timeout mène à une relance parlée adaptée au champ attendu.
+Le modèle Groq mesuré `qwen/qwen3.8-27b` est actuellement classé preview par
+Groq ; conserver l'allowlist étroite et vérifier sa disponibilité avant toute
+extension du pilote.
+
+```dotenv
+VOICE_LLM_HEDGE_DELAY_MS="1000"
+VOICE_LLM_HEDGE_TIMEOUT_MS="3000"
+VOICE_LLM_HEDGE_MODEL="qwen/qwen3.8-27b"
+VOICE_LLM_FILLER_DELAY_MS="1200"
+```
+
+Le délai hedge accepte 100–5000 ms, le timeout 500–10000 ms et le filler
+100–5000 ms. Le modèle de secours est une chaîne non secrète. `GROQ_API_KEY`
+reste la clé déjà gérée par le provider Groq ; aucune clé supplémentaire ni
+aucune valeur secrète ne doit être copiée dans cette configuration.
+
+Dialogue V2 active aussi la suppression d'écho par texte, valable pour Scribe
+et Deepgram. Le texte récent de l'agent est conservé uniquement en mémoire,
+sans être ajouté aux logs ni à la télémétrie.
+
 **PM2 et `.env` :** l'API lit `.env` via `node --env-file`, qui ne remplace pas
 une variable déjà présente dans l'environnement du process. Si PM2 a été lancé
 depuis un shell où ces variables étaient exportées, il les garde dans son
