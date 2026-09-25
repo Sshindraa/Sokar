@@ -247,7 +247,11 @@ describe('reprise de final STT', () => {
       telnyxWs: { readyState: WebSocket.OPEN },
       restaurantName: 'Test',
       sttProviderUsed: 'deepgram-nova-3',
-      voiceFeatureSnapshot: { sttProvider: 'deepgram', dialogueListeningV2Enabled: true },
+      voiceFeatureSnapshot: {
+        sttProvider: 'deepgram',
+        dialogueListeningV2Enabled: true,
+        deepgramModel: 'nova-3',
+      },
       conversation: createConversationState(),
       history: [],
       transcript: '',

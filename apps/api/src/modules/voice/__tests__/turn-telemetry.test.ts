@@ -23,6 +23,13 @@ type LoggedVoiceTurn = {
   phase?: string;
   sequence?: number;
   endOfSpeechToSttFinalMs?: number;
+  finalTrigger?: string;
+  providerResultEndMs?: number;
+  providerLastWordEndMs?: number;
+  receivedAtAudioMs?: number;
+  audioClockDriftMs?: number;
+  firstPartialAt?: number;
+  afterBargeIn?: boolean;
 };
 
 type LoggedPayload = {
@@ -226,6 +233,13 @@ describe('voice turn telemetry', () => {
           speechEndAt: startedAt + 200,
           sttFinalAt: startedAt + 300,
           turnDispatchedAt: startedAt + 450,
+          finalTrigger: 'speech_final',
+          providerResultEndMs: 250,
+          providerLastWordEndMs: 200,
+          receivedAtAudioMs: 300,
+          audioClockDriftMs: 50,
+          firstPartialAt: 120,
+          afterBargeIn: true,
         });
         vi.advanceTimersByTime(400);
         markVoiceTurnAudioSent(session, { isFiller: false });
@@ -241,7 +255,16 @@ describe('voice turn telemetry', () => {
           .mock.calls.map(([payload]) => payload as LoggedPayload)
           .find(({ voiceTurn }) => voiceTurn?.event === 'stt_final');
         const persistedTurn = snapshotVoiceTurnTelemetry(session).at(-1);
-        expect(sttFinalLog?.voiceTurn?.endOfSpeechToSttFinalMs).toBe(100);
+        expect(sttFinalLog?.voiceTurn).toMatchObject({
+          endOfSpeechToSttFinalMs: 100,
+          finalTrigger: 'speech_final',
+          providerResultEndMs: 250,
+          providerLastWordEndMs: 200,
+          receivedAtAudioMs: 300,
+          audioClockDriftMs: 50,
+          firstPartialAt: 120,
+          afterBargeIn: true,
+        });
         expect(persistedTurn?.latencyTrace?.endOfSpeechToSttFinalMs).toBe(
           sttFinalLog?.voiceTurn?.endOfSpeechToSttFinalMs,
         );

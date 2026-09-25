@@ -115,6 +115,257 @@ export const NB_CORPUS: BenchClip[] = [
   ),
 ];
 
+function info(category: CriticalCategory, value: string, label: string): CriticalInfo {
+  return { category, value, label };
+}
+
+function businessTerm(value: string): CriticalInfo {
+  return info('noms', value, 'terme restaurant');
+}
+
+/** A3 additions keep the historical 31-clip corpus stable for earlier reports. */
+export const NB_A3_RESTAURANT_CLIPS: BenchClip[] = [
+  {
+    id: 'r01',
+    text: 'Je voudrais une table en terrasse au Comptoir de Saint-Eustache samedi soir pour deux personnes.',
+    critical: [
+      businessTerm('terrasse'),
+      businessTerm('comptoir de saint eustache'),
+      info('dates', 'samedi', 'jour'),
+      info('chiffres', '2', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r02',
+    text: 'Réservez la salle du fond vendredi à 20 heures pour quatre personnes.',
+    critical: [
+      businessTerm('salle du fond'),
+      info('dates', 'vendredi', 'jour'),
+      info('heures', '20:00', 'heure'),
+      info('chiffres', '4', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r03',
+    text: 'Je voudrais goûter le bœuf bourguignon jeudi à 19h45, une table pour deux.',
+    critical: [
+      businessTerm('boeuf bourguignon'),
+      info('dates', 'jeudi', 'jour'),
+      info('heures', '19:45', 'heure'),
+      info('chiffres', '2', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r04',
+    text: "Est-ce qu'il reste une table pour trois samedi à 20 heures avec le tartare de bœuf ?",
+    critical: [
+      businessTerm('tartare de boeuf'),
+      info('chiffres', '3', 'nombre de couverts'),
+      info('dates', 'samedi', 'jour'),
+      info('heures', '20:00', 'heure'),
+    ],
+  },
+  {
+    id: 'r05',
+    text: 'Au Comptoir de Saint-Eustache, je réserve pour six personnes vendredi à 20h30.',
+    critical: [
+      businessTerm('comptoir de saint eustache'),
+      info('chiffres', '6', 'nombre de couverts'),
+      info('dates', 'vendredi', 'jour'),
+      info('heures', '20:30', 'heure'),
+    ],
+  },
+  {
+    id: 'r06',
+    text: "Une table en terrasse à 19 heures pour deux, avec un magret de canard, s'il vous plaît.",
+    critical: [
+      businessTerm('terrasse'),
+      businessTerm('magret de canard'),
+      info('chiffres', '2', 'nombre de couverts'),
+      info('heures', '19:00', 'heure'),
+    ],
+  },
+  {
+    id: 'r07',
+    text: 'Je voudrais réserver pour cinq personnes à 21 heures au Comptoir de Saint-Eustache vendredi.',
+    critical: [
+      businessTerm('comptoir de saint eustache'),
+      info('chiffres', '5', 'nombre de couverts'),
+      info('heures', '21:00', 'heure'),
+      info('dates', 'vendredi', 'jour'),
+    ],
+  },
+  {
+    id: 'r08',
+    text: 'Mercredi à 20 heures, quatre personnes en salle du fond, et un œuf mayonnaise à partager.',
+    critical: [
+      businessTerm('salle du fond'),
+      businessTerm('oeuf mayonnaise'),
+      info('dates', 'mercredi', 'jour'),
+      info('heures', '20:00', 'heure'),
+      info('chiffres', '4', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r09',
+    text: 'Demain à 19h30, une table pour trois en terrasse et un Paris-Brest à partager.',
+    critical: [
+      businessTerm('terrasse'),
+      businessTerm('paris brest'),
+      info('dates', 'demain', 'jour'),
+      info('heures', '19:30', 'heure'),
+      info('chiffres', '3', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r10',
+    text: 'Pour samedi soir, réservez le menu du marché au Comptoir de Saint-Eustache pour huit personnes.',
+    critical: [
+      businessTerm('menu du marche'),
+      businessTerm('comptoir de saint eustache'),
+      info('chiffres', '8', 'nombre de couverts'),
+      info('dates', 'samedi', 'jour'),
+    ],
+  },
+  {
+    id: 'r11',
+    text: 'Je voudrais privatiser la salle du fond vendredi soir pour douze personnes à 20 heures.',
+    critical: [
+      businessTerm('privatiser'),
+      businessTerm('salle du fond'),
+      info('dates', 'vendredi', 'jour'),
+      info('chiffres', '12', 'nombre de couverts'),
+      info('heures', '20:00', 'heure'),
+    ],
+  },
+  {
+    id: 'r12',
+    text: 'Dans le quartier Montorgueil, une table pour quatre est-elle libre samedi à 14h30 ?',
+    critical: [
+      businessTerm('montorgueil'),
+      info('chiffres', '4', 'nombre de couverts'),
+      info('dates', 'samedi', 'jour'),
+      info('heures', '14:30', 'heure'),
+    ],
+  },
+  {
+    id: 'r13',
+    text: 'Nous serons deux dans ce bistrot parisien jeudi à midi, avec une île flottante au dessert.',
+    critical: [
+      businessTerm('bistrot parisien'),
+      businessTerm('ile flottante'),
+      info('chiffres', '2', 'nombre de couverts'),
+      info('dates', 'jeudi', 'jour'),
+      info('heures', '12:00', 'heure'),
+    ],
+  },
+  {
+    id: 'r14',
+    text: 'Pouvez-vous réserver en terrasse au Comptoir de Saint-Eustache pour trois demain à 19 heures ?',
+    critical: [
+      businessTerm('terrasse'),
+      businessTerm('comptoir de saint eustache'),
+      info('chiffres', '3', 'nombre de couverts'),
+      info('dates', 'demain', 'jour'),
+      info('heures', '19:00', 'heure'),
+    ],
+  },
+  {
+    id: 'r15',
+    text: 'Je souhaite une table pour cinq vendredi à 20h30 et je prendrai le tartare de bœuf.',
+    critical: [
+      businessTerm('tartare de boeuf'),
+      info('chiffres', '5', 'nombre de couverts'),
+      info('dates', 'vendredi', 'jour'),
+      info('heures', '20:30', 'heure'),
+    ],
+  },
+  {
+    id: 'r16',
+    text: 'Samedi à 21 heures, réservez pour six personnes, nous prendrons le magret de canard.',
+    critical: [
+      businessTerm('magret de canard'),
+      info('dates', 'samedi', 'jour'),
+      info('heures', '21:00', 'heure'),
+      info('chiffres', '6', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r17',
+    text: 'Une table pour deux mercredi à 12h15, avec un Paris-Brest, dans le quartier des Halles.',
+    critical: [
+      businessTerm('paris brest'),
+      businessTerm('halles'),
+      info('chiffres', '2', 'nombre de couverts'),
+      info('dates', 'mercredi', 'jour'),
+      info('heures', '12:15', 'heure'),
+    ],
+  },
+  {
+    id: 'r18',
+    text: 'Est-il possible de réserver pour quatre lundi à 19h45, côté salle du fond, au Comptoir de Saint-Eustache ?',
+    critical: [
+      businessTerm('salle du fond'),
+      businessTerm('comptoir de saint eustache'),
+      info('chiffres', '4', 'nombre de couverts'),
+      info('dates', 'lundi', 'jour'),
+      info('heures', '19:45', 'heure'),
+    ],
+  },
+  {
+    id: 'r19',
+    text: 'Je souhaite déjeuner vendredi à 14h30 pour trois et goûter le bœuf bourguignon.',
+    critical: [
+      businessTerm('boeuf bourguignon'),
+      info('dates', 'vendredi', 'jour'),
+      info('heures', '14:30', 'heure'),
+      info('chiffres', '3', 'nombre de couverts'),
+    ],
+  },
+  {
+    id: 'r20',
+    text: 'Pour samedi soir à 20 heures, une table en terrasse pour dix et deux œufs mayonnaise.',
+    critical: [
+      businessTerm('terrasse'),
+      businessTerm('oeufs mayonnaise'),
+      info('dates', 'samedi', 'jour'),
+      info('heures', '20:00', 'heure'),
+      info('chiffres', '10', 'nombre de couverts'),
+    ],
+  },
+];
+
+export const NB_A3_CALIBRATION_IDS = new Set([
+  'c01',
+  'c03',
+  'c05',
+  'c07',
+  'c09',
+  'h01',
+  'h03',
+  'h05',
+  'h07',
+  'd01',
+  'd03',
+  'n01',
+  'n03',
+  'n05',
+  't01',
+  't03',
+  'r01',
+  'r02',
+  'r03',
+  'r04',
+  'r05',
+  'r06',
+  'r07',
+  'r08',
+  'r09',
+  'r10',
+]);
+
+export const NB_A3_CORPUS = [...NB_CORPUS, ...NB_A3_RESTAURANT_CLIPS];
+
 /** Voix « premade » ElevenLabs (multilingues), alternance homme/femme. */
 export const ELEVENLABS_BENCH_VOICES = [
   'pNInz6obpgDQGcFmaJgB', // Adam

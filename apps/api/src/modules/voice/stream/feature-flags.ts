@@ -1,6 +1,7 @@
 import type { CallSession } from './types';
 
 export type VoiceSttProvider = 'scribe' | 'deepgram';
+export type VoiceDeepgramModel = 'nova-3' | 'flux-general-multi';
 
 export function parseRestaurantIdList(value: string | undefined): string[] {
   return (value ?? '')
@@ -30,6 +31,17 @@ export function isVoiceFeatureEnabledForRestaurant(
 export interface VoiceFeatureSnapshot {
   dialogueListeningV2Enabled: boolean;
   sttProvider: VoiceSttProvider;
+  deepgramModel: VoiceDeepgramModel;
+  deepgramNumeralsEnabled: boolean;
+  deepgramPunctuateEnabled: boolean;
+  deepgramKeytermsEnabled: boolean;
+}
+
+export function isVoiceDeepgramKeytermsEnabled(
+  restaurantId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return parseRestaurantIdList(env.VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS).includes(restaurantId);
 }
 
 export function resolveVoiceFeatureSnapshot(
@@ -47,6 +59,21 @@ export function resolveVoiceFeatureSnapshot(
     sttProvider: isVoiceFeatureEnabledForRestaurant('deepgramStt', session.restaurantId, env)
       ? 'deepgram'
       : 'scribe',
+    deepgramModel:
+      env.VOICE_DEEPGRAM_MODEL === 'flux-general-multi' &&
+      parseRestaurantIdList(env.VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS).includes(session.restaurantId)
+        ? 'flux-general-multi'
+        : 'nova-3',
+    deepgramNumeralsEnabled: parseRestaurantIdList(
+      env.VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS,
+    ).includes(session.restaurantId)
+      ? env.VOICE_DEEPGRAM_NUMERALS !== 'false'
+      : true,
+    deepgramPunctuateEnabled:
+      parseRestaurantIdList(env.VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS).includes(
+        session.restaurantId,
+      ) && env.VOICE_DEEPGRAM_PUNCTUATE === 'true',
+    deepgramKeytermsEnabled: isVoiceDeepgramKeytermsEnabled(session.restaurantId, env),
   };
   session.voiceFeatureSnapshot = snapshot;
   return snapshot;

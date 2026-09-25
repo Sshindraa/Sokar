@@ -82,7 +82,11 @@ function parseNumberTokens(tokens: string[]): number | null {
 }
 
 function stripAccents(value: string): string {
-  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  return value
+    .replace(/œ/gu, 'oe')
+    .replace(/æ/gu, 'ae')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
 }
 
 /** tokens bruts : minuscules, sans accents, apostrophes et tirets éclatés. */
@@ -228,6 +232,13 @@ export function normalizeTokens(text: string): string[] {
 /** Texte canonique (WER) : tokens normalisés recollés par un espace. */
 export function normalizeText(text: string): string {
   return normalizeTokens(text).join(' ');
+}
+
+/** True when a normalized multi-token value occurs contiguously in a transcript. */
+export function containsNormalizedPhrase(transcript: string, phrase: string): boolean {
+  const normalizedPhrase = normalizeText(phrase);
+  if (!normalizedPhrase) return false;
+  return ` ${normalizeText(transcript)} `.includes(` ${normalizedPhrase} `);
 }
 
 /** Tous les nombres du transcript, dans l'ordre, concaténés (téléphone). */

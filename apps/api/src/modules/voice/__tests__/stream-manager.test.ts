@@ -2225,7 +2225,11 @@ function callFetchLlmStreaming(
   opts: LlmOpts,
   session: CallSession = {
     restaurantId: 'rest-stream-test',
-    voiceFeatureSnapshot: { sttProvider: 'scribe', dialogueListeningV2Enabled: false },
+    voiceFeatureSnapshot: {
+      sttProvider: 'scribe',
+      dialogueListeningV2Enabled: false,
+      deepgramModel: 'nova-3',
+    },
   } as CallSession,
 ): Promise<{ response: Response; provider: string }> {
   return (

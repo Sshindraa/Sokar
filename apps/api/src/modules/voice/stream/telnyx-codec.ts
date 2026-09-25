@@ -88,9 +88,19 @@ export function telnyxBytesPerMs(codec: TelnyxCodec): number {
  * valeur inattendue retombe sur PCMA plutôt que d'envoyer un format inconnu à
  * Telnyx pendant un appel.
  */
-export function getTelnyxCodec(): TelnyxStreamCodec {
+export function getTelnyxCodec(restaurantId?: string): TelnyxStreamCodec {
   const raw = process.env.VOICE_TELNYX_CODEC?.trim().toUpperCase();
-  return raw === 'L16' ? 'L16' : 'PCMA';
+  if (raw !== 'L16') return 'PCMA';
+
+  const restaurantIds = (process.env.VOICE_TELNYX_CODEC_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!restaurantId || !restaurantIds.includes(restaurantId)) {
+    return 'PCMA';
+  }
+
+  return 'L16';
 }
 
 export const telnyxCodecSchema = z.enum(TELNYX_STREAM_CODECS).default('PCMA');

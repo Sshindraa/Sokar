@@ -110,6 +110,14 @@ export const VoiceDeepgramConfigSchema = z.object({
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(300),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
+  VOICE_DEEPGRAM_MODEL: z.enum(['nova-3', 'flux-general-multi']).default('nova-3'),
+  VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS: z.string().optional(),
+  VOICE_DEEPGRAM_NUMERALS: z.enum(['true', 'false']).default('true'),
+  VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS: z.string().optional(),
+  VOICE_DEEPGRAM_PUNCTUATE: z.enum(['true', 'false']).default('false'),
+  VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS: z.string().optional(),
+  VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: z.string().optional(),
+  VOICE_DEEPGRAM_MIP_OPT_OUT: z.enum(['true', 'false']).default('true'),
 });
 
 /** Configuration voice issue des variables d'environnement validées. */
@@ -250,6 +258,8 @@ const EnvSchema = z
     // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
     // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
     VOICE_TELNYX_CODEC: telnyxCodecSchema,
+    // Allowlist optionnelle pour limiter le mode L16 aux restaurants ciblés.
+    VOICE_TELNYX_CODEC_RESTAURANT_IDS: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     // Stripe Billing — recurring base prices plus Multi-site establishment add-ons.

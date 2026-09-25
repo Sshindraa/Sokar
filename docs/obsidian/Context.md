@@ -13,8 +13,12 @@
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
+- [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
+- [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 
 ## Décisions récentes
+
+2026-09-25 — [voice, deepgram, keyterms] **Keyterms par restaurant en opt-in** — Les termes métier générés (budget estimé dédié de 200 tokens) s'activent par allowlist. Hors allowlist, conserver les keyterms historiques pour préserver le comportement ; aucune donnée client/personnel ou note libre n'est chargée. `VOICE_DEEPGRAM_MIP_OPT_OUT=true` devient le seul changement Deepgram par défaut.
 
 2026-09-24 — [reservations, voice, prisma] **Seuil de groupe unifié à 7** — La valeur par défaut des réservations vocales et agentiques est 7, portée par une constante partagée et le défaut Prisma. La migration ne change que le défaut des nouvelles lignes ; les lignes existantes conservent leur valeur.
 
