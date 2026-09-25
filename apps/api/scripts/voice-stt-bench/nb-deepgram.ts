@@ -9,6 +9,7 @@
  *   BENCH_DG_MODEL=flux   : /v2/listen, flux-general-multi + language_hint=fr ;
  *                           fin de tour détectée par Flux (ForceEndTurn en secours).
  *
+ * BENCH_DG_FORMAT=smart|numerals|none compare le formatage sur les mêmes clips.
  * Clé : `DEEPGRAM_BENCH_API_KEY` (jamais affichée). Sortie : JSON `BenchRecord`.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -29,8 +30,12 @@ const AUDIO_DIR = join(__dirname, '.data', 'audio16');
 const CHUNK_MS = 80;
 const BYTES_PER_MS = 8; // A-law 8 kHz
 const TRAILING_SILENCE_MS = 1500;
+const MAX_AUDIO_SECONDS = 660;
+const NOVA_3_STREAMING_USD_PER_MINUTE = 0.0048;
+const KEYTERM_USD_PER_MINUTE = 0.0013;
 
 type Model = 'nova-3' | 'flux';
+type FormatMode = 'smart' | 'numerals' | 'none';
 
 function cachedSay16k(text: string, index: number): Buffer {
   const key = createHash('sha256').update(`${index}|${text}`).digest('hex').slice(0, 16);
@@ -55,7 +60,7 @@ function pcm16ToAlaw(pcm: Buffer): Buffer {
   return out;
 }
 
-function deepgramUrl(model: Model): string {
+function deepgramUrl(model: Model, formatMode: FormatMode): string {
   const params = new URLSearchParams({ encoding: 'alaw', sample_rate: '8000' });
   if (model === 'flux') {
     params.set('model', 'flux-general-multi');
@@ -65,18 +70,23 @@ function deepgramUrl(model: Model): string {
   }
   params.set('model', 'nova-3');
   params.set('language', 'fr');
-  params.set('smart_format', 'true');
+  params.set('smart_format', String(formatMode === 'smart'));
+  params.set('numerals', String(formatMode === 'numerals'));
   params.set('punctuate', 'true');
-  params.append('keyterm', 'Chez Sokar');
+  const { buildSttKeyterms } = require('../../dist/modules/voice/stream/stt-bridge.js') as {
+    buildSttKeyterms: (restaurantName?: string) => string[];
+  };
+  for (const keyterm of buildSttKeyterms('Chez Sokar')) params.append('keyterm', keyterm);
   return `wss://api.deepgram.com/v1/listen?${params}`;
 }
 
 async function streamToDeepgram(
   audio: Buffer,
   model: Model,
+  formatMode: FormatMode,
   apiKey: string,
 ): Promise<{ transcript: string; latencyMs: number; error: string | null }> {
-  const ws = new WebSocket(deepgramUrl(model), {
+  const ws = new WebSocket(deepgramUrl(model, formatMode), {
     headers: { Authorization: `Token ${apiKey}` },
   });
   const finals: string[] = [];
@@ -174,6 +184,11 @@ async function main(): Promise<void> {
   const apiKey = process.env.DEEPGRAM_BENCH_API_KEY?.trim();
   if (!apiKey) throw new Error('DEEPGRAM_BENCH_API_KEY manquant');
   const model = (process.env.BENCH_DG_MODEL ?? 'nova-3') as Model;
+  if (!['nova-3', 'flux'].includes(model)) throw new Error('BENCH_DG_MODEL invalide');
+  const formatMode = (process.env.BENCH_DG_FORMAT ?? 'smart') as FormatMode;
+  if (!['smart', 'numerals', 'none'].includes(formatMode)) {
+    throw new Error('BENCH_DG_FORMAT doit valoir smart, numerals ou none');
+  }
   const limit = Number(process.env.BENCH_LIMIT ?? NB_CORPUS.length);
   const concurrency = Number(process.env.BENCH_CONCURRENCY ?? 20);
   const noiseIndex = Number(process.env.BENCH_NOISE_INDEX ?? 0);
@@ -208,6 +223,7 @@ async function main(): Promise<void> {
           text: clip.text,
           category: clip.critical[0]?.category ?? 'n/a',
           condition: 'B',
+          formatMode,
           variant: v.variant,
           repeat: v.variant === 'noisy' ? noiseIndex : 0,
           noiseSeed: v.seed,
@@ -220,10 +236,29 @@ async function main(): Promise<void> {
   }
 
   const speechSec = tasks.reduce((s, t) => s + Number(t.record.audioMs) / 1000, 0);
+  const totalAudioSec = speechSec + (tasks.length * TRAILING_SILENCE_MS) / 1000;
+  const maxAudioSec = Number(process.env.BENCH_DG_MAX_AUDIO_SECONDS ?? MAX_AUDIO_SECONDS);
+  if (!Number.isFinite(maxAudioSec) || maxAudioSec <= 0) {
+    throw new Error('BENCH_DG_MAX_AUDIO_SECONDS doit être un nombre positif');
+  }
+  if (totalAudioSec > maxAudioSec) {
+    throw new Error(
+      `Budget dépassé : ${Math.ceil(totalAudioSec)} s estimées, plafond ${maxAudioSec} s`,
+    );
+  }
+  const keytermMinutes = totalAudioSec / 60;
+  const estimatedCost = keytermMinutes * (NOVA_3_STREAMING_USD_PER_MINUTE + KEYTERM_USD_PER_MINUTE);
   process.stderr.write(
-    `Deepgram ${model} : ${tasks.length} sessions, ~${Math.round(speechSec)} s de parole ` +
-      `(+${TRAILING_SILENCE_MS / 1000} s de silence par session).\n`,
+    `Estimation avant envoi : ${model}/${formatMode}, ${tasks.length} sessions, ` +
+      `${speechSec.toFixed(1)} s de parole + ${(tasks.length * TRAILING_SILENCE_MS) / 1000} s ` +
+      `de silence = ${totalAudioSec.toFixed(1)} s au total. ` +
+      `Coût indicatif Nova-3 + keyterms : $${estimatedCost.toFixed(4)} USD ` +
+      `(tarifs PAYG affichés, hors taxes/arrondis).\n`,
   );
+  if (tasks.length > 8 && process.env.BENCH_CONFIRM !== '1') {
+    throw new Error('BENCH_CONFIRM=1 obligatoire pour plus de 8 sessions');
+  }
+  if (process.env.BENCH_DG_DRY_RUN === '1') return;
 
   const results: Array<Record<string, unknown>> = new Array(tasks.length);
   let next = 0;
@@ -233,7 +268,7 @@ async function main(): Promise<void> {
     while (next < tasks.length && !creditError) {
       const i = next++;
       const t = tasks[i];
-      const r = await streamToDeepgram(t.audio, model, apiKey!);
+      const r = await streamToDeepgram(t.audio, model, formatMode, apiKey!);
       if (r.error && /402|credit|balance|quota|insufficient/i.test(r.error)) creditError = true;
       results[i] = {
         ...t.record,

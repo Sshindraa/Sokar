@@ -179,6 +179,30 @@ pas de TTS. `BENCH_CONFIRM=1` est obligatoire au-delà de 8 clips.
 16 kHz est mis en cache dans `.data/audio16/` : les quatre conditions relisent
 le même signal.
 
+### Comparatif Deepgram Nova-3 (C2)
+
+Les trois réglages sont scorés sur les mêmes 31 clips propres et bruités (seed 0), condition
+B, A-law 8 kHz et keyterms de production. Le runner affiche durée et coût estimés avant le
+premier envoi. Le plafond par défaut est 660 s ; `BENCH_CONFIRM=1` est obligatoire au-delà de
+8 sessions. `DEEPGRAM_BENCH_API_KEY` est l'unique clé lue par ce script.
+
+```bash
+cd apps/api
+BENCH_CONFIRM=1 BENCH_LIMIT=31 BENCH_CONCURRENCY=8 BENCH_DG_FORMAT=smart \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-deepgram.ts \
+  > scripts/voice-stt-bench/.data/nb-deepgram-smart.json
+BENCH_CONFIRM=1 BENCH_LIMIT=31 BENCH_CONCURRENCY=8 BENCH_DG_FORMAT=numerals \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-deepgram.ts \
+  > scripts/voice-stt-bench/.data/nb-deepgram-numerals.json
+BENCH_CONFIRM=1 BENCH_LIMIT=31 BENCH_CONCURRENCY=8 BENCH_DG_FORMAT=none \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-deepgram.ts \
+  > scripts/voice-stt-bench/.data/nb-deepgram-none.json
+pnpm exec tsx scripts/voice-stt-bench/nb-deepgram-score.ts \
+  scripts/voice-stt-bench/.data/nb-deepgram-smart.json \
+  scripts/voice-stt-bench/.data/nb-deepgram-numerals.json \
+  scripts/voice-stt-bench/.data/nb-deepgram-none.json
+```
+
 ### Vérification hors ligne (sans crédit)
 
 `nb-mock-scribe.ts` est un faux Scribe Realtime qui reconnaît les clips non
