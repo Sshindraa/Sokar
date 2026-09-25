@@ -51,6 +51,7 @@ function fixture() {
       s.state = 'IDLE';
     }),
     processUtteranceStreaming: vi.fn(),
+    observeTurnPlan: vi.fn(async () => ({ status: 'missing', durationMs: 0 })),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
     handoffToManager: vi

@@ -29,3 +29,6 @@ export const TTS_UNDERFEED_PAUSE_MS = 10;
 
 /** Pause de pacing pour le streaming audio (ms) */
 export const TTS_PACE_PAUSE_MS = TTS_FRAME_DURATION_MS;
+
+/** Compréhension TurnPlan avant réponse : borne courte, le tour attend ce résultat. */
+export const TURN_UNDERSTANDING_TIMEOUT_MS = 1_200;

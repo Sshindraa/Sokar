@@ -281,3 +281,27 @@ export function applyTurnPlanAuthority(
     legacyAssistantInteraction,
   };
 }
+
+/**
+ * Acte de parole issu d'un plan compris avant la réponse. `unclear` garde
+ * l'acte lexical : le modèle n'a rien tranché.
+ */
+export function speechActFromUnderstanding(
+  plan: TurnPlan,
+  lexicalAct: VoiceSpeechAct,
+): VoiceSpeechAct {
+  switch (plan.interpretation) {
+    case 'end_call':
+      return 'closing';
+    case 'correction':
+      return 'correction';
+    case 'unclear':
+      return lexicalAct;
+    case 'answer':
+    case 'affirmation':
+    case 'decline':
+    case 'detour_question':
+    case 'new_request':
+      return 'content';
+  }
+}

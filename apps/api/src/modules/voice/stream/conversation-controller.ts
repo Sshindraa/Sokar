@@ -2083,9 +2083,15 @@ export function isSafeVoiceCorrectionReply(
   session: CallSession,
   transcript: string,
   reply: string,
+  options: { requireQuestion?: boolean } = {},
 ): boolean {
-  if (!finalAssistantQuestion(reply)) return false;
   const contradiction = findVoiceSlotContradictions(session, transcript)[0];
+  // Une valeur contredite doit toujours être clarifiée par une question. Sans
+  // contradiction, `requireQuestion: false` laisse passer une réponse du modèle
+  // qui n'en pose pas (clôture, simple accusé de réception).
+  if (!finalAssistantQuestion(reply)) {
+    return options.requireQuestion === false && !contradiction;
+  }
   if (!contradiction) return true;
   const normalizedReply = normalizeTranscript(reply);
   const tokensFor = (value: string | number): string[] => {

@@ -14,6 +14,7 @@
 import { WebSocket } from 'ws';
 import type { SttEvent, CallSession, DebugSpeechEntry } from './types';
 import type { CallSessionManager } from './manager';
+import { TURN_UNDERSTANDING_TIMEOUT_MS } from './constants';
 import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import {
@@ -78,6 +79,7 @@ import {
   hasDeterministicTurnProgress,
   hasTurnFactProgress,
   isTurnPlanAuthorityEnabled,
+  speechActFromUnderstanding,
 } from './turn-plan-authority';
 import {
   voiceLanguageLockedTotal,
@@ -1000,6 +1002,22 @@ async function processTranscript(
   }
 }
 
+/** Même réponse, à la casse et à la ponctuation près. */
+function isSameAssistantReply(reply: string, previous: string | null): boolean {
+  if (!previous || !reply.trim()) return false;
+  return normalizeTranscriptForDedupe(reply) === normalizeTranscriptForDedupe(previous);
+}
+
+function lastAssistantMessageBefore(session: CallSession): string | null {
+  for (let index = session.history.length - 1; index >= 0; index--) {
+    const message = session.history[index];
+    if (message.role === 'assistant' && typeof message.content === 'string' && message.content) {
+      return message.content;
+    }
+  }
+  return null;
+}
+
 /**
  * Version streaming : reçoit les phrases du LLM au fur et à mesure
  * et lance le TTS immédiatement sans attendre la réponse complète.
@@ -1034,6 +1052,7 @@ export async function processTranscriptStreaming(
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;
   const lastAssistantQuestionBeforeTurn = session.conversation.lastAssistantQuestion;
+  const previousAssistantReply = lastAssistantMessageBefore(session);
   const interactionBeforeTurn = getActivePendingInteraction(session);
   const turnPlanContext: TurnPlanContext = {
     transcript,
@@ -1085,7 +1104,41 @@ export async function processTranscriptStreaming(
   const livenessResponse = deterministicLanguage
     ? buildLivenessResponse(session, transcript)
     : null;
-  const classifiedAct = classifyVoiceSpeechActInContext(session, transcript);
+  const lexicalAct = classifyVoiceSpeechActInContext(session, transcript);
+  const turnPlanAuthorityEnabled = isTurnPlanAuthorityEnabled(session.restaurantId);
+  // Canary TurnPlan : un tour que les règles lexicales jugent ambigu (« non… »,
+  // clôture, réponse à l'offre gérant/message) est d'abord compris par le
+  // modèle. Sans plan valide dans le délai, les règles restent le repli.
+  const understanding =
+    turnPlanAuthorityEnabled &&
+    dialogueV2Enabled &&
+    !forceFrenchReprompt &&
+    (lexicalAct === 'correction' ||
+      lexicalAct === 'closing' ||
+      pendingQuestionBeforeTurn === 'humanFallback')
+      ? ((await mgr.observeTurnPlan(session, turnPlanContext, null, session.currentTurn?.id, {
+          lastAssistantMessage: previousAssistantReply,
+          timeoutMs: TURN_UNDERSTANDING_TIMEOUT_MS,
+        })) ?? { status: 'failed' as const, durationMs: 0 })
+      : null;
+  if (!isCurrentResponse()) return;
+  // Un plan peu sûr ne décide pas : raccrocher ou ignorer une correction engage l'appel.
+  const understoodPlan =
+    understanding?.status === 'valid' && understanding.plan.confidence !== 'low'
+      ? understanding.plan
+      : null;
+  if (understanding) {
+    recordVoiceTurnEvent(session, 'turn_understanding', {
+      stage: 'before_reply',
+      status: understanding.status,
+      durationMs: understanding.durationMs,
+      interpretation: understoodPlan?.interpretation ?? null,
+      lexicalAct,
+    });
+  }
+  const classifiedAct = understoodPlan
+    ? speechActFromUnderstanding(understoodPlan, lexicalAct)
+    : lexicalAct;
   const questionTurn = dialogueV2Enabled && isVoiceQuestionTranscript(transcript);
   const stopRequest = dialogueV2Enabled && isVoiceDialogueStopRequest(transcript);
   const slotContradictions = dialogueV2Enabled
@@ -1109,7 +1162,11 @@ export async function processTranscriptStreaming(
     (dialogueLoopDetected || (!directAnswer && session.conversation.stalledTurns > 0));
   const routeToModel =
     dialogueV2Enabled && (questionOrCorrection || !directAnswer || dialogueLoopDetected);
-  const explicitEnd = !forceFrenchReprompt && (stopRequest || isExplicitCallEnd(transcript));
+  const explicitEnd =
+    !forceFrenchReprompt &&
+    (stopRequest ||
+      understoodPlan?.interpretation === 'end_call' ||
+      (!understoodPlan && isExplicitCallEnd(transcript)));
   const speechAct = forceFrenchReprompt
     ? 'content'
     : classifiedAct === 'closing' && !explicitEnd
@@ -1535,7 +1592,6 @@ export async function processTranscriptStreaming(
   // compris par les extracteurs ; sinon le modèle interprète et propose le plan.
   // Après deux relances du modèle sur la même question, le déterministe reprend
   // la main pour reformuler puis proposer un repli humain réel.
-  const turnPlanAuthorityEnabled = isTurnPlanAuthorityEnabled(session.restaurantId);
   const unresolvedContentTurn =
     turnPlanAuthorityEnabled &&
     !explicitEnd &&
@@ -1770,7 +1826,7 @@ export async function processTranscriptStreaming(
   const llmContext = [availabilityContext, dialogueContext].filter(Boolean).join('\n\n');
   const shouldCollectInBandTurnPlan =
     turnPlanShadowEnabled &&
-    !routeToModel &&
+    (!routeToModel || turnPlanAuthorityEnabled) &&
     !explicitEnd &&
     speechAct !== 'liveness' &&
     !isNameCollectionBlocking(session);
@@ -1807,7 +1863,30 @@ export async function processTranscriptStreaming(
   };
   // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
   // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
-  const recordLlmReply = (reply: string) => {
+  const recordLlmReply = async (reply: string) => {
+    if (
+      shouldCollectInBandTurnPlan &&
+      turnPlanAuthorityEnabled &&
+      inBandTurnPlanResult?.status !== 'valid' &&
+      reply.trim()
+    ) {
+      // Qwen n'appelle pas toujours l'outil facultatif pendant qu'il parle. Un
+      // appel séparé, outil imposé, produit le plan pendant que l'audio joue.
+      const inBandStatus = inBandTurnPlanResult?.status ?? 'missing';
+      inBandTurnPlanResult = (await mgr.observeTurnPlan(
+        session,
+        turnPlanContext,
+        reply,
+        telemetryTurnId,
+        { timeoutMs: TURN_UNDERSTANDING_TIMEOUT_MS },
+      )) ?? { status: 'failed', durationMs: 0 };
+      recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'turn_understanding', {
+        stage: 'after_reply',
+        inBandStatus,
+        status: inBandTurnPlanResult.status,
+        durationMs: inBandTurnPlanResult.durationMs,
+      });
+    }
     const plan =
       shouldCollectInBandTurnPlan &&
       turnPlanAuthorityEnabled &&
@@ -2020,11 +2099,25 @@ export async function processTranscriptStreaming(
         Boolean(previousQuestion) &&
         (generatedQuestion === previousQuestion || (dialogueLoopRecovery && sameQuestionTarget));
       const unsafeCorrection =
-        correctionTurn && !isSafeVoiceCorrectionReply(session, transcript, fullResponse);
+        correctionTurn &&
+        !isSafeVoiceCorrectionReply(session, transcript, fullResponse, {
+          // Avec le TurnPlan, seule une valeur contredite impose une question :
+          // une clôture ou une réponse sans nouveau fait reste celle du modèle.
+          requireQuestion: !turnPlanAuthorityEnabled,
+        });
       if (repeatedQuestion)
         fullResponse = buildVoiceDialogueLoopRecovery(session, previousPendingQuestion);
       else if (unsafeCorrection)
         fullResponse = buildVoiceCorrectionClarification(session, transcript);
+      if (
+        turnPlanAuthorityEnabled &&
+        fullResponse !== generatedResponse &&
+        isSameAssistantReply(fullResponse, previousAssistantReply)
+      ) {
+        // Le remplacement répéterait mot pour mot la réponse précédente : la
+        // formulation du modèle est préférable à une boucle.
+        fullResponse = generatedResponse;
+      }
       if (fullResponse !== generatedResponse) {
         const lastMessage = session.history.at(-1);
         if (lastMessage?.role === 'assistant' && lastMessage.content === generatedResponse) {
@@ -2032,6 +2125,9 @@ export async function processTranscriptStreaming(
         }
         session.history.push({ role: 'assistant', content: fullResponse });
       }
+    }
+    if (isSameAssistantReply(fullResponse, previousAssistantReply)) {
+      recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'reply_repeated', {});
     }
     recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_completed', {
       mode: availabilityContext ? 'availability_context' : 'live',
@@ -2072,18 +2168,26 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordLlmReply(fullResponse);
-    if (routeToModel && !questionOrCorrection && !deferUnresolvedToModel) {
-      recordModelTurnStall(
-        session,
-        pendingQuestionBeforeTurn,
-        hasTurnFactProgress(
-          turnPlanBefore,
-          captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
-        ),
-      );
-    }
-    syncSpellingProfile(session);
+    // L'état de fin de tour peut attendre un TurnPlan observé après la réponse :
+    // il se calcule pendant la lecture audio et doit être prêt avant l'écoute.
+    const replyStateRecorded = (async () => {
+      await recordLlmReply(fullResponse);
+      if (!isCurrentResponse()) return;
+      if (routeToModel && !questionOrCorrection && !deferUnresolvedToModel) {
+        recordModelTurnStall(
+          session,
+          pendingQuestionBeforeTurn,
+          hasTurnFactProgress(
+            turnPlanBefore,
+            captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+          ),
+        );
+      }
+      syncSpellingProfile(session);
+    })();
+    // Rejet éventuel observé par l'await ci-dessous ; évite un rejet non géré
+    // si la lecture audio échoue avant.
+    replyStateRecorded.catch(() => undefined);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;
@@ -2113,6 +2217,7 @@ export async function processTranscriptStreaming(
       await Promise.all(ttsPromises);
     }
     writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
+    await replyStateRecorded;
 
     if (isCurrentResponse()) {
       mgr.transition(session, 'LISTENING');

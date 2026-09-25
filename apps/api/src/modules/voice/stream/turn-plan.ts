@@ -7,6 +7,7 @@ export type TurnPlanInterpretation =
   | 'affirmation'
   | 'decline'
   | 'new_request'
+  | 'end_call'
   | 'unclear';
 
 export type TurnPlanSlot = 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone';
@@ -65,6 +66,7 @@ const INTERPRETATIONS = new Set<TurnPlanInterpretation>([
   'affirmation',
   'decline',
   'new_request',
+  'end_call',
   'unclear',
 ]);
 const INTENTS = new Set<TurnPlanIntent>([

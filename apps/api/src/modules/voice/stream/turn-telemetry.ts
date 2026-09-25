@@ -50,6 +50,8 @@ export type VoiceTurnEvent =
   | 'turn_plan_shadow'
   | 'turn_plan_authority'
   | 'turn_plan_deferred'
+  | 'turn_understanding'
+  | 'reply_repeated'
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
@@ -137,6 +139,8 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'turn_plan_shadow':
     case 'turn_plan_authority':
     case 'turn_plan_deferred':
+    case 'turn_understanding':
+    case 'reply_repeated':
     case 'dialogue_guard':
       return 'generation';
     case 'availability_started':
@@ -459,6 +463,9 @@ export function recordVoiceTurnEvent(
           trace.availabilityDurationMs = (trace.availabilityDurationMs ?? 0) + durationMs;
           turn.availabilityStartedAt = undefined;
         }
+        break;
+      case 'reply_repeated':
+        turn.loopDetected = true;
         break;
       case 'dialogue_guard': {
         const level = fields.level;
