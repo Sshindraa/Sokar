@@ -8,7 +8,17 @@ import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { describeTranscript } from './pii-redact';
-import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
+import {
+  voiceProviderErrorsTotal,
+  voiceSttAudioMessagesTotal,
+  voiceSttChunkBytes,
+} from '../../../shared/observability/metrics';
+import {
+  getSttChunkMs,
+  STT_CHUNK_MS_DEFAULT,
+  STT_CHUNK_SAFETY_EXTRA_MS,
+} from '../../../shared/stt-chunking';
+import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 
@@ -456,13 +466,23 @@ function getSttHost(): string {
   return process.env.ELEVENLABS_STT_HOST ?? 'api.elevenlabs.io';
 }
 
+/** Format audio Scribe correspondant au codec Telnyx entrant. */
+export function sttAudioFormatForCodec(
+  codec: CallSession['codec'],
+): 'ulaw_8000' | 'pcm_8000' | 'pcm_16000' {
+  if (codec === 'PCMU') return 'ulaw_8000';
+  // L16 arrive en PCM16 16 kHz, déjà dans le format attendu par Scribe.
+  return codec === 'L16' ? 'pcm_16000' : 'pcm_8000';
+}
+
 /**
  * Construit l'URL Scribe Realtime. PCMU est envoyé directement en ulaw_8000.
- * PCMA est converti en PCM16 avant émission et utilise pcm_8000.
+ * PCMA est converti en PCM16 avant émission et utilise pcm_8000. L16 est du
+ * PCM16 16 kHz et utilise pcm_16000, sans décodage.
  */
 export function buildSttUrl(
   model: string = DEFAULT_STT_MODEL,
-  codec: 'PCMA' | 'PCMU' = 'PCMU',
+  codec: 'PCMA' | 'PCMU' | 'L16' = 'PCMU',
   turnConfig: SttTurnConfig = getBaseSttTurnConfig(),
   options: {
     restaurantName?: string;
@@ -472,7 +492,7 @@ export function buildSttUrl(
 ): string {
   const params = new URLSearchParams({
     model_id: model,
-    audio_format: codec === 'PCMU' ? 'ulaw_8000' : 'pcm_8000',
+    audio_format: sttAudioFormatForCodec(codec),
     commit_strategy: 'vad',
     vad_silence_threshold_secs: String(turnConfig.vadSilenceThresholdSecs),
     vad_threshold: '0.4',
@@ -499,6 +519,9 @@ export function buildSttUrl(
  * le profil métier pour une prochaine connexion et pour la grâce de fin de tour.
  */
 export function setSttSpellingProfile(session: CallSession, active: boolean): void {
+  // Changement d'état du pipeline de fin de tour : on ne garde pas d'audio en
+  // attente, sinon il serait attribué à un profil VAD qui n'est plus le bon.
+  flushSttChunkBuffer(session);
   const state = ensureSttTurnConfig(session);
   if (active && !state.spellingActive) {
     state.previous = cloneSttTurnConfig(state.applied ?? state.base);
@@ -580,6 +603,9 @@ function dispatchOrHoldUtteranceEnd(
   words?: SttWord[],
   languageCode?: string,
 ): void {
+  // Fin de tour détectée : vider le tampon pour que Scribe ait vu tout l'audio
+  // avant que le tour soit traité.
+  flushSttChunkBuffer(session);
   const previous = clearSemanticHold(session);
   const merged = previous ? mergeSttTranscripts(previous.transcript, transcript) : transcript;
   const mergedWords = previous?.words && words ? [...previous.words, ...words] : words;
@@ -609,6 +635,7 @@ function dispatchUtteranceEnd(
   words?: SttWord[],
   languageCode?: string,
 ): void {
+  flushSttChunkBuffer(session);
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
   if (languageCode) session.sttLanguageCode = languageCode;
@@ -650,22 +677,9 @@ function flushPendingSttEndOfTurn(session: CallSession): void {
   dispatchUtteranceEnd(session, pending.transcript, pending.words, pending.languageCode);
 }
 
-function toPcm16FromAlaw(input: Buffer): Buffer {
-  const output = Buffer.allocUnsafe(input.length * 2);
-  for (let index = 0; index < input.length; index++) {
-    const alaw = input[index] ^ 0x55;
-    let sample = (alaw & 0x0f) << 4;
-    const segment = (alaw & 0x70) >> 4;
-    if (segment === 0) sample += 8;
-    else if (segment === 1) sample += 0x108;
-    else sample = (sample + 0x108) << (segment - 1);
-    output.writeInt16LE(alaw & 0x80 ? sample : -sample, index * 2);
-  }
-  return output;
-}
-
+/** Conversion entrante → format Scribe, centralisée dans `telnyx-codec`. */
 function toSttAudio(codec: CallSession['codec'], input: Buffer): Buffer {
-  return codec === 'PCMA' ? toPcm16FromAlaw(input) : input;
+  return decodeTelnyxToPcm16(codec, input);
 }
 
 function sendAudioChunk(ws: WebSocket, audio: Buffer, previousText?: string): void {
@@ -688,6 +702,72 @@ function sendSessionAudioChunk(session: CallSession, audio: Buffer): void {
   );
   addSttAudioSamples(session, sttSamplesForBuffer(session, audio.length));
   session.sttFirstAudioChunkSent = true;
+  voiceSttAudioMessagesTotal.inc({ chunk_ms: String(getSttChunkMs()) });
+  voiceSttChunkBytes.observe(audio.length);
+}
+
+function clearSttChunkTimer(session: CallSession): void {
+  if (session.sttChunkTimer) {
+    clearTimeout(session.sttChunkTimer);
+    session.sttChunkTimer = null;
+  }
+}
+
+/**
+ * Envoie le tampon de regroupement s'il reste des octets. Idempotent : appelé
+ * avant chaque étape qui ne doit pas laisser d'audio en attente (commit manuel,
+ * fin de tour, barge-in, fermeture, reconnexion, fin d'appel).
+ */
+export function flushSttChunkBuffer(session: CallSession): void {
+  clearSttChunkTimer(session);
+  const buffered = session.sttChunkBuffer;
+  session.sttChunkBuffer = null;
+  if (buffered && buffered.length > 0) deliverSttAudio(session, buffered);
+}
+
+/** Envoie dès que la socket est ouverte, sinon met en file pour la reconnexion. */
+function deliverSttAudio(session: CallSession, audio: Buffer): void {
+  if (session.sttWs?.readyState === WebSocket.OPEN) {
+    sendSessionAudioChunk(session, audio);
+    return;
+  }
+  if (session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX) session.audioBuffer.shift();
+  session.audioBuffer.push(audio);
+}
+
+function appendSttChunk(session: CallSession, input: Buffer, chunkMs: number): void {
+  const accumulated = session.sttChunkBuffer
+    ? Buffer.concat([session.sttChunkBuffer, input])
+    : input;
+  // PCMA décodé et L16 sont du PCM16 ; PCMU reste en G.711 8 bits.
+  const targetBytes =
+    chunkMs * telnyxBytesPerMs(session.codec) * (session.codec === 'PCMA' ? 2 : 1);
+  if (accumulated.length >= targetBytes) {
+    clearSttChunkTimer(session);
+    session.sttChunkBuffer = null;
+    deliverSttAudio(session, accumulated);
+    return;
+  }
+  session.sttChunkBuffer = accumulated;
+  if (!session.sttChunkTimer) {
+    // Le flux peut s'interrompre avant que le tampon soit plein : on l'envoie
+    // quand même après la durée cible + 20 ms.
+    session.sttChunkTimer = setTimeout(() => {
+      session.sttChunkTimer = null;
+      flushSttChunkBuffer(session);
+    }, chunkMs + STT_CHUNK_SAFETY_EXTRA_MS);
+  }
+}
+
+/**
+ * À l'ouverture de la socket : rejoue d'abord la file de reconnexion (trames
+ * les plus anciennes), puis le tampon partiel courant, pour ne rien perdre ni
+ * réordonner.
+ */
+export function resumeSttAfterOpen(session: CallSession): void {
+  for (const chunk of session.audioBuffer) sendSessionAudioChunk(session, chunk);
+  session.audioBuffer = [];
+  flushSttChunkBuffer(session);
 }
 
 export interface ElevenLabsSttMessage {
@@ -938,6 +1018,9 @@ function handleBargeInFromTranscript(
     { callId: session.callControlId, ...describeTranscript(transcript.trim()) },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
   );
+  // Un barge-in coupe le TTS : l'audio déjà capté doit partir maintenant,
+  // sinon il resterait dans le tampon de regroupement.
+  flushSttChunkBuffer(session);
   session.abortController?.abort();
   session.abortController = null;
   mgr.handleBargeIn(session);
@@ -1180,8 +1263,7 @@ export function connectStt(
       );
       logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe connected');
       session.sttFirstAudioChunkSent = false;
-      for (const chunk of session.audioBuffer) sendSessionAudioChunk(session, chunk);
-      session.audioBuffer = [];
+      resumeSttAfterOpen(session);
       turnConfig.applied = { ...turnConfig.desired };
       resolve();
     });
@@ -1291,16 +1373,18 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
     });
   }
 
-  if (session.sttWs?.readyState === WebSocket.OPEN) {
-    sendSessionAudioChunk(session, input);
+  const chunkMs = getSttChunkMs();
+  if (chunkMs <= STT_CHUNK_MS_DEFAULT) {
+    // Défaut : une trame = un message, chemin strictement inchangé.
+    deliverSttAudio(session, input);
     return;
   }
-
-  if (session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX) session.audioBuffer.shift();
-  session.audioBuffer.push(input);
+  appendSttChunk(session, input, chunkMs);
 }
 
 export function closeStt(session: CallSession): void {
+  // Fin d'appel : envoyer ce qui reste avant de couper la socket.
+  flushSttChunkBuffer(session);
   clearPendingSttEndOfTurn(session);
   clearSemanticHold(session);
   clearPendingSttCommit(session);

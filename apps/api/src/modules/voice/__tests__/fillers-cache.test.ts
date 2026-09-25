@@ -29,6 +29,8 @@ import {
   setFillerCodec,
 } from '../stream/fillers-cache';
 import { redisCache } from '../../../shared/redis/client';
+import { buildCartesiaCacheVariant } from '../stream/cartesia-config';
+import { telnyxCodecProfile } from '../stream/telnyx-codec';
 
 // We assign env-vars through a helper to avoid the agent-level env-var
 // scrubber munging literals like `process.env.X = '…'` during file writes.
@@ -73,6 +75,14 @@ describe('setFillerCodec', () => {
     expect(() => setFillerCodec('PCMA')).not.toThrow();
     expect(() => setFillerCodec('PCMU')).not.toThrow();
   });
+
+  it('fige les étiquettes G.711 historiques dans les clés', () => {
+    expect(telnyxCodecProfile('PCMA').cartesiaEncoding).toBe('pcm_alaw');
+    expect(telnyxCodecProfile('PCMU').cartesiaEncoding).toBe('pcm_mulaw');
+    expect(
+      buildCartesiaCacheVariant({ voiceId: 'voice-test', locale: 'fr-FR', codec: 'alaw8k' }),
+    ).toBe('voice-test|sonic-3.6|fr-FR|auto|alaw8k|{}|');
+  });
 });
 
 describe('selectFillerText', () => {
@@ -99,6 +109,14 @@ describe('playFiller', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.mocked(redisCache.get).mockReset();
+  });
+
+  it('réutilise la clé Redis PCMA littérale de main', async () => {
+    setEnv('CARTESIA_VOICE_ID', 'voice-test');
+    vi.mocked(redisCache.get).mockResolvedValue(null);
+    await playFiller(makeTelnyxWs(), 'CASUAL', 'generic');
+    expect(redisCache.get).toHaveBeenCalledWith('filler:adf822a98bb1d82a');
+    setEnv('CARTESIA_VOICE_ID', undefined);
   });
 
   it('is a no-op when the Telnyx WebSocket is not OPEN', async () => {

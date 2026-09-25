@@ -7,6 +7,7 @@ import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import { acknowledgeCallEnding } from './stream/call-ending';
+import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
 import { callFinalizationDependencies } from './call-finalization.dependencies';
 
@@ -223,6 +224,8 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // (sinon le handler log "No session found for start event" et reste silencieux).
         // La session est en mode IDLE ici — le WebSocket start event y attachera le
         // telnyxWs et déclenchera la première salutation.
+        // Codec Telnyx : PCMA par défaut, L16 seulement si le flag est activé.
+        const telnyxCodec = getTelnyxCodec();
         CallSessionManager.getInstance().create({
           callControlId: payload.call_control_id,
           callSessionId: payload.call_leg_id,
@@ -241,7 +244,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           isVip: customer?.isVip ?? false,
           telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
           callLegId: payload.call_leg_id,
-          codec: 'PCMA',
+          codec: telnyxCodec,
           personality: ctx.personality
             ? {
                 fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(
@@ -287,12 +290,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               Authorization: `Bearer ${apiKey}`,
               'Idempotency-Key': idempotencyKey,
             },
-            body: JSON.stringify({
-              stream_url: wsUrl,
-              stream_track: 'inbound_track',
-              stream_bidirectional_mode: 'rtp',
-              stream_bidirectional_codec: 'PCMA',
-            }),
+            body: JSON.stringify(buildTelnyxStreamConfig(wsUrl, telnyxCodec)),
           })
             .then(async (res) => {
               if (res.ok) {
@@ -314,7 +312,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
                     callControlId: payload.call_control_id,
                     callLegId: payload.call_leg_id,
                     streamUrl: wsUrl,
-                    codec: 'PCMA',
+                    codec: telnyxCodec,
                     idempotencyKey,
                   },
                   { jobId: idempotencyKey },
@@ -337,7 +335,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
                     callControlId: payload.call_control_id,
                     callLegId: payload.call_leg_id,
                     streamUrl: wsUrl,
-                    codec: 'PCMA',
+                    codec: telnyxCodec,
                     idempotencyKey,
                   },
                   { jobId: idempotencyKey },

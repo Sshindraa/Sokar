@@ -26,6 +26,12 @@ import { getTtsCached, setTtsCached } from '../tts-cache';
 import { cleanTextForTts, addNaturalPauses } from './tts-handler';
 import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
 import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-config';
+import { getTelnyxCodec, telnyxCodecProfile, type TelnyxCodecProfile } from './telnyx-codec';
+
+/** Profil codec Telnyx courant : PCMA par défaut, L16 si le flag est actif. */
+function greetingCodecProfile(): TelnyxCodecProfile {
+  return telnyxCodecProfile(getTelnyxCodec());
+}
 import { normalizeVoiceLocale } from './voice-language';
 
 /**
@@ -61,8 +67,8 @@ async function generateSentenceAudio(text: string, voiceId: string): Promise<Buf
         normalization: CARTESIA_NORMALIZATION,
         output_format: {
           container: 'raw',
-          encoding: 'pcm_alaw',
-          sample_rate: 8000,
+          encoding: greetingCodecProfile().cartesiaEncoding,
+          sample_rate: greetingCodecProfile().sampleRate,
         },
       }),
     });
@@ -104,7 +110,7 @@ export async function initGreetingCache(restaurantNames?: string[]): Promise<voi
   const cacheVoiceId = buildCartesiaCacheVariant({
     voiceId,
     locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
-    codec: 'alaw8k',
+    codec: greetingCodecProfile().label,
   });
 
   // Charger les noms de restaurants depuis la DB (si non fournis)

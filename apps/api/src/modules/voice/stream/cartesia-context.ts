@@ -9,12 +9,13 @@ import {
   getCartesiaPronunciationDictId,
   getCartesiaVoiceId,
 } from './cartesia-config';
+import { TTS_INITIAL_BUFFER_FRAMES, TTS_PACE_PAUSE_MS, TTS_UNDERFEED_PAUSE_MS } from './constants';
 import {
-  TTS_FRAME_BYTES,
-  TTS_INITIAL_BUFFER_FRAMES,
-  TTS_PACE_PAUSE_MS,
-  TTS_UNDERFEED_PAUSE_MS,
-} from './constants';
+  encodeTelnyxFromPcm16,
+  padTelnyxFrame,
+  telnyxCodecProfile,
+  telnyxFrameBytes,
+} from './telnyx-codec';
 import { logger } from '../../../shared/logger/pino';
 import { persistLatencyTrace } from './session-persistence';
 import {
@@ -41,8 +42,8 @@ export interface CartesiaContextRequest {
   context_id: string;
   output_format: {
     container: 'raw';
-    encoding: 'pcm_alaw' | 'pcm_mulaw';
-    sample_rate: 8000;
+    encoding: 'pcm_alaw' | 'pcm_mulaw' | 'pcm_s16le';
+    sample_rate: 8000 | 16000;
   };
   continue: boolean;
 }
@@ -86,8 +87,8 @@ export function buildCartesiaContextRequest(
     context_id: contextId,
     output_format: {
       container: 'raw',
-      encoding: session.codec === 'PCMA' ? 'pcm_alaw' : 'pcm_mulaw',
-      sample_rate: 8000,
+      encoding: telnyxCodecProfile(session.codec).cartesiaEncoding,
+      sample_rate: telnyxCodecProfile(session.codec).sampleRate,
     },
     continue: shouldContinue,
   };
@@ -293,10 +294,11 @@ export class CartesiaContextTurn {
       markVoiceTurnTtsSynthesisFirstByte(this.session, 'cartesia_context', this.turnId);
     }
     const bytes = Buffer.concat([this.remainder, chunk]);
+    const frameBytes = telnyxFrameBytes(this.session.codec);
     let offset = 0;
-    while (offset + TTS_FRAME_BYTES <= bytes.length) {
-      this.audioFrames.push(bytes.subarray(offset, offset + TTS_FRAME_BYTES));
-      offset += TTS_FRAME_BYTES;
+    while (offset + frameBytes <= bytes.length) {
+      this.audioFrames.push(bytes.subarray(offset, offset + frameBytes));
+      offset += frameBytes;
     }
     this.remainder = bytes.subarray(offset);
     if (!this.playbackPromise) this.playbackPromise = this.playAudio();
@@ -321,7 +323,10 @@ export class CartesiaContextTurn {
         continue;
       }
       this.session.telnyxWs.send(
-        JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }),
+        JSON.stringify({
+          event: 'media',
+          media: { payload: encodeTelnyxFromPcm16(this.session.codec, frame).toString('base64') },
+        }),
       );
       this.sentFrames++;
       const hadAudioSent = this.session.latencyTrace?.totalE2eMs !== undefined;
@@ -340,12 +345,8 @@ export class CartesiaContextTurn {
 
   private async completeAfterPlayback(): Promise<void> {
     if (this.remainder.length > 0) {
-      const silenceByte = this.session.codec === 'PCMA' ? 0xd5 : 0xff;
       this.audioFrames.push(
-        Buffer.concat([
-          this.remainder,
-          Buffer.alloc(TTS_FRAME_BYTES - this.remainder.length, silenceByte),
-        ]),
+        padTelnyxFrame(this.session.codec, this.remainder, telnyxFrameBytes(this.session.codec)),
       );
       this.remainder = Buffer.alloc(0);
     }

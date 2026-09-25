@@ -269,6 +269,37 @@ export const voiceProviderErrorsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+/**
+ * Regroupement audio avant Scribe (`VOICE_STT_CHUNK_MS`) : nombre de messages
+ * envoyés et taille des chunks. Sert à vérifier qu'un flag à 100 ms transforme
+ * bien 5 trames en un message, sans perte ni duplication. Aucun label métier.
+ */
+export const voiceSttAudioMessagesTotal = new Counter({
+  name: 'sokar_voice_stt_audio_messages_total',
+  help: 'Messages audio envoyés à Scribe Realtime, par taille de chunk configurée',
+  labelNames: ['chunk_ms'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceSttChunkBytes = new Histogram({
+  name: 'sokar_voice_stt_chunk_bytes',
+  help: 'Taille des messages audio envoyés à Scribe Realtime (octets)',
+  buckets: [160, 320, 640, 1600, 3200, 6400, 16000],
+  registers: [getRegistry()],
+});
+
+/**
+ * Bande large détectée : part des appels où l'audio entrant porte réellement du
+ * contenu au-dessus de 4 kHz (codec L16). Mesure UNIQUEMENT l'audio, jamais un
+ * identifiant d'appel : c'est ce qui dira si le 16 kHz sert à quelque chose.
+ */
+export const voiceWidebandDetectedTotal = new Counter({
+  name: 'sokar_voice_wideband_detected_total',
+  help: 'Appels évalués par la sonde de bande large, selon le verdict',
+  labelNames: ['detected', 'codec'] as const,
+  registers: [getRegistry()],
+});
+
 export type VoiceQualityKind = 'party_size' | 'date' | 'time';
 export type VoiceQualityCohort = 'flag_on' | 'flag_off';
 export type VoiceExpectedAnswerStatus = 'accepted' | 'choice' | 'unresolved';

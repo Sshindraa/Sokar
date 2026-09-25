@@ -1,8 +1,8 @@
 /**
  * Banc STT vocal — synthèse, dégradation téléphonique et transcription Scribe.
  *
- * À lancer sur le serveur, où se trouvent les clés (jamais copiées ailleurs) :
- *   node --env-file=.env scripts/voice-stt-bench/transcribe.cjs phrases.json > transcripts.json
+ * Fournir ELEVENLABS_BENCH_API_KEY et CARTESIA_BENCH_API_KEY dans l'environnement.
+ * Les clés applicatives de production ne sont jamais utilisées par le banc.
  *
  * Chaque phrase est synthétisée par Cartesia en PCM 8 kHz, dégradée comme un
  * appel (bruit au SNR demandé, paquets de 20 ms perdus, codec A-law), puis
@@ -164,18 +164,10 @@ function transcribe(audio, elevenLabsBenchKey) {
 function requireBenchConfig(phrases) {
   const elevenLabsBenchKey = process.env.ELEVENLABS_BENCH_API_KEY;
   const cartesiaBenchKey = process.env.CARTESIA_BENCH_API_KEY;
-  const productionElevenLabsKey = process.env.ELEVENLABS_API_KEY;
-  const productionCartesiaKey = process.env.CARTESIA_API_KEY?.replace(/"/g, '');
   const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
 
   if (!elevenLabsBenchKey) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
-  if (productionElevenLabsKey && elevenLabsBenchKey === productionElevenLabsKey) {
-    throw new Error('ELEVENLABS_BENCH_API_KEY must differ from ELEVENLABS_API_KEY');
-  }
   if (!cartesiaBenchKey) throw new Error('CARTESIA_BENCH_API_KEY is required');
-  if (productionCartesiaKey && cartesiaBenchKey === productionCartesiaKey) {
-    throw new Error('CARTESIA_BENCH_API_KEY must differ from CARTESIA_API_KEY');
-  }
   if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
     throw new Error('BENCH_MAX_CREDITS must be a positive integer');
   }
@@ -263,7 +255,12 @@ async function main() {
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`, () => process.exit(0));
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Réutilisé par `second-opinion.cjs` : même synthèse, même dégradation, même Scribe Realtime.
+module.exports = { degrade, synthesize, transcribe, requireBenchConfig };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

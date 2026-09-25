@@ -32,12 +32,17 @@ import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/res
 import {
   CARTESIA_RETRY_DELAY_MS,
   CARTESIA_TTS_MAX_ATTEMPTS,
-  TTS_FRAME_BYTES,
   TTS_INITIAL_BUFFER_FRAMES,
   TTS_UNDERFEED_PAUSE_MS,
   TTS_PACE_PAUSE_MS,
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
+import {
+  encodeTelnyxFromPcm16,
+  padTelnyxFrame,
+  telnyxCodecProfile,
+  telnyxFrameBytes,
+} from './telnyx-codec';
 import {
   markVoiceTurnAudioSent,
   markVoiceTurnTtsSynthesisFirstByte,
@@ -86,7 +91,7 @@ async function sendPacedAudioFrames(
     session.telnyxWs.send(
       JSON.stringify({
         event: 'media',
-        media: { payload: frame.toString('base64') },
+        media: { payload: encodeTelnyxFromPcm16(session.codec, frame).toString('base64') },
       }),
     );
     framesSent++;
@@ -294,7 +299,8 @@ async function speakTtsFragment(
     characterCount: cleanedText.length,
   });
 
-  const isAlaw = session.codec === 'PCMA';
+  // Profil du codec Telnyx : PCMA/PCMU (G.711 8 kHz) ou L16 (PCM16 16 kHz).
+  const codecProfile = telnyxCodecProfile(session.codec);
   // Synthétiser la réponse complète conserve l'intonation entre les phrases.
   // Le contexte WebSocket applique la même continuité aux fragments LLM ; ce
   // chemin HTTP reste un fallback sans reset de prosodie local.
@@ -333,7 +339,7 @@ async function speakTtsFragment(
   const cacheVoiceId = buildCartesiaCacheVariant({
     voiceId,
     locale,
-    codec: isAlaw ? 'alaw8k' : 'mulaw8k',
+    codec: codecProfile.label,
     generationConfig,
     pronunciationDictId,
   });
@@ -399,8 +405,8 @@ async function speakTtsFragment(
         ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
         output_format: {
           container: 'raw',
-          encoding: isAlaw ? 'pcm_alaw' : 'pcm_mulaw',
-          sample_rate: 8000,
+          encoding: codecProfile.cartesiaEncoding,
+          sample_rate: codecProfile.sampleRate,
         },
       });
 
@@ -518,7 +524,7 @@ async function speakTtsFragment(
           session.telnyxWs.send(
             JSON.stringify({
               event: 'media',
-              media: { payload: frame.toString('base64') },
+              media: { payload: encodeTelnyxFromPcm16(session.codec, frame).toString('base64') },
             }),
           );
           framesSent++;
@@ -555,29 +561,22 @@ async function speakTtsFragment(
 
         const fullBytes = Buffer.concat([remainingBytes, rawChunk]);
 
-        // Découpe en trames de 800 bytes (100ms @ 8kHz 8-bit).
+        // Découpe en trames de 100 ms selon le codec (800 octets en G.711,
+        // 3200 octets en L16).
+        const frameBytes = telnyxFrameBytes(session.codec);
         let offset = 0;
-        while (offset + TTS_FRAME_BYTES <= fullBytes.length) {
-          playbackQueue.push(fullBytes.slice(offset, offset + TTS_FRAME_BYTES));
-          offset += TTS_FRAME_BYTES;
+        while (offset + frameBytes <= fullBytes.length) {
+          playbackQueue.push(fullBytes.slice(offset, offset + frameBytes));
+          offset += frameBytes;
         }
         remainingBytes = fullBytes.slice(offset);
       }
 
-      // Flush final — pad avec du silence pour garder une trame RTP de 100 ms.
+      // Flush final — pad avec le silence du codec pour garder une trame de 100 ms.
       if (remainingBytes.length > 0) {
-        if (remainingBytes.length < TTS_FRAME_BYTES) {
-          const padded = Buffer.concat([
-            remainingBytes,
-            Buffer.alloc(
-              TTS_FRAME_BYTES - remainingBytes.length,
-              session.codec === 'PCMA' ? 0xd5 : 0xff,
-            ),
-          ]);
-          playbackQueue.push(padded);
-        } else {
-          playbackQueue.push(remainingBytes);
-        }
+        playbackQueue.push(
+          padTelnyxFrame(session.codec, remainingBytes, telnyxFrameBytes(session.codec)),
+        );
       }
 
       streamFinished = true;

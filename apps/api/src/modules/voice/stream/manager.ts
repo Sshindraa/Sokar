@@ -510,7 +510,7 @@ export class CallSessionManager {
     isVip: boolean;
     telnyxWs: WebSocket;
     callLegId: string;
-    codec: 'PCMA' | 'PCMU';
+    codec: 'PCMA' | 'PCMU' | 'L16';
     personality?: {
       fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
       systemPromptExtra?: string | null;
@@ -662,6 +662,11 @@ export class CallSessionManager {
     }
     session.sttWs = null;
     session.audioBuffer = [];
+    if (session.sttChunkTimer) {
+      clearTimeout(session.sttChunkTimer);
+      session.sttChunkTimer = null;
+    }
+    session.sttChunkBuffer = null;
   }
 
   // ─── State Machine ──────────────────────────────────────────────

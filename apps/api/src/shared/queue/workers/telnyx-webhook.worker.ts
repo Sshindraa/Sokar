@@ -11,12 +11,13 @@ import {
 } from '../../../modules/voice/call-recording.service';
 import { db } from '../../db/client';
 import { purgeExpiredVoiceDebugTurns } from '../../../modules/voice/stream/debug-dialogue';
+import { buildTelnyxStreamConfig } from '../../../modules/voice/stream/telnyx-codec';
 
 export interface TelnyxAnswerJobData {
   readonly callControlId: string;
   readonly callLegId: string;
   readonly streamUrl: string;
-  readonly codec: 'PCMA' | 'PCMU';
+  readonly codec: 'PCMA' | 'PCMU' | 'L16';
   readonly idempotencyKey: string;
 }
 
@@ -75,12 +76,7 @@ export const telnyxWebhookWorker = new Worker(
         Authorization: `Bearer ${apiKey}`,
         'Idempotency-Key': data.idempotencyKey,
       },
-      body: JSON.stringify({
-        stream_url: data.streamUrl,
-        stream_track: 'inbound_track',
-        stream_bidirectional_mode: 'rtp',
-        stream_bidirectional_codec: data.codec,
-      }),
+      body: JSON.stringify(buildTelnyxStreamConfig(data.streamUrl, data.codec)),
     });
 
     if (!res.ok) {
