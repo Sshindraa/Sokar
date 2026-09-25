@@ -32,6 +32,22 @@ export function seedFromString(value: string, salt = 7): number {
   return hash >>> 0;
 }
 
+/** F is paired to B so both conditions use the exact same packet-loss mask. */
+export function packetLossSeed(
+  clipId: string,
+  condition: string,
+  variant: string,
+  repeat: number,
+): number {
+  const pairedCondition = condition === 'F' ? 'B' : condition;
+  return seedFromString(`${clipId}-${pairedCondition}-${variant}-${repeat}`);
+}
+
+export function noiseControlLossSeed(condition: string, repeat: number): number {
+  const pairedCondition = condition === 'F' ? 'B' : condition;
+  return seedFromString(`noise-only-${pairedCondition}-${repeat}`);
+}
+
 export function pcmToSamples(pcm: Buffer): Float64Array {
   const count = Math.floor(pcm.length / 2);
   const samples = new Float64Array(count);
@@ -220,6 +236,38 @@ export function addBackgroundNoise(
       chatter = burstAmplitude * Math.sin(burstPhase) * (0.6 + 0.4 * Math.sin(burstPhase / 7));
     }
     output[index] = samples[index] + gaussian * noiseRms + hum + chatter;
+  }
+  return samplesToPcm(output);
+}
+
+/** Same seeded restaurant/rue noise profile without a speech source. */
+export function backgroundNoiseOnly(
+  sampleRate: number,
+  durationMs: number,
+  options: { rms: number; seed: number },
+): Buffer {
+  const random = mulberry32(options.seed);
+  const humFrequency = 50 + random() * 30;
+  const output = new Float64Array(Math.round((sampleRate * durationMs) / 1000));
+  let burstRemaining = 0;
+  let burstAmplitude = 0;
+  let burstPhase = 0;
+  let burstFrequency = 300;
+  for (let index = 0; index < output.length; index++) {
+    const gaussian = Math.sqrt(-2 * Math.log(random() || 1e-9)) * Math.cos(2 * Math.PI * random());
+    const hum = 0.35 * options.rms * Math.sin((2 * Math.PI * humFrequency * index) / sampleRate);
+    if (burstRemaining <= 0 && random() < 1 / (sampleRate * 0.4)) {
+      burstRemaining = Math.round(sampleRate * (0.15 + random() * 0.35));
+      burstAmplitude = options.rms * (0.8 + random());
+      burstFrequency = 200 + random() * 900;
+    }
+    let chatter = 0;
+    if (burstRemaining > 0) {
+      burstRemaining--;
+      burstPhase += (2 * Math.PI * burstFrequency) / sampleRate;
+      chatter = burstAmplitude * Math.sin(burstPhase) * (0.6 + 0.4 * Math.sin(burstPhase / 7));
+    }
+    output[index] = gaussian * options.rms + hum + chatter;
   }
   return samplesToPcm(output);
 }

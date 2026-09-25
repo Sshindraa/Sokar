@@ -130,6 +130,8 @@ interface LlmResponse {
 interface LlmRequestOptions {
   /** Omettre les outils pour les réponses conversationnelles sans effet métier. */
   includeTools?: boolean;
+  /** Restreindre les outils exposés à une liste explicitement autorisée. */
+  allowedTools?: readonly string[];
   /** Réduire la réponse quand une seule formule courte est attendue. */
   maxTokens?: number;
   temperature?: number;
@@ -647,20 +649,24 @@ export class CallSessionManager {
       session.abortController.abort();
       session.abortController = null;
     }
-    if (session.sttWs && session.sttWs.readyState === WebSocket.OPEN) {
-      try {
-        session.sttWs.close();
-      } catch {
-        /* ignore */
-      }
-    } else if (session.sttWs?.readyState === WebSocket.CONNECTING) {
-      try {
-        session.sttWs.terminate();
-      } catch {
-        /* ignore */
+    for (const socket of new Set([session.sttWs, session.sttRelockPreviousWs])) {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        try {
+          socket.close();
+        } catch {
+          /* ignore */
+        }
+      } else if (socket?.readyState === WebSocket.CONNECTING) {
+        try {
+          socket.terminate();
+        } catch {
+          /* ignore */
+        }
       }
     }
     session.sttWs = null;
+    session.sttRelockPreviousWs = null;
+    session.sttReady = null;
     session.audioBuffer = [];
     if (session.sttChunkTimer) {
       clearTimeout(session.sttChunkTimer);
@@ -687,6 +693,13 @@ export class CallSessionManager {
 
     session.state = newState;
     session.lastActivityAt = Date.now();
+    if (newState === 'SPEAKING') {
+      try {
+        session.onAgentSpeaking?.();
+      } catch {
+        // A best-effort STT relock must never fail a voice-state transition.
+      }
+    }
     return true;
   }
 
@@ -1018,12 +1031,16 @@ export class CallSessionManager {
 
     const includeTools = options.includeTools !== false;
     const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
+    const availableTools =
+      tools && options.allowedTools
+        ? tools.filter((tool) => options.allowedTools?.includes(tool.function.name))
+        : tools;
     const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
     appendEphemeralContext(messages, options.context);
 
     for (let round = 0; round < 3; round++) {
       const response = await this.fetchLlmCompletion(messages, {
-        tools,
+        tools: availableTools,
         maxTokens: options.maxTokens ?? 200,
         temperature: options.temperature ?? 0.7,
         signal,
@@ -1074,16 +1091,20 @@ export class CallSessionManager {
         const executionControl: VoiceToolExecutionControl = { terminalReply: null };
         for (const tc of toolCalls) {
           signal?.throwIfAborted();
-          const result = executionControl.terminalReply
-            ? 'Action non exécutée, car une autorisation précédente de ce tour a été refusée par la policy.'
-            : await this.executeTool(
-                session,
-                tc.function.name,
-                tc.function.arguments,
-                undefined,
-                undefined,
-                executionControl,
-              );
+          const isAllowedTool =
+            !options.allowedTools || options.allowedTools.includes(tc.function.name);
+          const result = !isAllowedTool
+            ? 'Outil non autorisé pour ce tour. Réponds uniquement avec les informations déjà vérifiées.'
+            : executionControl.terminalReply
+              ? 'Action non exécutée, car une autorisation précédente de ce tour a été refusée par la policy.'
+              : await this.executeTool(
+                  session,
+                  tc.function.name,
+                  tc.function.arguments,
+                  undefined,
+                  undefined,
+                  executionControl,
+                );
           signal?.throwIfAborted();
           const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
           session.history.push(toolMsg);
@@ -1338,7 +1359,10 @@ export class CallSessionManager {
     options: LlmRequestOptions = {},
   ): Promise<string> {
     const includeTools = options.includeTools !== false;
-    const businessTools = includeTools ? getRestaurantTools(session.restaurantId) : [];
+    const allBusinessTools = includeTools ? getRestaurantTools(session.restaurantId) : [];
+    const businessTools = options.allowedTools
+      ? allBusinessTools.filter((tool) => options.allowedTools?.includes(tool.function.name))
+      : allBusinessTools;
     const turnPlanShadowStartedAt = Date.now();
     let turnPlanShadowReported = false;
     let metadataOnlyFallbackUsed = false;
@@ -1709,18 +1733,24 @@ export class CallSessionManager {
         for (const tc of toolCalls) {
           signal?.throwIfAborted();
           const isShadowTool = tc.function.name === TURN_PLAN_SHADOW_TOOL_NAME;
+          const isAllowedTool =
+            isShadowTool ||
+            !options.allowedTools ||
+            options.allowedTools.includes(tc.function.name);
           const result = isShadowTool
             ? 'Observation privée enregistrée; aucune action métier n’a été exécutée.'
-            : executionControl.terminalReply
-              ? 'Action non exécutée, car une autorisation précédente de ce tour a été refusée par la policy.'
-              : await this.executeTool(
-                  session,
-                  tc.function.name,
-                  tc.function.arguments,
-                  undefined,
-                  undefined,
-                  executionControl,
-                );
+            : !isAllowedTool
+              ? 'Outil non autorisé pour ce tour. Réponds uniquement avec les informations déjà vérifiées.'
+              : executionControl.terminalReply
+                ? 'Action non exécutée, car une autorisation précédente de ce tour a été refusée par la policy.'
+                : await this.executeTool(
+                    session,
+                    tc.function.name,
+                    tc.function.arguments,
+                    undefined,
+                    undefined,
+                    executionControl,
+                  );
           signal?.throwIfAborted();
           const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
           messages.push(toolMsg);

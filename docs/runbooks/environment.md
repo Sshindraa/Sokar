@@ -301,6 +301,32 @@ valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → comm
 valeur fait échouer le démarrage (validation Zod). Suivre
 `sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
 
+`VOICE_STT_FILTER_BACKGROUND=true` transmet `filter_background_audio=true` à Scribe pour
+réduire les faux déclenchements dus aux conversations voisines et au bruit ambiant. Défaut
+`false` : aucun paramètre supplémentaire n'est envoyé. Le seuil VAD explicite actuel reste
+inchangé. ElevenLabs interdit de combiner ce filtre avec `include_timestamps` : lorsque le
+flag est actif, ce seul paramètre explicite est omis ; `include_language_detection` reste
+actif. Voir la [référence Scribe Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime).
+
+`VOICE_STT_LANGUAGE_LOCK=true` verrouille l'appel en français après le premier tour commité
+que Scribe identifie comme français et qui contient au moins deux mots. La langue de dialogue
+ne suit ensuite plus les détections ultérieures. Un contenu non français récupérable par
+l'extracteur du champ demandé suit le parcours normal de réservation ; sinon l'agent relance
+en français. Après le verrou, une nouvelle session Scribe forcée en français est tentée au
+début du prochain tour TTS, jamais pendant que le client parle. Si ce relock échoue, la
+session auto-détectée précédente est restaurée ; si elle s'est aussi fermée, la reconnexion
+existante reprend la détection automatique. Défaut `false` : comportement actuel.
+Les compteurs `sokar_voice_language_locked_total`,
+`sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
+`sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
+
+`VOICE_DIALOGUE_LISTENING_V2=true` active le routage strict du dialogue : le chemin déterministe
+est réservé à une réponse directe, unique et non ambiguë à la question en attente. Les questions,
+corrections, contradictions et tours en boucle sont traités par le LLM sans appliquer de slot
+implicite ; les questions n'exposent que l'outil de vérification de disponibilité en lecture seule.
+Les fins de tour manifestement coupées ou réduites à une hésitation sont fusionnées pendant 900 ms,
+puis relancées naturellement si aucune suite n'arrive. Défaut `false` : chemin historique.
+
 `VOICE_TELNYX_CODEC` (défaut `PCMA`, valeurs `PCMA` ou `L16`) sélectionne le codec
 entrant et sortant du Media Stream Telnyx. Avec `L16`, demander 16 kHz dans les deux
 sens, envoyer le PCM16 à Scribe en `pcm_16000`, et générer le TTS Cartesia en PCM16 16 kHz.

@@ -1,7 +1,7 @@
 /**
  * Banc narrowband (phase 1) — scoring local (gratuit, hors ligne).
  *
- * Pour chaque condition (A/B/C/D) et chaque variante (propre/bruit) :
+ * Pour chaque condition (A/B/C/D/E/F) et chaque variante (propre/bruit) :
  *   - % d'informations critiques correctes, global et par catégorie ;
  *   - WER normalisé (minuscules, ponctuation retirée, chiffres = lettres) ;
  *   - latence du dernier chunk au transcript final (moyenne, écart, p50/p95) ;
@@ -21,12 +21,13 @@
  *   pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/nb-score.ts .data/nb-results.json
  */
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { NB_CORPUS, ALL_CATEGORIES, type CriticalCategory } from './nb-corpus';
 import { digitSequence, normalizeTokens, wordErrorRate } from './nb-normalize';
 import type { BenchRecord, Condition, Variant } from './nb-run';
 
 const CLIP_BY_ID = new Map(NB_CORPUS.map((clip) => [clip.id, clip]));
-const CONDITIONS: Condition[] = ['A', 'B', 'C', 'D', 'E'];
+const CONDITIONS: Condition[] = ['A', 'B', 'C', 'D', 'E', 'F'];
 const VARIANTS: Variant[] = ['clean', 'noisy'];
 const VARIANT_LABEL: Record<Variant, string> = { clean: 'propre', noisy: 'bruit' };
 
@@ -46,6 +47,11 @@ function stdDev(values: number[]): number {
   return Math.sqrt(mean(values.map((value) => (value - average) ** 2)));
 }
 
+function formatMeanDelta(values: number[], digits: number, suffix = ''): string {
+  const average = mean(values);
+  return `${average >= 0 ? '+' : ''}${average.toFixed(digits)} ± ${stdDev(values).toFixed(digits)}${suffix}`;
+}
+
 function percentile(values: number[], fraction: number): number {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -54,6 +60,42 @@ function percentile(values: number[], fraction: number): number {
     Math.max(0, Math.round(fraction * (sorted.length - 1))),
   );
   return sorted[index];
+}
+
+function metricsByRepeat(
+  records: BenchRecord[],
+  condition: Condition,
+  variant: Variant,
+): Map<number, { criticalRate: number; wer: number; latency: number }> {
+  const grouped = new Map<
+    number,
+    { correct: number; total: number; wers: number[]; latencies: number[] }
+  >();
+  for (const record of records) {
+    if (record.condition !== condition || record.variant !== variant || record.noiseOnly) continue;
+    const clip = CLIP_BY_ID.get(record.clipId);
+    const bucket = grouped.get(record.repeat) ?? { correct: 0, total: 0, wers: [], latencies: [] };
+    const transcript = record.error ? '' : record.transcript.trim();
+    for (const critical of clip?.critical ?? []) {
+      bucket.total++;
+      if (hasCritical(transcript, critical.category, critical.value)) {
+        bucket.correct++;
+      }
+    }
+    bucket.wers.push(wordErrorRate(clip?.text ?? record.text, transcript).wer);
+    if (record.latencyMs >= 0) bucket.latencies.push(record.latencyMs);
+    grouped.set(record.repeat, bucket);
+  }
+  return new Map(
+    [...grouped].map(([repeat, bucket]) => [
+      repeat,
+      {
+        criticalRate: bucket.total ? bucket.correct / bucket.total : 0,
+        wer: mean(bucket.wers),
+        latency: mean(bucket.latencies),
+      },
+    ]),
+  );
 }
 
 interface Cell {
@@ -82,8 +124,11 @@ function emptyCell(): Cell {
 }
 
 function main(): void {
-  const resultsPath = process.argv[2] ?? '.data/nb-results.json';
-  const records = JSON.parse(readFileSync(resultsPath, 'utf8')) as BenchRecord[];
+  const resultsPaths = process.argv.slice(2);
+  const inputPaths = resultsPaths.length ? resultsPaths : ['.data/nb-results.json'];
+  const records = inputPaths.flatMap(
+    (resultsPath) => JSON.parse(readFileSync(resultsPath, 'utf8')) as BenchRecord[],
+  );
 
   const cells = new Map<string, Cell>();
   const key = (condition: Condition, variant: Variant) => `${condition}|${variant}`;
@@ -92,6 +137,7 @@ function main(): void {
   }
 
   for (const record of records) {
+    if (record.noiseOnly) continue;
     const cell = cells.get(key(record.condition, record.variant));
     if (!cell) continue;
     cell.records.push(record);
@@ -160,31 +206,70 @@ function main(): void {
     }
   }
 
-  // 10 pires erreurs de B (propre) et correction par A (propre).
+  lines.push('', '## Variation appariée B/F entre répétitions', '');
+  lines.push(
+    '| Variante | B critiques par répétition | F critiques par répétition | Δ critiques (points) | Δ WER | Δ latence (ms) |',
+    '|---|---|---|---:|---:|---:|',
+  );
+  for (const variant of VARIANTS) {
+    const bMetrics = metricsByRepeat(records, 'B', variant);
+    const fMetrics = metricsByRepeat(records, 'F', variant);
+    const pairedRepeats = [...bMetrics.keys()]
+      .filter((repeat) => fMetrics.has(repeat))
+      .sort((left, right) => left - right);
+    const criticalDeltas = pairedRepeats.map(
+      (repeat) => (fMetrics.get(repeat)!.criticalRate - bMetrics.get(repeat)!.criticalRate) * 100,
+    );
+    const werDeltas = pairedRepeats.map(
+      (repeat) => fMetrics.get(repeat)!.wer - bMetrics.get(repeat)!.wer,
+    );
+    const latencyDeltas = pairedRepeats.map(
+      (repeat) => fMetrics.get(repeat)!.latency - bMetrics.get(repeat)!.latency,
+    );
+    const bSummary = pairedRepeats
+      .map((repeat) => `R${repeat + 1} ${pct(bMetrics.get(repeat)!.criticalRate)}`)
+      .join('; ');
+    const fSummary = pairedRepeats
+      .map((repeat) => `R${repeat + 1} ${pct(fMetrics.get(repeat)!.criticalRate)}`)
+      .join('; ');
+    lines.push(
+      `| ${VARIANT_LABEL[variant]} | ${bSummary || '—'} | ${fSummary || '—'} | ` +
+        `${formatMeanDelta(criticalDeltas, 1, ' pt')} | ` +
+        `${formatMeanDelta(werDeltas, 3)} | ${formatMeanDelta(latencyDeltas, 0, ' ms')} |`,
+    );
+  }
+
+  // Expose uniquement des empreintes de transcripts : jamais de texte brut dans les rapports.
   const bClean = cells.get(key('B', 'clean'))!.records;
   const aCleanByClip = new Map(
-    cells.get(key('A', 'clean'))!.records.map((record) => [record.clipId, record]),
+    cells
+      .get(key('A', 'clean'))!
+      .records.map((record) => [`${record.clipId}|${record.repeat}`, record]),
   );
   const errorDetails = bClean
     // Les sessions vides comptent aussi : ce sont les pires erreurs possibles.
     .map((record) => {
       const clip = CLIP_BY_ID.get(record.clipId);
+      const bTranscript = record.error ? '' : record.transcript;
       const criticallyCorrect = (clip?.critical ?? []).filter((critical) =>
-        hasCritical(record.transcript, critical.category, critical.value),
+        hasCritical(bTranscript, critical.category, critical.value),
       );
       const missing = (clip?.critical ?? []).filter(
-        (critical) => !hasCritical(record.transcript, critical.category, critical.value),
+        (critical) => !hasCritical(bTranscript, critical.category, critical.value),
       );
-      const aTranscript = aCleanByClip.get(record.clipId)?.transcript ?? '';
+      const aRecord = aCleanByClip.get(`${record.clipId}|${record.repeat}`);
+      const aTranscript = aRecord?.error ? '' : (aRecord?.transcript ?? '');
       const fixedByA = missing.every((critical) =>
         hasCritical(aTranscript, critical.category, critical.value),
       );
       return {
         record,
-        missing,
+        bTranscript,
+        aTranscript,
+        missing: missing.map((critical) => critical.category),
         criticallyCorrect: criticallyCorrect.length,
         fixedByA,
-        wer: wordErrorRate(clip?.text ?? record.text, record.transcript).wer,
+        wer: wordErrorRate(clip?.text ?? record.text, bTranscript).wer,
       };
     })
     .filter((entry) => entry.missing.length > 0)
@@ -193,26 +278,55 @@ function main(): void {
 
   lines.push('', '## 10 pires erreurs de B (propre) et correction par A', '');
   lines.push(
-    '| # | Clip | Attendu | (manquant) | Transcript B | A corrige ? | A entendu |',
+    '| # | Clip | Catégories manquantes | B longueur/empreinte | A corrige ? | A longueur/empreinte |',
     '|---|---|---|---|---|---|---|',
   );
   errorDetails.forEach((entry, index) => {
-    const clip = CLIP_BY_ID.get(entry.record.clipId);
-    const expected = (clip?.critical ?? [])
-      .map((critical) => `${critical.category}=${critical.value}`)
-      .join(', ');
-    const missing = entry.missing
-      .map((critical) => `${critical.category}=${critical.value}`)
-      .join(', ');
-    const aTranscript = aCleanByClip.get(entry.record.clipId)?.transcript ?? '';
+    const fingerprint = (value: string) =>
+      createHash('sha256').update(value).digest('hex').slice(0, 12);
     lines.push(
-      `| ${index + 1} | ${entry.record.clipId} | ${expected} | ${missing || '—'} | ` +
-        `« ${entry.record.transcript.trim() || (entry.record.error ? `erreur : ${entry.record.error}` : '(vide)')} » | ` +
-        `${entry.fixedByA ? 'oui' : 'non'} | « ${aTranscript} » |`,
+      `| ${index + 1} | ${entry.record.clipId} | ${entry.missing.join(', ') || '—'} | ` +
+        `${entry.bTranscript.length}/${fingerprint(entry.bTranscript)} | ` +
+        `${entry.fixedByA ? 'oui' : 'non'} | ${entry.aTranscript.length}/${fingerprint(entry.aTranscript)} |`,
     );
   });
   if (!errorDetails.length)
-    lines.push('| — | — | — | — | aucune erreur critique en B propre | — | — |');
+    lines.push('| — | — | — | aucune erreur critique en B propre | — | — |');
+
+  const noiseControls = records.filter((record) => record.noiseOnly);
+  lines.push('', '## Faux déclenchements sur bruit seul', '');
+  lines.push(
+    '| Condition | Sessions | Texte commité | Erreurs fournisseur |',
+    '|---|---:|---:|---:|',
+  );
+  for (const condition of ['B', 'F'] as const) {
+    const controls = noiseControls.filter((record) => record.condition === condition);
+    const triggered = controls.filter((record) => record.transcript.trim().length > 0).length;
+    const errors = controls.filter((record) => Boolean(record.error)).length;
+    lines.push(`| ${condition} | ${controls.length} | ${triggered} | ${errors} |`);
+  }
+  lines.push(
+    '',
+    '| Seed bruit | Condition | Texte commité | Erreur fournisseur |',
+    '|---:|---|---:|---:|',
+  );
+  const noiseSeeds = [
+    ...new Set(
+      noiseControls
+        .map((record) => record.noiseSeed)
+        .filter((seed): seed is number => seed !== null),
+    ),
+  ].sort((left, right) => left - right);
+  for (const seed of noiseSeeds) {
+    for (const condition of ['B', 'F'] as const) {
+      const record = noiseControls.find(
+        (entry) => entry.noiseSeed === seed && entry.condition === condition,
+      );
+      lines.push(
+        `| ${seed} | ${condition} | ${record?.transcript.trim() ? 1 : 0} | ${record?.error ? 1 : 0} |`,
+      );
+    }
+  }
 
   process.stdout.write(`${lines.join('\n')}\n`);
 }

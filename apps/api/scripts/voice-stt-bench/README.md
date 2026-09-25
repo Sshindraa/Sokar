@@ -82,7 +82,7 @@ L'audio reste sur le serveur, jamais commité.
 ## Banc narrowband — ce que coûte G.711 (phase 1)
 
 Mesure ce que la chaîne téléphonique narrowband coûte en précision de
-transcription, **sans toucher à la prod**. Quatre conditions sur **exactement
+transcription, **sans toucher à la prod**. Six conditions sur **exactement
 les mêmes clips et les mêmes seeds** :
 
 | Condition | Chaîne audio                                              | Scribe      | Chunks |
@@ -91,10 +91,15 @@ les mêmes clips et les mêmes seeds** :
 | `B`       | 300–3400 Hz → 8 kHz → A-law → PCM16 8 kHz (prod actuelle) | `pcm_8000`  | 20 ms  |
 | `C`       | comme `B` puis upsample 16 kHz                            | `pcm_16000` | 20 ms  |
 | `D`       | comme `B`                                                 | `pcm_8000`  | 100 ms |
+| `E`       | comme `B`, langue forcée `fr`                             | `pcm_8000`  | 20 ms  |
+| `F`       | comme `B`, `filter_background_audio=true`                 | `pcm_8000`  | 20 ms  |
 
 Tous les paramètres Scribe (langues, `keyterms`, VAD, `commit_strategy`) sont
 lus depuis `stt-bridge.ts` via son build compilé : seuls `audio_format` et la
-taille de chunk changent.
+taille de chunk changent, sauf E (langue) et F (filtre), dont le nom décrit
+l'unique réglage de modèle modifié. ElevenLabs interdit de combiner le filtre
+avec `include_timestamps`; F omet donc ce paramètre explicite tout en gardant
+`include_language_detection=true`. L'URL du chemin par défaut reste inchangée.
 
 ### Corpus
 
@@ -110,11 +115,30 @@ condition et par variante.
 ```bash
 cd apps/api
 
-# Clés de banc dédiées, jamais les clés de production (voir « Coût et garde-fous »).
-export ELEVENLABS_BENCH_API_KEY=...   # requis
-export CARTESIA_BENCH_API_KEY=...     # requis sauf BENCH_TTS_PROVIDER=say
+# ELEVENLABS_BENCH_API_KEY doit déjà être présent dans le shell ou apps/api/.env.
+# Le script refuse une clé absente ou identique à ELEVENLABS_API_KEY.
+pnpm --filter api build
 
-# Run réduit : 2 clips, 4 conditions, ~48 sessions. Sert à valider le budget.
+# F réduit : 8 phrases, propre/bruit, plus 3 contrôles bruit-seul B/F
+# (54 sessions au total). Les seeds et masques de pertes sont appariés à B.
+BENCH_TTS_PROVIDER=say BENCH_CONDITIONS=F BENCH_VARIANTS=clean,noisy \
+BENCH_LIMIT=8 BENCH_CONCURRENCY=4 \
+node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
+  > scripts/voice-stt-bench/.data/nb-results-F-reduced.json
+
+# F complet : 31 phrases, plus 3 contrôles bruit-seul pour B et F
+# (192 sessions au total). L'estimation utilise le tarif API public en USD.
+BENCH_TTS_PROVIDER=say BENCH_CONDITIONS=F BENCH_VARIANTS=clean,noisy \
+BENCH_LIMIT=31 BENCH_CONFIRM=1 BENCH_CONCURRENCY=4 \
+node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
+  > scripts/voice-stt-bench/.data/nb-results-F.json
+
+# Scoring F et faux déclenchements B/F sur bruit seul.
+pnpm exec tsx scripts/voice-stt-bench/nb-score.ts \
+  scripts/voice-stt-bench/.data/nb-results.json \
+  scripts/voice-stt-bench/.data/nb-results-F.json
+
+# Run historique A-D réduit : 2 clips, 4 conditions.
 BENCH_LIMIT=2 BENCH_CONCURRENCY=4 \
 node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
   > scripts/voice-stt-bench/.data/nb-results-reduced.json
@@ -130,15 +154,23 @@ pnpm exec tsx scripts/voice-stt-bench/nb-score.ts scripts/voice-stt-bench/.data/
 BENCH_TTS_PROVIDER=say BENCH_CONDITIONS=E BENCH_VARIANTS=clean,noisy \
   BENCH_LIMIT=31 BENCH_CONFIRM=1 BENCH_CONCURRENCY=4 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
-  > scripts/voice-stt-bench/.data/nb-results-e.json
+  > scripts/voice-stt-bench/.data/nb-results-E.json
+
+# Rescore hors ligne des slots récupérables après verrou FR, sans transcript en sortie.
+pnpm exec tsx scripts/voice-stt-bench/nb-language-rescore.ts \
+  scripts/voice-stt-bench/.data/nb-results.json \
+  scripts/voice-stt-bench/.data/nb-results-E.json
 ```
 
 Leviers : `BENCH_LIMIT`, `BENCH_CONCURRENCY`, `BENCH_CONDITIONS=A,B`,
 `BENCH_VARIANTS=clean,noisy`, `BENCH_STT_MODEL`, `BENCH_TTS_PROVIDER`.
 
-Le script affiche l'estimation de coût (clips × conditions × sessions, secondes
-d'audio, caractères TTS) **avant** toute synthèse ou envoi, puis exige
-`BENCH_CONFIRM=1` au-delà de 8 clips.
+Le script affiche avant tout appel les sessions, secondes d'audio, coût Scribe
+indicatif en USD et caractères TTS. L'estimation utilise le tarif public de
+[Scribe Realtime ($0.39/heure)](https://elevenlabs.io/pricing/api), majoré de
+20 % pour les keyterms selon la [référence Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime) ;
+le montant réellement facturé dépend du forfait. `say` est local et ne facture
+pas de TTS. `BENCH_CONFIRM=1` est obligatoire au-delà de 8 clips.
 
 ### Sources audio
 
@@ -155,8 +187,9 @@ dégradés et renvoie un texte de repli pour les autres. Il valide la plomberie
 ce n'est pas une mesure.
 
 ```bash
-# Clé de banc factice : rien n'est envoyé au fournisseur, seule la garde la lit.
-export ELEVENLABS_BENCH_API_KEY=bench-offline-mock
+# Valeur factice locale uniquement, jamais une clé fournisseur; rien ne part sur le réseau.
+read -rs ELEVENLABS_BENCH_API_KEY
+export ELEVENLABS_BENCH_API_KEY
 node --import tsx scripts/voice-stt-bench/nb-mock-scribe.ts &
 BENCH_TTS_PROVIDER=say BENCH_STT_URL=ws://127.0.0.1:8799 BENCH_LIMIT=2 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
@@ -166,9 +199,13 @@ pnpm exec tsx scripts/voice-stt-bench/nb-score.ts scripts/voice-stt-bench/.data/
 
 ### Coût et garde-fous
 
-Run complet : 31 clips × 4 conditions × 6 sessions = **744 sessions**, ~2 600 s
+Run complet A-D : 31 clips × 4 conditions × 6 sessions = **744 sessions**, ~2 600 s
 d'audio streamé (~43 min) silence final compris. Au tarif observé du compte
 gratuit ElevenLabs (~1 crédit/seconde), cela représente ~2 600 crédits, soit
 environ un quart du quota mensuel de 10 000. Le banc **ne doit pas** tourner sur
 la clé de production : le 24/09, un run sur ce compte a épuisé le quota partagé
 prod/staging. Prévoir une clé dédiée `ELEVENLABS_BENCH_API_KEY`.
+
+Le run F complet envoie 186 sessions parlées et 6 contrôles bruit-seul B/F,
+soit **192 sessions Scribe**. `say` est local et gratuit côté TTS. L'estimation
+des secondes d'audio streamé, silence final inclus, est affichée avant le run.

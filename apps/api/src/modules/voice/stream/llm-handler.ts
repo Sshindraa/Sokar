@@ -2,7 +2,9 @@
  * Logique LLM (ElevenLabs Scribe) — gestion des événements Scribe, traitement
  * des transcripts, spéculation LLM, et orchestration TTS.
  *
- * Extrait de handler.ts. Ces fonctions prennent une CallSession et un
+ * Extrait de handler.ts. Le routage V2 ne laisse le déterministe traiter qu'une
+ * réponse directe, unique et non ambiguë à l'interaction en attente.
+ * Ces fonctions prennent une CallSession et un
  * CallSessionManager en paramètres. Elles mutent l'état de la session
  * (state, speculativeLlm, transcript, etc.) mais c'est le design
  * existant — le handler principal délègue en passant la session par
@@ -40,8 +42,17 @@ import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.
 import { isSpeculativeLlmEnabled } from './speculation';
 import {
   getActivePendingInteraction,
+  extractConversationSlots,
   isModelTurnStalled,
   isNameCollectionBlocking,
+  isVoiceQuestionTranscript,
+  isVoiceDialogueStopRequest,
+  isVoiceDialogueIncompleteTranscript,
+  findVoiceSlotContradictions,
+  isDirectVoiceAnswerToPendingQuestion,
+  buildVoiceCorrectionClarification,
+  buildVoiceDialogueLoopRecovery,
+  isSafeVoiceCorrectionReply,
   recordModelTurnStall,
 } from './conversation-controller';
 import {
@@ -58,6 +69,8 @@ import {
   isTurnPlanAuthorityEnabled,
 } from './turn-plan-authority';
 import {
+  voiceLanguageLockedTotal,
+  voiceNonFrTranscriptAfterLockTotal,
   recordVoiceTurnPlanDeferred,
   type VoiceTurnPlanDeferredOutcome,
 } from '../../../shared/observability/metrics';
@@ -66,6 +79,7 @@ import { setSttSpellingProfile } from './stt-bridge';
 import {
   effectiveVoiceLanguage,
   hasReliableLanguageEvidence,
+  isFrenchLanguageLockEvidence,
   normalizeVoiceLanguage,
   resolveVoiceLanguage,
   supportsDeterministicVoiceLanguage,
@@ -107,6 +121,116 @@ const recentTranscripts = new WeakMap<
   { normalized: string; at: number; dialogueContext: string }
 >();
 export const LLM_FILLER_DELAY_MS = 1_000;
+
+const OPENING_DAY_NAMES: Record<string, string> = {
+  mon: 'lundi',
+  tue: 'mardi',
+  wed: 'mercredi',
+  thu: 'jeudi',
+  fri: 'vendredi',
+  sat: 'samedi',
+  sun: 'dimanche',
+};
+
+function buildOpeningHoursDialogueContext(session: CallSession): string {
+  if (!session.openingHours) {
+    return "Les horaires d'ouverture ne sont pas disponibles dans les données de cet appel. Ne les inventez pas.";
+  }
+  const lines = Object.entries(session.openingHours).map(([day, hours]) => {
+    if (hours === null) return `${OPENING_DAY_NAMES[day] ?? day} : fermé`;
+    if (hours?.open && hours.close) {
+      return `${OPENING_DAY_NAMES[day] ?? day} : ${hours.open}–${hours.close}`;
+    }
+    return `${OPENING_DAY_NAMES[day] ?? day} : horaires non renseignés`;
+  });
+  if (!lines.length) {
+    return "Les horaires d'ouverture ne sont pas disponibles dans les données de cet appel. Ne les inventez pas.";
+  }
+  return `Horaires d'ouverture vérifiés du restaurant : ${lines.join('; ')}.`;
+}
+
+function normalizeDialogueQuestion(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+type RecoverableReservationField = 'date' | 'time' | 'partySize';
+
+/** Use the same slot extractor as reservation turns, constrained to the asked field. */
+export function canRecoverNonFrenchReservationTurn(
+  session: CallSession,
+  transcript: string,
+): boolean {
+  const question = session.conversation.pendingQuestion;
+  let field: RecoverableReservationField | null =
+    question === 'date'
+      ? 'date'
+      : question === 'time' || question === 'timeChoice'
+        ? 'time'
+        : question === 'partySize' || question === 'partySizeConfirmation'
+          ? 'partySize'
+          : null;
+
+  if (
+    !field &&
+    (session.conversation.intent === 'reservation' ||
+      session.conversation.intent === 'availability')
+  ) {
+    if (!session.conversation.slots.date) field = 'date';
+    else if (!session.conversation.slots.time) field = 'time';
+    else if (session.conversation.slots.partySize === undefined) field = 'partySize';
+  }
+  if (!field) return false;
+
+  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+  return field === 'date'
+    ? Boolean(extracted.date)
+    : field === 'time'
+      ? Boolean(extracted.time)
+      : extracted.partySize !== undefined;
+}
+
+export function applyVoiceLanguageLock(
+  session: CallSession,
+  transcript: string,
+  languageCode: string | null | undefined,
+): { lockedNow: boolean; nonFrenchOutcome?: 'parsed' | 'reprompt' } {
+  if (process.env.VOICE_STT_LANGUAGE_LOCK !== 'true') return { lockedNow: false };
+  const detectedLanguage = normalizeVoiceLanguage(languageCode);
+  const lockedNow =
+    !session.languageLocked && isFrenchLanguageLockEvidence(transcript, languageCode);
+  if (lockedNow) {
+    session.languageLocked = 'fr';
+    session.sttRelockPending = true;
+    voiceLanguageLockedTotal.inc();
+    session.abortController?.abort();
+    session.abortController = null;
+    session.speculativeLlm = null;
+    session.speculativeResult = null;
+    session.speculativeTranscript = '';
+  }
+  if (session.languageLocked !== 'fr') return { lockedNow };
+
+  session.voiceLanguageCode = 'fr';
+  session.voiceLanguageCandidate = null;
+  if (!detectedLanguage || detectedLanguage === 'fr') return { lockedNow };
+
+  const parsed = canRecoverNonFrenchReservationTurn(session, transcript);
+  const nonFrenchOutcome = parsed ? 'parsed' : 'reprompt';
+  voiceNonFrTranscriptAfterLockTotal.inc({ outcome: nonFrenchOutcome });
+  session.forceFrenchReprompt = !parsed;
+  session.abortController?.abort();
+  session.abortController = null;
+  session.speculativeLlm = null;
+  session.speculativeResult = null;
+  session.speculativeTranscript = '';
+  return { lockedNow, nonFrenchOutcome };
+}
 
 function syncSpellingProfile(session: CallSession): void {
   setSttSpellingProfile(
@@ -491,7 +615,8 @@ export function handleSttEvent(
         event.transcript = `${interruptedTranscript} ${event.transcript}`;
       }
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
-      if (detectedLanguage) {
+      applyVoiceLanguageLock(session, event.transcript, event.languageCode);
+      if (!session.languageLocked && detectedLanguage) {
         const previousLanguage = effectiveVoiceLanguage(session);
         const languageDecision = resolveVoiceLanguage(
           previousLanguage,
@@ -819,6 +944,8 @@ export async function processTranscriptStreaming(
   mgr: CallSessionManager,
 ): Promise<void> {
   const transcript = normalizeSttTranscript(rawTranscript);
+  const forceFrenchReprompt = session.forceFrenchReprompt === true;
+  session.forceFrenchReprompt = false;
   if (!transcript.trim()) return;
   session.lastProcessedTranscript = transcript;
   if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
@@ -833,9 +960,11 @@ export async function processTranscriptStreaming(
   }
 
   const responseGeneration = ++session.responseGeneration;
+  const dialogueV2Enabled = process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true';
   const language = effectiveVoiceLanguage(session);
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;
+  const lastAssistantQuestionBeforeTurn = session.conversation.lastAssistantQuestion;
   const interactionBeforeTurn = getActivePendingInteraction(session);
   const turnPlanContext: TurnPlanContext = {
     transcript,
@@ -871,14 +1000,60 @@ export async function processTranscriptStreaming(
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
   if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
 
+  if (dialogueV2Enabled && isVoiceDialogueIncompleteTranscript(transcript)) {
+    const response = 'Oui, je vous écoute.';
+    session.history.push({ role: 'assistant', content: response });
+    recordAssistantReplyWithPolicy(session, response, {
+      source: 'explicit',
+      operation: 'keep',
+    });
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
   const livenessResponse = deterministicLanguage
     ? buildLivenessResponse(session, transcript)
     : null;
   const classifiedAct = classifyVoiceSpeechActInContext(session, transcript);
-  const explicitEnd = isExplicitCallEnd(transcript);
-  const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
-  if (!explicitEnd) suspendPendingInteractionForDetour(session, transcript);
-  recordUserTurn(session, transcript, speechAct);
+  const questionTurn = dialogueV2Enabled && isVoiceQuestionTranscript(transcript);
+  const stopRequest = dialogueV2Enabled && isVoiceDialogueStopRequest(transcript);
+  const slotContradictions = dialogueV2Enabled
+    ? findVoiceSlotContradictions(session, transcript)
+    : [];
+  const correctionTurn =
+    dialogueV2Enabled && (classifiedAct === 'correction' || slotContradictions.length > 0);
+  const questionOrCorrection = questionTurn || correctionTurn;
+  const directAnswer =
+    dialogueV2Enabled &&
+    !questionOrCorrection &&
+    isDirectVoiceAnswerToPendingQuestion(session, transcript, pendingQuestionBeforeTurn);
+  const dialogueLoopDetected =
+    dialogueV2Enabled &&
+    (session.currentTurn?.loopDetected === true ||
+      session.conversation.lastDialogueGuard?.level === 'reformulate' ||
+      session.conversation.lastDialogueGuard?.level === 'escalate');
+  const modelLoopRecovery =
+    dialogueV2Enabled &&
+    Boolean(pendingQuestionBeforeTurn) &&
+    (dialogueLoopDetected || (!directAnswer && session.conversation.stalledTurns > 0));
+  const routeToModel =
+    dialogueV2Enabled && (questionOrCorrection || !directAnswer || dialogueLoopDetected);
+  const explicitEnd = !forceFrenchReprompt && (stopRequest || isExplicitCallEnd(transcript));
+  const speechAct = forceFrenchReprompt
+    ? 'content'
+    : classifiedAct === 'closing' && !explicitEnd
+      ? 'backchannel'
+      : classifiedAct;
+  if (!explicitEnd && !forceFrenchReprompt) suspendPendingInteractionForDetour(session, transcript);
+  if (
+    !forceFrenchReprompt &&
+    (!dialogueV2Enabled || directAnswer) &&
+    !(dialogueV2Enabled && stopRequest)
+  ) {
+    recordUserTurn(session, transcript, speechAct);
+  }
   const expectedAnswer = session.conversation.lastExpectedAnswer;
   if (expectedAnswer) {
     // Statut et scores seulement : ni transcription ni valeur retenue.
@@ -898,8 +1073,26 @@ export async function processTranscriptStreaming(
     },
     '[voice-turn] Classified final user turn',
   );
+  if (forceFrenchReprompt) {
+    const response =
+      "Désolé, je n'ai pas bien compris. Pouvez-vous me répondre en français, s'il vous plaît ?";
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReplyWithPolicy(session, response, {
+      source: 'explicit',
+      operation: 'keep',
+    });
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
   if (explicitEnd) {
-    const goodbye = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL', language);
+    const goodbye = stopRequest
+      ? 'Bien sûr, nous nous arrêtons là. Vous pourrez nous rappeler quand vous le souhaitez. Bonne journée.'
+      : selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL', language);
     session.turnCount++;
     session.history.push(
       { role: 'user', content: transcript },
@@ -916,10 +1109,12 @@ export async function processTranscriptStreaming(
   const confirmationTurn = pendingQuestionBeforeTurn === 'confirmation';
   const affirmativeConfirmation = confirmationTurn && isAffirmativeShortResponse(transcript);
   const negativeConfirmation = confirmationTurn && isNegativeShortResponse(transcript);
-  if (negativeConfirmation) clearReservationConfirmation(session);
+  if (negativeConfirmation && !routeToModel) clearReservationConfirmation(session);
 
   const recapRejectionPlan =
-    confirmationTurn && deterministicLanguage ? buildRecapRejectionPlan(session, transcript) : null;
+    !routeToModel && confirmationTurn && deterministicLanguage
+      ? buildRecapRejectionPlan(session, transcript)
+      : null;
   if (recapRejectionPlan) {
     clearReservationConfirmation(session);
     session.history.push(
@@ -933,7 +1128,11 @@ export async function processTranscriptStreaming(
     return;
   }
 
-  if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
+  if (
+    !routeToModel &&
+    deterministicLanguage &&
+    /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)
+  ) {
     const question = session.conversation.lastAssistantQuestion;
     const response =
       language === 'en'
@@ -962,6 +1161,7 @@ export async function processTranscriptStreaming(
   const previousReply =
     session.history.filter((message) => message.role === 'assistant').at(-1)?.content ?? '';
   if (
+    !routeToModel &&
     deterministicLanguage &&
     speechAct === 'content' &&
     /au revoir|à demain|goodbye|see you|have a (?:good|great) (?:day|evening)/i.test(
@@ -990,7 +1190,7 @@ export async function processTranscriptStreaming(
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
     return;
   }
-  if (livenessResponse) {
+  if (livenessResponse && !routeToModel) {
     writeDebugLog(
       `[processTranscriptStreaming] Resuming the previous turn after liveness check: "${transcript}"`,
     );
@@ -1013,9 +1213,10 @@ export async function processTranscriptStreaming(
   // Le STT reste Scribe pour la conversation générale. Pour une suite de
   // lettres, on évite toutefois que le LLM la transforme en mot plausible
   // (ex. « K I F » → « Kif ») et on exige une confirmation explicite.
-  const customerNameTurn = deterministicLanguage
-    ? handleCustomerNameTurn(session, transcript)
-    : { response: null, escalate: false, confirmedName: null };
+  const customerNameTurn =
+    deterministicLanguage && !routeToModel
+      ? handleCustomerNameTurn(session, transcript)
+      : { response: null, escalate: false, confirmedName: null };
   if (customerNameTurn.response) {
     // Un nouveau tour peut avoir invalidé cette réponse pendant la lecture
     // TTS précédente (barge-in). Une réponse périmée ne doit jamais remettre
@@ -1064,6 +1265,7 @@ export async function processTranscriptStreaming(
   // Le garde-fou anti-boucle a proposé un repli humain (transfert ou message).
   // L'annonce ne vaut que si l'action est réellement exécutée ici.
   if (
+    !routeToModel &&
     deterministicLanguage &&
     pendingQuestionBeforeTurn === 'humanFallback' &&
     session.conversation.humanFallbackOffered
@@ -1123,7 +1325,7 @@ export async function processTranscriptStreaming(
   // Groupe au-delà du seuil du restaurant, nombre confirmé : le gérant prend
   // la main (transfert réel), sinon un message est enregistré pour lui.
   const confirmedGroup = session.conversation.groupRequest;
-  if (deterministicLanguage && confirmedGroup?.confirmed) {
+  if (!routeToModel && deterministicLanguage && confirmedGroup?.confirmed) {
     session.conversation.groupRequest = null;
     const transfer = Boolean(session.managerPhone?.trim());
     const response = transfer
@@ -1149,7 +1351,7 @@ export async function processTranscriptStreaming(
   // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La
   // confirmation de l'orthographe du nom ne suffit pas : le client doit encore
   // valider la date, l'heure et le nombre de personnes.
-  if (affirmativeConfirmation) {
+  if (affirmativeConfirmation && !routeToModel) {
     if (!confirmReservationDraft(session)) {
       const response =
         language === 'en'
@@ -1205,7 +1407,8 @@ export async function processTranscriptStreaming(
         .join(' ')}`
     : transcript;
 
-  const openRequest = deterministicLanguage ? getOpenAvailabilityRequest(session) : null;
+  const openRequest =
+    deterministicLanguage && !routeToModel ? getOpenAvailabilityRequest(session) : null;
   if (openRequest) {
     session.conversation.toolInFlight = 'checkAvailability';
     recordVoiceTurnEvent(session, 'availability_started', openRequest);
@@ -1276,12 +1479,14 @@ export async function processTranscriptStreaming(
   const modelTurnStalled = unresolvedContentTurn && isModelTurnStalled(session);
   if (modelTurnStalled) recordVoiceTurnPlanDeferred('stall_handoff');
   const deferUnresolvedToModel = unresolvedContentTurn && !modelTurnStalled;
-  const deterministicReplyPlan = deterministicLanguage
-    ? (buildDeterministicTurnPlan(session, speechAct, transcript, { deferUnresolvedToModel }) ??
-      (deferUnresolvedToModel ? null : buildReservationProgressPlan(session, transcript)))
-    : null;
+  const deterministicReplyPlan =
+    deterministicLanguage && !routeToModel
+      ? (buildDeterministicTurnPlan(session, speechAct, transcript, { deferUnresolvedToModel }) ??
+        (deferUnresolvedToModel ? null : buildReservationProgressPlan(session, transcript)))
+      : null;
   const deterministicResponse = deterministicReplyPlan?.reply ?? null;
   const dialogueGuard = session.conversation.lastDialogueGuard;
+  const dialogueLoopRecovery = routeToModel && modelLoopRecovery;
   if (deterministicResponse && dialogueGuard && dialogueGuard.level !== 'ask') {
     recordVoiceTurnEvent(session, 'dialogue_guard', {
       level: dialogueGuard.level,
@@ -1346,7 +1551,7 @@ export async function processTranscriptStreaming(
   }
 
   let availabilityContext: string | undefined;
-  const availabilityRequest = getReadyAvailabilityRequest(session);
+  const availabilityRequest = routeToModel ? null : getReadyAvailabilityRequest(session);
   if (availabilityRequest) {
     session.conversation.toolInFlight = 'checkAvailability';
     mgr.transition(session, 'PROCESSING');
@@ -1467,13 +1672,41 @@ export async function processTranscriptStreaming(
   // réponse, ce qui réduit le prompt et le temps de génération.
   const telemetryTurnId = session.currentTurn?.id;
   let inBandTurnPlanResult: InBandTurnPlanResult | undefined;
+  const bufferModelReply = correctionTurn || dialogueLoopRecovery;
+  const previousPendingQuestion = pendingQuestionBeforeTurn;
+  const dialogueContext = routeToModel
+    ? [
+        'POLITIQUE DIALOGUE V2 : les faits déjà présents dans le brouillon restent la référence. Ne sautez jamais une étape obligatoire.',
+        questionTurn
+          ? "L'appelant pose une question. Répondez-y d'abord avec les horaires et informations vérifiés fournis ci-dessous, ou avec une vérification de disponibilité en lecture seule. Une date ou heure mentionnée dans une question est une proposition : ne la retenez pas comme choix confirmé. Ensuite, reprenez naturellement la réservation au champ qui manque."
+          : '',
+        correctionTurn
+          ? slotContradictions.length
+            ? "L'appelant corrige ou contredit une valeur retenue. Ne remplacez rien silencieusement et ne présentez pas la nouvelle valeur comme acquise. Dites l'ancienne et la nouvelle valeur, puis demandez laquelle est correcte. N'exécutez aucune action de réservation pendant cette clarification."
+            : "L'appelant précise qu'une phrase précédente était une question. Reconnaissez l'erreur, répondez à la question en vous appuyant sur l'historique et les données disponibles, puis reprenez le champ réellement manquant. N'inventez pas une valeur de remplacement."
+          : '',
+        dialogueLoopRecovery
+          ? 'Le dialogue a déjà bloqué sur la question en attente. Résumez brièvement les valeurs comprises, dites explicitement ce qui manque et demandez-le avec une formulation différente. Ne reposez pas la même question.'
+          : '',
+        !questionTurn && !correctionTurn
+          ? "Ce tour n'est pas une réponse directe, unique et non ambiguë au champ actuellement demandé. Clarifiez-le naturellement sans passer au champ suivant."
+          : '',
+        questionTurn ? buildOpeningHoursDialogueContext(session) : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : undefined;
+  const llmContext = [availabilityContext, dialogueContext].filter(Boolean).join('\n\n');
   const shouldCollectInBandTurnPlan =
     turnPlanShadowEnabled &&
+    !routeToModel &&
     !explicitEnd &&
     speechAct !== 'liveness' &&
     !isNameCollectionBlocking(session);
   const llmOptions = {
-    ...(availabilityContext ? { context: availabilityContext, includeTools: false } : {}),
+    ...(llmContext ? { context: llmContext } : {}),
+    ...(availabilityContext || (routeToModel && correctionTurn) ? { includeTools: false } : {}),
+    ...(questionTurn ? { allowedTools: ['checkAvailability'] } : {}),
     ...(confirmationTurn ? { includeTools: false } : {}),
     ...(shouldCollectInBandTurnPlan
       ? {
@@ -1572,7 +1805,9 @@ export async function processTranscriptStreaming(
 
   // Le TTS Context V2 garde son ciblage ConfigCat indépendant du shadow TurnPlan.
   const useCartesiaContext =
-    isCartesiaContextV2Enabled() && (await isVoiceTtsContextV2Enabled(session.restaurantId));
+    !bufferModelReply &&
+    isCartesiaContextV2Enabled() &&
+    (await isVoiceTtsContextV2Enabled(session.restaurantId));
   if (!isCurrentResponse()) return;
   const ttsPromises: Promise<void>[] = [];
   // Ouvrir le socket pendant la génération LLM masque sa poignée de main
@@ -1620,6 +1855,7 @@ export async function processTranscriptStreaming(
 
         const cleanPhrase = stripRepeatedGreeting(phrase, session);
         if (!cleanPhrase || availabilityGuardTripped) return;
+        if (bufferModelReply) return;
         if (guardAvailability) {
           for (const time of extractSpokenTimes(cleanPhrase)) spokenTimes.add(time);
           if (
@@ -1666,8 +1902,50 @@ export async function processTranscriptStreaming(
       },
       llmOptions,
     );
-    const fullResponse = typeof generatedResponse === 'string' ? generatedResponse : '';
+    let fullResponse = typeof generatedResponse === 'string' ? generatedResponse : '';
     if (!isCurrentResponse() || abortController.signal.aborted) return;
+    if (bufferModelReply) {
+      const previousQuestion = normalizeDialogueQuestion(lastAssistantQuestionBeforeTurn);
+      const generatedQuestion = normalizeDialogueQuestion(finalAssistantQuestion(fullResponse));
+      const sameQuestionTarget = (() => {
+        const question = generatedQuestion;
+        switch (previousPendingQuestion) {
+          case 'partySize':
+          case 'partySizeConfirmation':
+            return /\b(?:combien|nombre de personnes|personnes)\b/u.test(question);
+          case 'date':
+            return /\b(?:quel jour|quelle date|quand)\b/u.test(question);
+          case 'time':
+          case 'timeChoice':
+            return /\b(?:quelle heure|quel horaire|a quelle heure|venir vers quelle)\b/u.test(
+              question,
+            );
+          case 'customerName':
+            return /\b(?:quel nom|a quel nom)\b/u.test(question);
+          case 'customerPhone':
+            return /\b(?:quel numero|numero de telephone)\b/u.test(question);
+          default:
+            return false;
+        }
+      })();
+      const repeatedQuestion =
+        (dialogueLoopRecovery || correctionTurn) &&
+        Boolean(previousQuestion) &&
+        (generatedQuestion === previousQuestion || (dialogueLoopRecovery && sameQuestionTarget));
+      const unsafeCorrection =
+        correctionTurn && !isSafeVoiceCorrectionReply(session, transcript, fullResponse);
+      if (repeatedQuestion)
+        fullResponse = buildVoiceDialogueLoopRecovery(session, previousPendingQuestion);
+      else if (unsafeCorrection)
+        fullResponse = buildVoiceCorrectionClarification(session, transcript);
+      if (fullResponse !== generatedResponse) {
+        const lastMessage = session.history.at(-1);
+        if (lastMessage?.role === 'assistant' && lastMessage.content === generatedResponse) {
+          session.history.pop();
+        }
+        session.history.push({ role: 'assistant', content: fullResponse });
+      }
+    }
     recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_completed', {
       mode: availabilityContext ? 'availability_context' : 'live',
       durationMs: Date.now() - llmStartedAt,
@@ -1708,11 +1986,27 @@ export async function processTranscriptStreaming(
       return;
     }
     recordLlmReply(fullResponse);
+    if (routeToModel && !questionOrCorrection && !deferUnresolvedToModel) {
+      recordModelTurnStall(
+        session,
+        pendingQuestionBeforeTurn,
+        hasTurnFactProgress(
+          turnPlanBefore,
+          captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+        ),
+      );
+    }
     syncSpellingProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;
-    if (contextTts) {
+    if (bufferModelReply) {
+      if (contextTts) {
+        contextTts.cancel();
+        settleContextDebugSpeech(false);
+      }
+      await speakTtsStreamed(session, fullResponse);
+    } else if (contextTts) {
       try {
         await contextTts.finish();
         settleContextDebugSpeech(isCurrentResponse());
@@ -1772,12 +2066,21 @@ export async function processTranscriptStreaming(
     const audioAlreadySent = ttsPromises.length > 0 || contextTtsRef.current?.hasAudioOutput;
     if (!audioAlreadySent && isSessionActiveForTts(session)) {
       const failurePlan = buildLlmFailurePlan(session);
+      const failureReply = correctionTurn
+        ? buildVoiceCorrectionClarification(session, transcript)
+        : dialogueLoopRecovery
+          ? buildVoiceDialogueLoopRecovery(session, previousPendingQuestion)
+          : failurePlan.reply;
       // processUtteranceStreaming a déjà ajouté le tour utilisateur à l'historique.
-      session.history.push({ role: 'assistant', content: failurePlan.reply });
-      recordAssistantReplyWithPolicy(session, failurePlan.reply, failurePlan.proposal);
+      session.history.push({ role: 'assistant', content: failureReply });
+      if (correctionTurn || dialogueLoopRecovery) {
+        recordAssistantReplyFromLlmTextFallback(session, failureReply);
+      } else {
+        recordAssistantReplyWithPolicy(session, failureReply, failurePlan.proposal);
+      }
       mgr.transition(session, 'SPEAKING');
       try {
-        await speakTtsStreamed(session, failurePlan.reply);
+        await speakTtsStreamed(session, failureReply);
       } catch (ttsErr) {
         logger.error(
           { err: ttsErr, callId: session.callControlId },

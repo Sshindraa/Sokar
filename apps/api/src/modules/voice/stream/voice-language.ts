@@ -240,19 +240,37 @@ export function normalizeVoiceLocale(code: string | null | undefined): VoiceLoca
 
 /** Langue active d'un appel ; le français reste le comportement historique. */
 export function effectiveVoiceLanguage(
-  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode'>,
+  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode' | 'languageLocked'>,
 ): VoiceLanguageCode {
-  return session.voiceLanguageCode ?? normalizeVoiceLanguage(session.sttLanguageCode) ?? 'fr';
+  return (
+    session.languageLocked ??
+    session.voiceLanguageCode ??
+    normalizeVoiceLanguage(session.sttLanguageCode) ??
+    'fr'
+  );
 }
 
 /** Locale Cartesia active pour un appel. */
 export function effectiveVoiceLocale(
-  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode'>,
+  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode' | 'languageLocked'>,
 ): VoiceLocaleCode {
+  if (session.languageLocked) {
+    return CARTESIA_DEFAULT_LOCALE_BY_LANGUAGE[session.languageLocked];
+  }
   return (
     normalizeVoiceLocale(session.sttLanguageCode) ??
     CARTESIA_DEFAULT_LOCALE_BY_LANGUAGE[effectiveVoiceLanguage(session)]
   );
+}
+
+/** Un premier tour français de deux mots minimum pose le verrou applicatif. */
+export function isFrenchLanguageLockEvidence(
+  transcript: string,
+  detectedLanguage: string | null | undefined,
+): boolean {
+  if (normalizeVoiceLanguage(detectedLanguage) !== 'fr') return false;
+  const wordCount = transcript.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+  return wordCount >= 2;
 }
 
 /**

@@ -70,6 +70,8 @@ const PROD_HOST_ALLOWLIST = [
 
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 
+export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
+
 /**
  * Stripe live secret keys must never be used by a local/test process.
  * Production mode is deliberately the only environment where they are
@@ -221,6 +223,12 @@ const EnvSchema = z
     // Regroupement des trames audio avant envoi à Scribe : 20 (défaut, envoi
     // immédiat trame par trame) ou un multiple de 20 entre 40 et 200.
     VOICE_STT_CHUNK_MS: sttChunkMsSchema,
+    // Filtrage du bruit de fond Scribe et verrou français au premier tour FR.
+    // Les deux restent strictement inactifs par défaut.
+    VOICE_STT_FILTER_BACKGROUND: voiceSttBooleanFlagSchema,
+    VOICE_STT_LANGUAGE_LOCK: voiceSttBooleanFlagSchema,
+    // Routage conversationnel strict : seul un slot direct et non ambigu reste déterministe.
+    VOICE_DIALOGUE_LISTENING_V2: voiceSttBooleanFlagSchema,
     // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
     // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
     VOICE_TELNYX_CODEC: telnyxCodecSchema,

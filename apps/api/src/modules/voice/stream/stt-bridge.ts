@@ -3,13 +3,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { CallSession, SttEvent, SttTurnConfig, SttWord } from './types';
 import { CallSessionManager } from './manager';
-import { isNameCollectionBlocking } from './conversation-controller';
+import {
+  isNameCollectionBlocking,
+  isVoiceDialogueIncompleteTranscript,
+} from './conversation-controller';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { describeTranscript } from './pii-redact';
 import {
   voiceProviderErrorsTotal,
+  voiceSttRelockTotal,
   voiceSttAudioMessagesTotal,
   voiceSttChunkBytes,
 } from '../../../shared/observability/metrics';
@@ -32,8 +36,12 @@ export const STT_CONNECT_TIMEOUT_MS = 2_500;
 // Laisse passer quatre délais de connexion (4 × 2,5 s) et le backoff
 // (3,5 s) avant le repli déclenché par la limite d'échecs consécutifs.
 export const STT_UNAVAILABLE_DEADLINE_MS = 15_000;
+export const DIALOGUE_V2_INCOMPLETE_HOLD_MS = 900;
 
-type SttWebSocketFactory = (url: string, options: { headers: Record<string, string> }) => WebSocket;
+export type SttWebSocketFactory = (
+  url: string,
+  options: { headers: Record<string, string> },
+) => WebSocket;
 
 function terminalSttReason(
   messageType: string | undefined,
@@ -116,6 +124,7 @@ function handleSttConnectionFailure(
   error: Error,
   createSocket: SttWebSocketFactory,
 ): void {
+  if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
   if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
   session.sttConsecutiveFailures = (session.sttConsecutiveFailures ?? 0) + 1;
   if (session.sttConsecutiveFailures >= STT_MAX_CONSECUTIVE_FAILURES) {
@@ -141,6 +150,85 @@ function handleSttConnectionFailure(
       // The connection attempt records its own failure and schedules the next retry.
     });
   }, delay);
+}
+
+/** A failed forced-French handshake restores the old auto-detect socket when possible. */
+function scheduleAutoDetectAfterRelockFailure(
+  session: CallSession,
+  createSocket: SttWebSocketFactory,
+): boolean {
+  if (!session.sttRelockAttempt) return false;
+  session.sttRelockAttempt = false;
+  session.sttFrenchOnly = false;
+  voiceSttRelockTotal.inc({ result: 'failed' });
+  const failedSocket = session.sttWs;
+  session.sttWs = null;
+  session.sttReady = null;
+  try {
+    if (failedSocket?.readyState === WebSocket.OPEN) {
+      failedSocket.close(1011, 'French language relock failed');
+    }
+  } catch {
+    // The automatic-language reconnect below remains best effort.
+  }
+  if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+  if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
+  session.sttConnectTimeout = null;
+  session.sttConnectionDeadlineTimer = null;
+  if (session.sttRetryTimer) clearTimeout(session.sttRetryTimer);
+  const previousSocket = session.sttRelockPreviousWs;
+  session.sttRelockPreviousWs = null;
+  if (previousSocket?.readyState === WebSocket.OPEN) {
+    session.sttWs = previousSocket;
+    session.sttReady = null;
+    resumeSttAfterOpen(session);
+    return true;
+  }
+  session.sttRetryTimer = setTimeout(() => {
+    session.sttRetryTimer = null;
+    if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
+    connectStt(session, undefined, createSocket).catch(() => {
+      // The normal reconnect path owns retries and eventual provider fallback.
+    });
+  }, 500);
+  return true;
+}
+
+/** Called at the transition into TTS, never while the customer has the floor. */
+export function beginFrenchSttRelock(
+  session: CallSession,
+  createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
+): void {
+  if (
+    !session.sttRelockPending ||
+    session.languageLocked !== 'fr' ||
+    session.state !== 'SPEAKING' ||
+    session.ended
+  )
+    return;
+
+  const oldSocket = session.sttWs;
+  if (oldSocket?.readyState !== WebSocket.OPEN) {
+    if (!session.sttReady && !session.sttRetryTimer) {
+      session.sttRelockPending = false;
+      voiceSttRelockTotal.inc({ result: 'skipped' });
+    }
+    return;
+  }
+
+  clearSttChunkTimer(session);
+  const pendingChunk = session.sttChunkBuffer;
+  session.sttChunkBuffer = null;
+  if (pendingChunk?.length) session.audioBuffer.push(pendingChunk);
+  session.sttRelockPending = false;
+  session.sttFrenchOnly = true;
+  session.sttRelockAttempt = true;
+  session.sttRelockPreviousWs = oldSocket;
+  session.sttWs = null;
+  session.sttReady = null;
+  connectStt(session, undefined, createSocket).catch(() => {
+    // scheduleAutoDetectAfterRelockFailure preserves the call if this fails.
+  });
 }
 
 /**
@@ -488,6 +576,8 @@ export function buildSttUrl(
     restaurantName?: string;
     keyterms?: readonly string[];
     languages?: readonly string[];
+    filterBackgroundAudio?: boolean;
+    forceFrench?: boolean;
   } = {},
 ): string {
   const params = new URLSearchParams({
@@ -498,16 +588,22 @@ export function buildSttUrl(
     vad_threshold: '0.4',
     min_speech_duration_ms: String(turnConfig.minSpeechDurationMs),
     min_silence_duration_ms: String(turnConfig.minSilenceDurationMs),
-    include_timestamps: 'true',
-    include_language_detection: 'true',
+    // Scribe rejects `filter_background_audio` together with `include_timestamps`.
+    ...(!options.filterBackgroundAudio ? { include_timestamps: 'true' } : {}),
+    include_language_detection: options.forceFrench ? 'false' : 'true',
   });
 
-  for (const language of options.languages ?? getSttLanguageCodes()) {
-    const normalized = normalizeSttLanguageCode(language);
-    if (STT_LANGUAGE_CODE_PATTERN.test(normalized)) {
-      params.append('secondary_languages', normalized);
+  if (options.forceFrench) {
+    params.set('language_code', 'fr');
+  } else {
+    for (const language of options.languages ?? getSttLanguageCodes()) {
+      const normalized = normalizeSttLanguageCode(language);
+      if (STT_LANGUAGE_CODE_PATTERN.test(normalized)) {
+        params.append('secondary_languages', normalized);
+      }
     }
   }
+  if (options.filterBackgroundAudio) params.set('filter_background_audio', 'true');
   for (const keyterm of buildSttKeyterms(options.restaurantName, options.keyterms)) {
     params.append('keyterms', keyterm);
   }
@@ -571,6 +667,32 @@ function mergeSttTranscripts(previous: string, next: string): string {
   return [...previousWords, ...nextWords].join(' ');
 }
 
+function mergeIncompleteDialogueTranscript(previous: string, next: string): string {
+  const normalize = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLocaleLowerCase('fr-FR')
+      .replace(/[^\p{L}\p{N}]/gu, '');
+  const previousWords = transcriptWords(previous);
+  const nextWords = transcriptWords(next);
+  const previousNormalized = previousWords.map(normalize);
+  const nextNormalized = nextWords.map(normalize);
+  if (
+    previousNormalized.length <= nextNormalized.length &&
+    previousNormalized.every((word, index) => word === nextNormalized[index])
+  ) {
+    return next.trim();
+  }
+  if (
+    nextNormalized.length <= previousNormalized.length &&
+    nextNormalized.every((word, index) => word === previousNormalized[index])
+  ) {
+    return previous.trim();
+  }
+  return mergeSttTranscripts(previous, next);
+}
+
 function clearSemanticHold(
   session: CallSession,
 ): NonNullable<CallSession['sttSemanticHold']> | null {
@@ -578,6 +700,34 @@ function clearSemanticHold(
   if (hold?.timer) clearTimeout(hold.timer);
   session.sttSemanticHold = null;
   return hold;
+}
+
+function holdIncompleteDialogueTranscript(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
+  const previous = clearSemanticHold(session);
+  const mergedWords =
+    previous?.words || words ? [...(previous?.words ?? []), ...(words ?? [])] : undefined;
+  const hold = {
+    transcript: previous
+      ? mergeIncompleteDialogueTranscript(previous.transcript, transcript)
+      : transcript,
+    ...(mergedWords ? { words: mergedWords } : {}),
+    ...((languageCode ?? previous?.languageCode)
+      ? { languageCode: languageCode ?? previous?.languageCode }
+      : {}),
+    holdMs: DIALOGUE_V2_INCOMPLETE_HOLD_MS,
+    timer: null,
+  };
+  session.sttSemanticHold = hold;
+  logger.debug(
+    { callId: session.callControlId, holdMs: hold.holdMs, reason: 'incomplete_dialogue_turn' },
+    '[stt] Holding incomplete dialogue turn',
+  );
+  armSemanticHoldTimer(session, hold);
 }
 
 function armSemanticHoldTimer(
@@ -607,7 +757,11 @@ function dispatchOrHoldUtteranceEnd(
   // avant que le tour soit traité.
   flushSttChunkBuffer(session);
   const previous = clearSemanticHold(session);
-  const merged = previous ? mergeSttTranscripts(previous.transcript, transcript) : transcript;
+  const merged = previous
+    ? isVoiceDialogueIncompleteTranscript(previous.transcript)
+      ? mergeIncompleteDialogueTranscript(previous.transcript, transcript)
+      : mergeSttTranscripts(previous.transcript, transcript)
+    : transcript;
   const mergedWords = previous?.words && words ? [...previous.words, ...words] : words;
   const mergedLanguage = languageCode ?? previous?.languageCode;
 
@@ -731,7 +885,11 @@ function deliverSttAudio(session: CallSession, audio: Buffer): void {
     sendSessionAudioChunk(session, audio);
     return;
   }
-  if (session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX) session.audioBuffer.shift();
+  if (
+    session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX &&
+    !(process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && session.languageLocked === 'fr')
+  )
+    session.audioBuffer.shift();
   session.audioBuffer.push(audio);
 }
 
@@ -1030,6 +1188,23 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
 
+  if (
+    process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true' &&
+    isVoiceDialogueIncompleteTranscript(cleanTranscript)
+  ) {
+    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    const hold = session.sttSemanticHold;
+    if (hold) {
+      if (hold.timer) clearTimeout(hold.timer);
+      hold.timer = null;
+      hold.transcript = mergeIncompleteDialogueTranscript(hold.transcript, cleanTranscript);
+      hold.holdMs = DIALOGUE_V2_INCOMPLETE_HOLD_MS;
+      armSemanticHoldTimer(session, hold);
+    }
+    session.turnTranscript = mergeSttTranscripts(session.turnTranscript, cleanTranscript);
+    return;
+  }
+
   const lowSignalReason = lowSignalTranscriptReason(cleanTranscript);
   if (lowSignalReason) {
     // Conserver le texte pour que le commit stable suivant puisse le remplacer,
@@ -1090,6 +1265,15 @@ function dispatchCommittedTranscript(
   session.turnTranscript = '';
   if (!cleanTranscript) return;
 
+  if (
+    process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true' &&
+    isVoiceDialogueIncompleteTranscript(cleanTranscript)
+  ) {
+    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode);
+    return;
+  }
+
   const lowSignalReason = lowSignalTranscriptReason(cleanTranscript);
   if (lowSignalReason) {
     logger.info(
@@ -1122,7 +1306,7 @@ function dispatchCommittedTranscript(
     schedulePendingSttEndOfTurn(session);
     return;
   }
-  if (isSmartEndpointEnabled(session)) {
+  if (isSmartEndpointEnabled(session) || process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true') {
     dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode);
     return;
   }
@@ -1202,6 +1386,9 @@ export function connectStt(
   createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
+  if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true') {
+    session.onAgentSpeaking = () => beginFrenchSttRelock(session, createSocket);
+  }
   if (session.sttReady) return session.sttReady;
   if (session.sttRetryTimer || session.sttTerminalFailure || session.sttFallbackTriggered) {
     return Promise.resolve();
@@ -1213,6 +1400,9 @@ export function connectStt(
     return session.sttReady;
   }
   if (!apiKey) {
+    if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
+      return Promise.resolve();
+    }
     triggerSttUnavailable(session, 'configuration', 'ELEVENLABS_API_KEY is not configured');
     return Promise.resolve();
   }
@@ -1226,6 +1416,8 @@ export function connectStt(
     ws = createSocket(
       buildSttUrl(model, session.codec, turnConfig.desired, {
         restaurantName: session.restaurantName,
+        filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
+        forceFrench: session.sttFrenchOnly === true,
       }),
       { headers: { 'xi-api-key': apiKey } },
     );
@@ -1254,6 +1446,21 @@ export function connectStt(
       // An open Scribe socket proves availability. Count only consecutive
       // failed opens/closures, while the per-call reconnection budget remains.
       session.sttConsecutiveFailures = 0;
+      if (session.sttRelockAttempt) {
+        session.sttRelockAttempt = false;
+        voiceSttRelockTotal.inc({ result: 'ok' });
+      }
+      const previousSocket = session.sttRelockPreviousWs;
+      session.sttRelockPreviousWs = null;
+      if (previousSocket && previousSocket !== ws) {
+        try {
+          if (previousSocket.readyState === WebSocket.OPEN) {
+            previousSocket.close(1000, 'French language relock complete');
+          }
+        } catch {
+          // The newly opened socket is already authoritative.
+        }
+      }
       writeDebugLog(
         '[stt] ElevenLabs Scribe connected for call ' +
           session.callControlId +
@@ -1265,6 +1472,9 @@ export function connectStt(
       session.sttFirstAudioChunkSent = false;
       resumeSttAfterOpen(session);
       turnConfig.applied = { ...turnConfig.desired };
+      if (session.sttRelockPending && session.state === 'SPEAKING') {
+        beginFrenchSttRelock(session, createSocket);
+      }
       resolve();
     });
 
@@ -1312,6 +1522,10 @@ export function connectStt(
       if (statusCode === 401 || statusCode === 403) {
         voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'auth' });
         if (!opened) reject(error);
+        if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
+          ws.terminate();
+          return;
+        }
         triggerSttUnavailable(session, 'auth', error.message);
         ws.terminate();
       } else {
@@ -1385,6 +1599,14 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 export function closeStt(session: CallSession): void {
   // Fin d'appel : envoyer ce qui reste avant de couper la socket.
   flushSttChunkBuffer(session);
+  if (session.sttRelockPending || session.sttRelockAttempt) {
+    voiceSttRelockTotal.inc({ result: 'skipped' });
+    session.sttRelockPending = false;
+    session.sttRelockAttempt = false;
+  }
+  session.onAgentSpeaking = undefined;
+  const previousSocket = session.sttRelockPreviousWs;
+  session.sttRelockPreviousWs = null;
   clearPendingSttEndOfTurn(session);
   clearSemanticHold(session);
   clearPendingSttCommit(session);
@@ -1392,12 +1614,15 @@ export function closeStt(session: CallSession): void {
   const ws = session.sttWs;
   session.sttWs = null;
   session.sttReady = null;
-  if (!ws) return;
-  try {
-    if (ws.readyState === WebSocket.OPEN) ws.close(1000, 'call ended');
-    else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
-  } catch (err) {
-    logger.warn({ err, callId: session.callControlId }, '[stt] Failed to close Scribe socket');
+  for (const socket of new Set(
+    [ws, previousSocket].filter((socket): socket is WebSocket => !!socket),
+  )) {
+    try {
+      if (socket.readyState === WebSocket.OPEN) socket.close(1000, 'call ended');
+      else if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
+    } catch (err) {
+      logger.warn({ err, callId: session.callControlId }, '[stt] Failed to close Scribe socket');
+    }
   }
 }
 
