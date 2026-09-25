@@ -505,6 +505,7 @@ export class CallSessionManager {
     to: string;
     restaurantId: string;
     restaurantName: string;
+    deepgramKeyterms?: string[];
     managerPhone?: string | null;
     onlineReservationsActive?: boolean;
     timezone?: string;
@@ -543,6 +544,7 @@ export class CallSessionManager {
       openingHours: opts.openingHours ?? null,
       ...(opts.maxPartySize !== undefined ? { maxPartySize: opts.maxPartySize } : {}),
       restaurantName,
+      ...(opts.deepgramKeyterms ? { deepgramKeyterms: opts.deepgramKeyterms } : {}),
       managerPhone: opts.managerPhone ?? null,
       onlineReservationsActive: opts.onlineReservationsActive ?? false,
       timezone: opts.timezone ?? 'Europe/Paris',

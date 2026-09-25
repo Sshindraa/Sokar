@@ -203,7 +203,16 @@ export function completeVoiceTurnInput(
   words: SttWord[] = [],
   timing?: Pick<
     Extract<SttEvent, { type: 'UtteranceEnd' }>,
-    'speechEndAt' | 'sttFinalAt' | 'turnDispatchedAt'
+    | 'speechEndAt'
+    | 'sttFinalAt'
+    | 'turnDispatchedAt'
+    | 'finalTrigger'
+    | 'providerResultEndMs'
+    | 'providerLastWordEndMs'
+    | 'receivedAtAudioMs'
+    | 'audioClockDriftMs'
+    | 'firstPartialAt'
+    | 'afterBargeIn'
   >,
 ): void {
   if (!session.currentTurn) startVoiceTurn(session);
@@ -244,6 +253,13 @@ export function completeVoiceTurnInput(
     holdMs: session.latencyTrace?.holdMs,
     speechDurationMs: session.latencyTrace?.speechDurationMs ?? null,
     transcriptLength: transcript.length,
+    finalTrigger: timing?.finalTrigger,
+    providerResultEndMs: timing?.providerResultEndMs,
+    providerLastWordEndMs: timing?.providerLastWordEndMs,
+    receivedAtAudioMs: timing?.receivedAtAudioMs,
+    audioClockDriftMs: timing?.audioClockDriftMs,
+    firstPartialAt: timing?.firstPartialAt,
+    afterBargeIn: timing?.afterBargeIn ?? false,
     ...wordConfidenceStats(words),
   });
 }

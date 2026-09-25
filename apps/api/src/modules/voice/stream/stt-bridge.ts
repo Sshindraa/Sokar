@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { CallSession, SttEvent, SttTurnConfig, SttWord } from './types';
+import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
 import { CallSessionManager } from './manager';
 import {
   isNameCollectionBlocking,
@@ -25,6 +25,9 @@ import {
   STT_CHUNK_SAFETY_EXTRA_MS,
 } from '../../../shared/stt-chunking';
 import { telnyxBytesPerMs } from './telnyx-codec';
+import { mapSttAudioClock } from './stt-audio-clock';
+import { buildSttKeyterms } from './stt-keyterms';
+export { buildSttKeyterms } from './stt-keyterms';
 import {
   createDeepgramSttAdapter,
   createScribeSttAdapter,
@@ -86,6 +89,7 @@ function triggerSttUnavailable(
   message: string,
 ): void {
   if (session.ended || session.sttFallbackTriggered) return;
+  if (session.sttProviderOpenedOnce) flushDeepgramFinalPartsForSafety(session);
   session.sttTerminalFailure = true;
   session.sttFallbackTriggered = true;
   clearSttRecoveryTimers(session);
@@ -143,6 +147,9 @@ function handleSttConnectionFailure(
 ): void {
   if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
   if (fallbackToScribeAtOpening(session, createSocket)) return;
+  if (!session.ended && session.sttProviderOpenedOnce) {
+    flushDeepgramFinalPartsForSafety(session);
+  }
   if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
   session.sttConsecutiveFailures = (session.sttConsecutiveFailures ?? 0) + 1;
   if (session.sttConsecutiveFailures >= STT_MAX_CONSECUTIVE_FAILURES) {
@@ -189,6 +196,7 @@ function fallbackToScribeAtOpening(
   session.sttAdapter = createScribeSttAdapter({ model: configuredModel(session) });
   session.sttModel = session.sttAdapter.model;
   session.sttConnectionAudioStartedAt = undefined;
+  session.sttConnectionAudioBytesSent = 0;
   session.sttDeepgramFinalParts = [];
   session.sttConsecutiveFailures = 0;
   logger.warn(
@@ -386,66 +394,7 @@ export const SPELLING_STT_TURN_CONFIG: SttTurnConfig = {
 export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
-const RESERVATION_KEYTERMS = [
-  // Français
-  'réservation',
-  'réserver',
-  'personnes',
-  'soir',
-  'heures',
-  'midi',
-  'couverts',
-  'deux',
-  'double',
-  'épeler',
-  'au nom de',
-  'demain',
-  'aujourd’hui',
-  'trois',
-  'quatre',
-  'cinq',
-  'six',
-  'sept',
-  'huit',
-  'neuf',
-  'dix',
-  // Anglais
-  'reservation',
-  'reserve',
-  'table',
-  'people',
-  'tonight',
-  'tomorrow',
-  'booking',
-  'dinner',
-  'lunch',
-  // Espagnol
-  'reserva',
-  'reservar',
-  'mesa',
-  'personas',
-  // Italien
-  'prenotazione',
-  'prenotare',
-  'tavolo',
-  'persone',
-  'domani',
-  // Allemand
-  'reservierung',
-  'reservieren',
-  'tisch',
-  'morgen',
-  // Portugais
-  'pessoas',
-  'amanhã',
-  // Néerlandais
-  'reservering',
-  'reserveren',
-  'tafel',
-];
-const MAX_STT_KEYTERMS = 50;
 const MAX_TURN_PARTIALS = 30;
-const MAX_STT_KEYTERM_LENGTH = 20;
 const MAX_STT_PREVIOUS_TEXT_LENGTH = 50;
 /** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
 export const STT_TIMESTAMPED_COMMIT_GRACE_MS = 250;
@@ -472,38 +421,6 @@ export function getSttLanguageCodes(): string[] {
  * sont limités à 20 caractères et 50 valeurs ; les valeurs invalides sont
  * ignorées afin de ne jamais rendre la poignée de main provider invalide.
  */
-export function buildSttKeyterms(
-  restaurantName?: string,
-  additionalKeyterms: readonly string[] = [],
-): string[] {
-  // Les termes propres au restaurant sont prioritaires ; les 50 slots Scribe
-  // ne doivent pas être consommés par le vocabulaire générique multilingue.
-  const candidates = [restaurantName ?? '', ...additionalKeyterms, ...RESERVATION_KEYTERMS];
-  const keyterms: string[] = [];
-  const seen = new Set<string>();
-
-  for (const candidate of candidates) {
-    const normalized = candidate.trim().replace(/\s+/gu, ' ');
-    if (!normalized) continue;
-
-    // Un nom long est plus utile sous forme de mots que tronqué au milieu.
-    const values =
-      normalized.length <= MAX_STT_KEYTERM_LENGTH
-        ? [normalized]
-        : normalized.split(' ').filter((word) => word.length <= MAX_STT_KEYTERM_LENGTH);
-
-    for (const value of values) {
-      const dedupeKey = value.toLocaleLowerCase('fr-FR');
-      if (!value || seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      keyterms.push(value);
-      if (keyterms.length >= MAX_STT_KEYTERMS) return keyterms;
-    }
-  }
-
-  return keyterms;
-}
-
 /** Contexte court envoyé à Scribe uniquement avec le premier paquet audio. */
 export function buildSttPreviousText(restaurantName?: string): string {
   const name = restaurantName?.trim().replace(/\s+/gu, ' ');
@@ -669,9 +586,31 @@ export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
 export function buildDeepgramSttUrl(
   codec: CallSession['codec'],
   keyterms: readonly string[] = buildSttKeyterms(),
+  model: 'nova-3' | 'flux-general-multi' = 'nova-3',
+  options: { numerals?: boolean; punctuate?: boolean; mipOptOut?: boolean } = {},
 ): string {
   const encoding = codec === 'PCMA' ? 'alaw' : codec === 'PCMU' ? 'mulaw' : 'linear16';
   const sampleRate = codec === 'L16' ? 16000 : 8000;
+  const numerals = options.numerals ?? true;
+  const punctuate = options.punctuate ?? false;
+  const mipOptOut = options.mipOptOut ?? voiceConfig.VOICE_DEEPGRAM_MIP_OPT_OUT !== 'false';
+  if (model === 'flux-general-multi') {
+    const params = new URLSearchParams({
+      model,
+      language_hint: 'fr',
+      encoding,
+      sample_rate: String(sampleRate),
+      eot_threshold: '0.7',
+      eager_eot_threshold: '0.5',
+      eot_timeout_ms: String(
+        voiceConfig.VOICE_DEEPGRAM_UTTERANCE_END_MS ?? DEEPGRAM_UTTERANCE_END_MS,
+      ),
+      numerals: String(numerals),
+      mip_opt_out: String(mipOptOut),
+    });
+    for (const keyterm of keyterms) params.append('keyterm', keyterm);
+    return `wss://api.deepgram.com/v2/listen?${params.toString()}`;
+  }
   const params = new URLSearchParams({
     model: 'nova-3',
     language: 'fr',
@@ -684,7 +623,9 @@ export function buildDeepgramSttUrl(
     ),
     vad_events: 'true',
     smart_format: 'false',
-    numerals: 'true',
+    numerals: String(numerals),
+    punctuate: String(punctuate),
+    mip_opt_out: String(mipOptOut),
   });
   for (const keyterm of keyterms) params.append('keyterm', keyterm);
   return `wss://api.deepgram.com/v1/listen?${params.toString()}`;
@@ -692,7 +633,7 @@ export function buildDeepgramSttUrl(
 
 function createSttAdapter(session: CallSession, provider: SttProviderId): SttProviderAdapter {
   return provider === 'deepgram'
-    ? createDeepgramSttAdapter({ model: 'nova-3' })
+    ? createDeepgramSttAdapter({ model: resolveVoiceFeatureSnapshot(session).deepgramModel })
     : createScribeSttAdapter({ model: configuredModel(session) });
 }
 
@@ -706,26 +647,74 @@ function sttAdapterForSession(session: CallSession): SttProviderAdapter {
 interface SttTurnTiming {
   speechEndAt?: number;
   sttFinalAt?: number;
+  finalTrigger?: SttFinalTrigger;
+  providerResultEndMs?: number;
+  providerLastWordEndMs?: number;
+  receivedAtAudioMs?: number;
+  audioClockDriftMs?: number;
+  firstPartialAt?: number;
+  afterBargeIn?: boolean;
 }
 
 function metricProvider(session: CallSession): SttProviderAdapter['metricLabel'] {
   return sttAdapterForSession(session).metricLabel;
 }
 
-function sttTimingFromOffset(session: CallSession, offsetMs?: number): SttTurnTiming {
+function sttTimingFromOffset(
+  session: CallSession,
+  offsetMs?: number,
+  finalTrigger: SttFinalTrigger = 'speech_final',
+  providerResultEndMs?: number,
+  providerLastWordEndMs?: number,
+): SttTurnTiming {
   const sttFinalAt = Date.now();
-  // Provider offsets anchor to the audio queued at socket open; without one,
-  // the latest non-empty partial is the closest available end-of-speech proxy.
-  const mappedSpeechEnd =
-    offsetMs !== undefined && session.sttConnectionAudioStartedAt !== undefined
-      ? Math.min(sttFinalAt, session.sttConnectionAudioStartedAt + offsetMs)
+  const adapter = session.sttAdapter;
+  const audioClock =
+    session.sttConnectionAudioStartedAt !== undefined && adapter
+      ? mapSttAudioClock({
+          connectionAudioStartedAt: session.sttConnectionAudioStartedAt,
+          now: sttFinalAt,
+          sentBytes: session.sttConnectionAudioBytesSent ?? 0,
+          bytesPerMs: adapter.chunkBytesPerMs(session.codec),
+          providerOffsetMs: offsetMs,
+        })
+      : undefined;
+  const firstPartialAt =
+    session.sttFirstPartialAt !== undefined
+      ? Math.max(
+          0,
+          session.sttFirstPartialAt - (session.sttTurnStartedAt ?? session.sttFirstPartialAt),
+        )
       : undefined;
   const speechEndAt =
-    mappedSpeechEnd ??
+    audioClock?.speechEndAt ??
     (session.sttAdapter?.id === 'deepgram'
       ? undefined
       : (session.sttLastNonEmptyPartialAt ?? session.sttLastSpeechStartedAt));
-  return { ...(speechEndAt !== undefined ? { speechEndAt } : {}), sttFinalAt };
+  return {
+    ...(speechEndAt !== undefined ? { speechEndAt } : {}),
+    sttFinalAt,
+    finalTrigger,
+    ...(providerResultEndMs !== undefined ? { providerResultEndMs } : {}),
+    ...(providerLastWordEndMs !== undefined ? { providerLastWordEndMs } : {}),
+    ...(audioClock ? { receivedAtAudioMs: audioClock.receivedAtAudioMs } : {}),
+    ...(audioClock ? { audioClockDriftMs: audioClock.audioClockDriftMs } : {}),
+    ...(firstPartialAt !== undefined ? { firstPartialAt } : {}),
+    afterBargeIn: session.sttAfterBargeIn === true,
+  };
+}
+
+function withFinalTrigger(
+  timing: SttTurnTiming | undefined,
+  finalTrigger: SttFinalTrigger,
+): SttTurnTiming {
+  return { ...(timing ?? {}), finalTrigger };
+}
+
+function resetSttTurnDiagnostics(session: CallSession): void {
+  session.sttTurnStartedAt = undefined;
+  session.sttFirstPartialAt = undefined;
+  session.sttAfterBargeIn = false;
 }
 
 function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurnTiming | undefined {
@@ -868,7 +857,13 @@ function armSemanticHoldTimer(
   hold.timer = setTimeout(() => {
     if (session.sttSemanticHold !== hold) return;
     session.sttSemanticHold = null;
-    dispatchUtteranceEnd(session, hold.transcript, hold.words, hold.languageCode, hold.timing);
+    dispatchUtteranceEnd(
+      session,
+      hold.transcript,
+      hold.words,
+      hold.languageCode,
+      withFinalTrigger(hold.timing, 'semantic_hold'),
+    );
   }, hold.holdMs);
 }
 
@@ -932,6 +927,14 @@ function dispatchUtteranceEnd(
     timing?.speechEndAt ??
     (session.sttAdapter?.id === 'deepgram' ? undefined : session.sttLastNonEmptyPartialAt);
   const turnDispatchedAt = Date.now();
+  const firstPartialAt =
+    timing?.firstPartialAt ??
+    (session.sttFirstPartialAt !== undefined
+      ? Math.max(
+          0,
+          session.sttFirstPartialAt - (session.sttTurnStartedAt ?? session.sttFirstPartialAt),
+        )
+      : undefined);
   logger.info(
     {
       callId: session.callControlId,
@@ -948,9 +951,25 @@ function dispatchUtteranceEnd(
     ...(speechEndAt !== undefined ? { speechEndAt } : {}),
     sttFinalAt,
     turnDispatchedAt,
+    finalTrigger: timing?.finalTrigger ?? 'speech_final',
+    ...(timing?.providerResultEndMs !== undefined
+      ? { providerResultEndMs: timing.providerResultEndMs }
+      : {}),
+    ...(timing?.providerLastWordEndMs !== undefined
+      ? { providerLastWordEndMs: timing.providerLastWordEndMs }
+      : {}),
+    ...(timing?.receivedAtAudioMs !== undefined
+      ? { receivedAtAudioMs: timing.receivedAtAudioMs }
+      : {}),
+    ...(timing?.audioClockDriftMs !== undefined
+      ? { audioClockDriftMs: timing.audioClockDriftMs }
+      : {}),
+    ...(firstPartialAt !== undefined ? { firstPartialAt } : {}),
+    afterBargeIn: timing?.afterBargeIn === true || session.sttAfterBargeIn === true,
   });
   session.sttLastNonEmptyPartialAt = undefined;
   session.sttLastSpeechStartedAt = undefined;
+  resetSttTurnDiagnostics(session);
 }
 
 function schedulePendingSttEndOfTurn(
@@ -968,7 +987,7 @@ function schedulePendingSttEndOfTurn(
         pending.transcript,
         pending.words,
         pending.languageCode,
-        pending.timing,
+        withFinalTrigger(pending.timing, 'spelling_hold'),
       );
   }, delayMs);
 }
@@ -986,7 +1005,7 @@ function flushPendingSttEndOfTurn(session: CallSession): void {
     pending.transcript,
     pending.words,
     pending.languageCode,
-    pending.timing,
+    withFinalTrigger(pending.timing, 'spelling_hold'),
   );
 }
 
@@ -1002,6 +1021,7 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
       ? buildSttPreviousText(session.restaurantName)
       : undefined,
   );
+  session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
   addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
   session.sttFirstAudioChunkSent = true;
   const chunkMs = String(getSttChunkMs());
@@ -1301,6 +1321,7 @@ function handleBargeInFromTranscript(
     { callId: session.callControlId, ...describeTranscript(transcript.trim()) },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
   );
+  session.sttAfterBargeIn = true;
   // Un barge-in coupe le TTS : l'audio déjà capté doit partir maintenant,
   // sinon il resterait dans le tampon de regroupement.
   flushSttChunkBuffer(session);
@@ -1490,7 +1511,12 @@ function dispatchCommittedTranscript(
   dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
 }
 
-function dispatchDeepgramFinalParts(session: CallSession): void {
+function dispatchDeepgramFinalParts(
+  session: CallSession,
+  finalTrigger: SttFinalTrigger = 'speech_final',
+  utteranceEndOffsetMs?: number,
+  utteranceLastWordEndMs?: number,
+): void {
   const parts = session.sttDeepgramFinalParts ?? [];
   session.sttDeepgramFinalParts = [];
   const transcript = parts.reduce(
@@ -1499,12 +1525,27 @@ function dispatchDeepgramFinalParts(session: CallSession): void {
   );
   if (!transcript.trim()) return;
   const words = parts.flatMap((part) => part.words ?? []);
-  const speechEndOffsetMs = parts.reduce(
-    (latest, part) => Math.max(latest, part.speechEndOffsetMs ?? 0),
+  const resultEndMs = parts.reduce(
+    (latest, part) => Math.max(latest, part.providerResultEndMs ?? 0),
     0,
   );
+  const lastWordEndMs = Math.max(
+    utteranceLastWordEndMs ?? 0,
+    ...parts.map((part) => part.providerLastWordEndMs ?? 0),
+  );
+  const speechEndOffsetMs =
+    lastWordEndMs ||
+    utteranceEndOffsetMs ||
+    resultEndMs ||
+    parts.reduce((latest, part) => Math.max(latest, part.speechEndOffsetMs ?? 0), 0);
   const languageCode = [...parts].reverse().find((part) => part.languageCode)?.languageCode ?? 'fr';
-  const timing = sttTimingFromOffset(session, speechEndOffsetMs || undefined);
+  const timing = sttTimingFromOffset(
+    session,
+    speechEndOffsetMs || undefined,
+    finalTrigger,
+    resultEndMs || undefined,
+    lastWordEndMs || undefined,
+  );
   dispatchCommittedTranscript(
     session,
     transcript,
@@ -1512,6 +1553,12 @@ function dispatchDeepgramFinalParts(session: CallSession): void {
     languageCode,
     timing,
   );
+}
+
+export function flushDeepgramFinalPartsForSafety(session: CallSession): void {
+  if (session.sttDeepgramFinalParts?.length) {
+    dispatchDeepgramFinalParts(session, 'safety_flush');
+  }
 }
 
 export function handleNormalizedSttMessage(
@@ -1527,7 +1574,10 @@ export function handleNormalizedSttMessage(
     case 'partial':
       if (event.transcript.trim()) {
         session.sttConsecutiveFailures = 0;
-        session.sttLastNonEmptyPartialAt = Date.now();
+        const partialAt = Date.now();
+        session.sttLastNonEmptyPartialAt = partialAt;
+        session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt ?? partialAt;
+        session.sttFirstPartialAt ??= partialAt;
       }
       emitPartialTranscript(session, event.transcript);
       return;
@@ -1561,19 +1611,44 @@ export function handleNormalizedSttMessage(
           ...(event.speechEndOffsetMs !== undefined
             ? { speechEndOffsetMs: event.speechEndOffsetMs }
             : {}),
+          ...(event.providerResultEndMs !== undefined
+            ? { providerResultEndMs: event.providerResultEndMs }
+            : {}),
+          ...(event.providerLastWordEndMs !== undefined
+            ? { providerLastWordEndMs: event.providerLastWordEndMs }
+            : {}),
         });
         session.sttConsecutiveFailures = 0;
       }
-      if (event.speechFinal) dispatchDeepgramFinalParts(session);
+      if (event.speechFinal) dispatchDeepgramFinalParts(session, 'speech_final');
       return;
     }
     case 'utterance_end':
       if (session.sttAdapter?.id === 'deepgram') {
-        if (session.sttDeepgramFinalParts?.length) dispatchDeepgramFinalParts(session);
+        if (session.sttDeepgramFinalParts?.length) {
+          dispatchDeepgramFinalParts(
+            session,
+            'utterance_end',
+            event.speechEndOffsetMs,
+            event.providerLastWordEndMs,
+          );
+        }
       }
       return;
     case 'speech_started':
-      session.sttLastSpeechStartedAt = Date.now();
+      session.sttLastSpeechStartedAt =
+        event.speechStartOffsetMs !== undefined &&
+        session.sttConnectionAudioStartedAt !== undefined &&
+        session.sttAdapter
+          ? (mapSttAudioClock({
+              connectionAudioStartedAt: session.sttConnectionAudioStartedAt,
+              now: Date.now(),
+              sentBytes: session.sttConnectionAudioBytesSent ?? 0,
+              bytesPerMs: session.sttAdapter.chunkBytesPerMs(session.codec),
+              providerOffsetMs: event.speechStartOffsetMs,
+            }).speechEndAt ?? Date.now())
+          : Date.now();
+      session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt;
       return;
     case 'warning':
       logger.warn(
@@ -1663,14 +1738,25 @@ export function connectStt(
   ensureSttAvailabilityDeadline(session);
   let ws: WebSocket;
   try {
-    const url =
-      adapter.id === 'deepgram'
-        ? buildDeepgramSttUrl(session.codec, buildSttKeyterms(session.restaurantName))
-        : buildSttUrl(adapter.model, session.codec, turnConfig.desired, {
-            restaurantName: session.restaurantName,
-            filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
-            forceFrench: session.sttFrenchOnly === true,
-          });
+    const deepgramFeatures =
+      adapter.id === 'deepgram' ? resolveVoiceFeatureSnapshot(session) : null;
+    const url = deepgramFeatures
+      ? buildDeepgramSttUrl(
+          session.codec,
+          deepgramFeatures.deepgramKeytermsEnabled
+            ? (session.deepgramKeyterms ?? [])
+            : buildSttKeyterms(session.restaurantName),
+          adapter.model as 'nova-3' | 'flux-general-multi',
+          {
+            numerals: deepgramFeatures.deepgramNumeralsEnabled,
+            punctuate: deepgramFeatures.deepgramPunctuateEnabled,
+          },
+        )
+      : buildSttUrl(adapter.model, session.codec, turnConfig.desired, {
+          restaurantName: session.restaurantName,
+          filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
+          forceFrench: session.sttFrenchOnly === true,
+        });
     const headers: Record<string, string> =
       adapter.id === 'deepgram' ? { Authorization: `Token ${apiKey}` } : { 'xi-api-key': apiKey };
     ws = adapter.open({ url, headers, createSocket });
@@ -1694,7 +1780,7 @@ export function connectStt(
       opened = true;
       session.sttProviderOpenedOnce = true;
       session.sttProviderUsed =
-        adapter.id === 'deepgram' ? 'deepgram-nova-3' : 'elevenlabs-scribe-v2-realtime';
+        adapter.id === 'deepgram' ? `deepgram-${adapter.model}` : 'elevenlabs-scribe-v2-realtime';
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
@@ -1707,6 +1793,7 @@ export function connectStt(
         (session.sttChunkBuffer?.length ?? 0);
       session.sttConnectionAudioStartedAt =
         Date.now() - pendingAudioBytes / telnyxBytesPerMs(session.codec);
+      session.sttConnectionAudioBytesSent = 0;
       session.sttDeepgramFinalParts = [];
       if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
       session.sttKeepAliveTimer =

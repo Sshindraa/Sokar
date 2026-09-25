@@ -5,6 +5,7 @@ import { CallSessionManager } from '../stream/manager';
 import {
   buildSttUrl,
   buildDeepgramSttUrl,
+  flushDeepgramFinalPartsForSafety,
   buildSttKeyterms,
   buildSttPreviousText,
   DEFAULT_STT_LANGUAGES,
@@ -26,6 +27,7 @@ import {
   isLikelyRepeatedNoiseTranscript,
   isPunctuationOnlyTranscript,
 } from '../stream/stt-bridge';
+import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
 function makeWsMock(): WebSocket {
   return {
@@ -184,7 +186,48 @@ describe('buildDeepgramSttUrl', () => {
     expect(url.searchParams.get('endpointing')).toBe('300');
     expect(url.searchParams.get('utterance_end_ms')).toBe('1000');
     expect(url.searchParams.get('numerals')).toBe('true');
+    expect(url.searchParams.get('punctuate')).toBe('false');
+    expect(url.searchParams.get('mip_opt_out')).toBe('true');
     expect(url.searchParams.getAll('keyterm')).toEqual(['Chez Sokar', 'réservation']);
+  });
+
+  it('sélectionne Flux v2 avec le hint français et ses seuils de tour', () => {
+    const url = new URL(buildDeepgramSttUrl('PCMA', ['Chez Sokar'], 'flux-general-multi'));
+    expect(url.pathname).toBe('/v2/listen');
+    expect(url.searchParams.get('model')).toBe('flux-general-multi');
+    expect(url.searchParams.get('language_hint')).toBe('fr');
+    expect(url.searchParams.get('encoding')).toBe('alaw');
+    expect(url.searchParams.get('sample_rate')).toBe('8000');
+    expect(url.searchParams.get('eager_eot_threshold')).toBe('0.5');
+    expect(url.searchParams.get('eot_timeout_ms')).toBe('1000');
+    expect(url.searchParams.get('mip_opt_out')).toBe('true');
+    expect(url.searchParams.get('numerals')).toBe('true');
+    expect(url.searchParams.has('punctuate')).toBe(false);
+    expect(url.searchParams.getAll('keyterm')).toEqual(['Chez Sokar']);
+  });
+
+  it('transmet les paramètres expérimentaux de formatage et l’opt-out MIP explicites', () => {
+    const nova = new URL(
+      buildDeepgramSttUrl('PCMA', [], 'nova-3', {
+        numerals: false,
+        punctuate: true,
+        mipOptOut: false,
+      }),
+    );
+    const flux = new URL(
+      buildDeepgramSttUrl('PCMA', [], 'flux-general-multi', {
+        numerals: false,
+        punctuate: true,
+        mipOptOut: false,
+      }),
+    );
+
+    expect(nova.searchParams.get('numerals')).toBe('false');
+    expect(nova.searchParams.get('punctuate')).toBe('true');
+    expect(nova.searchParams.get('mip_opt_out')).toBe('false');
+    expect(flux.searchParams.get('numerals')).toBe('false');
+    expect(flux.searchParams.has('punctuate')).toBe(false);
+    expect(flux.searchParams.get('mip_opt_out')).toBe('false');
   });
 });
 
@@ -676,8 +719,15 @@ describe('Deepgram final dispatch', () => {
 
   function deepgramSession() {
     const session = makeSession();
-    session.voiceFeatureSnapshot = { sttProvider: 'deepgram', dialogueListeningV2Enabled: true };
-    session.sttAdapter = { id: 'deepgram' } as NonNullable<typeof session.sttAdapter>;
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
     return { session, onEvent };
@@ -694,7 +744,11 @@ describe('Deepgram final dispatch', () => {
     });
 
     expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'UtteranceEnd', transcript: 'Demain soir' }),
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'Demain soir',
+        finalTrigger: 'speech_final',
+      }),
     );
     expect(session.sttSemanticHold).toBeNull();
 
@@ -737,7 +791,85 @@ describe('Deepgram final dispatch', () => {
     expect(onEvent).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'UtteranceEnd', transcript: 'A K' }),
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'A K',
+        finalTrigger: 'spelling_hold',
+      }),
+    );
+  });
+
+  it('marque utterance_end comme cause de dispatch et conserve ses offsets provider', () => {
+    const { session, onEvent } = deepgramSession();
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'Demain soir',
+      speechFinal: false,
+      providerResultEndMs: 900,
+      providerLastWordEndMs: 800,
+      speechEndOffsetMs: 800,
+    });
+    handleNormalizedSttMessage(session, {
+      type: 'utterance_end',
+      speechEndOffsetMs: 800,
+      providerLastWordEndMs: 800,
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        finalTrigger: 'utterance_end',
+        providerResultEndMs: 900,
+        providerLastWordEndMs: 800,
+      }),
+    );
+  });
+
+  it('safety-flush les segments finaux restés en attente avant reconnexion', () => {
+    const { session, onEvent } = deepgramSession();
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'Demain soir',
+      speechFinal: false,
+      providerResultEndMs: 900,
+    });
+
+    flushDeepgramFinalPartsForSafety(session);
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'safety_flush' }),
+    );
+    expect(session.sttDeepgramFinalParts).toEqual([]);
+  });
+
+  it('mesure les offsets avec le nombre d’octets effectivement envoyés', () => {
+    const { session, onEvent } = deepgramSession();
+    const now = Date.now();
+    session.sttConnectionAudioStartedAt = now - 1_000;
+    session.sttConnectionAudioBytesSent = 800 * 8;
+    session.sttTurnStartedAt = now - 500;
+    session.sttFirstPartialAt = now - 350;
+    session.sttAfterBargeIn = true;
+
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'Demain soir',
+      speechFinal: true,
+      speechEndOffsetMs: 700,
+      providerResultEndMs: 750,
+      providerLastWordEndMs: 700,
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        speechEndAt: now - 100,
+        providerResultEndMs: 750,
+        providerLastWordEndMs: 700,
+        receivedAtAudioMs: 800,
+        audioClockDriftMs: 200,
+        firstPartialAt: 150,
+        afterBargeIn: true,
+      }),
     );
   });
 });
@@ -745,7 +877,14 @@ describe('Deepgram final dispatch', () => {
 describe('assistant echo on Scribe', () => {
   it('supprime une phrase agent sans déclencher de barge-in', () => {
     const session = makeSession();
-    session.voiceFeatureSnapshot = { sttProvider: 'scribe', dialogueListeningV2Enabled: true };
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'scribe',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
     session.state = 'SPEAKING';
     session.recentAgentSpeechText =
       'Avec plaisir. Pour combien de personnes souhaitez-vous réserver ?';
@@ -855,5 +994,21 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
     expect(ends(onEvent)).toEqual([
       { type: 'UtteranceEnd', transcript: "Mmh, est-ce que c'est en-" },
     ]);
+  });
+
+  it('marque semantic_hold quand le délai hybride déclenche le dispatch', async () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'Bonjour je suis Martin',
+    });
+
+    expect(onEvent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'semantic_hold' }),
+    );
   });
 });

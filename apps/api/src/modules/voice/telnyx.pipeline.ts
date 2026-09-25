@@ -6,6 +6,11 @@ import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { CallSessionManager } from './stream/manager';
+import {
+  isVoiceDeepgramKeytermsEnabled,
+  isVoiceFeatureEnabledForRestaurant,
+} from './stream/feature-flags';
+import { buildDeepgramKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
@@ -225,7 +230,17 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // La session est en mode IDLE ici — le WebSocket start event y attachera le
         // telnyxWs et déclenchera la première salutation.
         // Codec Telnyx : PCMA par défaut, L16 seulement si le flag est activé.
-        const telnyxCodec = getTelnyxCodec();
+        const telnyxCodec = getTelnyxCodec(ctx.id);
+        const deepgramKeyterms =
+          isVoiceFeatureEnabledForRestaurant('deepgramStt', ctx.id) &&
+          isVoiceDeepgramKeytermsEnabled(ctx.id)
+            ? buildDeepgramKeyterms({
+                restaurantName: ctx.name,
+                address: ctx.formattedAddress,
+                city: ctx.city,
+                cuisineTypes: ctx.cuisineType,
+              })
+            : undefined;
         CallSessionManager.getInstance().create({
           callControlId: payload.call_control_id,
           callSessionId: payload.call_leg_id,
@@ -233,6 +248,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           to: payload.to,
           restaurantId: ctx.id,
           restaurantName: ctx.name,
+          deepgramKeyterms,
           managerPhone: ctx.managerPhone,
           onlineReservationsActive: ctx.onlineReservationsActive === true,
           timezone: ctx.timezone,

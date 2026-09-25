@@ -21,9 +21,15 @@ export type NormalizedSttProviderMessage =
       languageCode?: string;
       speechFinal: boolean;
       speechEndOffsetMs?: number;
+      providerResultEndMs?: number;
+      providerLastWordEndMs?: number;
     }
-  | { type: 'utterance_end'; speechEndOffsetMs?: number }
-  | { type: 'speech_started' }
+  | {
+      type: 'utterance_end';
+      speechEndOffsetMs?: number;
+      providerLastWordEndMs?: number;
+    }
+  | { type: 'speech_started'; speechStartOffsetMs?: number }
   | { type: 'warning'; message: string }
   | { type: 'entities'; count: number }
   | { type: 'provider_error'; messageType: string; message: string };
@@ -170,6 +176,7 @@ function normalizeDeepgramMessage(
       {
         type: 'utterance_end',
         speechEndOffsetMs: lastWordEnd === undefined ? undefined : lastWordEnd * 1000,
+        providerLastWordEndMs: lastWordEnd === undefined ? undefined : lastWordEnd * 1000,
       },
     ];
   }
@@ -195,8 +202,9 @@ function normalizeDeepgramMessage(
   const start = finiteNumber(message.start) ?? 0;
   const duration = finiteNumber(message.duration);
   const wordEnd = words?.reduce((end, word) => Math.max(end, word.end ?? 0), 0);
-  const speechEndOffsetMs =
-    (wordEnd && wordEnd > 0 ? wordEnd : duration === undefined ? 0 : start + duration) * 1000;
+  const providerResultEndMs = duration === undefined ? undefined : (start + duration) * 1000;
+  const providerLastWordEndMs = wordEnd && wordEnd > 0 ? wordEnd * 1000 : undefined;
+  const speechEndOffsetMs = providerLastWordEndMs ?? providerResultEndMs;
 
   if (message.is_final === true) {
     return [
@@ -207,18 +215,76 @@ function normalizeDeepgramMessage(
         languageCode,
         speechFinal: message.speech_final === true,
         speechEndOffsetMs,
+        providerResultEndMs,
+        providerLastWordEndMs,
       },
     ];
   }
   return transcript ? [{ type: 'partial', transcript, words, languageCode }] : [];
 }
 
+function normalizeFluxMessage(message: Record<string, unknown>): NormalizedSttProviderMessage[] {
+  const type = typeof message.type === 'string' ? message.type : '';
+  if (type === 'Connected') return [{ type: 'session_started' }];
+  if (type === 'Error') {
+    return [
+      {
+        type: 'provider_error',
+        messageType: String(message.code ?? 'error'),
+        message: String(message.description ?? 'Deepgram Flux error'),
+      },
+    ];
+  }
+  if (type !== 'TurnInfo') return [];
+
+  const event = typeof message.event === 'string' ? message.event : '';
+  const transcript = typeof message.transcript === 'string' ? message.transcript.trim() : '';
+  const words = normalizeWords(message.words);
+  const languages = Array.isArray(message.languages) ? message.languages : [];
+  const languageCode = typeof languages[0] === 'string' ? languages[0] : undefined;
+  const audioWindowEnd = finiteNumber(message.audio_window_end);
+  const providerResultEndMs = audioWindowEnd === undefined ? undefined : audioWindowEnd * 1000;
+  const lastWordEnd = words?.reduce((end, word) => Math.max(end, word.end ?? 0), 0);
+  const providerLastWordEndMs = lastWordEnd && lastWordEnd > 0 ? lastWordEnd * 1000 : undefined;
+
+  if (event === 'StartOfTurn') {
+    return [
+      {
+        type: 'speech_started',
+        ...(finiteNumber(message.audio_window_start) !== undefined
+          ? { speechStartOffsetMs: finiteNumber(message.audio_window_start)! * 1000 }
+          : {}),
+      },
+      ...(transcript ? [{ type: 'partial' as const, transcript, words, languageCode }] : []),
+    ];
+  }
+  if (event === 'Update' || event === 'EagerEndOfTurn' || event === 'TurnResumed') {
+    return transcript ? [{ type: 'partial', transcript, words, languageCode }] : [];
+  }
+  if (event === 'EndOfTurn') {
+    return [
+      {
+        type: 'final_segment',
+        transcript,
+        words,
+        languageCode,
+        speechFinal: true,
+        speechEndOffsetMs: providerLastWordEndMs,
+        providerResultEndMs,
+        providerLastWordEndMs,
+      },
+    ];
+  }
+  return [];
+}
+
 function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): SttProviderAdapter {
   const deepgram = id === 'deepgram';
+  const flux = deepgram && options.model.startsWith('flux-');
   const adapter: SttProviderAdapter = {
     id,
     metricLabel: deepgram ? 'deepgram_stt' : 'elevenlabs_stt',
-    model: deepgram ? 'nova-3' : options.model,
+    model: options.model,
     open(connection) {
       return connection.createSocket(connection.url, { headers: connection.headers });
     },
@@ -236,17 +302,20 @@ function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): Stt
       }
     },
     finalize(ws) {
-      if (deepgram && ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ type: 'Finalize' }));
+      if (deepgram && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: flux ? 'ForceEndTurn' : 'Finalize' }));
+      }
     },
     keepAlive(ws) {
-      if (deepgram && ws.readyState === WebSocket.OPEN) {
+      if (deepgram && !flux && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'KeepAlive' }));
       }
     },
     close(ws, code, reason) {
-      if (ws.readyState === WebSocket.OPEN) ws.close(code, reason);
-      else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
+      if (ws.readyState === WebSocket.OPEN) {
+        if (flux) ws.send(JSON.stringify({ type: 'CloseStream' }));
+        ws.close(code, reason);
+      } else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
     },
     toProviderAudio(codec, input) {
       return deepgram && codec !== 'L16' ? input : decodeTelnyxToPcm16(codec, input);
@@ -266,7 +335,11 @@ function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): Stt
       } catch {
         return [];
       }
-      return deepgram ? normalizeDeepgramMessage(message) : normalizeScribeMessage(message);
+      return deepgram
+        ? flux
+          ? normalizeFluxMessage(message)
+          : normalizeDeepgramMessage(message)
+        : normalizeScribeMessage(message);
     },
   };
   return adapter;

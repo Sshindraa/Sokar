@@ -203,6 +203,96 @@ pnpm exec tsx scripts/voice-stt-bench/nb-deepgram-score.ts \
   scripts/voice-stt-bench/.data/nb-deepgram-none.json
 ```
 
+### Phase A — Nova-3 versus Flux
+
+Compare les deux modèles sur les mêmes 31 clips `say` (synthèse locale), condition B (A-law
+8 kHz), les mêmes keyterms et le même bruit simulé : propre, puis bruit à seed fixe
+`20260924` / 15 dB avec 2 % de pertes. Les phrases sont réparties en calibration (16) et
+validation (15), stratifiées par catégorie et sans recouvrement. Les paramètres Nova suivent la
+socket de production (`endpointing=300`, `utterance_end_ms=1000`) ; Flux utilise
+`flux-general-multi`, `language_hint=fr`, `eot_timeout_ms=1000` et des chunks 80 ms. La latence
+va de la fin des derniers octets de parole envoyés au final Nova (`speech_final`/`UtteranceEnd`)
+ou au `EndOfTurn` Flux. Après 1,5 s de silence ajouté, le runner envoie `Finalize` à Nova ou
+`ForceEndTurn` à Flux si aucun final naturel n'est arrivé, puis attend jusqu'à 5 s ; un final
+obtenu après cette commande garde son horodatage réel. Dans le run du 25/09, 19/62 sessions Nova
+ont nécessité `Finalize`, et 13/62 sessions Flux `ForceEndTurn`. Les IC 95 % sont bootstrapés
+par phrase, et les sessions en erreur ou sans transcript restent des échecs de score. Les
+transcriptions brutes restent uniquement dans `.data/`, ignoré par git ; le terminal n'affiche
+que progression, coût et chemin du fichier.
+
+```bash
+cd apps/api
+
+# Facultatif, gratuit : vérifie l'estimation avant l'envoi.
+BENCH_DG_DRY_RUN=1 BENCH_LIMIT=31 \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-flux-bench.ts
+
+# Run complet apparié (124 sessions, plafond fournisseur cumulé 660 s).
+# DEEPGRAM_BENCH_API_KEY est requis; la synthèse audio say est locale.
+BENCH_CONFIRM=1 BENCH_LIMIT=51 BENCH_CONCURRENCY=4 \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-flux-bench.ts
+
+# Scoring hors ligne, sans texte de transcript.
+pnpm exec tsx scripts/voice-stt-bench/nb-flux-score.ts \
+  scripts/voice-stt-bench/.data/nb-flux-comparison.json
+```
+
+### Phase A3 — réglages Nova-3 et PCMA contre L16
+
+Le plan factoriel PCMA compare `numerals` vrai/faux, `punctuate` vrai/faux et
+keyterms historiques/générés sur 51 phrases (31 historiques + 10 calibration
+et 10 validation ciblées sur les termes business), propre et bruit seed
+`20260924`. Les splits sont disjoints : 26 calibration, 25 validation. Le
+contrôle L16 reprend les mêmes clips et la même variante bruitée à 16 kHz PCM16.
+Les nouveaux clips manquants sont synthétisés localement avec `say`, en PCM16
+16 kHz, sans coût TTS. Le profil peut venir d'une base locale (nom, adresse,
+ville, cuisine) ou de variables explicites business-only (quartier et termes
+menu inclus). Les transcripts sont conservés uniquement dans `.data/`; la
+progression n'affiche aucun texte.
+
+```bash
+cd apps/api
+
+# Export local read-only. Cette étape refuse tout DATABASE_URL non local.
+BENCH_RESTAURANT_ID=<restaurant-id> \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-profile.ts
+
+# Alternative sans base : profil business-only explicite; valeurs jamais affichées.
+BENCH_A3_PROFILE_SOURCE=env BENCH_A3_RESTAURANT_NAME='<nom public>' \
+BENCH_A3_PUBLIC_ADDRESS='<adresse/quartier public>' BENCH_A3_CITY='<ville>' \
+BENCH_A3_NEIGHBORHOOD='<quartier>' BENCH_A3_CUISINES='cuisine 1|cuisine 2' \
+BENCH_A3_MENU_TERMS='plat 1|plat 2|terme maison' \
+  node --import tsx scripts/voice-stt-bench/nb-a3-profile.ts
+
+# Vérifier le nombre de sessions, la durée et le coût avant tout appel.
+BENCH_A3_DRY_RUN=1 BENCH_LIMIT=2 \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-bench.ts
+
+# Run réduit; les 40 sessions nécessitent BENCH_CONFIRM=1.
+BENCH_CONFIRM=1 BENCH_LIMIT=2 BENCH_CONCURRENCY=4 \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-bench.ts
+
+# Run complet apparié (1 020 sessions, plafond 7 200 s). DEEPGRAM_BENCH_API_KEY uniquement.
+BENCH_CONFIRM=1 BENCH_LIMIT=51 BENCH_CONCURRENCY=4 \
+  node --env-file=.env --import tsx scripts/voice-stt-bench/nb-a3-bench.ts
+
+# Scoring hors ligne; IC 95 % bootstrapés par phrase pour scores, WER et latences p50/p90.
+pnpm exec tsx scripts/voice-stt-bench/nb-a3-score.ts \
+  scripts/voice-stt-bench/.data/nb-a3-results.json
+```
+
+Le profil `nb-a3-keyterms.json` et le résultat sont ignorés par git. Le runner
+refuse les runs de plus de huit sessions sans `BENCH_CONFIRM=1`, plafonne par
+défaut à 7 200 secondes fournisseur et annonce l'estimation avant le premier
+WebSocket. Le tarif estimé utilise le tarif PAYG affiché de Nova-3 streaming
+($0.0048/min) et l'add-on keyterms ($0.0013/min); c'est indicatif, car le
+fournisseur signale un impact tarifaire possible de `mip_opt_out=true` et le
+compte réel peut différer.
+Le profil synthétique A3 peut inclure les plats et termes maison fournis
+explicitement pour le benchmark. En production, le schéma expose le nom,
+l'adresse, la ville et la cuisine, mais aucun menu structuré ni personnel ; le
+générateur ne lit donc pas de texte libre, de données client ou de personnel.
+
 ### Vérification hors ligne (sans crédit)
 
 `nb-mock-scribe.ts` est un faux Scribe Realtime qui reconnaît les clips non

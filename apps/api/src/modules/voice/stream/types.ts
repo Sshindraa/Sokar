@@ -99,6 +99,13 @@ export interface SttWord {
   end?: number;
 }
 
+export type SttFinalTrigger =
+  | 'speech_final'
+  | 'utterance_end'
+  | 'safety_flush'
+  | 'spelling_hold'
+  | 'semantic_hold';
+
 /** Paramètres de détection de fin de tour appliqués à la session STT. */
 export interface SttTurnConfig {
   vadSilenceThresholdSecs: number;
@@ -329,6 +336,13 @@ export type SttEvent =
       speechEndAt?: number;
       sttFinalAt?: number;
       turnDispatchedAt?: number;
+      finalTrigger?: SttFinalTrigger;
+      providerResultEndMs?: number;
+      providerLastWordEndMs?: number;
+      receivedAtAudioMs?: number;
+      audioClockDriftMs?: number;
+      firstPartialAt?: number;
+      afterBargeIn?: boolean;
     }
   | { type: 'SpeechResumed' }
   | {
@@ -396,6 +410,8 @@ export interface CallSession {
   restaurantName: string;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
+  /** Keyterms métier non personnels préparés pour le chemin Deepgram ciblé. */
+  deepgramKeyterms?: string[];
   /** La page Connect publique du restaurant est actuellement publiée. */
   onlineReservationsActive?: boolean;
   timezone: string;
@@ -450,13 +466,20 @@ export interface CallSession {
   sttOpeningFallbackAttempted?: boolean;
   sttKeepAliveTimer?: ReturnType<typeof setInterval> | null;
   sttConnectionAudioStartedAt?: number;
+  /** Bytes successfully sent on the current provider socket, after conversion. */
+  sttConnectionAudioBytesSent?: number;
   sttLastNonEmptyPartialAt?: number;
   sttLastSpeechStartedAt?: number;
+  sttTurnStartedAt?: number;
+  sttFirstPartialAt?: number;
+  sttAfterBargeIn?: boolean;
   sttDeepgramFinalParts?: Array<{
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
     speechEndOffsetMs?: number;
+    providerResultEndMs?: number;
+    providerLastWordEndMs?: number;
   }>;
   /** Dernière langue détectée par Scribe sur un segment final. */
   sttLanguageCode?: string;

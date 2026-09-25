@@ -209,7 +209,31 @@ démarrage par Zod :
 VOICE_DEEPGRAM_ENDPOINTING_MS="300"
 VOICE_DEEPGRAM_UTTERANCE_END_MS="1000"
 VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
+VOICE_DEEPGRAM_MODEL="nova-3"
+# Optional; Flux is used only when this CSV contains the restaurant ID.
+VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""
+VOICE_DEEPGRAM_NUMERALS="true"
+VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS=""
+VOICE_DEEPGRAM_PUNCTUATE="false"
+VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS=""
+VOICE_DEEPGRAM_MIP_OPT_OUT="true"
+VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS=
 ```
+
+Les réglages `numerals` et `punctuate` ne s'écartent de leurs valeurs actuelles
+(`true` et `false`) que pour un restaurant présent dans leur allowlist respective.
+`VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS` est vide par défaut ; renseignez-y
+uniquement les restaurants qui utilisent les keyterms générés. Hors allowlist,
+le chemin historique reste utilisé. Le budget généré est distinct de celui de
+Scribe et reste sous 200 tokens estimés (marge prudente sous la limite Deepgram
+de 500 tokens).
+Le schéma actuel expose le nom, l'adresse, la ville et les
+types de cuisine; il ne contient pas de menu structuré ni de modèle de personnel.
+
+`VOICE_DEEPGRAM_MIP_OPT_OUT=true` s'applique à Nova-3 et Flux. Il exclut les
+requêtes STT du programme d'amélioration et active la rétention limitée au
+traitement selon la documentation Deepgram. Le défaut a volontairement changé;
+mettre `false` réactive le comportement fournisseur antérieur.
 
 L'épellation attend 800 ms de silence total, en tenant compte de
 `endpointing`; elle ne cumule pas un hold hybride. Les valeurs autorisées sont
@@ -422,6 +446,20 @@ et reste figée pendant l'appel. Une erreur avant la première ouverture Deepgra
 seule fois vers Scribe ; aucune bascule provider n'a lieu au milieu d'un appel. La clé
 `DEEPGRAM_API_KEY` doit être présente dans l'environnement de l'API pour les restaurants
 canary. Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
+
+Le codec Telnyx reste PCMA par défaut. `VOICE_TELNYX_CODEC=L16` conserve le
+comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
+`VOICE_TELNYX_CODEC_RESTAURANT_IDS` contienne l'ID du restaurant ciblé; une
+allowlist vide ou absente reste en PCMA. Les autres appels restent PCMA. La
+valeur est évaluée à l'ouverture de l'appel et ne change pas pendant le flux.
+
+Le modèle Deepgram reste `nova-3` par défaut. Le canary Flux nécessite simultanément
+`VOICE_DEEPGRAM_MODEL=flux-general-multi` et l'identifiant du restaurant dans
+`VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS` ; sans les deux, le modèle résolu reste Nova-3. Flux
+utilise l'endpoint `/v2/listen` avec `language_hint=fr`. `flux-general-multi` est le modèle Flux
+documenté qui prend en charge le français ; les noms `DEEPGRAM_MODEL` historiques ne pilotent
+pas cette sélection. Ce flag ne sélectionne pas Deepgram à lui seul : le provider exige toujours
+`VOICE_STT_PROVIDER=deepgram` et `VOICE_STT_PROVIDER_RESTAURANT_IDS`.
 
 Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
 `endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.

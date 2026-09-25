@@ -102,14 +102,89 @@ describe('STT provider adapters', () => {
         words: [{ word: 'dix-neuf', confidence: 0.91, start: 1.2, end: 1.7 }],
         speechFinal: true,
         speechEndOffsetMs: 1700,
+        providerResultEndMs: 2100,
+        providerLastWordEndMs: 1700,
       },
     ]);
     expect(normalize({ type: 'SpeechStarted' })).toEqual([{ type: 'speech_started' }]);
     expect(normalize({ type: 'UtteranceEnd', last_word_end: 3.25 })).toEqual([
-      { type: 'utterance_end', speechEndOffsetMs: 3250 },
+      {
+        type: 'utterance_end',
+        speechEndOffsetMs: 3250,
+        providerLastWordEndMs: 3250,
+      },
     ]);
     expect(normalize({ type: 'Error', code: 'not_authorized', description: 'denied' })).toEqual([
       { type: 'provider_error', messageType: 'not_authorized', message: 'denied' },
     ]);
+  });
+
+  it('uses the documented Flux v2 turn events and ForceEndTurn controls', () => {
+    const adapter = createDeepgramSttAdapter({ model: 'flux-general-multi' });
+    const normalize = (message: unknown) =>
+      adapter.normalizeMessage(Buffer.from(JSON.stringify(message)));
+    const socket = makeSocket();
+
+    expect(adapter.model).toBe('flux-general-multi');
+    expect(normalize({ type: 'Connected' })).toEqual([{ type: 'session_started' }]);
+    expect(
+      normalize({
+        type: 'TurnInfo',
+        event: 'StartOfTurn',
+        audio_window_start: 0.2,
+        transcript: 'Demain soir',
+        words: [{ word: 'soir', start: 0.4, end: 0.8, confidence: 0.9 }],
+      }),
+    ).toEqual([
+      { type: 'speech_started', speechStartOffsetMs: 200 },
+      {
+        type: 'partial',
+        transcript: 'Demain soir',
+        words: [{ word: 'soir', start: 0.4, end: 0.8, confidence: 0.9 }],
+      },
+    ]);
+    expect(
+      normalize({
+        type: 'TurnInfo',
+        event: 'EndOfTurn',
+        audio_window_end: 1.1,
+        transcript: 'Demain soir',
+        words: [{ word: 'soir', start: 0.4, end: 0.8 }],
+      }),
+    ).toEqual([
+      {
+        type: 'final_segment',
+        transcript: 'Demain soir',
+        words: [{ word: 'soir', start: 0.4, end: 0.8 }],
+        speechFinal: true,
+        speechEndOffsetMs: 800,
+        providerResultEndMs: 1_100,
+        providerLastWordEndMs: 800,
+      },
+    ]);
+    expect(
+      normalize({
+        type: 'TurnInfo',
+        event: 'EndOfTurn',
+        audio_window_end: 1.1,
+        transcript: 'Demain soir',
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'final_segment',
+        providerResultEndMs: 1_100,
+        speechEndOffsetMs: undefined,
+        providerLastWordEndMs: undefined,
+      }),
+    ]);
+
+    adapter.finalize(socket);
+    adapter.keepAlive(socket);
+    adapter.close(socket, 1000, 'done');
+    expect(vi.mocked(socket.send).mock.calls).toEqual([
+      [JSON.stringify({ type: 'ForceEndTurn' })],
+      [JSON.stringify({ type: 'CloseStream' })],
+    ]);
+    expect(socket.close).toHaveBeenCalledOnce();
   });
 });
