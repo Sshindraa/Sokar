@@ -17,6 +17,7 @@ import {
   voiceFalseEndOfTurnTotal,
   voiceFillerEventsTotal,
   voiceTurnPlanShadowByRestaurantTotal,
+  recordVoiceQualityTurnEvent,
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { recordDebugCallerText, recordDebugSpeechAct } from './debug-dialogue';
@@ -34,6 +35,8 @@ export type VoiceTurnEvent =
   | 'started'
   | 'speech_resumed'
   | 'stt_final'
+  | 'expected_answer'
+  | 'slot_confidence'
   | 'classified'
   | 'llm_started'
   | 'llm_first_token'
@@ -118,6 +121,8 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'speech_resumed':
       return 'speech';
     case 'stt_final':
+    case 'expected_answer':
+    case 'slot_confidence':
     case 'classified':
       return 'transcription';
     case 'llm_started':
@@ -221,7 +226,26 @@ export function completeVoiceTurnInput(
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
     speechDurationMs: session.latencyTrace?.speechDurationMs ?? null,
     transcriptLength: transcript.length,
+    ...wordConfidenceStats(words),
   });
+}
+
+/** Confiance STT du tour (min, moyenne, mots sous 0,5), sans le texte. */
+export function wordConfidenceStats(words: SttWord[]): {
+  minWordConfidence?: number;
+  meanWordConfidence?: number;
+  lowConfidenceWordCount?: number;
+} {
+  const values = words
+    .map((word) => word.confidence)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (!values.length) return {};
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  return {
+    minWordConfidence: round(Math.min(...values)),
+    meanWordConfidence: round(values.reduce((sum, value) => sum + value, 0) / values.length),
+    lowConfidenceWordCount: values.filter((value) => value < 0.5).length,
+  };
 }
 
 export function recordVoiceTurnClassification(
@@ -334,6 +358,9 @@ export function recordVoiceTurnEvent(
   const compactFields = Object.fromEntries(
     Object.entries(fields).filter(([, value]) => value !== undefined),
   );
+  if (event === 'expected_answer' || event === 'slot_confidence') {
+    recordVoiceQualityTurnEvent(event, fields);
+  }
   const phase = phaseForEvent(event);
 
   // Le runtime conserve les jalons utiles au dernier tour pour la persistance

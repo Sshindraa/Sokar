@@ -1,3 +1,4 @@
+import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
 import type { VoiceLanguageCode } from './voice-language';
 
@@ -140,6 +141,49 @@ export interface ConversationState {
   dayPeriod?: DayPeriod;
   /** Échecs LLM consécutifs, remis à zéro par une réponse LLM réussie. */
   llmFailureStreak?: number;
+  /**
+   * Deux valeurs phonétiquement proches pour la question en cours (« six ou
+   * dix ? »). Posé par `recordUserTurn`, consommé par la réponse du tour.
+   */
+  answerChoice?: { kind: 'partySize' | 'weekday' | 'time'; values: [string, string] } | null;
+  /** Valeurs retenues au dernier tour, relues naturellement dans la question suivante. */
+  justFilled?: { partySize?: boolean; date?: boolean; time?: boolean } | null;
+  /** Confiance des valeurs du dernier tour, pour la télémétrie (sans texte ni valeur). */
+  lastSlotConfidence?: Array<{
+    kind: 'partySize' | 'weekday' | 'time';
+    confidence: number | null;
+    unstable: boolean;
+    /** `wouldBe…` : flag de confiance coupé, décision calculée mais non appliquée. */
+    decision:
+      | 'readBack'
+      | 'choice'
+      | 'reprompt'
+      | 'wouldBeReadBack'
+      | 'wouldBeChoice'
+      | 'wouldBeReprompt';
+  }> | null;
+  /**
+   * Groupe au-delà du seuil du restaurant : `confirmed` passe à vrai quand
+   * l'appelant confirme le nombre (ou le choisit dans « X ou Y ? ») ; le tour
+   * est alors confié au gérant (transfert) ou à la prise de message.
+   */
+  groupRequest?: { partySize: number; confirmed: boolean } | null;
+  /** Heure hors des horaires d'ouverture, sans voisin ouvert : redemandée en citant les horaires. */
+  closedTimeReprompt?: boolean;
+  /** Valeur jugée trop incertaine au dernier tour : la question est reposée autrement. */
+  confidenceReprompt?: {
+    kind: 'partySize' | 'weekday' | 'time';
+    outsideOpeningHours: boolean;
+  } | null;
+  /** Champ rempli au dernier tour par rapprochement phonétique (jamais en silence). */
+  phoneticAccepted?: 'partySize' | 'date' | 'time' | null;
+  /** Issue du rapprochement au dernier tour, pour la télémétrie (sans texte). */
+  lastExpectedAnswer?: {
+    kind: 'partySize' | 'weekday' | 'time';
+    status: 'accepted' | 'choice' | 'unresolved';
+    bestScore: number | null;
+    margin: number | null;
+  } | null;
   offeredAvailability?: { date: string; partySize: number; slots: string[] };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
@@ -283,6 +327,11 @@ export type SttEvent =
       transcript: string;
       words?: SttWord[];
     }
+  | {
+      type: 'Unavailable';
+      reason: 'auth' | 'quota' | 'terms' | 'connection' | 'configuration';
+      message: string;
+    }
   | { type: 'Error'; message: string };
 
 /** Message entrant de Telnyx Media Stream WebSocket */
@@ -326,9 +375,18 @@ export interface CallSession {
   from: string;
   to: string;
   restaurantId: string;
+  /** Horaires d'ouverture du restaurant, pour borner les heures candidates. */
+  openingHours?: OpeningHours | null;
+  /**
+   * Taille de groupe réservable automatiquement (incluse), partagée avec le
+   * canal agentique (`RestaurantExposureSettings.maxPartySize`). Absent : 7.
+   */
+  maxPartySize?: number;
   restaurantName: string;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
+  /** La page Connect publique du restaurant est actuellement publiée. */
+  onlineReservationsActive?: boolean;
   timezone: string;
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
@@ -358,6 +416,17 @@ export interface CallSession {
   sttWs: WebSocket | null;
   /** Promise résolue quand le fournisseur STT est connecté (pre-warm) */
   sttReady: Promise<void> | null;
+  /** Échecs consécutifs d’ouverture/fermeture avant une connexion STT stable. */
+  sttConsecutiveFailures?: number;
+  /** Reconnexions Scribe déjà tentées pendant cet appel (l'ouverture initiale exclue). */
+  sttReconnectAttempts?: number;
+  sttRetryTimer?: ReturnType<typeof setTimeout> | null;
+  sttConnectTimeout?: ReturnType<typeof setTimeout> | null;
+  sttConnectionDeadlineTimer?: ReturnType<typeof setTimeout> | null;
+  /** Arrêt définitif de la reconnexion après erreur terminale ou repli parlé. */
+  sttTerminalFailure?: boolean;
+  sttFallbackTriggered?: boolean;
+  sttFallbackSpoken?: boolean;
   /** Callback mutable pour les événements STT (remplacé par le handler WS) */
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */
@@ -396,6 +465,14 @@ export interface CallSession {
     languageCode?: string;
     timer: ReturnType<typeof setTimeout>;
   } | null;
+  /** Transcriptions partielles Scribe du tour en cours (signal d'instabilité). */
+  turnPartials?: string[];
+  /**
+   * Preuves STT de la phrase finale, lues par `recordUserTurn` : mots avec leur
+   * confiance et partielles du tour. Rattachées au texte pour ne jamais servir
+   * à une autre phrase.
+   */
+  sttEvidence?: { transcript: string; words?: SttWord[]; partials: string[] } | null;
   /** Dernière phrase appelant envoyée au traitement (déterministe ou LLM). */
   lastProcessedTranscript?: string;
   /**

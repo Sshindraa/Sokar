@@ -300,6 +300,152 @@ export const voiceWidebandDetectedTotal = new Counter({
   registers: [getRegistry()],
 });
 
+export type VoiceQualityKind = 'party_size' | 'date' | 'time';
+export type VoiceQualityCohort = 'flag_on' | 'flag_off';
+export type VoiceExpectedAnswerStatus = 'accepted' | 'choice' | 'unresolved';
+export type VoiceSlotConfidenceDecision =
+  | 'readBack'
+  | 'choice'
+  | 'reprompt'
+  | 'wouldBeReadBack'
+  | 'wouldBeChoice'
+  | 'wouldBeReprompt';
+export type VoiceChoiceOutcome = 'first' | 'second' | 'neither' | 'other';
+
+/** Résultat du rapprochement d'une réponse attendue, sans score ni valeur en label. */
+export const voiceExpectedAnswerTotal = new Counter({
+  name: 'sokar_voice_expected_answer_total',
+  help: 'Voice expected-answer decisions by bounded field and status',
+  labelNames: ['kind', 'status'] as const,
+  registers: [getRegistry()],
+});
+
+/** Décisions de confiance de slot, y compris les décisions shadow `wouldBe…`. */
+export const voiceSlotConfidenceTotal = new Counter({
+  name: 'sokar_voice_slot_confidence_total',
+  help: 'Voice slot-confidence decisions by bounded field and decision',
+  labelNames: ['kind', 'decision'] as const,
+  registers: [getRegistry()],
+});
+
+/** Champs dont l'agent a relu la valeur à l'appelant. */
+export const voiceReadbackTotal = new Counter({
+  name: 'sokar_voice_readback_total',
+  help: 'Voice reservation fields read back by the assistant',
+  labelNames: ['kind'] as const,
+  registers: [getRegistry()],
+});
+
+/** Relectures corrigées par l'appelant au tour suivant. */
+export const voiceReadbackCorrectedTotal = new Counter({
+  name: 'sokar_voice_readback_corrected_total',
+  help: 'Voice readbacks corrected by the caller on the immediately following turn',
+  labelNames: ['kind'] as const,
+  registers: [getRegistry()],
+});
+
+/** Issue de la réponse au choix vocal entre deux valeurs. */
+export const voiceChoiceAnswerTotal = new Counter({
+  name: 'sokar_voice_choice_answer_total',
+  help: 'Voice caller outcomes for two-option reservation questions',
+  labelNames: ['kind', 'outcome'] as const,
+  registers: [getRegistry()],
+});
+
+/** Nombre de relectures de questions, par champ et cohort de feature flag. */
+export const voiceRepromptTotal = new Counter({
+  name: 'sokar_voice_reprompt_total',
+  help: 'Voice reservation questions repeated by bounded field and expected-answer flag cohort',
+  labelNames: ['kind', 'cohort'] as const,
+  registers: [getRegistry()],
+});
+
+/** Dénominateur des taux de relance, compté au moment où la question est émise. */
+export const voiceQuestionTotal = new Counter({
+  name: 'sokar_voice_question_total',
+  help: 'Voice reservation slot questions emitted by bounded field and flag cohort',
+  labelNames: ['kind', 'cohort'] as const,
+  registers: [getRegistry()],
+});
+
+const VOICE_QUALITY_KINDS: Readonly<Record<string, VoiceQualityKind>> = {
+  partySize: 'party_size',
+  party_size: 'party_size',
+  weekday: 'date',
+  date: 'date',
+  time: 'time',
+};
+
+function normalizeVoiceQualityKind(kind: unknown): VoiceQualityKind | null {
+  return typeof kind === 'string' ? (VOICE_QUALITY_KINDS[kind] ?? null) : null;
+}
+
+/**
+ * Convertit les événements internes en compteurs bornés. Seuls les quatre
+ * champs utiles aux réservations et les issues prévues entrent dans Prometheus;
+ * texte, valeurs, identifiants et champs supplémentaires sont ignorés.
+ */
+export function recordVoiceQualityTurnEvent(
+  event: 'expected_answer' | 'slot_confidence',
+  fields: Record<string, unknown>,
+): void {
+  const kind = normalizeVoiceQualityKind(fields.kind);
+  if (!kind) return;
+
+  if (event === 'expected_answer') {
+    const status = fields.status;
+    if (status === 'accepted' || status === 'choice' || status === 'unresolved') {
+      voiceExpectedAnswerTotal.inc({ kind, status });
+    }
+    return;
+  }
+
+  const decision = fields.decision;
+  if (
+    decision === 'readBack' ||
+    decision === 'choice' ||
+    decision === 'reprompt' ||
+    decision === 'wouldBeReadBack' ||
+    decision === 'wouldBeChoice' ||
+    decision === 'wouldBeReprompt'
+  ) {
+    voiceSlotConfidenceTotal.inc({ kind, decision });
+  }
+}
+
+export function recordVoiceQuestion(kind: VoiceQualityKind, cohort: VoiceQualityCohort): void {
+  voiceQuestionTotal.inc({ kind, cohort });
+}
+
+export function recordVoiceReprompt(kind: VoiceQualityKind, cohort: VoiceQualityCohort): void {
+  voiceRepromptTotal.inc({ kind, cohort });
+}
+
+export function recordVoiceReadback(kind: VoiceQualityKind): void {
+  voiceReadbackTotal.inc({ kind });
+}
+
+export function recordVoiceReadbackCorrected(kind: VoiceQualityKind): void {
+  voiceReadbackCorrectedTotal.inc({ kind });
+}
+
+export function recordVoiceChoiceAnswer(kind: VoiceQualityKind, outcome: VoiceChoiceOutcome): void {
+  voiceChoiceAnswerTotal.inc({ kind, outcome });
+}
+
+/** État du quota ElevenLabs observé via l'endpoint subscription. */
+export const elevenLabsCharacterCount = new Gauge({
+  name: 'sokar_elevenlabs_character_count',
+  help: 'Nombre de caractères consommés sur le compte ElevenLabs',
+  registers: [getRegistry()],
+});
+
+export const elevenLabsCharacterLimit = new Gauge({
+  name: 'sokar_elevenlabs_character_limit',
+  help: 'Limite de caractères du compte ElevenLabs',
+  registers: [getRegistry()],
+});
+
 export type VoiceTurnPlanShadowStatus =
   | 'valid'
   | 'invalid'
@@ -468,7 +614,11 @@ export const voiceTurnPlanShadowByRestaurantTotal = new Counter({
   registers: [getRegistry()],
 });
 
-export type VoiceTransferMotive = 'caller_request' | 'dialogue_stall' | 'name_spelling';
+export type VoiceTransferMotive =
+  | 'caller_request'
+  | 'dialogue_stall'
+  | 'name_spelling'
+  | 'group_size';
 export type VoiceTransferOutcome = 'requested' | 'rejected' | 'failed' | 'unconfigured';
 
 /** Transferts au gérant par motif, intention en cours et résultat Telnyx. */
@@ -538,11 +688,23 @@ export function __resetMetrics(): void {
   queueJobsGauge.reset();
   callsMissingTranscriptGauge.reset();
   reservationsMissingSmsGauge.reset();
+  voiceExpectedAnswerTotal.reset();
+  voiceSlotConfidenceTotal.reset();
+  voiceReadbackTotal.reset();
+  voiceReadbackCorrectedTotal.reset();
+  voiceChoiceAnswerTotal.reset();
+  voiceRepromptTotal.reset();
+  voiceQuestionTotal.reset();
+  voiceReservationsCreated7dGauge.reset();
+  voiceReservationsChangedAfterCall7dGauge.reset();
+  voiceReservationsCancelledAfterCall7dGauge.reset();
   voiceTurnDurationMs.reset();
   voiceLlmFirstTokenMs.reset();
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  elevenLabsCharacterCount.reset();
+  elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
@@ -685,6 +847,28 @@ export const callsMissingTranscriptGauge = new Gauge({
 export const reservationsMissingSmsGauge = new Gauge({
   name: 'sokar_reservations_missing_confirmation_sms_24h',
   help: 'Reservations in the last 24h without a confirmation SMS audit trail (refreshed every 5 min)',
+  registers: [getRegistry()],
+});
+
+/** Réservations vocales créées dans les sept derniers jours. */
+export const voiceReservationsCreated7dGauge = new Gauge({
+  name: 'sokar_voice_reservations_created_7d',
+  help: 'Phone reservations linked to calls and created in the last 7 days',
+  registers: [getRegistry()],
+});
+
+/** Réservations vocales modifiées dans les 48 h, d'après les noms de champs audités. */
+export const voiceReservationsChangedAfterCall7dGauge = new Gauge({
+  name: 'sokar_voice_reservations_changed_after_call_7d',
+  help: 'Voice reservations edited within 48 hours of creation, by field',
+  labelNames: ['field'] as const,
+  registers: [getRegistry()],
+});
+
+/** Réservations vocales annulées après l'appel de création, dans la cohorte 7 j. */
+export const voiceReservationsCancelledAfterCall7dGauge = new Gauge({
+  name: 'sokar_voice_reservations_cancelled_after_call_7d',
+  help: 'Voice reservations with a cancellation audit event after creation in the last 7 days',
   registers: [getRegistry()],
 });
 

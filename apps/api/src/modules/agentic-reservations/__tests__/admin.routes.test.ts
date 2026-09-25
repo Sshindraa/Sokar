@@ -111,7 +111,7 @@ describe('agentic admin routes', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.maxPartySize).toBe(8);
+      expect(body.maxPartySize).toBe(7);
     });
   });
 

@@ -91,6 +91,74 @@ function getLegacyState(state: Prisma.ReservationUpdateInput['state']): Reservat
   return typeof state === 'string' ? (state as ReservationState) : null;
 }
 
+type ReservationQualityField = 'date' | 'time' | 'party_size';
+
+function directUpdateValue(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || value instanceof Date) return value;
+  return 'set' in value ? (value as { set?: unknown }).set : undefined;
+}
+
+function asUpdateDate(value: unknown): Date | null {
+  const direct = directUpdateValue(value);
+  if (direct instanceof Date && Number.isFinite(direct.getTime())) return direct;
+  if (typeof direct === 'string') {
+    const parsed = new Date(direct);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+  }
+  return null;
+}
+
+function zonedDateTimeParts(value: Date, timeZone: string): { date: string; time: string } {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  };
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-CA', options);
+  } catch {
+    // A stale invalid restaurant timezone must not block reservation updates.
+    formatter = new Intl.DateTimeFormat('en-CA', { ...options, timeZone: 'UTC' });
+  }
+  const parts = formatter.formatToParts(value);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}`,
+  };
+}
+
+/** Returns only bounded field names; audit metadata never stores old/new values. */
+function changedReservationQualityFields(
+  existing: Reservation,
+  data: Prisma.ReservationUpdateInput,
+  timeZone: string,
+): ReservationQualityField[] {
+  const changed: ReservationQualityField[] = [];
+  const nextPartySize = directUpdateValue(data.partySize);
+  if (typeof nextPartySize === 'number' && nextPartySize !== existing.partySize) {
+    changed.push('party_size');
+  }
+
+  const timeUpdates = [
+    { current: existing.reservedAt, next: asUpdateDate(data.reservedAt) },
+    { current: existing.startsAt ?? existing.reservedAt, next: asUpdateDate(data.startsAt) },
+  ];
+  for (const { current, next } of timeUpdates) {
+    if (!next || next.getTime() === current.getTime()) continue;
+    const currentParts = zonedDateTimeParts(current, timeZone);
+    const nextParts = zonedDateTimeParts(next, timeZone);
+    if (nextParts.date !== currentParts.date && !changed.includes('date')) changed.push('date');
+    if (nextParts.time !== currentParts.time && !changed.includes('time')) changed.push('time');
+  }
+  return changed;
+}
+
 /**
  * Vérifie qu'une réservation existante correspond aux paramètres d'entrée.
  * En cas de mismatch (bug amont, retry avec args différents), on log un warning
@@ -439,6 +507,11 @@ export class ReservationService {
       where: { id, restaurantId },
       include: { restaurant: true },
     });
+    const changedFields = changedReservationQualityFields(
+      reservation,
+      data,
+      reservation.restaurant.timezone,
+    );
 
     const status = getLegacyStatus(data.status);
     const requestedState = getLegacyState(data.state);
@@ -470,8 +543,16 @@ export class ReservationService {
         additionalData,
         metadata:
           projectedState === 'CANCELLED'
-            ? { source: 'legacy_reservation_update' }
-            : { source: 'legacy_reservation_update', status },
+            ? {
+                source: 'legacy_reservation_update',
+                ...(changedFields.length ? { changedFields } : {}),
+              }
+            : {
+                source: 'legacy_reservation_update',
+                status,
+                ...(changedFields.length ? { changedFields } : {}),
+              },
+        changedFields,
         operation: projectedState === 'CANCELLED' ? 'cancel' : 'update',
         observationSource: 'legacy_service',
         allowAlreadyInTarget: true,
@@ -498,7 +579,24 @@ export class ReservationService {
               actor,
               fromState,
               toState,
-              metadata: { source: 'legacy_reservation_update' },
+              metadata: {
+                source: 'legacy_reservation_update',
+                ...(changedFields.length ? { changedFields } : {}),
+              },
+            },
+          });
+        } else if (changedFields.length) {
+          await tx.reservationAuditLog.create({
+            data: {
+              event: 'reservation_fields_changed',
+              reservationId: id,
+              actor,
+              fromState,
+              toState,
+              metadata: {
+                source: 'legacy_reservation_update',
+                changedFields,
+              },
             },
           });
         }
@@ -614,7 +712,7 @@ export class ReservationService {
         status: updated.status,
         state: updated.state,
         idempotency: 'not_applicable',
-        audit: stateChanged ? 'written' : 'not_applicable',
+        audit: stateChanged || changedFields.length ? 'written' : 'not_applicable',
         notification: 'not_applicable',
         capacity: 'unchanged',
       });

@@ -20,10 +20,128 @@ import {
 } from '../../../shared/stt-chunking';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
+import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
 const STT_PROVIDER_LABEL = 'elevenlabs_stt';
+export const STT_RETRY_BACKOFF_MS = [500, 1_000, 2_000] as const;
+export const STT_MAX_CONSECUTIVE_FAILURES = 4;
+export const STT_MAX_RECONNECTIONS_PER_CALL = 8;
+export const STT_CONNECT_TIMEOUT_MS = 2_500;
+// Laisse passer quatre délais de connexion (4 × 2,5 s) et le backoff
+// (3,5 s) avant le repli déclenché par la limite d'échecs consécutifs.
+export const STT_UNAVAILABLE_DEADLINE_MS = 15_000;
+
+type SttWebSocketFactory = (url: string, options: { headers: Record<string, string> }) => WebSocket;
+
+function terminalSttReason(
+  messageType: string | undefined,
+): Extract<SttEvent, { type: 'Unavailable' }>['reason'] | null {
+  const normalized = messageType?.toLowerCase() ?? '';
+  if (normalized.includes('quota')) return 'quota';
+  if (normalized.includes('unaccepted_terms') || normalized.includes('terms')) return 'terms';
+  if (
+    normalized.includes('auth') ||
+    normalized.includes('unauthorized') ||
+    normalized.includes('forbidden')
+  )
+    return 'auth';
+  return null;
+}
+
+function clearSttRecoveryTimers(session: CallSession): void {
+  if (session.sttRetryTimer) clearTimeout(session.sttRetryTimer);
+  if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+  if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
+  session.sttRetryTimer = null;
+  session.sttConnectTimeout = null;
+  session.sttConnectionDeadlineTimer = null;
+}
+
+function triggerSttUnavailable(
+  session: CallSession,
+  reason: Extract<SttEvent, { type: 'Unavailable' }>['reason'],
+  message: string,
+): void {
+  if (session.ended || session.sttFallbackTriggered) return;
+  session.sttTerminalFailure = true;
+  session.sttFallbackTriggered = true;
+  clearSttRecoveryTimers(session);
+  session.audioBuffer = [];
+  if (reason === 'connection') {
+    voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'connection_unavailable' });
+    recordSttConnectionUnavailable().catch((error) =>
+      logger.warn({ err: error }, '[stt] Could not dispatch connection alert'),
+    );
+  } else if (reason === 'quota' || reason === 'auth' || reason === 'terms') {
+    alertTerminalSttUnavailable(reason).catch((error) =>
+      logger.warn({ err: error }, '[stt] Could not dispatch terminal provider alert'),
+    );
+  }
+  const ws = session.sttWs;
+  session.sttWs = null;
+  session.sttReady = null;
+  if (ws) {
+    try {
+      if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'STT unavailable');
+      else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
+    } catch {
+      // Un socket déjà fermée n'empêche pas le repli parlé.
+    }
+  }
+  session.onSttEvent?.({ type: 'Unavailable', reason, message });
+}
+
+function ensureSttAvailabilityDeadline(session: CallSession): void {
+  if (
+    session.sttConnectionDeadlineTimer ||
+    session.sttTerminalFailure ||
+    session.sttFallbackTriggered
+  )
+    return;
+  session.sttConnectionDeadlineTimer = setTimeout(() => {
+    session.sttConnectionDeadlineTimer = null;
+    if (session.sttWs?.readyState === WebSocket.OPEN) return;
+    triggerSttUnavailable(
+      session,
+      'connection',
+      'ElevenLabs Scribe did not become available before the connection deadline',
+    );
+  }, STT_UNAVAILABLE_DEADLINE_MS);
+}
+
+function handleSttConnectionFailure(
+  session: CallSession,
+  error: Error,
+  createSocket: SttWebSocketFactory,
+): void {
+  if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
+  session.sttConsecutiveFailures = (session.sttConsecutiveFailures ?? 0) + 1;
+  if (session.sttConsecutiveFailures >= STT_MAX_CONSECUTIVE_FAILURES) {
+    triggerSttUnavailable(session, 'connection', error.message);
+    return;
+  }
+  if ((session.sttReconnectAttempts ?? 0) >= STT_MAX_RECONNECTIONS_PER_CALL) {
+    triggerSttUnavailable(session, 'connection', error.message);
+    return;
+  }
+
+  ensureSttAvailabilityDeadline(session);
+  if (session.sttRetryTimer) return;
+  const delay =
+    STT_RETRY_BACKOFF_MS[
+      Math.min(session.sttConsecutiveFailures - 1, STT_RETRY_BACKOFF_MS.length - 1)
+    ];
+  session.sttRetryTimer = setTimeout(() => {
+    session.sttRetryTimer = null;
+    if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
+    session.sttReconnectAttempts = (session.sttReconnectAttempts ?? 0) + 1;
+    connectStt(session, undefined, createSocket).catch(() => {
+      // The connection attempt records its own failure and schedules the next retry.
+    });
+  }, delay);
+}
 
 /**
  * Langues touristiques activées par défaut pour les appels de restaurant.
@@ -31,7 +149,10 @@ const STT_PROVIDER_LABEL = 'elevenlabs_stt';
  * améliore l'identification sur un appel court et évite de promettre une
  * couverture que le restaurant n'a pas validée.
  */
-export const DEFAULT_STT_LANGUAGES = ['fr', 'en', 'es', 'it', 'de', 'pt', 'nl'] as const;
+// Banc du 24/09/2026 (voix téléphonique A-law 8 kHz, 21 essais) : toutes les
+// langues → 33 % d'informations critiques justes (Scribe transcrit en allemand,
+// néerlandais…), fr+en → 76 %. Chaque langue ajoutée augmente les confusions.
+export const DEFAULT_STT_LANGUAGES = ['fr', 'en'] as const;
 const STT_LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}$/u;
 
 /**
@@ -182,6 +303,7 @@ const RESERVATION_KEYTERMS = [
   'tafel',
 ];
 const MAX_STT_KEYTERMS = 50;
+const MAX_TURN_PARTIALS = 30;
 const MAX_STT_KEYTERM_LENGTH = 20;
 const MAX_STT_PREVIOUS_TEXT_LENGTH = 50;
 /** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
@@ -667,6 +789,8 @@ export interface ElevenLabsSttMessage {
     start?: number;
     end?: number;
     confidence?: number;
+    /** Scribe Realtime envoie une log-probabilité, pas une confiance. */
+    logprob?: number;
     type?: string;
   }>;
 }
@@ -698,6 +822,7 @@ function sttErrorMetricType(messageType: string | undefined): string {
   if (!messageType) return 'provider_error';
   if (/auth/iu.test(messageType)) return 'auth';
   if (/quota/iu.test(messageType)) return 'quota';
+  if (/terms/iu.test(messageType)) return 'terms';
   if (/rate|throttl/iu.test(messageType)) return 'rate_limited';
   if (/queue|resource/iu.test(messageType)) return 'capacity';
   if (/session_time/iu.test(messageType)) return 'session_limit';
@@ -715,6 +840,18 @@ function getMessageLanguageCode(msg: ElevenLabsSttMessage): string | undefined {
   return languageCode && STT_LANGUAGE_CODE_PATTERN.test(languageCode) ? languageCode : undefined;
 }
 
+/**
+ * Confiance d'un mot entre 0 et 1. Scribe Realtime ne fournit que `logprob` :
+ * sans cette conversion, aucune confiance n'était jamais conservée.
+ */
+function wordConfidence(word: { confidence?: number; logprob?: number }): { confidence?: number } {
+  if (typeof word.confidence === 'number') return { confidence: word.confidence };
+  if (typeof word.logprob === 'number' && Number.isFinite(word.logprob)) {
+    return { confidence: Math.min(1, Math.max(0, Math.exp(word.logprob))) };
+  }
+  return {};
+}
+
 function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
   if (!msg.words?.length) return undefined;
   const words = msg.words
@@ -723,7 +860,7 @@ function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
       if (!text) return null;
       return {
         word: text,
-        ...(typeof word.confidence === 'number' ? { confidence: word.confidence } : {}),
+        ...wordConfidence(word),
         ...(typeof word.start === 'number' ? { start: word.start } : {}),
         ...(typeof word.end === 'number' ? { end: word.end } : {}),
       };
@@ -916,12 +1053,17 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
 
   if (!session.turnTranscript.trim() && !semanticHold) {
     flushPendingSttEndOfTurn(session);
+    session.turnPartials = [];
     session.onSttEvent?.({ type: 'UtteranceStart' });
   } else if (session.state === 'PROCESSING' && cleanTranscript !== session.turnTranscript) {
     session.onSttEvent?.({ type: 'SpeechResumed' });
   }
 
   session.turnTranscript = mergeSttTranscripts(session.turnTranscript, cleanTranscript);
+  // Partielles bornées : elles servent à voir si une valeur a changé en cours de tour.
+  const partials = (session.turnPartials ??= []);
+  if (partials.at(-1) !== cleanTranscript) partials.push(cleanTranscript);
+  if (partials.length > MAX_TURN_PARTIALS) partials.splice(0, partials.length - MAX_TURN_PARTIALS);
 
   const wordCount = cleanTranscript.split(/\s+/u).filter(Boolean).length;
   const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
@@ -993,9 +1135,11 @@ export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage
       logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe session started');
       return;
     case 'partial_transcript':
+      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
       emitPartialTranscript(session, getMessageText(msg));
       return;
     case 'committed_transcript':
+      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
       queuePlainCommittedTranscript(
         session,
         getMessageText(msg),
@@ -1004,6 +1148,7 @@ export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage
       );
       return;
     case 'committed_transcript_with_timestamps':
+      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
       dispatchTimestampedCommittedTranscript(
         session,
         getMessageText(msg),
@@ -1040,7 +1185,12 @@ export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage
           provider: STT_PROVIDER_LABEL,
           type: sttErrorMetricType(msg.message_type),
         });
-        session.onSttEvent?.({ type: 'Error', message });
+        const terminalReason = terminalSttReason(msg.message_type);
+        if (terminalReason) {
+          triggerSttUnavailable(session, terminalReason, message);
+        } else {
+          session.onSttEvent?.({ type: 'Error', message });
+        }
         return;
       }
   }
@@ -1049,31 +1199,61 @@ export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage
 export function connectStt(
   session: CallSession,
   onEvent?: (event: SttEvent) => void,
+  createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
   if (session.sttReady) return session.sttReady;
+  if (session.sttRetryTimer || session.sttTerminalFailure || session.sttFallbackTriggered) {
+    return Promise.resolve();
+  }
 
   const apiKey = process.env.ELEVENLABS_API_KEY ?? '';
-  if (!apiKey || process.env.NODE_ENV === 'test') {
+  if (process.env.NODE_ENV === 'test') {
     session.sttReady = Promise.resolve();
     return session.sttReady;
+  }
+  if (!apiKey) {
+    triggerSttUnavailable(session, 'configuration', 'ELEVENLABS_API_KEY is not configured');
+    return Promise.resolve();
   }
 
   const model = configuredModel(session);
   session.sttModel = model;
   const turnConfig = ensureSttTurnConfig(session);
-  const ready = new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(
+  ensureSttAvailabilityDeadline(session);
+  let ws: WebSocket;
+  try {
+    ws = createSocket(
       buildSttUrl(model, session.codec, turnConfig.desired, {
         restaurantName: session.restaurantName,
       }),
-      {
-        headers: { 'xi-api-key': apiKey },
-      },
+      { headers: { 'xi-api-key': apiKey } },
     );
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    handleSttConnectionFailure(session, error, createSocket);
+    return Promise.reject(error);
+  }
+
+  let opened = false;
+  let failureHandled = false;
+  const ready = new Promise<void>((resolve, reject) => {
     session.sttWs = ws;
 
     ws.on('open', () => {
+      if (session.ended || session.sttWs !== ws) {
+        ws.close(1000, 'call ended');
+        resolve();
+        return;
+      }
+      opened = true;
+      if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+      session.sttConnectTimeout = null;
+      if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
+      session.sttConnectionDeadlineTimer = null;
+      // An open Scribe socket proves availability. Count only consecutive
+      // failed opens/closures, while the per-call reconnection budget remains.
+      session.sttConsecutiveFailures = 0;
       writeDebugLog(
         '[stt] ElevenLabs Scribe connected for call ' +
           session.callControlId +
@@ -1098,6 +1278,8 @@ export function connectStt(
     });
 
     ws.on('error', (err: Error) => {
+      if (failureHandled || session.sttWs !== ws) return;
+      failureHandled = true;
       writeDebugLog('[stt] ElevenLabs WebSocket error for call ' + session.callControlId, err);
       logger.error({ err, callId: session.callControlId }, '[stt] Error: ' + err.message);
       voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'ws_error' });
@@ -1107,9 +1289,36 @@ export function connectStt(
           extra: { callId: session.callControlId },
         });
       }
-      session.sttWs = null;
-      session.sttReady = null;
-      reject(err);
+      if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+      session.sttConnectTimeout = null;
+      if (session.sttWs === ws) session.sttWs = null;
+      if (session.sttReady === ready) session.sttReady = null;
+      if (!opened) reject(err);
+      handleSttConnectionFailure(session, err, createSocket);
+    });
+
+    ws.on('unexpected-response', (_request, response) => {
+      if (failureHandled || session.sttWs !== ws) return;
+      failureHandled = true;
+      response.resume();
+      if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+      session.sttConnectTimeout = null;
+      if (session.sttWs === ws) session.sttWs = null;
+      if (session.sttReady === ready) session.sttReady = null;
+      const statusCode = response.statusCode ?? 0;
+      const error = new Error(
+        'ElevenLabs Scribe WebSocket handshake failed with HTTP ' + statusCode,
+      );
+      if (statusCode === 401 || statusCode === 403) {
+        voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'auth' });
+        if (!opened) reject(error);
+        triggerSttUnavailable(session, 'auth', error.message);
+        ws.terminate();
+      } else {
+        voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'ws_error' });
+        if (!opened) reject(error);
+        handleSttConnectionFailure(session, error, createSocket);
+      }
     });
 
     ws.on('close', (code: number, reason: Buffer) => {
@@ -1117,9 +1326,28 @@ export function connectStt(
         { callId: session.callControlId, code, reason: reason.toString() },
         '[stt] ElevenLabs Scribe connection closed',
       );
+      if (failureHandled || session.sttWs !== ws) return;
+      failureHandled = true;
+      if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+      session.sttConnectTimeout = null;
       session.sttWs = null;
-      session.sttReady = null;
+      if (session.sttReady === ready) session.sttReady = null;
+      const error = new Error('ElevenLabs Scribe WebSocket closed before the call ended');
+      if (!opened) reject(error);
+      handleSttConnectionFailure(session, error, createSocket);
     });
+
+    session.sttConnectTimeout = setTimeout(() => {
+      if (failureHandled || opened || session.sttWs !== ws) return;
+      failureHandled = true;
+      session.sttConnectTimeout = null;
+      session.sttWs = null;
+      if (session.sttReady === ready) session.sttReady = null;
+      const error = new Error('ElevenLabs Scribe WebSocket connection timed out');
+      reject(error);
+      handleSttConnectionFailure(session, error, createSocket);
+      ws.terminate();
+    }, STT_CONNECT_TIMEOUT_MS);
   });
 
   session.sttReady = ready;
@@ -1127,9 +1355,16 @@ export function connectStt(
 }
 
 export function sendAudioToStt(session: CallSession, audioPayload: string): void {
+  if (session.sttTerminalFailure || session.sttFallbackTriggered) return;
   const input = toSttAudio(session.codec, Buffer.from(audioPayload, 'base64'));
 
-  if (!session.sttWs && !session.sttReady) {
+  if (
+    !session.sttWs &&
+    !session.sttReady &&
+    !session.sttRetryTimer &&
+    !session.sttTerminalFailure &&
+    !session.sttFallbackTriggered
+  ) {
     connectStt(session).catch((err) => {
       logger.error(
         { err, callId: session.callControlId },
@@ -1153,10 +1388,14 @@ export function closeStt(session: CallSession): void {
   clearPendingSttEndOfTurn(session);
   clearSemanticHold(session);
   clearPendingSttCommit(session);
+  clearSttRecoveryTimers(session);
   const ws = session.sttWs;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  session.sttWs = null;
+  session.sttReady = null;
+  if (!ws) return;
   try {
-    ws.close(1000, 'call ended');
+    if (ws.readyState === WebSocket.OPEN) ws.close(1000, 'call ended');
+    else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
   } catch (err) {
     logger.warn({ err, callId: session.callControlId }, '[stt] Failed to close Scribe socket');
   }

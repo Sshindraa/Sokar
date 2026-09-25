@@ -23,6 +23,9 @@ vi.mock('../../../shared/redis/client', () => ({
 const restaurantFromDb = {
   id: 'rest-1',
   name: 'Chez Cache',
+  slug: 'chez-cache',
+  publishedAt: new Date('2026-09-01T10:00:00.000Z'),
+  agenticOptIn: true,
   plan: 'STARTER',
   managerPhone: '+33600000000',
   managerEmail: 'boss@sokar.test',
@@ -31,6 +34,9 @@ const restaurantFromDb = {
   carrier: 'telnyx',
   smsConfirmEnabled: true,
   googleCalendarId: 'calendar-safe-id',
+  exposureSettings: {
+    connectPublished: true,
+  },
   googleRefreshToken: 'secret-refresh-token-never-cache',
   personality: {
     id: 'personality-1',
@@ -92,6 +98,7 @@ describe('RestaurantService context cache', () => {
       select: expect.not.objectContaining({ googleRefreshToken: true }),
     });
     expect(setCachedContext).toHaveBeenCalledWith('phone:pn-cache', result, REDIS_CTX_TTL_SECONDS);
+    expect(result.onlineReservationsActive).toBe(true);
 
     const cachedPayload = JSON.stringify(vi.mocked(setCachedContext).mock.calls[0][1]);
     expect(cachedPayload).toContain('Suggère les plats du jour.');
@@ -105,6 +112,27 @@ describe('RestaurantService context cache', () => {
     expect(cachedPayload).not.toContain('secret-refresh-token-never-cache');
     expect(cachedPayload).not.toContain('CARTESIA_API_KEY');
     expect(cachedPayload).not.toContain('test-cartesia-key');
+  });
+
+  it.each([
+    { agenticOptIn: false },
+    { publishedAt: null },
+    { slug: null },
+    { exposureSettings: { connectPublished: false } },
+  ])('désactive les réservations Connect sans publication complète', async (overrides) => {
+    const { db } = await import('../../../shared/db/client');
+    const { getCachedContext } = await import('../../../shared/redis/client');
+    const { RestaurantService } = await import('../restaurant.service');
+
+    vi.mocked(getCachedContext).mockResolvedValue(null);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...restaurantFromDb,
+      ...overrides,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const result = await RestaurantService.loadContext('pn-cache');
+
+    expect(result.onlineReservationsActive).toBe(false);
   });
 
   it('invalide le cache par clé téléphone', async () => {

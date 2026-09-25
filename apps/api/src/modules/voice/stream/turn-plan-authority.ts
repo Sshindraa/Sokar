@@ -13,6 +13,7 @@ import {
   isNameCollectionBlocking,
   proposeAssistantInteractionFromLlmText,
   recordAssistantReplyWithPolicy,
+  voiceMaxPartySize,
 } from './conversation-controller';
 import { recordVoiceTurnPlanAuthority } from '../../../shared/observability/metrics';
 
@@ -147,6 +148,12 @@ function applyTurnPlanFacts(
       continue;
     }
     if (fact.op === 'clear' || fact.value === undefined) {
+      recordVoiceTurnPlanAuthority(field, 'unsupported');
+      continue;
+    }
+    // Un groupe au-delà du seuil n'est jamais écrit par le modèle : il passe
+    // par la confirmation puis le gérant (parcours déterministe).
+    if (field === 'partySize' && Number(fact.value) > voiceMaxPartySize(session)) {
       recordVoiceTurnPlanAuthority(field, 'unsupported');
       continue;
     }
