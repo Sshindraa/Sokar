@@ -518,6 +518,30 @@ const SPELLING_FILLER_TOKENS = new Set([
   'ok',
   'donc',
 ]);
+const NON_NAME_PREFIX_TOKENS = new Set([
+  ...SPELLING_FILLER_TOKENS,
+  'a',
+  'au',
+  'aux',
+  'bonjour',
+  'de',
+  'des',
+  'du',
+  'en',
+  'est',
+  'je',
+  'la',
+  'le',
+  'les',
+  'merci',
+  'mon',
+  'nom',
+  'non',
+  'pour',
+  'suis',
+  'un',
+  'une',
+]);
 
 const NAME_INTRODUCTION_PATTERN =
   /\b(?:au nom de|un nom de|(?:en|un) nombre de actifs?|nom de|mon nom est|mon nom|je m appelle|je suis|my name is|the name is|under the name of|this is)\b/u;
@@ -680,9 +704,7 @@ function findNextComparatorStart(
  * probable. La forme détaillée conserve chaque zone inconnue et sa position ;
  * le wrapper historique garde uniquement `value` et `confident`.
  */
-export function parseSpelledNameTranscriptDetailed(
-  transcript: string,
-): DetailedSpelledNameCandidate | null {
+function parseSpelledNameTranscriptCore(transcript: string): DetailedSpelledNameCandidate | null {
   const normalized = normalizeTranscript(transcript);
   if (!normalized) return null;
 
@@ -865,6 +887,68 @@ export function parseSpelledNameTranscriptDetailed(
       knownLetterCount <= 2 &&
       hasNoUnknowns,
   };
+}
+
+interface PronouncedNameSpellingMatch {
+  candidate: DetailedSpelledNameCandidate;
+  spokenName: string;
+}
+
+function extractSpokenNameLetters(prefix: string): string | null {
+  const normalized = normalizeTranscript(prefix);
+  const parsed = parseSpelledNameTranscriptCore(normalized);
+  if (parsed?.confident) {
+    const letters = parsed.value.replace(/[^A-Z]/gu, '');
+    if (letters.length >= 2) return letters;
+  }
+
+  const introducedName = normalized.match(
+    /^(?:au nom de|un nom de|nom de|mon nom est|mon nom|je m appelle|je suis|my name is|the name is|under the name of)\s+([\p{L}]+)$/u,
+  )?.[1];
+  const singleWord = /^[\p{L}]+$/u.test(normalized) ? normalized : null;
+  const spokenName = introducedName ?? singleWord;
+  if (!spokenName || spokenName.length < 2 || NON_NAME_PREFIX_TOKENS.has(spokenName)) {
+    return null;
+  }
+
+  return spokenName.toLocaleUpperCase('fr-FR');
+}
+
+function isLetterSubsequence(prefix: string, candidate: string): boolean {
+  let prefixIndex = 0;
+  for (const letter of candidate) {
+    if (letter === prefix[prefixIndex]) prefixIndex++;
+  }
+  return prefixIndex === prefix.length;
+}
+
+function findPronouncedNameSpellingMatch(transcript: string): PronouncedNameSpellingMatch | null {
+  const words = normalizeTranscript(transcript).split(/\s+/u).filter(Boolean);
+  if (words.length < 3) return null;
+
+  for (let start = words.length - 2; start >= 1; start--) {
+    const spokenName = extractSpokenNameLetters(words.slice(0, start).join(' '));
+    if (!spokenName) continue;
+
+    const candidate = parseSpelledNameTranscriptCore(words.slice(start).join(' '));
+    if (!candidate?.confident || candidate.value.length < 2) continue;
+
+    const spelledLetters = candidate.value.replace(/[^A-Z]/gu, '');
+    if (isLetterSubsequence(spokenName, spelledLetters)) {
+      return { candidate, spokenName };
+    }
+  }
+
+  return null;
+}
+
+export function parseSpelledNameTranscriptDetailed(
+  transcript: string,
+): DetailedSpelledNameCandidate | null {
+  return (
+    findPronouncedNameSpellingMatch(transcript)?.candidate ??
+    parseSpelledNameTranscriptCore(transcript)
+  );
 }
 
 /** Wrapper de compatibilité avec la PR #116. */
@@ -1468,8 +1552,10 @@ export function handleCustomerNameTurn(
   const targeted = applyTargetedCorrection(session, transcript, language);
   if (targeted) return targeted;
 
-  const directParsed = parseSpelledNameTranscriptDetailed(transcript);
   const nameContext = nameQuestionContext(session) || isNameCollectionActive(session);
+  const pronouncedNameSpelling = nameContext ? findPronouncedNameSpellingMatch(transcript) : null;
+  const directParsed =
+    pronouncedNameSpelling?.candidate ?? parseSpelledNameTranscriptDetailed(transcript);
   const trailingParsed = nameContext
     ? parseTrailingSpellingTranscript(
         transcript,
@@ -1579,12 +1665,15 @@ export function handleCustomerNameTurn(
   if (parsed && parsedBelongsToName) {
     const previousState = collection.state;
     const previousKnown = knownCandidate(collection);
+    const isPronouncedNameConfirmation =
+      Boolean(pronouncedNameSpelling) && parsed.value === pronouncedNameSpelling?.candidate.value;
     let nextTokens: SpellingToken[];
     const repeatsKnownPrefix =
       previousKnown.length > 0 &&
       parsed.value.startsWith(previousKnown) &&
       !hasContinuationCue(transcript);
     const shouldAppend =
+      !isPronouncedNameConfirmation &&
       previousState === 'collecting' &&
       !hasFullRestartCue(transcript) &&
       !parsed.hasNameIntroduction &&
@@ -1618,6 +1707,22 @@ export function handleCustomerNameTurn(
         return clarificationEscalation(language);
       }
       return { response: ambiguityQuestion(collection, language), confirmedName: null };
+    }
+
+    if (isPronouncedNameConfirmation) {
+      const confirmedName = knownCandidate(collection);
+      collection.state = 'confirmed';
+      collection.confirmedName = confirmedName;
+      collection.presentedCandidate = null;
+      collection.clarificationCount = 0;
+      collection.awaitingCorrection = false;
+      collection.fallbackRecorded = false;
+      session.conversation.slots.customerName = confirmedName;
+      syncLegacySpellingCandidate(session);
+      if (getActivePendingInteraction(session)?.kind === 'customerName') {
+        finishActivePendingInteraction(session, 'resolved', 'customerName');
+      }
+      return { response: null, confirmedName };
     }
 
     collection.clarificationCount = 0;

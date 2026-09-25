@@ -333,6 +333,8 @@ describe('conversation state', () => {
     ['A comme Anatole K I F', 'AKIF'],
     ['A deux L A N', 'ALLAN'],
     ['a k 2 k i f', 'AKKIF'],
+    ['a k f a 2 k i f', 'AKKIF'],
+    ['dupont d u p o n t', 'DUPONT'],
     ['a k deux k i f', 'AKKIF'],
     ['a k double k i f', 'AKKIF'],
     ['a k alors deux k euh i f', 'AKKIF'],
@@ -459,6 +461,23 @@ describe('conversation state', () => {
     });
     expect(session.conversation.slots.customerName).toBe('KIF');
     expect(session.conversation.spellingCandidate).toBeNull();
+  });
+
+  it.each([
+    ['a k f a 2 k i f', 'AKKIF'],
+    ['dupont d u p o n t', 'DUPONT'],
+  ])('confirme le nom prononcé compatible avec son épellation finale: %s', (transcript, name) => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, transcript)).toEqual({
+      response: null,
+      confirmedName: name,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirmed');
+    expect(session.conversation.nameCollection.confirmedName).toBe(name);
+    expect(session.conversation.slots.customerName).toBe(name);
+    expect(session.conversation.pendingQuestion).toBeNull();
   });
 
   it('conserve le contexte nom pour la confirmation de l’épellation', () => {
