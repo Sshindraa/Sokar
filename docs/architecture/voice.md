@@ -1,5 +1,9 @@
 # Voice Architecture
 
+- **Routage dialogue V2** (`VOICE_DIALOGUE_LISTENING_V2`, défaut `false`) : le déterministe ne
+  traite que la réponse directe, unique et non ambiguë à la question en attente. Une question, une
+  correction/contradiction, une hésitation finale ou une boucle est confiée au LLM avec l'état utile ;
+  les valeurs évoquées dans une question ne sont jamais enregistrées comme choix confirmé.
 - Carrier: Telnyx Media Stream.
 - STT: ElevenLabs Scribe Realtime (`scribe_v2_realtime`), détection ciblée `fr,en,es,it,de,pt,nl` par défaut ; les 44 langues Sonic 3.6 sont activables via `ELEVENLABS_STT_ALL_LANGUAGES=true`.
 - Dialogue multilingue: le code de langue du segment final Scribe devient la langue active de la session ; le LLM reçoit une consigne de raisonnement et de réponse dans cette langue.

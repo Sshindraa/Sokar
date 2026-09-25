@@ -1,14 +1,16 @@
 /**
- * Banc narrowband (phase 1) — exécution des 4 conditions sur les mêmes clips.
+ * Banc narrowband — exécution des conditions sur les mêmes clips.
  *
  *   A : 16 kHz natif                        → Scribe `pcm_16000` (référence haute)
  *   B : passe-bande → 8 kHz → A-law → 8 kHz → Scribe `pcm_8000` (prod actuelle)
  *   C : B puis upsampling 16 kHz            → Scribe `pcm_16000`
  *   D : B mais envoi par chunks de 100 ms   → Scribe `pcm_8000`
+ *   E : B avec `language_code=fr`
+ *   F : B avec filtrage Scribe du bruit de fond
  *
  * Les paramètres Scribe (langues, keyterms, VAD, stratégie de commit) sont lus
- * depuis `stt-bridge.ts` via son build compilé : seul `audio_format` et la
- * taille de chunk changent. Tout le reste est identique à la production.
+ * depuis `stt-bridge.ts` via son build compilé. E et F ne changent que leur
+ * condition; F omet aussi `include_timestamps`, incompatible avec le filtre.
  *
  * À lancer depuis `apps/api`, où se trouvent les clés :
  *   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts > .data/nb-results.json
@@ -25,14 +27,17 @@ import {
   addBackgroundNoise,
   alawRoundTrip,
   applyPacketLoss,
+  backgroundNoiseOnly,
   downsampleBy2,
-  seedFromString,
+  noiseControlLossSeed,
+  packetLossSeed,
   telephoneBandpass,
   upsampleBy2,
 } from './nb-dsp';
 import { synthesize16k, type TtsProvider } from './nb-tts';
 import {
   BENCH_CONFIRM_LIMIT,
+  BENCH_TRAILING_SILENCE_S,
   estimateBenchCost,
   formatCostEstimate,
   requireBenchKey,
@@ -43,14 +48,19 @@ const { buildSttUrl } = require('../../dist/modules/voice/stream/stt-bridge.js')
     model?: string,
     codec?: 'PCMA' | 'PCMU',
     turnConfig?: unknown,
-    options?: { restaurantName?: string },
+    options?: {
+      restaurantName?: string;
+      filterBackgroundAudio?: boolean;
+      languages?: readonly string[];
+    },
   ) => string;
 };
 
 const DATA_DIR = join(__dirname, '.data');
 const AUDIO_DIR = join(DATA_DIR, 'audio16');
+const NOISE_CONTROL_MS = 4_000;
 
-export type Condition = 'A' | 'B' | 'C' | 'D' | 'E';
+export type Condition = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
 export type Variant = 'clean' | 'noisy';
 
 interface ConditionSpec {
@@ -64,6 +74,7 @@ interface ConditionSpec {
    * `secondary_languages` restreints (voir `scribeUrl`).
    */
   language?: { primary: string; secondaries: readonly string[] };
+  filterBackgroundAudio?: boolean;
 }
 
 const narrowband8k = (native16k: Buffer): Buffer =>
@@ -88,6 +99,14 @@ export const CONDITIONS: Record<Condition, ConditionSpec> = {
     prepare: narrowband8k,
     language: { primary: 'fr', secondaries: [] },
   },
+  // F = B avec le filtre de bruit Scribe, sans autre changement.
+  F: {
+    format: 'pcm_8000',
+    sampleRate: 8000,
+    chunkMs: 20,
+    prepare: narrowband8k,
+    filterBackgroundAudio: true,
+  },
 };
 
 function scribeUrl(spec: ConditionSpec): string {
@@ -97,6 +116,7 @@ function scribeUrl(spec: ConditionSpec): string {
     // `languages: []` supprime toutes les `secondary_languages` : sans liste,
     // Scribe ne peut pas dériver vers une autre langue que `language_code`.
     ...(spec.language ? { languages: spec.language.secondaries } : {}),
+    filterBackgroundAudio: spec.filterBackgroundAudio,
   });
   const url = new URL(base);
   url.searchParams.set('audio_format', spec.format);
@@ -120,6 +140,7 @@ interface StreamResult {
   latencyMs: number;
   messagesSent: number;
   error: string | null;
+  detectedLanguage: string | null;
 }
 
 async function streamToScribe(
@@ -136,6 +157,7 @@ async function streamToScribe(
     let messagesSent = 0;
     let endOfSpeechAt = 0;
     let lastCommitAt = 0;
+    let detectedLanguage: string | null = null;
     let finished = false;
     const bytesPerChunk = Math.round((spec.sampleRate * 2 * spec.chunkMs) / 1000);
 
@@ -155,11 +177,17 @@ async function streamToScribe(
         latencyMs: lastCommitAt && endOfSpeechAt ? lastCommitAt - endOfSpeechAt : -1,
         messagesSent,
         error,
+        detectedLanguage,
       });
     };
 
     const hardTimer = setTimeout(() => finish(committed.length ? null : 'timeout'), 40_000);
     ws.on('error', (error: Error) => finish(error.message));
+    ws.on('unexpected-response', (_request, response) => {
+      const statusCode = response.statusCode ?? 0;
+      response.resume();
+      finish(`handshake_http_${statusCode}`);
+    });
 
     ws.on('message', async (raw: WebSocket.RawData) => {
       let event: Record<string, unknown>;
@@ -169,6 +197,9 @@ async function streamToScribe(
         return;
       }
       const type = typeof event.message_type === 'string' ? event.message_type : '';
+      if (typeof event.language_code === 'string') {
+        detectedLanguage = event.language_code;
+      }
 
       if (type === 'session_started') {
         const send = (chunk: Buffer) => {
@@ -229,9 +260,8 @@ async function streamToScribe(
         return;
       }
 
-      if (/error/i.test(type)) {
-        const message = typeof event.error === 'string' ? event.error : type;
-        finish(message);
+      if (/(?:error|rate.?limit|quota)/i.test(type)) {
+        finish(type || 'scribe_error');
       }
     });
   });
@@ -269,6 +299,8 @@ export interface BenchRecord {
   messagesSent: number;
   transcript: string;
   error: string | null;
+  detectedLanguage: string | null;
+  noiseOnly?: boolean;
 }
 
 async function main(): Promise<void> {
@@ -299,12 +331,21 @@ async function main(): Promise<void> {
   const sessionsPerCondition =
     (variants.includes('clean') ? CLEAN_REPEATS : 0) +
     (variants.includes('noisy') ? NOISE_SEEDS.length : 0);
+  const noiseControlConditions = conditions.includes('F') ? (['B', 'F'] as const) : [];
+  const noiseControlSessions = noiseControlConditions.length * NOISE_SEEDS.length;
+  const noiseControlSeconds =
+    noiseControlSessions * (NOISE_CONTROL_MS / 1000 + BENCH_TRAILING_SILENCE_S);
   const estimate = estimateBenchCost(
     clips.map((clip) => clip.text),
     conditions.length,
     sessionsPerCondition,
+    noiseControlSessions,
+    noiseControlSeconds,
   );
-  process.stderr.write(`${formatCostEstimate(estimate)}\n`);
+  process.stderr.write(
+    `${formatCostEstimate(estimate)} ` +
+      (ttsProvider === 'say' ? 'TTS local say : aucun coût API TTS.\n' : '\n'),
+  );
   if (clips.length > BENCH_CONFIRM_LIMIT && process.env.BENCH_CONFIRM !== '1') {
     throw new Error(
       `${clips.length} clips dépasse la limite de confirmation (${BENCH_CONFIRM_LIMIT}). ` +
@@ -313,7 +354,10 @@ async function main(): Promise<void> {
   }
 
   const tasks: Array<{
-    record: Omit<BenchRecord, 'transcript' | 'latencyMs' | 'messagesSent' | 'error'>;
+    record: Omit<
+      BenchRecord,
+      'transcript' | 'latencyMs' | 'messagesSent' | 'error' | 'detectedLanguage'
+    >;
     audio: Buffer;
     spec: ConditionSpec;
   }> = [];
@@ -351,9 +395,7 @@ async function main(): Promise<void> {
       const spec = CONDITIONS[condition];
       for (const variant of variantAudio) {
         const prepared = spec.prepare(variant.pcm);
-        const lossSeed = seedFromString(
-          `${clip.id}-${condition}-${variant.variant}-${variant.repeat}`,
-        );
+        const lossSeed = packetLossSeed(clip.id, condition, variant.variant, variant.repeat);
         const audio =
           variant.variant === 'noisy'
             ? applyPacketLoss(prepared, spec.sampleRate, { lossRate: 0.02, seed: lossSeed })
@@ -377,10 +419,44 @@ async function main(): Promise<void> {
     }
   }
 
-  const audioMinutes = tasks.reduce((sum, task) => sum + task.record.audioMs, 0) / 60_000;
+  for (const [repeat, noise] of NOISE_SEEDS.entries()) {
+    const noise16k = backgroundNoiseOnly(16000, NOISE_CONTROL_MS, {
+      rms: 600,
+      seed: noise.seed,
+    });
+    for (const condition of noiseControlConditions) {
+      const spec = CONDITIONS[condition];
+      const prepared = spec.prepare(noise16k);
+      const audio = applyPacketLoss(prepared, spec.sampleRate, {
+        lossRate: 0.02,
+        seed: noiseControlLossSeed(condition, repeat),
+      });
+      tasks.push({
+        spec,
+        audio,
+        record: {
+          clipId: `noise-only-${repeat + 1}`,
+          text: '',
+          category: 'noise_only',
+          condition,
+          variant: 'noisy',
+          repeat,
+          noiseSeed: noise.seed,
+          snrDb: noise.snrDb,
+          audioMs: Math.round((audio.length / 2 / spec.sampleRate) * 1000),
+          noiseOnly: true,
+        },
+      });
+    }
+  }
+
+  const audioMinutes =
+    tasks.reduce((sum, task) => sum + task.record.audioMs / 1000 + BENCH_TRAILING_SILENCE_S, 0) /
+    60;
   process.stderr.write(
     `Banc narrowband : ${clips.length} clips, conditions ${conditions.join('/')}, ` +
-      `variantes ${variants.join('/')}, ${tasks.length} sessions Scribe, ${audioMinutes.toFixed(1)} min d'audio.\n`,
+      `variantes ${variants.join('/')}, ${tasks.length} sessions Scribe, ` +
+      `${audioMinutes.toFixed(1)} min d'audio avec silences VAD.\n`,
   );
 
   const results: BenchRecord[] = new Array(tasks.length);
@@ -398,6 +474,7 @@ async function main(): Promise<void> {
           latencyMs: stream.latencyMs,
           messagesSent: stream.messagesSent,
           error: stream.error,
+          detectedLanguage: stream.detectedLanguage,
         };
       } catch (error) {
         results[index] = {
@@ -406,6 +483,7 @@ async function main(): Promise<void> {
           latencyMs: -1,
           messagesSent: 0,
           error: error instanceof Error ? error.message : String(error),
+          detectedLanguage: null,
         };
       }
       done++;

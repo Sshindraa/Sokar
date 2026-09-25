@@ -15,6 +15,7 @@ import {
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
+  DIALOGUE_V2_INCOMPLETE_HOLD_MS,
   isSmartEndpointEnabled,
   SMART_ENDPOINT_HOLD_CORRECTION_MS,
   SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS,
@@ -122,6 +123,45 @@ describe('buildSttUrl', () => {
   it('sélectionne PCM16 pour un stt Telnyx PCMA', () => {
     const url = new URL(buildSttUrl('scribe_v2_realtime', 'PCMA'));
     expect(url.searchParams.get('audio_format')).toBe('pcm_8000');
+  });
+
+  it.each(['PCMA', 'L16'] as const)(
+    'laisse l’URL %s identique quand le filtre est coupé et le transmet quand il est actif',
+    (codec) => {
+      const baseline = buildSttUrl('scribe_v2_realtime', codec);
+      const disabled = buildSttUrl('scribe_v2_realtime', codec, undefined, {
+        filterBackgroundAudio: false,
+      });
+      expect(disabled).toBe(baseline);
+      expect(new URL(disabled).searchParams.has('filter_background_audio')).toBe(false);
+
+      const enabled = new URL(
+        buildSttUrl('scribe_v2_realtime', codec, undefined, {
+          filterBackgroundAudio: true,
+        }),
+      );
+      expect(enabled.searchParams.get('filter_background_audio')).toBe('true');
+      expect(enabled.searchParams.has('include_timestamps')).toBe(false);
+      expect(enabled.searchParams.get('include_language_detection')).toBe('true');
+      expect(enabled.searchParams.get('audio_format')).toBe(
+        codec === 'L16' ? 'pcm_16000' : 'pcm_8000',
+      );
+    },
+  );
+
+  it('force le français sans détection ni langues secondaires lors du relock', () => {
+    const url = new URL(
+      buildSttUrl('scribe_v2_realtime', 'PCMA', undefined, {
+        forceFrench: true,
+        filterBackgroundAudio: true,
+      }),
+    );
+    expect(url.searchParams.get('language_code')).toBe('fr');
+    expect(url.searchParams.get('include_language_detection')).toBe('false');
+    expect(url.searchParams.getAll('secondary_languages')).toEqual([]);
+    expect(url.searchParams.get('filter_background_audio')).toBe('true');
+    expect(url.searchParams.has('include_timestamps')).toBe(false);
+    expect(url.searchParams.get('commit_strategy')).toBe('vad');
   });
 });
 
@@ -537,5 +577,96 @@ describe('handleSttMessage', () => {
     ['je voudrais réserver une table', SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS, 'no_punctuation'],
   ])('getSmartEndpointDelay(%s) → %i ms (%s)', (transcript, holdMs, reason) => {
     expect(getSmartEndpointDelay(transcript)).toEqual({ holdMs, reason });
+  });
+});
+
+describe('hold de fin de phrase du routage dialogue V2', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', 'true');
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls.map(([event]) => event).filter((event) => event.type === 'UtteranceEnd');
+
+  it.each([
+    ["Mmh, est-ce que c'est en-", "Mmh, est-ce que c'est en-"],
+    ['Euh, mmh', 'Euh, mmh'],
+    ['Est-ce que', 'Est-ce que'],
+  ])('retient « %s » puis relance à la limite des 900 ms', async (text, expected) => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text,
+    });
+
+    expect(ends(onEvent)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(DIALOGUE_V2_INCOMPLETE_HOLD_MS - 1);
+    expect(ends(onEvent)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(ends(onEvent)).toEqual([{ type: 'UtteranceEnd', transcript: expected }]);
+  });
+
+  it('fusionne la reprise en une seule phrase, sans répéter le préfixe tronqué', async () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: "Mmh, est-ce que c'est en-",
+    });
+    handleSttMessage(session, {
+      message_type: 'partial_transcript',
+      text: "Mmh, est-ce que c'est en terrasse ?",
+    });
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: "Mmh, est-ce que c'est en terrasse ?",
+    });
+    await vi.advanceTimersByTimeAsync(DIALOGUE_V2_INCOMPLETE_HOLD_MS + 100);
+
+    expect(ends(onEvent)).toHaveLength(1);
+    expect(ends(onEvent)[0]).toEqual({
+      type: 'UtteranceEnd',
+      transcript: "Mmh, est-ce que c'est en terrasse ?",
+    });
+  });
+
+  it('laisse toujours interrompre le TTS sur un fragment incomplet', () => {
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    handleSttMessage(session, {
+      message_type: 'partial_transcript',
+      text: "Mmh, est-ce que c'est en-",
+    });
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+
+  it('garde le dispatch immédiat historique quand le flag est coupé', () => {
+    vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', 'false');
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: "Mmh, est-ce que c'est en-",
+    });
+
+    expect(ends(onEvent)).toEqual([
+      { type: 'UtteranceEnd', transcript: "Mmh, est-ce que c'est en-" },
+    ]);
   });
 });

@@ -19,7 +19,7 @@ export default defineConfig({
     env: {},
     pool: 'forks',
     singleFork: true,
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/voice-stt-bench/**/*.test.ts'],
   },
   resolve: {
     alias: {

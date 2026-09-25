@@ -1806,6 +1806,195 @@ export function classifyVoiceSpeechActInContext(
   return classifyVoiceSpeechAct(transcript);
 }
 
+export interface VoiceSlotContradiction {
+  field: 'date' | 'time' | 'partySize';
+  current: string | number;
+  proposed: string | number;
+}
+
+export function isVoiceQuestionTranscript(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript).replace(/-/gu, ' ');
+  return (
+    /[?？]/u.test(transcript) ||
+    /\b(?:est ce que|c etait une question|c etait juste une question|a quelle heure|quelle heure|quand est ce|pourquoi|comment|c est possible|est ce possible|vous fermez|vous etes (?:ouvert|ouverts)|vous avez de la place|avez vous|do you|are you|can you|could you|what time|when do you)\b/u.test(
+      normalized,
+    ) ||
+    /\b(?:vous|tu) (?:etes|avez|ouvrez|fermez|proposez|pouvez)\b/u.test(normalized)
+  );
+}
+
+export function isVoiceDialogueStopRequest(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /\b(?:on arrete|on s arrete|on va arreter|laissez tomber|je rappellerai|je vous rappellerai|je vous rappellerai plus tard|je rappellerai plus tard)\b/u.test(
+    normalized,
+  );
+}
+
+export function isVoiceDialogueIncompleteTranscript(transcript: string): boolean {
+  const trimmed = transcript.trim();
+  const normalized = normalizeTranscript(trimmed).replace(/-/gu, ' ');
+  if (/(?:\.\.\.|…|[\p{L}][‐‑–-])$/u.test(trimmed)) return true;
+  return (
+    /^(?:(?:euh|heu|hum|hmm|mmh|mh|mhm)(?:\s+|$))*$/u.test(normalized) ||
+    /(?:^|\s)(?:est ce que|c est possible de|je voudrais|j aimerais|au nom de|je m appelle)$/u.test(
+      normalized,
+    )
+  );
+}
+
+export function findVoiceSlotContradictions(
+  session: CallSession,
+  transcript: string,
+  now = new Date(),
+): VoiceSlotContradiction[] {
+  const current = session.conversation.slots;
+  const proposed = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
+  const conflicts: VoiceSlotContradiction[] = [];
+  for (const field of ['date', 'time', 'partySize'] as const) {
+    const currentValue = current[field];
+    const proposedValue = proposed[field];
+    if (
+      currentValue !== undefined &&
+      proposedValue !== undefined &&
+      String(currentValue) !== String(proposedValue)
+    ) {
+      conflicts.push({ field, current: currentValue, proposed: proposedValue });
+    }
+  }
+  return conflicts;
+}
+
+/** The deterministic path is reserved for one clear answer to the open field. */
+export function isDirectVoiceAnswerToPendingQuestion(
+  session: CallSession,
+  transcript: string,
+  pendingQuestion = session.conversation.pendingQuestion,
+): boolean {
+  if (!pendingQuestion) return false;
+  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+  const populated = [extracted.date, extracted.time, extracted.partySize].filter(
+    (value) => value !== undefined,
+  ).length;
+  if (pendingQuestion === 'confirmation') return isAffirmativeShortResponse(transcript);
+  if (pendingQuestion === 'partySizeConfirmation') {
+    return isAffirmativeShortResponse(transcript) || extracted.partySize !== undefined;
+  }
+  if (pendingQuestion === 'date') return Boolean(extracted.date) && populated === 1;
+  if (pendingQuestion === 'time') return Boolean(extracted.time) && populated === 1;
+  if (pendingQuestion === 'partySize') return extracted.partySize !== undefined && populated === 1;
+  if (pendingQuestion === 'timeChoice') {
+    return (
+      (Boolean(extracted.time) && populated === 1) ||
+      /^(?:(?:le|la|the) )?(?:premier|premiere|deuxieme|second|seconde|troisieme|dernier|derniere|first|second|third|last)(?: (?:creneau|horaire|one))?(?: s il vous plait| please)?$/u.test(
+        normalizeTranscript(transcript),
+      )
+    );
+  }
+  if (pendingQuestion === 'customerName') {
+    return Boolean(
+      parseSpelledNameTranscriptDetailed(transcript)?.value ||
+      extractPlainCustomerName(transcript, true),
+    );
+  }
+  if (pendingQuestion === 'customerPhone') return /(?:\+?\d[\d\s().-]{6,}\d)/u.test(transcript);
+  return false;
+}
+
+function dialogueSlotValue(field: VoiceSlotContradiction['field'], value: string | number): string {
+  if (field === 'partySize') {
+    const number = Number(value);
+    return `${FRENCH_PARTY_SIZE_WORDS[number] ?? number} ${number === 1 ? 'personne' : 'personnes'}`;
+  }
+  if (field === 'time') return formatAvailabilitySlot(String(value));
+  return new Date(`${String(value)}T12:00:00Z`).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  });
+}
+
+export function buildVoiceCorrectionClarification(
+  session: CallSession,
+  transcript: string,
+): string {
+  const contradiction = findVoiceSlotContradictions(session, transcript)[0];
+  if (!contradiction) {
+    return "Je vous écoute. Qu'est-ce que vous souhaitez corriger dans la réservation ?";
+  }
+  const current = dialogueSlotValue(contradiction.field, contradiction.current);
+  const proposed = dialogueSlotValue(contradiction.field, contradiction.proposed);
+  return `J'avais noté ${current}. Vous souhaitez finalement ${proposed} ?`;
+}
+
+export function buildVoiceDialogueLoopRecovery(
+  session: CallSession,
+  pendingQuestion = session.conversation.pendingQuestion,
+): string {
+  const { date, time, partySize } = session.conversation.slots;
+  const known = [
+    partySize ? `${FRENCH_PARTY_SIZE_WORDS[partySize] ?? partySize} personnes` : null,
+    date ? dialogueSlotValue('date', date) : null,
+    time ? formatAvailabilitySlot(time) : null,
+  ].filter((value): value is string => Boolean(value));
+  const summary = known.length ? `J'ai bien noté ${known.join(', ')}. ` : '';
+  switch (pendingQuestion) {
+    case 'partySize':
+    case 'partySizeConfirmation':
+      return `${summary}Il me manque encore le nombre de personnes. Pour combien dois-je regarder ?`;
+    case 'date':
+      return `${summary}Quel jour vous conviendrait pour la réservation ?`;
+    case 'time':
+    case 'timeChoice':
+      return `${summary}À quel horaire souhaitez-vous venir ?`;
+    case 'customerName':
+      return `${summary}Quel nom puis-je indiquer pour la réservation ?`;
+    case 'customerPhone':
+      return `${summary}Quel numéro puis-je utiliser pour la confirmation ?`;
+    default:
+      return `${summary}Souhaitez-vous poursuivre la réservation ou aviez-vous une autre demande ?`;
+  }
+}
+
+export function isSafeVoiceCorrectionReply(
+  session: CallSession,
+  transcript: string,
+  reply: string,
+): boolean {
+  if (!finalAssistantQuestion(reply)) return false;
+  const contradiction = findVoiceSlotContradictions(session, transcript)[0];
+  if (!contradiction) return true;
+  const normalizedReply = normalizeTranscript(reply);
+  const tokensFor = (value: string | number): string[] => {
+    const numeric = String(value);
+    if (contradiction.field !== 'partySize') {
+      return [normalizeTranscript(dialogueSlotValue(contradiction.field, value))];
+    }
+    const words: Record<number, string> = {
+      1: 'un',
+      2: 'deux',
+      3: 'trois',
+      4: 'quatre',
+      5: 'cinq',
+      6: 'six',
+      7: 'sept',
+      8: 'huit',
+      9: 'neuf',
+      10: 'dix',
+      11: 'onze',
+      12: 'douze',
+      13: 'treize',
+      14: 'quatorze',
+      15: 'quinze',
+      16: 'seize',
+    };
+    return [numeric, words[Number(value)]].filter((token): token is string => Boolean(token));
+  };
+  return [contradiction.current, contradiction.proposed].every((value) =>
+    tokensFor(value).some((token) => normalizedReply.includes(token)),
+  );
+}
+
 function inferIntent(transcript: string): ConversationState['intent'] {
   const normalized = normalizeTranscript(transcript);
   if (/\b(?:annul|supprim|cancel|cancellation)/.test(normalized)) return 'cancel';

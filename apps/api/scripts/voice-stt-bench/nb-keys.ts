@@ -15,6 +15,8 @@ export const BENCH_TRAILING_SILENCE_S = 1.6;
 
 /** Au-delà de ce nombre de clips, `BENCH_CONFIRM=1` est obligatoire. */
 export const BENCH_CONFIRM_LIMIT = 8;
+const BENCH_KEYTERM_COST_FACTOR = 1.2;
+const BENCH_STT_USD_PER_HOUR = 0.39;
 
 export function requireBenchKey(envName: BenchProviderKey, productionEnvName: string): string {
   const value = process.env[envName]?.trim();
@@ -40,6 +42,7 @@ export interface BenchCostEstimate {
   sessions: number;
   estimatedAudioSeconds: number;
   estimatedTtsCharacters: number;
+  estimatedUsd: number;
 }
 
 /**
@@ -51,15 +54,23 @@ export function estimateBenchCost(
   texts: readonly string[],
   conditions: number,
   sessionsPerCondition: number,
+  extraSessions = 0,
+  extraAudioSeconds = 0,
 ): BenchCostEstimate {
   const perClipSeconds = texts.reduce((sum, text) => sum + Math.max(1.2, text.length / 13), 0);
-  const sessions = texts.length * conditions * sessionsPerCondition;
+  const sessions = texts.length * conditions * sessionsPerCondition + extraSessions;
   const repeats = conditions * sessionsPerCondition;
+  const estimatedAudioSeconds =
+    perClipSeconds * repeats +
+    texts.length * conditions * sessionsPerCondition * BENCH_TRAILING_SILENCE_S +
+    extraAudioSeconds;
   return {
     clips: texts.length,
     sessions,
-    estimatedAudioSeconds: perClipSeconds * repeats + sessions * BENCH_TRAILING_SILENCE_S,
+    estimatedAudioSeconds,
     estimatedTtsCharacters: texts.reduce((sum, text) => sum + text.length, 0),
+    estimatedUsd:
+      (estimatedAudioSeconds / 3600) * BENCH_STT_USD_PER_HOUR * BENCH_KEYTERM_COST_FACTOR,
   };
 }
 
@@ -68,6 +79,7 @@ export function formatCostEstimate(estimate: BenchCostEstimate): string {
   return (
     `Estimation de coût avant envoi : ${estimate.clips} clips → ${estimate.sessions} sessions Scribe, ` +
     `~${estimate.estimatedAudioSeconds.toFixed(0)} s d'audio streamé (~${minutes.toFixed(1)} min, silence final inclus), ` +
+    `~$${estimate.estimatedUsd.toFixed(3)} USD Scribe estimés (base $0.39/h +20 % keyterms), ` +
     `~${estimate.estimatedTtsCharacters} caractères TTS.`
   );
 }

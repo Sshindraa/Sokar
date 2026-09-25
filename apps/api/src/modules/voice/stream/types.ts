@@ -433,6 +433,8 @@ export interface CallSession {
   sttModel?: string;
   /** Dernière langue détectée par Scribe sur un segment final. */
   sttLanguageCode?: string;
+  /** Langue métier verrouillée après une preuve française fiable. */
+  languageLocked?: 'fr';
   /** Langue de dialogue active pour le LLM et le TTS. */
   voiceLanguageCode?: VoiceLanguageCode;
   /**
@@ -444,6 +446,18 @@ export interface CallSession {
     code: VoiceLanguageCode;
     count: number;
   } | null;
+  /** Relock Scribe en français différé jusqu'au début du prochain TTS. */
+  sttRelockPending?: boolean;
+  /** Le socket courant utilise le profil français sans détection. */
+  sttFrenchOnly?: boolean;
+  /** Un handshake de relock est en cours ; son échec restaure l'auto-détection. */
+  sttRelockAttempt?: boolean;
+  /** Socket auto-détection conservé jusqu'à l'ouverture du nouveau socket français. */
+  sttRelockPreviousWs?: WebSocket | null;
+  /** Appelé par la machine d'état uniquement à l'entrée en SPEAKING. */
+  onAgentSpeaking?: () => void;
+  /** Le tour non français verrouillé doit emprunter la relance française. */
+  forceFrenchReprompt?: boolean;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */
   sttFirstAudioChunkSent?: boolean;
   /** Tampon de regroupement des trames avant envoi (`VOICE_STT_CHUNK_MS` > 20). */
