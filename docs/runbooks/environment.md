@@ -292,8 +292,9 @@ suite est fusionnée dans le même tour. Comparer avant/après avec
 `VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi à
 Scribe. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
 son propre message. Une valeur multiple de 20 entre `40` et `200` accumule les trames
-décodées et n'envoie qu'un message quand la durée cible est atteinte. Le regroupement ne
-change pas le format audio : `pcm_8000` avec PCMA, `pcm_16000` avec L16.
+décodées et n'envoie qu'un message quand la durée cible est atteinte. À 20 ms, le
+comportement historique reste inchangé : une trame par message et conversion PCMA vers
+`pcm_8000`. Le regroupement ne change pas le format audio.
 Le tampon est vidé avant tout commit manuel, une fin de tour, un barge-in, la fermeture ou la
 reconnexion de la session, et la fin d'appel ; un timer de sécurité (`valeur + 20 ms`) envoie
 un tampon partiel si le flux s'interrompt. Un couple de trames est donc retardé d'au plus la
@@ -371,6 +372,20 @@ Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
 ## Voice STT (ElevenLabs Scribe)
+
+Deepgram Nova-3 est disponible en canary uniquement : `VOICE_STT_PROVIDER` vaut `scribe`
+par défaut, et `VOICE_STT_PROVIDER=deepgram` ne l'active que pour les identifiants présents
+dans `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV). La liste est résolue au début du Media Stream
+et reste figée pendant l'appel. Une erreur avant la première ouverture Deepgram bascule une
+seule fois vers Scribe ; aucune bascule provider n'a lieu au milieu d'un appel. La clé
+`DEEPGRAM_API_KEY` doit être présente dans l'environnement de l'API pour les restaurants
+canary. Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
+
+Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
+`endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.
+La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullables et doit
+passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
+et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
 ### Clé et quota (état temporaire au 24/09/2026)
 
