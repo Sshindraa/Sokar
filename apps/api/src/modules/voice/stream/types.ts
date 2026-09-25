@@ -248,9 +248,15 @@ export interface VoiceTurnLatencyTrace {
   startTime: number;
   /** Horodatages/durées ajoutés pour la chronologie de diagnostic. */
   speechStartedAt?: number;
+  speechEndAt?: number;
   speechDurationMs?: number;
   sttFinalAt?: number;
   sttFinalMs?: number;
+  turnDispatchedAt?: number;
+  endOfSpeechToSttFinalMs?: number;
+  holdMs?: number;
+  endOfSpeechToFirstAudioMs?: number;
+  firstAudioIsFiller?: boolean;
   llmFirstTokenMs?: number;
   llmFirstPhraseMs?: number;
   llmCompletedMs?: number;
@@ -318,8 +324,11 @@ export type SttEvent =
       type: 'UtteranceEnd';
       transcript: string;
       words?: SttWord[];
-      /** Code ISO détecté par Scribe sur le segment final, si disponible. */
+      /** Code ISO détecté par le provider STT sur le segment final, si disponible. */
       languageCode?: string;
+      speechEndAt?: number;
+      sttFinalAt?: number;
+      turnDispatchedAt?: number;
     }
   | { type: 'SpeechResumed' }
   | {
@@ -375,6 +384,8 @@ export interface CallSession {
   from: string;
   to: string;
   restaurantId: string;
+  /** Résolution des flags/provider figée au début du Media Stream. */
+  voiceFeatureSnapshot?: import('./feature-flags').VoiceFeatureSnapshot;
   /** Horaires d'ouverture du restaurant, pour borner les heures candidates. */
   openingHours?: OpeningHours | null;
   /**
@@ -431,6 +442,20 @@ export interface CallSession {
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */
   sttModel?: string;
+  /** Adaptateur de transport STT actif, figé après le handshake initial. */
+  sttAdapter?: import('./stt-provider-adapter').SttProviderAdapter;
+  sttProviderOpenedOnce?: boolean;
+  sttOpeningFallbackAttempted?: boolean;
+  sttKeepAliveTimer?: ReturnType<typeof setInterval> | null;
+  sttConnectionAudioStartedAt?: number;
+  sttLastNonEmptyPartialAt?: number;
+  sttLastSpeechStartedAt?: number;
+  sttDeepgramFinalParts?: Array<{
+    transcript: string;
+    words?: SttWord[];
+    languageCode?: string;
+    speechEndOffsetMs?: number;
+  }>;
   /** Dernière langue détectée par Scribe sur un segment final. */
   sttLanguageCode?: string;
   /** Langue métier verrouillée après une preuve française fiable. */
@@ -477,6 +502,7 @@ export interface CallSession {
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
+    timing?: { speechEndAt?: number; sttFinalAt?: number };
     timer: ReturnType<typeof setTimeout>;
   } | null;
   /** Transcriptions partielles Scribe du tour en cours (signal d'instabilité). */
@@ -501,6 +527,7 @@ export interface CallSession {
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
+    timing?: { speechEndAt?: number; sttFinalAt?: number };
     holdMs: number;
     timer: ReturnType<typeof setTimeout> | null;
   } | null;
@@ -509,6 +536,7 @@ export interface CallSession {
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
+    timing?: { speechEndAt?: number; sttFinalAt?: number };
   } | null;
 
   // Gestion audio

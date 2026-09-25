@@ -6,6 +6,7 @@ import type {
   VoiceTurnLatencyTrace,
   VoiceTurnTelemetry,
   VoiceTurnPath,
+  SttEvent,
 } from './types';
 import { logger } from '../../../shared/logger/pino';
 import {
@@ -14,6 +15,7 @@ import {
   voiceLlmFirstPhraseMs,
   voiceTtsFirstAudioMs,
   voiceEndOfSpeechToFirstAudioMs,
+  voiceEndOfSpeechToSttFinalMs,
   voiceFalseEndOfTurnTotal,
   voiceFillerEventsTotal,
   voiceTurnPlanShadowByRestaurantTotal,
@@ -199,18 +201,32 @@ export function completeVoiceTurnInput(
   session: CallSession,
   transcript: string,
   words: SttWord[] = [],
+  timing?: Pick<
+    Extract<SttEvent, { type: 'UtteranceEnd' }>,
+    'speechEndAt' | 'sttFinalAt' | 'turnDispatchedAt'
+  >,
 ): void {
   if (!session.currentTurn) startVoiceTurn(session);
   const turn = session.currentTurn;
   if (!turn) return;
 
-  const completedAt = Date.now();
+  const completedAt = timing?.sttFinalAt ?? Date.now();
+  const dispatchedAt = timing?.turnDispatchedAt ?? Date.now();
   recordDebugCallerText(session, transcript);
   turn.transcriptLength = transcript.length;
   turn.transcriptFingerprint = transcriptFingerprint(transcript);
   if (session.latencyTrace) {
+    if (timing?.speechEndAt !== undefined && Number.isFinite(timing.speechEndAt)) {
+      session.latencyTrace.speechEndAt = Math.min(timing.speechEndAt, completedAt);
+      session.latencyTrace.endOfSpeechToSttFinalMs = Math.max(
+        0,
+        completedAt - session.latencyTrace.speechEndAt,
+      );
+    }
     session.latencyTrace.sttFinalAt = completedAt;
     session.latencyTrace.sttFinalMs = completedAt - session.latencyTrace.startTime;
+    session.latencyTrace.turnDispatchedAt = dispatchedAt;
+    session.latencyTrace.holdMs = Math.max(0, dispatchedAt - completedAt);
     const wordStarts = words
       .map((word) => word.start)
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
@@ -224,6 +240,8 @@ export function completeVoiceTurnInput(
   }
   recordVoiceTurnEvent(session, 'stt_final', {
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
+    endOfSpeechToSttFinalMs: session.latencyTrace?.endOfSpeechToSttFinalMs,
+    holdMs: session.latencyTrace?.holdMs,
     speechDurationMs: session.latencyTrace?.speechDurationMs ?? null,
     transcriptLength: transcript.length,
     ...wordConfidenceStats(words),
@@ -338,8 +356,14 @@ export function markVoiceTurnAudioSent(
   const sentAt = Date.now();
   trace.audioSentAt = sentAt;
   trace.totalE2eMs = sentAt - trace.startTime;
+  trace.firstAudioIsFiller = fields.isFiller === true;
+  if (trace.speechEndAt !== undefined) {
+    trace.endOfSpeechToFirstAudioMs = Math.max(0, sentAt - trace.speechEndAt);
+  }
   recordVoiceTurnEvent(session, 'tts_first_audio', {
     ...fields,
+    firstAudioIsFiller: trace.firstAudioIsFiller,
+    endOfSpeechToFirstAudioMs: trace.endOfSpeechToFirstAudioMs,
     ttsFirstByteMs: trace.ttsFirstByteMs ?? null,
     totalE2eMs: trace.totalE2eMs,
   });
@@ -474,7 +498,12 @@ export function recordVoiceTurnEvent(
       voiceTtsFirstAudioMs.observe(ttsMs);
       const totalMs = typeof fields.totalE2eMs === 'number' ? fields.totalE2eMs : elapsedMs;
       voiceTurnDurationMs.observe(totalMs);
-      if (trace?.sttFinalAt !== undefined) {
+      if (trace?.endOfSpeechToFirstAudioMs !== undefined) {
+        voiceEndOfSpeechToFirstAudioMs.observe(
+          { path: currentPath(session), restaurant_id: restaurantId },
+          trace.endOfSpeechToFirstAudioMs,
+        );
+      } else if (trace?.sttFinalAt !== undefined) {
         const vadMs = Math.round(
           (session.sttTurnConfig?.applied?.vadSilenceThresholdSecs ??
             session.sttTurnConfig?.desired.vadSilenceThresholdSecs ??
@@ -487,6 +516,14 @@ export function recordVoiceTurnEvent(
       }
       break;
     }
+    case 'stt_final':
+      if (typeof fields.endOfSpeechToSttFinalMs === 'number') {
+        voiceEndOfSpeechToSttFinalMs.observe(
+          { provider: turn.sttProvider ?? 'unknown' },
+          fields.endOfSpeechToSttFinalMs,
+        );
+      }
+      break;
     case 'speech_resumed':
       voiceFalseEndOfTurnTotal.inc({ restaurant_id: restaurantId });
       break;

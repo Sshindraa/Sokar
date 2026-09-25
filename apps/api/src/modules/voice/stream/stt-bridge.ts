@@ -16,19 +16,28 @@ import {
   voiceSttRelockTotal,
   voiceSttAudioMessagesTotal,
   voiceSttChunkBytes,
+  voiceSttProviderAudioMessagesTotal,
+  voiceSttProviderChunkBytes,
 } from '../../../shared/observability/metrics';
 import {
   getSttChunkMs,
   STT_CHUNK_MS_DEFAULT,
   STT_CHUNK_SAFETY_EXTRA_MS,
 } from '../../../shared/stt-chunking';
-import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
-import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
+import { telnyxBytesPerMs } from './telnyx-codec';
+import {
+  createDeepgramSttAdapter,
+  createScribeSttAdapter,
+  type NormalizedSttProviderMessage,
+  type SttProviderAdapter,
+  type SttProviderId,
+} from './stt-provider-adapter';
+import { resolveVoiceFeatureSnapshot } from './feature-flags';
+import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
-const STT_PROVIDER_LABEL = 'elevenlabs_stt';
 export const STT_RETRY_BACKOFF_MS = [500, 1_000, 2_000] as const;
 export const STT_MAX_CONSECUTIVE_FAILURES = 4;
 export const STT_MAX_RECONNECTIONS_PER_CALL = 8;
@@ -65,6 +74,8 @@ function clearSttRecoveryTimers(session: CallSession): void {
   session.sttRetryTimer = null;
   session.sttConnectTimeout = null;
   session.sttConnectionDeadlineTimer = null;
+  if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+  session.sttKeepAliveTimer = null;
 }
 
 function triggerSttUnavailable(
@@ -78,12 +89,16 @@ function triggerSttUnavailable(
   clearSttRecoveryTimers(session);
   session.audioBuffer = [];
   if (reason === 'connection') {
-    voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'connection_unavailable' });
-    recordSttConnectionUnavailable().catch((error) =>
+    const provider = metricProvider(session);
+    voiceProviderErrorsTotal.inc({
+      provider,
+      type: 'connection_unavailable',
+    });
+    recordSttConnectionUnavailable(undefined, provider).catch((error) =>
       logger.warn({ err: error }, '[stt] Could not dispatch connection alert'),
     );
   } else if (reason === 'quota' || reason === 'auth' || reason === 'terms') {
-    alertTerminalSttUnavailable(reason).catch((error) =>
+    alertTerminalSttUnavailable(reason, undefined, metricProvider(session)).catch((error) =>
       logger.warn({ err: error }, '[stt] Could not dispatch terminal provider alert'),
     );
   }
@@ -125,6 +140,7 @@ function handleSttConnectionFailure(
   createSocket: SttWebSocketFactory,
 ): void {
   if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
+  if (fallbackToScribeAtOpening(session, createSocket)) return;
   if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
   session.sttConsecutiveFailures = (session.sttConsecutiveFailures ?? 0) + 1;
   if (session.sttConsecutiveFailures >= STT_MAX_CONSECUTIVE_FAILURES) {
@@ -150,6 +166,40 @@ function handleSttConnectionFailure(
       // The connection attempt records its own failure and schedules the next retry.
     });
   }, delay);
+}
+
+/** Deepgram may fall back only before its first successful socket open. */
+function fallbackToScribeAtOpening(
+  session: CallSession,
+  createSocket: SttWebSocketFactory,
+): boolean {
+  const adapter = session.sttAdapter;
+  if (
+    adapter?.id !== 'deepgram' ||
+    session.sttProviderOpenedOnce ||
+    session.sttOpeningFallbackAttempted ||
+    session.ended
+  ) {
+    return false;
+  }
+
+  session.sttOpeningFallbackAttempted = true;
+  session.sttAdapter = createScribeSttAdapter({ model: configuredModel(session) });
+  session.sttModel = session.sttAdapter.model;
+  session.sttConnectionAudioStartedAt = undefined;
+  session.sttDeepgramFinalParts = [];
+  session.sttConsecutiveFailures = 0;
+  logger.warn(
+    { callId: session.callControlId, failedProvider: 'deepgram_stt' },
+    '[stt] Initial Deepgram connection failed; falling back to Scribe',
+  );
+  connectStt(session, undefined, createSocket).catch(() => {
+    logger.warn(
+      { callId: session.callControlId, provider: 'elevenlabs_stt' },
+      '[stt] Opening fallback connection failed',
+    );
+  });
+  return true;
 }
 
 /** A failed forced-French handshake restores the old auto-detect socket when possible. */
@@ -200,6 +250,7 @@ export function beginFrenchSttRelock(
   createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
 ): void {
   if (
+    sttAdapterForSession(session).id !== 'scribe' ||
     !session.sttRelockPending ||
     session.languageLocked !== 'fr' ||
     session.state !== 'SPEAKING' ||
@@ -610,6 +661,74 @@ export function buildSttUrl(
   return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
+export const DEEPGRAM_ENDPOINTING_MS = 700;
+export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
+
+export function buildDeepgramSttUrl(
+  codec: CallSession['codec'],
+  keyterms: readonly string[] = buildSttKeyterms(),
+): string {
+  const encoding = codec === 'PCMA' ? 'alaw' : codec === 'PCMU' ? 'mulaw' : 'linear16';
+  const sampleRate = codec === 'L16' ? 16000 : 8000;
+  const params = new URLSearchParams({
+    model: 'nova-3',
+    language: 'fr',
+    encoding,
+    sample_rate: String(sampleRate),
+    interim_results: 'true',
+    endpointing: String(DEEPGRAM_ENDPOINTING_MS),
+    utterance_end_ms: String(DEEPGRAM_UTTERANCE_END_MS),
+    vad_events: 'true',
+    smart_format: 'false',
+    numerals: 'true',
+  });
+  for (const keyterm of keyterms) params.append('keyterm', keyterm);
+  return `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+}
+
+function createSttAdapter(session: CallSession, provider: SttProviderId): SttProviderAdapter {
+  return provider === 'deepgram'
+    ? createDeepgramSttAdapter({ model: 'nova-3' })
+    : createScribeSttAdapter({ model: configuredModel(session) });
+}
+
+function sttAdapterForSession(session: CallSession): SttProviderAdapter {
+  return (session.sttAdapter ??= createSttAdapter(
+    session,
+    resolveVoiceFeatureSnapshot(session).sttProvider,
+  ));
+}
+
+interface SttTurnTiming {
+  speechEndAt?: number;
+  sttFinalAt?: number;
+}
+
+function metricProvider(session: CallSession): SttProviderAdapter['metricLabel'] {
+  return sttAdapterForSession(session).metricLabel;
+}
+
+function sttTimingFromOffset(session: CallSession, offsetMs?: number): SttTurnTiming {
+  const sttFinalAt = Date.now();
+  // Provider offsets anchor to the audio queued at socket open; without one,
+  // the latest non-empty partial is the closest available end-of-speech proxy.
+  const mappedSpeechEnd =
+    offsetMs !== undefined && session.sttConnectionAudioStartedAt !== undefined
+      ? Math.min(sttFinalAt, session.sttConnectionAudioStartedAt + offsetMs)
+      : undefined;
+  const speechEndAt =
+    mappedSpeechEnd ?? session.sttLastNonEmptyPartialAt ?? session.sttLastSpeechStartedAt;
+  return { ...(speechEndAt !== undefined ? { speechEndAt } : {}), sttFinalAt };
+}
+
+function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurnTiming | undefined {
+  if (!previous && !next) return undefined;
+  return {
+    ...(previous ?? {}),
+    ...(next ?? {}),
+  };
+}
+
 /**
  * Scribe ne propose pas de reconfiguration sur une socket active. On mémorise
  * le profil métier pour une prochaine connexion et pour la grâce de fin de tour.
@@ -707,6 +826,7 @@ function holdIncompleteDialogueTranscript(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   const previous = clearSemanticHold(session);
   const mergedWords =
@@ -718,6 +838,9 @@ function holdIncompleteDialogueTranscript(
     ...(mergedWords ? { words: mergedWords } : {}),
     ...((languageCode ?? previous?.languageCode)
       ? { languageCode: languageCode ?? previous?.languageCode }
+      : {}),
+    ...(mergeSttTiming(previous?.timing, timing)
+      ? { timing: mergeSttTiming(previous?.timing, timing) }
       : {}),
     holdMs: DIALOGUE_V2_INCOMPLETE_HOLD_MS,
     timer: null,
@@ -738,7 +861,7 @@ function armSemanticHoldTimer(
   hold.timer = setTimeout(() => {
     if (session.sttSemanticHold !== hold) return;
     session.sttSemanticHold = null;
-    dispatchUtteranceEnd(session, hold.transcript, hold.words, hold.languageCode);
+    dispatchUtteranceEnd(session, hold.transcript, hold.words, hold.languageCode, hold.timing);
   }, hold.holdMs);
 }
 
@@ -752,6 +875,7 @@ function dispatchOrHoldUtteranceEnd(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   // Fin de tour détectée : vider le tampon pour que Scribe ait vu tout l'audio
   // avant que le tour soit traité.
@@ -764,10 +888,11 @@ function dispatchOrHoldUtteranceEnd(
     : transcript;
   const mergedWords = previous?.words && words ? [...previous.words, ...words] : words;
   const mergedLanguage = languageCode ?? previous?.languageCode;
+  const mergedTiming = mergeSttTiming(previous?.timing, timing);
 
   const { holdMs, reason } = getSmartEndpointDelay(merged);
   if (holdMs === 0) {
-    dispatchUtteranceEnd(session, merged, mergedWords, mergedLanguage);
+    dispatchUtteranceEnd(session, merged, mergedWords, mergedLanguage, mergedTiming);
     return;
   }
 
@@ -776,6 +901,7 @@ function dispatchOrHoldUtteranceEnd(
     transcript: merged,
     ...(mergedWords ? { words: mergedWords } : {}),
     ...(mergedLanguage ? { languageCode: mergedLanguage } : {}),
+    ...(mergedTiming ? { timing: mergedTiming } : {}),
     holdMs,
     timer: null,
   };
@@ -788,11 +914,15 @@ function dispatchUtteranceEnd(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   flushSttChunkBuffer(session);
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
   if (languageCode) session.sttLanguageCode = languageCode;
+  const sttFinalAt = timing?.sttFinalAt ?? Date.now();
+  const speechEndAt = timing?.speechEndAt ?? session.sttLastNonEmptyPartialAt;
+  const turnDispatchedAt = Date.now();
   logger.info(
     {
       callId: session.callControlId,
@@ -806,7 +936,12 @@ function dispatchUtteranceEnd(
     transcript: cleanTranscript,
     ...(words ? { words } : {}),
     ...(languageCode ? { languageCode } : {}),
+    ...(speechEndAt !== undefined ? { speechEndAt } : {}),
+    sttFinalAt,
+    turnDispatchedAt,
   });
+  session.sttLastNonEmptyPartialAt = undefined;
+  session.sttLastSpeechStartedAt = undefined;
 }
 
 function schedulePendingSttEndOfTurn(session: CallSession): void {
@@ -816,7 +951,13 @@ function schedulePendingSttEndOfTurn(session: CallSession): void {
     session.pendingSttEndOfTurn = null;
     session.sttEndOfTurnTimer = null;
     if (pending)
-      dispatchUtteranceEnd(session, pending.transcript, pending.words, pending.languageCode);
+      dispatchUtteranceEnd(
+        session,
+        pending.transcript,
+        pending.words,
+        pending.languageCode,
+        pending.timing,
+      );
   }, STT_SPELLING_EOT_GRACE_MS);
 }
 
@@ -828,36 +969,36 @@ function flushPendingSttEndOfTurn(session: CallSession): void {
     session.sttEndOfTurnTimer = null;
   }
   session.pendingSttEndOfTurn = null;
-  dispatchUtteranceEnd(session, pending.transcript, pending.words, pending.languageCode);
-}
-
-/** Conversion entrante → format Scribe, centralisée dans `telnyx-codec`. */
-function toSttAudio(codec: CallSession['codec'], input: Buffer): Buffer {
-  return decodeTelnyxToPcm16(codec, input);
-}
-
-function sendAudioChunk(ws: WebSocket, audio: Buffer, previousText?: string): void {
-  ws.send(
-    JSON.stringify({
-      message_type: 'input_audio_chunk',
-      audio_base_64: audio.toString('base64'),
-      ...(previousText ? { previous_text: previousText } : {}),
-    }),
+  dispatchUtteranceEnd(
+    session,
+    pending.transcript,
+    pending.words,
+    pending.languageCode,
+    pending.timing,
   );
 }
 
-function sendSessionAudioChunk(session: CallSession, audio: Buffer): void {
+function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void {
   if (!session.sttWs) return;
+  const adapter = sttAdapterForSession(session);
+  const audio = adapter.toProviderAudio(session.codec, telnyxAudio);
   const isFirstChunk = !session.sttFirstAudioChunkSent;
-  sendAudioChunk(
+  adapter.sendAudio(
     session.sttWs,
     audio,
-    isFirstChunk ? buildSttPreviousText(session.restaurantName) : undefined,
+    isFirstChunk && adapter.id === 'scribe'
+      ? buildSttPreviousText(session.restaurantName)
+      : undefined,
   );
-  addSttAudioSamples(session, sttSamplesForBuffer(session, audio.length));
+  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
   session.sttFirstAudioChunkSent = true;
-  voiceSttAudioMessagesTotal.inc({ chunk_ms: String(getSttChunkMs()) });
-  voiceSttChunkBytes.observe(audio.length);
+  const chunkMs = String(getSttChunkMs());
+  voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });
+  voiceSttProviderChunkBytes.observe({ provider: adapter.id }, audio.length);
+  if (adapter.id === 'scribe') {
+    voiceSttAudioMessagesTotal.inc({ chunk_ms: chunkMs });
+    voiceSttChunkBytes.observe(audio.length);
+  }
 }
 
 function clearSttChunkTimer(session: CallSession): void {
@@ -897,9 +1038,7 @@ function appendSttChunk(session: CallSession, input: Buffer, chunkMs: number): v
   const accumulated = session.sttChunkBuffer
     ? Buffer.concat([session.sttChunkBuffer, input])
     : input;
-  // PCMA décodé et L16 sont du PCM16 ; PCMU reste en G.711 8 bits.
-  const targetBytes =
-    chunkMs * telnyxBytesPerMs(session.codec) * (session.codec === 'PCMA' ? 2 : 1);
+  const targetBytes = chunkMs * telnyxBytesPerMs(session.codec);
   if (accumulated.length >= targetBytes) {
     clearSttChunkTimer(session);
     session.sttChunkBuffer = null;
@@ -953,7 +1092,7 @@ export interface ElevenLabsSttMessage {
   }>;
 }
 
-const STT_PROVIDER_ERROR_TYPES = new Set([
+const SAFE_STT_PROVIDER_ERROR_TYPES = new Set([
   'auth_error',
   'quota_exceeded',
   'transcriber_error',
@@ -971,11 +1110,6 @@ const STT_PROVIDER_ERROR_TYPES = new Set([
   'scribe_error',
 ]);
 
-function isSttProviderError(messageType: string | undefined): boolean {
-  if (!messageType) return false;
-  return STT_PROVIDER_ERROR_TYPES.has(messageType) || /error$/iu.test(messageType);
-}
-
 function sttErrorMetricType(messageType: string | undefined): string {
   if (!messageType) return 'provider_error';
   if (/auth/iu.test(messageType)) return 'auth';
@@ -987,44 +1121,6 @@ function sttErrorMetricType(messageType: string | undefined): string {
   if (/input|chunk/iu.test(messageType)) return 'input';
   if (/invalid/iu.test(messageType)) return 'invalid_request';
   return 'provider_error';
-}
-
-function getMessageText(msg: ElevenLabsSttMessage): string {
-  return typeof msg.text === 'string' ? msg.text.trim() : '';
-}
-
-function getMessageLanguageCode(msg: ElevenLabsSttMessage): string | undefined {
-  const languageCode = msg.language_code?.trim().toLowerCase();
-  return languageCode && STT_LANGUAGE_CODE_PATTERN.test(languageCode) ? languageCode : undefined;
-}
-
-/**
- * Confiance d'un mot entre 0 et 1. Scribe Realtime ne fournit que `logprob` :
- * sans cette conversion, aucune confiance n'était jamais conservée.
- */
-function wordConfidence(word: { confidence?: number; logprob?: number }): { confidence?: number } {
-  if (typeof word.confidence === 'number') return { confidence: word.confidence };
-  if (typeof word.logprob === 'number' && Number.isFinite(word.logprob)) {
-    return { confidence: Math.min(1, Math.max(0, Math.exp(word.logprob))) };
-  }
-  return {};
-}
-
-function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
-  if (!msg.words?.length) return undefined;
-  const words = msg.words
-    .map((word) => {
-      const text = word.word ?? word.text;
-      if (!text) return null;
-      return {
-        word: text,
-        ...wordConfidence(word),
-        ...(typeof word.start === 'number' ? { start: word.start } : {}),
-        ...(typeof word.end === 'number' ? { end: word.end } : {}),
-      };
-    })
-    .filter((word): word is SttWord => word !== null);
-  return words.length ? words : undefined;
 }
 
 function clearPendingSttCommit(session: CallSession): CallSession['sttPendingCommit'] {
@@ -1100,6 +1196,7 @@ function queuePlainCommittedTranscript(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
@@ -1111,6 +1208,7 @@ function queuePlainCommittedTranscript(
       previous.transcript,
       previous.words,
       previous.languageCode,
+      previous.timing,
     );
   // Le commit clôt ce segment même si l'événement horodaté arrive quelques
   // millisecondes plus tard ; un nouveau partial doit démarrer un tour neuf.
@@ -1120,12 +1218,19 @@ function queuePlainCommittedTranscript(
     const pending = session.sttPendingCommit;
     if (!pending) return;
     session.sttPendingCommit = null;
-    dispatchCommittedTranscript(session, pending.transcript, pending.words, pending.languageCode);
+    dispatchCommittedTranscript(
+      session,
+      pending.transcript,
+      pending.words,
+      pending.languageCode,
+      pending.timing,
+    );
   }, STT_TIMESTAMPED_COMMIT_GRACE_MS);
   session.sttPendingCommit = {
     transcript: cleanTranscript,
     ...(words ? { words } : {}),
     ...(languageCode ? { languageCode } : {}),
+    ...(timing ? { timing } : {}),
     timer,
   };
 }
@@ -1135,6 +1240,7 @@ function dispatchTimestampedCommittedTranscript(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   const pending = session.sttPendingCommit;
   if (pending && (!transcript.trim() || sameTranscript(pending.transcript, transcript))) {
@@ -1144,14 +1250,21 @@ function dispatchTimestampedCommittedTranscript(
       transcript.trim() || pending.transcript,
       words ?? pending.words,
       languageCode ?? pending.languageCode,
+      mergeSttTiming(pending.timing, timing),
     );
     return;
   }
   if (pending) {
     clearPendingSttCommit(session);
-    dispatchCommittedTranscript(session, pending.transcript, pending.words, pending.languageCode);
+    dispatchCommittedTranscript(
+      session,
+      pending.transcript,
+      pending.words,
+      pending.languageCode,
+      pending.timing,
+    );
   }
-  dispatchCommittedTranscript(session, transcript, words, languageCode);
+  dispatchCommittedTranscript(session, transcript, words, languageCode, timing);
 }
 
 function handleBargeInFromTranscript(
@@ -1189,7 +1302,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   if (!cleanTranscript) return;
 
   if (
-    process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true' &&
+    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
@@ -1260,17 +1373,18 @@ function dispatchCommittedTranscript(
   transcript: string,
   words?: SttWord[],
   languageCode?: string,
+  timing?: SttTurnTiming,
 ): void {
   const cleanTranscript = transcript.trim() || session.turnTranscript.trim();
   session.turnTranscript = '';
   if (!cleanTranscript) return;
 
   if (
-    process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true' &&
+    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
-    holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode);
+    holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode, timing);
     return;
   }
 
@@ -1302,82 +1416,147 @@ function dispatchCommittedTranscript(
       transcript: cleanTranscript,
       ...(words ? { words } : {}),
       ...(languageCode ? { languageCode } : {}),
+      ...(timing ? { timing } : {}),
     };
     schedulePendingSttEndOfTurn(session);
     return;
   }
-  if (isSmartEndpointEnabled(session) || process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true') {
-    dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode);
+  if (
+    isSmartEndpointEnabled(session) ||
+    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled
+  ) {
+    dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
-  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode);
+  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
 }
 
-export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage): void {
-  switch (msg.message_type) {
+function dispatchDeepgramFinalParts(session: CallSession): void {
+  const parts = session.sttDeepgramFinalParts ?? [];
+  session.sttDeepgramFinalParts = [];
+  const transcript = parts.reduce(
+    (merged, part) => mergeSttTranscripts(merged, part.transcript),
+    '',
+  );
+  if (!transcript.trim()) return;
+  const words = parts.flatMap((part) => part.words ?? []);
+  const speechEndOffsetMs = parts.reduce(
+    (latest, part) => Math.max(latest, part.speechEndOffsetMs ?? 0),
+    0,
+  );
+  const languageCode = [...parts].reverse().find((part) => part.languageCode)?.languageCode ?? 'fr';
+  const timing = sttTimingFromOffset(session, speechEndOffsetMs || undefined);
+  dispatchCommittedTranscript(
+    session,
+    transcript,
+    words.length ? words : undefined,
+    languageCode,
+    timing,
+  );
+}
+
+function handleNormalizedSttMessage(
+  session: CallSession,
+  event: NormalizedSttProviderMessage,
+): void {
+  switch (event.type) {
     case 'session_started':
-      logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe session started');
+      if (metricProvider(session) === 'elevenlabs_stt') {
+        logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe session started');
+      }
       return;
-    case 'partial_transcript':
-      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
-      emitPartialTranscript(session, getMessageText(msg));
+    case 'partial':
+      if (event.transcript.trim()) {
+        session.sttConsecutiveFailures = 0;
+        session.sttLastNonEmptyPartialAt = Date.now();
+      }
+      emitPartialTranscript(session, event.transcript);
       return;
-    case 'committed_transcript':
-      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
+    case 'plain_commit':
+      if (event.transcript.trim()) session.sttConsecutiveFailures = 0;
       queuePlainCommittedTranscript(
         session,
-        getMessageText(msg),
-        getMessageWords(msg),
-        getMessageLanguageCode(msg),
+        event.transcript,
+        event.words,
+        event.languageCode,
+        sttTimingFromOffset(session, event.speechEndOffsetMs),
       );
       return;
-    case 'committed_transcript_with_timestamps':
-      if (getMessageText(msg).trim()) session.sttConsecutiveFailures = 0;
+    case 'timestamped_commit':
+      if (event.transcript.trim()) session.sttConsecutiveFailures = 0;
       dispatchTimestampedCommittedTranscript(
         session,
-        getMessageText(msg),
-        getMessageWords(msg),
-        getMessageLanguageCode(msg),
+        event.transcript,
+        event.words,
+        event.languageCode,
+        sttTimingFromOffset(session, event.speechEndOffsetMs),
       );
+      return;
+    case 'final_segment': {
+      const parts = (session.sttDeepgramFinalParts ??= []);
+      if (event.transcript.trim()) {
+        parts.push({
+          transcript: event.transcript,
+          ...(event.words ? { words: event.words } : {}),
+          ...(event.languageCode ? { languageCode: event.languageCode } : {}),
+          ...(event.speechEndOffsetMs !== undefined
+            ? { speechEndOffsetMs: event.speechEndOffsetMs }
+            : {}),
+        });
+        session.sttConsecutiveFailures = 0;
+      }
+      if (event.speechFinal) dispatchDeepgramFinalParts(session);
+      return;
+    }
+    case 'utterance_end':
+      if (session.sttAdapter?.id === 'deepgram') {
+        if (session.sttDeepgramFinalParts?.length) dispatchDeepgramFinalParts(session);
+      }
+      return;
+    case 'speech_started':
+      session.sttLastSpeechStartedAt = Date.now();
       return;
     case 'warning':
       logger.warn(
-        {
-          callId: session.callControlId,
-          warning: msg.warning ?? msg.message ?? 'ElevenLabs STT warning',
-        },
+        { callId: session.callControlId, provider: metricProvider(session) },
         '[stt] Provider warning',
       );
       return;
-    case 'committed_transcript_entities':
-      // Les entités ne sont pas activées par défaut (surcoût provider). Si
-      // elles le sont ultérieurement, ne jamais écrire leur contenu en clair.
+    case 'entities':
       logger.debug(
-        { callId: session.callControlId, entityCount: msg.entities?.length ?? 0 },
+        { callId: session.callControlId, entityCount: event.count },
         '[stt] Provider entities received',
       );
       return;
-    default:
-      if (!isSttProviderError(msg.message_type)) return;
-      {
-        const message = msg.error ?? msg.message ?? 'ElevenLabs STT error';
-        logger.error(
-          { callId: session.callControlId, message, type: msg.message_type },
-          '[stt] Provider error',
-        );
-        voiceProviderErrorsTotal.inc({
-          provider: STT_PROVIDER_LABEL,
-          type: sttErrorMetricType(msg.message_type),
-        });
-        const terminalReason = terminalSttReason(msg.message_type);
-        if (terminalReason) {
-          triggerSttUnavailable(session, terminalReason, message);
-        } else {
-          session.onSttEvent?.({ type: 'Error', message });
-        }
-        return;
-      }
+    case 'provider_error': {
+      const safeType = SAFE_STT_PROVIDER_ERROR_TYPES.has(event.messageType)
+        ? event.messageType
+        : sttErrorMetricType(event.messageType);
+      const message = `${metricProvider(session)} provider error (${safeType})`;
+      logger.error(
+        {
+          callId: session.callControlId,
+          provider: metricProvider(session),
+          type: sttErrorMetricType(event.messageType),
+        },
+        '[stt] Provider error',
+      );
+      voiceProviderErrorsTotal.inc({
+        provider: metricProvider(session),
+        type: sttErrorMetricType(event.messageType),
+      });
+      const terminalReason = terminalSttReason(event.messageType);
+      if (terminalReason) triggerSttUnavailable(session, terminalReason, message);
+      else session.onSttEvent?.({ type: 'Error', message });
+      return;
+    }
   }
+}
+
+export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage): void {
+  const adapter = createScribeSttAdapter({ model: configuredModel(session) });
+  const normalized = adapter.normalizeMessage(Buffer.from(JSON.stringify(msg)));
+  for (const event of normalized) handleNormalizedSttMessage(session, event);
 }
 
 export function connectStt(
@@ -1386,7 +1565,8 @@ export function connectStt(
   createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
-  if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true') {
+  const adapter = sttAdapterForSession(session);
+  if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && adapter.id === 'scribe') {
     session.onAgentSpeaking = () => beginFrenchSttRelock(session, createSocket);
   }
   if (session.sttReady) return session.sttReady;
@@ -1394,33 +1574,47 @@ export function connectStt(
     return Promise.resolve();
   }
 
-  const apiKey = process.env.ELEVENLABS_API_KEY ?? '';
   if (process.env.NODE_ENV === 'test') {
     session.sttReady = Promise.resolve();
     return session.sttReady;
   }
+  const apiKey =
+    adapter.id === 'deepgram'
+      ? (process.env.DEEPGRAM_API_KEY ?? '')
+      : (process.env.ELEVENLABS_API_KEY ?? '');
   if (!apiKey) {
+    if (fallbackToScribeAtOpening(session, createSocket)) {
+      return Promise.resolve();
+    }
     if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
       return Promise.resolve();
     }
-    triggerSttUnavailable(session, 'configuration', 'ELEVENLABS_API_KEY is not configured');
+    triggerSttUnavailable(
+      session,
+      'configuration',
+      adapter.id === 'deepgram'
+        ? 'DEEPGRAM_API_KEY is not configured'
+        : 'ELEVENLABS_API_KEY is not configured',
+    );
     return Promise.resolve();
   }
 
-  const model = configuredModel(session);
-  session.sttModel = model;
+  session.sttModel = adapter.model;
   const turnConfig = ensureSttTurnConfig(session);
   ensureSttAvailabilityDeadline(session);
   let ws: WebSocket;
   try {
-    ws = createSocket(
-      buildSttUrl(model, session.codec, turnConfig.desired, {
-        restaurantName: session.restaurantName,
-        filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
-        forceFrench: session.sttFrenchOnly === true,
-      }),
-      { headers: { 'xi-api-key': apiKey } },
-    );
+    const url =
+      adapter.id === 'deepgram'
+        ? buildDeepgramSttUrl(session.codec, buildSttKeyterms(session.restaurantName))
+        : buildSttUrl(adapter.model, session.codec, turnConfig.desired, {
+            restaurantName: session.restaurantName,
+            filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
+            forceFrench: session.sttFrenchOnly === true,
+          });
+    const headers: Record<string, string> =
+      adapter.id === 'deepgram' ? { Authorization: `Token ${apiKey}` } : { 'xi-api-key': apiKey };
+    ws = adapter.open({ url, headers, createSocket });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
     handleSttConnectionFailure(session, error, createSocket);
@@ -1439,13 +1633,24 @@ export function connectStt(
         return;
       }
       opened = true;
+      session.sttProviderOpenedOnce = true;
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
       session.sttConnectionDeadlineTimer = null;
-      // An open Scribe socket proves availability. Count only consecutive
+      // An open provider socket proves availability. Count only consecutive
       // failed opens/closures, while the per-call reconnection budget remains.
       session.sttConsecutiveFailures = 0;
+      const pendingAudioBytes =
+        session.audioBuffer.reduce((total, chunk) => total + chunk.length, 0) +
+        (session.sttChunkBuffer?.length ?? 0);
+      session.sttConnectionAudioStartedAt =
+        Date.now() - pendingAudioBytes / telnyxBytesPerMs(session.codec);
+      session.sttDeepgramFinalParts = [];
+      if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+      session.sttKeepAliveTimer =
+        adapter.id === 'deepgram' ? setInterval(() => adapter.keepAlive(ws), 5_000) : null;
+      session.sttKeepAliveTimer?.unref?.();
       if (session.sttRelockAttempt) {
         session.sttRelockAttempt = false;
         voiceSttRelockTotal.inc({ result: 'ok' });
@@ -1462,16 +1667,19 @@ export function connectStt(
         }
       }
       writeDebugLog(
-        '[stt] ElevenLabs Scribe connected for call ' +
+        `[stt] ${adapter.id} connected for call ` +
           session.callControlId +
           '; sending ' +
           session.audioBuffer.length +
           ' buffered chunks',
       );
-      logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe connected');
+      logger.info(
+        { callId: session.callControlId, provider: adapter.id },
+        '[stt] Provider connected',
+      );
       session.sttFirstAudioChunkSent = false;
       resumeSttAfterOpen(session);
-      turnConfig.applied = { ...turnConfig.desired };
+      if (adapter.id === 'scribe') turnConfig.applied = { ...turnConfig.desired };
       if (session.sttRelockPending && session.state === 'SPEAKING') {
         beginFrenchSttRelock(session, createSocket);
       }
@@ -1479,10 +1687,13 @@ export function connectStt(
     });
 
     ws.on('message', (raw: Buffer) => {
+      if (adapter.id === 'deepgram' && (session.ended || session.sttWs !== ws)) return;
       try {
-        handleSttMessage(session, JSON.parse(raw.toString()) as ElevenLabsSttMessage);
+        for (const event of adapter.normalizeMessage(raw)) {
+          handleNormalizedSttMessage(session, event);
+        }
       } catch (err) {
-        writeDebugLog('[stt] ElevenLabs message parse error', err);
+        writeDebugLog('[stt] Provider message parse error', err);
         logger.error({ err, callId: session.callControlId }, '[stt] Message parse error');
       }
     });
@@ -1490,17 +1701,22 @@ export function connectStt(
     ws.on('error', (err: Error) => {
       if (failureHandled || session.sttWs !== ws) return;
       failureHandled = true;
-      writeDebugLog('[stt] ElevenLabs WebSocket error for call ' + session.callControlId, err);
-      logger.error({ err, callId: session.callControlId }, '[stt] Error: ' + err.message);
-      voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'ws_error' });
+      writeDebugLog(`[stt] ${adapter.id} WebSocket error for call ${session.callControlId}`, err);
+      logger.error(
+        { err, callId: session.callControlId, provider: adapter.id },
+        '[stt] WebSocket error',
+      );
+      voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'ws_error' });
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
-          tags: { service: 'stt-bridge', provider: STT_PROVIDER_LABEL, event: 'websocket-error' },
+          tags: { service: 'stt-bridge', provider: adapter.metricLabel, event: 'websocket-error' },
           extra: { callId: session.callControlId },
         });
       }
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
+      if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+      session.sttKeepAliveTimer = null;
       if (session.sttWs === ws) session.sttWs = null;
       if (session.sttReady === ready) session.sttReady = null;
       if (!opened) reject(err);
@@ -1513,15 +1729,19 @@ export function connectStt(
       response.resume();
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
+      if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+      session.sttKeepAliveTimer = null;
       if (session.sttWs === ws) session.sttWs = null;
       if (session.sttReady === ready) session.sttReady = null;
       const statusCode = response.statusCode ?? 0;
-      const error = new Error(
-        'ElevenLabs Scribe WebSocket handshake failed with HTTP ' + statusCode,
-      );
+      const error = new Error(`${adapter.id} WebSocket handshake failed with HTTP ${statusCode}`);
       if (statusCode === 401 || statusCode === 403) {
-        voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'auth' });
+        voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'auth' });
         if (!opened) reject(error);
+        if (fallbackToScribeAtOpening(session, createSocket)) {
+          ws.terminate();
+          return;
+        }
         if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
           ws.terminate();
           return;
@@ -1529,24 +1749,26 @@ export function connectStt(
         triggerSttUnavailable(session, 'auth', error.message);
         ws.terminate();
       } else {
-        voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'ws_error' });
+        voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'ws_error' });
         if (!opened) reject(error);
         handleSttConnectionFailure(session, error, createSocket);
       }
     });
 
-    ws.on('close', (code: number, reason: Buffer) => {
+    ws.on('close', (code: number) => {
       logger.info(
-        { callId: session.callControlId, code, reason: reason.toString() },
-        '[stt] ElevenLabs Scribe connection closed',
+        { callId: session.callControlId, code, provider: adapter.id },
+        '[stt] Provider connection closed',
       );
       if (failureHandled || session.sttWs !== ws) return;
       failureHandled = true;
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
+      if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+      session.sttKeepAliveTimer = null;
       session.sttWs = null;
       if (session.sttReady === ready) session.sttReady = null;
-      const error = new Error('ElevenLabs Scribe WebSocket closed before the call ended');
+      const error = new Error(`${adapter.id} WebSocket closed before the call ended`);
       if (!opened) reject(error);
       handleSttConnectionFailure(session, error, createSocket);
     });
@@ -1555,9 +1777,11 @@ export function connectStt(
       if (failureHandled || opened || session.sttWs !== ws) return;
       failureHandled = true;
       session.sttConnectTimeout = null;
+      if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
+      session.sttKeepAliveTimer = null;
       session.sttWs = null;
       if (session.sttReady === ready) session.sttReady = null;
-      const error = new Error('ElevenLabs Scribe WebSocket connection timed out');
+      const error = new Error(`${adapter.id} WebSocket connection timed out`);
       reject(error);
       handleSttConnectionFailure(session, error, createSocket);
       ws.terminate();
@@ -1570,7 +1794,7 @@ export function connectStt(
 
 export function sendAudioToStt(session: CallSession, audioPayload: string): void {
   if (session.sttTerminalFailure || session.sttFallbackTriggered) return;
-  const input = toSttAudio(session.codec, Buffer.from(audioPayload, 'base64'));
+  const input = Buffer.from(audioPayload, 'base64');
 
   if (
     !session.sttWs &&
@@ -1579,10 +1803,10 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
     !session.sttTerminalFailure &&
     !session.sttFallbackTriggered
   ) {
-    connectStt(session).catch((err) => {
+    connectStt(session).catch((_err) => {
       logger.error(
-        { err, callId: session.callControlId },
-        '[stt] ElevenLabs connection failed while sending audio',
+        { callId: session.callControlId, provider: metricProvider(session) },
+        '[stt] Provider connection failed while sending audio',
       );
     });
   }
@@ -1614,14 +1838,18 @@ export function closeStt(session: CallSession): void {
   const ws = session.sttWs;
   session.sttWs = null;
   session.sttReady = null;
+  const adapter = sttAdapterForSession(session);
   for (const socket of new Set(
     [ws, previousSocket].filter((socket): socket is WebSocket => !!socket),
   )) {
     try {
-      if (socket.readyState === WebSocket.OPEN) socket.close(1000, 'call ended');
-      else if (socket.readyState === WebSocket.CONNECTING) socket.terminate();
-    } catch (err) {
-      logger.warn({ err, callId: session.callControlId }, '[stt] Failed to close Scribe socket');
+      if (socket.readyState === WebSocket.OPEN) adapter.finalize(socket);
+      adapter.close(socket, 1000, 'call ended');
+    } catch (_err) {
+      logger.warn(
+        { callId: session.callControlId, provider: adapter.id },
+        '[stt] Failed to close provider socket',
+      );
     }
   }
 }

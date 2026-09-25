@@ -84,6 +84,28 @@ describe('alertes d’indisponibilité STT', () => {
     expect(message).not.toMatch(/cc-stt|cs-stt|\+33|callId|phone/i);
   });
 
+  it('isole les alertes Deepgram avec son label sans réutiliser la série ElevenLabs', async () => {
+    const store = makeStore();
+    const dispatch = vi.fn().mockResolvedValue([]);
+    const dependencies = { store, dispatch, now: store.now };
+
+    await alertTerminalSttUnavailable('quota', dependencies, 'deepgram_stt');
+
+    expect(store.set).toHaveBeenCalledWith(
+      'sokar:voice:stt:terminal-alert-cooldown:deepgram_stt',
+      '1',
+      'EX',
+      3_600,
+      'NX',
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      kind: 'deepgram_stt_quota',
+      severity: 'critical',
+      summary: 'Deepgram STT indisponible : quota',
+      detail: 'provider=deepgram_stt\nreason=quota',
+    });
+  });
+
   it('alerte en avertissement au sixième appel touché dans la fenêtre de dix minutes', async () => {
     const store = makeStore();
     const dispatch = vi.fn().mockResolvedValue([]);
