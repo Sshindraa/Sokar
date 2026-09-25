@@ -64,7 +64,7 @@ export function isSessionActiveForTts(session: CallSession, generation?: number)
 function persistFirstAudioFrame(session: CallSession, turnId?: string): void {
   if (!session.latencyTrace || session.latencyTrace.totalE2eMs !== undefined) return;
 
-  markVoiceTurnAudioSent(session, { ttsPath: 'http_stream' }, turnId);
+  markVoiceTurnAudioSent(session, { ttsPath: 'http_stream', isFiller: false }, turnId);
   persistLatencyTrace(session).catch((err) =>
     logger.error(
       { err, callId: session.callControlId },

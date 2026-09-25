@@ -32,6 +32,11 @@ const turn = {
   path: 'llm',
   speechDurationMs: 1200,
   speechToSttFinalMs: 300,
+  endOfSpeechToSttFinalMs: 180,
+  holdMs: 50,
+  endOfSpeechToFirstAudioMs: 600,
+  firstAudioIsFiller: false,
+  speechEndAt: new Date('2026-09-24T10:00:01.500Z'),
   llmFirstTokenMs: 250,
   llmFirstPhraseMs: 400,
   llmDurationMs: 600,
@@ -110,6 +115,11 @@ describe('voiceReadRoutes', () => {
       callerText: 'Une table pour deux demain',
       agentText: 'Vers quelle heure ?',
       totalE2eMs: 1900,
+      endOfSpeechToSttFinalMs: 180,
+      holdMs: 50,
+      endOfSpeechToFirstAudioMs: 600,
+      firstAudioIsFiller: false,
+      speechEndAt: '2026-09-24T10:00:01.500Z',
     });
   });
 

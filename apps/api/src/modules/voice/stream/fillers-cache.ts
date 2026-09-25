@@ -44,6 +44,7 @@ import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
 import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
 import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
+import { markVoiceTurnAudioSent } from './turn-telemetry';
 import {
   buildCartesiaCacheVariant,
   CARTESIA_NORMALIZATION,
@@ -447,6 +448,9 @@ export async function playFiller(
             media: { payload: encodeTelnyxFromPcm16(codec, frame).toString('base64') },
           }),
         );
+        if (session && fillerFramesSent === 0) {
+          markVoiceTurnAudioSent(session, { ttsPath: 'filler', isFiller: true });
+        }
         fillerFramesSent++;
         await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
         if (options.signal?.aborted) break;
