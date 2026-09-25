@@ -2223,15 +2223,20 @@ function callFetchLlmStreaming(
   mgr: CallSessionManager,
   messages: ChatMessage[],
   opts: LlmOpts,
+  session: CallSession = {
+    restaurantId: 'rest-stream-test',
+    voiceFeatureSnapshot: { sttProvider: 'scribe', dialogueListeningV2Enabled: false },
+  } as CallSession,
 ): Promise<{ response: Response; provider: string }> {
   return (
     mgr as unknown as {
       fetchLlmStreaming: (
+        s: CallSession,
         m: ChatMessage[],
         o: LlmOpts,
       ) => Promise<{ response: Response; provider: string }>;
     }
-  ).fetchLlmStreaming(messages, opts);
+  ).fetchLlmStreaming(session, messages, opts);
 }
 
 /**

@@ -509,6 +509,14 @@ const SPELLING_FILLER_TOKENS = new Set([
   'please',
   'uh',
   'um',
+  'oui',
+  'alors',
+  'voila',
+  'ben',
+  'hein',
+  'bon',
+  'ok',
+  'donc',
 ]);
 
 const NAME_INTRODUCTION_PATTERN =
@@ -616,7 +624,7 @@ function isBareSpellingSequence(tokens: LexicalToken[]): boolean {
   return words.every((token, index) => {
     if (isSpellingFiller(token.text) || token.text === 'grec') return true;
     if (/^[a-z]$/u.test(token.text)) return true;
-    if (token.text === 'double' || token.text === 'deux') {
+    if (token.text === 'double' || token.text === 'deux' || token.text === '2') {
       return Boolean(words[index + 1]) && !words[index + 1].punctuation;
     }
     return Boolean(SPOKEN_LETTER_TOKENS[token.text] || isSpokenSeparator(token.text));
@@ -733,7 +741,10 @@ export function parseSpelledNameTranscriptDetailed(
       continue;
     }
 
-    if ((lexical.text === 'double' || lexical.text === 'deux') && !tokens[index + 1]?.punctuation) {
+    if (
+      (lexical.text === 'double' || lexical.text === 'deux' || lexical.text === '2') &&
+      !tokens[index + 1]?.punctuation
+    ) {
       const doubled = parseLetterAt(tokens, index + 1, allowPhoneticWords);
       if (doubled) {
         const raw = lexical.text + ' ' + tokens[index + 1].text;
@@ -745,9 +756,16 @@ export function parseSpelledNameTranscriptDetailed(
           addSpellingToken(output, parts, raw, 'W', 'letter', letterPosition);
           knownLetterCount++;
         } else {
-          addSpellingToken(output, parts, raw, doubled.value, 'letter', letterPosition);
-          addSpellingToken(output, parts, raw, doubled.value, 'letter', letterPosition);
-          knownLetterCount += 2;
+          const overlapsPreviousLetter =
+            output.at(-1)?.kind === 'letter' && output.at(-1)?.value === doubled.value;
+          if (overlapsPreviousLetter) {
+            addSpellingToken(output, parts, raw, doubled.value, 'letter', letterPosition);
+            knownLetterCount++;
+          } else {
+            addSpellingToken(output, parts, raw, doubled.value, 'letter', letterPosition);
+            addSpellingToken(output, parts, raw, doubled.value, 'letter', letterPosition);
+            knownLetterCount += 2;
+          }
         }
         index = doubled.nextIndex;
         continue;
@@ -2532,6 +2550,37 @@ export function buildLlmFailurePlan(session: CallSession): AssistantReplyEmissio
     language === 'en'
       ? "Sorry, I didn't quite catch that. Could you say it again?"
       : "Pardon, je n'ai pas bien saisi. Pouvez-vous répéter ?";
+  return buildExplicitInteractionReplyPlan(session, reply, 'open');
+}
+
+/** Secours court aligné sur le champ encore attendu pour le pilote vocal. */
+export function buildVoiceStageFailurePlan(session: CallSession): AssistantReplyEmissionPlan {
+  if ((session.conversation.llmFailureStreak ?? 0) >= 2) return buildLlmFailurePlan(session);
+  const english = effectiveVoiceLanguage(session) === 'en';
+  const prompts: Partial<Record<NonNullable<PendingQuestion>, string>> = english
+    ? {
+        date: 'Sorry, what date would you prefer?',
+        time: 'Sorry, what time would you like to come?',
+        timeChoice: 'Sorry, which time works best for you?',
+        partySize: 'Sorry, how many people will be joining?',
+        partySizeConfirmation: 'Sorry, how many people should I put down?',
+        customerName: 'Sorry, could you spell the name for the reservation?',
+        customerPhone: 'Sorry, what phone number should I use?',
+        confirmation: 'Sorry, would you like me to confirm this reservation?',
+      }
+    : {
+        date: 'Pardon, quelle date souhaitez-vous ?',
+        time: 'Pardon, à quelle heure souhaitez-vous venir ?',
+        timeChoice: 'Pardon, quel horaire vous conviendrait ?',
+        partySize: 'Pardon, vous serez combien ?',
+        partySizeConfirmation: 'Pardon, pour combien de personnes ?',
+        customerName: 'Pardon, pouvez-vous épeler le nom de la réservation ?',
+        customerPhone: 'Pardon, quel numéro de téléphone dois-je noter ?',
+        confirmation: 'Pardon, souhaitez-vous confirmer cette réservation ?',
+      };
+  const pendingQuestion = session.conversation.pendingQuestion;
+  const reply =
+    (pendingQuestion ? prompts[pendingQuestion] : undefined) ?? buildLlmFailurePlan(session).reply;
   return buildExplicitInteractionReplyPlan(session, reply, 'open');
 }
 

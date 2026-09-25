@@ -63,6 +63,7 @@ function finalizeSessionCall(
         source,
         restaurantId: session.restaurantId,
         transcript: session.transcript,
+        sttProvider: session.sttProviderUsed ?? null,
         endedReason: source === 'stream-error' ? 'error' : null,
         handoffConclusion: session.handoffConclusion,
         conversationIntent: session.conversation?.intent ?? null,

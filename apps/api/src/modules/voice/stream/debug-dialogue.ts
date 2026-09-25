@@ -45,11 +45,24 @@ export function recordDebugAgentSpeech(
   text: string,
   kind: 'speech' | 'filler' = 'speech',
 ): DebugSpeechEntry | null {
+  rememberRecentAgentSpeech(session, text);
   const dialogue = currentDialogue(session);
   if (!dialogue || !text.trim()) return null;
   const entry: DebugSpeechEntry = { text: redactPii(text.trim()), status: 'pending' };
   (kind === 'filler' ? dialogue.fillers : dialogue.agentSpeech).push(entry);
   return entry;
+}
+
+export function rememberRecentAgentSpeech(session: CallSession, text: string): void {
+  if (!text.trim()) return;
+  const turnId = session.currentTurn?.id;
+  if (session.recentAgentSpeechTurnId !== turnId) {
+    session.recentAgentSpeechText = '';
+    session.recentAgentSpeechTurnId = turnId;
+  }
+  session.recentAgentSpeechText = `${session.recentAgentSpeechText ?? ''} ${text.trim()}`
+    .trim()
+    .slice(-2_000);
 }
 
 /** Complète une réplique lue d'un seul flux (contexte Cartesia). */

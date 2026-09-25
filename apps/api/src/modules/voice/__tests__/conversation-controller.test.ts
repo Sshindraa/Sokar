@@ -11,6 +11,7 @@ import {
   buildAnswerChoicePlan,
   openingHourTimes,
   buildLlmFailurePlan,
+  buildVoiceStageFailurePlan,
   buildOpenAvailabilityReply,
   extractDayPeriod,
   extractSpokenTimes,
@@ -331,6 +332,10 @@ describe('conversation state', () => {
     ['A comme Anatole, K comme Karim, I comme Isabelle, F comme François', 'AKIF'],
     ['A comme Anatole K I F', 'AKIF'],
     ['A deux L A N', 'ALLAN'],
+    ['a k 2 k i f', 'AKKIF'],
+    ['a k deux k i f', 'AKKIF'],
+    ['a k double k i f', 'AKKIF'],
+    ['a k alors deux k euh i f', 'AKKIF'],
     ['double L', 'LL'],
     ['double vé i grec', 'WY'],
     ['K tiret I F', 'K-IF'],
@@ -1474,6 +1479,20 @@ describe('garde-fou des horaires prononcés', () => {
 });
 
 describe('réponse parlée après un échec LLM', () => {
+  it('redemande le champ en attente avec un secours court adapté', () => {
+    const session = makeSession();
+    session.conversation.pendingQuestion = 'partySize';
+
+    expect(buildVoiceStageFailurePlan(session).reply).toBe('Pardon, vous serez combien ?');
+  });
+
+  it('garde le secours humain après deux échecs consécutifs', () => {
+    const session = makeSession();
+    session.conversation.llmFailureStreak = 2;
+
+    expect(buildVoiceStageFailurePlan(session).reply).toBe(buildLlmFailurePlan(session).reply);
+  });
+
   it('reprend le créneau vérifié et demande le nom au lieu de se taire', () => {
     const session = makeSession();
     session.conversation.slots = { date: '2026-09-25', time: '22:30', partySize: 4 };

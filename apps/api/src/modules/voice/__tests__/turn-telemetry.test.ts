@@ -22,6 +22,7 @@ type LoggedVoiceTurn = {
   event?: string;
   phase?: string;
   sequence?: number;
+  endOfSpeechToSttFinalMs?: number;
 };
 
 type LoggedPayload = {
@@ -235,6 +236,15 @@ describe('voice turn telemetry', () => {
           endOfSpeechToFirstAudioMs: 500,
           firstAudioIsFiller: false,
         });
+        const sttFinalLog = vi
+          .mocked(logger.info)
+          .mock.calls.map(([payload]) => payload as LoggedPayload)
+          .find(({ voiceTurn }) => voiceTurn?.event === 'stt_final');
+        const persistedTurn = snapshotVoiceTurnTelemetry(session).at(-1);
+        expect(sttFinalLog?.voiceTurn?.endOfSpeechToSttFinalMs).toBe(100);
+        expect(persistedTurn?.latencyTrace?.endOfSpeechToSttFinalMs).toBe(
+          sttFinalLog?.voiceTurn?.endOfSpeechToSttFinalMs,
+        );
         const metrics = await renderMetrics();
         expect(metrics).toContain(
           'sokar_voice_end_of_speech_to_stt_final_ms_bucket{le="100",provider="unknown"} 1',

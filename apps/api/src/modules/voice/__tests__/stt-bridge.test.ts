@@ -12,6 +12,7 @@ import {
   sendAudioToStt,
   STT_AUDIO_BUFFER_MAX,
   handleSttMessage,
+  handleNormalizedSttMessage,
   setSttSpellingProfile,
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
@@ -180,7 +181,7 @@ describe('buildDeepgramSttUrl', () => {
     expect(url.searchParams.get('encoding')).toBe(encoding);
     expect(url.searchParams.get('sample_rate')).toBe(rate);
     expect(url.searchParams.get('interim_results')).toBe('true');
-    expect(url.searchParams.get('endpointing')).toBe('700');
+    expect(url.searchParams.get('endpointing')).toBe('300');
     expect(url.searchParams.get('utterance_end_ms')).toBe('1000');
     expect(url.searchParams.get('numerals')).toBe('true');
     expect(url.searchParams.getAll('keyterm')).toEqual(['Chez Sokar', 'réservation']);
@@ -657,6 +658,109 @@ describe('handleSttMessage', () => {
     ['je voudrais réserver une table', SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS, 'no_punctuation'],
   ])('getSmartEndpointDelay(%s) → %i ms (%s)', (transcript, holdMs, reason) => {
     expect(getSmartEndpointDelay(transcript)).toEqual({ holdMs, reason });
+  });
+});
+
+describe('Deepgram final dispatch', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    process.env.VOICE_DIALOGUE_LISTENING_V2 = 'true';
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    delete process.env.VOICE_DIALOGUE_LISTENING_V2;
+    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+  });
+
+  function deepgramSession() {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = { sttProvider: 'deepgram', dialogueListeningV2Enabled: true };
+    session.sttAdapter = { id: 'deepgram' } as NonNullable<typeof session.sttAdapter>;
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    return { session, onEvent };
+  }
+
+  it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {
+    const { session, onEvent } = deepgramSession();
+    process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'Demain soir',
+      speechFinal: true,
+      speechEndOffsetMs: 1_000,
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', transcript: 'Demain soir' }),
+    );
+    expect(session.sttSemanticHold).toBeNull();
+
+    onEvent.mockClear();
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: "Mmh, est-ce que c'est en-",
+      speechFinal: true,
+    });
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(session.sttSemanticHold?.transcript).toContain('en-');
+    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+  });
+
+  it('does not label the latest Deepgram partial as end-of-speech when word offsets are absent', () => {
+    const { session, onEvent } = deepgramSession();
+    session.sttLastNonEmptyPartialAt = Date.now() - 2_000;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'Demain soir',
+      speechFinal: true,
+    });
+
+    const committedEvent = onEvent.mock.calls[0]?.[0];
+    expect(committedEvent).toMatchObject({ type: 'UtteranceEnd', transcript: 'Demain soir' });
+    expect(committedEvent).not.toHaveProperty('speechEndAt');
+  });
+
+  it('attend 800 ms au total pour une épellation, endpointing inclus', () => {
+    const { session, onEvent } = deepgramSession();
+    session.conversation.pendingQuestion = 'customerName';
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'A K',
+      speechFinal: true,
+    });
+
+    expect(onEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(499);
+    expect(onEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', transcript: 'A K' }),
+    );
+  });
+});
+
+describe('assistant echo on Scribe', () => {
+  it('supprime une phrase agent sans déclencher de barge-in', () => {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = { sttProvider: 'scribe', dialogueListeningV2Enabled: true };
+    session.state = 'SPEAKING';
+    session.recentAgentSpeechText =
+      'Avec plaisir. Pour combien de personnes souhaitez-vous réserver ?';
+    session.agentAudioActive = true;
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+
+    handleSttMessage(session, {
+      message_type: 'partial_transcript',
+      text: 'Avec plaisir, pour combien de personnes',
+    });
+
+    expect(handleBargeIn).not.toHaveBeenCalled();
+    expect(session.turnTranscript).toBe('');
   });
 });
 

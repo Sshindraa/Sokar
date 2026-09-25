@@ -651,6 +651,26 @@ export const voiceFillerEventsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+export const voiceLlmHedgeTotal = new Counter({
+  name: 'sokar_voice_llm_hedge_total',
+  help: 'Hedged voice LLM requests by winning provider or timeout',
+  labelNames: ['winner'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceLlmSpokenFallbackTotal = new Counter({
+  name: 'sokar_voice_llm_spoken_fallback_total',
+  help: 'Voice LLM failures recovered with a spoken deterministic response',
+  registers: [getRegistry()],
+});
+
+export const voiceEchoSuppressedTotal = new Counter({
+  name: 'sokar_voice_echo_suppressed_total',
+  help: 'Assistant audio echo suppressed from STT by stage',
+  labelNames: ['stage'] as const,
+  registers: [getRegistry()],
+});
+
 export const voiceTurnPlanShadowByRestaurantTotal = new Counter({
   name: 'sokar_voice_turn_plan_shadow_by_restaurant_total',
   help: 'Observations TurnPlan shadow par statut et restaurant',
@@ -761,6 +781,9 @@ export function __resetMetrics(): void {
   voiceEndOfSpeechToSttFinalMs.reset();
   voiceFalseEndOfTurnTotal.reset();
   voiceFillerEventsTotal.reset();
+  voiceLlmHedgeTotal.reset();
+  voiceLlmSpokenFallbackTotal.reset();
+  voiceEchoSuppressedTotal.reset();
   voiceTurnPlanShadowByRestaurantTotal.reset();
   voiceTransfersTotal.reset();
   voiceCallsTotal.reset();

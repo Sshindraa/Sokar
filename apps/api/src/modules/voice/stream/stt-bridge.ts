@@ -35,6 +35,8 @@ import {
 import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
+import { voiceConfig } from '../../../env';
+import { filterAssistantEcho, hasBargeInWordThreshold } from './assistant-echo';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -661,7 +663,7 @@ export function buildSttUrl(
   return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
-export const DEEPGRAM_ENDPOINTING_MS = 700;
+export const DEEPGRAM_ENDPOINTING_MS = 300;
 export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
 
 export function buildDeepgramSttUrl(
@@ -676,8 +678,10 @@ export function buildDeepgramSttUrl(
     encoding,
     sample_rate: String(sampleRate),
     interim_results: 'true',
-    endpointing: String(DEEPGRAM_ENDPOINTING_MS),
-    utterance_end_ms: String(DEEPGRAM_UTTERANCE_END_MS),
+    endpointing: String(voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS ?? DEEPGRAM_ENDPOINTING_MS),
+    utterance_end_ms: String(
+      voiceConfig.VOICE_DEEPGRAM_UTTERANCE_END_MS ?? DEEPGRAM_UTTERANCE_END_MS,
+    ),
     vad_events: 'true',
     smart_format: 'false',
     numerals: 'true',
@@ -717,7 +721,10 @@ function sttTimingFromOffset(session: CallSession, offsetMs?: number): SttTurnTi
       ? Math.min(sttFinalAt, session.sttConnectionAudioStartedAt + offsetMs)
       : undefined;
   const speechEndAt =
-    mappedSpeechEnd ?? session.sttLastNonEmptyPartialAt ?? session.sttLastSpeechStartedAt;
+    mappedSpeechEnd ??
+    (session.sttAdapter?.id === 'deepgram'
+      ? undefined
+      : (session.sttLastNonEmptyPartialAt ?? session.sttLastSpeechStartedAt));
   return { ...(speechEndAt !== undefined ? { speechEndAt } : {}), sttFinalAt };
 }
 
@@ -921,7 +928,9 @@ function dispatchUtteranceEnd(
   if (!cleanTranscript) return;
   if (languageCode) session.sttLanguageCode = languageCode;
   const sttFinalAt = timing?.sttFinalAt ?? Date.now();
-  const speechEndAt = timing?.speechEndAt ?? session.sttLastNonEmptyPartialAt;
+  const speechEndAt =
+    timing?.speechEndAt ??
+    (session.sttAdapter?.id === 'deepgram' ? undefined : session.sttLastNonEmptyPartialAt);
   const turnDispatchedAt = Date.now();
   logger.info(
     {
@@ -944,7 +953,10 @@ function dispatchUtteranceEnd(
   session.sttLastSpeechStartedAt = undefined;
 }
 
-function schedulePendingSttEndOfTurn(session: CallSession): void {
+function schedulePendingSttEndOfTurn(
+  session: CallSession,
+  delayMs = STT_SPELLING_EOT_GRACE_MS,
+): void {
   if (session.sttEndOfTurnTimer) clearTimeout(session.sttEndOfTurnTimer);
   session.sttEndOfTurnTimer = setTimeout(() => {
     const pending = session.pendingSttEndOfTurn;
@@ -958,7 +970,7 @@ function schedulePendingSttEndOfTurn(session: CallSession): void {
         pending.languageCode,
         pending.timing,
       );
-  }, STT_SPELLING_EOT_GRACE_MS);
+  }, delayMs);
 }
 
 function flushPendingSttEndOfTurn(session: CallSession): void {
@@ -1298,14 +1310,23 @@ function handleBargeInFromTranscript(
 }
 
 function emitPartialTranscript(session: CallSession, transcript: string): void {
-  const cleanTranscript = transcript.trim();
+  let cleanTranscript = transcript.trim();
+  let allowBargeIn = true;
   if (!cleanTranscript) return;
+
+  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
+    const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
+    if (echo.suppressed) return;
+    cleanTranscript = echo.transcript;
+    allowBargeIn = hasBargeInWordThreshold(echo);
+  }
 
   if (
     resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
-    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    if (allowBargeIn)
+      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
     const hold = session.sttSemanticHold;
     if (hold) {
       if (hold.timer) clearTimeout(hold.timer);
@@ -1329,7 +1350,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   }
 
   const mgr = CallSessionManager.getInstance();
-  handleBargeInFromTranscript(session, mgr, cleanTranscript);
+  if (allowBargeIn) handleBargeInFromTranscript(session, mgr, cleanTranscript);
 
   const semanticHold = session.sttSemanticHold;
   if (semanticHold?.timer) {
@@ -1375,15 +1396,25 @@ function dispatchCommittedTranscript(
   languageCode?: string,
   timing?: SttTurnTiming,
 ): void {
-  const cleanTranscript = transcript.trim() || session.turnTranscript.trim();
+  let cleanTranscript = transcript.trim() || session.turnTranscript.trim();
+  let allowBargeIn = true;
   session.turnTranscript = '';
   if (!cleanTranscript) return;
+
+  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
+    const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
+    if (echo.suppressed) return;
+    cleanTranscript = echo.transcript;
+    allowBargeIn = hasBargeInWordThreshold(echo);
+    if (!allowBargeIn && session.state === 'SPEAKING') return;
+  }
 
   if (
     resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
-    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    if (allowBargeIn)
+      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
     holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode, timing);
     return;
   }
@@ -1407,7 +1438,8 @@ function dispatchCommittedTranscript(
   // Le partial est normalement le premier signal de barge-in, mais Scribe
   // peut engager un transcript sans partial observable sur une connexion
   // courte. Le commit doit donc rester suffisant pour interrompre le TTS.
-  handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+  if (allowBargeIn)
+    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
 
   const spellingProfileActive =
     isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName';
@@ -1418,7 +1450,34 @@ function dispatchCommittedTranscript(
       ...(languageCode ? { languageCode } : {}),
       ...(timing ? { timing } : {}),
     };
-    schedulePendingSttEndOfTurn(session);
+    const spellingDelay =
+      session.sttAdapter?.id === 'deepgram'
+        ? Math.max(
+            0,
+            voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS -
+              voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
+          )
+        : STT_SPELLING_EOT_GRACE_MS;
+    schedulePendingSttEndOfTurn(session, spellingDelay);
+    return;
+  }
+  if (session.sttAdapter?.id === 'deepgram') {
+    const previous = clearSemanticHold(session);
+    if (previous) {
+      const mergedTranscript = isVoiceDialogueIncompleteTranscript(previous.transcript)
+        ? mergeIncompleteDialogueTranscript(previous.transcript, cleanTranscript)
+        : mergeSttTranscripts(previous.transcript, cleanTranscript);
+      const mergedWords = previous.words && words ? [...previous.words, ...words] : words;
+      dispatchUtteranceEnd(
+        session,
+        mergedTranscript,
+        mergedWords,
+        languageCode ?? previous.languageCode,
+        mergeSttTiming(previous.timing, timing),
+      );
+      return;
+    }
+    dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
   if (
@@ -1455,7 +1514,7 @@ function dispatchDeepgramFinalParts(session: CallSession): void {
   );
 }
 
-function handleNormalizedSttMessage(
+export function handleNormalizedSttMessage(
   session: CallSession,
   event: NormalizedSttProviderMessage,
 ): void {
@@ -1634,6 +1693,8 @@ export function connectStt(
       }
       opened = true;
       session.sttProviderOpenedOnce = true;
+      session.sttProviderUsed =
+        adapter.id === 'deepgram' ? 'deepgram-nova-3' : 'elevenlabs-scribe-v2-realtime';
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);

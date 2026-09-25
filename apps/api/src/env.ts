@@ -106,16 +106,28 @@ export const optionalUrlSchema = z.preprocess((value) => {
   return trimmed === '' ? undefined : trimmed;
 }, z.string().url().optional());
 
-/** Configuration LLM voice issue des variables d'environnement validées. */
-export const VoiceConfigSchema = z.object({
-  VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
-  VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
-  VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('groq'),
-  GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
-  GROQ_API_KEY: z.string().optional(),
-  CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
-  CEREBRAS_API_KEY: z.string().optional(),
+export const VoiceDeepgramConfigSchema = z.object({
+  VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(300),
+  VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
+  VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
 });
+
+/** Configuration voice issue des variables d'environnement validées. */
+export const VoiceConfigSchema = z
+  .object({
+    VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
+    VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
+    VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('groq'),
+    VOICE_LLM_HEDGE_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_000),
+    VOICE_LLM_HEDGE_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(3_000),
+    VOICE_LLM_HEDGE_MODEL: z.string().default('qwen/qwen3.8-27b'),
+    VOICE_LLM_FILLER_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_200),
+    GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
+    GROQ_API_KEY: z.string().optional(),
+    CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
+    CEREBRAS_API_KEY: z.string().optional(),
+  })
+  .merge(VoiceDeepgramConfigSchema);
 
 export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  isVoiceDeepgramDialoguePilot,
   isVoiceFeatureEnabledForRestaurant,
   resolveVoiceFeatureSnapshot,
 } from '../stream/feature-flags';
@@ -75,5 +76,24 @@ describe('voice feature flags', () => {
     });
     expect(later).toBe(first);
     expect(later.sttProvider).toBe('deepgram');
+  });
+
+  it('scopes the latency pilot to Deepgram plus Dialogue V2 allowlists', () => {
+    const env = {
+      VOICE_STT_PROVIDER: 'deepgram',
+      VOICE_STT_PROVIDER_RESTAURANT_IDS: 'rest-a',
+      VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS: 'rest-a',
+    };
+    const pilot = { restaurantId: 'rest-a' } as CallSession;
+    const other = { restaurantId: 'rest-b' } as CallSession;
+    resolveVoiceFeatureSnapshot(pilot, env);
+    resolveVoiceFeatureSnapshot(other, env);
+
+    expect(isVoiceDeepgramDialoguePilot(pilot)).toBe(true);
+    expect(isVoiceDeepgramDialoguePilot(other)).toBe(false);
+    expect(other.voiceFeatureSnapshot).toMatchObject({
+      sttProvider: 'scribe',
+      dialogueListeningV2Enabled: false,
+    });
   });
 });

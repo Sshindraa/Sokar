@@ -11,9 +11,11 @@ vi.mock('../stream/fillers-cache', () => ({ playFiller: mockPlayFiller }));
 vi.mock('../stream/turn-telemetry', () => ({ recordVoiceTurnEvent: mockRecordVoiceTurnEvent }));
 
 import {
+  cancelPendingThinkingFiller,
   cancelScheduledFiller,
   scheduleThinkingFiller,
   THINKING_FILLER_DELAY_MS,
+  waitForStartedThinkingFiller,
 } from '../stream/filler-scheduler';
 
 function makeSession(): CallSession {
@@ -73,6 +75,49 @@ describe('filler scheduler', () => {
     vi.advanceTimersByTime(THINKING_FILLER_DELAY_MS + 1_000);
 
     expect(mockPlayFiller).not.toHaveBeenCalled();
+  });
+
+  it('annule uniquement le filler en attente au premier token', async () => {
+    const session = makeSession();
+    scheduleThinkingFiller(session, 'CASUAL', {
+      probability: 1,
+      random: () => 0,
+      delayMs: 1_200,
+    });
+
+    cancelPendingThinkingFiller(session);
+    await waitForStartedThinkingFiller(session);
+    vi.advanceTimersByTime(1_200);
+
+    expect(mockPlayFiller).not.toHaveBeenCalled();
+  });
+
+  it('laisse finir un filler démarré avant que la première phrase parte', async () => {
+    const session = makeSession();
+    let finishFiller: () => void = () => {};
+    mockPlayFiller.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFiller = resolve;
+        }),
+    );
+    scheduleThinkingFiller(session, 'CASUAL', {
+      probability: 1,
+      random: () => 0,
+      delayMs: 10,
+    });
+    vi.advanceTimersByTime(10);
+    await Promise.resolve();
+
+    let settled = false;
+    const playback = waitForStartedThinkingFiller(session).then(() => {
+      settled = true;
+    });
+    expect(settled).toBe(false);
+    finishFiller();
+    await playback;
+
+    expect(settled).toBe(true);
   });
 
   it('n’envoie pas de filler si la réponse arrive avant le délai', () => {

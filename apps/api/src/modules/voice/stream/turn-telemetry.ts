@@ -183,7 +183,7 @@ export function startVoiceTurn(session: CallSession, transcript = ''): void {
     availabilityFailures: 0,
     loopDetected: false,
     completed: false,
-    sttProvider: session.sttModel,
+    sttProvider: session.sttProviderUsed ?? session.sttModel,
     latencyTrace,
     eventSequence: 0,
   };
@@ -350,6 +350,8 @@ export function markVoiceTurnAudioSent(
   fields: VoiceTurnEventFields = {},
   turnId?: string,
 ): void {
+  session.agentAudioActive = true;
+  session.agentAudioEndedAt = undefined;
   if (!isCurrentVoiceTurn(session, turnId)) return;
   const trace = session.latencyTrace;
   if (!trace || trace.totalE2eMs !== undefined) return;
@@ -374,6 +376,17 @@ export function recordVoiceTurnEvent(
   event: VoiceTurnEvent,
   fields: VoiceTurnEventFields = {},
 ): void {
+  if (event === 'tts_completed' || event === 'filler_completed') {
+    session.agentAudioActive = false;
+    session.agentAudioEndedAt = Date.now();
+  } else if (
+    event === 'tts_interrupted' ||
+    event === 'filler_interrupted' ||
+    event === 'barge_in'
+  ) {
+    session.agentAudioActive = false;
+    session.agentAudioEndedAt = Date.now();
+  }
   const turn = session.currentTurn;
   if (!turn) return;
   const eventAt = Date.now();
