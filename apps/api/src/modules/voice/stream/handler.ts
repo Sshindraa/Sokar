@@ -26,6 +26,7 @@ import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
 import { sendAudioToStt, closeStt, connectStt } from './stt-bridge';
+import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { decodeTelnyxToPcm16, telnyxCodecProfile } from './telnyx-codec';
 import { L16EndianProbe, WidebandProbe } from './wideband';
 import { logger } from '../../../shared/logger/pino';
@@ -267,10 +268,12 @@ function handleTelnyxMessage(
         };
       }
 
+      resolveVoiceFeatureSnapshot(session);
+
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
       session.telnyxWs = socket;
 
-      // Connecter et démarrer ElevenLabs Scribe STT pour la session
+      // Le provider STT est résolu une seule fois à l'ouverture du Media Stream.
       session.onSttEvent = (event: SttEvent) => handleSttEvent(event, session, mgr);
       connectStt(session)
         .then(() => {

@@ -330,7 +330,11 @@ export class CartesiaContextTurn {
       );
       this.sentFrames++;
       const hadAudioSent = this.session.latencyTrace?.totalE2eMs !== undefined;
-      markVoiceTurnAudioSent(this.session, { ttsPath: 'cartesia_context' }, this.turnId);
+      markVoiceTurnAudioSent(
+        this.session,
+        { ttsPath: 'cartesia_context', isFiller: false },
+        this.turnId,
+      );
       if (!hadAudioSent && this.session.latencyTrace?.totalE2eMs !== undefined) {
         persistLatencyTrace(this.session).catch((err) =>
           logger.error(

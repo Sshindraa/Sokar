@@ -214,6 +214,39 @@ describe('voice turn telemetry', () => {
       }
     });
 
+    it('mesure les jalons end-of-speech→STT final et end-of-speech→premier audio', async () => {
+      vi.useFakeTimers();
+      try {
+        const session = restaurantSession();
+        startVoiceTurn(session);
+        const startedAt = Date.now();
+        vi.advanceTimersByTime(300);
+        completeVoiceTurnInput(session, 'Pour deux personnes.', [], {
+          speechEndAt: startedAt + 200,
+          sttFinalAt: startedAt + 300,
+          turnDispatchedAt: startedAt + 450,
+        });
+        vi.advanceTimersByTime(400);
+        markVoiceTurnAudioSent(session, { isFiller: false });
+
+        expect(session.latencyTrace).toMatchObject({
+          endOfSpeechToSttFinalMs: 100,
+          holdMs: 150,
+          endOfSpeechToFirstAudioMs: 500,
+          firstAudioIsFiller: false,
+        });
+        const metrics = await renderMetrics();
+        expect(metrics).toContain(
+          'sokar_voice_end_of_speech_to_stt_final_ms_bucket{le="100",provider="unknown"} 1',
+        );
+        expect(metrics).toContain(
+          'sokar_voice_end_of_speech_to_first_audio_ms_bucket{le="500",path="unknown",restaurant_id="resto-1"} 1',
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('compte fausses fins de tour, fillers et statuts TurnPlan', async () => {
       const session = restaurantSession();
       startVoiceTurn(session);

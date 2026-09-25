@@ -12,6 +12,7 @@
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
+- [ ] Tester le canary Deepgram STT en staging avant toute activation restaurant.
 
 ## Décisions récentes
 

@@ -1,9 +1,10 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import type { CallSession } from '../stream/types';
+import type { CallSession, SttEvent } from '../stream/types';
 import { CallSessionManager } from '../stream/manager';
 import {
   buildSttUrl,
+  buildDeepgramSttUrl,
   buildSttKeyterms,
   buildSttPreviousText,
   DEFAULT_STT_LANGUAGES,
@@ -165,6 +166,27 @@ describe('buildSttUrl', () => {
   });
 });
 
+describe('buildDeepgramSttUrl', () => {
+  it.each([
+    ['PCMA', 'alaw', '8000'],
+    ['PCMU', 'mulaw', '8000'],
+    ['L16', 'linear16', '16000'],
+  ] as const)('déclare le format %s correspondant au codec entrant', (codec, encoding, rate) => {
+    const url = new URL(buildDeepgramSttUrl(codec, ['Chez Sokar', 'réservation']));
+    expect(url.hostname).toBe('api.deepgram.com');
+    expect(url.pathname).toBe('/v1/listen');
+    expect(url.searchParams.get('model')).toBe('nova-3');
+    expect(url.searchParams.get('language')).toBe('fr');
+    expect(url.searchParams.get('encoding')).toBe(encoding);
+    expect(url.searchParams.get('sample_rate')).toBe(rate);
+    expect(url.searchParams.get('interim_results')).toBe('true');
+    expect(url.searchParams.get('endpointing')).toBe('700');
+    expect(url.searchParams.get('utterance_end_ms')).toBe('1000');
+    expect(url.searchParams.get('numerals')).toBe('true');
+    expect(url.searchParams.getAll('keyterm')).toEqual(['Chez Sokar', 'réservation']);
+  });
+});
+
 describe('sendAudioToStt', () => {
   beforeEach(() => {
     vi.stubEnv('NODE_ENV', 'test');
@@ -224,12 +246,42 @@ describe('handleSttMessage', () => {
     });
 
     expect(onEvent).toHaveBeenNthCalledWith(1, { type: 'UtteranceStart' });
-    expect(onEvent).toHaveBeenNthCalledWith(2, {
-      type: 'UtteranceEnd',
-      transcript: 'Je voudrais réserver',
-      words: [{ word: 'réserver', start: 0.5, end: 1.1 }],
-    });
+    expect(onEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'Je voudrais réserver',
+        words: [{ word: 'réserver', start: 0.5, end: 1.1 }],
+      }),
+    );
     expect(session.turnTranscript).toBe('');
+  });
+
+  it('joint les jalons fin de parole, final STT et dispatch au tour normalisé', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      handleSttMessage(session, { message_type: 'partial_transcript', text: 'Demain soir' });
+      vi.advanceTimersByTime(250);
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'Demain soir',
+        words: [{ word: 'soir', start: 0.4, end: 0.8 }],
+      });
+
+      expect(onEvent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          speechEndAt: expect.any(Number),
+          sttFinalAt: expect.any(Number),
+          turnDispatchedAt: expect.any(Number),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('convertit la log-probabilité Scribe en confiance de mot', () => {
@@ -337,7 +389,9 @@ describe('handleSttMessage', () => {
       handleSttMessage(session, { message_type: 'committed_transcript', text: 'A K' });
       expect(onEvent).not.toHaveBeenCalled();
       vi.advanceTimersByTime(STT_TIMESTAMPED_COMMIT_GRACE_MS + STT_SPELLING_EOT_GRACE_MS);
-      expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceEnd', transcript: 'A K' });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', transcript: 'A K' }),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -358,11 +412,13 @@ describe('handleSttMessage', () => {
     });
 
     expect(onEvent).toHaveBeenCalledTimes(1);
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'UtteranceEnd',
-      transcript: 'Oui, demain',
-      words: [{ word: 'demain', start: 0.2, end: 0.6 }],
-    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'Oui, demain',
+        words: [{ word: 'demain', start: 0.2, end: 0.6 }],
+      }),
+    );
   });
 
   it('propage la langue détectée par Scribe sur le segment final', () => {
@@ -377,11 +433,13 @@ describe('handleSttMessage', () => {
       language_code: 'en',
     });
 
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'UtteranceEnd',
-      transcript: 'I need a table',
-      languageCode: 'en',
-    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'I need a table',
+        languageCode: 'en',
+      }),
+    );
     expect(session.sttLanguageCode).toBe('en');
   });
 
@@ -395,10 +453,12 @@ describe('handleSttMessage', () => {
       handleSttMessage(session, { message_type: 'committed_transcript', text: 'Deux personnes' });
       vi.advanceTimersByTime(STT_TIMESTAMPED_COMMIT_GRACE_MS);
 
-      expect(onEvent).toHaveBeenCalledWith({
-        type: 'UtteranceEnd',
-        transcript: 'Deux personnes',
-      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'Deux personnes',
+        }),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -412,7 +472,7 @@ describe('handleSttMessage', () => {
     expect(onEvent).toHaveBeenCalledWith({
       type: 'Unavailable',
       reason: 'quota',
-      message: 'quota',
+      message: 'elevenlabs_stt provider error (quota_exceeded)',
     });
   });
 
@@ -429,7 +489,7 @@ describe('handleSttMessage', () => {
     expect(onEvent).toHaveBeenCalledWith({
       type: 'Unavailable',
       reason,
-      message: messageType,
+      message: `elevenlabs_stt provider error (${messageType})`,
     });
     expect(session.sttTerminalFailure).toBe(true);
     expect(session.sttFallbackTriggered).toBe(true);
@@ -450,7 +510,10 @@ describe('handleSttMessage', () => {
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
     handleSttMessage(session, { message_type: messageType, message: messageType });
-    expect(onEvent).toHaveBeenCalledWith({ type: 'Error', message: messageType });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Error',
+      message: `elevenlabs_stt provider error (${messageType})`,
+    });
   });
 
   it('ignore un avertissement et les entités sans écrire leur contenu dans l’événement vocal', () => {
@@ -490,7 +553,22 @@ describe('handleSttMessage', () => {
       handleSttMessage(session, { message_type: 'committed_transcript_with_timestamps', text });
     }
     const utteranceEnds = (onEvent: ReturnType<typeof vi.fn>) =>
-      onEvent.mock.calls.filter(([event]) => event.type === 'UtteranceEnd');
+      onEvent.mock.calls
+        .filter(([event]) => event.type === 'UtteranceEnd')
+        .map(([event]) => {
+          const { type, transcript, words, languageCode } = event as Extract<
+            SttEvent,
+            { type: 'UtteranceEnd' }
+          >;
+          return [
+            {
+              type,
+              transcript,
+              ...(words ? { words } : {}),
+              ...(languageCode ? { languageCode } : {}),
+            },
+          ];
+        });
 
     it('respecte le flag et la liste de restaurants', () => {
       const session = makeSession();
@@ -518,10 +596,12 @@ describe('handleSttMessage', () => {
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
       commit(session, 'Pour deux personnes.');
-      expect(onEvent).toHaveBeenCalledWith({
-        type: 'UtteranceEnd',
-        transcript: 'Pour deux personnes.',
-      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'Pour deux personnes.',
+        }),
+      );
     });
 
     it('retient une fin en suspens puis fusionne la reprise en un seul tour', () => {
@@ -594,7 +674,10 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
   });
 
   const ends = (onEvent: ReturnType<typeof vi.fn>) =>
-    onEvent.mock.calls.map(([event]) => event).filter((event) => event.type === 'UtteranceEnd');
+    onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'UtteranceEnd')
+      .map((event) => ({ type: event.type, transcript: event.transcript }));
 
   it.each([
     ["Mmh, est-ce que c'est en-", "Mmh, est-ce que c'est en-"],

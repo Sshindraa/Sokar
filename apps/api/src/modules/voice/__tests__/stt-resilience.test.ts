@@ -11,6 +11,7 @@ vi.mock('../stream/stt-alerts', () => sttAlertMocks);
 import { CallSessionManager } from '../stream/manager';
 import type { CallSession, SttEvent } from '../stream/types';
 import {
+  closeStt,
   connectStt,
   sendAudioToStt,
   STT_CONNECT_TIMEOUT_MS,
@@ -107,7 +108,9 @@ describe('résilience STT', () => {
     session.state = 'LISTENING';
     const manager = makeManager();
     const { socket, handlers } = makeConnectingSocket();
-    const createSocket = vi.fn(() => socket);
+    const createSocket = vi.fn((_url: string, _options: { headers: Record<string, string> }) => {
+      return socket;
+    });
     const attempt = connectStt(
       session,
       (event: SttEvent) => handleSttEvent(event, session, manager as never),
@@ -130,6 +133,122 @@ describe('résilience STT', () => {
     expect(manager.transition).toHaveBeenCalledWith(session, 'PROCESSING');
     expect(manager.transition).toHaveBeenCalledWith(session, 'SPEAKING');
     expect(finishCall).not.toHaveBeenCalled();
+  });
+
+  it('bascule de Deepgram vers Scribe uniquement sur échec du handshake initial', async () => {
+    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
+    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
+    vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
+    vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
+    const session = makeSession();
+    session.codec = 'PCMA';
+    const sockets: ReturnType<typeof makeConnectingSocket>[] = [];
+    const createSocket = vi.fn((_url: string, _options: { headers: Record<string, string> }) => {
+      const next = makeConnectingSocket();
+      sockets.push(next);
+      return next.socket;
+    });
+    const attempt = connectStt(session, vi.fn(), createSocket);
+
+    expect(new URL(vi.mocked(createSocket).mock.calls[0][0]).host).toBe('api.deepgram.com');
+    expect(vi.mocked(createSocket).mock.calls[0][1].headers).toHaveProperty('Authorization');
+    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
+    expect(session.audioBuffer).toEqual([Buffer.from([0xd5])]);
+    sockets[0].handlers.get('unexpected-response')?.(
+      {} as never,
+      { statusCode: 401, resume: vi.fn() } as never,
+    );
+
+    await expect(attempt).rejects.toThrow('HTTP 401');
+    expect(createSocket).toHaveBeenCalledTimes(2);
+    expect(new URL(vi.mocked(createSocket).mock.calls[1][0]).host).toBe('api.elevenlabs.io');
+    expect(session.sttAdapter?.id).toBe('scribe');
+    expect(session.sttOpeningFallbackAttempted).toBe(true);
+    expect(session.voiceFeatureSnapshot?.sttProvider).toBe('deepgram');
+
+    Object.defineProperty(sockets[1].socket, 'readyState', { value: WebSocket.OPEN });
+    sockets[1].handlers.get('open')?.();
+    expect(session.audioBuffer).toHaveLength(0);
+    const scribeAudio = JSON.parse(
+      String(vi.mocked(sockets[1].socket.send).mock.calls[0]?.[0]),
+    ) as {
+      audio_base_64: string;
+    };
+    expect(Buffer.from(scribeAudio.audio_base_64, 'base64')).toEqual(Buffer.from([0x08, 0x00]));
+    closeStt(session);
+  });
+
+  it('route Deepgram en binaire brut et normalise son segment final dans le bridge commun', async () => {
+    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
+    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
+    vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
+    vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
+    const session = makeSession();
+    session.codec = 'PCMA';
+    const onEvent = vi.fn();
+    const { socket, handlers } = makeConnectingSocket();
+    const createSocket = vi.fn((_url: string, _options: { headers: Record<string, string> }) => {
+      return socket;
+    });
+    const attempt = connectStt(session, onEvent, createSocket);
+    Object.defineProperty(socket, 'readyState', { value: WebSocket.OPEN });
+    handlers.get('open')?.();
+    await attempt;
+
+    const url = new URL(vi.mocked(createSocket).mock.calls[0]![0]);
+    expect(url.searchParams.get('encoding')).toBe('alaw');
+    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
+    expect(vi.mocked(socket.send)).toHaveBeenCalledWith(Buffer.from([0xd5]), { binary: true });
+
+    const message = {
+      type: 'Results',
+      start: 0.2,
+      duration: 0.5,
+      is_final: true,
+      speech_final: true,
+      channel: {
+        alternatives: [
+          {
+            transcript: 'Pour six personnes.',
+            languages: ['fr'],
+            words: [{ word: 'personnes', start: 0.2, end: 0.7, confidence: 0.9 }],
+          },
+        ],
+      },
+    };
+    (handlers.get('message') as (data: Buffer) => void)(Buffer.from(JSON.stringify(message)));
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'Pour six personnes.',
+        languageCode: 'fr',
+        speechEndAt: expect.any(Number),
+        sttFinalAt: expect.any(Number),
+      }),
+    );
+    expect(session.voiceUsage?.sttAudioSamples).toBe(1);
+    closeStt(session);
+  });
+
+  it('ne rebascule pas vers Scribe après une première ouverture Deepgram réussie', async () => {
+    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
+    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
+    vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
+    const session = makeSession();
+    const { socket, handlers } = makeConnectingSocket();
+    const createSocket = vi.fn(() => socket);
+    connectStt(session, vi.fn(), createSocket).catch(() => undefined);
+
+    Object.defineProperty(socket, 'readyState', { value: WebSocket.OPEN });
+    handlers.get('open')?.();
+    handlers.get('close')?.(1006 as never);
+
+    expect(session.sttProviderOpenedOnce).toBe(true);
+    expect(session.sttAdapter?.id).toBe('deepgram');
+    expect(session.sttOpeningFallbackAttempted).toBeFalsy();
+    expect(createSocket).toHaveBeenCalledOnce();
+    closeStt(session);
   });
 
   it('sur 401 simulé sans ligne gérant, prononce le repli et termine l’appel', async () => {

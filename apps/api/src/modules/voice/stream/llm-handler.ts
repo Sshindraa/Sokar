@@ -40,6 +40,7 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
+import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import {
   getActivePendingInteraction,
   extractConversationSlots,
@@ -661,7 +662,7 @@ export function handleSttEvent(
       // Cumuler le transcript pour persistance et rattacher la fin au tour
       // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
-      completeVoiceTurnInput(session, event.transcript, event.words);
+      completeVoiceTurnInput(session, event.transcript, event.words, event);
       session.sttEvidence = {
         transcript: event.transcript,
         words: event.words,
@@ -960,7 +961,7 @@ export async function processTranscriptStreaming(
   }
 
   const responseGeneration = ++session.responseGeneration;
-  const dialogueV2Enabled = process.env.VOICE_DIALOGUE_LISTENING_V2 === 'true';
+  const dialogueV2Enabled = resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled;
   const language = effectiveVoiceLanguage(session);
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;

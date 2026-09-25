@@ -207,6 +207,7 @@ const EnvSchema = z
       .max(200_000_000)
       .default(50_000_000),
     ELEVENLABS_API_KEY: z.string().optional(),
+    DEEPGRAM_API_KEY: z.string().optional(),
     // Endpoint STT temps réel ElevenLabs — surchargeable pour les tests.
     ELEVENLABS_STT_HOST: z.string().default('api.elevenlabs.io'),
     ELEVENLABS_STT_MODEL: z.string().default('scribe_v2_realtime'),
@@ -229,6 +230,11 @@ const EnvSchema = z
     VOICE_STT_LANGUAGE_LOCK: voiceSttBooleanFlagSchema,
     // Routage conversationnel strict : seul un slot direct et non ambigu reste déterministe.
     VOICE_DIALOGUE_LISTENING_V2: voiceSttBooleanFlagSchema,
+    // Activation ciblée du routage strict ; s'ajoute au flag global.
+    VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS: z.string().optional(),
+    // Provider choisi avant ouverture de session ; Deepgram requiert aussi une allowlist.
+    VOICE_STT_PROVIDER: z.enum(['scribe', 'deepgram']).default('scribe'),
+    VOICE_STT_PROVIDER_RESTAURANT_IDS: z.string().optional(),
     // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
     // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
     VOICE_TELNYX_CODEC: telnyxCodecSchema,

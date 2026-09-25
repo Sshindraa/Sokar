@@ -26,6 +26,7 @@ vi.mock('../../../shared/sentry/client', () => ({ captureException: vi.fn() }));
 vi.mock('../stream/debug-log', () => ({ writeDebugLog: vi.fn() }));
 
 import {
+  completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
   markVoiceTurnAudioSent,
   recordVoiceTurnEvent,
@@ -118,6 +119,36 @@ describe('voice session persistence', () => {
           create: expect.objectContaining({ llmFirstToken: 125 }),
         }),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists end-of-speech, hold duration and whether first audio was a filler', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      startVoiceTurn(session, 'Tour de test');
+      const startedAt = Date.now();
+      vi.advanceTimersByTime(350);
+      completeVoiceTurnInput(session, 'Tour de test', [], {
+        speechEndAt: startedAt + 100,
+        sttFinalAt: startedAt + 300,
+        turnDispatchedAt: startedAt + 350,
+      });
+      vi.advanceTimersByTime(150);
+      markVoiceTurnAudioSent(session, { ttsPath: 'filler', isFiller: true });
+
+      await persistLatencyTrace(session);
+
+      const persisted = mockDb.voiceTurnTelemetry.upsert.mock.calls[0][0].create;
+      expect(persisted).toMatchObject({
+        endOfSpeechToSttFinalMs: 200,
+        holdMs: 50,
+        endOfSpeechToFirstAudioMs: 400,
+        firstAudioIsFiller: true,
+        speechEndAt: new Date(startedAt + 100),
+      });
     } finally {
       vi.useRealTimers();
     }

@@ -258,7 +258,7 @@ export const voiceTtsFirstAudioMs = new Histogram({
 /**
  * Erreurs par provider voice (ElevenLabs STT, Cartesia, Groq).
  * Permet de mesurer la fiabilité de chaque provider indépendamment.
- * Labels : provider (elevenlabs_stt | cartesia | groq) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
+ * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | groq) × type borné.
  */
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
@@ -284,6 +284,22 @@ export const voiceSttAudioMessagesTotal = new Counter({
 export const voiceSttChunkBytes = new Histogram({
   name: 'sokar_voice_stt_chunk_bytes',
   help: 'Taille des messages audio envoyés à Scribe Realtime (octets)',
+  buckets: [160, 320, 640, 1600, 3200, 6400, 16000],
+  registers: [getRegistry()],
+});
+
+/** STT messages by selected provider; existing Scribe metric remains unchanged. */
+export const voiceSttProviderAudioMessagesTotal = new Counter({
+  name: 'sokar_voice_stt_provider_audio_messages_total',
+  help: 'Audio messages sent to the active STT provider by configured chunk size',
+  labelNames: ['provider', 'chunk_ms'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceSttProviderChunkBytes = new Histogram({
+  name: 'sokar_voice_stt_provider_chunk_bytes',
+  help: 'Audio message sizes sent to the active STT provider in bytes',
+  labelNames: ['provider'] as const,
   buckets: [160, 320, 640, 1600, 3200, 6400, 16000],
   registers: [getRegistry()],
 });
@@ -612,6 +628,14 @@ export const voiceEndOfSpeechToFirstAudioMs = new Histogram({
   registers: [getRegistry()],
 });
 
+export const voiceEndOfSpeechToSttFinalMs = new Histogram({
+  name: 'sokar_voice_end_of_speech_to_stt_final_ms',
+  help: 'Measured end of caller speech to final STT transcript in milliseconds',
+  labelNames: ['provider'] as const,
+  buckets: [100, 200, 350, 500, 750, 1000, 1250, 1500, 2000, 3000, 5000],
+  registers: [getRegistry()],
+});
+
 /** Fausse fin de tour : le client reprend la parole pendant PROCESSING. */
 export const voiceFalseEndOfTurnTotal = new Counter({
   name: 'sokar_voice_false_end_of_turn_total',
@@ -723,6 +747,10 @@ export function __resetMetrics(): void {
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  voiceSttAudioMessagesTotal.reset();
+  voiceSttChunkBytes.reset();
+  voiceSttProviderAudioMessagesTotal.reset();
+  voiceSttProviderChunkBytes.reset();
   elevenLabsCharacterCount.reset();
   elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
@@ -730,6 +758,7 @@ export function __resetMetrics(): void {
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();
   voiceEndOfSpeechToFirstAudioMs.reset();
+  voiceEndOfSpeechToSttFinalMs.reset();
   voiceFalseEndOfTurnTotal.reset();
   voiceFillerEventsTotal.reset();
   voiceTurnPlanShadowByRestaurantTotal.reset();
