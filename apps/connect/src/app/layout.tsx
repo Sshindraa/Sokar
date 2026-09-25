@@ -9,22 +9,23 @@
  */
 
 import type { Metadata, Viewport } from 'next';
-import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { Footer } from '@/components/footer';
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800', '900'],
+// Keep production builds independent from the Google Fonts network endpoint.
+const outfit = localFont({
+  src: './fonts/outfit-latin.woff2',
   variable: '--font-display',
   display: 'swap',
+  weight: '300 900',
 });
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+const jakarta = localFont({
+  src: './fonts/plus-jakarta-sans-latin.woff2',
   variable: '--font-body',
   display: 'swap',
+  weight: '300 800',
 });
 
 export const metadata: Metadata = {

@@ -10,7 +10,7 @@ import {
   PhoneCall,
   Utensils,
 } from 'lucide-react';
-import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
 import MobileNav from '@/components/MobileNav';
@@ -28,18 +28,19 @@ const DemoSection = dynamic(() => import('@/app/DemoSection'), {
   loading: () => <SectionSkeleton variant="demo" />,
 });
 
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800', '900'],
+// Keep production builds independent from the Google Fonts network endpoint.
+const outfit = localFont({
+  src: './fonts/outfit-latin.woff2',
   display: 'swap',
   variable: '--font-display',
+  weight: '300 900',
 });
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
+const jakarta = localFont({
+  src: './fonts/plus-jakarta-sans-latin.woff2',
   display: 'swap',
   variable: '--font-sans',
+  weight: '300 800',
 });
 
 export default function HomePage() {
