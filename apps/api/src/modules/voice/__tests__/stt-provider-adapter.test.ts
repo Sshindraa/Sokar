@@ -101,11 +101,21 @@ describe('STT provider adapters', () => {
         languageCode: 'fr',
         words: [{ word: 'dix-neuf', confidence: 0.91, start: 1.2, end: 1.7 }],
         speechFinal: true,
+        fromFinalize: false,
         speechEndOffsetMs: 1700,
         providerResultEndMs: 2100,
         providerLastWordEndMs: 1700,
       },
     ]);
+    expect(
+      normalize({
+        type: 'Results',
+        is_final: true,
+        speech_final: false,
+        from_finalize: true,
+        channel: { alternatives: [{ transcript: 'sept' }] },
+      }),
+    ).toMatchObject([{ type: 'final_segment', speechFinal: false, fromFinalize: true }]);
     expect(normalize({ type: 'SpeechStarted' })).toEqual([{ type: 'speech_started' }]);
     expect(normalize({ type: 'UtteranceEnd', last_word_end: 3.25 })).toEqual([
       {

@@ -20,6 +20,8 @@ export type NormalizedSttProviderMessage =
       words?: SttWord[];
       languageCode?: string;
       speechFinal: boolean;
+      /** Segment produit en réponse à un message `Finalize`. */
+      fromFinalize?: boolean;
       speechEndOffsetMs?: number;
       providerResultEndMs?: number;
       providerLastWordEndMs?: number;
@@ -214,6 +216,7 @@ function normalizeDeepgramMessage(
         words,
         languageCode,
         speechFinal: message.speech_final === true,
+        fromFinalize: message.from_finalize === true,
         speechEndOffsetMs,
         providerResultEndMs,
         providerLastWordEndMs,

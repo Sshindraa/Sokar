@@ -103,6 +103,8 @@ export interface SttWord {
 export type SttFinalTrigger =
   | 'speech_final'
   | 'utterance_end'
+  /** UtteranceEnd reçu avant tout segment final : `Finalize` a forcé le segment. */
+  | 'utterance_end_finalize'
   | 'safety_flush'
   | 'spelling_hold'
   | 'semantic_hold';
@@ -486,6 +488,10 @@ export interface CallSession {
     providerResultEndMs?: number;
     providerLastWordEndMs?: number;
   }>;
+  /** Deepgram : mots intermédiaires reçus, pas encore couverts par un segment final. */
+  sttDeepgramPendingInterim?: boolean;
+  /** Deepgram : `Finalize` envoyé en cours d'appel, le prochain segment final clôt le tour. */
+  sttDeepgramFinalizeRequested?: boolean;
   /** Dernière langue détectée par Scribe sur un segment final. */
   sttLanguageCode?: string;
   /** Langue métier verrouillée après une preuve française fiable. */
