@@ -198,6 +198,8 @@ function fallbackToScribeAtOpening(
   session.sttConnectionAudioStartedAt = undefined;
   session.sttConnectionAudioBytesSent = 0;
   session.sttDeepgramFinalParts = [];
+  session.sttDeepgramPendingInterim = false;
+  session.sttDeepgramFinalizeRequested = false;
   session.sttConsecutiveFailures = 0;
   logger.warn(
     { callId: session.callControlId, failedProvider: 'deepgram_stt' },
@@ -1519,6 +1521,7 @@ function dispatchDeepgramFinalParts(
 ): void {
   const parts = session.sttDeepgramFinalParts ?? [];
   session.sttDeepgramFinalParts = [];
+  session.sttDeepgramFinalizeRequested = false;
   const transcript = parts.reduce(
     (merged, part) => mergeSttTranscripts(merged, part.transcript),
     '',
@@ -1561,6 +1564,29 @@ export function flushDeepgramFinalPartsForSafety(session: CallSession): void {
   }
 }
 
+/**
+ * Journal des événements Deepgram qui décident de la fin d'un tour, sans
+ * texte : ordre, offsets fournisseur et audio envoyé à la réception.
+ */
+function logDeepgramEvent(
+  session: CallSession,
+  kind: 'final_segment' | 'utterance_end',
+  fields: Record<string, boolean | number | undefined>,
+): void {
+  const bytesPerMs = session.sttAdapter?.chunkBytesPerMs(session.codec);
+  logger.info(
+    {
+      callId: session.callControlId,
+      kind,
+      ...fields,
+      receivedAtAudioMs: bytesPerMs
+        ? Math.round((session.sttConnectionAudioBytesSent ?? 0) / bytesPerMs)
+        : undefined,
+    },
+    '[stt] Deepgram turn event',
+  );
+}
+
 export function handleNormalizedSttMessage(
   session: CallSession,
   event: NormalizedSttProviderMessage,
@@ -1578,6 +1604,7 @@ export function handleNormalizedSttMessage(
         session.sttLastNonEmptyPartialAt = partialAt;
         session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt ?? partialAt;
         session.sttFirstPartialAt ??= partialAt;
+        if (session.sttAdapter?.id === 'deepgram') session.sttDeepgramPendingInterim = true;
       }
       emitPartialTranscript(session, event.transcript);
       return;
@@ -1620,18 +1647,49 @@ export function handleNormalizedSttMessage(
         });
         session.sttConsecutiveFailures = 0;
       }
+      if (session.sttAdapter?.id === 'deepgram') {
+        session.sttDeepgramPendingInterim = false;
+        logDeepgramEvent(session, 'final_segment', {
+          speechFinal: event.speechFinal,
+          fromFinalize: event.fromFinalize === true,
+          empty: !event.transcript.trim(),
+          providerResultEndMs: event.providerResultEndMs,
+          providerLastWordEndMs: event.providerLastWordEndMs,
+        });
+      }
       if (event.speechFinal) dispatchDeepgramFinalParts(session, 'speech_final');
+      else if (session.sttDeepgramFinalizeRequested) {
+        // Réponse au `Finalize` (from_finalize) : elle clôt le tour, que
+        // Deepgram la marque speech_final ou non.
+        dispatchDeepgramFinalParts(session, 'utterance_end_finalize');
+      }
       return;
     }
     case 'utterance_end':
       if (session.sttAdapter?.id === 'deepgram') {
-        if (session.sttDeepgramFinalParts?.length) {
+        const hasFinalParts = Boolean(session.sttDeepgramFinalParts?.length);
+        logDeepgramEvent(session, 'utterance_end', {
+          hasFinalParts,
+          pendingInterim: session.sttDeepgramPendingInterim === true,
+          providerLastWordEndMs: event.providerLastWordEndMs,
+        });
+        if (hasFinalParts) {
           dispatchDeepgramFinalParts(
             session,
             'utterance_end',
             event.speechEndOffsetMs,
             event.providerLastWordEndMs,
           );
+        } else if (
+          session.sttDeepgramPendingInterim &&
+          !session.sttDeepgramFinalizeRequested &&
+          session.sttWs?.readyState === WebSocket.OPEN
+        ) {
+          // Plus aucun mot depuis utterance_end_ms, mais Deepgram garde le
+          // segment ouvert (bruit de ligne sans silence) : on force sa sortie
+          // au lieu d'attendre l'endpointing, jusqu'à 4 s sur l'appel a8012c5c.
+          session.sttDeepgramFinalizeRequested = true;
+          session.sttAdapter.finalize(session.sttWs);
         }
       }
       return;
@@ -1795,6 +1853,8 @@ export function connectStt(
         Date.now() - pendingAudioBytes / telnyxBytesPerMs(session.codec);
       session.sttConnectionAudioBytesSent = 0;
       session.sttDeepgramFinalParts = [];
+      session.sttDeepgramPendingInterim = false;
+      session.sttDeepgramFinalizeRequested = false;
       if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
       session.sttKeepAliveTimer =
         adapter.id === 'deepgram' ? setInterval(() => adapter.keepAlive(ws), 5_000) : null;

@@ -763,6 +763,60 @@ describe('Deepgram final dispatch', () => {
     delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
   });
 
+  it('force la sortie du segment quand UtteranceEnd arrive avant tout segment final (appel a8012c5c)', () => {
+    const { session, onEvent } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'sept frère sept' });
+    handleNormalizedSttMessage(session, { type: 'utterance_end', providerLastWordEndMs: 54_170 });
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+
+    // Un second UtteranceEnd avant la réponse ne renvoie pas Finalize.
+    handleNormalizedSttMessage(session, { type: 'utterance_end' });
+    expect(ws.send).toHaveBeenCalledTimes(1);
+
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'sept frère sept',
+      speechFinal: false,
+      fromFinalize: true,
+      speechEndOffsetMs: 54_170,
+    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'sept frère sept',
+        finalTrigger: 'utterance_end_finalize',
+      }),
+    );
+    expect(session.sttDeepgramFinalizeRequested).toBe(false);
+  });
+
+  it('n’envoie pas Finalize sans mots en attente, ni ne clôt un segment final ordinaire', () => {
+    const { session, onEvent } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'utterance_end' });
+    expect(ws.send).not.toHaveBeenCalled();
+
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'demain' });
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'demain',
+      speechFinal: false,
+    });
+    expect(session.sttDeepgramPendingInterim).toBe(false);
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+    handleNormalizedSttMessage(session, { type: 'utterance_end' });
+    expect(ws.send).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: 'demain', finalTrigger: 'utterance_end' }),
+    );
+  });
+
   it('does not label the latest Deepgram partial as end-of-speech when word offsets are absent', () => {
     const { session, onEvent } = deepgramSession();
     session.sttLastNonEmptyPartialAt = Date.now() - 2_000;
