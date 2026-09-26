@@ -30,6 +30,7 @@ type Expect = Partial<{
   sayExcludes: string[];
   endsCall: boolean;
   reservationCreated: boolean;
+  turnComplete: boolean;
 }>;
 
 interface Scenario {
@@ -88,6 +89,24 @@ const SCENARIOS: Scenario[] = [
         caller: 'non vous êtes ouvert quelle heure',
         expect: { interpretation: ['question'], action: ['none'], sayExcludes: ['corriger'] },
       },
+    ],
+  },
+  {
+    name: 'd89cdb48 — phrases coupées',
+    turns: [
+      { caller: 'je voudrais réserver pour demain soir', expect: { turnComplete: true } },
+      { caller: 'on sera six', expect: { turnComplete: true } },
+      { caller: 'non mais attends', expect: { turnComplete: false } },
+      {
+        caller: 'pourquoi parce que vous n’acceptez pas les parce que je',
+        expect: { turnComplete: false },
+      },
+      { caller: 'euh', expect: { turnComplete: false } },
+      {
+        caller: 'je me demandais si vous preniez les groupes le dimanche',
+        expect: { turnComplete: true },
+      },
+      { caller: 'non', expect: { turnComplete: true } },
     ],
   },
   {
@@ -295,6 +314,9 @@ async function main() {
         }
         for (const word of step.expect.sayExcludes ?? []) {
           verdicts.push([`say≠${word}`, !said.toLowerCase().includes(word)]);
+        }
+        if (step.expect.turnComplete !== undefined) {
+          verdicts.push(['turnComplete', first?.turnComplete === step.expect.turnComplete]);
         }
         if (step.expect.reservationCreated !== undefined) {
           verdicts.push([

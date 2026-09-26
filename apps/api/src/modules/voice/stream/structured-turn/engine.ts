@@ -114,13 +114,59 @@ interface PassResult {
   spoken: boolean;
 }
 
+/**
+ * Silence après un tour jugé inachevé avant de répondre quand même : l'appelant
+ * cherchait peut-être ses mots mais attend maintenant une réponse.
+ */
+export const INCOMPLETE_TURN_SILENCE_MS = 2_500;
+
+const incompleteTurnTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
+
+function clearIncompleteTurnTimer(session: CallSession): void {
+  const timer = incompleteTurnTimers.get(session);
+  if (timer) clearTimeout(timer);
+  incompleteTurnTimers.delete(session);
+}
+
+function armIncompleteTurnTimer(
+  session: CallSession,
+  mgr: CallSessionManager,
+  fragment: string,
+): void {
+  clearIncompleteTurnTimer(session);
+  const timer = setTimeout(() => {
+    incompleteTurnTimers.delete(session);
+    if (session.ended || session.ending) return;
+    if (session.structuredTurn?.pendingFragment !== fragment) return;
+    const generation = ++session.responseGeneration;
+    void runStructuredTurn(
+      session,
+      '',
+      mgr,
+      () => !session.ended && session.responseGeneration === generation,
+      { callerFinished: true },
+    );
+  }, INCOMPLETE_TURN_SILENCE_MS);
+  timer.unref?.();
+  incompleteTurnTimers.set(session, timer);
+}
+
 export async function runStructuredTurn(
   session: CallSession,
-  transcript: string,
+  rawTranscript: string,
   mgr: CallSessionManager,
   isCurrentResponse: () => boolean,
+  options: { callerFinished?: boolean } = {},
 ): Promise<void> {
   const state = (session.structuredTurn ??= createStructuredTurnState());
+  clearIncompleteTurnTimer(session);
+  // Un début de phrase retenu au tour précédent est la même prise de parole.
+  const transcript = [state.pendingFragment, rawTranscript]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(' ')
+    .trim();
+  state.pendingFragment = null;
+  if (!transcript) return;
   const turnId = session.currentTurn?.id;
   const abortController = new AbortController();
   session.abortController = abortController;
@@ -151,6 +197,7 @@ export async function runStructuredTurn(
     const extractor = new SayStreamExtractor();
     const splitter = new PhraseSplitter();
     let action: string | null = null;
+    let turnComplete: boolean | null = null;
     let firstToken = true;
     const messages = buildStructuredTurnMessages({
       systemPrompt: session.systemPrompt,
@@ -158,6 +205,7 @@ export async function runStructuredTurn(
       transcript,
       state,
       ...(actionResult ? { actionResult } : {}),
+      ...(options.callerFinished ? { callerFinished: true } : {}),
     });
     const format = responseFormat(actionResult ? AFTER_ACTION_ACTIONS : undefined);
     const text = await mgr.streamStructuredCompletion(session, messages, format, {
@@ -170,14 +218,20 @@ export async function runStructuredTurn(
           markVoiceTurnLlmFirstToken(session, turnId);
         }
         const said = extractor.push(delta);
-        // `action` précède `say` dans le schéma : il est connu quand la phrase commence.
+        // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
+        // connus quand la phrase commence.
+        if (turnComplete === null) {
+          const match = /"turnComplete"\s*:\s*(true|false)/.exec(extractor.raw);
+          if (match) turnComplete = match[1] === 'true';
+        }
         action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
-        if (said && action === 'none') splitter.push(said).forEach(speakPhrase);
+        const mayContinue = turnComplete === true || options.callerFinished === true;
+        if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
       },
     });
     const output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
-    const spoken = output.action === 'none';
+    const spoken = output.action === 'none' && (output.turnComplete || !!options.callerFinished);
     if (spoken) {
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
@@ -252,6 +306,21 @@ export async function runStructuredTurn(
   try {
     const first = await runPass();
     if (!isLive()) return;
+    if (!first.output.turnComplete && !options.callerFinished) {
+      // L'appelant n'a pas fini : l'agent se tait et garde le début de phrase.
+      session.history.pop();
+      session.turnCount--;
+      state.pendingFragment = transcript;
+      recordVoiceTurnEvent(session, 'structured_turn', {
+        pass: 1,
+        turnComplete: false,
+        interpretation: first.output.interpretation,
+        confidence: first.output.confidence,
+      });
+      mgr.transition(session, 'LISTENING');
+      armIncompleteTurnTimer(session, mgr, transcript);
+      return;
+    }
     const applied = applyProposedDraft(state.draft, first.output, { today });
     state.draft = applied.draft;
     const decision = authorizeStructuredAction(state, first.output, state.draft, {
