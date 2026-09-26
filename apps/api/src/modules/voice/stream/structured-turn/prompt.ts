@@ -1,6 +1,6 @@
 import { normalizeOpeningHours } from '@sokar/shared';
 import type { ChatMessage } from '../types';
-import type { StructuredTurnState } from './fact-guards';
+import type { DayAvailability, StructuredTurnState } from './fact-guards';
 
 /**
  * Consignes du tour structuré, ajoutées au prompt du restaurant. Elles
@@ -14,7 +14,8 @@ Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit
 - draft : l'état complet du brouillon de réservation APRÈS ce tour. date au format AAAA-MM-JJ, time au format HH:MM, partySize entier, customerName avec l'orthographe retenue. Chaîne vide ou 0 si inconnu. Garde les valeurs déjà connues tant que l'appelant ne les change pas.
 - awaiting : ce que ta phrase « say » attend de l'appelant. customerName quand tu demandes le nom ou de l'épeler ; customerNameConfirmation quand tu relis seulement l'orthographe du nom ; confirmation UNIQUEMENT quand ta phrase relit le récapitulatif complet (date, heure, nombre ET nom) et demande l'accord pour réserver ; humanFallback quand tu proposes le gérant ou un message ; open pour une question ouverte ; none si tu n'attends rien.
 - action :
-  - check_availability dès que la date, l'heure et le nombre sont connus et que l'ÉTAT VÉRIFIÉ ne contient pas déjà la disponibilité de ces valeurs. Laisse « say » vide : le résultat te sera donné, puis tu formuleras la réponse.
+  - check_availability dès que la date, l'heure et le nombre sont connus et que l'ÉTAT VÉRIFIÉ ne contient ni « availability » pour ces valeurs, ni « dayAvailability » couvrant cette date et ce nombre. Laisse « say » vide : le résultat te sera donné, puis tu formuleras la réponse.
+  - Si « dayAvailability » couvre la date et le nombre, ces créneaux sont réels : réponds directement (action none), sans check_availability. « closed » = le restaurant est fermé ce jour-là. Une plage « 19:00→21:30 » contient chaque demi-heure de 19:00 à 21:30 incluses. Ne propose que ces horaires.
   - create_reservation uniquement si l'appelant vient d'accepter le récapitulatif complet (date, heure, nombre, nom) que tu as relu au tour précédent avec awaiting=confirmation. Une orthographe confirmée ne suffit pas : relis alors le récapitulatif complet. Laisse « say » vide.
   - take_message quand l'appelant veut laisser un message ou choisit le message : « message » résume sa demande pour le gérant. Laisse « say » vide.
   - transfer quand l'appelant demande le gérant ou choisit le transfert. Laisse « say » vide.
@@ -76,6 +77,47 @@ export function describeCalendar(today: string, openingHours: unknown): string {
   return lines.join('\n');
 }
 
+function minutes(time: string): number {
+  const [hours, mins] = time.split(':').map(Number);
+  return hours * 60 + mins;
+}
+
+/** « 12:00→14:30, 19:00 » : demi-heures consécutives regroupées en plages. */
+export function compactSlots(slots: string[]): string {
+  const ranges: string[] = [];
+  let start = '';
+  let previous = '';
+  for (const slot of [...slots].sort()) {
+    if (start && minutes(slot) - minutes(previous) === 30) {
+      previous = slot;
+      continue;
+    }
+    if (start) ranges.push(start === previous ? start : `${start}→${previous}`);
+    start = slot;
+    previous = slot;
+  }
+  if (start) ranges.push(start === previous ? start : `${start}→${previous}`);
+  return ranges.join(', ') || 'aucun';
+}
+
+/** Tailles consécutives aux mêmes créneaux regroupées : « 1-4 », « 5-7 ». */
+function describeDayAvailability(day: DayAvailability) {
+  if (day.closed) return { date: day.date, closed: true };
+  const sizes = Object.keys(day.slotsBySize)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const freeSlotsByPartySize: Record<string, string> = {};
+  let groupStart = sizes[0];
+  sizes.forEach((size, index) => {
+    const next = sizes[index + 1];
+    const text = compactSlots(day.slotsBySize[size]);
+    if (next !== undefined && compactSlots(day.slotsBySize[next]) === text) return;
+    freeSlotsByPartySize[groupStart === size ? String(size) : `${groupStart}-${size}`] = text;
+    groupStart = next;
+  });
+  return { date: day.date, closed: false, freeSlotsByPartySize };
+}
+
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
   history: ChatMessage[];
@@ -96,6 +138,9 @@ export function buildStructuredTurnMessages(input: {
     lastAwaiting: input.state.lastAwaiting,
     ...(input.state.draft.date
       ? { dateFacts: describeDate(input.state.draft.date, input.openingHours) }
+      : {}),
+    ...(input.state.dayAvailability
+      ? { dayAvailability: describeDayAvailability(input.state.dayAvailability) }
       : {}),
   };
   const calendar = input.today ? describeCalendar(input.today, input.openingHours) : '';

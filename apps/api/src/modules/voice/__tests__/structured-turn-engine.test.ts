@@ -231,6 +231,37 @@ describe('tour structuré (canary)', () => {
     expect(spoken().join(' ')).not.toContain('pas bien saisi');
   });
 
+  it('répond en un seul passage avec les créneaux du jour lus d’avance', async () => {
+    const { session, mgr, outputs } = fixture();
+    const dated = { date: TOMORROW, time: '', partySize: 0, customerName: '' };
+    outputs.push(turn({ draft: dated, awaiting: 'time', say: 'Vers quelle heure ?' }));
+    await processTranscriptStreaming(session, 'une table pour demain', mgr);
+    // La lecture du jour part à la fin du tour, sans le ralentir.
+    await vi.waitFor(() => expect(session.structuredTurn?.dayAvailability?.date).toBe(TOMORROW));
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 1);
+
+    vi.mocked(mgr.getAvailability).mockClear();
+    const complete = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(
+      turn({ draft: complete, awaiting: 'customerName', say: '20 h est libre. À quel nom ?' }),
+    );
+    await processTranscriptStreaming(session, '20 heures pour quatre', mgr);
+
+    // Un seul appel au modèle, et le créneau est vérifié pour la réservation.
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    const context = (
+      vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[1] as Array<{ content: string }>
+    )[0].content;
+    expect(context).toContain('"freeSlotsByPartySize"');
+    expect(context).toContain('19:00→20:00');
+    expect(session.structuredTurn?.availability).toEqual({
+      date: TOMORROW,
+      partySize: 4,
+      slots: ['19:00', '19:30', '20:00'],
+    });
+    expect(spoken()).toContain('À quel nom ?');
+  });
+
   it('ne crée pas la réservation sans récapitulatif accepté', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };

@@ -264,6 +264,8 @@ function recordStyle(said: string, previousSaid: string): void {
     style.repeatedQuestions++;
   }
 }
+/** Jetons de prompt envoyés et repris du cache fournisseur, sur tout le banc. */
+const promptTokens = { total: 0, cached: 0 };
 
 function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): CallSessionManager {
   return {
@@ -315,6 +317,7 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
           reasoning_effort: 'none',
           response_format: responseFormat,
           stream: true,
+          stream_options: { include_usage: true },
         }),
         signal: options.signal,
       });
@@ -336,9 +339,15 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
         for (const line of lines) {
           const payload = line.trim().replace(/^data:\s*/, '');
           if (!payload || payload === '[DONE]' || !line.trim().startsWith('data:')) continue;
-          const delta = (
-            JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }> }
-          ).choices?.[0]?.delta?.content;
+          const chunk = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            usage?: { prompt_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+          };
+          if (chunk.usage?.prompt_tokens) {
+            promptTokens.total += chunk.usage.prompt_tokens;
+            promptTokens.cached += chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+          }
+          const delta = chunk.choices?.[0]?.delta?.content;
           if (!delta) continue;
           firstTokenMs ??= Date.now() - startedAt;
           text += delta;
@@ -419,6 +428,7 @@ async function main() {
   let checks = 0;
   let passed = 0;
   let invalid = 0;
+  let twoPassTurns = 0;
   const failures: string[] = [];
   for (let repeat = 0; repeat < REPEATS; repeat++) {
     // BENCH_ONLY=texte : ne rejoue que les scénarios dont le nom le contient.
@@ -445,6 +455,7 @@ async function main() {
           );
         }
         if (!first) invalid++;
+        if (outputs.length > 1) twoPassTurns++;
         const said = String(session.history.at(-1)?.content ?? '');
         if (session.history.at(-1)?.role === 'assistant') {
           const previousSaid = String(
@@ -514,6 +525,7 @@ async function main() {
   const firstTokens = timings.map(([value]) => value);
   const sayStarts = timings.map(([, value]) => value);
   process.stdout.write(`Appels modèle : ${timings.length}, sorties invalides : ${invalid}\n`);
+  process.stdout.write(`Tours à deux appels modèle : ${twoPassTurns}\n`);
   process.stdout.write(`Attentes respectées : ${passed}/${checks}\n`);
   process.stdout.write(
     `Premier token p50/p90 : ${percentile(firstTokens, 50)} / ${percentile(firstTokens, 90)} ms\n`,
@@ -525,6 +537,11 @@ async function main() {
   process.stdout.write(
     `Phrasé (${style.replies} réponses) : « ! » ${pct(style.exclamations)}, ouverture toute faite ${pct(style.stockOpeners)}, date complète ${pct(style.fullDates)}, question répétée mot pour mot ${style.repeatedQuestions}\n`,
   );
+  if (promptTokens.total) {
+    process.stdout.write(
+      `Jetons de prompt repris du cache : ${Math.round((100 * promptTokens.cached) / promptTokens.total)} %\n`,
+    );
+  }
   if (failures.length) process.stdout.write(`\nÉcarts :\n${failures.join('\n')}\n`);
 }
 

@@ -181,6 +181,68 @@ function armIncompleteTurnTimer(
   incompleteTurnTimers.set(session, timer);
 }
 
+/** Attente maximale d'une lecture de créneaux en cours au début d'un tour. */
+export const DAY_PREFETCH_WAIT_MS = 150;
+/** Borne du nombre de requêtes de créneaux par jour lu. */
+const MAX_PREFETCH_PARTY_SIZE = 12;
+
+const dayPrefetches = new WeakMap<CallSession, { date: string; promise: Promise<void> }>();
+
+/**
+ * Lit en tâche de fond les créneaux réels du jour pour chaque taille de groupe
+ * (quelques millisecondes par taille). Le modèle les reçoit dans l'ÉTAT
+ * VÉRIFIÉ et peut annoncer la disponibilité sans second appel. Une lecture
+ * déjà en cours pour ce jour est réutilisée.
+ */
+function prefetchDayAvailability(
+  session: CallSession,
+  mgr: CallSessionManager,
+  state: StructuredTurnState,
+  date: string,
+): Promise<void> {
+  const inFlight = dayPrefetches.get(session);
+  if (inFlight?.date === date) return inFlight.promise;
+  const maxSize = Math.min(voiceMaxPartySize(session), MAX_PREFETCH_PARTY_SIZE);
+  const sizes = Array.from({ length: maxSize }, (_, index) => index + 1);
+  const promise = Promise.all(sizes.map((size) => mgr.getAvailability(session, date, size)))
+    .then((results) => {
+      if (state.draft.date !== date) return;
+      state.dayAvailability = {
+        date,
+        closed: results.every(
+          (result) => result.slots.length === 0 && result.allSlots.length === 0,
+        ),
+        slotsBySize: Object.fromEntries(
+          results.map((result, index) => [sizes[index], result.slots]),
+        ),
+      };
+    })
+    .catch((err: unknown) => {
+      logger.warn(
+        { err: err instanceof Error ? err.name : String(err), callId: session.callControlId },
+        '[structured-turn] Day availability prefetch failed',
+      );
+    })
+    .finally(() => {
+      if (dayPrefetches.get(session)?.promise === promise) dayPrefetches.delete(session);
+    });
+  dayPrefetches.set(session, { date, promise });
+  return promise;
+}
+
+async function waitAtMost(promise: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([promise, new Promise<void>((resolve) => (timer = setTimeout(resolve, ms)))]);
+  if (timer) clearTimeout(timer);
+}
+
+/** Créneaux du jour lus d'avance pour le brouillon, s'ils le couvrent. */
+function prefetchedSlots(state: StructuredTurnState): string[] | null {
+  const { draft, dayAvailability } = state;
+  if (!dayAvailability || dayAvailability.date !== draft.date || draft.partySize < 1) return null;
+  return dayAvailability.slotsBySize[draft.partySize] ?? null;
+}
+
 export async function runStructuredTurn(
   session: CallSession,
   rawTranscript: string,
@@ -202,6 +264,21 @@ export async function runStructuredTurn(
   session.abortController = abortController;
   const isLive = () => isCurrentResponse() && !abortController.signal.aborted;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
+  if (state.draft.date) {
+    // Normalement déjà lue à la fin du tour précédent : l'attente est bornée.
+    const needed =
+      dayPrefetches.get(session)?.date === state.draft.date ||
+      state.dayAvailability?.date !== state.draft.date;
+    if (needed) {
+      await waitAtMost(
+        prefetchDayAvailability(session, mgr, state, state.draft.date),
+        DAY_PREFETCH_WAIT_MS,
+      );
+    }
+  }
+  if (state.dayAvailability && state.dayAvailability.date !== state.draft.date) {
+    state.dayAvailability = null;
+  }
   const historyBefore = [...session.history];
   const ttsPromises: Promise<void>[] = [];
   // Toutes les phrases d'une réponse partent dans un même contexte Cartesia :
@@ -421,6 +498,16 @@ export async function runStructuredTurn(
     }
     const applied = applyProposedDraft(state.draft, first.output, { today });
     state.draft = applied.draft;
+    // Créneaux lus d'avance et couvrant le brouillon : ce sont des faits vérifiés,
+    // la réservation reste soumise aux mêmes garde-fous.
+    const prefetched = prefetchedSlots(state);
+    if (prefetched) {
+      state.availability = {
+        date: state.draft.date,
+        partySize: state.draft.partySize,
+        slots: prefetched,
+      };
+    }
     const decision = authorizeStructuredAction(state, first.output, state.draft, {
       maxPartySize: voiceMaxPartySize(session),
     });
@@ -433,6 +520,7 @@ export async function runStructuredTurn(
       changedFields: applied.changed.join(',') || null,
       rejectedFields: applied.rejected.join(',') || null,
       actionDecision: decision.allowed ? 'allowed' : decision.reason,
+      prefetchedDay: Boolean(state.dayAvailability),
     });
 
     let final = first.output;
@@ -532,6 +620,11 @@ export async function runStructuredTurn(
         ? bookingKey(state.draft)
         : null;
     mirrorConversation(session, state);
+    // Lecture fraîche du jour pour le tour suivant, sans attendre.
+    if (state.draft.date) {
+      // Les erreurs sont journalisées dans la lecture elle-même.
+      prefetchDayAvailability(session, mgr, state, state.draft.date).catch(() => undefined);
+    }
     session.history.push({ role: 'assistant', content: said });
     recordVoiceTurnEventIfCurrent(session, turnId, 'llm_completed', {
       mode: 'structured',
