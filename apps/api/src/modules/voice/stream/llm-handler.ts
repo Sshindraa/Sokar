@@ -15,6 +15,7 @@ import { WebSocket } from 'ws';
 import type { SttEvent, CallSession, DebugSpeechEntry } from './types';
 import type { CallSessionManager } from './manager';
 import { finishCall, isExplicitCallEnd } from './call-ending';
+import { isStructuredTurnEnabled, runStructuredTurn } from './structured-turn/engine';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import {
   cancelPendingThinkingFiller,
@@ -1068,6 +1069,13 @@ export async function processTranscriptStreaming(
     !session.ended && session.responseGeneration === responseGeneration;
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
   if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
+
+  // Canary : le modèle comprend et répond en un seul appel structuré ; aucune
+  // règle lexicale de ce fichier ne s'applique à ces restaurants.
+  if (isStructuredTurnEnabled(session.restaurantId)) {
+    await runStructuredTurn(session, transcript, mgr, isCurrentResponse);
+    return;
+  }
 
   if (dialogueV2Enabled && isVoiceDialogueIncompleteTranscript(transcript)) {
     const response = 'Oui, je vous écoute.';

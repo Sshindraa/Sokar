@@ -151,6 +151,12 @@ interface LlmRequestOptions {
   onFirstToken?: () => void;
 }
 
+/** `response_format` OpenAI-compatible en JSON Schema strict. */
+export interface StructuredResponseFormat {
+  type: 'json_schema';
+  json_schema: { name: string; strict: true; schema: unknown };
+}
+
 const TURN_PLAN_SHADOW_TOOL_NAME = 'proposeTurnPlanShadow';
 
 function buildTurnPlanShadowTool(): ReturnType<typeof getRestaurantTools>[number] {
@@ -915,6 +921,100 @@ export class CallSessionManager {
     }
   }
 
+  /**
+   * Message laissé pour le gérant, rédigé par le modèle du tour structuré. Le
+   * choix du message vient de ce tour ; l'exécution passe par le même tool.
+   */
+  async recordCallerMessage(session: CallSession, message: string): Promise<string> {
+    const customerName =
+      session.structuredTurn?.draft.customerName.trim() ||
+      session.conversation.slots.customerName ||
+      'Client';
+    return this.executeTool(
+      session,
+      'takeMessage',
+      JSON.stringify({ customerName, message, callbackPhone: session.from }),
+      undefined,
+      { kind: 'human_fallback_choice', choice: 'message' },
+    );
+  }
+
+  /**
+   * Génération streaming à sortie JSON Schema stricte, sans outil. Chaque
+   * fragment de contenu est transmis dès réception ; le texte complet est
+   * renvoyé à la fin.
+   */
+  async streamStructuredCompletion(
+    session: CallSession,
+    messages: ChatMessage[],
+    responseFormat: StructuredResponseFormat,
+    options: {
+      signal?: AbortSignal;
+      telemetryTurnId?: string;
+      maxTokens?: number;
+      onDelta: (delta: string) => void;
+    },
+  ): Promise<string> {
+    const { response, provider } = await this.fetchLlmStreaming(session, messages, {
+      responseFormat,
+      maxTokens: options.maxTokens ?? 400,
+      temperature: 0.3,
+      signal: options.signal,
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Structured LLM request failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    let text = '';
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice('data:'.length).trim();
+          if (!payload || payload === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(payload) as {
+              choices?: Array<{ delta?: { content?: string | null } }>;
+              usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+            };
+            if (chunk.usage) {
+              inputTokens = chunk.usage.prompt_tokens ?? inputTokens;
+              outputTokens = chunk.usage.completion_tokens ?? outputTokens;
+            }
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) {
+              text += delta;
+              options.onDelta(delta);
+            }
+          } catch {
+            // Ligne SSE incomplète ou non JSON : ignorée.
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    addLlmUsage(
+      session,
+      provider,
+      options.telemetryTurnId ?? `turn-${session.turnCount}`,
+      inputTokens ?? estimateMessagesTokens(messages),
+      outputTokens ?? estimateTokenCount(text),
+      inputTokens === undefined,
+    );
+    return text;
+  }
+
   async processUtterance(session: CallSession, transcript: string): Promise<string> {
     const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
@@ -1285,13 +1385,16 @@ export class CallSessionManager {
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
+      responseFormat?: StructuredResponseFormat;
       maxTokens: number;
       temperature: number;
       signal?: AbortSignal;
     },
   ): Promise<{ response: Response; provider: LlmProvider }> {
     const provider = getVoiceLlmProvider();
+    // Le secours Groq n'est pas validé pour la sortie JSON Schema stricte.
     const hedgeEnabled = Boolean(
+      !opts.responseFormat &&
       provider === 'cerebras' &&
       voiceConfig.GROQ_API_KEY &&
       isVoiceDeepgramDialoguePilot(session) &&
@@ -1373,6 +1476,7 @@ export class CallSessionManager {
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
+      responseFormat?: StructuredResponseFormat;
       maxTokens: number;
       temperature: number;
       signal?: AbortSignal;
@@ -1388,6 +1492,7 @@ export class CallSessionManager {
       top_p: 0.8,
       reasoning_effort: 'none',
       ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+      ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
       stream: true,
       stream_options: { include_usage: true },
     };
@@ -2007,6 +2112,7 @@ export class CallSessionManager {
               customerName: reservationCustomerName,
               customerPhone: customerPhone ?? session.from,
             });
+            session.reservationCreatedAt = Date.now();
 
             return terminalToolReply(
               executionControl,

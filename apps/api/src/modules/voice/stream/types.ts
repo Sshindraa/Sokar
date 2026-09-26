@@ -1,3 +1,4 @@
+import type { StructuredTurnState } from './structured-turn/fact-guards';
 import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
 import type { VoiceLanguageCode } from './voice-language';
@@ -418,6 +419,10 @@ export interface CallSession {
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
   systemPrompt: string;
+  /** État du tour structuré (canary), absent sur le chemin historique. */
+  structuredTurn?: StructuredTurnState;
+  /** Horodatage de la dernière réservation réellement créée pendant l'appel. */
+  reservationCreatedAt?: number;
   state: CallState;
   ended: boolean;
   /** Vrai après l'acceptation Telnyx d'un transfert vers le gérant. */

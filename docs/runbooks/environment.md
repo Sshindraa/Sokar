@@ -324,6 +324,21 @@ continue de comparer le plan à l'état déterministe seul. Décisions comptées
 `sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
 l'accord par dimension sur des appels réels.
 
+`VOICE_STRUCTURED_TURN_RESTAURANT_IDS` (IDs séparés par des virgules ; vide = aucun) fait
+passer les restaurants listés sur le **tour structuré** : un seul appel au modèle, en JSON
+Schema strict, comprend le tour (interprétation, brouillon, attente, action) et formule la
+réponse ; `say` est lu en streaming. Aucune règle lexicale du chemin historique ne
+s'applique à ces restaurants. Le code valide le format et la plausibilité des valeurs
+(date dans l'horizon, heure, couverts, nom), exécute les actions autorisées
+(disponibilité réelle ; réservation seulement après un récapitulatif lu au tour précédent
+et accepté, sur un créneau vérifié ; message ; transfert ; fin d'appel) et rend leur
+résultat au modèle pour la formulation. Aucune action à effet sur un plan à confiance
+faible. Le secours Groq est désactivé sur ce chemin. Télémétrie : événement
+`structured_turn` (interprétation, action, attente, confiance, champs modifiés ou rejetés ;
+aucun texte). Banc contre le vrai modèle, clé de dev uniquement :
+`CEREBRAS_API_KEY=… node --env-file=.env --import tsx scripts/voice-structured-bench.ts`
+depuis `apps/api`.
+
 Un tour de contenu que les extracteurs n'ont pas compris est confié au modèle au lieu
 d'une relance mécanique. Son résultat est compté par
 `sokar_voice_turn_plan_deferred_total{outcome}` : `fact_applied`, `no_fact`,
