@@ -114,6 +114,21 @@ export async function getFlag<T extends string | number | boolean>(
   }
 }
 
+/**
+ * Lecture sans type attendu : renvoie la valeur brute (ou `null`), à valider
+ * par l'appelant. Pour les flags dont le type dashboard n'est pas garanti.
+ */
+async function getUntypedFlag(flagKey: string, restaurantId?: string): Promise<unknown> {
+  const c = getClient();
+  if (!c) return null;
+  try {
+    return await c.getValueAsync(flagKey, null, buildUser(restaurantId));
+  } catch (err) {
+    logger.error({ err }, `[configcat] Error getting flag "${flagKey}"`);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Semantic helpers — domain-specific wrappers used in handlers/services.
 // They are fail-open (defaults preserve current behavior) unless the flag
@@ -152,7 +167,9 @@ export async function getRestaurantPlanOverride(
   // ConfigCat peut renvoyer une valeur d'un autre type si le flag est
   // recréé ou mal typé dans le dashboard. Le cast du SDK ne constitue pas une
   // validation runtime : la base reste la source de vérité dans ce cas.
-  const candidate: unknown = await getFlag<string>(FLAGS.RESTAURANT_PLAN, '', restaurantId);
+  // Défaut `null` : le SDK ne compare alors pas le type du flag au défaut. Avec
+  // `''`, un flag booléen levait une erreur ConfigCat à chaque appel entrant.
+  const candidate = await getUntypedFlag(FLAGS.RESTAURANT_PLAN, restaurantId);
   if (isValidPlan(candidate)) {
     return candidate;
   }
