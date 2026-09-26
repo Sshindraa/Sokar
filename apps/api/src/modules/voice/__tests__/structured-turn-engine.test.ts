@@ -180,6 +180,44 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toEqual(['20 h est libre.', 'À quel nom ?']);
   });
 
+  it('annonce la fermeture si le modèle ne dit rien après un jour fermé (appel a8012c5c)', async () => {
+    const { session, mgr, outputs } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+      restaurantId: RESTAURANT_ID,
+      date: '2026-09-27',
+      partySize: 7,
+      slots: [],
+      allSlots: [],
+    });
+    const draft = { date: TOMORROW, time: '14:00', partySize: 7, customerName: '' };
+    outputs.push(turn({ draft, action: 'check_availability' }), turn({ draft, say: '' }));
+
+    await processTranscriptStreaming(session, 'non 7 pardon', mgr);
+
+    expect(spoken().join(' ')).toMatch(
+      /^Nous sommes fermés \S+ \d+ \S+\. Voulez-vous venir un autre jour \?$/,
+    );
+    expect(session.history.at(-1)?.content).toContain('fermés');
+  });
+
+  it('dit « complet » plutôt que « pas compris » quand le jour ouvert est plein', async () => {
+    const { session, mgr, outputs } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+      restaurantId: RESTAURANT_ID,
+      date: '2026-09-26',
+      partySize: 7,
+      slots: [],
+      allSlots: [{ time: '20:00', available: false }],
+    });
+    const draft = { date: TOMORROW, time: '20:00', partySize: 7, customerName: '' };
+    outputs.push(turn({ draft, action: 'check_availability' }), turn({ draft, say: '' }));
+
+    await processTranscriptStreaming(session, 'on sera sept', mgr);
+
+    expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
+    expect(spoken().join(' ')).not.toContain('pas bien saisi');
+  });
+
   it('ne crée pas la réservation sans récapitulatif accepté', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };
