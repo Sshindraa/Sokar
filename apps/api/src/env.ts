@@ -134,6 +134,10 @@ export const VoiceConfigSchema = z
     GROQ_API_KEY: z.string().optional(),
     CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
     CEREBRAS_API_KEY: z.string().optional(),
+    /** Secours du tour structuré (JSON Schema strict) si le provider principal échoue. */
+    OPENROUTER_API_KEY: z.string().optional(),
+    OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
+    VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('qwen/qwen3.8-27b'),
   })
   .merge(VoiceDeepgramConfigSchema);
 

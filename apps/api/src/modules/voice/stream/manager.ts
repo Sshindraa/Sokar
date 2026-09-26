@@ -955,16 +955,30 @@ export class CallSessionManager {
       onDelta: (delta: string) => void;
     },
   ): Promise<string> {
-    const { response, provider } = await this.fetchLlmStreaming(session, messages, {
+    const request = {
       responseFormat,
       maxTokens: options.maxTokens ?? 400,
       temperature: 0.3,
       signal: options.signal,
-    });
-    if (!response.ok || !response.body) {
-      throw new Error(`Structured LLM request failed (${response.status})`);
+    };
+    let response: Response;
+    let provider: string;
+    try {
+      ({ response, provider } = await this.fetchLlmStreaming(session, messages, request));
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(`Structured LLM request failed (${response.status})`);
+      }
+    } catch (err) {
+      if (isSessionAbortError(err, options.signal)) throw err;
+      // Rien n'a encore été dit : un second fournisseur peut prendre le tour.
+      const fallback = await this.fetchStructuredFallback(session, messages, request, err);
+      if (!fallback) throw err;
+      response = fallback;
+      provider = 'openrouter';
     }
-    const reader = response.body.getReader();
+    // Les deux chemins ont vérifié le corps ci-dessus.
+    const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let pending = '';
     let text = '';
@@ -1466,6 +1480,79 @@ export class CallSessionManager {
       recordProviderFailure(provider);
       recordLlmException(provider, err, opts.signal);
       throw err;
+    }
+  }
+
+  /**
+   * Secours du tour structuré : OpenRouter, routé vers l'hébergeur le plus
+   * rapide qui accepte le JSON Schema strict. Utilisé seulement quand le
+   * provider principal échoue avant le premier fragment (quota, 429, 5xx,
+   * réseau, circuit ouvert). Renvoie null sans clé ou si le secours échoue.
+   */
+  private async fetchStructuredFallback(
+    session: CallSession,
+    messages: ChatMessage[],
+    opts: {
+      responseFormat: StructuredResponseFormat;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    primaryError: unknown,
+  ): Promise<Response | null> {
+    const apiKey = voiceConfig.OPENROUTER_API_KEY?.trim();
+    const reason = primaryError instanceof Error ? primaryError.message : String(primaryError);
+    if (!apiKey) {
+      logger.warn(
+        { callId: session.callControlId, reason },
+        '[structured-llm] Primary failed, no fallback key',
+      );
+      return null;
+    }
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(`${voiceConfig.OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        signal: withRequestTimeout(opts.signal),
+        body: JSON.stringify({
+          model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL,
+          messages: mergeSystemMessages(messages),
+          max_tokens: opts.maxTokens,
+          temperature: opts.temperature,
+          top_p: 0.8,
+          reasoning: { enabled: false },
+          response_format: opts.responseFormat,
+          // Uniquement des hébergeurs qui respectent response_format, le plus rapide d'abord.
+          provider: { require_parameters: true, sort: 'latency' },
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      });
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => undefined);
+        logger.error(
+          { callId: session.callControlId, reason, status: response.status },
+          '[structured-llm] Primary and fallback failed',
+        );
+        return null;
+      }
+      logger.warn(
+        { callId: session.callControlId, reason, fallbackMs: Date.now() - startedAt },
+        '[structured-llm] Primary failed, OpenRouter fallback used',
+      );
+      return response;
+    } catch (err) {
+      if (isSessionAbortError(err, opts.signal)) throw err;
+      logger.error(
+        {
+          callId: session.callControlId,
+          reason,
+          err: err instanceof Error ? err.name : String(err),
+        },
+        '[structured-llm] Primary and fallback failed',
+      );
+      return null;
     }
   }
 
