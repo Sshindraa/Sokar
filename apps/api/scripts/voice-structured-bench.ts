@@ -29,6 +29,7 @@ type Expect = Partial<{
   awaiting: StructuredTurnOutput['awaiting'][];
   sayExcludes: string[];
   endsCall: boolean;
+  reservationCreated: boolean;
 }>;
 
 interface Scenario {
@@ -48,17 +49,23 @@ const SCENARIOS: Scenario[] = [
         caller: 'vous êtes ouvert demain',
         expect: { interpretation: ['question'], action: ['none'] },
       },
-      { caller: 'vers 18 heures 30', expect: { action: ['none'], awaiting: ['partySize'] } },
+      {
+        caller: 'vers 18 heures 30',
+        expect: { action: ['none'], awaiting: ['partySize', 'date'] },
+      },
       {
         caller: '6 personnes',
         expect: { action: ['check_availability', 'none'] },
       },
       {
         caller: "c'est Akif alors c'est A K I F",
-        expect: { awaiting: ['customerName', 'confirmation'] },
+        expect: { awaiting: ['customerNameConfirmation', 'customerName', 'confirmation', 'date'] },
       },
       { caller: 'non', expect: { awaiting: ['customerName'] } },
-      { caller: "alors c'est a 2 k i f", expect: { awaiting: ['customerName', 'confirmation'] } },
+      {
+        caller: "alors c'est a 2 k i f",
+        expect: { awaiting: ['customerNameConfirmation', 'confirmation'] },
+      },
       {
         caller: 'non non non je préfère rien faire',
         expect: { interpretation: ['end_call'], endsCall: true, sayExcludes: ['corriger'] },
@@ -96,9 +103,23 @@ const SCENARIOS: Scenario[] = [
   {
     name: 'réservation complète',
     turns: [
-      { caller: 'une table pour deux demain à 20 heures', expect: {} },
-      { caller: 'Dupont, D U P O N T', expect: { awaiting: ['confirmation', 'customerName'] } },
-      { caller: 'oui c’est parfait', expect: {} },
+      {
+        caller: 'une table pour deux demain à 20 heures',
+        expect: { awaiting: ['customerName'], reservationCreated: false },
+      },
+      {
+        caller: 'Dupont, D U P O N T',
+        expect: {
+          awaiting: ['customerNameConfirmation', 'confirmation'],
+          reservationCreated: false,
+        },
+      },
+      {
+        caller: 'oui c’est ça',
+        // Un oui à l'orthographe seule ne réserve pas : le récapitulatif complet doit suivre.
+        expect: { reservationCreated: false },
+      },
+      { caller: 'oui parfait', expect: { reservationCreated: true } },
     ],
   },
 ];
@@ -249,6 +270,11 @@ async function main() {
           () => session.responseGeneration === generation && !session.ended,
         );
         const first = outputs[0];
+        if (process.env.BENCH_TRACE) {
+          process.stdout.write(
+            `[${scenario.name} #${index + 1}] « ${step.caller} » → ${JSON.stringify(outputs)}\n`,
+          );
+        }
         if (!first) invalid++;
         const said = String(session.history.at(-1)?.content ?? '');
         const verdicts: Array<[string, boolean]> = [];
@@ -269,6 +295,12 @@ async function main() {
         }
         for (const word of step.expect.sayExcludes ?? []) {
           verdicts.push([`say≠${word}`, !said.toLowerCase().includes(word)]);
+        }
+        if (step.expect.reservationCreated !== undefined) {
+          verdicts.push([
+            'reservationCreated',
+            Boolean(session.reservationCreatedAt) === step.expect.reservationCreated,
+          ]);
         }
         if (step.expect.endsCall !== undefined) {
           verdicts.push([

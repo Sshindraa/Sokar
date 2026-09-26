@@ -23,9 +23,10 @@ import {
 import { recordDebugTool } from '../debug-dialogue';
 import { logger } from '../../../../shared/logger/pino';
 import {
-  STRUCTURED_TURN_JSON_SCHEMA,
   STRUCTURED_TURN_SCHEMA_NAME,
+  buildStructuredTurnJsonSchema,
   parseStructuredTurnOutput,
+  type StructuredTurnAction,
   type StructuredTurnOutput,
 } from './schema';
 import {
@@ -50,14 +51,19 @@ export function isStructuredTurnEnabled(
   );
 }
 
-const RESPONSE_FORMAT = {
-  type: 'json_schema' as const,
-  json_schema: {
-    name: STRUCTURED_TURN_SCHEMA_NAME,
-    strict: true as const,
-    schema: STRUCTURED_TURN_JSON_SCHEMA,
-  },
-};
+function responseFormat(actions?: readonly StructuredTurnAction[]) {
+  return {
+    type: 'json_schema' as const,
+    json_schema: {
+      name: STRUCTURED_TURN_SCHEMA_NAME,
+      strict: true as const,
+      schema: buildStructuredTurnJsonSchema(actions),
+    },
+  };
+}
+
+/** Après une action exécutée, le modèle ne peut plus que parler ou terminer l'appel. */
+const AFTER_ACTION_ACTIONS: readonly StructuredTurnAction[] = ['none', 'end_call'];
 
 /** Au-delà, seuls les créneaux les plus proches de l'heure demandée sont donnés au modèle. */
 const MAX_SLOTS_IN_RESULT = 12;
@@ -83,6 +89,8 @@ const PENDING_BY_AWAITING: Partial<
   time: 'time',
   partySize: 'partySize',
   customerName: 'customerName',
+  // Relecture de l'orthographe : l'appelant peut ré-épeler, le profil STT d'épellation reste actif.
+  customerNameConfirmation: 'customerName',
   confirmation: 'confirmation',
   humanFallback: 'humanFallback',
 };
@@ -151,7 +159,8 @@ export async function runStructuredTurn(
       state,
       ...(actionResult ? { actionResult } : {}),
     });
-    const text = await mgr.streamStructuredCompletion(session, messages, RESPONSE_FORMAT, {
+    const format = responseFormat(actionResult ? AFTER_ACTION_ACTIONS : undefined);
+    const text = await mgr.streamStructuredCompletion(session, messages, format, {
       signal: abortController.signal,
       telemetryTurnId: turnId,
       onDelta: (delta) => {

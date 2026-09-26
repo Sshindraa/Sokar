@@ -25,6 +25,7 @@ export const STRUCTURED_TURN_AWAITING = [
   'time',
   'partySize',
   'customerName',
+  'customerNameConfirmation',
   'confirmation',
   'humanFallback',
   'open',
@@ -63,30 +64,38 @@ export interface StructuredTurnOutput {
 
 export const STRUCTURED_TURN_SCHEMA_NAME = 'voice_turn';
 
-export const STRUCTURED_TURN_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    interpretation: { type: 'string', enum: [...STRUCTURED_TURN_INTERPRETATIONS] },
-    draft: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        date: { type: 'string' },
-        time: { type: 'string' },
-        partySize: { type: 'integer' },
-        customerName: { type: 'string' },
+/**
+ * Schéma JSON strict. `actions` restreint les actions possibles : après une
+ * action exécutée, le second passage ne peut que parler ou terminer l'appel.
+ */
+export function buildStructuredTurnJsonSchema(
+  actions: readonly StructuredTurnAction[] = STRUCTURED_TURN_ACTIONS,
+) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      interpretation: { type: 'string', enum: [...STRUCTURED_TURN_INTERPRETATIONS] },
+      draft: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          date: { type: 'string' },
+          time: { type: 'string' },
+          partySize: { type: 'integer' },
+          customerName: { type: 'string' },
+        },
+        required: ['date', 'time', 'partySize', 'customerName'],
       },
-      required: ['date', 'time', 'partySize', 'customerName'],
+      awaiting: { type: 'string', enum: [...STRUCTURED_TURN_AWAITING] },
+      action: { type: 'string', enum: [...actions] },
+      message: { type: 'string' },
+      confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+      say: { type: 'string' },
     },
-    awaiting: { type: 'string', enum: [...STRUCTURED_TURN_AWAITING] },
-    action: { type: 'string', enum: [...STRUCTURED_TURN_ACTIONS] },
-    message: { type: 'string' },
-    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-    say: { type: 'string' },
-  },
-  required: ['interpretation', 'draft', 'awaiting', 'action', 'message', 'confidence', 'say'],
-} as const;
+    required: ['interpretation', 'draft', 'awaiting', 'action', 'message', 'confidence', 'say'],
+  } as const;
+}
 
 function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (values as readonly string[]).includes(value);
