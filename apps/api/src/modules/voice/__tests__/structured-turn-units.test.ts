@@ -14,6 +14,7 @@ import {
 
 function output(overrides: Partial<StructuredTurnOutput> = {}): StructuredTurnOutput {
   return {
+    turnComplete: true,
     interpretation: 'answer',
     draft: { date: '', time: '', partySize: 0, customerName: '' },
     awaiting: 'none',

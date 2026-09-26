@@ -5,7 +5,8 @@
  * actions autorisées.
  *
  * L'ordre des clés est celui du schéma (Cerebras, mode strict) : `say` vient en
- * dernier pour être lu en streaming pendant sa génération.
+ * dernier pour être lu en streaming pendant sa génération ; `turnComplete` en
+ * premier pour savoir au plus tôt si l'appelant a fini de parler.
  */
 
 export const STRUCTURED_TURN_INTERPRETATIONS = [
@@ -53,6 +54,8 @@ export interface StructuredTurnDraft {
 }
 
 export interface StructuredTurnOutput {
+  /** Faux quand l'appelant n'a visiblement pas fini sa phrase : l'agent se tait. */
+  turnComplete: boolean;
   interpretation: StructuredTurnInterpretation;
   draft: StructuredTurnDraft;
   awaiting: StructuredTurnAwaiting;
@@ -75,6 +78,7 @@ export function buildStructuredTurnJsonSchema(
     type: 'object',
     additionalProperties: false,
     properties: {
+      turnComplete: { type: 'boolean' },
       interpretation: { type: 'string', enum: [...STRUCTURED_TURN_INTERPRETATIONS] },
       draft: {
         type: 'object',
@@ -93,7 +97,16 @@ export function buildStructuredTurnJsonSchema(
       confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
       say: { type: 'string' },
     },
-    required: ['interpretation', 'draft', 'awaiting', 'action', 'message', 'confidence', 'say'],
+    required: [
+      'turnComplete',
+      'interpretation',
+      'draft',
+      'awaiting',
+      'action',
+      'message',
+      'confidence',
+      'say',
+    ],
   } as const;
 }
 
@@ -113,6 +126,7 @@ export function parseStructuredTurnOutput(raw: string): StructuredTurnOutput | n
   const record = value as Record<string, unknown>;
   const draft = record.draft as Record<string, unknown> | undefined;
   if (
+    typeof record.turnComplete !== 'boolean' ||
     !isOneOf(STRUCTURED_TURN_INTERPRETATIONS, record.interpretation) ||
     !isOneOf(STRUCTURED_TURN_AWAITING, record.awaiting) ||
     !isOneOf(STRUCTURED_TURN_ACTIONS, record.action) ||
@@ -129,6 +143,7 @@ export function parseStructuredTurnOutput(raw: string): StructuredTurnOutput | n
     return null;
   }
   return {
+    turnComplete: record.turnComplete,
     interpretation: record.interpretation,
     draft: {
       date: draft.date,

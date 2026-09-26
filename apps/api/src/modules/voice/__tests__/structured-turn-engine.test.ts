@@ -34,6 +34,7 @@ const TOMORROW = (() => {
 
 function turn(overrides: Partial<StructuredTurnOutput> = {}): StructuredTurnOutput {
   return {
+    turnComplete: true,
     interpretation: 'answer',
     draft: { date: '', time: '', partySize: 0, customerName: '' },
     awaiting: 'none',
@@ -249,6 +250,62 @@ describe('tour structuré (canary)', () => {
 
     expect(spoken()).toHaveLength(1);
     expect(session.state).toBe('LISTENING');
+  });
+
+  it('se tait quand l’appelant n’a pas fini et recolle le fragment (appel d89cdb48)', async () => {
+    const { session, mgr, outputs } = fixture();
+    outputs.push(
+      turn({ turnComplete: false, interpretation: 'unclear', confidence: 'low' }),
+      turn({
+        interpretation: 'question',
+        awaiting: 'open',
+        say: 'Pour six, je n’ai rien demain. Voulez-vous un autre jour ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'pourquoi parce que vous n’acceptez pas les', mgr);
+
+    expect(spoken()).toEqual([]);
+    expect(session.state).toBe('LISTENING');
+    expect(session.history).toEqual([]);
+    expect(session.structuredTurn?.pendingFragment).toBe(
+      'pourquoi parce que vous n’acceptez pas les',
+    );
+
+    await processTranscriptStreaming(session, 'groupes de six le dimanche', mgr);
+
+    const lastMessages = vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[1] as Array<{
+      content: string;
+    }>;
+    expect(lastMessages.at(-1)?.content).toBe(
+      'pourquoi parce que vous n’acceptez pas les groupes de six le dimanche',
+    );
+    expect(spoken()).toEqual(['Pour six, je n’ai rien demain.', 'Voulez-vous un autre jour ?']);
+    expect(session.structuredTurn?.pendingFragment).toBeNull();
+  });
+
+  it('répond quand même si l’appelant reste silencieux après un tour inachevé', async () => {
+    vi.useFakeTimers();
+    const { session, mgr, outputs } = fixture();
+    outputs.push(
+      turn({ turnComplete: false, interpretation: 'unclear', confidence: 'low' }),
+      turn({
+        interpretation: 'unclear',
+        awaiting: 'open',
+        say: 'Je vous écoute, prenez votre temps.',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'non mais attends', mgr);
+    expect(spoken()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2_600);
+    vi.useRealTimers();
+
+    expect(spoken()).toEqual(['Je vous écoute, prenez votre temps.']);
+    expect(session.history.map((message) => message.content)).toEqual([
+      'non mais attends',
+      'Je vous écoute, prenez votre temps.',
+    ]);
   });
 
   it('n’utilise pas le moteur hors allowlist', async () => {

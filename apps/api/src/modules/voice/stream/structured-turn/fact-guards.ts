@@ -17,6 +17,8 @@ export interface StructuredTurnState {
   /** Dernier résultat réel du moteur de disponibilité. */
   availability: { date: string; partySize: number; slots: string[] } | null;
   reservationCreated: boolean;
+  /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
+  pendingFragment: string | null;
 }
 
 export function createStructuredTurnState(): StructuredTurnState {
@@ -26,6 +28,7 @@ export function createStructuredTurnState(): StructuredTurnState {
     recapKey: null,
     availability: null,
     reservationCreated: false,
+    pendingFragment: null,
   };
 }
 
