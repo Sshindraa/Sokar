@@ -186,6 +186,21 @@ VOICE_LLM_MODEL="qwen-3.8-27b"
 En production, la clé du provider actif est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
+Secours du tour structuré (restaurants de `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`) :
+si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
+réseau, circuit ouvert), la même requête JSON Schema stricte part vers
+OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
+`response_format`. Sans `OPENROUTER_API_KEY`, pas de secours : le tour dit la
+phrase de repli. Mesuré le 26 septembre (banc réel) : 0 sortie invalide, mais
+début de phrase vers 2 s au lieu de ~350 ms, et `awaiting` parfois `open`.
+C'est un filet d'urgence, pas un provider de production.
+
+```dotenv
+OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
+OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut
+VOICE_STRUCTURED_FALLBACK_MODEL="qwen/qwen3.8-27b"        # défaut
+```
+
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
 fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
 refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx

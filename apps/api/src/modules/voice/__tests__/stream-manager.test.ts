@@ -118,6 +118,7 @@ import { logger } from '../../../shared/logger/pino';
 
 const GROQ_TEST_KEY = ['test', 'groq', 'api', 'key'].join('-');
 const CEREBRAS_TEST_KEY = ['test', 'cerebras', 'api', 'key'].join('-');
+const OPENROUTER_TEST_KEY = ['test', 'openrouter', 'api', 'key'].join('-');
 
 function makeTelnyxWs(): WebSocket {
   return {
@@ -181,6 +182,7 @@ type VoiceConfigSnapshot = Pick<
   | 'GROQ_API_KEY'
   | 'CEREBRAS_BASE_URL'
   | 'CEREBRAS_API_KEY'
+  | 'OPENROUTER_API_KEY'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
@@ -192,6 +194,7 @@ function snapshotVoiceConfig(): VoiceConfigSnapshot {
     GROQ_API_KEY: voiceConfig.GROQ_API_KEY,
     CEREBRAS_BASE_URL: voiceConfig.CEREBRAS_BASE_URL,
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
+    OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
   };
 }
 
@@ -2311,6 +2314,69 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
     _resetCircuitBreakersForTesting();
     restoreVoiceConfig(savedVoiceConfig);
     vi.useRealTimers();
+  });
+
+  describe('secours du tour structuré', () => {
+    const format = {
+      type: 'json_schema' as const,
+      json_schema: { name: 'voice_turn', strict: true as const, schema: { type: 'object' } },
+    };
+    function sseBody(content: string): ReadableStream<Uint8Array> {
+      const payload = `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`;
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(payload));
+          controller.close();
+        },
+      });
+    }
+
+    it('passe par OpenRouter quand Cerebras refuse (quota épuisé)', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.OPENROUTER_API_KEY = OPENROUTER_TEST_KEY;
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 402, body: null })
+        .mockResolvedValueOnce({ ok: true, status: 200, body: sseBody('{"say":"Bonjour"}') });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+      const session = makeSession();
+      const deltas: string[] = [];
+
+      const text = await CallSessionManager.getInstance().streamStructuredCompletion(
+        session,
+        [{ role: 'user', content: 'bonjour' }],
+        format,
+        { onDelta: (delta) => deltas.push(delta) },
+      );
+
+      expect(text).toBe('{"say":"Bonjour"}');
+      expect(deltas).toEqual(['{"say":"Bonjour"}']);
+      const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect(requestHost(url)).toBe('openrouter.ai');
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body.response_format).toEqual(format);
+      expect(body.provider).toEqual({ require_parameters: true, sort: 'latency' });
+      expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('garde l’erreur d’origine sans clé de secours', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.OPENROUTER_API_KEY = undefined;
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 402, body: null });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+      await expect(
+        CallSessionManager.getInstance().streamStructuredCompletion(
+          makeSession(),
+          [{ role: 'user', content: 'bonjour' }],
+          format,
+          { onDelta: () => undefined },
+        ),
+      ).rejects.toThrow('Structured LLM request failed (402)');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('Cerebras reçoit la requête avec sa clé et un seul message system en tête', async () => {
