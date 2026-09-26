@@ -73,6 +73,18 @@ function minutesOf(time: string): number {
   return hours * 60 + minutes;
 }
 
+/** « dimanche 27 septembre » pour une date AAAA-MM-JJ. */
+function spokenDay(date: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day) return 'ce jour-là';
+  return new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
 function nearestSlots(slots: string[], time: string): string[] {
   if (slots.length <= MAX_SLOTS_IN_RESULT || !time) return slots.slice(0, MAX_SLOTS_IN_RESULT);
   const target = minutesOf(time);
@@ -244,6 +256,9 @@ export async function runStructuredTurn(
     return { output, spoken };
   };
 
+  // Phrase dite si le second passage ne formule rien après l'action.
+  let actionFallbackSay: string | null = null;
+
   const runAvailability = async (): Promise<string> => {
     const { date, time, partySize } = state.draft;
     recordDebugTool(session, 'checkAvailability');
@@ -262,9 +277,17 @@ export async function runStructuredTurn(
           ? ` ${time} est disponible.`
           : ` ${time} n'est pas disponible.`
         : '';
-      return result.slots.length
-        ? `Disponibilité réelle le ${date} pour ${partySize} personne(s) : créneaux libres ${offered.join(', ')}.${requested} Ne propose que ces horaires.`
-        : `Aucun créneau libre le ${date} pour ${partySize} personne(s). Propose une autre date, le gérant ou un message.`;
+      if (result.slots.length) {
+        return `Disponibilité réelle le ${date} pour ${partySize} personne(s) : créneaux libres ${offered.join(', ')}.${requested} Ne propose que ces horaires.`;
+      }
+      const day = spokenDay(date);
+      if (result.allSlots.length === 0) {
+        // Aucun créneau généré : le restaurant n'ouvre pas ce jour-là.
+        actionFallbackSay = `Nous sommes fermés ${day}. Voulez-vous venir un autre jour ?`;
+        return `Le restaurant est FERMÉ le ${date} (${day}) : aucun service ce jour-là. Dis-le clairement et propose un autre jour d'ouverture.`;
+      }
+      actionFallbackSay = `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`;
+      return `Complet le ${date} pour ${partySize} personne(s) : aucun créneau libre. Propose une autre date, le gérant ou un message.`;
     } catch (err) {
       recordVoiceTurnEvent(session, 'availability_failed', {
         durationMs: Date.now() - availabilityStartedAt,
@@ -273,6 +296,8 @@ export async function runStructuredTurn(
         { err: err instanceof Error ? err.name : String(err), callId: session.callControlId },
         '[structured-turn] Availability check failed',
       );
+      actionFallbackSay =
+        "Je n'arrive pas à vérifier les disponibilités pour le moment. Voulez-vous que je prenne un message pour le gérant ?";
       return "La vérification de disponibilité a échoué. N'annonce aucun horaire ; propose le gérant ou un message.";
     }
   };
@@ -407,6 +432,10 @@ export async function runStructuredTurn(
       } else if (!second.spoken && second.output.say.trim()) {
         // Une seconde action n'est jamais exécutée : la phrase reste dite.
         speakPhrase(second.output.say.trim());
+      } else if (!second.output.say.trim() && actionFallbackSay) {
+        // Phrase vide après l'action : dire le résultat plutôt que « je n'ai pas compris ».
+        speakPhrase(actionFallbackSay);
+        final = { ...second.output, say: actionFallbackSay, awaiting: 'open' };
       }
     }
 

@@ -21,14 +21,17 @@ const DAY_LABELS: Record<string, string> = {
   sun: 'Dimanche',
 };
 
+const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+
+/**
+ * Les sept jours, dans l'ordre : un jour absent est fermé. Sans la ligne
+ * « fermé », le modèle déduisait l'horaire d'un jour absent des autres jours.
+ */
 export function formatOpeningHours(hours: OpeningHours): string {
-  return Object.entries(hours)
-    .map(([day, slot]) =>
-      slot
-        ? `${DAY_LABELS[day] ?? day} : ${slot.open}–${slot.close}`
-        : `${DAY_LABELS[day] ?? day} : fermé`,
-    )
-    .join('\n');
+  return DAY_ORDER.map((day) => {
+    const slot = hours[day];
+    return slot ? `${DAY_LABELS[day]} : ${slot.open}–${slot.close}` : `${DAY_LABELS[day]} : fermé`;
+  }).join('\n');
 }
 
 export interface SystemPromptContext {

@@ -120,10 +120,27 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
+    name: 'a8012c5c — jour fermé',
+    turns: [
+      {
+        caller: "bonjour je vous appelle pour faire une réservation pour dimanche s'il vous plaît",
+        expect: { sayExcludes: ['midi', '18 heures', 'on ouvre'] },
+      },
+      {
+        caller: 'vous êtes ouvert vers quelle heure dimanche',
+        expect: { sayExcludes: ['midi'] },
+      },
+      {
+        caller: 'dimanche à 20 heures pour 7 personnes',
+        expect: { sayExcludes: ['pas bien saisi', 'je regarde', 'je vérifie'] },
+      },
+    ],
+  },
+  {
     name: 'réservation complète',
     turns: [
       {
-        caller: 'une table pour deux demain à 20 heures',
+        caller: 'une table pour deux mardi à 20 heures',
         expect: { awaiting: ['customerName'], reservationCreated: false },
       },
       {
@@ -152,13 +169,19 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
     cleanup: (session: CallSession) => {
       session.ended = true;
     },
-    getAvailability: async (_s: CallSession, date: string, partySize: number) => ({
-      restaurantId: 'bench',
-      date,
-      partySize,
-      slots: ['18:30', '19:00', '19:30', '20:00', '20:30'],
-      allSlots: [],
-    }),
+    getAvailability: async (_s: CallSession, date: string, partySize: number) => {
+      // Dimanche fermé (comme le prompt du banc) ; BENCH_NO_SLOTS simule un soir complet.
+      const closed = new Date(`${date}T12:00:00Z`).getUTCDay() === 0;
+      const times = ['18:30', '19:00', '19:30', '20:00', '20:30'];
+      const full = Boolean(process.env.BENCH_NO_SLOTS);
+      return {
+        restaurantId: 'bench',
+        date,
+        partySize,
+        slots: closed || full ? [] : times,
+        allSlots: closed ? [] : times.map((time) => ({ time, available: !full })),
+      };
+    },
     createReservationFromConversation: async (session: CallSession) => {
       session.reservationCreatedAt = Date.now();
       return 'Réservation confirmée. Un SMS de confirmation va être envoyé.';
