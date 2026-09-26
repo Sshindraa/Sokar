@@ -139,13 +139,18 @@ function armIncompleteTurnTimer(
     if (session.ended || session.ending) return;
     if (session.structuredTurn?.pendingFragment !== fragment) return;
     const generation = ++session.responseGeneration;
-    void runStructuredTurn(
+    runStructuredTurn(
       session,
       '',
       mgr,
       () => !session.ended && session.responseGeneration === generation,
       { callerFinished: true },
-    );
+    ).catch((err: unknown) => {
+      logger.warn(
+        { err: err instanceof Error ? err.name : String(err), callId: session.callControlId },
+        '[structured-turn] Silent-caller turn failed',
+      );
+    });
   }, INCOMPLETE_TURN_SILENCE_MS);
   timer.unref?.();
   incompleteTurnTimers.set(session, timer);
