@@ -50,6 +50,7 @@ export type VoiceTurnEvent =
   | 'turn_plan_shadow'
   | 'turn_plan_authority'
   | 'turn_plan_deferred'
+  | 'structured_turn'
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
@@ -137,6 +138,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'turn_plan_shadow':
     case 'turn_plan_authority':
     case 'turn_plan_deferred':
+    case 'structured_turn':
     case 'dialogue_guard':
       return 'generation';
     case 'availability_started':
