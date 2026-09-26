@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { normalizeOpeningHours } from '@sokar/shared';
 
 type DaySlot = { open: string; close: string } | null;
 export type OpeningHours = {
@@ -11,26 +12,31 @@ export type OpeningHours = {
   sun?: DaySlot;
 };
 
-const DAY_LABELS: Record<string, string> = {
-  mon: 'Lundi',
-  tue: 'Mardi',
-  wed: 'Mercredi',
-  thu: 'Jeudi',
-  fri: 'Vendredi',
-  sat: 'Samedi',
-  sun: 'Dimanche',
-};
-
-const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
+// Lundi d'abord ; index de Date#getUTCDay (0 = dimanche), comme normalizeOpeningHours.
+const DAY_ORDER: Array<[number, string]> = [
+  [1, 'Lundi'],
+  [2, 'Mardi'],
+  [3, 'Mercredi'],
+  [4, 'Jeudi'],
+  [5, 'Vendredi'],
+  [6, 'Samedi'],
+  [0, 'Dimanche'],
+];
 
 /**
  * Les sept jours, dans l'ordre : un jour absent est fermé. Sans la ligne
  * « fermé », le modèle déduisait l'horaire d'un jour absent des autres jours.
+ * Même normalisation que le calcul des créneaux, pour que l'agent et la
+ * disponibilité voient les mêmes jours. Sans aucun horaire, rien n'est affirmé.
  */
-export function formatOpeningHours(hours: OpeningHours): string {
-  return DAY_ORDER.map((day) => {
-    const slot = hours[day];
-    return slot ? `${DAY_LABELS[day]} : ${slot.open}–${slot.close}` : `${DAY_LABELS[day]} : fermé`;
+export function formatOpeningHours(hours: unknown): string {
+  const days = normalizeOpeningHours(hours);
+  if (!days.length) {
+    return "Horaires non renseignés : n'annonce aucun horaire ni jour d'ouverture ; propose le gérant ou un message.";
+  }
+  return DAY_ORDER.map(([index, label]) => {
+    const slot = days.find((day) => day.dayIndex === index);
+    return slot ? `${label} : ${slot.open}–${slot.close}` : `${label} : fermé`;
   }).join('\n');
 }
 

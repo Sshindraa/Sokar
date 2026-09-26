@@ -46,6 +46,20 @@ describe('buildSystemPrompt', () => {
     ]);
   });
 
+  it('lit aussi les formats longs et schema.org, comme le calcul des créneaux', () => {
+    expect(formatOpeningHours({ sunday: { opens: '12:00', closes: '15:00' } })).toContain(
+      'Dimanche : 12:00–15:00',
+    );
+    expect(
+      formatOpeningHours([{ dayOfWeek: 'Monday', opens: '18:00', closes: '23:00' }]),
+    ).toContain('Lundi : 18:00–23:00');
+  });
+
+  it('n’affirme aucun jour quand les horaires ne sont pas renseignés', () => {
+    expect(formatOpeningHours({})).toContain('Horaires non renseignés');
+    expect(formatOpeningHours({})).not.toContain('fermé');
+  });
+
   it('devrait generer le prompt de base sans CRM ni prompt extra', () => {
     const prompt = buildSystemPrompt(baseCtx, new Date('2026-07-22T10:00:00Z'));
 
