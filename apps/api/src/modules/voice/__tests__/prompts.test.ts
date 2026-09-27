@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, formatOpeningHours } from '../prompts';
-import { buildStructuredTurnMessages, describeDate } from '../stream/structured-turn/prompt';
+import {
+  buildStructuredTurnMessages,
+  describeCalendar,
+  describeDate,
+} from '../stream/structured-turn/prompt';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 
 describe('buildSystemPrompt', () => {
@@ -84,6 +88,26 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain(
       '"dateFacts":{"date":"2026-09-28","weekday":"lundi","hours":"FERMÉ ce jour-là"}',
     );
+  });
+
+  it('donne un calendrier calculé de 14 jours, jours fermés compris (appel 88921164)', () => {
+    const hours = { tue: { open: '12:00', close: '22:00' } };
+    const calendar = describeCalendar('2026-09-27', hours).split('\n');
+    expect(calendar).toHaveLength(14);
+    expect(calendar[0]).toBe("2026-09-27 dimanche (aujourd'hui) : FERMÉ ce jour-là");
+    expect(calendar[1]).toBe('2026-09-28 lundi (demain) : FERMÉ ce jour-là');
+    expect(calendar[2]).toBe('2026-09-29 mardi (après-demain) : ouvert 12:00–22:00');
+
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'on serait ouvert demain',
+      state: createStructuredTurnState(),
+      openingHours: hours,
+      today: '2026-09-27',
+    });
+    expect(system.content).toContain('CALENDRIER (calculé');
+    expect(system.content).toContain('2026-09-28 lundi (demain) : FERMÉ ce jour-là');
   });
 
   it('devrait generer le prompt de base sans CRM ni prompt extra', () => {
