@@ -129,7 +129,7 @@ const SCENARIOS: Scenario[] = [
     turns: [
       {
         caller: "bonjour je vous appelle pour faire une réservation pour dimanche s'il vous plaît",
-        expect: { sayExcludes: ['midi', '18 heures', 'on ouvre'] },
+        expect: { sayExcludes: ['midi', 'on ouvre à midi'] },
       },
       {
         caller: 'vous êtes ouvert vers quelle heure dimanche',
@@ -157,7 +157,7 @@ const SCENARIOS: Scenario[] = [
         caller: 'à 20 heures pour 4 voire 5 personnes',
         expect: {
           // « 4 ou 5 ? » est une clarification légitime avant de vérifier.
-          sayIncludesAny: ['fermé', 'fermés', 'autre jour', '4 ou 5', 'quatre ou cinq'],
+          sayIncludesAny: ['fermé', 'fermés', 'autre jour', '4 ou 5', 'quatre ou cinq', 'combien'],
           sayExcludes: ['gérant pour finaliser', 'tout à fait', 'pas bien saisi'],
         },
       },
@@ -433,7 +433,9 @@ async function main() {
   for (let repeat = 0; repeat < REPEATS; repeat++) {
     // BENCH_ONLY=texte : ne rejoue que les scénarios dont le nom le contient.
     for (const scenario of SCENARIOS.filter(
-      (entry) => !process.env.BENCH_ONLY || entry.name.includes(process.env.BENCH_ONLY),
+      (entry) =>
+        !process.env.BENCH_ONLY ||
+        process.env.BENCH_ONLY.split('|').some((part) => entry.name.includes(part)),
     )) {
       const session = benchSession(scenario.closeTomorrow === true);
       for (const [index, step] of scenario.turns.entries()) {

@@ -3,7 +3,10 @@ import { WebSocket } from 'ws';
 import { processTranscriptStreaming } from '../stream/llm-handler';
 import { createConversationState } from '../stream/conversation-controller';
 import type { StructuredTurnOutput } from '../stream/structured-turn/schema';
-import { CALLER_FINISHED_FALLBACK } from '../stream/structured-turn/engine';
+import {
+  CALLER_FINISHED_FALLBACK,
+  speculateStructuredTurn,
+} from '../stream/structured-turn/engine';
 import {
   bookingKey,
   createStructuredTurnState,
@@ -450,6 +453,43 @@ describe('tour structuré (canary)', () => {
 
       expect(contextTurn.cancel).toHaveBeenCalledWith('unused');
       expect(contextTurn.push).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('spéculation sur partielle stable', () => {
+    beforeEach(() => vi.stubEnv('VOICE_STRUCTURED_SPECULATION_ENABLED', 'true'));
+
+    it('reprend la requête lancée sur la partielle quand la phrase finale est identique', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      speculateStructuredTurn(session, mgr, 'je voudrais réserver');
+      expect(spoken()).toEqual([]);
+
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toEqual(['Bien sûr.', 'Pour quel jour ?']);
+    });
+
+    it('abandonne la spéculation quand la phrase finale diffère', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ awaiting: 'date', say: 'Réponse spéculative.' }),
+        turn({ awaiting: 'date', say: 'Pour quel jour ?' }),
+      );
+      speculateStructuredTurn(session, mgr, 'je voudrais');
+
+      await processTranscriptStreaming(session, 'je voudrais réserver une table', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual(['Pour quel jour ?']);
+    });
+
+    it('ne spécule pas pendant que l’agent parle', () => {
+      const { session, mgr } = fixture();
+      session.state = 'SPEAKING';
+      speculateStructuredTurn(session, mgr, 'attendez');
+      expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
     });
   });
 

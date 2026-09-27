@@ -46,6 +46,12 @@ import {
   type StructuredTurnState,
 } from './fact-guards';
 import { buildStructuredTurnMessages } from './prompt';
+import {
+  cancelSpeculation,
+  isStructuredSpeculationEnabled,
+  startSpeculation,
+  takeSpeculation,
+} from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
 
 export function isStructuredTurnEnabled(
@@ -207,6 +213,12 @@ function prefetchDayAvailability(
   const promise = Promise.all(sizes.map((size) => mgr.getAvailability(session, date, size)))
     .then((results) => {
       if (state.draft.date !== date) return;
+      // Jour fermé : pas de raccourci, la vérification garde sa phrase fixe
+      // « Nous sommes fermés… » (sinon le modèle répondait « c'est noté »).
+      if (results.every((result) => result.slots.length === 0 && result.allSlots.length === 0)) {
+        state.dayAvailability = null;
+        return;
+      }
       state.dayAvailability = {
         date,
         closed: results.every(
@@ -240,7 +252,57 @@ async function waitAtMost(promise: Promise<void>, ms: number): Promise<void> {
 function prefetchedSlots(state: StructuredTurnState): string[] | null {
   const { draft, dayAvailability } = state;
   if (!dayAvailability || dayAvailability.date !== draft.date || draft.partySize < 1) return null;
-  return dayAvailability.slotsBySize[draft.partySize] ?? null;
+  const slots = dayAvailability.slotsBySize[draft.partySize];
+  // Aucun créneau pour ce nombre : même règle, la vérification annonce « complet ».
+  return slots?.length ? slots : null;
+}
+
+/** Requête d'un passage : partagée par le tour et par la spéculation. */
+function passRequest(
+  session: CallSession,
+  state: StructuredTurnState,
+  transcript: string,
+  history: CallSession['history'],
+  today: string,
+  extra: { actionResult?: string; callerFinished?: boolean } = {},
+) {
+  const messages = buildStructuredTurnMessages({
+    systemPrompt: session.systemPrompt,
+    history,
+    transcript,
+    state,
+    openingHours: session.openingHours,
+    today,
+    ...extra,
+  });
+  // Relance après un silence (appel cdc95509) : le modèle répondait encore
+  // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
+  const format = responseFormat(extra.actionResult ? AFTER_ACTION_ACTIONS : undefined, {
+    turnCompleteOnly: extra.callerFinished === true,
+  });
+  return { messages, format };
+}
+
+/**
+ * Partielle Deepgram stable pendant que l'agent écoute : lance en avance le
+ * premier passage, sans rien dire ni exécuter (voir speculation.ts).
+ */
+export function speculateStructuredTurn(
+  session: CallSession,
+  mgr: CallSessionManager,
+  partialTranscript: string,
+): void {
+  if (!isStructuredSpeculationEnabled() || !isStructuredTurnEnabled(session.restaurantId)) return;
+  if (session.ended || session.ending || session.state !== 'LISTENING') return;
+  const state = session.structuredTurn ?? createStructuredTurnState();
+  const transcript = [state.pendingFragment, partialTranscript]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(' ')
+    .trim();
+  if (!transcript) return;
+  const today = todayInTimezone(session.timezone || 'Europe/Paris');
+  const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
+  startSpeculation(session, mgr, messages, format);
 }
 
 export async function runStructuredTurn(
@@ -344,41 +406,42 @@ export async function runStructuredTurn(
     let action: string | null = null;
     let turnComplete: boolean | null = null;
     let firstToken = true;
-    const messages = buildStructuredTurnMessages({
-      systemPrompt: session.systemPrompt,
-      history: historyBefore,
-      transcript,
-      state,
-      openingHours: session.openingHours,
-      today,
+    const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
     });
-    // Relance après un silence (appel cdc95509) : le modèle répondait encore
-    // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
-    const format = responseFormat(actionResult ? AFTER_ACTION_ACTIONS : undefined, {
-      turnCompleteOnly: options.callerFinished === true,
-    });
-    const text = await mgr.streamStructuredCompletion(session, messages, format, {
+    const onDelta = (delta: string) => {
+      if (!isLive()) return;
+      if (firstToken) {
+        firstToken = false;
+        markVoiceTurnLlmFirstToken(session, turnId);
+      }
+      const said = extractor.push(delta);
+      // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
+      // connus quand la phrase commence.
+      if (turnComplete === null) {
+        const match = /"turnComplete"\s*:\s*(true|false)/.exec(extractor.raw);
+        if (match) turnComplete = match[1] === 'true';
+      }
+      action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      const mayContinue = turnComplete === true || options.callerFinished === true;
+      if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
+    };
+    // Premier passage : reprendre la requête déjà lancée sur la partielle stable
+    // si elle est identique ; sinon (ou en cas d'échec) appel normal.
+    let text: string | null = null;
+    const speculative =
+      !actionResult && !options.callerFinished
+        ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
+        : null;
+    if (speculative) {
+      speculationUsed = true;
+      text = await speculative.catch(() => null);
+    }
+    text ??= await mgr.streamStructuredCompletion(session, messages, format, {
       signal: abortController.signal,
       telemetryTurnId: turnId,
-      onDelta: (delta) => {
-        if (!isLive()) return;
-        if (firstToken) {
-          firstToken = false;
-          markVoiceTurnLlmFirstToken(session, turnId);
-        }
-        const said = extractor.push(delta);
-        // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
-        // connus quand la phrase commence.
-        if (turnComplete === null) {
-          const match = /"turnComplete"\s*:\s*(true|false)/.exec(extractor.raw);
-          if (match) turnComplete = match[1] === 'true';
-        }
-        action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
-        const mayContinue = turnComplete === true || options.callerFinished === true;
-        if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
-      },
+      onDelta,
     });
     const output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
@@ -390,6 +453,7 @@ export async function runStructuredTurn(
     return { output, spoken };
   };
 
+  let speculationUsed = false;
   // Phrase dite si le second passage ne formule rien après l'action.
   let actionFallbackSay: string | null = null;
   // Jour fermé ou complet : un fait simple, dit tel quel sans second passage
@@ -480,6 +544,8 @@ export async function runStructuredTurn(
 
   try {
     const first = await runPass();
+    // Une spéculation non reprise (requête différente, relance) ne sert plus.
+    cancelSpeculation(session);
     if (!isLive()) return;
     if (!first.output.turnComplete && !options.callerFinished) {
       // L'appelant n'a pas fini : l'agent se tait et garde le début de phrase.
@@ -521,6 +587,7 @@ export async function runStructuredTurn(
       rejectedFields: applied.rejected.join(',') || null,
       actionDecision: decision.allowed ? 'allowed' : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
+      speculated: speculationUsed,
     });
 
     let final = first.output;
