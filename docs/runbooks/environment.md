@@ -159,31 +159,22 @@ rejoué sur un environnement non productif, avec consentement de test et rollbac
 
 ## Voice LLM
 
-Le chemin vocal utilise un seul provider actif, choisi par `VOICE_LLM_PROVIDER`
-(`groq` par défaut, ou `cerebras`). Les deux exposent une API OpenAI-compatible
-et servent le même modèle Qwen 3.8, sous un nom différent. Il n'y a aucun repli
-automatique d'un provider vers l'autre. `VOICE_LLM_FALLBACK_MODEL` n'est plus lu.
+Le chemin vocal a un seul fournisseur LLM : **Cerebras** (API OpenAI-compatible,
+modèle Qwen 3.8). Groq a été retiré le 27 septembre 2026 ; `GROQ_*`,
+`VOICE_LLM_HEDGE_*` et `VOICE_LLM_FALLBACK_MODEL` ne sont plus lus, et
+`VOICE_LLM_PROVIDER=groq` est refusé au démarrage.
 
-Définir dans `apps/api/.env`, pour Groq :
-
-```dotenv
-VOICE_LLM_PROVIDER="groq"
-GROQ_API_KEY="gsk_..."
-GROQ_BASE_URL="https://api.groq.com/openai/v1"
-VOICE_LLM_MODEL="qwen/qwen3.8-27b"
-VOICE_LLM_TIMEOUT_MS="8000"
-```
-
-Pour Cerebras :
+Définir dans `apps/api/.env` :
 
 ```dotenv
-VOICE_LLM_PROVIDER="cerebras"
+VOICE_LLM_PROVIDER="cerebras"        # seule valeur acceptée (défaut)
 CEREBRAS_API_KEY="csk-..."
 CEREBRAS_BASE_URL="https://api.cerebras.ai/v1"
 VOICE_LLM_MODEL="qwen-3.8-27b"
+VOICE_LLM_TIMEOUT_MS="8000"
 ```
 
-En production, la clé du provider actif est obligatoire (≥20 caractères). Les
+En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
 Secours du tour structuré (restaurants de `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`) :
@@ -205,11 +196,6 @@ Latence du tour structuré (mesures du 27 septembre, appel 25650799 et rejeu des
 appels enregistrés) :
 
 ```dotenv
-# Course Cerebras/Groq quand le premier jeton tarde (pics 1,7–2,1 s observés).
-# Groq on_demand plafonne à 7 000 jetons/min (~2 courses/min) ; au-delà sa
-# requête échoue et la réponse Cerebras est gardée.
-VOICE_STRUCTURED_HEDGE_ENABLED="false"      # opt-in
-VOICE_STRUCTURED_HEDGE_DELAY_MS="700"
 # Premier passage lancé sur une partielle Deepgram stable, repris seulement si
 # la requête finale est identique (rien n'est dit ni exécuté avant).
 VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
@@ -227,12 +213,7 @@ fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
 refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx
 ou une erreur réseau déclenche une réponse parlée déterministe (reprise du
 créneau vérifié, sinon demande de répétition, puis proposition du gérant après
-deux échecs consécutifs). Sur Groq, le niveau `on_demand` plafonne à 7 000
-tokens d'entrée par minute, soit environ un tour LLM par minute.
-
-`OPENROUTER_API_KEY` peut rester provisionnée comme clé isolée pour des outils
-hors production. Elle n'est pas lue par le pipeline vocal et ne constitue pas
-un mécanisme de repli.
+deux échecs consécutifs), après le secours OpenRouter du tour structuré.
 
 ### Latence Deepgram et secours LLM
 
@@ -242,7 +223,7 @@ immédiat, et `UtteranceEnd` reste un filet de sécurité. Valeurs validées au
 démarrage par Zod :
 
 ```dotenv
-VOICE_DEEPGRAM_ENDPOINTING_MS="300"
+VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 VOICE_DEEPGRAM_UTTERANCE_END_MS="1000"
 VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 VOICE_DEEPGRAM_MODEL="nova-3"
@@ -275,26 +256,11 @@ L'épellation attend 800 ms de silence total, en tenant compte de
 `endpointing`; elle ne cumule pas un hold hybride. Les valeurs autorisées sont
 respectivement 100–1000 ms, 500–3000 ms et 400–2000 ms.
 
-Le hedge Cerebras → Groq et le filler différé ne sont actifs que pour une
-session Deepgram + Dialogue V2. Le provider global reste inchangé pour les
-autres restaurants. Le hedge choisit le premier delta de texte, démarre Groq
-après 1000 ms et abandonne les deux requêtes si aucun delta n'arrive sous
-3000 ms. Un timeout mène à une relance parlée adaptée au champ attendu.
-Le modèle Groq mesuré `qwen/qwen3.8-27b` est actuellement classé preview par
-Groq ; conserver l'allowlist étroite et vérifier sa disponibilité avant toute
-extension du pilote.
+Le filler différé n'est actif que pour une session Deepgram + Dialogue V2.
 
 ```dotenv
-VOICE_LLM_HEDGE_DELAY_MS="1000"
-VOICE_LLM_HEDGE_TIMEOUT_MS="3000"
-VOICE_LLM_HEDGE_MODEL="qwen/qwen3.8-27b"
-VOICE_LLM_FILLER_DELAY_MS="1200"
+VOICE_LLM_FILLER_DELAY_MS="1200"      # 100–5000 ms
 ```
-
-Le délai hedge accepte 100–5000 ms, le timeout 500–10000 ms et le filler
-100–5000 ms. Le modèle de secours est une chaîne non secrète. `GROQ_API_KEY`
-reste la clé déjà gérée par le provider Groq ; aucune clé supplémentaire ni
-aucune valeur secrète ne doit être copiée dans cette configuration.
 
 Dialogue V2 active aussi la suppression d'écho par texte, valable pour Scribe
 et Deepgram. Le texte récent de l'agent est conservé uniquement en mémoire,
@@ -316,7 +282,7 @@ effectivement envoyée à OpenRouter.
 Le shadow `TurnPlan` est contrôlé par un flag global, sans ciblage par restaurant.
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
-Groq/Qwen existante pour recevoir la proposition structurée avec la réponse
+Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse
 libre ; il ne lance donc pas de requête LLM shadow séparée sur ce chemin. La
 policy valide puis compare la proposition à l’état effectivement conservé.
 Aucune valeur proposée ne modifie la conversation ni n’autorise un effet métier,
@@ -369,7 +335,7 @@ s'applique à ces restaurants. Le code valide le format et la plausibilité des 
 (disponibilité réelle ; réservation seulement après un récapitulatif lu au tour précédent
 et accepté, sur un créneau vérifié ; message ; transfert ; fin d'appel) et rend leur
 résultat au modèle pour la formulation. Aucune action à effet sur un plan à confiance
-faible. Le secours Groq est désactivé sur ce chemin. Télémétrie : événement
+faible. Si Cerebras échoue, le secours OpenRouter prend le tour. Télémétrie : événement
 `structured_turn` (interprétation, action, attente, confiance, champs modifiés ou rejetés ;
 aucun texte). Banc contre le vrai modèle, clé de dev uniquement :
 `CEREBRAS_API_KEY=… node --env-file=.env --import tsx scripts/voice-structured-bench.ts`
@@ -388,7 +354,7 @@ propose un repli humain réel (`stall_handoff`). Les métriques shadow portent u
 coupé) observe aussi une part des tours répondus sans LLM : après la réponse déterministe,
 un appel TurnPlan séparé (outil forcé, température 0, 2,5 s maximum) interprète le tour.
 Il ne retarde pas la réponse, ne modifie ni l'état ni l'historique, et ne passe pas par le
-disjoncteur Groq, pour qu'une observation lente ne coupe jamais le LLM des appels réels.
+disjoncteur LLM, pour qu'une observation lente ne coupe jamais le LLM des appels réels.
 Son coût est rattaché à l'appel. C'est la seule mesure des tours où la regex décide seule,
 y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commencer bas
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
@@ -540,7 +506,7 @@ Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
 | **ELEVENLABS_BENCH_API_KEY** | Clé dédiée du banc STT, différente de ELEVENLABS_API_KEY                                     |
 | **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
 | **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
-| **GROQ_BENCH_API_KEY**       | Clé dédiée du diagnostic vocal manuel, différente de GROQ_API_KEY                            |
+| **CEREBRAS_BENCH_API_KEY**   | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                        |
 | **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
 
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule

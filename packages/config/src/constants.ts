@@ -50,20 +50,16 @@ export const LLM_VIP_TURN_THRESHOLD = 5;
 
 // Modèle LLM utilisé dans le pipeline vocal (pas le modèle Hermes).
 //
-// Provider par défaut : Groq en direct, endpoint OpenAI-compatible.
-//  - identifiant : qwen/qwen3.8-27b (Cerebras : qwen-3.8-27b)
-//  - tool use + streaming supportés, mode instruct (raisonnement désactivé)
-//  - TTFT ~151 ms (LPU), $0.59/$0.79 par million de tokens
+// Fournisseur LLM vocal unique : Cerebras (API OpenAI-compatible), modèle
+// qwen-3.8-27b en mode instruct, raisonnement désactivé, streaming.
 //
-// Le modèle reste configurable par environnement (`VOICE_LLM_MODEL`) pour un
-// canary sans changement de code. Le provider est choisi par
-// `VOICE_LLM_PROVIDER` ; il n'y a pas de repli de l'un vers l'autre : une panne
-// dégrade l'appel vers une réponse parlée déterministe.
-export const VOICE_LLM_MODEL_DEFAULT = 'qwen/qwen3.8-27b';
-export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+// Le modèle reste configurable par environnement (`VOICE_LLM_MODEL`). Une
+// panne dégrade l'appel vers le secours OpenRouter du tour structuré, puis vers
+// une réponse parlée déterministe.
+export const VOICE_LLM_MODEL_DEFAULT = 'qwen-3.8-27b';
 export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
-/** Providers LLM vocaux (API OpenAI-compatible). Un seul est actif à la fois, sans repli. */
-export const VOICE_LLM_PROVIDERS = ['groq', 'cerebras'] as const;
+/** Fournisseur LLM vocal (API OpenAI-compatible). */
+export const VOICE_LLM_PROVIDERS = ['cerebras'] as const;
 export type VoiceLlmProviderName = (typeof VOICE_LLM_PROVIDERS)[number];
 
 export const TTS_PROVIDERS = ['cartesia'] as const;

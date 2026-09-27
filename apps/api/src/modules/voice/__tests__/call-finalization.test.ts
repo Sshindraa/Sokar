@@ -149,9 +149,9 @@ describe('call finalization — décision par les faits', () => {
   });
 
   it('enregistre le provider lorsqu’un tour LLM observé le fournit', () => {
-    const plan = planCallFinalization(snapshot(), hints({ llmProvider: 'groq' }));
+    const plan = planCallFinalization(snapshot(), hints({ llmProvider: 'cerebras' }));
 
-    expect(plan.data.llmProvider).toBe('groq');
+    expect(plan.data.llmProvider).toBe('cerebras');
     expect(plan.updatedFields).toContain('llmProvider');
   });
 
@@ -290,7 +290,7 @@ describe('finalizeVoiceCall — idempotence et ordre des événements', () => {
       outcome: 'NO_ACTION',
       intent: 'RESERVATION',
       sttProvider: 'elevenlabs-scribe-v2-realtime',
-      llmProvider: 'groq',
+      llmProvider: 'cerebras',
       ttsProvider: 'cartesia-sonic',
     });
     const result = await finalizeVoiceCall(

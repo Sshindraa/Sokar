@@ -51,7 +51,7 @@ export function isTurnPlanShadowEnabled(env: NodeJS.ProcessEnv = process.env): b
 
 /**
  * Part des tours répondus sans LLM observés par un appel TurnPlan séparé
- * (0 à 1, défaut 0). Chaque observation coûte un petit appel Groq.
+ * (0 à 1, défaut 0). Chaque observation coûte un petit appel LLM.
  */
 export function turnPlanDeterministicShadowRate(env: NodeJS.ProcessEnv = process.env): number {
   if (!isTurnPlanShadowEnabled(env)) return 0;

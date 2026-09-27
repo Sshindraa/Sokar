@@ -2,12 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import {
-  CEREBRAS_BASE_URL,
-  GROQ_BASE_URL,
-  VOICE_LLM_MODEL_DEFAULT,
-  VOICE_LLM_PROVIDERS,
-} from '@sokar/config';
+import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT, VOICE_LLM_PROVIDERS } from '@sokar/config';
 import { sttChunkMsSchema } from './shared/stt-chunking';
 import { telnyxCodecSchema } from './modules/voice/stream/telnyx-codec';
 
@@ -127,16 +122,8 @@ export const VoiceConfigSchema = z
   .object({
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
-    VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('groq'),
-    VOICE_LLM_HEDGE_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_000),
-    VOICE_LLM_HEDGE_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(3_000),
-    VOICE_LLM_HEDGE_MODEL: z.string().default('qwen/qwen3.8-27b'),
-    /** Course Cerebras/Groq pour le tour structuré (JSON Schema strict), opt-in. */
-    VOICE_STRUCTURED_HEDGE_ENABLED: z.enum(['true', 'false']).default('false'),
-    VOICE_STRUCTURED_HEDGE_DELAY_MS: z.coerce.number().int().min(200).max(5_000).default(700),
+    VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_LLM_FILLER_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_200),
-    GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
-    GROQ_API_KEY: z.string().optional(),
     CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
     CEREBRAS_API_KEY: z.string().optional(),
     /** Secours du tour structuré (JSON Schema strict) si le provider principal échoue. */
@@ -469,16 +456,12 @@ const EnvSchema = z
   .refine(
     (data) => {
       if (data.NODE_ENV !== 'production' || process.env.VOICE_DISABLED === 'true') return true;
-      const key =
-        data.VOICE_LLM_PROVIDER === 'cerebras' ? data.CEREBRAS_API_KEY : data.GROQ_API_KEY;
-      return !!key && key.length >= 20;
+      return !!data.CEREBRAS_API_KEY && data.CEREBRAS_API_KEY.length >= 20;
     },
-    (data) => {
-      const keyName = data.VOICE_LLM_PROVIDER === 'cerebras' ? 'CEREBRAS_API_KEY' : 'GROQ_API_KEY';
-      return {
-        message: `${keyName} doit être définie en production (≥20 caractères) : c’est la clé du provider LLM vocal actif (${data.VOICE_LLM_PROVIDER}).`,
-        path: [keyName],
-      };
+    {
+      message:
+        'CEREBRAS_API_KEY doit être définie en production (≥20 caractères) : c’est la clé du LLM vocal.',
+      path: ['CEREBRAS_API_KEY'],
     },
   )
   .refine(

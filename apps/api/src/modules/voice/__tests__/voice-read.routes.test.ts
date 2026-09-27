@@ -22,7 +22,7 @@ const call = {
   intent: 'RESERVATION',
   outcome: 'RESERVED',
   sttProvider: 'scribe',
-  llmProvider: 'groq',
+  llmProvider: 'cerebras',
   ttsProvider: 'cartesia',
 };
 

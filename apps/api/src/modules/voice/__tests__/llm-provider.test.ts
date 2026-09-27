@@ -14,7 +14,7 @@ describe('voice LLM runtime identity', () => {
 
     expect(runtime.provider).toBe(getVoiceLlmProvider());
     expect(runtime.model).toBe(getVoiceLlmModel());
-    expect(runtime.provider).toBe('groq');
+    expect(runtime.provider).toBe('cerebras');
     expect(runtime.openrouterUsed).toBe(false);
   });
 
@@ -24,7 +24,7 @@ describe('voice LLM runtime identity', () => {
     expect(getVoiceLlmRuntimeInfo()).toMatchObject({
       openrouterKeyConfigured: true,
       openrouterUsed: false,
-      provider: 'groq',
+      provider: 'cerebras',
     });
   });
 });

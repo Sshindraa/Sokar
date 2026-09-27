@@ -44,7 +44,7 @@ import {
 | Cartesia TTS (fillers)      | `/tts/sse`                                    | 8 s                          | 3 tentatives           | non                                          | filler ignoré, la réponse principale continue              |
 | Cartesia TTS (démo/preview) | `/tts/bytes` one-shot                         | 8 s                          | aucun                  | oui, 3 échecs / 30 s                         | erreur explicite de l'endpoint                             |
 | ElevenLabs STT              | WebSocket temps réel                          | géré par le bridge           | reconnexion du bridge  | non                                          | tour sans transcription, alerte `calls_without_transcript` |
-| LLM vocal (Groq)            | complétion vocale                             | 8 s (`VOICE_LLM_TIMEOUT_MS`) | aucun                  | oui, 3 échecs / 30 s (implémentation dédiée) | message d'excuse parlé, l'appel ne bascule plus de modèle  |
+| LLM vocal (Cerebras)        | complétion vocale                             | 8 s (`VOICE_LLM_TIMEOUT_MS`) | aucun                  | oui, 3 échecs / 30 s (implémentation dédiée) | secours OpenRouter (tour structuré), puis excuse parlée    |
 | Stripe                      | PaymentIntent, webhooks                       | 10 s (SDK)                   | `maxNetworkRetries: 2` | non                                          | paiement refusé proprement, job en dead-letter             |
 | Resend                      | email transactionnel                          | 10 s                         | BullMQ                 | non                                          | email non envoyé, trace en base                            |
 | Google Calendar / Places    | freeBusy, recherche                           | 10 s                         | aucun                  | non                                          | disponibilité réduite, log d'avertissement                 |
@@ -53,20 +53,19 @@ Le circuit breaker LLM vit dans `modules/voice/stream/manager.ts`. Il n'a pas é
 module partagé pour ne pas toucher le chemin vocal ; l'unification est un suivi assumé, pas un
 oubli.
 
-Depuis le 22 septembre 2026, le pipeline vocal n'a **qu'un provider** : Groq en direct, modèle
-`qwen/qwen3.8-27b`. Il n'y a aucun routage secondaire : un 402/429/5xx ou une erreur réseau
-remonte à l'appelant, qui prononce le message d'excuse parlé. Le circuit breaker reste utile pour
-ne pas marteler Groq pendant 30 s après trois échecs consécutifs.
-
-Conséquence à garder en tête : **il n'y a pas de continuité de modèle**. Une panne Groq dégrade la
-conversation. Si ce compromis doit être rouvert, il faudra ajouter un provider réellement
-indépendant, avec ses propres timeouts, métriques, coûts et tests de panne.
+Depuis le 27 septembre 2026, le pipeline vocal n'a **qu'un fournisseur LLM** : Cerebras, modèle
+`qwen-3.8-27b` (Groq a été retiré). Sur le tour structuré, un 402/429/5xx, une erreur réseau ou un
+circuit ouvert avant le premier fragment envoie la même requête vers OpenRouter (filet d'urgence,
+~2 s avant la première phrase) ; sans secours ou s'il échoue, l'appelant entend le message
+d'excuse parlé. Le circuit breaker évite de marteler Cerebras pendant 30 s après trois échecs
+consécutifs.
 
 L'identité effective est enregistrée à l'ouverture du stream et dans la télémétrie :
-`llmProvider=groq` et `llmModel=VOICE_LLM_MODEL` sur `VoiceTurnTelemetry` et
+`llmProvider=cerebras` (ou `openrouter` quand le secours a servi) et `llmModel=VOICE_LLM_MODEL` sur `VoiceTurnTelemetry` et
 `VoiceCallTelemetry`. Le log de démarrage expose aussi `openrouterKeyConfigured` (présence de la
 clé dans l'environnement) et `openrouterUsed` (route effectivement empruntée). La première valeur
-peut être vraie pour un outil externe ; avec le pipeline actuel, la seconde reste toujours fausse.
+est vraie en production (secours du tour structuré et écoute des appels) ; la seconde reste
+fausse tant que Cerebras répond.
 
 ## Ajouter un appel fournisseur
 

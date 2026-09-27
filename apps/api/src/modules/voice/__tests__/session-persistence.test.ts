@@ -56,7 +56,7 @@ describe('voice session persistence', () => {
     mockDb.call.findUnique.mockResolvedValue({
       id: 'call-db-1',
       sttProvider: 'elevenlabs-scribe-v2-realtime',
-      llmProvider: 'groq',
+      llmProvider: 'cerebras',
       ttsProvider: 'cartesia-sonic',
       intent: 'RESERVATION',
       outcome: null,
@@ -92,7 +92,7 @@ describe('voice session persistence', () => {
         path: 'llm',
         sequence: 1,
         llmFirstTokenMs: 125,
-        llmProvider: 'groq',
+        llmProvider: 'cerebras',
         llmModel: expect.any(String),
       });
       expect(secondTurn).toMatchObject({ path: 'deterministic', sequence: 2 });
@@ -106,7 +106,7 @@ describe('voice session persistence', () => {
             callId: 'call-db-1',
             firstLlmFirstTokenMs: 125,
             firstTtsFirstAudioMs: 150,
-            llmProvider: 'groq',
+            llmProvider: 'cerebras',
             llmModel: expect.any(String),
             llmTurnCount: 1,
             deterministicTurnCount: 1,

@@ -737,7 +737,7 @@ process.env.CLERK_SECRET_KEY = 'sk_test_dummy-secret-key';
 process.env.RESERVATION_SERVICE_TOKEN = ['test', 'reservation', 'service', 'token', 'fixture'].join(
   '-',
 );
-process.env.GROQ_API_KEY = ['test', 'groq', 'api', 'key'].join('-');
+process.env.CEREBRAS_API_KEY = ['test', 'cerebras', 'api', 'key'].join('-');
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
 process.env.STRIPE_SECRET_KEY = 'sk_test';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';
