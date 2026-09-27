@@ -130,7 +130,9 @@ export const VoiceConfigSchema = z
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
-    VOICE_SEMANTIC_SIGNALS_MODEL: z.enum(['span-01-pro', 'span-01-free']).default('span-01-pro'),
+    /** `openrouter` passe par `/alpha/decisions` ; `respan` garde le client direct. */
+    VOICE_SEMANTIC_SIGNALS_PROVIDER: z.enum(['openrouter', 'respan']).default('openrouter'),
+    VOICE_SEMANTIC_SIGNALS_MODEL: z.string().optional(),
     VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS: z.coerce.number().int().min(200).max(10_000).default(2_000),
     VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS: z.coerce.number().int().min(1).max(30).default(6),
     RESPAN_BASE_URL: z.string().url().default(RESPAN_BASE_URL),
@@ -528,9 +530,46 @@ function parseEnv() {
   return result.data;
 }
 
-export const env = parseEnv();
-if (env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true' && !env.RESPAN_API_KEY?.trim()) {
-  console.warn('[voice-semantic] enabled without RESPAN_API_KEY; shadow scoring disabled');
+const parsedEnv = parseEnv();
+
+/**
+ * Le modèle Span-01 par défaut dépend du fournisseur : Respan valide ses deux
+ * modèles, OpenRouter passe par `respan/span-01`. On refuse les croisements
+ * plutôt que de laisser un modèle inconnu atteindre l'API.
+ */
+export function resolveSemanticModel(
+  provider: 'openrouter' | 'respan',
+  model: string | undefined,
+): string {
+  if (provider === 'openrouter') {
+    if (model === undefined || model === '') return 'respan/span-01';
+    if (model === 'span-01-pro' || model === 'span-01-free')
+      throw new Error(
+        `VOICE_SEMANTIC_SIGNALS_MODEL=${model} appartient à Respan ; utilisez 'respan/span-01' avec VOICE_SEMANTIC_SIGNALS_PROVIDER=openrouter`,
+      );
+    return model;
+  }
+  if (model === undefined || model === '') return 'span-01-pro';
+  if (model === 'span-01-pro' || model === 'span-01-free') return model;
+  throw new Error(
+    `VOICE_SEMANTIC_SIGNALS_MODEL=${model} n'est pas un modèle Respan ; utilisez 'span-01-pro' ou 'span-01-free'`,
+  );
+}
+
+export const env: typeof parsedEnv = {
+  ...parsedEnv,
+  VOICE_SEMANTIC_SIGNALS_MODEL: resolveSemanticModel(
+    parsedEnv.VOICE_SEMANTIC_SIGNALS_PROVIDER,
+    parsedEnv.VOICE_SEMANTIC_SIGNALS_MODEL,
+  ),
+};
+if (env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true') {
+  const key =
+    env.VOICE_SEMANTIC_SIGNALS_PROVIDER === 'respan' ? env.RESPAN_API_KEY : env.OPENROUTER_API_KEY;
+  if (!key?.trim())
+    console.warn(
+      `[voice-semantic] enabled without ${env.VOICE_SEMANTIC_SIGNALS_PROVIDER === 'respan' ? 'RESPAN_API_KEY' : 'OPENROUTER_API_KEY'}; shadow scoring disabled`,
+    );
 }
 
 // Vue typée dédiée au pipeline voice. Elle référence le même objet validé que

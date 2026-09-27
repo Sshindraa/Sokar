@@ -297,9 +297,21 @@ vaut `https://api.respan.ai/api/v1` par défaut ; l'appel direct cible `/scores`
 ne modifie la policy, l'état, les outils ou la réponse. Le 403 d'accès anticipé
 est mesuré `forbidden`.
 
-Évaluation hors ligne : `pnpm --filter api semantic:eval <fichier.jsonl>` avec
-`RESPAN_API_KEY` dans l'environnement. Le JSONL doit déjà être anonymisé ; les
-rapports agrégés vont dans `apps/api/scratch/semantic-signals-eval/` (ignoré par git).
+`VOICE_SEMANTIC_SIGNALS_PROVIDER` vaut `openrouter` par défaut (ou `respan`).
+OpenRouter appelle `POST /alpha/decisions` avec `OPENROUTER_API_KEY` et
+`OPENROUTER_BASE_URL` (`https://openrouter.ai/api` par défaut) ; le modèle vaut
+alors `respan/span-01`. La clé OpenRouter n'existe qu'en production, pas en
+staging : le mode shadow y démarre avec un avertissement et `missing_key`.
+Respan garde le client direct `/scores` avec `RESPAN_API_KEY` et
+`VOICE_SEMANTIC_SIGNALS_MODEL=span-01-pro` ou `span-01-free`. Span-01 n'accepte
+que des questions `noul` : une seule probabilité par comportement, sans score
+« impossible à dire » (`not_observable` reste à 0 côté OpenRouter).
+
+Évaluation hors ligne : `pnpm --filter api semantic:eval [fichier.jsonl]
+[--provider openrouter|respan]` avec la clé du fournisseur dans l'environnement
+(le fournisseur par défaut est `VOICE_SEMANTIC_SIGNALS_PROVIDER`, sinon
+`openrouter`). Le JSONL doit déjà être anonymisé ; les rapports agrégés vont dans
+`apps/api/scratch/semantic-signals-eval/` (ignoré par git).
 
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale

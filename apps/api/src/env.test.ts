@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLiveStripeSecretKey, voiceSttBooleanFlagSchema } from './env';
+import { isLiveStripeSecretKey, resolveSemanticModel, voiceSttBooleanFlagSchema } from './env';
 
 describe('Stripe environment guard', () => {
   it('recognises live secret keys without exposing their value', () => {
@@ -20,5 +20,23 @@ describe('VOICE_DIALOGUE_LISTENING_V2 environment schema', () => {
     expect(voiceSttBooleanFlagSchema.parse('true')).toBe('true');
     expect(voiceSttBooleanFlagSchema.parse('false')).toBe('false');
     expect(voiceSttBooleanFlagSchema.safeParse('1').success).toBe(false);
+  });
+});
+
+describe('Span-01 model resolution', () => {
+  it('falls back to the provider default, including for an empty value', () => {
+    expect(resolveSemanticModel('openrouter', undefined)).toBe('respan/span-01');
+    expect(resolveSemanticModel('openrouter', '')).toBe('respan/span-01');
+    expect(resolveSemanticModel('respan', undefined)).toBe('span-01-pro');
+    expect(resolveSemanticModel('respan', '')).toBe('span-01-pro');
+  });
+
+  it('keeps provider-specific models and rejects cross-provider values', () => {
+    expect(resolveSemanticModel('respan', 'span-01-free')).toBe('span-01-free');
+    expect(resolveSemanticModel('openrouter', 'respan/span-01')).toBe('respan/span-01');
+    expect(() => resolveSemanticModel('openrouter', 'span-01-pro')).toThrow(/appartient à Respan/);
+    expect(() => resolveSemanticModel('respan', 'respan/span-01')).toThrow(
+      /n'est pas un modèle Respan/,
+    );
   });
 });
