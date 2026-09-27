@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CEREBRAS_BASE_URL, GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { VoiceConfigSchema, VoiceDeepgramConfigSchema, optionalUrlSchema } from '../env';
 
 /**
@@ -37,9 +37,6 @@ describe('VoiceConfigSchema', () => {
     expect(config).toMatchObject({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
-      VOICE_LLM_HEDGE_DELAY_MS: 1000,
-      VOICE_LLM_HEDGE_TIMEOUT_MS: 3000,
-      VOICE_LLM_HEDGE_MODEL: 'qwen/qwen3.8-27b',
       VOICE_LLM_FILLER_DELAY_MS: 1200,
       VOICE_DEEPGRAM_ENDPOINTING_MS: 200,
       VOICE_DEEPGRAM_UTTERANCE_END_MS: 1000,
@@ -47,26 +44,26 @@ describe('VoiceConfigSchema', () => {
       VOICE_DEEPGRAM_NUMERALS: 'true',
       VOICE_DEEPGRAM_PUNCTUATE: 'false',
       VOICE_DEEPGRAM_MIP_OPT_OUT: 'true',
-      GROQ_BASE_URL,
+      VOICE_LLM_PROVIDER: 'cerebras',
+      CEREBRAS_BASE_URL,
     });
-    expect(config.GROQ_API_KEY).toBeUndefined();
+    expect(config.CEREBRAS_API_KEY).toBeUndefined();
   });
 
   it('parse les overrides typés et conserve la clé API optionnelle', () => {
     const config = VoiceConfigSchema.parse({
-      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
+      VOICE_LLM_MODEL: 'qwen-3.8-27b',
       VOICE_LLM_TIMEOUT_MS: '1250',
-      GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
-      GROQ_API_KEY: 'gsk-key',
+      CEREBRAS_BASE_URL: 'https://cerebras.example.test/v1',
+      CEREBRAS_API_KEY: 'csk-key',
     });
 
     expect(config).toMatchObject({
-      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
+      VOICE_LLM_MODEL: 'qwen-3.8-27b',
       VOICE_LLM_TIMEOUT_MS: 1250,
-      VOICE_LLM_PROVIDER: 'groq',
-      GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
-      GROQ_API_KEY: 'gsk-key',
-      CEREBRAS_BASE_URL,
+      VOICE_LLM_PROVIDER: 'cerebras',
+      CEREBRAS_BASE_URL: 'https://cerebras.example.test/v1',
+      CEREBRAS_API_KEY: 'csk-key',
     });
   });
 
@@ -85,8 +82,9 @@ describe('VoiceConfigSchema', () => {
     });
   });
 
-  it('refuse un provider vocal inconnu', () => {
+  it('refuse un provider vocal inconnu, Groq compris', () => {
     expect(VoiceConfigSchema.safeParse({ VOICE_LLM_PROVIDER: 'legacy' }).success).toBe(false);
+    expect(VoiceConfigSchema.safeParse({ VOICE_LLM_PROVIDER: 'groq' }).success).toBe(false);
   });
 
   it('ignore les variables des providers supprimés', () => {
@@ -96,16 +94,17 @@ describe('VoiceConfigSchema', () => {
       VOICE_LLM_FALLBACK_MODEL: 'legacy-model',
       VOICE_LLM_BASE_URL: 'https://legacy.example.test',
       VOICE_LLM_API_KEY: 'x',
-      OPENROUTER_API_KEY: 'or-key',
+      GROQ_API_KEY: 'gsk-key',
+      GROQ_BASE_URL: 'https://api.groq.com/openai/v1',
     });
 
     expect(config).toMatchObject({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
-      VOICE_LLM_PROVIDER: 'groq',
-      GROQ_BASE_URL,
+      VOICE_LLM_PROVIDER: 'cerebras',
       CEREBRAS_BASE_URL,
     });
+    expect(config).not.toHaveProperty('GROQ_API_KEY');
   });
 
   it('retombe sur le timeout par défaut si la valeur est invalide', () => {
@@ -114,8 +113,8 @@ describe('VoiceConfigSchema', () => {
     expect(config.VOICE_LLM_TIMEOUT_MS).toBe(8000);
   });
 
-  it('refuse une URL Groq invalide', () => {
-    const result = VoiceConfigSchema.safeParse({ GROQ_BASE_URL: 'not-a-url' });
+  it('refuse une URL Cerebras invalide', () => {
+    const result = VoiceConfigSchema.safeParse({ CEREBRAS_BASE_URL: 'not-a-url' });
 
     expect(result.success).toBe(false);
   });

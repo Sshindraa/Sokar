@@ -5,14 +5,14 @@ Non exécutés en CI — usage développeur local uniquement.
 
 ## Scripts
 
-| Script                          | Rôle                                                                                     | Invocation                                             |
-| ------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `test-stt-tts.mjs`              | Valide les 3 APIs vocales (ElevenLabs Scribe STT, Cartesia TTS, Groq LLM) indépendamment | `pnpm test:diagnostic`                                 |
-| `benchmark-cartesia-voices.mjs` | Génère un corpus français/anglais pour comparer les voix Sonic 3.6                       | `node tools/diagnostics/benchmark-cartesia-voices.mjs` |
-| `dogfood-sokar.sh`              | Dogfood QA du site/dashboard via Hermes CLI                                              | `pnpm dogfood:sokar`                                   |
-| `simulate-voice-call.ts`        | Simule un appel vocal contre l'API locale (`/api/test/simulate-call`)                    | `pnpm test:voice:simulate`                             |
-| `test-mcp-client.ts`            | Client de test pour les endpoints MCP de l'API (depuis le contexte `apps/api`)           | `pnpm test:mcp:client`                                 |
-| `sokar-mcp-stdio.ts`            | Bridge MCP stdio pour Claude Desktop (depuis le contexte `apps/api`)                     | `pnpm test:mcp:stdio`                                  |
+| Script                          | Rôle                                                                                         | Invocation                                             |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `test-stt-tts.mjs`              | Valide les 3 APIs vocales (ElevenLabs Scribe STT, Cartesia TTS, Cerebras LLM) indépendamment | `pnpm test:diagnostic`                                 |
+| `benchmark-cartesia-voices.mjs` | Génère un corpus français/anglais pour comparer les voix Sonic 3.6                           | `node tools/diagnostics/benchmark-cartesia-voices.mjs` |
+| `dogfood-sokar.sh`              | Dogfood QA du site/dashboard via Hermes CLI                                                  | `pnpm dogfood:sokar`                                   |
+| `simulate-voice-call.ts`        | Simule un appel vocal contre l'API locale (`/api/test/simulate-call`)                        | `pnpm test:voice:simulate`                             |
+| `test-mcp-client.ts`            | Client de test pour les endpoints MCP de l'API (depuis le contexte `apps/api`)               | `pnpm test:mcp:client`                                 |
+| `sokar-mcp-stdio.ts`            | Bridge MCP stdio pour Claude Desktop (depuis le contexte `apps/api`)                         | `pnpm test:mcp:stdio`                                  |
 
 ## Variables d'environnement
 
@@ -20,10 +20,10 @@ Non exécutés en CI — usage développeur local uniquement.
 | -------------------------- | -------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
 | `ELEVENLABS_BENCH_API_KEY` | test-stt-tts, voice-stt-bench                            | obligatoire                                   | Clé ElevenLabs dédiée, différente de la clé de production |
 | `CARTESIA_BENCH_API_KEY`   | test-stt-tts, voice-stt-bench, benchmark-cartesia-voices | obligatoire                                   | Clé Cartesia dédiée, différente de la clé de production   |
-| `GROQ_BENCH_API_KEY`       | test-stt-tts                                             | obligatoire                                   | Clé Groq dédiée, différente de la clé de production       |
+| `CEREBRAS_BENCH_API_KEY`   | test-stt-tts                                             | obligatoire                                   | Clé Cerebras dédiée, différente de la clé de production   |
 | `OPENROUTER_BENCH_API_KEY` | benchmark-voice-llms                                     | obligatoire                                   | Clé OpenRouter dédiée, différente de la clé de production |
 | `BENCH_MAX_CREDITS`        | diagnostics et bancs                                     | entier positif obligatoire                    | Plafond estimé en unités natives par fournisseur          |
-| `GROQ_BASE_URL`            | test-stt-tts                                             | `https://api.groq.com/openai/v1`              | Endpoint Groq OpenAI-compatible                           |
+| `CEREBRAS_BASE_URL`        | test-stt-tts                                             | `https://api.cerebras.ai/v1`                  | Endpoint Cerebras OpenAI-compatible                       |
 | `VOICE_LLM_MODEL`          | test-stt-tts                                             | `qwen/qwen3.8-27b`                            | Modèle LLM vocal                                          |
 | `CARTESIA_VOICE_ID`        | test-stt-tts                                             | `f786b574-...`                                | ID de voix Cartesia                                       |
 | `ELEVENLABS_STT_MODEL`     | test-stt-tts                                             | `scribe_v2_realtime`                          | Modèle STT                                                |
@@ -43,4 +43,4 @@ Non exécutés en CI — usage développeur local uniquement.
 - `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+), mais n'utilise
   que les trois clés `*_BENCH_API_KEY`. Il refuse toute clé absente, identique à la clé
   de production ou dépassant `BENCH_MAX_CREDITS`. Les unités du plafond sont affichées
-  séparément pour ElevenLabs (caractères), Cartesia (caractères) et Groq (tokens).
+  séparément pour ElevenLabs (caractères), Cartesia (caractères) et Cerebras (tokens).

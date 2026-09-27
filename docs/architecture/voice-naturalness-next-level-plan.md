@@ -40,7 +40,7 @@ Les quatre qualités à optimiser ensemble sont :
 
 ## 2. Diagnostic factuel des appels observés
 
-Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → Groq/Qwen 3.8 27B → Cartesia Sonic 3.6 (`sonic-3.6`) → Telnyx.
+Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → Cerebras/Qwen 3.8 27B → Cartesia Sonic 3.6 (`sonic-3.6`) → Telnyx.
 
 ### Points déjà corrigés en production
 
@@ -146,7 +146,7 @@ Valider la structure et les slots avant TTS. Les champs critiques doivent être 
 7. Interdire « je vais vérifier » si aucun appel d’outil n’est produit dans le tour.
 8. Retirer défensivement les secondes salutations et relances génériques avant TTS.
 9. Passer le délai des fillers de 400 ms à 900–1 200 ms ; valeur initiale recommandée : 1 000 ms.
-10. ~~Conserver plusieurs modèles et tester un canari par restaurant.~~ Clos le 22/09/2026 : un seul provider, Groq/Qwen, sans repli ni flag par restaurant (voir Chantier F).
+10. ~~Conserver plusieurs modèles et tester un canari par restaurant.~~ Clos le 22/09/2026 : un seul provider, Groq/Qwen, sans repli ni flag par restaurant (voir Chantier F). Depuis le 27/09/2026 : Cerebras seul, avec secours OpenRouter sur le tour structuré.
 
 Un prototype de ces changements existe dans le worktree local `/private/tmp/sokar-liveness-deploy`, non déployé. Il doit être revu et repris proprement, pas copié aveuglément.
 
@@ -198,7 +198,7 @@ Ne pas ajouter artificiellement des « euh ». Une hésitation simulée et rép�
 
 **Clos le 22 septembre 2026.** La sélection de modèle par restaurant, les canaris
 de provider et le repli automatique ont été retirés : **un seul provider, Groq en
-direct avec `qwen/qwen3.8-27b`, sans repli et sans flag par restaurant**. Les
+direct avec `qwen/qwen3.8-27b`, sans repli et sans flag par restaurant** (remplacé le 27/09/2026 par Cerebras `qwen-3.8-27b`, Groq retiré). Les
 anciens documents de comparaison sont archivés dans
 [`docs/_archive/`](../../_archive/README.md) et ne font plus partie du chemin actif.
 
@@ -206,7 +206,7 @@ Reste applicable de ce chantier : conserver une température modérée pour les 
 variété de style ne dégrade pas les arguments structurés. Le tableau de suivi est
 [`runbooks/provider-resilience.md`](../../runbooks/provider-resilience.md) ; toute réintroduction
 d'un second modèle devra passer par un provider réellement indépendant, pas par un repli qui
-repasserait par Groq.
+repasserait par le même fournisseur.
 
 ## 6. Observabilité requise
 
@@ -342,7 +342,7 @@ Le worktree `/private/tmp/sokar-liveness-deploy` contient actuellement une expé
 - date/fuseau injectés ;
 - `checkAvailability` avec heure précise ;
 - filler à 1 000 ms ;
-- modèle unique : Groq/Qwen 3.8 27B ;
+- modèle unique : Cerebras/Qwen 3.8 27B (Groq retiré le 27/09/2026) ;
 - smoke réel `apps/api/scripts/smoke-voice-naturalness.ts`.
 
 Résultats obtenus avant cette passation :

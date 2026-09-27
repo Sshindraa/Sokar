@@ -386,7 +386,7 @@ export interface TelnyxStreamMessage {
   stream_id?: string;
 }
 
-/** Message de chat au format OpenAI-compatible (Groq). */
+/** Message de chat au format OpenAI-compatible (Cerebras). */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;

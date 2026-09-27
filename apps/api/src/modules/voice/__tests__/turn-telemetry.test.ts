@@ -149,7 +149,7 @@ describe('voice turn telemetry', () => {
       expect(turns[0]).toMatchObject({
         path: 'llm',
         sequence: 1,
-        llmProvider: 'groq',
+        llmProvider: 'cerebras',
         llmModel: expect.any(String),
       });
       expect(turns[0]?.latencyTrace?.llmFirstTokenMs).toBe(120);

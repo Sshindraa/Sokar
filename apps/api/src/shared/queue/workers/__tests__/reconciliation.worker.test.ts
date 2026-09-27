@@ -606,7 +606,7 @@ describe('reconciliation.worker voice finalization sweep', () => {
         outcome: 'RESERVED',
         intent: 'RESERVATION',
         sttProvider: 'elevenlabs-scribe-v2-realtime',
-        llmProvider: 'groq',
+        llmProvider: 'cerebras',
         ttsProvider: 'cartesia-sonic',
         reservation: { id: 'res-1' },
       }),

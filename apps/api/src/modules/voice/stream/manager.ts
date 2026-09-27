@@ -48,12 +48,9 @@ import {
   voiceActiveSessionsGauge,
   voiceCallsTotal,
   voiceTransfersTotal,
-  voiceLlmHedgeTotal,
   type VoiceTransferMotive,
   type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
-import { isVoiceDeepgramDialoguePilot } from './feature-flags';
-import { raceFirstTokenResponses } from './first-token-hedge';
 
 function recordVoiceTransfer(
   session: CallSession,
@@ -77,8 +74,7 @@ function recordVoiceTransfer(
 }
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
-// Un seul provider LLM actif à la fois (`VOICE_LLM_PROVIDER`) : le label de la
-// métrique porte son nom pour distinguer Groq et Cerebras dans les dashboards.
+// Fournisseur LLM unique : Cerebras. Le label de la métrique porte son nom.
 
 type LlmProvider = VoiceLlmProvider;
 
@@ -341,8 +337,7 @@ function terminalToolReply(
  * Regroupe tous les messages `system` en un seul, placé en tête.
  *
  * Le prompt, la consigne de langue et le contexte éphémère sont des messages
- * `system` distincts. Groq les accepte, mais le template de chat Qwen de
- * Cerebras refuse tout message `system` qui n'est pas le premier (400
+ * `system` distincts. Le template de chat Qwen de Cerebras refuse tout message `system` qui n'est pas le premier (400
  * `System message must be at the beginning`). L'ordre des consignes est
  * conservé ; les autres messages ne sont pas modifiés.
  */
@@ -425,7 +420,6 @@ const CIRCUIT_BREAKER_THRESHOLD = 3; // 3 échecs consécutifs → open
 const CIRCUIT_BREAKER_COOLDOWN_MS = 30_000; // 30s de cooldown
 
 const circuitBreakers: Record<LlmProvider, CircuitBreakerState> = {
-  groq: { failures: 0, openedAt: null },
   cerebras: { failures: 0, openedAt: null },
 };
 
@@ -475,7 +469,6 @@ function resetCircuitBreaker(provider: LlmProvider): void {
 
 // Exporté pour les tests
 export function _resetCircuitBreakersForTesting(): void {
-  resetCircuitBreaker('groq');
   resetCircuitBreaker('cerebras');
 }
 
@@ -1406,76 +1399,18 @@ export class CallSessionManager {
     },
   ): Promise<{ response: Response; provider: LlmProvider }> {
     const provider = getVoiceLlmProvider();
-    // Tour structuré : Groq sert le même modèle et respecte le JSON Schema strict
-    // (banc réel du 27/09) ; la course est opt-in et plus précoce, les pics
-    // Cerebras au premier jeton (1,7–2,1 s, appel 25650799) étant rares.
-    const structuredHedge = Boolean(
-      opts.responseFormat && voiceConfig.VOICE_STRUCTURED_HEDGE_ENABLED === 'true',
-    );
-    const hedgeEnabled = Boolean(
-      provider === 'cerebras' &&
-      voiceConfig.GROQ_API_KEY &&
-      (opts.responseFormat ? structuredHedge : isVoiceDeepgramDialoguePilot(session)) &&
-      !isCircuitBreakerOpen('groq'),
-    );
-    const primaryCircuitOpen = isCircuitBreakerOpen(provider);
-    if (primaryCircuitOpen && !hedgeEnabled) {
+    if (isCircuitBreakerOpen(provider)) {
       logger.warn({ provider }, '[circuit-breaker] provider LLM open, streaming ignoré');
       throw new Error('LLM provider unavailable (circuit open)');
     }
 
     try {
-      if (hedgeEnabled) {
-        return await raceFirstTokenResponses(
-          'cerebras',
-          (signal) =>
-            this.fetchProviderStreaming(
-              messages,
-              { ...opts, signal },
-              getVoiceLlmModel(),
-              'cerebras',
-            ),
-          'groq',
-          (signal) =>
-            this.fetchProviderStreaming(
-              messages,
-              { ...opts, signal },
-              voiceConfig.VOICE_LLM_HEDGE_MODEL,
-              'groq',
-            ),
-          {
-            delayMs: structuredHedge
-              ? voiceConfig.VOICE_STRUCTURED_HEDGE_DELAY_MS
-              : voiceConfig.VOICE_LLM_HEDGE_DELAY_MS,
-            timeoutMs: voiceConfig.VOICE_LLM_HEDGE_TIMEOUT_MS,
-            startBackupImmediately: primaryCircuitOpen,
-            signal: opts.signal,
-            onWinner: (winner) => {
-              recordProviderSuccess(winner as LlmProvider);
-              voiceLlmHedgeTotal.inc({ winner });
-            },
-            onFailure: (failedProvider, _error, statusCode) => {
-              recordProviderFailure(failedProvider as LlmProvider);
-              if (statusCode !== undefined) {
-                recordLlmHttpError(failedProvider as LlmProvider, statusCode);
-              }
-            },
-            onTimeout: () => voiceLlmHedgeTotal.inc({ winner: 'timeout' }),
-          },
-        );
-      }
-
-      const response = await this.fetchProviderStreaming(
-        messages,
-        opts,
-        getVoiceLlmModel(),
-        provider,
-      );
+      const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
       if (response.ok) {
         recordProviderSuccess(provider);
         return { response, provider };
       }
-      if (!hedgeEnabled) recordProviderFailure(provider);
+      recordProviderFailure(provider);
       recordLlmHttpError(provider, response.status);
       return { response, provider };
     } catch (err) {
@@ -1563,7 +1498,7 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM streaming via l'API OpenAI-compatible du provider actif.
+   * Fetch LLM streaming via l'API OpenAI-compatible de Cerebras.
    */
   private async fetchProviderStreaming(
     messages: ChatMessage[],
@@ -1575,7 +1510,6 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
     model: string,
-    provider: LlmProvider = getVoiceLlmProvider(),
   ): Promise<Response> {
     const body = {
       model,
@@ -1590,7 +1524,7 @@ export class CallSessionManager {
       stream_options: { include_usage: true },
     };
 
-    const { baseUrl, apiKey } = getVoiceLlmEndpoint(provider);
+    const { baseUrl, apiKey } = getVoiceLlmEndpoint();
     return fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {

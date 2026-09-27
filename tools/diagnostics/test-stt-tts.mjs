@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Test pipeline vocal — STT (ElevenLabs Scribe) ↔ TTS (Cartesia) ↔ LLM (Groq)
+ * Test pipeline vocal — STT (ElevenLabs Scribe) ↔ TTS (Cartesia) ↔ LLM (Cerebras)
  *
  * Usage : pnpm test:diagnostic  (ou node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs)
  *
@@ -9,28 +9,28 @@
 
 const EL_KEY = process.env.ELEVENLABS_BENCH_API_KEY || '';
 const CA_KEY = process.env.CARTESIA_BENCH_API_KEY || '';
-const GROQ_KEY = process.env.GROQ_BENCH_API_KEY || '';
-const GROQ_BASE_URL = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1';
+const LLM_KEY = process.env.CEREBRAS_BENCH_API_KEY || '';
+const CEREBRAS_BASE_URL = process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
 const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.6';
-const VOICE_MODEL = process.env.VOICE_LLM_MODEL || 'qwen/qwen3.8-27b';
+const VOICE_MODEL = process.env.VOICE_LLM_MODEL || 'qwen-3.8-27b';
 const CARTESIA_TEST_TEXT = 'Test de synthèse vocale Cartesia.';
-const GROQ_SYSTEM_PROMPT = 'Vous êtes un agent vocal concis.';
-const GROQ_USER_PROMPT = 'Dis bonjour en français.';
-const GROQ_MAX_TOKENS = 50;
+const LLM_SYSTEM_PROMPT = 'Vous êtes un agent vocal concis.';
+const LLM_USER_PROMPT = 'Dis bonjour en français.';
+const LLM_MAX_TOKENS = 50;
 
 function keyOk(k) {
   return k && k.length > 10 && k !== '...' && !k.includes('***');
 }
 
 const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
-const groqEstimatedTokens =
-  Math.ceil((GROQ_SYSTEM_PROMPT.length + GROQ_USER_PROMPT.length) / 2) + GROQ_MAX_TOKENS;
+const llmEstimatedTokens =
+  Math.ceil((LLM_SYSTEM_PROMPT.length + LLM_USER_PROMPT.length) / 2) + LLM_MAX_TOKENS;
 const providerEstimates = {
   ElevenLabs: 0,
   Cartesia: CARTESIA_TEST_TEXT.length,
-  Groq: groqEstimatedTokens,
+  Cerebras: llmEstimatedTokens,
 };
 
 if (!keyOk(EL_KEY)) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
@@ -41,9 +41,9 @@ if (!keyOk(CA_KEY)) throw new Error('CARTESIA_BENCH_API_KEY is required');
 if (CA_KEY === process.env.CARTESIA_API_KEY?.replace(/"/g, '')) {
   throw new Error('CARTESIA_BENCH_API_KEY must differ from CARTESIA_API_KEY');
 }
-if (!keyOk(GROQ_KEY)) throw new Error('GROQ_BENCH_API_KEY is required');
-if (GROQ_KEY === process.env.GROQ_API_KEY) {
-  throw new Error('GROQ_BENCH_API_KEY must differ from GROQ_API_KEY');
+if (!keyOk(LLM_KEY)) throw new Error('CEREBRAS_BENCH_API_KEY is required');
+if (LLM_KEY === process.env.CEREBRAS_API_KEY) {
+  throw new Error('CEREBRAS_BENCH_API_KEY must differ from CEREBRAS_API_KEY');
 }
 if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
   throw new Error('BENCH_MAX_CREDITS must be a positive integer');
@@ -169,22 +169,22 @@ async function testCartesia() {
   }
 }
 
-// ─── 3. Groq LLM ───────────────────────────────────────────────────────────────
-async function testGroq() {
-  console.log('\n━━━ 3. Groq LLM ━━━');
-  if (!keyOk(GROQ_KEY)) return skip('Groq', 'clé API manquante');
+// ─── 3. Cerebras LLM ───────────────────────────────────────────────────────────────
+async function testLlm() {
+  console.log('\n━━━ 3. Cerebras LLM ━━━');
+  if (!keyOk(LLM_KEY)) return skip('Cerebras', 'clé API manquante');
 
   try {
-    const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${CEREBRAS_BASE_URL}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${LLM_KEY}` },
       body: JSON.stringify({
         model: VOICE_MODEL,
         messages: [
-          { role: 'system', content: GROQ_SYSTEM_PROMPT },
-          { role: 'user', content: GROQ_USER_PROMPT },
+          { role: 'system', content: LLM_SYSTEM_PROMPT },
+          { role: 'user', content: LLM_USER_PROMPT },
         ],
-        max_tokens: GROQ_MAX_TOKENS,
+        max_tokens: LLM_MAX_TOKENS,
         reasoning_effort: 'none',
       }),
     });
@@ -203,18 +203,20 @@ async function testGroq() {
 async function main() {
   console.log('═'.repeat(60));
   console.log('  🔍 Diagnostic Pipeline Vocal');
-  console.log(`  TTS : Cartesia sonic-3.6 | STT : ElevenLabs Scribe | LLM : Groq (${VOICE_MODEL})`);
+  console.log(
+    `  TTS : Cartesia sonic-3.6 | STT : ElevenLabs Scribe | LLM : Cerebras (${VOICE_MODEL})`,
+  );
   console.log('═'.repeat(60));
   console.log('');
   console.log('  État des clés API dans .env.local :');
   console.log(`  • ELEVENLABS_BENCH_API_KEY : ${keyOk(EL_KEY) ? '✓' : '✗'}`);
   console.log(`  • CARTESIA_BENCH_API_KEY   : ${keyOk(CA_KEY) ? '✓' : '✗'}`);
-  console.log(`  • GROQ_BENCH_API_KEY       : ${keyOk(GROQ_KEY) ? '✓' : '✗'}`);
+  console.log(`  • CEREBRAS_BENCH_API_KEY   : ${keyOk(LLM_KEY) ? '✓' : '✗'}`);
   console.log('');
 
   await testElevenLabsStt();
   await testCartesia();
-  await testGroq();
+  await testLlm();
 
   console.log('\n' + '═'.repeat(60));
   const total = passed + failed + skipped;
@@ -222,19 +224,19 @@ async function main() {
   console.log('═'.repeat(60));
 
   // Recommandations
-  if (!keyOk(EL_KEY) || !keyOk(CA_KEY) || !keyOk(GROQ_KEY)) {
+  if (!keyOk(EL_KEY) || !keyOk(CA_KEY) || !keyOk(LLM_KEY)) {
     console.log('\n📋 Clés API nécessaires :');
     if (!keyOk(EL_KEY))
       console.log('  • ElevenLabs : https://elevenlabs.io → API Keys → générer une clé');
     if (!keyOk(CA_KEY))
       console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
-    if (!keyOk(GROQ_KEY))
-      console.log('  • Groq : https://console.groq.com → API Keys → créer une clé');
+    if (!keyOk(LLM_KEY))
+      console.log('  • Cerebras : https://cloud.cerebras.ai → API Keys → créer une clé');
     console.log('');
     console.log('  Ajoutez-les dans .env :');
     console.log('    ELEVENLABS_BENCH_API_KEY="cle"');
     console.log('    CARTESIA_BENCH_API_KEY="cle"');
-    console.log('    GROQ_BENCH_API_KEY="cle"');
+    console.log('    CEREBRAS_BENCH_API_KEY="cle"');
     console.log('    CARTESIA_VOICE_ID="f786b574-daa5-4673-aa0c-cbe3e8534c02"');
     console.log('');
     console.log('  Sinon, vous pouvez tester le pipeline de logique métier sans audio :');

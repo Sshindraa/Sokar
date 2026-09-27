@@ -394,7 +394,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
   it('fermeture WS : marque la session comme ended et appelle mgr.delete', async () => {
     const session = makeMockSession();
-    session.currentTurn = { llmProvider: 'groq' } as NonNullable<CallSession['currentTurn']>;
+    session.currentTurn = { llmProvider: 'cerebras' } as NonNullable<CallSession['currentTurn']>;
     mockMgr.get.mockReturnValue(session);
 
     const ws = await connectWs(port, 'cc-ws-1');
@@ -421,7 +421,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     // resterait sans outcome si `/voice/telnyx/end` n'arrive jamais.
     expect(mockFinalizeVoiceCall).toHaveBeenCalledWith(
       'leg-ws-1',
-      expect.objectContaining({ source: 'stream-close', llmProvider: 'groq' }),
+      expect.objectContaining({ source: 'stream-close', llmProvider: 'cerebras' }),
       expect.objectContaining({
         enqueueRecovery: expect.any(Function),
         loadRestaurantContext: expect.any(Function),

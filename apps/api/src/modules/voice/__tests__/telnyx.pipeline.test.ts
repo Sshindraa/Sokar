@@ -872,7 +872,7 @@ describe('finalisation commune des appels — ordre, doublons et pannes', () => 
     intent: 'RESERVATION',
     outcome: 'NO_ACTION',
     sttProvider: 'elevenlabs-scribe-v2-realtime',
-    llmProvider: 'groq',
+    llmProvider: 'cerebras',
     ttsProvider: 'cartesia-sonic',
     reservation: null,
     messages: [],

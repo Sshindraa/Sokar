@@ -301,7 +301,7 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
       responseFormat: unknown,
       options: { signal?: AbortSignal; onDelta: (delta: string) => void },
     ) => {
-      // BENCH_PACE_MS : espace les appels (fournisseur à faible débit autorisé, ex. Groq).
+      // BENCH_PACE_MS : espace les appels (fournisseur à faible débit autorisé).
       const pace = Number(process.env.BENCH_PACE_MS ?? 0);
       if (pace > 0) await new Promise((resolve) => setTimeout(resolve, pace));
       const startedAt = Date.now();

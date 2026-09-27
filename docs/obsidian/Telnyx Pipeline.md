@@ -34,7 +34,7 @@ POST /voice/telnyx  ← call.initiated webhook
 | Étape               | Provider                               | Modèle                                                       | Détail                                                                                  |
 | ------------------- | -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | **STT**             | Telnyx ai_config / Scribe Media Stream | `scribe_v2_realtime` en Media Stream                         | La route Media Stream envoie PCMU en `ulaw_8000` et convertit PCMA en `pcm_8000`        |
-| **LLM**             | Groq OpenAI-compatible                 | `qwen/qwen3.8-27b`                                           | System prompt + conversation turns ; aucun repli de modèle                              |
+| **LLM**             | Cerebras OpenAI-compatible             | `qwen-3.8-27b`                                               | System prompt + conversation turns ; aucun repli de modèle                              |
 | **TTS**             | Cartesia                               | `sonic-3.6` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
 | **First utterance** | —                                      | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
@@ -57,7 +57,7 @@ Le code de langue détecté par Scribe est transmis au LLM ; Cartesia reçoit la
          │ utterances textuelles
          ▼
 ┌─────────────────┐
-│   Groq LLM       │  ← décision + tool calls
+│   Cerebras LLM   │  ← décision + tool calls
 │   Qwen 3.8 27B   │
 └────────┬────────┘
          │ réponse textuelle
@@ -119,8 +119,8 @@ Met à jour le Call record avec durée, transcript, outcome, provider info, flag
 ## Modèle LLM vocal
 
 Le chemin vocal utilise un seul modèle configuré par `VOICE_LLM_MODEL`, avec
-`qwen/qwen3.8-27b` comme valeur par défaut. Le provider est Groq direct ; il
-n'existe plus de sélection VIP, de canari par restaurant ou de repli automatique.
+`qwen-3.8-27b` comme valeur par défaut. Le fournisseur est Cerebras (Groq retiré
+le 27/09/2026) ; le tour structuré a un secours OpenRouter en cas de panne.
 Après trois échecs consécutifs, le circuit breaker court-circuite temporairement
 les appels et le pipeline prononce le message de dégradation prévu.
 

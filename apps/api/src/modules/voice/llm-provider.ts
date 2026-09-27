@@ -1,9 +1,8 @@
 /**
  * Provider LLM vocal — source de vérité unique.
  *
- * Un seul provider actif à la fois, choisi par `VOICE_LLM_PROVIDER` (Groq par
- * défaut, Cerebras en option). Les deux exposent une API OpenAI-compatible ;
- * le chemin vocal n'effectue aucun routage secondaire ni repli entre eux.
+ * Fournisseur unique : Cerebras (API OpenAI-compatible). Le tour structuré a
+ * un secours OpenRouter en cas de panne (voir manager.ts).
  *
  * Les métadonnées d'appel (SafeProviderConfig, `Call.llmProvider`) doivent
  * refléter ce provider ; le modèle est exposé séparément par
@@ -25,14 +24,11 @@ export function getVoiceLlmModel(): string {
 }
 
 /** URL de base et clé du provider actif. */
-export function getVoiceLlmEndpoint(provider: VoiceLlmProvider = getVoiceLlmProvider()): {
+export function getVoiceLlmEndpoint(): {
   baseUrl: string;
   apiKey: string | undefined;
 } {
-  if (provider === 'cerebras') {
-    return { baseUrl: voiceConfig.CEREBRAS_BASE_URL, apiKey: voiceConfig.CEREBRAS_API_KEY };
-  }
-  return { baseUrl: voiceConfig.GROQ_BASE_URL, apiKey: voiceConfig.GROQ_API_KEY };
+  return { baseUrl: voiceConfig.CEREBRAS_BASE_URL, apiKey: voiceConfig.CEREBRAS_API_KEY };
 }
 
 /**

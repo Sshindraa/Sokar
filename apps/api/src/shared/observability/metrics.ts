@@ -228,7 +228,7 @@ export const voiceTurnDurationMs = new Histogram({
 
 /**
  * Temps jusqu'au premier token LLM (TTFT). Cible < 500ms pour une
- * conversation naturelle (Groq LPU).
+ * conversation naturelle.
  */
 export const voiceLlmFirstTokenMs = new Histogram({
   name: 'sokar_voice_llm_first_token_ms',
@@ -256,9 +256,9 @@ export const voiceTtsFirstAudioMs = new Histogram({
 });
 
 /**
- * Erreurs par provider voice (ElevenLabs STT, Cartesia, Groq).
+ * Erreurs par provider voice (Deepgram, Cartesia, Cerebras).
  * Permet de mesurer la fiabilité de chaque provider indépendamment.
- * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | groq) × type borné.
+ * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | cerebras | openrouter) × type borné.
  */
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
@@ -651,13 +651,6 @@ export const voiceFillerEventsTotal = new Counter({
   registers: [getRegistry()],
 });
 
-export const voiceLlmHedgeTotal = new Counter({
-  name: 'sokar_voice_llm_hedge_total',
-  help: 'Hedged voice LLM requests by winning provider or timeout',
-  labelNames: ['winner'] as const,
-  registers: [getRegistry()],
-});
-
 export const voiceLlmSpokenFallbackTotal = new Counter({
   name: 'sokar_voice_llm_spoken_fallback_total',
   help: 'Voice LLM failures recovered with a spoken deterministic response',
@@ -781,7 +774,6 @@ export function __resetMetrics(): void {
   voiceEndOfSpeechToSttFinalMs.reset();
   voiceFalseEndOfTurnTotal.reset();
   voiceFillerEventsTotal.reset();
-  voiceLlmHedgeTotal.reset();
   voiceLlmSpokenFallbackTotal.reset();
   voiceEchoSuppressedTotal.reset();
   voiceTurnPlanShadowByRestaurantTotal.reset();
