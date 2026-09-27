@@ -54,11 +54,13 @@ export function observeSemanticSignalsShadow(
   options: { config?: SemanticShadowConfig; fetcher?: typeof fetch; random?: () => number } = {},
 ): void {
   const config = options.config ?? currentConfig();
-  if (!config.enabled || !config.apiKey?.trim()) {
-    voiceSemanticStatusTotal.inc({ status: 'disabled' });
+  if (!config.enabled) return;
+  if (!config.apiKey?.trim()) {
+    voiceSemanticStatusTotal.inc({ status: 'missing_key' });
     return;
   }
   if ((options.random ?? Math.random)() >= config.sampleRate) return;
+  const currentIntent = turn.spanSession?.conversation.intent ?? session.conversation.intent;
   try {
     const request = buildSemanticSpan(turn.spanSession ?? session, {
       transcript: turn.transcript,
@@ -77,7 +79,7 @@ export function observeSemanticSignalsShadow(
     })
       .then((result) => {
         clearTimeout(timer);
-        recordSemanticResult(result, session, turn, config.model);
+        recordSemanticResult(result, session, turn, config.model, currentIntent);
       })
       .catch(() => {
         clearTimeout(timer);
@@ -93,6 +95,7 @@ function recordSemanticResult(
   session: CallSession,
   turn: { plan?: TurnPlan; activeInteraction: PendingInteractionKind | 'none'; turnId?: string },
   model: string,
+  currentIntent: CallSession['conversation']['intent'],
 ): void {
   voiceSemanticStatusTotal.inc({ status: result.status });
   voiceSemanticDurationMs.observe({ model }, result.durationMs);
@@ -107,7 +110,12 @@ function recordSemanticResult(
   }
   voiceSemanticInputTokensTotal.inc(result.inputTokens);
   const validation = validateSemanticSignals(result.signals, turn.activeInteraction);
-  const comparison = compareSemanticSignals(result.signals, turn.plan, turn.activeInteraction);
+  const comparison = compareSemanticSignals(
+    result.signals,
+    turn.plan,
+    turn.activeInteraction,
+    currentIntent,
+  );
   for (const conflict of validation.conflicts) voiceSemanticConflictTotal.inc({ conflict });
   for (const [behavior, outcome] of Object.entries(comparison.agreements)) {
     voiceSemanticAgreementTotal.inc({

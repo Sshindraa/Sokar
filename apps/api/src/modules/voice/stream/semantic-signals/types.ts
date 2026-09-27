@@ -10,6 +10,7 @@ export type SemanticSignals = Partial<Record<BehaviorId, SemanticProbability>>;
 export type SemanticScoreStatus =
   | 'ok'
   | 'disabled'
+  | 'missing_key'
   | 'timeout'
   | 'forbidden'
   | 'rate_limited'
