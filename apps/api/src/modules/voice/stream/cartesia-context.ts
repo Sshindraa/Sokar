@@ -46,6 +46,7 @@ export interface CartesiaContextRequest {
     sample_rate: 8000 | 16000;
   };
   continue: boolean;
+  max_buffer_delay_ms: number;
 }
 
 interface CartesiaContextMessage {
@@ -91,7 +92,17 @@ export function buildCartesiaContextRequest(
       sample_rate: telnyxCodecProfile(session.codec).sampleRate,
     },
     continue: shouldContinue,
+    // Cartesia attend par défaut jusqu'à 3 000 ms d'avoir plus de texte avant de
+    // générer ; nos entrées sont déjà des phrases complètes, le délai ne ferait
+    // que retarder la première phrase.
+    max_buffer_delay_ms: cartesiaContextMaxBufferMs(),
   };
+}
+
+/** Délai de mise en tampon Cartesia (0–5 000 ms), 0 par défaut. */
+export function cartesiaContextMaxBufferMs(): number {
+  const parsed = Number(process.env.VOICE_TTS_CONTEXT_MAX_BUFFER_MS ?? 0);
+  return Number.isFinite(parsed) ? Math.min(5_000, Math.max(0, Math.round(parsed))) : 0;
 }
 
 function isActive(session: CallSession, generation: number): boolean {
@@ -180,17 +191,20 @@ export class CartesiaContextTurn {
     return this.completion;
   }
 
-  cancel(): void {
+  /** `unused` : contexte ouvert d'avance mais aucune phrase à dire (pas une interruption). */
+  cancel(reason: 'barge_in' | 'unused' = 'barge_in'): void {
     if (this.cancelled) return;
     this.cancelled = true;
     this.finishedInput = true;
     this.finishedOutput = true;
     this.audioFrames.length = 0;
     this.remainder = Buffer.alloc(0);
-    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_interrupted', {
-      reason: 'barge_in',
-      ttsPath: 'cartesia_context',
-    });
+    if (reason === 'barge_in') {
+      recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_interrupted', {
+        reason,
+        ttsPath: 'cartesia_context',
+      });
+    }
     if (this.openTimeout) clearTimeout(this.openTimeout);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {

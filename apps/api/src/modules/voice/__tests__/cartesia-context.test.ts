@@ -36,6 +36,7 @@ describe('Cartesia context TTS', () => {
       context_id: 'context-1',
       output_format: { container: 'raw', encoding: 'pcm_alaw', sample_rate: 8000 },
       continue: true,
+      max_buffer_delay_ms: 0,
     });
   });
 

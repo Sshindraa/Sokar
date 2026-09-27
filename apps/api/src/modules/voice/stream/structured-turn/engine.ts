@@ -6,7 +6,9 @@
  */
 import type { CallSession } from '../types';
 import type { CallSessionManager } from '../manager';
-import { speakTtsStreamed } from '../tts-handler';
+import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts-handler';
+import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
+import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
 import { parseRestaurantIdList } from '../feature-flags';
 import {
@@ -197,6 +199,30 @@ export async function runStructuredTurn(
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const historyBefore = [...session.history];
   const ttsPromises: Promise<void>[] = [];
+  // Toutes les phrases d'une réponse partent dans un même contexte Cartesia :
+  // intonation continue et plus de blanc entre deux phrases (appels 0d49230d,
+  // 88921164 : 1,2 à 1,6 s de silence entre « Avec plaisir ! » et la suite, la
+  // phrase suivante n'étant synthétisée qu'après la fin de la précédente).
+  // Le socket s'ouvre pendant la génération ; repli HTTP sans audio envoyé.
+  const contextTts = isCartesiaContextV2Enabled() ? createCartesiaContextTurn(session, true) : null;
+  if (contextTts) session.ttsContext = contextTts;
+  const spokenPhrases: string[] = [];
+  const flushSpeech = async () => {
+    if (contextTts && spokenPhrases.length) {
+      try {
+        await contextTts.finish();
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err), callId: session.callControlId },
+          '[structured-turn] Cartesia context failed',
+        );
+        if (!contextTts.hasAudioOutput && isSessionActiveForTts(session)) {
+          await speakTtsStreamed(session, spokenPhrases.join(' ')).catch(() => undefined);
+        }
+      }
+    }
+    await Promise.all(ttsPromises);
+  };
   const startedAt = Date.now();
   let firstPhraseSpoken = false;
 
@@ -213,6 +239,14 @@ export async function runStructuredTurn(
       mgr.transition(session, 'SPEAKING');
     }
     recordVoiceTurnEvent(session, 'llm_phrase_generated', { characterCount: phrase.length });
+    // La voix surjoue les points d'exclamation sur une phrase courte (« Avec
+    // plaisiiir ! », appel 0d49230d) : ton posé côté synthèse.
+    phrase = phrase.replace(/\s*!/g, '.');
+    spokenPhrases.push(phrase);
+    if (contextTts) {
+      contextTts.push(cleanTextForTts(phrase, effectiveVoiceLanguage(session)));
+      return;
+    }
     ttsPromises.push(speakTtsStreamed(session, phrase).catch(() => undefined));
   };
 
@@ -350,7 +384,7 @@ export async function runStructuredTurn(
   };
 
   const endCall = async (goodbye: string) => {
-    await Promise.all(ttsPromises);
+    await flushSpeech();
     session.history.push({ role: 'assistant', content: goodbye });
     await finishCall(session, mgr, goodbye);
   };
@@ -422,7 +456,7 @@ export async function runStructuredTurn(
           if (!isLive()) return;
           session.history.push({ role: 'assistant', content: reply });
           speakPhrase(reply);
-          await Promise.all(ttsPromises);
+          await flushSpeech();
           return;
         }
         case 'none':
@@ -492,7 +526,7 @@ export async function runStructuredTurn(
       durationMs: Date.now() - startedAt,
       characterCount: said.length,
     });
-    await Promise.all(ttsPromises);
+    await flushSpeech();
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
   } catch (err) {
     if (!isLive()) return;
@@ -505,11 +539,16 @@ export async function runStructuredTurn(
       reason: 'error',
       durationMs: Date.now() - startedAt,
     });
-    await Promise.all(ttsPromises);
+    await flushSpeech();
     const fallback = buildLlmFailurePlan(session).reply;
     session.history.push({ role: 'assistant', content: fallback });
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, fallback);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+  } finally {
+    // Tour sans phrase (fragment retenu, relance, interruption) : le contexte
+    // ouvert d'avance est fermé sans audio.
+    if (contextTts && !spokenPhrases.length) contextTts.cancel('unused');
+    if (session.ttsContext === contextTts) session.ttsContext = null;
   }
 }

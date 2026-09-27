@@ -215,6 +215,32 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
+/** Indices de phrasé robotique relevés sur toutes les réponses dites. */
+const style = { replies: 0, exclamations: 0, stockOpeners: 0, repeatedQuestions: 0, fullDates: 0 };
+const STOCK_OPENER = /^(parfait|très bien|avec plaisir|c'est noté|entendu|bien reçu|noté)\b/i;
+const FULL_DATE =
+  /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche),? \d{1,2} (janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\b/i;
+
+function lastQuestion(text: string): string {
+  return (
+    text
+      .split(/(?<=[.!?])\s+/)
+      .findLast((part) => part.trim().endsWith('?'))
+      ?.trim() ?? ''
+  );
+}
+
+function recordStyle(said: string, previousSaid: string): void {
+  if (!said) return;
+  style.replies++;
+  if (said.includes('!')) style.exclamations++;
+  if (STOCK_OPENER.test(said.trim())) style.stockOpeners++;
+  if (FULL_DATE.test(said)) style.fullDates++;
+  if (lastQuestion(said) && lastQuestion(said) === lastQuestion(previousSaid)) {
+    style.repeatedQuestions++;
+  }
+}
+
 function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): CallSessionManager {
   return {
     transition: (session: CallSession, state: CallSession['state']) => {
@@ -381,6 +407,13 @@ async function main() {
         }
         if (!first) invalid++;
         const said = String(session.history.at(-1)?.content ?? '');
+        if (session.history.at(-1)?.role === 'assistant') {
+          const previousSaid = String(
+            session.history.slice(0, -1).findLast((message) => message.role === 'assistant')
+              ?.content ?? '',
+          );
+          recordStyle(said, previousSaid);
+        }
         const verdicts: Array<[string, boolean]> = [];
         if (step.expect.interpretation) {
           verdicts.push([
@@ -448,6 +481,10 @@ async function main() {
   );
   process.stdout.write(
     `Début de « say » p50/p90 : ${percentile(sayStarts, 50)} / ${percentile(sayStarts, 90)} ms\n`,
+  );
+  const pct = (count: number) => `${Math.round((100 * count) / Math.max(1, style.replies))} %`;
+  process.stdout.write(
+    `Phrasé (${style.replies} réponses) : « ! » ${pct(style.exclamations)}, ouverture toute faite ${pct(style.stockOpeners)}, date complète ${pct(style.fullDates)}, question répétée mot pour mot ${style.repeatedQuestions}\n`,
   );
   if (failures.length) process.stdout.write(`\nÉcarts :\n${failures.join('\n')}\n`);
 }
