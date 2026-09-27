@@ -280,6 +280,25 @@ Pour le diagnostic d'un appel, se fier à `VoiceTurnTelemetry.llmProvider` et
 effectivement envoyée à OpenRouter.
 
 Le shadow `TurnPlan` est contrôlé par un flag global, sans ciblage par restaurant.
+
+### Span-01, signaux sémantiques shadow
+
+`VOICE_SEMANTIC_SIGNALS_ENABLED=false` par défaut. Activé, chaque tour échantillonné
+(`VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE`, 0–1, défaut 1) envoie hors du chemin de
+réponse les derniers tours anonymisés à Respan. `RESPAN_API_KEY` est un secret
+optionnel chargé depuis l'environnement : si le flag est actif sans clé, l'API
+démarre avec un avertissement et le score est `disabled`. `RESPAN_BASE_URL`
+vaut `https://api.respan.ai/api/v1` par défaut ; l'appel direct cible `/scores`.
+`VOICE_SEMANTIC_SIGNALS_MODEL` vaut `span-01-pro` (ou `span-01-free`).
+`VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS` vaut 2000 (200–10000) et
+`VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS` vaut 6 (1–30). Aucun résultat Span-01
+ne modifie la policy, l'état, les outils ou la réponse. Le 403 d'accès anticipé
+est mesuré `forbidden`.
+
+Évaluation hors ligne : `pnpm --filter api semantic:eval <fichier.jsonl>` avec
+`RESPAN_API_KEY` dans l'environnement. Le JSONL doit déjà être anonymisé ; les
+rapports agrégés vont dans `apps/api/scratch/semantic-signals-eval/` (ignoré par git).
+
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
 Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse

@@ -2,7 +2,12 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import { CEREBRAS_BASE_URL, VOICE_LLM_MODEL_DEFAULT, VOICE_LLM_PROVIDERS } from '@sokar/config';
+import {
+  CEREBRAS_BASE_URL,
+  RESPAN_BASE_URL,
+  VOICE_LLM_MODEL_DEFAULT,
+  VOICE_LLM_PROVIDERS,
+} from '@sokar/config';
 import { sttChunkMsSchema } from './shared/stt-chunking';
 import { telnyxCodecSchema } from './modules/voice/stream/telnyx-codec';
 
@@ -123,6 +128,13 @@ export const VoiceConfigSchema = z
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
+    VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
+    VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
+    VOICE_SEMANTIC_SIGNALS_MODEL: z.enum(['span-01-pro', 'span-01-free']).default('span-01-pro'),
+    VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS: z.coerce.number().int().min(200).max(10_000).default(2_000),
+    VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS: z.coerce.number().int().min(1).max(30).default(6),
+    RESPAN_BASE_URL: z.string().url().default(RESPAN_BASE_URL),
+    RESPAN_API_KEY: z.string().optional(),
     VOICE_LLM_FILLER_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_200),
     CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
     CEREBRAS_API_KEY: z.string().optional(),
@@ -517,6 +529,9 @@ function parseEnv() {
 }
 
 export const env = parseEnv();
+if (env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true' && !env.RESPAN_API_KEY?.trim()) {
+  console.warn('[voice-semantic] enabled without RESPAN_API_KEY; shadow scoring disabled');
+}
 
 // Vue typée dédiée au pipeline voice. Elle référence le même objet validé que
 // `env` afin d'éviter une seconde source de vérité ou une copie de secrets.

@@ -48,6 +48,7 @@ export type VoiceTurnEvent =
   | 'llm_interrupted'
   | 'speculation_hit'
   | 'turn_plan_shadow'
+  | 'semantic_signals_shadow'
   | 'turn_plan_authority'
   | 'turn_plan_deferred'
   | 'structured_turn'
@@ -136,6 +137,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'llm_interrupted':
     case 'speculation_hit':
     case 'turn_plan_shadow':
+    case 'semantic_signals_shadow':
     case 'turn_plan_authority':
     case 'turn_plan_deferred':
     case 'structured_turn':

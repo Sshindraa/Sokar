@@ -58,6 +58,7 @@ export const LLM_VIP_TURN_THRESHOLD = 5;
 // une réponse parlée déterministe.
 export const VOICE_LLM_MODEL_DEFAULT = 'qwen-3.8-27b';
 export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
+export const RESPAN_BASE_URL = 'https://api.respan.ai/api/v1';
 /** Fournisseur LLM vocal (API OpenAI-compatible). */
 export const VOICE_LLM_PROVIDERS = ['cerebras'] as const;
 export type VoiceLlmProviderName = (typeof VOICE_LLM_PROVIDERS)[number];

@@ -46,6 +46,14 @@ Le code de langue détecté par Scribe est transmis au LLM ; Cartesia reçoit la
 
 ## Pipeline Vocal Complet
 
+### Signaux sémantiques Span-01 (shadow)
+
+Après la réponse de l'agent, les tours échantillonnés sont anonymisés et
+évalués en arrière-plan par Span-01. Ses probabilités sont comparées au TurnPlan
+du même tour quand les champs sont réellement comparables. Seules des métriques
+et une télémétrie sans transcription sont enregistrées ; aucun résultat ne
+modifie la réponse, l'état, la policy ou les outils. Le flag est désactivé par défaut.
+
 ```
 [Appelant parle]
       │

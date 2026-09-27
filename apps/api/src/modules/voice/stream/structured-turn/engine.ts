@@ -5,6 +5,7 @@
  * modèle pour la formulation. Aucune règle lexicale n'interprète l'appelant.
  */
 import type { CallSession, DebugSpeechEntry } from '../types';
+import { observeSemanticSignalsShadow } from '../turn-plan-shadow';
 import type { CallSessionManager } from '../manager';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts-handler';
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
@@ -693,6 +694,14 @@ export async function runStructuredTurn(
       prefetchDayAvailability(session, mgr, state, state.draft.date).catch(() => undefined);
     }
     session.history.push({ role: 'assistant', content: said });
+    observeSemanticSignalsShadow(session, {
+      transcript,
+      reply: said,
+      previousQuestion:
+        historyBefore.filter((message) => message.role === 'assistant').at(-1)?.content ?? null,
+      activeInteraction: 'none',
+      turnId,
+    });
     recordVoiceTurnEventIfCurrent(session, turnId, 'llm_completed', {
       mode: 'structured',
       durationMs: Date.now() - startedAt,
