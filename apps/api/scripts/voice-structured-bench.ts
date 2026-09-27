@@ -14,6 +14,7 @@ import { WebSocket } from 'ws';
 import { runStructuredTurn } from '../src/modules/voice/stream/structured-turn/engine';
 import { createConversationState } from '../src/modules/voice/stream/conversation-controller';
 import { buildSystemPrompt } from '../src/modules/voice/prompts';
+import { todayInTimezone } from '../src/modules/voice/stream/structured-turn/fact-guards';
 import type { CallSession, ChatMessage } from '../src/modules/voice/stream/types';
 import type { CallSessionManager } from '../src/modules/voice/stream/manager';
 import type { StructuredTurnOutput } from '../src/modules/voice/stream/structured-turn/schema';
@@ -36,6 +37,8 @@ type Expect = Partial<{
 
 interface Scenario {
   name: string;
+  /** Ferme le jour de « demain », quel que soit le jour où le banc tourne. */
+  closeTomorrow?: boolean;
   /** `callerFinished` : l'appelant s'est tu après un tour jugé inachevé (relance du moteur). */
   turns: Array<{ caller: string; expect: Expect; callerFinished?: boolean }>;
 }
@@ -192,6 +195,27 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
+    name: '88921164 — « demain » fermé, demandé avant la réservation',
+    closeTomorrow: true,
+    turns: [
+      { caller: 'bonjour je souhaite faire une réservation', expect: {} },
+      {
+        caller: 'on serait ouvert demain',
+        // Le jour de semaine et le jour de réouverture doivent être justes.
+        expect: {
+          sayIncludesAny: ['fermé', 'fermés'],
+          sayExcludes: [
+            'on est ouvert',
+            'oui, on',
+            'rouvre demain',
+            'rouvrons demain',
+            'un dimanche',
+          ],
+        },
+      },
+    ],
+  },
+  {
     name: 'réservation complète',
     turns: [
       {
@@ -341,18 +365,30 @@ const BENCH_OPENING_HOURS = {
   sun: null,
 };
 
-function benchSession(): CallSession {
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+function benchHours(
+  closeTomorrow: boolean,
+): Record<string, { open: string; close: string } | null> {
+  if (!closeTomorrow) return BENCH_OPENING_HOURS;
+  const tomorrow = new Date(`${todayInTimezone('Europe/Paris')}T12:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return { ...BENCH_OPENING_HOURS, [DAY_KEYS[tomorrow.getUTCDay()]]: null };
+}
+
+function benchSession(closeTomorrow = false): CallSession {
+  const hours = benchHours(closeTomorrow);
   return {
     callControlId: 'bench',
     restaurantId: 'bench',
     timezone: 'Europe/Paris',
     from: '+33600000000',
     maxPartySize: 7,
-    openingHours: BENCH_OPENING_HOURS,
+    openingHours: hours,
     systemPrompt: buildSystemPrompt({
       name: 'Le Comptoir de Saint-Eustache',
       timezone: 'Europe/Paris',
-      openingHours: BENCH_OPENING_HOURS,
+      openingHours: hours,
     }),
     state: 'LISTENING',
     ended: false,
@@ -386,7 +422,7 @@ async function main() {
     for (const scenario of SCENARIOS.filter(
       (entry) => !process.env.BENCH_ONLY || entry.name.includes(process.env.BENCH_ONLY),
     )) {
-      const session = benchSession();
+      const session = benchSession(scenario.closeTomorrow === true);
       for (const [index, step] of scenario.turns.entries()) {
         if (session.ended || session.ending) break;
         const outputs: StructuredTurnOutput[] = [];

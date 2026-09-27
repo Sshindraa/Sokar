@@ -262,6 +262,7 @@ export async function runStructuredTurn(
       transcript,
       state,
       openingHours: session.openingHours,
+      today,
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
     });
