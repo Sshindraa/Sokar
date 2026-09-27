@@ -550,7 +550,10 @@ build_packages_api() {
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
     fi
     if [ "$need_api" = true ]; then
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
+        # `tsc` sur l'API consomme ~2 Go de mémoire (mesuré le 27/09/2026 avec
+        # --extendedDiagnostics) : avec 1536 Mo le build échouait au hasard du GC
+        # (OOM, exit 134). Le VPS a ~5,7 Go disponibles pendant le build.
+        NODE_OPTIONS="--max-old-space-size=3072" pnpm --filter @sokar/api build
         if [ ! -f "$SOKAR_ROOT/apps/api/dist/main.js" ]; then
             log_error "API build terminé sans apps/api/dist/main.js (entrypoint PM2 manquant)."
             return 1
