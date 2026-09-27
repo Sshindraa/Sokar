@@ -32,6 +32,15 @@ const choiceAnswerSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
 });
 
+/**
+ * `OPENROUTER_BASE_URL` vaut `https://openrouter.ai/api/v1` pour le chat LLM,
+ * mais l'API decisions vit hors de `/v1` : `https://openrouter.ai/api/alpha/decisions`.
+ * `/api/v1/alpha/decisions` répond 404.
+ */
+export function decisionsUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')}/alpha/decisions`;
+}
+
 export async function scoreDecisions(
   request: DecisionRequest,
   options: { signal: AbortSignal; apiKey: string; baseUrl: string; fetcher?: typeof fetch },
@@ -39,15 +48,12 @@ export async function scoreDecisions(
   const started = performance.now();
   const durationMs = () => performance.now() - started;
   try {
-    const response = await (options.fetcher ?? fetch)(
-      `${options.baseUrl.replace(/\/$/, '')}/alpha/decisions`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: options.signal,
-      },
-    );
+    const response = await (options.fetcher ?? fetch)(decisionsUrl(options.baseUrl), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: options.signal,
+    });
     if (!response.ok) {
       return {
         status:

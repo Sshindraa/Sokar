@@ -15,7 +15,8 @@ import {
 import { logger } from '../../../../shared/logger/pino';
 import { BEHAVIORS } from './behaviors';
 import { scoreSpan } from './client';
-import { scoreDecisions } from './openrouter-client';
+import { decisionsUrl, scoreDecisions } from './openrouter-client';
+import { env } from '../../../../env';
 import { buildDecisionState, buildSemanticSpan } from './span-builder';
 import { validateSemanticSignals } from './validate';
 import { compareSemanticSignals } from './compare';
@@ -145,6 +146,28 @@ const decide = (fetcher: typeof fetch, signal = new AbortController().signal) =>
   });
 
 describe('Span-01 OpenRouter client', () => {
+  it('targets /api/alpha/decisions even when the base URL is the chat /api/v1 default', async () => {
+    expect(decisionsUrl('https://openrouter.ai/api/v1')).toBe(
+      'https://openrouter.ai/api/alpha/decisions',
+    );
+    expect(decisionsUrl('https://openrouter.ai/api/v1/')).toBe(
+      'https://openrouter.ai/api/alpha/decisions',
+    );
+    expect(decisionsUrl('https://openrouter.ai/api')).toBe(
+      'https://openrouter.ai/api/alpha/decisions',
+    );
+    // La valeur par défaut de production (partagée avec le chat LLM) doit donner la bonne URL.
+    expect(decisionsUrl(env.OPENROUTER_BASE_URL)).toMatch(/\/api\/alpha\/decisions$/);
+    const fetcher = response(200, decisionBody);
+    await scoreDecisions(decisionRequest, {
+      fetcher,
+      signal: new AbortController().signal,
+      apiKey: mockApiKey,
+      baseUrl: 'https://openrouter.ai/api/v1',
+    });
+    expect(vi.mocked(fetcher).mock.calls[0][0]).toBe('https://openrouter.ai/api/alpha/decisions');
+  });
+
   it('maps noul answers, ignores unknown IDs and marks not_observable unsupported', async () => {
     const fetcher = response(200, decisionBody);
     const result = await decide(fetcher);
