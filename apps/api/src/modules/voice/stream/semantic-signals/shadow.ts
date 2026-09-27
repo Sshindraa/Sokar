@@ -11,7 +11,7 @@ import {
   voiceSemanticStatusTotal,
   voiceSemanticWouldClarifyTotal,
 } from '../../../../shared/observability/metrics';
-import { BEHAVIOR_SET_VERSION } from './behaviors';
+import { BEHAVIOR_SET_VERSION, CHOICE_OPTIONS } from './behaviors';
 import { buildDecisionState, buildSemanticSpan } from './span-builder';
 import { scoreSpan } from './client';
 import { scoreDecisions } from './openrouter-client';
@@ -158,7 +158,11 @@ function recordSemanticResult(
     voiceSemanticWouldClarifyTotal.inc({ sensitive_action: comparison.wouldClarify });
   }
   for (const [id, choice] of Object.entries(result.choices ?? {})) {
-    const maxProbability = Math.max(0, ...Object.values(choice?.probabilities ?? {}));
+    const knownOptions = CHOICE_OPTIONS[id as keyof typeof CHOICE_OPTIONS] ?? [];
+    const maxProbability = Math.max(
+      0,
+      ...knownOptions.map((option) => choice?.probabilities[option] ?? 0),
+    );
     voiceSemanticChoiceConfidence.observe({ choice: id, provider }, maxProbability);
   }
   const probabilities = Object.fromEntries(
@@ -185,17 +189,22 @@ function recordSemanticResult(
       .length,
     wouldClarify: comparison.wouldClarify ?? null,
     ...Object.fromEntries(
-      Object.entries(result.choices ?? {}).flatMap(([id, choice]) =>
-        choice
-          ? [
-              [`${id}_option`, choice.choice],
-              [`${id}_confidence`, choice.confidence],
-              ...Object.entries(choice.probabilities).map(
-                ([option, probability]) => [`${id}_${option}`, probability] as const,
-              ),
-            ]
-          : [],
-      ),
+      Object.entries(result.choices ?? {}).flatMap(([id, choice]) => {
+        if (!choice) return [];
+        const knownOptions = CHOICE_OPTIONS[id as keyof typeof CHOICE_OPTIONS] ?? [];
+        // Une option hors nomenclature n'écrit jamais son nom : elle n'apparaît
+        // que comme indicateur booléen, pour que la télémétrie reste bornée.
+        return [
+          [`${id}_option`, knownOptions.includes(choice.choice) ? choice.choice : 'unknown'],
+          [`${id}_confidence`, choice.confidence],
+          ...knownOptions.map(
+            (option) => [`${id}_${option}`, choice.probabilities[option] ?? 0] as const,
+          ),
+          ...(knownOptions.includes(choice.choice)
+            ? []
+            : [[`${id}_unknown_option`, true] as const]),
+        ];
+      }),
     ),
     ...probabilities,
   });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { voiceSemanticAnswerSkippedTotal } from '../../../../shared/observability/metrics';
 import { BEHAVIOR_IDS, CHOICE_IDS } from './behaviors';
 import type {
   DecisionRequest,
@@ -9,21 +10,26 @@ import type {
 
 /**
  * Réponse de `POST /alpha/decisions`. Jev accepte `noul` (une probabilité) et
- * `choice` (une distribution sur des options nommées).
+ * `choice` (une distribution sur des options nommées). Le schéma de haut niveau
+ * reste permissif : chaque réponse est validée séparément, pour qu'une réponse
+ * d'un type inattendu n'invalide pas tout le lot.
  */
 const responseSchema = z.object({
-  answers: z.record(
-    z.union([
-      z.object({ type: z.literal('noul'), noul: z.number().min(0).max(1) }),
-      z.object({
-        type: z.literal('choice'),
-        choice: z.string(),
-        probabilities: z.record(z.number().min(0).max(1)),
-        confidence: z.number().min(0).max(1),
-      }),
-    ]),
-  ),
+  answers: z.record(z.unknown()),
   usage: z.object({ input_tokens: z.number().int().nonnegative() }).optional(),
+});
+
+const noulAnswerSchema = z.object({
+  type: z.literal('noul'),
+  noul: z.number().min(0).max(1),
+});
+
+/** `confidence` est optionnelle : la probabilité maximale sert alors de repli. */
+const choiceAnswerSchema = z.object({
+  type: z.literal('choice'),
+  choice: z.string(),
+  probabilities: z.record(z.number().min(0).max(1)),
+  confidence: z.number().min(0).max(1).optional(),
 });
 
 export async function scoreDecisions(
@@ -61,23 +67,55 @@ export async function scoreDecisions(
     if (!parsed.success) return { status: 'invalid_response', durationMs: durationMs() };
     const signals: SemanticSignals = {};
     const choices: SemanticChoices = {};
-    for (const [id, answer] of Object.entries(parsed.data.answers)) {
-      if (answer.type === 'choice') {
-        if (!CHOICE_IDS.has(id)) continue;
-        choices[id as keyof SemanticChoices] = {
-          choice: answer.choice,
-          probabilities: answer.probabilities,
-          confidence: answer.confidence,
+    let expected = 0;
+    for (const [id, rawAnswer] of Object.entries(parsed.data.answers)) {
+      const isExpected = BEHAVIOR_IDS.has(id) || CHOICE_IDS.has(id);
+      if (isExpected) expected++;
+      const type =
+        typeof rawAnswer === 'object' && rawAnswer !== null
+          ? (rawAnswer as { type?: unknown }).type
+          : undefined;
+      if (type !== 'noul' && type !== 'choice') {
+        if (isExpected)
+          voiceSemanticAnswerSkippedTotal.inc({ provider: 'openrouter', reason: 'unknown_type' });
+        continue;
+      }
+      if (type === 'noul') {
+        const parsedAnswer = noulAnswerSchema.safeParse(rawAnswer);
+        if (!parsedAnswer.success) {
+          if (isExpected)
+            voiceSemanticAnswerSkippedTotal.inc({
+              provider: 'openrouter',
+              reason: 'invalid_shape',
+            });
+          continue;
+        }
+        if (!BEHAVIOR_IDS.has(id)) continue;
+        signals[id as keyof SemanticSignals] = {
+          present: parsedAnswer.data.noul,
+          absent: 1 - parsedAnswer.data.noul,
+          notObservable: 0,
         };
         continue;
       }
-      if (!BEHAVIOR_IDS.has(id)) continue;
-      signals[id as keyof SemanticSignals] = {
-        present: answer.noul,
-        absent: 1 - answer.noul,
-        notObservable: 0,
+      const parsedAnswer = choiceAnswerSchema.safeParse(rawAnswer);
+      if (!parsedAnswer.success) {
+        if (isExpected)
+          voiceSemanticAnswerSkippedTotal.inc({ provider: 'openrouter', reason: 'invalid_shape' });
+        continue;
+      }
+      if (!CHOICE_IDS.has(id)) continue;
+      choices[id as keyof SemanticChoices] = {
+        choice: parsedAnswer.data.choice,
+        probabilities: parsedAnswer.data.probabilities,
+        confidence:
+          parsedAnswer.data.confidence ??
+          Math.max(0, ...Object.values(parsedAnswer.data.probabilities)),
       };
     }
+    // Un lot sans aucune réponse exploitable est traité comme une réponse illisible.
+    if (Object.keys(signals).length === 0 && Object.keys(choices).length === 0 && expected > 0)
+      return { status: 'invalid_response', durationMs: durationMs() };
     return {
       status: 'ok',
       signals,
