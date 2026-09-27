@@ -13,6 +13,7 @@ export type SemanticScoreStatus =
   | 'missing_key'
   | 'timeout'
   | 'forbidden'
+  | 'payment_required'
   | 'rate_limited'
   | 'http_error'
   | 'invalid_response'

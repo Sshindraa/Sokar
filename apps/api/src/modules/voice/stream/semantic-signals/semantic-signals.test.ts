@@ -60,6 +60,7 @@ describe('Span-01 client', () => {
 
   it.each([
     [403, 'forbidden'],
+    [402, 'payment_required'],
     [429, 'rate_limited'],
     [500, 'http_error'],
   ] as const)('maps HTTP %i to %s', async (status, expected) => {
