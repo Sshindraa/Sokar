@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "semantic:eval": "tsx scripts/semantic-signals-eval.ts",
+    "semantic:annotation-export": "tsx scripts/semantic-annotation-export.ts",
     "seed": "tsx seed.ts",
     "usage:telnyx:fetch": "node --import tsx scripts/fetch-telnyx-usage-invoice.ts",
     "usage:accounting:package": "node --import tsx scripts/build-usage-accounting-package.ts",

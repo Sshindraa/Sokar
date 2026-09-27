@@ -321,6 +321,18 @@ modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-27.2-jev`.
 `openrouter`). Le JSONL doit déjà être anonymisé ; les rapports agrégés vont dans
 `apps/api/scratch/semantic-signals-eval/` (ignoré par git).
 
+Annotation : `pnpm --filter api semantic:annotation-export [--days 14] [--limit 400]
+[--no-prioritize]`, à lancer sur le VPS de production. Le script lit
+`voice_debug_turns` (appels de test des restaurants de
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` uniquement, jamais un restaurant client),
+masque téléphones et emails, puis classe les tours en mettant en tête ceux où Jev
+doute le plus (nécessite `OPENROUTER_API_KEY` ; les scores ne sont pas écrits dans
+l'export pour ne pas orienter l'annotation). Il écrit dans
+`apps/api/scratch/semantic-annotation/` un JSONL et une page `annotate-*.html`
+autonome : ouvrez-la dans un navigateur, annotez au clavier, puis « Exporter le
+JSONL » produit le fichier à passer à `semantic:eval`. Les noms dits à l'oral ne
+sont pas masqués : la page reste sur le poste de l'annotateur.
+
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
 Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse

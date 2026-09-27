@@ -6,13 +6,12 @@ import { RESPAN_BASE_URL } from '@sokar/config';
 import {
   BEHAVIORS,
   BEHAVIOR_SET_VERSION,
-  CHOICE_QUESTIONS,
 } from '../src/modules/voice/stream/semantic-signals/behaviors';
 import { scoreSpan } from '../src/modules/voice/stream/semantic-signals/client';
 import { scoreDecisions } from '../src/modules/voice/stream/semantic-signals/openrouter-client';
+import { buildEvalDecisionRequest } from '../src/modules/voice/stream/semantic-signals/eval-request';
 import type { BehaviorId } from '../src/modules/voice/stream/semantic-signals/behaviors';
 import type {
-  DecisionRequest,
   SemanticProvider,
   SemanticScoreResult,
   SpanRequest,
@@ -33,19 +32,6 @@ const percentile = (values: number[], quantile: number) =>
   values.length
     ? values[Math.min(values.length - 1, Math.ceil(values.length * quantile) - 1)]
     : null;
-
-/** Le JSONL contient exactement les messages du span : même ordre, même rôles. */
-function buildState(example: {
-  input: Array<{ role: string; content: string }>;
-  output: { content: string };
-}): string {
-  return [
-    ...example.input.map(
-      (message) => `${message.role === 'user' ? 'Client' : 'Agent'} : ${message.content}`,
-    ),
-    `Agent (réponse évaluée) : ${example.output.content}`,
-  ].join('\n');
-}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -93,28 +79,7 @@ async function main(): Promise<void> {
           };
           results[index] = await scoreSpan(request, options);
         } else {
-          const request: DecisionRequest = {
-            model,
-            state: buildState(example),
-            questions: {
-              ...Object.fromEntries(
-                BEHAVIORS.map(({ id, instructions, present, absent }) => [
-                  id,
-                  {
-                    type: 'noul' as const,
-                    instructions,
-                    criteria: { true: present, false: absent },
-                  },
-                ]),
-              ),
-              ...Object.fromEntries(
-                CHOICE_QUESTIONS.map(({ id, instructions, criteria }) => [
-                  id,
-                  { type: 'choice' as const, instructions, criteria },
-                ]),
-              ),
-            },
-          };
+          const request = buildEvalDecisionRequest(example, model);
           results[index] = await scoreDecisions(request, options);
         }
       }
