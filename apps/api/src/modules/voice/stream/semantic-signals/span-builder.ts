@@ -38,8 +38,9 @@ export function buildSemanticSpan(
   const anonymize = (content: string): string => {
     let redacted = content;
     for (const [value, placeholder] of knownValues) {
+      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       redacted = redacted.replaceAll(
-        new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+        new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu'),
         placeholder,
       );
     }

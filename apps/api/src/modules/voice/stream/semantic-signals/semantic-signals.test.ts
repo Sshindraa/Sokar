@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { CallSession } from '../types';
 import type { TurnPlan } from '../turn-plan';
+import { voiceSemanticStatusTotal } from '../../../../shared/observability/metrics';
 import { BEHAVIORS } from './behaviors';
 import { scoreSpan } from './client';
 import { buildSemanticSpan } from './span-builder';
@@ -127,6 +128,43 @@ describe('span builder', () => {
     expect(serialized).toContain('<EMAIL>');
     expect(serialized).toContain('<PHONE>');
   });
+
+  it.each(['Ali Ben', 'Léa', 'Ana'])('masks %s without changing surrounding words', (name) => {
+    const text = `La réalité de cette analyse, une banane. ${name} répond.`;
+    const namedSession = {
+      ...session,
+      history: [],
+      conversation: { slots: { customerName: name } },
+    } as unknown as CallSession;
+    const built = buildSemanticSpan(namedSession, {
+      transcript: text,
+      reply: `Merci ${name}.`,
+      previousQuestion: null,
+      model: 'span-01-pro',
+      historyTurns: 1,
+    });
+    expect(built.span.input.at(-1)?.content).toContain('réalité de cette analyse, une banane');
+    expect(built.span.input.at(-1)?.content).not.toContain(name);
+    expect(built.span.output.content).toBe('Merci <CUSTOMER_NAME>.');
+  });
+
+  it('masks Léa independently of case', () => {
+    const namedSession = {
+      ...session,
+      history: [],
+      conversation: { slots: { customerName: 'Léa' } },
+    } as unknown as CallSession;
+    const built = buildSemanticSpan(namedSession, {
+      transcript: 'léa et LÉA parlent de la réalité.',
+      reply: 'Merci Léa.',
+      previousQuestion: null,
+      model: 'span-01-pro',
+      historyTurns: 1,
+    });
+    expect(built.span.input.at(-1)?.content).toBe(
+      '<CUSTOMER_NAME> et <CUSTOMER_NAME> parlent de la réalité.',
+    );
+  });
 });
 
 const plan = (overrides: Partial<TurnPlan> = {}): TurnPlan => ({
@@ -192,8 +230,80 @@ describe('validation and comparison', () => {
       plan({ interpretation: 'affirmation', interactionDisposition: 'resolve' }),
       'humanFallback',
     );
-    expect(compared.wouldClarify).toBe('transfer');
+    expect(compared.wouldClarify).toBe('human_fallback');
     expect(compared.agreements.explicitly_requests_transfer).toBe('not_comparable');
+  });
+
+  it('does not mark a name answer as a fresh cancellation or gift card action', () => {
+    for (const intent of ['cancel', 'gift_card'] as const) {
+      const compared = compareSemanticSignals(
+        {
+          explicitly_requests_cancellation: present(0.05),
+          explicitly_requests_gift_card_purchase: present(0.05),
+        },
+        plan({ intent, interpretation: 'answer', interactionDisposition: 'resolve' }),
+        'customerName',
+      );
+      expect(compared.wouldClarify).toBeNull();
+    }
+  });
+
+  it('marks a new cancellation request or resolved cancellation confirmation as sensitive', () => {
+    const signals: SemanticSignals = { explicitly_requests_cancellation: present(0.05) };
+    expect(
+      compareSemanticSignals(
+        signals,
+        plan({ intent: 'cancel', interpretation: 'new_request' }),
+        'none',
+      ).wouldClarify,
+    ).toBe('cancellation');
+    expect(
+      compareSemanticSignals(
+        signals,
+        plan({
+          intent: 'cancel',
+          interpretation: 'affirmation',
+          interactionDisposition: 'resolve',
+        }),
+        'confirmation',
+      ).wouldClarify,
+    ).toBe('cancellation');
+    expect(
+      compareSemanticSignals(
+        signals,
+        plan({ interpretation: 'affirmation', interactionDisposition: 'resolve' }),
+        'confirmation',
+        'cancel',
+      ).wouldClarify,
+    ).toBe('cancellation');
+  });
+
+  it('accepts a message choice as clear human fallback evidence', () => {
+    const compared = compareSemanticSignals(
+      { explicitly_requests_transfer: present(0.05), explicitly_requests_message: present(0.95) },
+      plan({ interpretation: 'answer', interactionDisposition: 'resolve' }),
+      'humanFallback',
+    );
+    expect(compared.wouldClarify).toBeNull();
+  });
+
+  it('treats gift card purchase as sensitive only on a new request or its resolved confirmation', () => {
+    const signals: SemanticSignals = { explicitly_requests_gift_card_purchase: present(0.05) };
+    expect(
+      compareSemanticSignals(
+        signals,
+        plan({ intent: 'gift_card', interpretation: 'new_request' }),
+        'none',
+      ).wouldClarify,
+    ).toBe('gift_card');
+    expect(
+      compareSemanticSignals(
+        signals,
+        plan({ interpretation: 'affirmation', interactionDisposition: 'resolve' }),
+        'confirmation',
+        'gift_card',
+      ).wouldClarify,
+    ).toBe('gift_card');
   });
 });
 
@@ -208,7 +318,8 @@ const config: SemanticShadowConfig = {
 };
 
 describe('shadow boundary', () => {
-  it('does not fetch when disabled', () => {
+  it('does not fetch or count disabled when the flag is off', () => {
+    const increment = vi.spyOn(voiceSemanticStatusTotal, 'inc');
     const fetcher = response(200, resultBody);
     observeSemanticSignalsShadow(
       session,
@@ -221,6 +332,26 @@ describe('shadow boundary', () => {
       { config: { ...config, enabled: false }, fetcher },
     );
     expect(fetcher).not.toHaveBeenCalled();
+    expect(increment).not.toHaveBeenCalled();
+    increment.mockRestore();
+  });
+
+  it('counts missing_key only when enabled without a key', () => {
+    const increment = vi.spyOn(voiceSemanticStatusTotal, 'inc');
+    const fetcher = response(200, resultBody);
+    observeSemanticSignalsShadow(
+      session,
+      {
+        transcript: 'Bonjour',
+        reply: 'Bonjour',
+        previousQuestion: null,
+        activeInteraction: 'none',
+      },
+      { config: { ...config, apiKey: '' }, fetcher },
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(increment).toHaveBeenCalledWith({ status: 'missing_key' });
+    increment.mockRestore();
   });
 
   it('returns synchronously while a failed request remains pending', async () => {
