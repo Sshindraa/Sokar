@@ -4,6 +4,7 @@ import type { TurnPlan } from '../turn-plan';
 import { recordVoiceTurnEventIfCurrent } from '../turn-telemetry';
 import {
   voiceSemanticAgreementTotal,
+  voiceSemanticChoiceConfidence,
   voiceSemanticConflictTotal,
   voiceSemanticDurationMs,
   voiceSemanticInputTokensTotal,
@@ -18,9 +19,9 @@ import { validateSemanticSignals } from './validate';
 import { compareSemanticSignals } from './compare';
 import type { SemanticProvider, SemanticScoreResult } from './types';
 
-/** Défauts par fournisseur : Respan n'accepte que ses modèles, OpenRouter passe par `respan/`. */
+/** Défauts par fournisseur : Respan n'accepte que ses modèles, OpenRouter passe par Jev. */
 export const DEFAULT_SEMANTIC_MODELS: Record<SemanticProvider, string> = {
-  openrouter: 'respan/span-01',
+  openrouter: 'typesafe/jev-1.13-20260917',
   respan: 'span-01-pro',
 };
 
@@ -88,6 +89,7 @@ export function observeSemanticSignalsShadow(
       previousQuestion: turn.previousQuestion,
       model: config.model,
       historyTurns: config.historyTurns,
+      activeInteraction: turn.activeInteraction,
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -142,7 +144,7 @@ function recordSemanticResult(
     turn.plan,
     turn.activeInteraction,
     currentIntent,
-    { supportsNotObservable: result.supportsNotObservable },
+    { supportsNotObservable: result.supportsNotObservable, choices: result.choices },
   );
   for (const conflict of validation.conflicts) voiceSemanticConflictTotal.inc({ conflict });
   for (const [behavior, outcome] of Object.entries(comparison.agreements)) {
@@ -154,6 +156,10 @@ function recordSemanticResult(
   }
   if (comparison.wouldClarify) {
     voiceSemanticWouldClarifyTotal.inc({ sensitive_action: comparison.wouldClarify });
+  }
+  for (const [id, choice] of Object.entries(result.choices ?? {})) {
+    const maxProbability = Math.max(0, ...Object.values(choice?.probabilities ?? {}));
+    voiceSemanticChoiceConfidence.observe({ choice: id, provider }, maxProbability);
   }
   const probabilities = Object.fromEntries(
     Object.entries(result.signals).flatMap(([id, score]) =>
@@ -178,6 +184,19 @@ function recordSemanticResult(
     disagreeCount: Object.values(comparison.agreements).filter((outcome) => outcome === 'disagree')
       .length,
     wouldClarify: comparison.wouldClarify ?? null,
+    ...Object.fromEntries(
+      Object.entries(result.choices ?? {}).flatMap(([id, choice]) =>
+        choice
+          ? [
+              [`${id}_option`, choice.choice],
+              [`${id}_confidence`, choice.confidence],
+              ...Object.entries(choice.probabilities).map(
+                ([option, probability]) => [`${id}_${option}`, probability] as const,
+              ),
+            ]
+          : [],
+      ),
+    ),
     ...probabilities,
   });
 }

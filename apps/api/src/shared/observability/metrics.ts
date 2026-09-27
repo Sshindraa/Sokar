@@ -527,6 +527,14 @@ export const voiceSemanticInputTokensTotal = new Counter({
   help: 'Span-01 input tokens',
   registers: [getRegistry()],
 });
+/** Jev renvoie souvent 0 ou 1 : cet histogramme suit la surconfiance des `choice`. */
+export const voiceSemanticChoiceConfidence = new Histogram({
+  name: 'sokar_voice_semantic_choice_confidence',
+  help: 'Max option probability of a Span-01 choice answer',
+  labelNames: ['choice', 'provider'] as const,
+  buckets: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1],
+  registers: [getRegistry()],
+});
 export type VoiceTurnPlanShadowPolicyOutcome = 'accepted' | 'rejected' | 'not_evaluated';
 export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparable';
 
@@ -811,6 +819,7 @@ export function __resetMetrics(): void {
   voiceSemanticConflictTotal.reset();
   voiceSemanticWouldClarifyTotal.reset();
   voiceSemanticInputTokensTotal.reset();
+  voiceSemanticChoiceConfidence.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();
