@@ -795,6 +795,28 @@ describe('Deepgram final dispatch', () => {
     expect(session.sttDeepgramFinalizeRequested).toBe(false);
   });
 
+  it('journalise le rythme des partielles Deepgram sans leur texte', async () => {
+    const { logger } = await import('../../../shared/logger/pino');
+    const info = vi.spyOn(logger, 'info');
+    const { session } = deepgramSession();
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'on serait' });
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'on serait' });
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'on serait quatre' });
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'on serait quatre',
+      speechFinal: true,
+    });
+
+    const call = info.mock.calls.find(([, message]) => message === '[stt] Deepgram turn event');
+    const fields = call?.[0] as Record<string, unknown>;
+    expect(fields).toMatchObject({ partialCount: 3, partialChanges: 2, lastPartialWordCount: 3 });
+    expect(typeof fields.msSinceLastPartialChange).toBe('number');
+    expect(JSON.stringify(fields)).not.toContain('serait');
+    expect(session.sttDeepgramPartials).toBeUndefined();
+    info.mockRestore();
+  });
+
   it('n’envoie pas Finalize sans mots en attente, ni ne clôt un segment final ordinaire', () => {
     const { session, onEvent } = deepgramSession();
     const ws = makeWsMock();

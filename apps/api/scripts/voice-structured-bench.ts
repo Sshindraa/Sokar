@@ -152,7 +152,8 @@ const SCENARIOS: Scenario[] = [
       {
         caller: 'à 20 heures pour 4 voire 5 personnes',
         expect: {
-          sayIncludesAny: ['fermé', 'fermés', 'autre jour'],
+          // « 4 ou 5 ? » est une clarification légitime avant de vérifier.
+          sayIncludesAny: ['fermé', 'fermés', 'autre jour', '4 ou 5', 'quatre ou cinq'],
           sayExcludes: ['gérant pour finaliser', 'tout à fait', 'pas bien saisi'],
         },
       },
@@ -161,6 +162,19 @@ const SCENARIOS: Scenario[] = [
         expect: {
           sayExcludes: ['tout à fait réserver', 'je peux réserver'],
           reservationCreated: false,
+        },
+      },
+    ],
+  },
+  {
+    name: '0d49230d — épellation reprise',
+    turns: [
+      { caller: 'une table pour deux mardi à 20 heures', expect: {} },
+      {
+        caller: "c'est au nom de a k f a 2 k i f",
+        expect: {
+          sayIncludesAny: ['deux k', 'k, k', 'double k', '2 k'],
+          awaiting: ['customerNameConfirmation', 'confirmation'],
         },
       },
     ],
@@ -330,7 +344,10 @@ async function main() {
   let invalid = 0;
   const failures: string[] = [];
   for (let repeat = 0; repeat < REPEATS; repeat++) {
-    for (const scenario of SCENARIOS) {
+    // BENCH_ONLY=texte : ne rejoue que les scénarios dont le nom le contient.
+    for (const scenario of SCENARIOS.filter(
+      (entry) => !process.env.BENCH_ONLY || entry.name.includes(process.env.BENCH_ONLY),
+    )) {
       const session = benchSession();
       for (const [index, step] of scenario.turns.entries()) {
         if (session.ended || session.ending) break;

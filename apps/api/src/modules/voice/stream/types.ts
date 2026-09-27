@@ -492,6 +492,19 @@ export interface CallSession {
   sttDeepgramPendingInterim?: boolean;
   /** Deepgram : `Finalize` envoyé en cours d'appel, le prochain segment final clôt le tour. */
   sttDeepgramFinalizeRequested?: boolean;
+  /**
+   * Deepgram : rythme des transcriptions partielles depuis le dernier segment
+   * final (jamais leur texte dans les logs). Sert à expliquer un segment final
+   * tardif : partielles encore en mouvement, ou silence côté fournisseur.
+   */
+  sttDeepgramPartials?: {
+    count: number;
+    changes: number;
+    lastAt: number;
+    lastChangeAt: number;
+    lastText: string;
+    lastWordCount: number;
+  };
   /** Dernière langue détectée par Scribe sur un segment final. */
   sttLanguageCode?: string;
   /** Langue métier verrouillée après une preuve française fiable. */
