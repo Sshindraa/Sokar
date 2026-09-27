@@ -25,11 +25,22 @@ export const SIMULATOR_STEPS = [
   { sender: 'assistant', text: 'Merci à vous, au revoir et bon appétit !' },
 ];
 
-export const PLANS = [
+export interface PricingPlan {
+  label: 'Essential' | 'Pro' | 'Multi-site';
+  /** Prix mensuel sans engagement, en euros. */
+  price: string;
+  /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
+  sitePrice?: string;
+  description: string;
+  features: string[];
+  featured?: boolean;
+}
+
+export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
-    period: '€/mois',
+    description: 'Pour automatiser vos premiers appels et réservations.',
     features: [
       'Répond à chaque appel, 24h/24',
       'Réservations prises sans intervention',
@@ -41,7 +52,7 @@ export const PLANS = [
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
-    period: '€/mois',
+    description: 'Pour les restaurants qui veulent maximiser chaque service.',
     features: [
       "Tout l'Essential, sans limite",
       'Vos clients reconnus à chaque appel',
@@ -55,7 +66,8 @@ export const PLANS = [
   {
     label: 'Multi-site',
     price: String(PLAN_PRICES_EUR.PREMIUM),
-    period: '€/mois + 99€/site',
+    sitePrice: '99',
+    description: 'Pour piloter plusieurs établissements avec une seule équipe.',
     features: [
       'Plan Pro sur tous vos établissements',
       'Un seul dashboard pour tout piloter',
