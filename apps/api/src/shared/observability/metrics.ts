@@ -535,6 +535,13 @@ export const voiceSemanticChoiceConfidence = new Histogram({
   buckets: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1],
   registers: [getRegistry()],
 });
+/** Réponses unitaires écartées : type inattendu ou forme invalide. */
+export const voiceSemanticAnswerSkippedTotal = new Counter({
+  name: 'sokar_voice_semantic_answer_skipped_total',
+  help: 'Span-01 answers skipped during per-answer parsing',
+  labelNames: ['provider', 'reason'] as const,
+  registers: [getRegistry()],
+});
 export type VoiceTurnPlanShadowPolicyOutcome = 'accepted' | 'rejected' | 'not_evaluated';
 export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparable';
 
@@ -820,6 +827,7 @@ export function __resetMetrics(): void {
   voiceSemanticWouldClarifyTotal.reset();
   voiceSemanticInputTokensTotal.reset();
   voiceSemanticChoiceConfidence.reset();
+  voiceSemanticAnswerSkippedTotal.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();

@@ -7,30 +7,15 @@ export type Agreement = 'agree' | 'disagree' | 'span_not_observable' | 'not_comp
 export type SensitiveAction = 'commit' | 'cancellation' | 'human_fallback' | 'gift_card';
 
 /**
- * Les questions `choice` doublent volontairement les signaux `noul` sur les deux
- * décisions les plus coûteuses. Le `noul` reste prioritaire : quand il tranche
- * (>= 0,5 ou <= 0,5 côté présent), il décide, et le `choice` ne sert qu'à
- * couvrir le cas où le `noul` n'a pas été posé ou est au milieu.
+ * Les questions `choice` n'alimentent ni `agreements` ni `wouldClarify` par
+ * substitution : les signaux `noul` équivalents sont toujours posés et restent
+ * la source des accords. Les choix servent uniquement à `wouldClarify`, à la
+ * télémétrie du tour et à l'histogramme de confiance.
  */
 type ChoiceAnswers = SemanticChoices | undefined;
 
 function choiceProbability(choices: ChoiceAnswers, id: string, option: string): number {
   return choices?.[id as keyof SemanticChoices]?.probabilities[option] ?? 0;
-}
-
-/** Résolution d'un `choice` binaire : true, false, ou null si indécis. */
-function choiceDecision(
-  choices: ChoiceAnswers,
-  id: string,
-  positiveOption: string,
-  negativeOption: string,
-): boolean | null {
-  const choice = choices?.[id as keyof SemanticChoices];
-  if (!choice) return null;
-  const positive = choiceProbability(choices, id, positiveOption);
-  const negative = choiceProbability(choices, id, negativeOption);
-  if (positive === negative) return null;
-  return positive > negative;
 }
 
 export function compareSemanticSignals(
@@ -73,38 +58,14 @@ export function compareSemanticSignals(
   for (const behavior of BEHAVIORS) {
     const score = signals[behavior.id];
     const planValue = expected[behavior.id];
-    let observed: boolean | null = score ? score.present >= 0.5 : null;
-    if (score && options.supportsNotObservable !== false && score.notObservable >= 0.5) {
-      agreements[behavior.id] = 'span_not_observable';
-      continue;
-    }
-    // Repli `choice` quand le `noul` correspondant n'a pas été posé.
-    if (observed === null && options.choices) {
-      if (behavior.id === 'explicitly_requests_transfer')
-        observed = choiceDecision(options.choices, 'human_fallback_choice', 'gerant', 'message');
-      else if (behavior.id === 'explicitly_requests_message')
-        observed = choiceDecision(options.choices, 'human_fallback_choice', 'message', 'gerant');
-      else if (behavior.id === 'explicitly_confirms_proposal')
-        observed = choiceDecision(
-          options.choices,
-          'proposal_response_choice',
-          'confirme',
-          'refuse',
-        );
-      else if (behavior.id === 'rejects_proposal')
-        observed = choiceDecision(
-          options.choices,
-          'proposal_response_choice',
-          'refuse',
-          'confirme',
-        );
-    }
     agreements[behavior.id] =
-      planValue === undefined || observed === null
+      planValue === undefined || !score
         ? 'not_comparable'
-        : observed === planValue
-          ? 'agree'
-          : 'disagree';
+        : options.supportsNotObservable !== false && score.notObservable >= 0.5
+          ? 'span_not_observable'
+          : score.present >= 0.5 === planValue
+            ? 'agree'
+            : 'disagree';
   }
   const newRequest = plan?.interpretation === 'new_request';
   const resolvedConfirmation =

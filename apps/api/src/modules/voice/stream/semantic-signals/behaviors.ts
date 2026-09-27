@@ -124,6 +124,13 @@ const CHOICE_SOURCES = [
 
 export const CHOICE_QUESTIONS = CHOICE_SOURCES;
 export const CHOICE_IDS = new Set<string>(CHOICE_SOURCES.map((choice) => choice.id));
+/**
+ * Options connues par question `choice`. Sert à borner la télémétrie : Jev peut
+ * renvoyer une option hors nomenclature, son nom ne doit pas sortir du process.
+ */
+export const CHOICE_OPTIONS = Object.fromEntries(
+  CHOICE_SOURCES.map((choice) => [choice.id, Object.keys(choice.criteria)]),
+) as unknown as Record<ChoiceId, readonly string[]>;
 
 export const BEHAVIOR_SET_VERSION = '2026-09-27.2-jev';
 

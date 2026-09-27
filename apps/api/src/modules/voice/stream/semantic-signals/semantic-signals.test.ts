@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
+vi.mock('../../../../shared/logger/pino', () => ({ logger: { info: vi.fn() } }));
+
 import type { CallSession } from '../types';
 import type { TurnPlan } from '../turn-plan';
 import {
+  voiceSemanticAnswerSkippedTotal,
   voiceSemanticChoiceConfidence,
   voiceSemanticDurationMs,
   voiceSemanticStatusTotal,
 } from '../../../../shared/observability/metrics';
+import { logger } from '../../../../shared/logger/pino';
 import { BEHAVIORS } from './behaviors';
 import { scoreSpan } from './client';
 import { scoreDecisions } from './openrouter-client';
@@ -170,11 +175,44 @@ describe('Span-01 OpenRouter client', () => {
     expect(result.signals.corrects_existing_fact?.present).toBeCloseTo(0.92);
   });
 
-  it('rejects a malformed choice answer as invalid_response', async () => {
-    const malformed = {
-      answers: { human_fallback_choice: { type: 'choice', choice: 'gerant' } },
+  it('keeps valid answers in a mixed response and skips unsupported answer types', async () => {
+    const skipped = vi.spyOn(voiceSemanticAnswerSkippedTotal, 'inc');
+    const result = await decide(
+      response(200, {
+        answers: {
+          corrects_existing_fact: { type: 'noul', noul: 0.92 },
+          answers_active_question: { type: 'score', score: 0.75 },
+          human_fallback_choice: {
+            type: 'choice',
+            choice: 'gerant',
+            probabilities: { gerant: 0.7, message: 0.2, pas_clair: 0.1 },
+          },
+        },
+      }),
+    );
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.signals.corrects_existing_fact?.present).toBeCloseTo(0.92);
+    expect(result.choices?.human_fallback_choice).toEqual({
+      choice: 'gerant',
+      probabilities: { gerant: 0.7, message: 0.2, pas_clair: 0.1 },
+      confidence: 0.7,
+    });
+    expect(skipped).toHaveBeenCalledExactlyOnceWith({
+      provider: 'openrouter',
+      reason: 'unknown_type',
+    });
+    skipped.mockRestore();
+  });
+
+  it('returns invalid_response when every expected answer is invalid', async () => {
+    const invalid = {
+      answers: {
+        corrects_existing_fact: { type: 'noul' },
+        human_fallback_choice: { type: 'choice', choice: 'gerant' },
+      },
     };
-    expect((await decide(response(200, malformed))).status).toBe('invalid_response');
+    expect((await decide(response(200, invalid))).status).toBe('invalid_response');
   });
 
   it.each([
@@ -194,9 +232,10 @@ describe('Span-01 OpenRouter client', () => {
       .fn<typeof fetch>()
       .mockRejectedValue(new DOMException('Aborted', 'AbortError'));
     expect((await decide(aborted, controller.signal)).status).toBe('timeout');
-    expect((await decide(response(200, { answers: { x: { type: 'noul' } } }))).status).toBe(
-      'invalid_response',
-    );
+    expect(
+      (await decide(response(200, { answers: { corrects_existing_fact: { type: 'noul' } } })))
+        .status,
+    ).toBe('invalid_response');
     const malformedJson = vi.fn<typeof fetch>().mockResolvedValue({
       ok: true,
       status: 200,
@@ -481,7 +520,7 @@ describe('validation and comparison', () => {
     ).toBe('cancellation');
   });
 
-  it('accepts a message choice as clear human fallback evidence', () => {
+  it('accepts clear noul transfer/message signals as human fallback evidence', () => {
     const compared = compareSemanticSignals(
       { explicitly_requests_transfer: present(0.05), explicitly_requests_message: present(0.95) },
       plan({ interpretation: 'answer', interactionDisposition: 'resolve' }),
@@ -490,7 +529,7 @@ describe('validation and comparison', () => {
     expect(compared.wouldClarify).toBeNull();
   });
 
-  it('compares the confirmation choice with the plan when no noul answer was asked', () => {
+  it('does not substitute a choice answer for missing noul signals in agreements', () => {
     const compared = compareSemanticSignals(
       {},
       plan({ interpretation: 'affirmation' }),
@@ -506,12 +545,11 @@ describe('validation and comparison', () => {
         },
       },
     );
-    expect(compared.agreements.explicitly_confirms_proposal).toBe('agree');
-    // Le plan dit « affirmation » : ne pas refuser est bien ce qu'il attend.
-    expect(compared.agreements.rejects_proposal).toBe('agree');
+    expect(compared.agreements.explicitly_confirms_proposal).toBe('not_comparable');
+    expect(compared.agreements.rejects_proposal).toBe('not_comparable');
   });
 
-  it('keeps the noul signal as the primary source when both are present', () => {
+  it('does not let a choice answer replace or override the noul comparison', () => {
     const compared = compareSemanticSignals(
       { explicitly_confirms_proposal: present(0.05) },
       plan({ interpretation: 'affirmation' }),
@@ -666,6 +704,54 @@ describe('shadow boundary', () => {
       0.8,
     );
     confidence.mockRestore();
+  });
+
+  it('bounds telemetry when Jev returns an unknown choice option', async () => {
+    const info = vi.mocked(logger.info);
+    info.mockClear();
+    const telemetrySession = {
+      ...session,
+      currentTurn: {
+        id: 'semantic-turn',
+        sequence: 1,
+        startedAt: Date.now(),
+        transcriptLength: 7,
+        transcriptFingerprint: '123456789abc',
+        path: 'llm' as const,
+        availabilitySearches: 0,
+        availabilityFailures: 0,
+        loopDetected: false,
+        completed: false,
+      },
+    } as CallSession;
+    observeSemanticSignalsShadow(
+      telemetrySession,
+      { ...turn, activeInteraction: 'humanFallback' },
+      {
+        config: openrouterConfig,
+        fetcher: response(200, {
+          answers: {
+            human_fallback_choice: {
+              type: 'choice',
+              choice: 'autre',
+              probabilities: { autre: 0.8, gerant: 0.1, message: 0.05, pas_clair: 0.05 },
+              confidence: 0.8,
+            },
+          },
+        }),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const event = info.mock.calls
+      .map(([payload]) => (payload as { voiceTurn?: Record<string, unknown> }).voiceTurn)
+      .find((voiceTurn) => voiceTurn?.event === 'semantic_signals_shadow');
+    expect(event).toBeDefined();
+    expect(event).toMatchObject({
+      human_fallback_choice_option: 'unknown',
+      human_fallback_choice_unknown_option: true,
+    });
+    expect(event).not.toHaveProperty('human_fallback_choice_autre');
   });
 
   it('omits the choice questions when the active interaction does not match', async () => {
