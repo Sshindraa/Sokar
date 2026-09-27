@@ -584,7 +584,7 @@ export function buildSttUrl(
   return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
-export const DEEPGRAM_ENDPOINTING_MS = 300;
+export const DEEPGRAM_ENDPOINTING_MS = 200;
 export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
 
 export function buildDeepgramSttUrl(

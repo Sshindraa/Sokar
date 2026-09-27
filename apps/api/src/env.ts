@@ -107,7 +107,9 @@ export const optionalUrlSchema = z.preprocess((value) => {
 }, z.string().url().optional());
 
 export const VoiceDeepgramConfigSchema = z.object({
-  VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(300),
+  // 200 ms : −110 ms en médiane sur le rejeu des appels réels du 27/09 (958 → 849 ms) ;
+  // les phrases coupées sont rattrapées par l'attente des tours inachevés.
+  VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
   VOICE_DEEPGRAM_MODEL: z.enum(['nova-3', 'flux-general-multi']).default('nova-3'),
@@ -129,6 +131,9 @@ export const VoiceConfigSchema = z
     VOICE_LLM_HEDGE_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_000),
     VOICE_LLM_HEDGE_TIMEOUT_MS: z.coerce.number().int().min(500).max(10_000).default(3_000),
     VOICE_LLM_HEDGE_MODEL: z.string().default('qwen/qwen3.8-27b'),
+    /** Course Cerebras/Groq pour le tour structuré (JSON Schema strict), opt-in. */
+    VOICE_STRUCTURED_HEDGE_ENABLED: z.enum(['true', 'false']).default('false'),
+    VOICE_STRUCTURED_HEDGE_DELAY_MS: z.coerce.number().int().min(200).max(5_000).default(700),
     VOICE_LLM_FILLER_DELAY_MS: z.coerce.number().int().min(100).max(5_000).default(1_200),
     GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
     GROQ_API_KEY: z.string().optional(),
