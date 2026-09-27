@@ -200,6 +200,7 @@ function fallbackToScribeAtOpening(
   session.sttDeepgramFinalParts = [];
   session.sttDeepgramPendingInterim = false;
   session.sttDeepgramFinalizeRequested = false;
+  session.sttDeepgramPartials = undefined;
   session.sttConsecutiveFailures = 0;
   logger.warn(
     { callId: session.callControlId, failedProvider: 'deepgram_stt' },
@@ -1574,11 +1575,20 @@ function logDeepgramEvent(
   fields: Record<string, boolean | number | undefined>,
 ): void {
   const bytesPerMs = session.sttAdapter?.chunkBytesPerMs(session.codec);
+  const partials = session.sttDeepgramPartials;
+  const now = Date.now();
   logger.info(
     {
       callId: session.callControlId,
       kind,
       ...fields,
+      // Partielles reçues depuis le dernier segment final : combien, combien
+      // de changements, et depuis quand plus rien ne bouge.
+      partialCount: partials?.count ?? 0,
+      partialChanges: partials?.changes ?? 0,
+      msSinceLastPartial: partials ? now - partials.lastAt : undefined,
+      msSinceLastPartialChange: partials ? now - partials.lastChangeAt : undefined,
+      lastPartialWordCount: partials?.lastWordCount,
       receivedAtAudioMs: bytesPerMs
         ? Math.round((session.sttConnectionAudioBytesSent ?? 0) / bytesPerMs)
         : undefined,
@@ -1604,7 +1614,25 @@ export function handleNormalizedSttMessage(
         session.sttLastNonEmptyPartialAt = partialAt;
         session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt ?? partialAt;
         session.sttFirstPartialAt ??= partialAt;
-        if (session.sttAdapter?.id === 'deepgram') session.sttDeepgramPendingInterim = true;
+        if (session.sttAdapter?.id === 'deepgram') {
+          session.sttDeepgramPendingInterim = true;
+          const partials = (session.sttDeepgramPartials ??= {
+            count: 0,
+            changes: 0,
+            lastAt: partialAt,
+            lastChangeAt: partialAt,
+            lastText: '',
+            lastWordCount: 0,
+          });
+          partials.count++;
+          partials.lastAt = partialAt;
+          if (event.transcript !== partials.lastText) {
+            partials.changes++;
+            partials.lastChangeAt = partialAt;
+            partials.lastText = event.transcript;
+            partials.lastWordCount = event.transcript.trim().split(/\s+/).length;
+          }
+        }
       }
       emitPartialTranscript(session, event.transcript);
       return;
@@ -1656,6 +1684,7 @@ export function handleNormalizedSttMessage(
           providerResultEndMs: event.providerResultEndMs,
           providerLastWordEndMs: event.providerLastWordEndMs,
         });
+        if (event.transcript.trim()) session.sttDeepgramPartials = undefined;
       }
       if (event.speechFinal) dispatchDeepgramFinalParts(session, 'speech_final');
       else if (session.sttDeepgramFinalizeRequested) {
@@ -1855,6 +1884,7 @@ export function connectStt(
       session.sttDeepgramFinalParts = [];
       session.sttDeepgramPendingInterim = false;
       session.sttDeepgramFinalizeRequested = false;
+      session.sttDeepgramPartials = undefined;
       if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
       session.sttKeepAliveTimer =
         adapter.id === 'deepgram' ? setInterval(() => adapter.keepAlive(ws), 5_000) : null;
