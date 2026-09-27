@@ -25,17 +25,20 @@ describe('VOICE_DIALOGUE_LISTENING_V2 environment schema', () => {
 
 describe('Span-01 model resolution', () => {
   it('falls back to the provider default, including for an empty value', () => {
-    expect(resolveSemanticModel('openrouter', undefined)).toBe('respan/span-01');
-    expect(resolveSemanticModel('openrouter', '')).toBe('respan/span-01');
+    expect(resolveSemanticModel('openrouter', undefined)).toBe('typesafe/jev-1.13-20260917');
+    expect(resolveSemanticModel('openrouter', '')).toBe('typesafe/jev-1.13-20260917');
     expect(resolveSemanticModel('respan', undefined)).toBe('span-01-pro');
     expect(resolveSemanticModel('respan', '')).toBe('span-01-pro');
   });
 
   it('keeps provider-specific models and rejects cross-provider values', () => {
     expect(resolveSemanticModel('respan', 'span-01-free')).toBe('span-01-free');
-    expect(resolveSemanticModel('openrouter', 'respan/span-01')).toBe('respan/span-01');
+    expect(resolveSemanticModel('openrouter', 'typesafe/jev-1.13-20260917')).toBe(
+      'typesafe/jev-1.13-20260917',
+    );
+    expect(resolveSemanticModel('openrouter', 'typesafe/jev-latest')).toBe('typesafe/jev-latest');
     expect(() => resolveSemanticModel('openrouter', 'span-01-pro')).toThrow(/appartient à Respan/);
-    expect(() => resolveSemanticModel('respan', 'respan/span-01')).toThrow(
+    expect(() => resolveSemanticModel('respan', 'typesafe/jev-1.13-20260917')).toThrow(
       /n'est pas un modèle Respan/,
     );
   });

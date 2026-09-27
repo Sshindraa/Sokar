@@ -95,8 +95,40 @@ export const BEHAVIORS = BEHAVIOR_SOURCES.map((behavior) => ({
   definition: `${behavior.instructions} Présent si : ${behavior.present}. Absent si : ${behavior.absent}.`,
 }));
 
-export const BEHAVIOR_SET_VERSION = '2026-09-27.2';
+/**
+ * Questions à choix multiple, posées uniquement quand l'interaction active les
+ * rend pertinentes. Jev accepte `noul` et `choice` ; Respan n'accepte que `noul`.
+ */
+const CHOICE_SOURCES = [
+  {
+    id: 'human_fallback_choice',
+    activeInteraction: 'humanFallback',
+    instructions: 'Que demande le client dans son dernier message ?',
+    criteria: {
+      gerant: 'Il demande explicitement à parler au gérant ou à une personne',
+      message: 'Il demande explicitement à laisser un message',
+      pas_clair: 'Sa réponse ne permet pas de savoir lequel des deux il veut',
+    },
+  },
+  {
+    id: 'proposal_response_choice',
+    activeInteraction: 'confirmation',
+    instructions: "Comment le client répond-il au récapitulatif de l'agent ?",
+    criteria: {
+      confirme: 'Il accepte, même de façon familière',
+      refuse: 'Il refuse, conteste ou veut autre chose',
+      hesite: 'Il hésite, ou sa réponse ne permet pas de savoir',
+    },
+  },
+] as const;
+
+export const CHOICE_QUESTIONS = CHOICE_SOURCES;
+export const CHOICE_IDS = new Set<string>(CHOICE_SOURCES.map((choice) => choice.id));
+
+export const BEHAVIOR_SET_VERSION = '2026-09-27.2-jev';
 
 export type Behavior = (typeof BEHAVIORS)[number];
 export type BehaviorId = Behavior['id'];
 export const BEHAVIOR_IDS = new Set<string>(BEHAVIORS.map((behavior) => behavior.id));
+export type Choice = (typeof CHOICE_SOURCES)[number];
+export type ChoiceId = Choice['id'];

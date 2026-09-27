@@ -6,6 +6,7 @@ import { RESPAN_BASE_URL } from '@sokar/config';
 import {
   BEHAVIORS,
   BEHAVIOR_SET_VERSION,
+  CHOICE_QUESTIONS,
 } from '../src/modules/voice/stream/semantic-signals/behaviors';
 import { scoreSpan } from '../src/modules/voice/stream/semantic-signals/client';
 import { scoreDecisions } from '../src/modules/voice/stream/semantic-signals/openrouter-client';
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
   if (!key) throw new Error(`${keyEnv} is required`);
   const model =
     process.env.VOICE_SEMANTIC_SIGNALS_MODEL ??
-    (provider === 'respan' ? 'span-01-free' : 'respan/span-01');
+    (provider === 'respan' ? 'span-01-free' : 'typesafe/jev-1.13-20260917');
   const baseUrl =
     provider === 'respan'
       ? (process.env.RESPAN_BASE_URL ?? RESPAN_BASE_URL)
@@ -95,12 +96,24 @@ async function main(): Promise<void> {
           const request: DecisionRequest = {
             model,
             state: buildState(example),
-            questions: Object.fromEntries(
-              BEHAVIORS.map(({ id, instructions, present, absent }) => [
-                id,
-                { type: 'noul' as const, instructions, criteria: { true: present, false: absent } },
-              ]),
-            ),
+            questions: {
+              ...Object.fromEntries(
+                BEHAVIORS.map(({ id, instructions, present, absent }) => [
+                  id,
+                  {
+                    type: 'noul' as const,
+                    instructions,
+                    criteria: { true: present, false: absent },
+                  },
+                ]),
+              ),
+              ...Object.fromEntries(
+                CHOICE_QUESTIONS.map(({ id, instructions, criteria }) => [
+                  id,
+                  { type: 'choice' as const, instructions, criteria },
+                ]),
+              ),
+            },
           };
           results[index] = await scoreDecisions(request, options);
         }

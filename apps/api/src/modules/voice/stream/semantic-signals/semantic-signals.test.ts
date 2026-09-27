@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { CallSession } from '../types';
 import type { TurnPlan } from '../turn-plan';
 import {
+  voiceSemanticChoiceConfidence,
   voiceSemanticDurationMs,
   voiceSemanticStatusTotal,
 } from '../../../../shared/observability/metrics';
@@ -113,6 +114,23 @@ const decisionBody = {
   },
   usage: { input_tokens: 42 },
 };
+const choiceBody = {
+  answers: {
+    corrects_existing_fact: { type: 'noul', noul: 0.92 },
+    human_fallback_choice: {
+      type: 'choice',
+      choice: 'gerant',
+      probabilities: { gerant: 0.8, message: 0.15, pas_clair: 0.05 },
+      confidence: 0.8,
+    },
+    unknown_choice: {
+      type: 'choice',
+      choice: 'x',
+      probabilities: { x: 1 },
+      confidence: 1,
+    },
+  },
+};
 const decide = (fetcher: typeof fetch, signal = new AbortController().signal) =>
   scoreDecisions(decisionRequest, {
     fetcher,
@@ -138,6 +156,25 @@ describe('Span-01 OpenRouter client', () => {
     }
     expect(fetcher.mock.calls[0][0]).toBe('https://example.test/api/alpha/decisions');
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual(decisionRequest);
+  });
+
+  it('keeps choice answers with their probabilities and ignores unknown choice IDs', async () => {
+    const result = await decide(response(200, choiceBody));
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.choices?.human_fallback_choice).toEqual({
+      choice: 'gerant',
+      probabilities: { gerant: 0.8, message: 0.15, pas_clair: 0.05 },
+      confidence: 0.8,
+    });
+    expect(result.choices).not.toHaveProperty('unknown_choice');
+    expect(result.signals.corrects_existing_fact?.present).toBeCloseTo(0.92);
+  });
+
+  it('rejects a malformed choice answer as invalid_response', async () => {
+    const malformed = {
+      answers: { human_fallback_choice: { type: 'choice', choice: 'gerant' } },
+    };
+    expect((await decide(response(200, malformed))).status).toBe('invalid_response');
   });
 
   it.each([
@@ -271,6 +308,45 @@ describe('span builder', () => {
         criteria: { true: behavior.present, false: behavior.absent },
       });
     }
+    // Aucune interaction active : les questions `choice` restent absentes.
+    expect(Object.keys(built.questions)).toHaveLength(BEHAVIORS.length);
+  });
+
+  it('adds the choice questions only for their active interaction', () => {
+    const build = (activeInteraction: 'none' | 'humanFallback' | 'confirmation') =>
+      buildDecisionState(session, {
+        transcript: 'Oui.',
+        reply: 'Je vous écoute.',
+        previousQuestion: 'Gérant ou message ?',
+        model: 'typesafe/jev-1.13-20260917',
+        historyTurns: 2,
+        activeInteraction,
+      });
+    const choiceIds = (activeInteraction: 'none' | 'humanFallback' | 'confirmation') =>
+      Object.entries(build(activeInteraction).questions)
+        .filter(([, question]) => question.type === 'choice')
+        .map(([id]) => id);
+    expect(choiceIds('none')).toEqual([]);
+    expect(choiceIds('humanFallback')).toEqual(['human_fallback_choice']);
+    expect(choiceIds('confirmation')).toEqual(['proposal_response_choice']);
+    expect(build('humanFallback').questions.human_fallback_choice).toEqual({
+      type: 'choice',
+      instructions: 'Que demande le client dans son dernier message ?',
+      criteria: {
+        gerant: 'Il demande explicitement à parler au gérant ou à une personne',
+        message: 'Il demande explicitement à laisser un message',
+        pas_clair: 'Sa réponse ne permet pas de savoir lequel des deux il veut',
+      },
+    });
+    expect(build('confirmation').questions.proposal_response_choice).toEqual({
+      type: 'choice',
+      instructions: "Comment le client répond-il au récapitulatif de l'agent ?",
+      criteria: {
+        confirme: 'Il accepte, même de façon familière',
+        refuse: 'Il refuse, conteste ou veut autre chose',
+        hesite: 'Il hésite, ou sa réponse ne permet pas de savoir',
+      },
+    });
   });
 
   it('derives both provider formats from the same behavior source', () => {
@@ -414,6 +490,93 @@ describe('validation and comparison', () => {
     expect(compared.wouldClarify).toBeNull();
   });
 
+  it('compares the confirmation choice with the plan when no noul answer was asked', () => {
+    const compared = compareSemanticSignals(
+      {},
+      plan({ interpretation: 'affirmation' }),
+      'confirmation',
+      undefined,
+      {
+        choices: {
+          proposal_response_choice: {
+            choice: 'confirme',
+            probabilities: { confirme: 0.8, refuse: 0.1, hesite: 0.1 },
+            confidence: 0.8,
+          },
+        },
+      },
+    );
+    expect(compared.agreements.explicitly_confirms_proposal).toBe('agree');
+    // Le plan dit « affirmation » : ne pas refuser est bien ce qu'il attend.
+    expect(compared.agreements.rejects_proposal).toBe('agree');
+  });
+
+  it('keeps the noul signal as the primary source when both are present', () => {
+    const compared = compareSemanticSignals(
+      { explicitly_confirms_proposal: present(0.05) },
+      plan({ interpretation: 'affirmation' }),
+      'confirmation',
+      undefined,
+      {
+        choices: {
+          proposal_response_choice: {
+            choice: 'confirme',
+            probabilities: { confirme: 0.9, refuse: 0.05, hesite: 0.05 },
+            confidence: 0.9,
+          },
+        },
+      },
+    );
+    expect(compared.agreements.explicitly_confirms_proposal).toBe('disagree');
+  });
+
+  it('would clarify when the choice itself is unclear', () => {
+    const base = {
+      explicitly_requests_transfer: present(0.95),
+      explicitly_requests_message: present(0.05),
+    };
+    const humanFallback = plan({ interpretation: 'answer', interactionDisposition: 'resolve' });
+    expect(
+      compareSemanticSignals(base, humanFallback, 'humanFallback', undefined, {
+        choices: {
+          human_fallback_choice: {
+            choice: 'pas_clair',
+            probabilities: { gerant: 0.3, message: 0.2, pas_clair: 0.5 },
+            confidence: 0.5,
+          },
+        },
+      }).wouldClarify,
+    ).toBe('human_fallback');
+    expect(
+      compareSemanticSignals(base, humanFallback, 'humanFallback', undefined, {
+        choices: {
+          human_fallback_choice: {
+            choice: 'gerant',
+            probabilities: { gerant: 0.9, message: 0.05, pas_clair: 0.05 },
+            confidence: 0.9,
+          },
+        },
+      }).wouldClarify,
+    ).toBeNull();
+    expect(
+      compareSemanticSignals(
+        { explicitly_confirms_proposal: present(0.95) },
+        plan({ interpretation: 'affirmation', interactionDisposition: 'resolve' }),
+        'confirmation',
+        undefined,
+        {
+          choices: {
+            proposal_response_choice: {
+              choice: 'hesite',
+              probabilities: { confirme: 0.25, refuse: 0.25, hesite: 0.5 },
+              confidence: 0.5,
+            },
+          },
+        },
+      ).wouldClarify,
+    ).toBe('commit');
+  });
+
   it('treats gift card purchase as sensitive only on a new request or its resolved confirmation', () => {
     const signals: SemanticSignals = { explicitly_requests_gift_card_purchase: present(0.05) };
     expect(
@@ -488,6 +651,31 @@ describe('shadow boundary', () => {
     );
     status.mockRestore();
     duration.mockRestore();
+  });
+
+  it('records the max choice probability, keeps the choice in telemetry and asks them only when relevant', async () => {
+    const confidence = vi.spyOn(voiceSemanticChoiceConfidence, 'observe');
+    observeSemanticSignalsShadow(
+      session,
+      { ...turn, activeInteraction: 'humanFallback' },
+      { config: openrouterConfig, fetcher: response(200, choiceBody) },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(confidence).toHaveBeenCalledWith(
+      { choice: 'human_fallback_choice', provider: 'openrouter' },
+      0.8,
+    );
+    confidence.mockRestore();
+  });
+
+  it('omits the choice questions when the active interaction does not match', async () => {
+    const fetcher = response(200, decisionBody);
+    observeSemanticSignalsShadow(session, turn, { config: openrouterConfig, fetcher });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const sent = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(Object.keys(sent.questions)).toHaveLength(BEHAVIORS.length);
+    expect(sent.questions).not.toHaveProperty('human_fallback_choice');
+    expect(sent.questions).not.toHaveProperty('proposal_response_choice');
   });
 
   it('does not fetch or count disabled when the flag is off', () => {

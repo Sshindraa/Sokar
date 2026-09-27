@@ -542,10 +542,10 @@ export function resolveSemanticModel(
   model: string | undefined,
 ): string {
   if (provider === 'openrouter') {
-    if (model === undefined || model === '') return 'respan/span-01';
+    if (model === undefined || model === '') return 'typesafe/jev-1.13-20260917';
     if (model === 'span-01-pro' || model === 'span-01-free')
       throw new Error(
-        `VOICE_SEMANTIC_SIGNALS_MODEL=${model} appartient à Respan ; utilisez 'respan/span-01' avec VOICE_SEMANTIC_SIGNALS_PROVIDER=openrouter`,
+        `VOICE_SEMANTIC_SIGNALS_MODEL=${model} appartient à Respan ; utilisez 'typesafe/jev-1.13-20260917' avec VOICE_SEMANTIC_SIGNALS_PROVIDER=openrouter`,
       );
     return model;
   }

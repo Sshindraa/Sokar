@@ -300,12 +300,20 @@ est mesuré `forbidden`.
 `VOICE_SEMANTIC_SIGNALS_PROVIDER` vaut `openrouter` par défaut (ou `respan`).
 OpenRouter appelle `POST /alpha/decisions` avec `OPENROUTER_API_KEY` et
 `OPENROUTER_BASE_URL` (`https://openrouter.ai/api` par défaut) ; le modèle vaut
-alors `respan/span-01`. La clé OpenRouter n'existe qu'en production, pas en
-staging : le mode shadow y démarre avec un avertissement et `missing_key`.
+alors `typesafe/jev-1.13-20260917` (version figée, jamais `jev-latest`). La clé
+OpenRouter n'existe qu'en production, pas en staging : le mode shadow y démarre
+avec un avertissement et `missing_key`.
 Respan garde le client direct `/scores` avec `RESPAN_API_KEY` et
-`VOICE_SEMANTIC_SIGNALS_MODEL=span-01-pro` ou `span-01-free`. Span-01 n'accepte
-que des questions `noul` : une seule probabilité par comportement, sans score
-« impossible à dire » (`not_observable` reste à 0 côté OpenRouter).
+`VOICE_SEMANTIC_SIGNALS_MODEL=span-01-pro` ou `span-01-free`. Jev accepte les
+questions `noul` et `choice` : onze comportements en `noul` (une probabilité,
+sans score « impossible à dire », donc `not_observable` à 0), plus deux
+questions `choice` posées seulement quand l'interaction active les rend
+pertinentes — `human_fallback_choice` sous `humanFallback` et
+`proposal_response_choice` sous confirmation. Respan n'accepte que `noul` :
+le client direct ne reçoit pas ces deux questions. La probabilité maximale de
+chaque `choice` alimente l'histogramme
+`sokar_voice_semantic_choice_confidence`, qui surveille la surconfiance du
+modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-27.2-jev`.
 
 Évaluation hors ligne : `pnpm --filter api semantic:eval [fichier.jsonl]
 [--provider openrouter|respan]` avec la clé du fournisseur dans l'environnement

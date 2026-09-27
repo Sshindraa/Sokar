@@ -1,17 +1,44 @@
 import { turnPlanFacts, type TurnPlan } from '../turn-plan';
 import type { ConversationState, PendingInteractionKind } from '../types';
 import { BEHAVIORS, type BehaviorId } from './behaviors';
-import type { SemanticSignals } from './types';
+import type { SemanticChoices, SemanticSignals } from './types';
 
 export type Agreement = 'agree' | 'disagree' | 'span_not_observable' | 'not_comparable';
 export type SensitiveAction = 'commit' | 'cancellation' | 'human_fallback' | 'gift_card';
+
+/**
+ * Les questions `choice` doublent volontairement les signaux `noul` sur les deux
+ * décisions les plus coûteuses. Le `noul` reste prioritaire : quand il tranche
+ * (>= 0,5 ou <= 0,5 côté présent), il décide, et le `choice` ne sert qu'à
+ * couvrir le cas où le `noul` n'a pas été posé ou est au milieu.
+ */
+type ChoiceAnswers = SemanticChoices | undefined;
+
+function choiceProbability(choices: ChoiceAnswers, id: string, option: string): number {
+  return choices?.[id as keyof SemanticChoices]?.probabilities[option] ?? 0;
+}
+
+/** Résolution d'un `choice` binaire : true, false, ou null si indécis. */
+function choiceDecision(
+  choices: ChoiceAnswers,
+  id: string,
+  positiveOption: string,
+  negativeOption: string,
+): boolean | null {
+  const choice = choices?.[id as keyof SemanticChoices];
+  if (!choice) return null;
+  const positive = choiceProbability(choices, id, positiveOption);
+  const negative = choiceProbability(choices, id, negativeOption);
+  if (positive === negative) return null;
+  return positive > negative;
+}
 
 export function compareSemanticSignals(
   signals: SemanticSignals,
   plan: TurnPlan | undefined,
   activeInteraction: PendingInteractionKind | 'none',
   currentIntent?: ConversationState['intent'],
-  options: { supportsNotObservable?: boolean } = {},
+  options: { supportsNotObservable?: boolean; choices?: SemanticChoices } = {},
 ): { agreements: Record<BehaviorId, Agreement>; wouldClarify: SensitiveAction | null } {
   const expected: Partial<Record<BehaviorId, boolean>> = {};
   if (plan) {
@@ -46,14 +73,38 @@ export function compareSemanticSignals(
   for (const behavior of BEHAVIORS) {
     const score = signals[behavior.id];
     const planValue = expected[behavior.id];
+    let observed: boolean | null = score ? score.present >= 0.5 : null;
+    if (score && options.supportsNotObservable !== false && score.notObservable >= 0.5) {
+      agreements[behavior.id] = 'span_not_observable';
+      continue;
+    }
+    // Repli `choice` quand le `noul` correspondant n'a pas été posé.
+    if (observed === null && options.choices) {
+      if (behavior.id === 'explicitly_requests_transfer')
+        observed = choiceDecision(options.choices, 'human_fallback_choice', 'gerant', 'message');
+      else if (behavior.id === 'explicitly_requests_message')
+        observed = choiceDecision(options.choices, 'human_fallback_choice', 'message', 'gerant');
+      else if (behavior.id === 'explicitly_confirms_proposal')
+        observed = choiceDecision(
+          options.choices,
+          'proposal_response_choice',
+          'confirme',
+          'refuse',
+        );
+      else if (behavior.id === 'rejects_proposal')
+        observed = choiceDecision(
+          options.choices,
+          'proposal_response_choice',
+          'refuse',
+          'confirme',
+        );
+    }
     agreements[behavior.id] =
-      planValue === undefined || !score
+      planValue === undefined || observed === null
         ? 'not_comparable'
-        : options.supportsNotObservable !== false && score.notObservable >= 0.5
-          ? 'span_not_observable'
-          : score.present >= 0.5 === planValue
-            ? 'agree'
-            : 'disagree';
+        : observed === planValue
+          ? 'agree'
+          : 'disagree';
   }
   const newRequest = plan?.interpretation === 'new_request';
   const resolvedConfirmation =
@@ -84,8 +135,22 @@ export function compareSemanticSignals(
             );
   const wouldClarify =
     sensitiveAction &&
-    ((matchingProbability ?? 0) < 0.5 || (signals.needs_clarification?.present ?? 0) > 0.5)
+    ((matchingProbability ?? 0) < 0.5 ||
+      (signals.needs_clarification?.present ?? 0) > 0.5 ||
+      choiceIsUnclear(options.choices, sensitiveAction))
       ? sensitiveAction
       : null;
   return { agreements, wouldClarify };
+}
+
+/**
+ * Un `choice` au moins aussi probable que l'option décidée signale un doute :
+ * `pas_clair` côté repli humain, `hesite` côté récapitulatif.
+ */
+function choiceIsUnclear(choices: ChoiceAnswers, action: SensitiveAction): boolean {
+  if (action === 'human_fallback')
+    return choiceProbability(choices, 'human_fallback_choice', 'pas_clair') >= 0.5;
+  if (action === 'commit')
+    return choiceProbability(choices, 'proposal_response_choice', 'hesite') >= 0.5;
+  return false;
 }

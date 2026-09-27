@@ -1,17 +1,27 @@
 import { z } from 'zod';
-import { BEHAVIOR_IDS } from './behaviors';
-import type { DecisionRequest, SemanticScoreResult, SemanticSignals } from './types';
+import { BEHAVIOR_IDS, CHOICE_IDS } from './behaviors';
+import type {
+  DecisionRequest,
+  SemanticChoices,
+  SemanticScoreResult,
+  SemanticSignals,
+} from './types';
 
 /**
- * Réponse de `POST /alpha/decisions`. Respan n'expose que des questions `noul` :
- * une seule probabilité, sans état « impossible à dire ».
+ * Réponse de `POST /alpha/decisions`. Jev accepte `noul` (une probabilité) et
+ * `choice` (une distribution sur des options nommées).
  */
 const responseSchema = z.object({
   answers: z.record(
-    z.object({
-      type: z.literal('noul'),
-      noul: z.number().min(0).max(1),
-    }),
+    z.union([
+      z.object({ type: z.literal('noul'), noul: z.number().min(0).max(1) }),
+      z.object({
+        type: z.literal('choice'),
+        choice: z.string(),
+        probabilities: z.record(z.number().min(0).max(1)),
+        confidence: z.number().min(0).max(1),
+      }),
+    ]),
   ),
   usage: z.object({ input_tokens: z.number().int().nonnegative() }).optional(),
 });
@@ -50,7 +60,17 @@ export async function scoreDecisions(
     const parsed = responseSchema.safeParse(await response.json());
     if (!parsed.success) return { status: 'invalid_response', durationMs: durationMs() };
     const signals: SemanticSignals = {};
+    const choices: SemanticChoices = {};
     for (const [id, answer] of Object.entries(parsed.data.answers)) {
+      if (answer.type === 'choice') {
+        if (!CHOICE_IDS.has(id)) continue;
+        choices[id as keyof SemanticChoices] = {
+          choice: answer.choice,
+          probabilities: answer.probabilities,
+          confidence: answer.confidence,
+        };
+        continue;
+      }
       if (!BEHAVIOR_IDS.has(id)) continue;
       signals[id as keyof SemanticSignals] = {
         present: answer.noul,
@@ -64,6 +84,7 @@ export async function scoreDecisions(
       durationMs: durationMs(),
       inputTokens: parsed.data.usage?.input_tokens ?? 0,
       supportsNotObservable: false,
+      choices,
     };
   } catch (error) {
     return {

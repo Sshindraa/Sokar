@@ -1,6 +1,6 @@
-import type { CallSession } from '../types';
+import type { CallSession, PendingInteractionKind } from '../types';
 import { redactPii } from '../pii-redact';
-import { BEHAVIORS } from './behaviors';
+import { BEHAVIORS, CHOICE_QUESTIONS } from './behaviors';
 import type { DecisionRequest, SpanMessage, SpanRequest } from './types';
 
 interface BuildInput {
@@ -9,6 +9,7 @@ interface BuildInput {
   previousQuestion: string | null;
   model: string;
   historyTurns: number;
+  activeInteraction?: PendingInteractionKind | 'none';
 }
 
 interface AnonymizedTurns {
@@ -101,6 +102,10 @@ export function buildDecisionState(
   input: BuildInput,
 ): DecisionRequest {
   const turns = anonymizedTurns(session, input);
+  const activeInteraction = input.activeInteraction ?? 'none';
+  const choiceQuestions = CHOICE_QUESTIONS.filter(
+    (choice) => choice.activeInteraction === activeInteraction,
+  );
   return {
     model: input.model,
     state: [
@@ -109,11 +114,19 @@ export function buildDecisionState(
       ),
       `Agent (réponse évaluée) : ${turns.reply}`,
     ].join('\n'),
-    questions: Object.fromEntries(
-      BEHAVIORS.map(({ id, instructions, present, absent }) => [
-        id,
-        { type: 'noul' as const, instructions, criteria: { true: present, false: absent } },
-      ]),
-    ),
+    questions: {
+      ...Object.fromEntries(
+        BEHAVIORS.map(({ id, instructions, present, absent }) => [
+          id,
+          { type: 'noul' as const, instructions, criteria: { true: present, false: absent } },
+        ]),
+      ),
+      ...Object.fromEntries(
+        choiceQuestions.map(({ id, instructions, criteria }) => [
+          id,
+          { type: 'choice' as const, instructions, criteria },
+        ]),
+      ),
+    },
   };
 }
