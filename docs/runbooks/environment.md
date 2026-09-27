@@ -201,6 +201,27 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut
 VOICE_STRUCTURED_FALLBACK_MODEL="qwen/qwen3.8-27b"        # défaut
 ```
 
+Latence du tour structuré (mesures du 27 septembre, appel 25650799 et rejeu des
+appels enregistrés) :
+
+```dotenv
+# Course Cerebras/Groq quand le premier jeton tarde (pics 1,7–2,1 s observés).
+# Groq on_demand plafonne à 7 000 jetons/min (~2 courses/min) ; au-delà sa
+# requête échoue et la réponse Cerebras est gardée.
+VOICE_STRUCTURED_HEDGE_ENABLED="false"      # opt-in
+VOICE_STRUCTURED_HEDGE_DELAY_MS="700"
+# Premier passage lancé sur une partielle Deepgram stable, repris seulement si
+# la requête finale est identique (rien n'est dit ni exécuté avant).
+VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
+VOICE_STRUCTURED_SPECULATION_MS="250"
+# Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
+VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
+# Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
+VOICE_DEEPGRAM_ENDPOINTING_MS="200"
+# Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
+VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
+```
+
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
 fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
 refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx
