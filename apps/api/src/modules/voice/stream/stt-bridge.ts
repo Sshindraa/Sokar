@@ -201,6 +201,7 @@ function fallbackToScribeAtOpening(
   session.sttDeepgramPendingInterim = false;
   session.sttDeepgramFinalizeRequested = false;
   session.sttDeepgramPartials = undefined;
+  clearDeepgramStallTimer(session);
   session.sttConsecutiveFailures = 0;
   logger.warn(
     { callId: session.callControlId, failedProvider: 'deepgram_stt' },
@@ -1597,6 +1598,54 @@ function logDeepgramEvent(
   );
 }
 
+/** Sans changement de la partielle pendant ce délai, on force la fin du segment. */
+export function deepgramStallFinalizeMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_DEEPGRAM_STALL_FINALIZE_MS ?? 1_200);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 10_000 ? parsed : 1_200;
+}
+
+const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
+const deepgramFinalizeReasons = new WeakMap<CallSession, 'utterance_end' | 'stalled'>();
+
+function clearDeepgramStallTimer(session: CallSession): void {
+  const timer = deepgramStallTimers.get(session);
+  if (timer) clearTimeout(timer);
+  deepgramStallTimers.delete(session);
+}
+
+/**
+ * Appel 25650799 : Deepgram tenait « peut-être vers 18 heures 30 » en partielle
+ * inchangée pendant 7,6 s, sans speech_final ni UtteranceEnd, sur une piste
+ * appelant silencieuse → 8,8 s de silence. Une partielle figée déclenche
+ * désormais `Finalize` ; la réponse clôt le tour comme après UtteranceEnd.
+ */
+function armDeepgramStallTimer(session: CallSession): void {
+  clearDeepgramStallTimer(session);
+  const stallMs = deepgramStallFinalizeMs();
+  const timer = setTimeout(() => {
+    deepgramStallTimers.delete(session);
+    const ws = session.sttWs;
+    if (
+      session.ended ||
+      session.sttAdapter?.id !== 'deepgram' ||
+      !session.sttDeepgramPendingInterim ||
+      session.sttDeepgramFinalizeRequested ||
+      ws?.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+    session.sttDeepgramFinalizeRequested = true;
+    deepgramFinalizeReasons.set(session, 'stalled');
+    logger.info(
+      { callId: session.callControlId, stallMs, partialCount: session.sttDeepgramPartials?.count },
+      '[stt] Deepgram partial stalled, Finalize sent',
+    );
+    session.sttAdapter.finalize(ws);
+  }, stallMs);
+  timer.unref?.();
+  deepgramStallTimers.set(session, timer);
+}
+
 export function handleNormalizedSttMessage(
   session: CallSession,
   event: NormalizedSttProviderMessage,
@@ -1631,6 +1680,7 @@ export function handleNormalizedSttMessage(
             partials.lastChangeAt = partialAt;
             partials.lastText = event.transcript;
             partials.lastWordCount = event.transcript.trim().split(/\s+/).length;
+            armDeepgramStallTimer(session);
           }
         }
       }
@@ -1684,13 +1734,21 @@ export function handleNormalizedSttMessage(
           providerResultEndMs: event.providerResultEndMs,
           providerLastWordEndMs: event.providerLastWordEndMs,
         });
-        if (event.transcript.trim()) session.sttDeepgramPartials = undefined;
+        if (event.transcript.trim()) {
+          session.sttDeepgramPartials = undefined;
+          clearDeepgramStallTimer(session);
+        }
       }
       if (event.speechFinal) dispatchDeepgramFinalParts(session, 'speech_final');
       else if (session.sttDeepgramFinalizeRequested) {
         // Réponse au `Finalize` (from_finalize) : elle clôt le tour, que
         // Deepgram la marque speech_final ou non.
-        dispatchDeepgramFinalParts(session, 'utterance_end_finalize');
+        dispatchDeepgramFinalParts(
+          session,
+          deepgramFinalizeReasons.get(session) === 'stalled'
+            ? 'stalled_finalize'
+            : 'utterance_end_finalize',
+        );
       }
       return;
     }
@@ -1718,6 +1776,7 @@ export function handleNormalizedSttMessage(
           // segment ouvert (bruit de ligne sans silence) : on force sa sortie
           // au lieu d'attendre l'endpointing, jusqu'à 4 s sur l'appel a8012c5c.
           session.sttDeepgramFinalizeRequested = true;
+          deepgramFinalizeReasons.set(session, 'utterance_end');
           session.sttAdapter.finalize(session.sttWs);
         }
       }
@@ -1885,6 +1944,7 @@ export function connectStt(
       session.sttDeepgramPendingInterim = false;
       session.sttDeepgramFinalizeRequested = false;
       session.sttDeepgramPartials = undefined;
+      clearDeepgramStallTimer(session);
       if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
       session.sttKeepAliveTimer =
         adapter.id === 'deepgram' ? setInterval(() => adapter.keepAlive(ws), 5_000) : null;
@@ -2073,6 +2133,7 @@ export function closeStt(session: CallSession): void {
   clearSemanticHold(session);
   clearPendingSttCommit(session);
   clearSttRecoveryTimers(session);
+  clearDeepgramStallTimer(session);
   const ws = session.sttWs;
   session.sttWs = null;
   session.sttReady = null;

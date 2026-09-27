@@ -4,7 +4,7 @@
  * les faits proposés, exécute les actions autorisées et rend leur résultat au
  * modèle pour la formulation. Aucune règle lexicale n'interprète l'appelant.
  */
-import type { CallSession } from '../types';
+import type { CallSession, DebugSpeechEntry } from '../types';
 import type { CallSessionManager } from '../manager';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts-handler';
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
@@ -22,7 +22,12 @@ import {
   getReservationConfirmationKey,
   voiceMaxPartySize,
 } from '../conversation-controller';
-import { recordDebugTool } from '../debug-dialogue';
+import {
+  appendDebugSpeechText,
+  recordDebugAgentSpeech,
+  recordDebugTool,
+  settleDebugSpeech,
+} from '../debug-dialogue';
 import { logger } from '../../../../shared/logger/pino';
 import {
   STRUCTURED_TURN_SCHEMA_NAME,
@@ -207,10 +212,12 @@ export async function runStructuredTurn(
   const contextTts = isCartesiaContextV2Enabled() ? createCartesiaContextTurn(session, true) : null;
   if (contextTts) session.ttsContext = contextTts;
   const spokenPhrases: string[] = [];
+  let contextDebugEntry: DebugSpeechEntry | null = null;
   const flushSpeech = async () => {
     if (contextTts && spokenPhrases.length) {
       try {
         await contextTts.finish();
+        settleDebugSpeech(contextDebugEntry, contextTts.framesSent, true);
       } catch (err) {
         logger.warn(
           { err: err instanceof Error ? err.message : String(err), callId: session.callControlId },
@@ -244,6 +251,10 @@ export async function runStructuredTurn(
     phrase = phrase.replace(/\s*!/g, '.');
     spokenPhrases.push(phrase);
     if (contextTts) {
+      // Une réplique du relevé par réponse, mesurée par les trames du contexte
+      // (appel 25650799 : relevé vide côté agent sans cela).
+      if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, phrase);
+      else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
       contextTts.push(cleanTextForTts(phrase, effectiveVoiceLanguage(session)));
       return;
     }
@@ -550,6 +561,8 @@ export async function runStructuredTurn(
     // Tour sans phrase (fragment retenu, relance, interruption) : le contexte
     // ouvert d'avance est fermé sans audio.
     if (contextTts && !spokenPhrases.length) contextTts.cancel('unused');
+    // Réponse coupée ou échouée : ce qui n'a pas été fixé l'est ici.
+    settleDebugSpeech(contextDebugEntry, contextTts?.framesSent ?? 0, false);
     if (session.ttsContext === contextTts) session.ttsContext = null;
   }
 }

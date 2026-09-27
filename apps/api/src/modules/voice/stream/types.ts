@@ -105,6 +105,8 @@ export type SttFinalTrigger =
   | 'utterance_end'
   /** UtteranceEnd reçu avant tout segment final : `Finalize` a forcé le segment. */
   | 'utterance_end_finalize'
+  /** Partielle Deepgram figée sans fin de phrase : `Finalize` a forcé le segment. */
+  | 'stalled_finalize'
   | 'safety_flush'
   | 'spelling_hold'
   | 'semantic_hold';
