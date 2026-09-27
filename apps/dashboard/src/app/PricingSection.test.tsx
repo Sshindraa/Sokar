@@ -43,4 +43,28 @@ describe('PricingSection', () => {
       '/register?plan=pro&billing=monthly',
     );
   });
+
+  it('affiche les montants avec une espace insécable et le prix par site du Multi-site', () => {
+    const { container } = render(<PricingSection />);
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('249\u00a0€/mois + 99\u00a0€/site');
+    expect(text).toContain('+ 79\u00a0€/site');
+    expect(text).toContain(
+      'Économisez 50\u00a0€/mois + 20\u00a0€/site avec la facturation annuelle.',
+    );
+    expect(text).toContain('Économisez 40\u00a0€/mois avec la facturation annuelle.');
+  });
+
+  it('masque le prix barré et les économies en mensuel', () => {
+    const { container } = render(<PricingSection />);
+
+    fireEvent.click(screen.getByRole('switch'));
+
+    const text = container.textContent ?? '';
+    expect(screen.getByText('299')).toBeInTheDocument();
+    expect(text).toContain('+ 99\u00a0€/site');
+    expect(text).not.toContain('Économisez');
+    expect(text).not.toContain('-20% annuel');
+  });
 });
