@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
+
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.

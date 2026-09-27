@@ -9,6 +9,8 @@ import {
   type VoiceTurnPlanShadowPath,
 } from '../../../shared/observability/metrics';
 
+export { observeSemanticSignalsShadow } from './semantic-signals/shadow';
+
 export interface TurnPlanPolicySnapshot {
   intent: CallSession['conversation']['intent'];
   slots: CallSession['conversation']['slots'];

@@ -489,6 +489,44 @@ export type VoiceTurnPlanShadowStatus =
   | 'speech_missing'
   | 'failed'
   | 'aborted';
+
+/** Span-01 shadow labels are bounded enums; no call or restaurant identifiers. */
+export const voiceSemanticDurationMs = new Histogram({
+  name: 'sokar_voice_semantic_duration_ms',
+  help: 'Span-01 scoring duration in milliseconds',
+  labelNames: ['model'] as const,
+  buckets: [100, 200, 500, 1000, 2000, 5000, 10000],
+  registers: [getRegistry()],
+});
+export const voiceSemanticStatusTotal = new Counter({
+  name: 'sokar_voice_semantic_status_total',
+  help: 'Span-01 scoring outcomes',
+  labelNames: ['status'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticAgreementTotal = new Counter({
+  name: 'sokar_voice_semantic_agreement_total',
+  help: 'Agreement between Span-01 signals and TurnPlan',
+  labelNames: ['behavior', 'outcome', 'behavior_set_version'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticConflictTotal = new Counter({
+  name: 'sokar_voice_semantic_conflict_total',
+  help: 'Contradictory Span-01 signals',
+  labelNames: ['conflict'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticWouldClarifyTotal = new Counter({
+  name: 'sokar_voice_semantic_would_clarify_total',
+  help: 'Hypothetical clarification for sensitive action',
+  labelNames: ['sensitive_action'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticInputTokensTotal = new Counter({
+  name: 'sokar_voice_semantic_input_tokens_total',
+  help: 'Span-01 input tokens',
+  registers: [getRegistry()],
+});
 export type VoiceTurnPlanShadowPolicyOutcome = 'accepted' | 'rejected' | 'not_evaluated';
 export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparable';
 
@@ -767,6 +805,12 @@ export function __resetMetrics(): void {
   elevenLabsCharacterCount.reset();
   elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
+  voiceSemanticDurationMs.reset();
+  voiceSemanticStatusTotal.reset();
+  voiceSemanticAgreementTotal.reset();
+  voiceSemanticConflictTotal.reset();
+  voiceSemanticWouldClarifyTotal.reset();
+  voiceSemanticInputTokensTotal.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();

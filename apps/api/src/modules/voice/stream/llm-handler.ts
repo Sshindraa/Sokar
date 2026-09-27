@@ -71,6 +71,7 @@ import {
   captureTurnPlanPolicySnapshot,
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
+  observeSemanticSignalsShadow,
   shouldObserveDeterministicTurnPlan,
 } from './turn-plan-shadow';
 import type { InBandTurnPlanResult, TurnPlanPolicySnapshot } from './turn-plan-shadow';
@@ -1590,21 +1591,30 @@ export async function processTranscriptStreaming(
     }
     // Shadow hors bande : mesure aussi les tours où la regex a décidé seule,
     // sans retarder la réponse déjà prête.
-    if (
+    const observeDeterministicPlan =
       turnPlanShadowEnabled &&
       !explicitEnd &&
       (speechAct === 'content' || speechAct === 'correction') &&
       !isNameCollectionBlocking(session) &&
-      shouldObserveDeterministicTurnPlan()
-    ) {
+      shouldObserveDeterministicTurnPlan();
+    if (observeDeterministicPlan) {
       const observedTurnId = session.currentTurn?.id;
+      const semanticSpanSession = {
+        history: [...session.history],
+        conversation: {
+          ...session.conversation,
+          slots: { ...session.conversation.slots },
+          nameCollection: { ...session.conversation.nameCollection },
+        },
+        from: session.from,
+      };
       const observedAfter = captureTurnPlanPolicySnapshot(
         session,
         interactionBeforeTurn?.id ?? null,
       );
       mgr
         .observeTurnPlan(session, turnPlanContext, deterministicResponse, observedTurnId)
-        .then((result) =>
+        .then((result) => {
           recordInBandTurnPlanShadow(
             session,
             turnPlanContext,
@@ -1613,11 +1623,36 @@ export async function processTranscriptStreaming(
             observedAfter,
             observedTurnId,
             'deterministic',
-          ),
-        )
-        .catch((err: unknown) =>
-          logger.warn({ err }, '[voice-turn] Deterministic TurnPlan observation failed'),
-        );
+          );
+          observeSemanticSignalsShadow(session, {
+            transcript,
+            reply: deterministicResponse,
+            previousQuestion: lastAssistantQuestionBeforeTurn,
+            plan: result.status === 'valid' ? result.plan : undefined,
+            activeInteraction: turnPlanBefore.activeInteractionKind,
+            turnId: observedTurnId,
+            spanSession: semanticSpanSession,
+          });
+        })
+        .catch((err: unknown) => {
+          logger.warn({ err }, '[voice-turn] Deterministic TurnPlan observation failed');
+          observeSemanticSignalsShadow(session, {
+            transcript,
+            reply: deterministicResponse,
+            previousQuestion: lastAssistantQuestionBeforeTurn,
+            activeInteraction: turnPlanBefore.activeInteractionKind,
+            turnId: observedTurnId,
+            spanSession: semanticSpanSession,
+          });
+        });
+    } else {
+      observeSemanticSignalsShadow(session, {
+        transcript,
+        reply: deterministicResponse,
+        previousQuestion: lastAssistantQuestionBeforeTurn,
+        activeInteraction: turnPlanBefore.activeInteractionKind,
+        turnId: session.currentTurn?.id,
+      });
     }
     syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
@@ -1816,6 +1851,14 @@ export async function processTranscriptStreaming(
   // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
   // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
   const recordLlmReply = (reply: string) => {
+    observeSemanticSignalsShadow(session, {
+      transcript,
+      reply,
+      previousQuestion: lastAssistantQuestionBeforeTurn,
+      plan: inBandTurnPlanResult?.status === 'valid' ? inBandTurnPlanResult.plan : undefined,
+      activeInteraction: turnPlanBefore.activeInteractionKind,
+      turnId: telemetryTurnId,
+    });
     const plan =
       shouldCollectInBandTurnPlan &&
       turnPlanAuthorityEnabled &&
