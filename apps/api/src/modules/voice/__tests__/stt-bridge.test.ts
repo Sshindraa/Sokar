@@ -795,6 +795,56 @@ describe('Deepgram final dispatch', () => {
     expect(session.sttDeepgramFinalizeRequested).toBe(false);
   });
 
+  it('force la fin d’une partielle Deepgram figée (appel 25650799)', () => {
+    vi.useFakeTimers();
+    const { session, onEvent } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'peut-être vers' });
+    vi.advanceTimersByTime(800);
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'peut-être vers 18 heures 30',
+    });
+    // La même partielle revient, sans changement : le délai ne repart pas.
+    vi.advanceTimersByTime(600);
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'peut-être vers 18 heures 30',
+    });
+    expect(ws.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(600);
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'peut-être vers 18 heures 30',
+      speechFinal: false,
+      fromFinalize: true,
+    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'stalled_finalize' }),
+    );
+    vi.useRealTimers();
+  });
+
+  it('ne force rien quand Deepgram clôt la phrase à temps', () => {
+    vi.useFakeTimers();
+    const { session } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'cinq personnes' });
+    vi.advanceTimersByTime(500);
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'cinq personnes',
+      speechFinal: true,
+    });
+    vi.advanceTimersByTime(5_000);
+    expect(ws.send).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it('journalise le rythme des partielles Deepgram sans leur texte', async () => {
     const { logger } = await import('../../../shared/logger/pino');
     const info = vi.spyOn(logger, 'info');
