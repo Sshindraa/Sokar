@@ -338,15 +338,20 @@ par défaut ; quand le flag est activé, le worker lit les tours des 7 derniers
 jours dans `voice_debug_turns`, conserve au plus
 `VOICE_SEMANTIC_AUTO_EVAL_MAX_TURNS=300` tours récents et lance Jev et le juge
 en parallèle (concurrence 4). Il faut au moins 20 tours annotables. Le juge
-utilise `VOICE_SEMANTIC_JUDGE_MODEL=anthropic/claude-sonnet-5-20260630` et la
+utilise `VOICE_SEMANTIC_JUDGE_MODEL=xiaomi/mimo-v2.6-flash` et la
 clé secrète `OPENROUTER_API_KEY`. Le job est planifié le lundi à 06:00
 (Europe/Paris), avec une tentative. Les rapports agrégés sont écrits dans
 `apps/api/scratch/semantic-auto-eval/` et publiés via les métriques
 `sokar_voice_semantic_eval_precision`, `..._recall`, `..._examples`,
 `..._last_run_timestamp_seconds` et `..._judge_status_total`. Le résumé
-opérationnel ne contient ni transcription ni raisonnement du juge. Comptez
-environ 0,01–0,03 $ par tour pour le juge Sonnet 5, selon la longueur du
-contexte ; les appels Jev ont leur propre coût. Ces annotations restent des
+opérationnel ne contient ni transcription ni raisonnement du juge. Le juge
+MiMo v2.6 Flash coûte environ 0,0001 $ par tour. Sur 6 cas difficiles (27/09/2026), il
+a donné 9/12 bonnes réponses contre 12/12 pour `anthropic/claude-sonnet-5` (environ
+0,0075 $ par tour) : ses écarts sont des `not_observable` (abstentions), exclus du calcul,
+jamais des réponses inversées. Il réduit donc surtout le nombre d'exemples utiles,
+notamment sur le « oui » ambigu face à un choix. Pour un juge plus fiable, passer
+`VOICE_SEMANTIC_JUDGE_MODEL=anthropic/claude-sonnet-5`. Les appels Jev ont leur propre
+coût. Ces annotations restent des
 jugements de modèle et ne constituent pas une vérité humaine.
 
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;

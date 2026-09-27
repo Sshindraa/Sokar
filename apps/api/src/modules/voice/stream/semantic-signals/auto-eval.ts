@@ -11,6 +11,7 @@ import {
   voiceSemanticEvalRecall,
 } from '../../../../shared/observability/metrics';
 import { logger } from '../../../../shared/logger/pino';
+import { parseRestaurantIdList } from '../feature-flags';
 import { buildAnnotationItems } from './annotation';
 import { BEHAVIORS } from './behaviors';
 import { buildEvalDecisionRequest, type EvalExample } from './eval-request';
@@ -155,9 +156,16 @@ export type SemanticAutoEvalRunResult =
   | { status: 'disabled' | 'missing_key' | 'not_enough_data'; turns: number }
   | { status: 'completed'; turns: number; report: SemanticAutoEvalReport };
 
+/**
+ * Limité aux restaurants de debug : ce sont les seuls dont le dialogue est
+ * écrit dans `voice_debug_turns`, et le filtre explicite satisfait le garde de
+ * scoping tenant. Sans restaurant de debug configuré, rien n'est lu.
+ */
 async function loadRecentTurns(since: Date, limit: number): Promise<VoiceDebugTurn[]> {
+  const restaurantIds = parseRestaurantIdList(process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS);
+  if (restaurantIds.length === 0) return [];
   return db.voiceDebugTurn.findMany({
-    where: { createdAt: { gte: since } },
+    where: { restaurantId: { in: restaurantIds }, createdAt: { gte: since } },
     select: { callId: true, turnId: true, sequence: true, callerText: true, agentText: true },
     orderBy: { createdAt: 'desc' },
     take: limit,
