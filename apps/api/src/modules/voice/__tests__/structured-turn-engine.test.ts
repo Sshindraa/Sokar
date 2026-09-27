@@ -180,7 +180,7 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toEqual(['20 h est libre.', 'À quel nom ?']);
   });
 
-  it('annonce la fermeture si le modèle ne dit rien après un jour fermé (appel a8012c5c)', async () => {
+  it('annonce un jour fermé par une phrase fixe, sans second appel au modèle (appels a8012c5c, 0d49230d)', async () => {
     const { session, mgr, outputs } = fixture();
     vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
       restaurantId: RESTAURANT_ID,
@@ -190,7 +190,7 @@ describe('tour structuré (canary)', () => {
       allSlots: [],
     });
     const draft = { date: TOMORROW, time: '14:00', partySize: 7, customerName: '' };
-    outputs.push(turn({ draft, action: 'check_availability' }), turn({ draft, say: '' }));
+    outputs.push(turn({ draft, action: 'check_availability' }));
 
     await processTranscriptStreaming(session, 'non 7 pardon', mgr);
 
@@ -198,6 +198,8 @@ describe('tour structuré (canary)', () => {
       /^Nous sommes fermés \S+ \d+ \S+\. Voulez-vous venir un autre jour \?$/,
     );
     expect(session.history.at(-1)?.content).toContain('fermés');
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    expect(session.structuredTurn?.lastAwaiting).toBe('date');
   });
 
   it('dit « complet » plutôt que « pas compris » quand le jour ouvert est plein', async () => {

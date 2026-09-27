@@ -28,6 +28,7 @@ type Expect = Partial<{
   action: StructuredTurnOutput['action'][];
   awaiting: StructuredTurnOutput['awaiting'][];
   sayExcludes: string[];
+  sayIncludesAny: string[];
   endsCall: boolean;
   reservationCreated: boolean;
   turnComplete: boolean;
@@ -133,6 +134,34 @@ const SCENARIOS: Scenario[] = [
       {
         caller: 'dimanche à 20 heures pour 7 personnes',
         expect: { sayExcludes: ['pas bien saisi', 'je regarde', 'je vérifie'] },
+      },
+    ],
+  },
+  {
+    name: '0d49230d — jour fermé contredit',
+    turns: [
+      {
+        caller: 'je voudrais réserver pour dimanche',
+        expect: { sayIncludesAny: ['fermé', 'fermés'], sayExcludes: ['midi'] },
+      },
+      {
+        caller: 'vous êtes ouvert à quelle heure',
+        // Le dimanche ne doit jamais être présenté comme ouvert.
+        expect: { sayExcludes: ['midi', 'dimanche on ouvre', 'dimanche, on ouvre'] },
+      },
+      {
+        caller: 'à 20 heures pour 4 voire 5 personnes',
+        expect: {
+          sayIncludesAny: ['fermé', 'fermés', 'autre jour'],
+          sayExcludes: ['gérant pour finaliser', 'tout à fait', 'pas bien saisi'],
+        },
+      },
+      {
+        caller: 'pourquoi',
+        expect: {
+          sayExcludes: ['tout à fait réserver', 'je peux réserver'],
+          reservationCreated: false,
+        },
       },
     ],
   },
@@ -250,6 +279,16 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
   } as unknown as CallSessionManager;
 }
 
+const BENCH_OPENING_HOURS = {
+  mon: { open: '18:00', close: '23:00' },
+  tue: { open: '18:00', close: '23:00' },
+  wed: { open: '18:00', close: '23:00' },
+  thu: { open: '18:00', close: '23:00' },
+  fri: { open: '18:00', close: '23:30' },
+  sat: { open: '18:00', close: '23:30' },
+  sun: null,
+};
+
 function benchSession(): CallSession {
   return {
     callControlId: 'bench',
@@ -257,18 +296,11 @@ function benchSession(): CallSession {
     timezone: 'Europe/Paris',
     from: '+33600000000',
     maxPartySize: 7,
+    openingHours: BENCH_OPENING_HOURS,
     systemPrompt: buildSystemPrompt({
       name: 'Le Comptoir de Saint-Eustache',
       timezone: 'Europe/Paris',
-      openingHours: {
-        mon: { open: '18:00', close: '23:00' },
-        tue: { open: '18:00', close: '23:00' },
-        wed: { open: '18:00', close: '23:00' },
-        thu: { open: '18:00', close: '23:00' },
-        fri: { open: '18:00', close: '23:30' },
-        sat: { open: '18:00', close: '23:30' },
-        sun: null,
-      },
+      openingHours: BENCH_OPENING_HOURS,
     }),
     state: 'LISTENING',
     ended: false,
@@ -333,6 +365,13 @@ async function main() {
           verdicts.push([
             'awaiting',
             Boolean(last && step.expect.awaiting.includes(last.awaiting)),
+          ]);
+        }
+        if (step.expect.sayIncludesAny) {
+          const lower = said.toLowerCase();
+          verdicts.push([
+            `say∋${step.expect.sayIncludesAny.join('|')}`,
+            step.expect.sayIncludesAny.some((word) => lower.includes(word)),
           ]);
         }
         for (const word of step.expect.sayExcludes ?? []) {

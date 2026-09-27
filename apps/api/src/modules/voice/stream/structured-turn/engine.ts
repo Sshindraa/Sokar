@@ -221,6 +221,7 @@ export async function runStructuredTurn(
       history: historyBefore,
       transcript,
       state,
+      openingHours: session.openingHours,
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
     });
@@ -258,6 +259,11 @@ export async function runStructuredTurn(
 
   // Phrase dite si le second passage ne formule rien après l'action.
   let actionFallbackSay: string | null = null;
+  // Jour fermé ou complet : un fait simple, dit tel quel sans second passage
+  // (appel 0d49230d : le modèle contredisait « FERMÉ » et promettait de réserver).
+  const fixed: { reply: { say: string; awaiting: StructuredTurnOutput['awaiting'] } | null } = {
+    reply: null,
+  };
 
   const runAvailability = async (): Promise<string> => {
     const { date, time, partySize } = state.draft;
@@ -283,10 +289,16 @@ export async function runStructuredTurn(
       const day = spokenDay(date);
       if (result.allSlots.length === 0) {
         // Aucun créneau généré : le restaurant n'ouvre pas ce jour-là.
-        actionFallbackSay = `Nous sommes fermés ${day}. Voulez-vous venir un autre jour ?`;
+        fixed.reply = {
+          say: `Nous sommes fermés ${day}. Voulez-vous venir un autre jour ?`,
+          awaiting: 'date',
+        };
         return `Le restaurant est FERMÉ le ${date} (${day}) : aucun service ce jour-là. Dis-le clairement et propose un autre jour d'ouverture.`;
       }
-      actionFallbackSay = `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`;
+      fixed.reply = {
+        say: `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`,
+        awaiting: 'open',
+      };
       return `Complet le ${date} pour ${partySize} personne(s) : aucun créneau libre. Propose une autre date, le gérant ou un message.`;
     } catch (err) {
       recordVoiceTurnEvent(session, 'availability_failed', {
@@ -406,6 +418,18 @@ export async function runStructuredTurn(
         case 'none':
           break;
       }
+    }
+
+    const fixedReply = fixed.reply;
+    if (fixedReply) {
+      speakPhrase(fixedReply.say);
+      final = {
+        ...first.output,
+        action: 'none',
+        say: fixedReply.say,
+        awaiting: fixedReply.awaiting,
+      };
+      actionResult = null;
     }
 
     if (actionResult) {

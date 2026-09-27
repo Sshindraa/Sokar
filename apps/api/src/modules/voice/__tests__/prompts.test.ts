@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, formatOpeningHours } from '../prompts';
+import { buildStructuredTurnMessages, describeDate } from '../stream/structured-turn/prompt';
+import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 
 describe('buildSystemPrompt', () => {
   const baseCtx = {
@@ -58,6 +60,30 @@ describe('buildSystemPrompt', () => {
   it('n’affirme aucun jour quand les horaires ne sont pas renseignés', () => {
     expect(formatOpeningHours({})).toContain('Horaires non renseignés');
     expect(formatOpeningHours({})).not.toContain('fermé');
+  });
+
+  it('calcule le jour et les horaires de la date réservée (appel 0d49230d)', () => {
+    const hours = { tue: { open: '12:00', close: '22:00' } };
+    expect(describeDate('2026-09-28', hours)).toEqual({
+      date: '2026-09-28',
+      weekday: 'lundi',
+      hours: 'FERMÉ ce jour-là',
+    });
+    expect(describeDate('2026-09-29', hours)?.hours).toBe('ouvert 12:00–22:00');
+    expect(describeDate('2026-09-29', {})?.hours).toBe('horaires non renseignés');
+
+    const state = createStructuredTurnState();
+    state.draft.date = '2026-09-28';
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'vous êtes ouvert à quelle heure',
+      state,
+      openingHours: hours,
+    });
+    expect(system.content).toContain(
+      '"dateFacts":{"date":"2026-09-28","weekday":"lundi","hours":"FERMÉ ce jour-là"}',
+    );
   });
 
   it('devrait generer le prompt de base sans CRM ni prompt extra', () => {
