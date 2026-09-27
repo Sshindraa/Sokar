@@ -542,6 +542,36 @@ export const voiceSemanticAnswerSkippedTotal = new Counter({
   labelNames: ['provider', 'reason'] as const,
   registers: [getRegistry()],
 });
+/** Aggregated precision/recall from the weekly Jev model-judge evaluation. */
+export const voiceSemanticEvalPrecision = new Gauge({
+  name: 'sokar_voice_semantic_eval_precision',
+  help: 'Weekly Jev evaluation precision by behavior and score threshold',
+  labelNames: ['behavior', 'threshold'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticEvalRecall = new Gauge({
+  name: 'sokar_voice_semantic_eval_recall',
+  help: 'Weekly Jev evaluation recall by behavior and score threshold',
+  labelNames: ['behavior', 'threshold'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticEvalExamples = new Gauge({
+  name: 'sokar_voice_semantic_eval_examples',
+  help: 'Observable examples used in the weekly Jev evaluation by behavior',
+  labelNames: ['behavior'] as const,
+  registers: [getRegistry()],
+});
+export const voiceSemanticEvalLastRunTimestampSeconds = new Gauge({
+  name: 'sokar_voice_semantic_eval_last_run_timestamp_seconds',
+  help: 'Unix timestamp of the most recent weekly Jev evaluation run',
+  registers: [getRegistry()],
+});
+export const voiceSemanticEvalJudgeStatusTotal = new Counter({
+  name: 'sokar_voice_semantic_eval_judge_status_total',
+  help: 'Weekly Jev evaluation model-judge results by status',
+  labelNames: ['status'] as const,
+  registers: [getRegistry()],
+});
 export type VoiceTurnPlanShadowPolicyOutcome = 'accepted' | 'rejected' | 'not_evaluated';
 export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparable';
 
@@ -828,6 +858,11 @@ export function __resetMetrics(): void {
   voiceSemanticInputTokensTotal.reset();
   voiceSemanticChoiceConfidence.reset();
   voiceSemanticAnswerSkippedTotal.reset();
+  voiceSemanticEvalPrecision.reset();
+  voiceSemanticEvalRecall.reset();
+  voiceSemanticEvalExamples.reset();
+  voiceSemanticEvalLastRunTimestampSeconds.reset();
+  voiceSemanticEvalJudgeStatusTotal.reset();
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();

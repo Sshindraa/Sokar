@@ -194,4 +194,12 @@ export const queues = {
       removeOnFail: 100,
     },
   }),
+  voiceSemanticAutoEval: new Queue('voice-semantic-auto-eval', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 1,
+      removeOnComplete: 30,
+      removeOnFail: 100,
+    },
+  }),
 };
