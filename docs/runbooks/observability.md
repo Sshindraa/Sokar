@@ -72,6 +72,23 @@ s'éditent pas dans l'interface, toute modification passe par le dépôt :
    inexistante ne se déclenche jamais, silencieusement.
 3. Mettre à jour le dashboard concerné si la règle introduit une nouvelle métrique.
 
+## Écouter un appel (enregistrement instrumenté)
+
+Pour juger un appel au-delà de sa transcription (silences réellement perçus,
+chevauchements, bruit de ligne, saturation), sur les seuls restaurants de
+`CALL_RECORDING_TEST_RESTAURANT_IDS` :
+
+```zsh
+python3 scripts/ops/voice_call_audio.py latest --restaurant <restaurantId>
+python3 scripts/ops/voice_call_audio.py <début-de-l-id-d-appel>
+```
+
+Le script récupère l'enregistrement privé via le VPS (MP3 deux pistes :
+appelant à gauche, agent à droite), mesure chaque piste et produit une
+chronologie recalée sur les tours transcrits, plus un spectrogramme. L'audio
+est une donnée personnelle : il reste dans `$TMPDIR/sokar-call-audio/`, jamais
+dans le dépôt. Dépendances locales : `ffmpeg`, `numpy`.
+
 ## Limites connues
 
 - Le test des règles valide les **noms** de métriques, pas le fait qu'elles soient peuplées dans le
