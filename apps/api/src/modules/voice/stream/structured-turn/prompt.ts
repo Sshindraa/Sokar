@@ -1,3 +1,4 @@
+import { normalizeOpeningHours } from '@sokar/shared';
 import type { ChatMessage } from '../types';
 import type { StructuredTurnState } from './fact-guards';
 
@@ -23,7 +24,33 @@ Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit
 - confidence : high si tu es sûr de ta compréhension, low si tu hésites (alors pose une question de clarification et action none).
 - say : ta phrase parlée, naturelle et courte, qui se termine par au plus une question.
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
+Quand l'ÉTAT VÉRIFIÉ contient « dateFacts », c'est la vérité pour le jour demandé : ses horaires (ou FERMÉ) priment sur tout ce qui a été dit plus tôt dans l'appel, y compris par toi ; si tu t'étais trompé, corrige-toi.
 L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. « deux K », « 2 k » ou « double K » signifient deux lettres K à la suite ; un chiffre n'est jamais une lettre du nom. Rapproche l'épellation du nom prononcé juste avant pour proposer l'orthographe la plus probable, relis-la lettre par lettre et fais-la confirmer. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
+
+/**
+ * Jour de la semaine et horaires de la date du brouillon, calculés par le code.
+ * Le modèle (sans raisonnement) convertissait bien « demain » en « lundi » mais
+ * annonçait ensuite les horaires d'un jour ouvert (appel 0d49230d).
+ */
+export function describeDate(
+  date: string,
+  openingHours: unknown,
+): { date: string; weekday: string; hours: string } | null {
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
+    utc,
+  );
+  const days = normalizeOpeningHours(openingHours);
+  if (!days.length) return { date, weekday, hours: 'horaires non renseignés' };
+  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
+  return {
+    date,
+    weekday,
+    hours: slot ? `ouvert ${slot.open}–${slot.close}` : 'FERMÉ ce jour-là',
+  };
+}
 
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
@@ -31,6 +58,8 @@ export function buildStructuredTurnMessages(input: {
   transcript: string;
   state: StructuredTurnState;
   actionResult?: string;
+  /** Horaires du restaurant : les faits du jour réservé sont calculés ici, pas par le modèle. */
+  openingHours?: unknown;
   /** L'appelant s'est tu après un tour jugé inachevé : il faut lui répondre. */
   callerFinished?: boolean;
 }): ChatMessage[] {
@@ -39,6 +68,9 @@ export function buildStructuredTurnMessages(input: {
     availability: input.state.availability,
     reservationCreated: input.state.reservationCreated,
     lastAwaiting: input.state.lastAwaiting,
+    ...(input.state.draft.date
+      ? { dateFacts: describeDate(input.state.draft.date, input.openingHours) }
+      : {}),
   };
   const system = [
     input.systemPrompt,
