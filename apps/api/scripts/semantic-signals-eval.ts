@@ -8,8 +8,11 @@ import {
   BEHAVIOR_SET_VERSION,
 } from '../src/modules/voice/stream/semantic-signals/behaviors';
 import { scoreSpan } from '../src/modules/voice/stream/semantic-signals/client';
+import { scoreDecisions } from '../src/modules/voice/stream/semantic-signals/openrouter-client';
 import type { BehaviorId } from '../src/modules/voice/stream/semantic-signals/behaviors';
 import type {
+  DecisionRequest,
+  SemanticProvider,
   SemanticScoreResult,
   SpanRequest,
 } from '../src/modules/voice/stream/semantic-signals/types';
@@ -22,6 +25,7 @@ const exampleSchema = z.object({
   labels: z.record(z.union([z.boolean(), z.literal('not_observable')])),
 });
 const thresholds = [0.5, 0.7, 0.8, 0.9, 0.95];
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api';
 const ratio = (numerator: number, denominator: number) =>
   denominator ? numerator / denominator : null;
 const percentile = (values: number[], quantile: number) =>
@@ -29,13 +33,45 @@ const percentile = (values: number[], quantile: number) =>
     ? values[Math.min(values.length - 1, Math.ceil(values.length * quantile) - 1)]
     : null;
 
+/** Le JSONL contient exactement les messages du span : même ordre, même rôles. */
+function buildState(example: {
+  input: Array<{ role: string; content: string }>;
+  output: { content: string };
+}): string {
+  return [
+    ...example.input.map(
+      (message) => `${message.role === 'user' ? 'Client' : 'Agent'} : ${message.content}`,
+    ),
+    `Agent (réponse évaluée) : ${example.output.content}`,
+  ].join('\n');
+}
+
 async function main(): Promise<void> {
-  const file = process.argv[2] ?? 'scripts/fixtures/semantic-eval.example.jsonl';
+  const args = process.argv.slice(2);
+  const providerFlag = args.findIndex((arg) => arg === '--provider');
+  const providerArg = providerFlag >= 0 ? args[providerFlag + 1] : undefined;
+  if (providerArg !== undefined && providerArg !== 'openrouter' && providerArg !== 'respan')
+    throw new Error(`--provider doit valoir openrouter ou respan (reçu : ${providerArg})`);
+  const provider: SemanticProvider =
+    (providerArg as SemanticProvider | undefined) ??
+    (process.env.VOICE_SEMANTIC_SIGNALS_PROVIDER as SemanticProvider | undefined) ??
+    'openrouter';
+  const file =
+    args.filter((_, index) => index !== providerFlag && index !== providerFlag + 1)[0] ??
+    'scripts/fixtures/semantic-eval.example.jsonl';
   const concurrency = Number(process.env.VOICE_SEMANTIC_EVAL_CONCURRENCY ?? 4);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 20)
     throw new Error('Invalid concurrency');
-  const key = process.env.RESPAN_API_KEY?.trim();
-  if (!key) throw new Error('RESPAN_API_KEY is required');
+  const keyEnv = provider === 'respan' ? 'RESPAN_API_KEY' : 'OPENROUTER_API_KEY';
+  const key = process.env[keyEnv]?.trim();
+  if (!key) throw new Error(`${keyEnv} is required`);
+  const model =
+    process.env.VOICE_SEMANTIC_SIGNALS_MODEL ??
+    (provider === 'respan' ? 'span-01-free' : 'respan/span-01');
+  const baseUrl =
+    provider === 'respan'
+      ? (process.env.RESPAN_BASE_URL ?? RESPAN_BASE_URL)
+      : (process.env.OPENROUTER_BASE_URL ?? DEFAULT_OPENROUTER_BASE_URL);
   const examples = (await readFile(file, 'utf8'))
     .split(/\r?\n/)
     .filter(Boolean)
@@ -47,16 +83,27 @@ async function main(): Promise<void> {
       while (cursor < examples.length) {
         const index = cursor++;
         const example = examples[index];
-        const request: SpanRequest = {
-          model: process.env.VOICE_SEMANTIC_SIGNALS_MODEL ?? 'span-01-free',
-          span: { input: example.input, output: example.output },
-          behaviors: BEHAVIORS.map(({ id, definition }) => ({ id, definition })),
-        };
-        results[index] = await scoreSpan(request, {
-          apiKey: key,
-          baseUrl: process.env.RESPAN_BASE_URL ?? RESPAN_BASE_URL,
-          signal: AbortSignal.timeout(10_000),
-        });
+        const options = { apiKey: key, baseUrl, signal: AbortSignal.timeout(10_000) };
+        if (provider === 'respan') {
+          const request: SpanRequest = {
+            model,
+            span: { input: example.input, output: example.output },
+            behaviors: BEHAVIORS.map(({ id, definition }) => ({ id, definition })),
+          };
+          results[index] = await scoreSpan(request, options);
+        } else {
+          const request: DecisionRequest = {
+            model,
+            state: buildState(example),
+            questions: Object.fromEntries(
+              BEHAVIORS.map(({ id, instructions, present, absent }) => [
+                id,
+                { type: 'noul' as const, instructions, criteria: { true: present, false: absent } },
+              ]),
+            ),
+          };
+          results[index] = await scoreDecisions(request, options);
+        }
       }
     }),
   );
@@ -106,12 +153,18 @@ async function main(): Promise<void> {
     return totals;
   }, {});
   if (successful.length === 0) {
-    process.stderr.write(`statuses ${JSON.stringify(statuses)}\n`);
+    process.stderr.write(
+      `provider=${provider} model=${model} statuses ${JSON.stringify(statuses)}\n`,
+    );
     process.exitCode = 1;
     return;
   }
-  process.stdout.write(`statuses ${JSON.stringify(statuses)}\n`);
+  process.stdout.write(
+    `provider=${provider} model=${model} statuses ${JSON.stringify(statuses)}\n`,
+  );
   const report = {
+    provider,
+    model,
     behaviorSetVersion: BEHAVIOR_SET_VERSION,
     examples: examples.length,
     statuses,

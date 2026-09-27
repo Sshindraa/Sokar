@@ -494,14 +494,14 @@ export type VoiceTurnPlanShadowStatus =
 export const voiceSemanticDurationMs = new Histogram({
   name: 'sokar_voice_semantic_duration_ms',
   help: 'Span-01 scoring duration in milliseconds',
-  labelNames: ['model'] as const,
+  labelNames: ['model', 'provider'] as const,
   buckets: [100, 200, 500, 1000, 2000, 5000, 10000],
   registers: [getRegistry()],
 });
 export const voiceSemanticStatusTotal = new Counter({
   name: 'sokar_voice_semantic_status_total',
   help: 'Span-01 scoring outcomes',
-  labelNames: ['status'] as const,
+  labelNames: ['status', 'provider'] as const,
   registers: [getRegistry()],
 });
 export const voiceSemanticAgreementTotal = new Counter({

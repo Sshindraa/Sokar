@@ -11,6 +11,7 @@ export function compareSemanticSignals(
   plan: TurnPlan | undefined,
   activeInteraction: PendingInteractionKind | 'none',
   currentIntent?: ConversationState['intent'],
+  options: { supportsNotObservable?: boolean } = {},
 ): { agreements: Record<BehaviorId, Agreement>; wouldClarify: SensitiveAction | null } {
   const expected: Partial<Record<BehaviorId, boolean>> = {};
   if (plan) {
@@ -48,7 +49,7 @@ export function compareSemanticSignals(
     agreements[behavior.id] =
       planValue === undefined || !score
         ? 'not_comparable'
-        : score.notObservable >= 0.5
+        : options.supportsNotObservable !== false && score.notObservable >= 0.5
           ? 'span_not_observable'
           : score.present >= 0.5 === planValue
             ? 'agree'

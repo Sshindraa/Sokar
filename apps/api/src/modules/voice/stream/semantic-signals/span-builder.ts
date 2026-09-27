@@ -1,18 +1,25 @@
 import type { CallSession } from '../types';
 import { redactPii } from '../pii-redact';
 import { BEHAVIORS } from './behaviors';
-import type { SpanMessage, SpanRequest } from './types';
+import type { DecisionRequest, SpanMessage, SpanRequest } from './types';
 
-export function buildSemanticSpan(
+interface BuildInput {
+  transcript: string;
+  reply: string;
+  previousQuestion: string | null;
+  model: string;
+  historyTurns: number;
+}
+
+interface AnonymizedTurns {
+  input: SpanMessage[];
+  reply: string;
+}
+
+function anonymizedTurns(
   session: Pick<CallSession, 'history' | 'conversation' | 'from'>,
-  input: {
-    transcript: string;
-    reply: string;
-    previousQuestion: string | null;
-    model: string;
-    historyTurns: number;
-  },
-): SpanRequest {
+  input: BuildInput,
+): AnonymizedTurns {
   const slots = session.conversation.slots as Record<string, unknown>;
   const names = [
     String(slots.customerName ?? ''),
@@ -61,14 +68,52 @@ export function buildSemanticSpan(
   }
   inputMessages.push({ role: 'user', content: input.transcript });
   return {
+    input: inputMessages.map((message) => ({
+      role: message.role,
+      content: anonymize(message.content),
+    })),
+    reply: anonymize(input.reply),
+  };
+}
+
+export function buildSemanticSpan(
+  session: Pick<CallSession, 'history' | 'conversation' | 'from'>,
+  input: BuildInput,
+): SpanRequest {
+  const turns = anonymizedTurns(session, input);
+  return {
     model: input.model,
     span: {
-      input: inputMessages.map((message) => ({
-        role: message.role,
-        content: anonymize(message.content),
-      })),
-      output: { role: 'assistant', content: anonymize(input.reply) },
+      input: turns.input,
+      output: { role: 'assistant', content: turns.reply },
     },
     behaviors: BEHAVIORS.map(({ id, definition }) => ({ id, definition })),
+  };
+}
+
+/**
+ * État textuel pour `POST /alpha/decisions` : mêmes messages anonymisés que le
+ * span, dans l'ordre, avec la dernière question de l'agent et le dernier message
+ * du client.
+ */
+export function buildDecisionState(
+  session: Pick<CallSession, 'history' | 'conversation' | 'from'>,
+  input: BuildInput,
+): DecisionRequest {
+  const turns = anonymizedTurns(session, input);
+  return {
+    model: input.model,
+    state: [
+      ...turns.input.map(
+        (message) => `${message.role === 'user' ? 'Client' : 'Agent'} : ${message.content}`,
+      ),
+      `Agent (réponse évaluée) : ${turns.reply}`,
+    ].join('\n'),
+    questions: Object.fromEntries(
+      BEHAVIORS.map(({ id, instructions, present, absent }) => [
+        id,
+        { type: 'noul' as const, instructions, criteria: { true: present, false: absent } },
+      ]),
+    ),
   };
 }

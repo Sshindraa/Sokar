@@ -11,31 +11,50 @@ import {
   voiceSemanticWouldClarifyTotal,
 } from '../../../../shared/observability/metrics';
 import { BEHAVIOR_SET_VERSION } from './behaviors';
-import { buildSemanticSpan } from './span-builder';
+import { buildDecisionState, buildSemanticSpan } from './span-builder';
 import { scoreSpan } from './client';
+import { scoreDecisions } from './openrouter-client';
 import { validateSemanticSignals } from './validate';
 import { compareSemanticSignals } from './compare';
-import type { SemanticScoreResult } from './types';
+import type { SemanticProvider, SemanticScoreResult } from './types';
+
+/** Défauts par fournisseur : Respan n'accepte que ses modèles, OpenRouter passe par `respan/`. */
+export const DEFAULT_SEMANTIC_MODELS: Record<SemanticProvider, string> = {
+  openrouter: 'respan/span-01',
+  respan: 'span-01-pro',
+};
 
 export interface SemanticShadowConfig {
   enabled: boolean;
   sampleRate: number;
-  model: 'span-01-pro' | 'span-01-free';
+  provider: SemanticProvider;
+  model: string;
   timeoutMs: number;
   historyTurns: number;
   baseUrl: string;
   apiKey?: string;
 }
 
+/** La clé et la base dépendent du fournisseur sélectionné. */
+function providerSettings(provider: SemanticProvider): { apiKey?: string; baseUrl: string } {
+  return provider === 'respan'
+    ? { apiKey: env.RESPAN_API_KEY, baseUrl: env.RESPAN_BASE_URL }
+    : { apiKey: env.OPENROUTER_API_KEY, baseUrl: env.OPENROUTER_BASE_URL };
+}
+
 function currentConfig(): SemanticShadowConfig {
+  const provider = env.VOICE_SEMANTIC_SIGNALS_PROVIDER;
+  const { apiKey, baseUrl } = providerSettings(provider);
   return {
     enabled: env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true',
     sampleRate: env.VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE,
-    model: env.VOICE_SEMANTIC_SIGNALS_MODEL,
+    provider,
+    // Le défaut est propre au fournisseur ; `env.ts` résout la valeur finale.
+    model: env.VOICE_SEMANTIC_SIGNALS_MODEL ?? DEFAULT_SEMANTIC_MODELS[provider],
     timeoutMs: env.VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS,
     historyTurns: env.VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS,
-    baseUrl: env.RESPAN_BASE_URL,
-    apiKey: env.RESPAN_API_KEY,
+    baseUrl,
+    apiKey,
   };
 }
 
@@ -56,37 +75,43 @@ export function observeSemanticSignalsShadow(
   const config = options.config ?? currentConfig();
   if (!config.enabled) return;
   if (!config.apiKey?.trim()) {
-    voiceSemanticStatusTotal.inc({ status: 'missing_key' });
+    voiceSemanticStatusTotal.inc({ status: 'missing_key', provider: config.provider });
     return;
   }
   if ((options.random ?? Math.random)() >= config.sampleRate) return;
   const currentIntent = turn.spanSession?.conversation.intent ?? session.conversation.intent;
   try {
-    const request = buildSemanticSpan(turn.spanSession ?? session, {
+    const spanSession = turn.spanSession ?? session;
+    const input = {
       transcript: turn.transcript,
       reply: turn.reply,
       previousQuestion: turn.previousQuestion,
       model: config.model,
       historyTurns: config.historyTurns,
-    });
+    };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.timeoutMs);
-    scoreSpan(request, {
+    const request = {
       signal: controller.signal,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       fetcher: options.fetcher,
-    })
+    };
+    const scored =
+      config.provider === 'respan'
+        ? scoreSpan(buildSemanticSpan(spanSession, input), request)
+        : scoreDecisions(buildDecisionState(spanSession, input), request);
+    scored
       .then((result) => {
         clearTimeout(timer);
-        recordSemanticResult(result, session, turn, config.model, currentIntent);
+        recordSemanticResult(result, session, turn, config, currentIntent);
       })
       .catch(() => {
         clearTimeout(timer);
-        voiceSemanticStatusTotal.inc({ status: 'network_error' });
+        voiceSemanticStatusTotal.inc({ status: 'network_error', provider: config.provider });
       });
   } catch {
-    voiceSemanticStatusTotal.inc({ status: 'invalid_response' });
+    voiceSemanticStatusTotal.inc({ status: 'invalid_response', provider: config.provider });
   }
 }
 
@@ -94,15 +119,17 @@ function recordSemanticResult(
   result: SemanticScoreResult,
   session: CallSession,
   turn: { plan?: TurnPlan; activeInteraction: PendingInteractionKind | 'none'; turnId?: string },
-  model: string,
+  config: Pick<SemanticShadowConfig, 'model' | 'provider'>,
   currentIntent: CallSession['conversation']['intent'],
 ): void {
-  voiceSemanticStatusTotal.inc({ status: result.status });
-  voiceSemanticDurationMs.observe({ model }, result.durationMs);
+  const { model, provider } = config;
+  voiceSemanticStatusTotal.inc({ status: result.status, provider });
+  voiceSemanticDurationMs.observe({ model, provider }, result.durationMs);
   if (result.status !== 'ok') {
     recordVoiceTurnEventIfCurrent(session, turn.turnId, 'semantic_signals_shadow', {
       status: result.status,
       model,
+      provider,
       behaviorSetVersion: BEHAVIOR_SET_VERSION,
       durationMs: result.durationMs,
     });
@@ -115,6 +142,7 @@ function recordSemanticResult(
     turn.plan,
     turn.activeInteraction,
     currentIntent,
+    { supportsNotObservable: result.supportsNotObservable },
   );
   for (const conflict of validation.conflicts) voiceSemanticConflictTotal.inc({ conflict });
   for (const [behavior, outcome] of Object.entries(comparison.agreements)) {
@@ -141,6 +169,7 @@ function recordSemanticResult(
   recordVoiceTurnEventIfCurrent(session, turn.turnId, 'semantic_signals_shadow', {
     status: result.status,
     model,
+    provider,
     behaviorSetVersion: BEHAVIOR_SET_VERSION,
     durationMs: result.durationMs,
     inputTokens: result.inputTokens,
