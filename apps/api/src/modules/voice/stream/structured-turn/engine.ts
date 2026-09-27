@@ -51,13 +51,16 @@ export function isStructuredTurnEnabled(
   );
 }
 
-function responseFormat(actions?: readonly StructuredTurnAction[]) {
+function responseFormat(
+  actions?: readonly StructuredTurnAction[],
+  options: { turnCompleteOnly?: boolean } = {},
+) {
   return {
     type: 'json_schema' as const,
     json_schema: {
       name: STRUCTURED_TURN_SCHEMA_NAME,
       strict: true as const,
-      schema: buildStructuredTurnJsonSchema(actions),
+      schema: buildStructuredTurnJsonSchema(actions, options),
     },
   };
 }
@@ -131,6 +134,9 @@ interface PassResult {
  * cherchait peut-être ses mots mais attend maintenant une réponse.
  */
 export const INCOMPLETE_TURN_SILENCE_MS = 2_500;
+
+/** Dite si la relance après un silence ne produit toujours aucune phrase. */
+export const CALLER_FINISHED_FALLBACK = 'Oui, je vous écoute ?';
 
 const incompleteTurnTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -225,7 +231,11 @@ export async function runStructuredTurn(
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
     });
-    const format = responseFormat(actionResult ? AFTER_ACTION_ACTIONS : undefined);
+    // Relance après un silence (appel cdc95509) : le modèle répondait encore
+    // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
+    const format = responseFormat(actionResult ? AFTER_ACTION_ACTIONS : undefined, {
+      turnCompleteOnly: options.callerFinished === true,
+    });
     const text = await mgr.streamStructuredCompletion(session, messages, format, {
       signal: abortController.signal,
       telemetryTurnId: turnId,
@@ -463,6 +473,11 @@ export async function runStructuredTurn(
       }
     }
 
+    if (!final.say.trim() && options.callerFinished && final.action === 'none') {
+      // Dernier filet de la relance : une invitation à continuer, jamais « pas compris ».
+      final = { ...final, say: CALLER_FINISHED_FALLBACK, awaiting: 'open' };
+      speakPhrase(CALLER_FINISHED_FALLBACK);
+    }
     const said = final.say.trim();
     if (!said) throw new Error('Structured turn produced no speech');
     state.lastAwaiting = final.awaiting;
