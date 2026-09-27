@@ -89,6 +89,12 @@ chronologie recalée sur les tours transcrits, plus un spectrogramme. L'audio
 est une donnée personnelle : il reste dans `$TMPDIR/sokar-call-audio/`, jamais
 dans le dépôt. Dépendances locales : `ffmpeg`, `numpy`.
 
+`--listen` fait en plus écouter les deux pistes par un modèle audio
+(`google/gemini-3.8-flash` via OpenRouter, clé lue sur le VPS, ~1 centime par
+appel) : ce que l'appelant a réellement dit (à comparer à la transcription du
+direct), son ton, la diction de l'agent et les incompréhensions. Ses
+horodatages sont approximatifs ; la chronologie mesurée fait foi.
+
 ## Limites connues
 
 - Le test des règles valide les **noms** de métriques, pas le fait qu'elles soient peuplées dans le

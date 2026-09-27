@@ -16,11 +16,15 @@ Usage :
   python3 scripts/ops/voice_call_audio.py latest --restaurant <id>
   python3 scripts/ops/voice_call_audio.py <début-de-l-id-d-appel>
 Options : --host deploy@sokar  --out <dossier>  --no-fetch (réanalyse)
+          --listen : fait écouter les deux pistes par un modèle audio (OpenRouter,
+          clé lue sur le VPS, ~1 centime par appel) : ce qui a été réellement dit,
+          ton de l'appelant, diction de l'agent, incompréhensions.
 Dépendances locales : ffmpeg, numpy.
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -71,6 +75,65 @@ NAME=SOKAR_VOICE_READ_TOKEN
 T=$(sed -n "s/^${NAME}=//p" .env | head -1 | tr -d '"')
 curl -sf -H "Authorization: Bearer $T" "http://127.0.0.1:4000/api/internal/voice/calls/$1"
 """
+
+
+# Écoute par un modèle audio : les deux pistes mono arrivent en JSON sur stdin.
+REMOTE_LISTEN = r"""
+(async () => {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const { caller, agent, model } = JSON.parse(Buffer.concat(chunks).toString());
+  const prompt = `Tu écoutes un appel téléphonique enregistré entre un client (piste 1) et un agent vocal IA de restaurant (piste 2), en français. Les deux pistes sont alignées dans le temps.
+Réponds en JSON strict :
+{"caller": [{"t": secondes, "said": "transcription exacte mot à mot de ce que dit le client, sans corriger ni résumer", "tone": "ton du client"}],
+ "agent": [{"t": secondes, "said": "ce que dit l'agent", "delivery": "débit, intonation, surjeu, voix robotique ou naturelle, pauses anormales"}],
+ "agent_overall": "jugement global honnête : l'agent sonne-t-il humain ou robotique, et pourquoi, en citant des moments",
+ "misunderstandings": ["moments où l'agent a mal compris ou mal enchaîné"]}`;
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
+    body: JSON.stringify({
+      model, temperature: 0.2, response_format: { type: 'json_object' },
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: prompt },
+        { type: 'text', text: 'Piste 1 : client' }, { type: 'input_audio', input_audio: { data: caller, format: 'mp3' } },
+        { type: 'text', text: 'Piste 2 : agent' }, { type: 'input_audio', input_audio: { data: agent, format: 'mp3' } },
+      ] }],
+    }),
+  });
+  const body = await response.json();
+  const out = { status: response.status, cost: body.usage?.cost, content: body.choices?.[0]?.message?.content, error: body.error };
+  process.stdout.write(JSON.stringify(out), () => process.exit(0));
+})();
+"""
+
+
+def listen(host: str, folder: Path, model: str) -> dict:
+    """Fait écouter les deux pistes par un modèle audio ; la clé reste sur le VPS."""
+    payload = {"model": model}
+    for channel, key in ((0, "caller"), (1, "agent")):
+        mono = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(folder / "call.mp3"), "-af", f"pan=mono|c0=c{channel}",
+             "-ar", "16000", "-b:a", "48k", "-f", "mp3", "-"],
+            capture_output=True, check=True,
+        ).stdout
+        payload[key] = base64.b64encode(mono).decode()
+    remote = "/opt/sokar/apps/api/.voice-listen.cjs"
+    subprocess.run(["ssh", host, f"cat > {remote}"], input=REMOTE_LISTEN.encode(), check=True)
+    try:
+        result = subprocess.run(
+            ["ssh", host, f"cd /opt/sokar/apps/api && node --env-file=.env {remote}"],
+            input=json.dumps(payload).encode(), capture_output=True, check=True,
+        )
+    finally:
+        subprocess.run(["ssh", host, f"rm -f {remote}"], check=False)
+    raw = json.loads(result.stdout)
+    content = (raw.get("content") or "").strip().removeprefix("```json").removesuffix("```")
+    heard = json.loads(content) if raw.get("status") == 200 and content else {"error": raw.get("error")}
+    heard["_cost_usd"] = raw.get("cost")
+    heard["_model"] = model
+    (folder / "listen.json").write_text(json.dumps(heard, ensure_ascii=False, indent=1))
+    return heard
 
 
 def run_remote(host: str, script: str, args: list[str], node: bool) -> bytes:
@@ -227,6 +290,23 @@ def report(folder: Path) -> str:
             where = f"fin de parole ≈ {at:.2f} s" if at is not None else "position inconnue"
             lines.append(f"- #{turn['sequence']} ({where}) « {turn.get('callerText') or ''} »"
                          f" → « {turn.get('agentText') or ''} »")
+    heard_path = folder / "listen.json"
+    if heard_path.exists():
+        heard = json.loads(heard_path.read_text())
+        lines += ["", f"## Écoute par modèle audio ({heard.get('_model')}, {heard.get('_cost_usd')} $)", ""]
+        if heard.get("error"):
+            lines.append(f"Écoute impossible : {heard['error']}")
+        lines += ["Ce que dit réellement l'appelant (à comparer aux tours transcrits) :", ""]
+        for item in heard.get("caller", []):
+            lines.append(f"- ~{item.get('t')} s « {item.get('said')} » — {item.get('tone')}")
+        lines += ["", "Diction de l'agent :", ""]
+        for item in heard.get("agent", []):
+            lines.append(f"- ~{item.get('t')} s « {item.get('said')} » — {item.get('delivery')}")
+        if heard.get("agent_overall"):
+            lines += ["", f"Jugement global : {heard['agent_overall']}"]
+        for item in heard.get("misunderstandings", []):
+            lines.append(f"- Incompréhension : {item}")
+        lines += ["", "Les horodatages du modèle audio sont approximatifs ; la chronologie ci-dessus fait foi."]
     lines += ["", f"Spectrogramme : {image}", f"Audio (privé, hors dépôt) : {mp3}"]
     text = "\n".join(lines) + "\n"
     (folder / "report.md").write_text(text)
@@ -241,11 +321,15 @@ def main() -> None:
     parser.add_argument("--out", type=Path,
                         default=Path(tempfile.gettempdir()) / "sokar-call-audio")
     parser.add_argument("--no-fetch", action="store_true", help="réanalyse un dossier déjà récupéré")
+    parser.add_argument("--listen", action="store_true", help="écoute par un modèle audio (~1 centime)")
+    parser.add_argument("--listen-model", default="google/gemini-3.8-flash")
     args = parser.parse_args()
     if args.no_fetch:
         folder = args.out / args.call[:8]
     else:
         folder = fetch(args.host, args.call, args.restaurant, args.out)
+    if args.listen:
+        listen(args.host, folder, args.listen_model)
     sys.stdout.write(report(folder))
 
 
