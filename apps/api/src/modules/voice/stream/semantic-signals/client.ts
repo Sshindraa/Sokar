@@ -35,9 +35,11 @@ export async function scoreSpan(
         status:
           response.status === 403
             ? 'forbidden'
-            : response.status === 429
-              ? 'rate_limited'
-              : 'http_error',
+            : response.status === 402
+              ? 'payment_required'
+              : response.status === 429
+                ? 'rate_limited'
+                : 'http_error',
         durationMs: durationMs(),
       };
     }

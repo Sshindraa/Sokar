@@ -48,7 +48,7 @@ async function main(): Promise<void> {
         const index = cursor++;
         const example = examples[index];
         const request: SpanRequest = {
-          model: process.env.VOICE_SEMANTIC_SIGNALS_MODEL ?? 'span-01-pro',
+          model: process.env.VOICE_SEMANTIC_SIGNALS_MODEL ?? 'span-01-free',
           span: { input: example.input, output: example.output },
           behaviors: BEHAVIORS.map(({ id, definition }) => ({ id, definition })),
         };
@@ -100,14 +100,21 @@ async function main(): Promise<void> {
       };
     }),
   );
+  const statuses = results.reduce<Record<string, number>>((totals, result) => {
+    const status = result?.status ?? 'missing';
+    totals[status] = (totals[status] ?? 0) + 1;
+    return totals;
+  }, {});
+  if (successful.length === 0) {
+    process.stderr.write(`statuses ${JSON.stringify(statuses)}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(`statuses ${JSON.stringify(statuses)}\n`);
   const report = {
     behaviorSetVersion: BEHAVIOR_SET_VERSION,
     examples: examples.length,
-    statuses: results.reduce<Record<string, number>>((totals, result) => {
-      const status = result?.status ?? 'missing';
-      totals[status] = (totals[status] ?? 0) + 1;
-      return totals;
-    }, {}),
+    statuses,
     latencyMs: { p50: percentile(latencies, 0.5), p95: percentile(latencies, 0.95) },
     rows,
   };

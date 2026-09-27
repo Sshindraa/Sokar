@@ -290,6 +290,8 @@ optionnel chargé depuis l'environnement : si le flag est actif sans clé, l'API
 démarre avec un avertissement et le score est `disabled`. `RESPAN_BASE_URL`
 vaut `https://api.respan.ai/api/v1` par défaut ; l'appel direct cible `/scores`.
 `VOICE_SEMANTIC_SIGNALS_MODEL` vaut `span-01-pro` (ou `span-01-free`).
+`span-01-pro` consomme des crédits Respan : sans crédit, l'API répond HTTP 402
+(statut `payment_required`). `span-01-free` applique un quota quotidien remis à zéro à 00:00 UTC.
 `VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS` vaut 2000 (200–10000) et
 `VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS` vaut 6 (1–30). Aucun résultat Span-01
 ne modifie la policy, l'état, les outils ou la réponse. Le 403 d'accès anticipé
