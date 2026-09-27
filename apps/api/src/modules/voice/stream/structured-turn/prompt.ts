@@ -52,6 +52,30 @@ export function describeDate(
   };
 }
 
+/** Jours couverts par le calendrier calculé donné au modèle. */
+export const CALENDAR_DAYS = 14;
+
+/**
+ * Calendrier des prochains jours avec leurs horaires, calculé par le code et
+ * toujours présent : le modèle n'a plus à convertir « demain » ou « samedi »
+ * en jour de semaine puis en horaires (appel 88921164 : « on est ouvert
+ * demain, lundi » alors que le lundi est fermé, avant même toute réservation).
+ */
+export function describeCalendar(today: string, openingHours: unknown): string {
+  const [year, month, day] = today.split('-').map(Number);
+  if (!year || !month || !day) return '';
+  const lines: string[] = [];
+  for (let offset = 0; offset < CALENDAR_DAYS; offset++) {
+    const date = new Date(Date.UTC(year, month - 1, day + offset)).toISOString().slice(0, 10);
+    const facts = describeDate(date, openingHours);
+    if (!facts) continue;
+    const label =
+      offset === 0 ? "aujourd'hui" : offset === 1 ? 'demain' : offset === 2 ? 'après-demain' : '';
+    lines.push(`${date} ${facts.weekday}${label ? ` (${label})` : ''} : ${facts.hours}`);
+  }
+  return lines.join('\n');
+}
+
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
   history: ChatMessage[];
@@ -60,6 +84,8 @@ export function buildStructuredTurnMessages(input: {
   actionResult?: string;
   /** Horaires du restaurant : les faits du jour réservé sont calculés ici, pas par le modèle. */
   openingHours?: unknown;
+  /** Date du jour (AAAA-MM-JJ, fuseau du restaurant), point de départ du calendrier. */
+  today?: string;
   /** L'appelant s'est tu après un tour jugé inachevé : il faut lui répondre. */
   callerFinished?: boolean;
 }): ChatMessage[] {
@@ -72,9 +98,13 @@ export function buildStructuredTurnMessages(input: {
       ? { dateFacts: describeDate(input.state.draft.date, input.openingHours) }
       : {}),
   };
+  const calendar = input.today ? describeCalendar(input.today, input.openingHours) : '';
   const system = [
     input.systemPrompt,
     STRUCTURED_TURN_INSTRUCTIONS,
+    calendar
+      ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
+      : '',
     `ÉTAT VÉRIFIÉ : ${JSON.stringify(verified)}`,
     input.actionResult
       ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
