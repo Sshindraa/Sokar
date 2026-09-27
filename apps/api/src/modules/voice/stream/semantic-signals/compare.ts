@@ -1,15 +1,16 @@
 import { turnPlanFacts, type TurnPlan } from '../turn-plan';
-import type { PendingInteractionKind } from '../types';
+import type { ConversationState, PendingInteractionKind } from '../types';
 import { BEHAVIORS, type BehaviorId } from './behaviors';
 import type { SemanticSignals } from './types';
 
 export type Agreement = 'agree' | 'disagree' | 'span_not_observable' | 'not_comparable';
-export type SensitiveAction = 'commit' | 'cancellation' | 'transfer' | 'gift_card';
+export type SensitiveAction = 'commit' | 'cancellation' | 'human_fallback' | 'gift_card';
 
 export function compareSemanticSignals(
   signals: SemanticSignals,
   plan: TurnPlan | undefined,
   activeInteraction: PendingInteractionKind | 'none',
+  currentIntent?: ConversationState['intent'],
 ): { agreements: Record<BehaviorId, Agreement>; wouldClarify: SensitiveAction | null } {
   const expected: Partial<Record<BehaviorId, boolean>> = {};
   if (plan) {
@@ -53,29 +54,36 @@ export function compareSemanticSignals(
             ? 'agree'
             : 'disagree';
   }
-  const sensitiveAction: SensitiveAction | null = !plan
-    ? null
-    : plan.intent === 'cancel'
+  const newRequest = plan?.interpretation === 'new_request';
+  const resolvedConfirmation =
+    activeInteraction === 'confirmation' && plan?.interactionDisposition === 'resolve';
+  const confirmationIntent = plan?.intent === 'unchanged' ? currentIntent : plan?.intent;
+  const sensitiveAction: SensitiveAction | null =
+    (newRequest && plan?.intent === 'cancel') ||
+    (resolvedConfirmation && confirmationIntent === 'cancel')
       ? 'cancellation'
-      : plan.intent === 'gift_card'
+      : (newRequest && plan?.intent === 'gift_card') ||
+          (resolvedConfirmation && confirmationIntent === 'gift_card')
         ? 'gift_card'
-        : activeInteraction === 'confirmation' && plan.interactionDisposition === 'resolve'
+        : resolvedConfirmation
           ? 'commit'
-          : activeInteraction === 'humanFallback' && plan.interactionDisposition === 'resolve'
-            ? 'transfer'
+          : activeInteraction === 'humanFallback' && plan?.interactionDisposition === 'resolve'
+            ? 'human_fallback'
             : null;
-  const matchingSignal =
+  const matchingProbability =
     sensitiveAction === 'cancellation'
-      ? 'explicitly_requests_cancellation'
+      ? signals.explicitly_requests_cancellation?.present
       : sensitiveAction === 'gift_card'
-        ? 'explicitly_requests_gift_card_purchase'
+        ? signals.explicitly_requests_gift_card_purchase?.present
         : sensitiveAction === 'commit'
-          ? 'explicitly_confirms_proposal'
-          : 'explicitly_requests_transfer';
+          ? signals.explicitly_confirms_proposal?.present
+          : Math.max(
+              signals.explicitly_requests_transfer?.present ?? 0,
+              signals.explicitly_requests_message?.present ?? 0,
+            );
   const wouldClarify =
     sensitiveAction &&
-    ((signals[matchingSignal]?.present ?? 0) < 0.5 ||
-      (signals.needs_clarification?.present ?? 0) > 0.5)
+    ((matchingProbability ?? 0) < 0.5 || (signals.needs_clarification?.present ?? 0) > 0.5)
       ? sensitiveAction
       : null;
   return { agreements, wouldClarify };
