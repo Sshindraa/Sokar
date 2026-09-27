@@ -36,7 +36,8 @@ type Expect = Partial<{
 
 interface Scenario {
   name: string;
-  turns: Array<{ caller: string; expect: Expect }>;
+  /** `callerFinished` : l'appelant s'est tu après un tour jugé inachevé (relance du moteur). */
+  turns: Array<{ caller: string; expect: Expect; callerFinished?: boolean }>;
 }
 
 const SCENARIOS: Scenario[] = [
@@ -176,6 +177,17 @@ const SCENARIOS: Scenario[] = [
           sayIncludesAny: ['deux k', 'k, k', 'double k', '2 k'],
           awaiting: ['customerNameConfirmation', 'confirmation'],
         },
+      },
+    ],
+  },
+  {
+    name: 'cdc95509 — silence après une phrase coupée',
+    turns: [
+      { caller: 'bonjour je vous appelle pour', expect: { turnComplete: false } },
+      {
+        caller: '',
+        callerFinished: true,
+        expect: { sayExcludes: ['pas bien saisi'], sayIncludesAny: ['?', 'écoute'] },
       },
     ],
   },
@@ -359,6 +371,7 @@ async function main() {
           step.caller,
           mgr,
           () => session.responseGeneration === generation && !session.ended,
+          step.callerFinished ? { callerFinished: true } : {},
         );
         const first = outputs[0];
         if (process.env.BENCH_TRACE) {

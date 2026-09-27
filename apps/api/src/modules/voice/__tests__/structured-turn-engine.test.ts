@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import { processTranscriptStreaming } from '../stream/llm-handler';
 import { createConversationState } from '../stream/conversation-controller';
 import type { StructuredTurnOutput } from '../stream/structured-turn/schema';
+import { CALLER_FINISHED_FALLBACK } from '../stream/structured-turn/engine';
 import {
   bookingKey,
   createStructuredTurnState,
@@ -346,6 +347,29 @@ describe('tour structuré (canary)', () => {
       'non mais attends',
       'Je vous écoute, prenez votre temps.',
     ]);
+  });
+
+  it('impose turnComplete=true à la relance et ne dit jamais « pas compris » (appel cdc95509)', async () => {
+    vi.useFakeTimers();
+    const { session, mgr, outputs } = fixture();
+    outputs.push(turn({ turnComplete: false, interpretation: 'unclear' }));
+    await processTranscriptStreaming(session, 'bonjour je vous appelle pour', mgr);
+    expect(spoken()).toEqual([]);
+
+    // Le modèle rend encore une phrase vide : le filet parle à sa place.
+    outputs.push(turn({ turnComplete: true, interpretation: 'unclear', say: '' }));
+    await vi.advanceTimersByTimeAsync(2_600);
+
+    const format = vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[2] as {
+      json_schema: { schema: { properties: { turnComplete: unknown } } };
+    };
+    expect(format.json_schema.schema.properties.turnComplete).toEqual({
+      type: 'boolean',
+      enum: [true],
+    });
+    expect(spoken()).toEqual([CALLER_FINISHED_FALLBACK]);
+    expect(session.history.at(-1)?.content).toBe(CALLER_FINISHED_FALLBACK);
+    vi.useRealTimers();
   });
 
   it('n’utilise pas le moteur hors allowlist', async () => {

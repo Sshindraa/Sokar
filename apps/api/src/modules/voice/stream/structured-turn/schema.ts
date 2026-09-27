@@ -73,12 +73,16 @@ export const STRUCTURED_TURN_SCHEMA_NAME = 'voice_turn';
  */
 export function buildStructuredTurnJsonSchema(
   actions: readonly StructuredTurnAction[] = STRUCTURED_TURN_ACTIONS,
+  options: { turnCompleteOnly?: boolean } = {},
 ) {
   return {
     type: 'object',
     additionalProperties: false,
     properties: {
-      turnComplete: { type: 'boolean' },
+      // Relance après un silence : le tour est terminé, le modèle doit parler.
+      turnComplete: options.turnCompleteOnly
+        ? { type: 'boolean', enum: [true] }
+        : { type: 'boolean' },
       interpretation: { type: 'string', enum: [...STRUCTURED_TURN_INTERPRETATIONS] },
       draft: {
         type: 'object',
