@@ -183,6 +183,8 @@ type VoiceConfigSnapshot = Pick<
   | 'CEREBRAS_BASE_URL'
   | 'CEREBRAS_API_KEY'
   | 'OPENROUTER_API_KEY'
+  | 'VOICE_STRUCTURED_HEDGE_ENABLED'
+  | 'VOICE_STRUCTURED_HEDGE_DELAY_MS'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
@@ -195,6 +197,8 @@ function snapshotVoiceConfig(): VoiceConfigSnapshot {
     CEREBRAS_BASE_URL: voiceConfig.CEREBRAS_BASE_URL,
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
+    VOICE_STRUCTURED_HEDGE_ENABLED: voiceConfig.VOICE_STRUCTURED_HEDGE_ENABLED,
+    VOICE_STRUCTURED_HEDGE_DELAY_MS: voiceConfig.VOICE_STRUCTURED_HEDGE_DELAY_MS,
   };
 }
 
@@ -2358,6 +2362,51 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
       expect(body.response_format).toEqual(format);
       expect(body.provider).toEqual({ require_parameters: true, sort: 'latency' });
       expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('fait la course avec Groq quand Cerebras tarde au premier jeton (appel 25650799)', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.VOICE_STRUCTURED_HEDGE_ENABLED = 'true';
+      voiceConfig.VOICE_STRUCTURED_HEDGE_DELAY_MS = 200;
+      const fetchMock = vi.fn((url: string, init: RequestInit) => {
+        if (requestHost(url) === 'api.cerebras.ai') {
+          // Cerebras ne répond jamais avant l'abandon de la course.
+          return new Promise((_resolve, reject) =>
+            init.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
+          );
+        }
+        return Promise.resolve({ ok: true, status: 200, body: sseBody('{"say":"Oui"}') });
+      });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+      const text = await CallSessionManager.getInstance().streamStructuredCompletion(
+        makeSession(),
+        [{ role: 'user', content: 'bonjour' }],
+        format,
+        { onDelta: () => undefined },
+      );
+
+      expect(text).toBe('{"say":"Oui"}');
+      const groqCall = fetchMock.mock.calls.find(([url]) => requestHost(url) === 'api.groq.com');
+      expect(JSON.parse(String(groqCall?.[1].body)).response_format).toEqual(format);
+    });
+
+    it('ne fait pas de course sans l’option', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.VOICE_STRUCTURED_HEDGE_ENABLED = 'false';
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, body: sseBody('{"say":"Oui"}') });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+      await CallSessionManager.getInstance().streamStructuredCompletion(
+        makeSession(),
+        [{ role: 'user', content: 'bonjour' }],
+        format,
+        { onDelta: () => undefined },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('garde l’erreur d’origine sans clé de secours', async () => {

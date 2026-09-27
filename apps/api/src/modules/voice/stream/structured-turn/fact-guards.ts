@@ -16,9 +16,22 @@ export interface StructuredTurnState {
   recapKey: string | null;
   /** Dernier résultat réel du moteur de disponibilité. */
   availability: { date: string; partySize: number; slots: string[] } | null;
+  /**
+   * Créneaux réels du jour du brouillon pour chaque taille de groupe, lus en
+   * tâche de fond dès que la date est connue : le modèle répond en un passage.
+   */
+  dayAvailability: DayAvailability | null;
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+}
+
+export interface DayAvailability {
+  date: string;
+  /** Aucun créneau généré pour ce jour : le restaurant n'ouvre pas. */
+  closed: boolean;
+  /** Créneaux libres par taille de groupe, de 1 au maximum vocal. */
+  slotsBySize: Record<number, string[]>;
 }
 
 export function createStructuredTurnState(): StructuredTurnState {
@@ -27,6 +40,7 @@ export function createStructuredTurnState(): StructuredTurnState {
     lastAwaiting: 'none',
     recapKey: null,
     availability: null,
+    dayAvailability: null,
     reservationCreated: false,
     pendingFragment: null,
   };

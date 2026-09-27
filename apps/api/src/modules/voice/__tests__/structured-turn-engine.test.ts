@@ -3,7 +3,10 @@ import { WebSocket } from 'ws';
 import { processTranscriptStreaming } from '../stream/llm-handler';
 import { createConversationState } from '../stream/conversation-controller';
 import type { StructuredTurnOutput } from '../stream/structured-turn/schema';
-import { CALLER_FINISHED_FALLBACK } from '../stream/structured-turn/engine';
+import {
+  CALLER_FINISHED_FALLBACK,
+  speculateStructuredTurn,
+} from '../stream/structured-turn/engine';
 import {
   bookingKey,
   createStructuredTurnState,
@@ -231,6 +234,37 @@ describe('tour structuré (canary)', () => {
     expect(spoken().join(' ')).not.toContain('pas bien saisi');
   });
 
+  it('répond en un seul passage avec les créneaux du jour lus d’avance', async () => {
+    const { session, mgr, outputs } = fixture();
+    const dated = { date: TOMORROW, time: '', partySize: 0, customerName: '' };
+    outputs.push(turn({ draft: dated, awaiting: 'time', say: 'Vers quelle heure ?' }));
+    await processTranscriptStreaming(session, 'une table pour demain', mgr);
+    // La lecture du jour part à la fin du tour, sans le ralentir.
+    await vi.waitFor(() => expect(session.structuredTurn?.dayAvailability?.date).toBe(TOMORROW));
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 1);
+
+    vi.mocked(mgr.getAvailability).mockClear();
+    const complete = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(
+      turn({ draft: complete, awaiting: 'customerName', say: '20 h est libre. À quel nom ?' }),
+    );
+    await processTranscriptStreaming(session, '20 heures pour quatre', mgr);
+
+    // Un seul appel au modèle, et le créneau est vérifié pour la réservation.
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    const context = (
+      vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[1] as Array<{ content: string }>
+    )[0].content;
+    expect(context).toContain('"freeSlotsByPartySize"');
+    expect(context).toContain('19:00→20:00');
+    expect(session.structuredTurn?.availability).toEqual({
+      date: TOMORROW,
+      partySize: 4,
+      slots: ['19:00', '19:30', '20:00'],
+    });
+    expect(spoken()).toContain('À quel nom ?');
+  });
+
   it('ne crée pas la réservation sans récapitulatif accepté', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };
@@ -419,6 +453,43 @@ describe('tour structuré (canary)', () => {
 
       expect(contextTurn.cancel).toHaveBeenCalledWith('unused');
       expect(contextTurn.push).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('spéculation sur partielle stable', () => {
+    beforeEach(() => vi.stubEnv('VOICE_STRUCTURED_SPECULATION_ENABLED', 'true'));
+
+    it('reprend la requête lancée sur la partielle quand la phrase finale est identique', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      speculateStructuredTurn(session, mgr, 'je voudrais réserver');
+      expect(spoken()).toEqual([]);
+
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toEqual(['Bien sûr.', 'Pour quel jour ?']);
+    });
+
+    it('abandonne la spéculation quand la phrase finale diffère', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ awaiting: 'date', say: 'Réponse spéculative.' }),
+        turn({ awaiting: 'date', say: 'Pour quel jour ?' }),
+      );
+      speculateStructuredTurn(session, mgr, 'je voudrais');
+
+      await processTranscriptStreaming(session, 'je voudrais réserver une table', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual(['Pour quel jour ?']);
+    });
+
+    it('ne spécule pas pendant que l’agent parle', () => {
+      const { session, mgr } = fixture();
+      session.state = 'SPEAKING';
+      speculateStructuredTurn(session, mgr, 'attendez');
+      expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
     });
   });
 

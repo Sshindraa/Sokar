@@ -1406,12 +1406,16 @@ export class CallSessionManager {
     },
   ): Promise<{ response: Response; provider: LlmProvider }> {
     const provider = getVoiceLlmProvider();
-    // Le secours Groq n'est pas validé pour la sortie JSON Schema stricte.
+    // Tour structuré : Groq sert le même modèle et respecte le JSON Schema strict
+    // (banc réel du 27/09) ; la course est opt-in et plus précoce, les pics
+    // Cerebras au premier jeton (1,7–2,1 s, appel 25650799) étant rares.
+    const structuredHedge = Boolean(
+      opts.responseFormat && voiceConfig.VOICE_STRUCTURED_HEDGE_ENABLED === 'true',
+    );
     const hedgeEnabled = Boolean(
-      !opts.responseFormat &&
       provider === 'cerebras' &&
       voiceConfig.GROQ_API_KEY &&
-      isVoiceDeepgramDialoguePilot(session) &&
+      (opts.responseFormat ? structuredHedge : isVoiceDeepgramDialoguePilot(session)) &&
       !isCircuitBreakerOpen('groq'),
     );
     const primaryCircuitOpen = isCircuitBreakerOpen(provider);
@@ -1440,7 +1444,9 @@ export class CallSessionManager {
               'groq',
             ),
           {
-            delayMs: voiceConfig.VOICE_LLM_HEDGE_DELAY_MS,
+            delayMs: structuredHedge
+              ? voiceConfig.VOICE_STRUCTURED_HEDGE_DELAY_MS
+              : voiceConfig.VOICE_LLM_HEDGE_DELAY_MS,
             timeoutMs: voiceConfig.VOICE_LLM_HEDGE_TIMEOUT_MS,
             startBackupImmediately: primaryCircuitOpen,
             signal: opts.signal,

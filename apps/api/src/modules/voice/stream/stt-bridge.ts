@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
 import { CallSessionManager } from './manager';
+import { speculateStructuredTurn } from './structured-turn/engine';
 import {
   isNameCollectionBlocking,
   isVoiceDialogueIncompleteTranscript,
@@ -584,7 +585,7 @@ export function buildSttUrl(
   return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
-export const DEEPGRAM_ENDPOINTING_MS = 300;
+export const DEEPGRAM_ENDPOINTING_MS = 200;
 export const DEEPGRAM_UTTERANCE_END_MS = 1_000;
 
 export function buildDeepgramSttUrl(
@@ -1605,12 +1606,35 @@ export function deepgramStallFinalizeMs(env: NodeJS.ProcessEnv = process.env): n
 }
 
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
+const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
+
+/** Stabilité de partielle avant de lancer la spéculation du tour structuré. */
+export function structuredSpeculationDelayMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STRUCTURED_SPECULATION_MS ?? 250);
+  return Number.isFinite(parsed) && parsed >= 50 && parsed <= 2_000 ? parsed : 250;
+}
+
+function armSpeculationTimer(session: CallSession, transcript: string): void {
+  const previous = speculationTimers.get(session);
+  if (previous) clearTimeout(previous);
+  const timer = setTimeout(() => {
+    speculationTimers.delete(session);
+    if (!session.sttDeepgramPendingInterim) return;
+    if (session.sttDeepgramPartials?.lastText !== transcript) return;
+    speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript);
+  }, structuredSpeculationDelayMs());
+  timer.unref?.();
+  speculationTimers.set(session, timer);
+}
 const deepgramFinalizeReasons = new WeakMap<CallSession, 'utterance_end' | 'stalled'>();
 
 function clearDeepgramStallTimer(session: CallSession): void {
   const timer = deepgramStallTimers.get(session);
   if (timer) clearTimeout(timer);
   deepgramStallTimers.delete(session);
+  const speculation = speculationTimers.get(session);
+  if (speculation) clearTimeout(speculation);
+  speculationTimers.delete(session);
 }
 
 /**
@@ -1681,6 +1705,7 @@ export function handleNormalizedSttMessage(
             partials.lastText = event.transcript;
             partials.lastWordCount = event.transcript.trim().split(/\s+/).length;
             armDeepgramStallTimer(session);
+            armSpeculationTimer(session, event.transcript);
           }
         }
       }

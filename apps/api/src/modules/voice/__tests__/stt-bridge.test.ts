@@ -183,7 +183,7 @@ describe('buildDeepgramSttUrl', () => {
     expect(url.searchParams.get('encoding')).toBe(encoding);
     expect(url.searchParams.get('sample_rate')).toBe(rate);
     expect(url.searchParams.get('interim_results')).toBe('true');
-    expect(url.searchParams.get('endpointing')).toBe('300');
+    expect(url.searchParams.get('endpointing')).toBe('200');
     expect(url.searchParams.get('utterance_end_ms')).toBe('1000');
     expect(url.searchParams.get('numerals')).toBe('true');
     expect(url.searchParams.get('punctuate')).toBe('false');
@@ -913,7 +913,7 @@ describe('Deepgram final dispatch', () => {
     });
 
     expect(onEvent).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(499);
+    vi.advanceTimersByTime(599);
     expect(onEvent).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onEvent).toHaveBeenCalledWith(
