@@ -20,7 +20,7 @@ import { captureMessage } from '../sentry/client';
 import { logger } from '../logger/pino';
 import { alertsSentTotal } from './metrics';
 
-export type AlertSeverity = 'warning' | 'critical';
+export type AlertSeverity = 'info' | 'warning' | 'critical';
 
 export interface AlertPayload {
   /** Identifiant stable de l'alerte (ex: 'calls_without_transcript'). */
@@ -78,7 +78,9 @@ async function tryEmail(payload: AlertPayload, recipients: string): Promise<Chan
 
 async function tryWebhook(payload: AlertPayload, url: string): Promise<ChannelResult> {
   try {
-    const text = `🚨 [Sokar ${payload.severity.toUpperCase()}] ${payload.summary}\n${payload.detail}`;
+    const icon =
+      payload.severity === 'critical' ? '🚨' : payload.severity === 'warning' ? '⚠️' : 'ℹ️';
+    const text = `${icon} [Sokar ${payload.severity.toUpperCase()}] ${payload.summary}\n${payload.detail}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -121,13 +123,12 @@ async function trySms(payload: AlertPayload, to: string): Promise<ChannelResult>
  */
 export async function dispatchAlert(payload: AlertPayload): Promise<ChannelResult[]> {
   // 1. Logs + Sentry — toujours.
-  logger.error(
-    { alert: payload.kind, severity: payload.severity, detail: payload.detail },
-    payload.summary,
-  );
+  const logContext = { alert: payload.kind, severity: payload.severity, detail: payload.detail };
+  if (payload.severity === 'info') logger.info(logContext, payload.summary);
+  else logger.error(logContext, payload.summary);
   captureMessage(
     `[${payload.severity}] ${payload.summary}`,
-    payload.severity === 'critical' ? 'error' : 'warning',
+    payload.severity === 'critical' ? 'error' : payload.severity,
     {
       tags: { alert: payload.kind },
       extra: { detail: payload.detail },

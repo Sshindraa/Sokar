@@ -300,6 +300,16 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Évaluation hebdomadaire en lecture seule des appels de test : elle reste
+  // sans effet tant que VOICE_SEMANTIC_AUTO_EVAL_ENABLED n'est pas activé.
+  await register('voice-semantic-auto-eval/weekly', () =>
+    queues.voiceSemanticAutoEval.upsertJobScheduler(
+      'weekly-voice-semantic-auto-eval',
+      { pattern: '0 6 * * 1', tz: 'Europe/Paris' },
+      { name: 'weekly-evaluation', data: {}, opts: { attempts: 1 } },
+    ),
+  );
+
   // Anonymisation RGPD (rétention 2 ans) : quotidienne à 3h. Le scheduler
   // tourne même quand l'opération est désactivée ; c'est le worker qui
   // refuse d'agir sans `RGPD_ANONYMIZATION_ENABLED=true`.

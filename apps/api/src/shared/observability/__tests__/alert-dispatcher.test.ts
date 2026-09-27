@@ -107,6 +107,23 @@ describe('dispatchAlert', () => {
     expect(criticalResults).toEqual([{ channel: 'sms', ok: true }]);
   });
 
+  it('envoie une alerte info sans SMS et garde la sévérité info', async () => {
+    process.env.ALERT_EMAIL_TO = 'ops@sokar.tech';
+    process.env.ALERT_SMS_TO = '+33612345678';
+
+    const results = await dispatchAlert({
+      kind: 'voice_semantic_auto_eval',
+      severity: 'info',
+      summary: 'Évaluation hebdomadaire terminée',
+      detail: '20 tours évalués',
+    });
+
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(vi.mocked(sendEmail).mock.calls[0][0].subject).toContain('[Sokar INFO]');
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(results).toEqual([{ channel: 'email', ok: true }]);
+  });
+
   it('sms: false bloque le SMS même en critique', async () => {
     process.env.ALERT_SMS_TO = '+33612345678';
 

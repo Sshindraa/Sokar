@@ -333,6 +333,22 @@ autonome : ouvrez-la dans un navigateur, annotez au clavier, puis « Exporter le
 JSONL » produit le fichier à passer à `semantic:eval`. Les noms dits à l'oral ne
 sont pas masqués : la page reste sur le poste de l'annotateur.
 
+Évaluation automatique hebdomadaire : `VOICE_SEMANTIC_AUTO_EVAL_ENABLED=false`
+par défaut ; quand le flag est activé, le worker lit les tours des 7 derniers
+jours dans `voice_debug_turns`, conserve au plus
+`VOICE_SEMANTIC_AUTO_EVAL_MAX_TURNS=300` tours récents et lance Jev et le juge
+en parallèle (concurrence 4). Il faut au moins 20 tours annotables. Le juge
+utilise `VOICE_SEMANTIC_JUDGE_MODEL=anthropic/claude-sonnet-5-20260630` et la
+clé secrète `OPENROUTER_API_KEY`. Le job est planifié le lundi à 06:00
+(Europe/Paris), avec une tentative. Les rapports agrégés sont écrits dans
+`apps/api/scratch/semantic-auto-eval/` et publiés via les métriques
+`sokar_voice_semantic_eval_precision`, `..._recall`, `..._examples`,
+`..._last_run_timestamp_seconds` et `..._judge_status_total`. Le résumé
+opérationnel ne contient ni transcription ni raisonnement du juge. Comptez
+environ 0,01–0,03 $ par tour pour le juge Sonnet 5, selon la longueur du
+contexte ; les appels Jev ont leur propre coût. Ces annotations restent des
+jugements de modèle et ne constituent pas une vérité humaine.
+
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
 Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse

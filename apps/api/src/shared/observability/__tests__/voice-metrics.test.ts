@@ -6,6 +6,9 @@ import {
   voiceLlmFirstTokenMs,
   voiceTtsFirstAudioMs,
   voiceProviderErrorsTotal,
+  voiceSemanticAnswerSkippedTotal,
+  voiceSemanticChoiceConfidence,
+  voiceSemanticEvalPrecision,
   recordVoiceTurnPlanShadowObservation,
 } from '../metrics';
 
@@ -87,6 +90,22 @@ describe('Voice Prometheus metrics', () => {
     expect(payload).toMatch(
       /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="missing"[^}]*policy_outcome="not_evaluated"[^}]*agreement="not_comparable"[^}]*path="deferred"[^}]*\} 1/,
     );
+  });
+
+  it('réinitialise les métriques sémantiques Jev et les nouvelles jauges de rapport', async () => {
+    voiceSemanticAnswerSkippedTotal.inc({ provider: 'openrouter', reason: 'unknown_type' });
+    voiceSemanticChoiceConfidence.observe(
+      { choice: 'proposal_response_choice', provider: 'openrouter' },
+      0.9,
+    );
+    voiceSemanticEvalPrecision.set({ behavior: 'answers_active_question', threshold: '0.8' }, 0.75);
+
+    __resetMetrics();
+    const payload = await renderMetrics();
+
+    expect(payload).not.toContain('sokar_voice_semantic_answer_skipped_total{');
+    expect(payload).not.toContain('sokar_voice_semantic_choice_confidence_bucket{');
+    expect(payload).not.toContain('sokar_voice_semantic_eval_precision{');
   });
 
   it("n'a pas de collision de noms de métriques voice", async () => {
