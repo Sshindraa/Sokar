@@ -19,6 +19,16 @@ vi.mock('../stream/tts-handler', () => ({
   isSessionActiveForTts: vi.fn().mockReturnValue(true),
   cleanTextForTts: (text: string) => text,
 }));
+const contextTurn = {
+  push: vi.fn(),
+  finish: vi.fn().mockResolvedValue(undefined),
+  cancel: vi.fn(),
+  hasAudioOutput: false,
+};
+vi.mock('../stream/cartesia-context', () => ({
+  isCartesiaContextV2Enabled: () => process.env.VOICE_TTS_CONTEXT_V2_ENABLED === 'true',
+  createCartesiaContextTurn: vi.fn(() => contextTurn),
+}));
 vi.mock('../../../shared/telnyx/http-agent', () => ({
   telnyxFetch: vi.fn().mockResolvedValue({ ok: true }),
 }));
@@ -370,6 +380,46 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toEqual([CALLER_FINISHED_FALLBACK]);
     expect(session.history.at(-1)?.content).toBe(CALLER_FINISHED_FALLBACK);
     vi.useRealTimers();
+  });
+
+  describe('contexte Cartesia (phrases enchaînées)', () => {
+    beforeEach(() => {
+      vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'true');
+      contextTurn.finish.mockResolvedValue(undefined);
+      contextTurn.hasAudioOutput = false;
+    });
+
+    it('envoie toutes les phrases d’une réponse dans un seul contexte, sans HTTP', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(contextTurn.push.mock.calls.map(([text]) => text)).toEqual([
+        'Bien sûr.',
+        'Pour quel jour ?',
+      ]);
+      expect(contextTurn.finish).toHaveBeenCalledTimes(1);
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+      expect(session.ttsContext).toBeNull();
+    });
+
+    it('repasse par HTTP si le contexte échoue avant tout audio', async () => {
+      contextTurn.finish.mockRejectedValueOnce(new Error('socket closed'));
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(spoken()).toEqual(['Bien sûr. Pour quel jour ?']);
+    });
+
+    it('ferme sans audio le contexte d’un tour où l’agent se tait', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ turnComplete: false, interpretation: 'unclear' }));
+      await processTranscriptStreaming(session, 'je voudrais', mgr);
+
+      expect(contextTurn.cancel).toHaveBeenCalledWith('unused');
+      expect(contextTurn.push).not.toHaveBeenCalled();
+    });
   });
 
   it('n’utilise pas le moteur hors allowlist', async () => {
