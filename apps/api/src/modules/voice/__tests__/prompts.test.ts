@@ -90,6 +90,21 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  it("interdit d'annoncer une disponibilité avant le nombre de personnes (appel c5d6b07d)", () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: "est-ce que c'est possible de venir à 18 heures",
+      state: createStructuredTurnState(),
+    });
+    // Rejeu Qwen du 28/09 : « Oui, 18 heures c'est possible » dans 7 à 8 tirages sur 10
+    // sans nombre de personnes ; 0 sur 10 avec cette consigne.
+    expect(system.content).toContain('tant que draft.partySize vaut 0');
+    expect(system.content).toContain("« 18 heures, c'est noté »");
+    // Groupe connu : lire la ligne de sa taille, refuser un horaire absent (1–2/10 → 9/10).
+    expect(system.content).toContain('« 5-8 » contient 6');
+  });
+
   it('donne un calendrier calculé de 14 jours, jours fermés compris (appel 88921164)', () => {
     const hours = { tue: { open: '12:00', close: '22:00' } };
     const calendar = describeCalendar('2026-09-27', hours).split('\n');
