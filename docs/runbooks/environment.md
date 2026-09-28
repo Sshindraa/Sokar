@@ -331,6 +331,15 @@ chaque `choice` alimente l'histogramme
 `sokar_voice_semantic_choice_confidence`, qui surveille la surconfiance du
 modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-28.4-jev`.
 
+Phase 2 (avis) de `needs_clarification`, sans effet sur l'appel : chaque tour noté
+est comparé à ce qu'a fait l'agent (`unclear` = il fait préciser) et compté dans
+`sokar_voice_semantic_advisory_total{behavior="needs_clarification",outcome}` :
+`both`, `jev_only` (Jev aurait fait reposer la question alors que l'agent a
+continué : les tours à relire avant toute phase 3), `agent_only`, `neither`. Le
+même classement est écrit dans l'événement de tour `semantic_signals_shadow`
+(`advisoryClarify`), avec le `turnId` pour retrouver le dialogue dans
+`voice_debug_turns`. Seuil : `VOICE_SEMANTIC_ADVISORY_CLARIFY_THRESHOLD` (0,8).
+
 Évaluation hors ligne : `pnpm --filter api semantic:eval [fichier.jsonl]
 [--provider openrouter|respan]` avec la clé du fournisseur dans l'environnement
 (le fournisseur par défaut est `VOICE_SEMANTIC_SIGNALS_PROVIDER`, sinon
