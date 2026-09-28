@@ -12,7 +12,7 @@ export default function PricingPage() {
     <div className="pricing-root">
       {/* Floating navbar */}
       <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
-        <nav className="flex items-center gap-2 rounded-full border border-border/40 bg-background/80 px-3 py-2 shadow-2xl backdrop-blur-xl">
+        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/85 px-3 py-2 shadow-2xl backdrop-blur-xl">
           {/* Logo inside navbar on mobile */}
           <Link
             href="/"
@@ -27,7 +27,6 @@ export default function PricingPage() {
               { label: 'Services', href: '/#services' },
               { label: "Cas d'usage", href: '/#demo' },
               { label: 'Tarifs', href: '/pricing' },
-              { label: "S'inscrire", href: '/register' },
             ].map((item) => (
               <Link
                 key={item.href}
@@ -45,7 +44,7 @@ export default function PricingPage() {
           </div>
           <Link
             href="/register"
-            className="hidden md:inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-border/40 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+            className="hidden md:inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
           >
             Créer mon compte
             <ArrowUpRight size={14} />
