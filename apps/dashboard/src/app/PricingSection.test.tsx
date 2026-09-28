@@ -50,10 +50,7 @@ describe('PricingSection', () => {
 
     expect(text).toContain('249\u00a0€/mois + 99\u00a0€/site');
     expect(text).toContain('+ 79\u00a0€/site');
-    expect(text).toContain(
-      'Économisez 50\u00a0€/mois + 20\u00a0€/site avec la facturation annuelle.',
-    );
-    expect(text).toContain('Économisez 40\u00a0€/mois avec la facturation annuelle.');
+    expect(text).not.toContain('Économisez');
   });
 
   it('masque le prix barré et les économies en mensuel', () => {
