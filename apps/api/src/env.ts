@@ -12,18 +12,26 @@ import { sttChunkMsSchema } from './shared/stt-chunking';
 import { telnyxCodecSchema } from './modules/voice/stream/telnyx-codec';
 
 function isValidCorsOrigins(val: string): boolean {
-  return val
+  const origins = val
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean)
-    .every((origin) => {
+    .filter(Boolean);
+  return (
+    origins.length > 0 &&
+    origins.every((origin) => {
       try {
-        const { protocol } = new URL(origin);
-        return protocol === 'http:' || protocol === 'https:';
+        const url = new URL(origin);
+        return (
+          (url.protocol === 'http:' || url.protocol === 'https:') &&
+          url.origin === origin &&
+          !url.username &&
+          !url.password
+        );
       } catch {
         return false;
       }
-    });
+    })
+  );
 }
 
 // En production (PM2 --env-file=.env), le fichier app-local est la source de
@@ -161,6 +169,11 @@ const EnvSchema = z
     SITE_URL: z.string().url('SITE_URL must be a valid URL'),
     DASHBOARD_URL: z.string().url('DASHBOARD_URL must be a valid URL'),
     API_URL: z.string().url('API_URL must be a valid URL'),
+    OAUTH_ISSUER_URL: z.string().url('OAUTH_ISSUER_URL must be a valid URL').optional(),
+    MCP_ALLOWED_ORIGINS: z
+      .string()
+      .refine(isValidCorsOrigins, { message: 'MCP_ALLOWED_ORIGINS must be http(s) origins' })
+      .optional(),
     // CORS — allowlist explicite des origins navigateur (comma-separated)
     CORS_ORIGINS: z
       .string()

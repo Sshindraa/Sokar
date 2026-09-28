@@ -32,6 +32,7 @@ export type AvailabilityQuery = {
 
 export type AvailabilityResult = {
   available: boolean;
+  alternativeSlots?: Array<{ startsAt: string; endsAt: string }>;
   conflictingHoldId?: string;
   conflictingReservationId?: string;
   reason?: 'hold_active' | 'reservation_confirmed' | 'party_size_exceeds_capacity' | 'unknown';
@@ -93,6 +94,7 @@ export class AvailabilityService {
     slotEnd: Date;
     cuisineType?: string[];
     maxResults: number;
+    cursor?: string;
   }): Promise<
     Array<{
       restaurantId: string;
@@ -101,9 +103,30 @@ export class AvailabilityService {
       distanceMeters: number | null;
     }>
   > {
+    return (await this.searchAvailableRestaurantsPage(args)).results;
+  }
+
+  async searchAvailableRestaurantsPage(args: {
+    city: string;
+    partySize: number;
+    slotStart: Date;
+    slotEnd: Date;
+    cuisineType?: string[];
+    maxResults: number;
+    cursor?: string;
+  }): Promise<{
+    results: Array<{
+      restaurantId: string;
+      name: string;
+      slug: string | null;
+      distanceMeters: number | null;
+    }>;
+    nextCursor?: string;
+  }> {
     // Étape 1 : candidats (filtre ville + cuisine + opt-in)
     const candidates = await this.prisma.restaurant.findMany({
       where: {
+        ...(args.cursor ? { id: { gt: args.cursor } } : {}),
         agenticOptIn: true,
         exposureSettings: {
           is: {
@@ -114,6 +137,7 @@ export class AvailabilityService {
           ? { cuisineType: { hasSome: args.cuisineType } }
           : {}),
       },
+      orderBy: { id: 'asc' },
       select: {
         id: true,
         name: true,
@@ -128,14 +152,13 @@ export class AvailabilityService {
     // Filtre grossier par adresse/ville (le partial match se fait côté DB via
     // un LIKE — l'index GIN pg_trgm accélérera en P1)
     const lowerCity = args.city.toLowerCase();
-    const filtered = candidates.filter((r) => {
-      const addr = r.formattedAddress?.toLowerCase() ?? '';
-      return lowerCity.length === 0 || addr.includes(lowerCity);
-    });
-
     // Étape 2 : pour chaque candidat, vérifie la dispo sur le slot exact
     const results: Array<{ id: string; name: string; slug: string | null }> = [];
-    for (const c of filtered) {
+    let lastScannedId: string | undefined;
+    for (const c of candidates) {
+      lastScannedId = c.id;
+      const addr = c.formattedAddress?.toLowerCase() ?? '';
+      if (lowerCity.length > 0 && !addr.includes(lowerCity)) continue;
       const check = await this.checkAvailability({
         restaurantId: c.id,
         partySize: args.partySize,
@@ -148,12 +171,19 @@ export class AvailabilityService {
       }
     }
 
-    return results.map((r) => ({
-      restaurantId: r.id,
-      name: r.name,
-      slug: r.slug,
-      distanceMeters: null, // PostGIS en P1 si besoin
-    }));
+    return {
+      results: results.map((r) => ({
+        restaurantId: r.id,
+        name: r.name,
+        slug: r.slug,
+        distanceMeters: null, // PostGIS en P1 si besoin
+      })),
+      nextCursor:
+        lastScannedId &&
+        (results.length >= args.maxResults || candidates.length >= SEARCH_CANDIDATES_MAX)
+          ? lastScannedId
+          : undefined,
+    };
   }
 
   /**
@@ -257,9 +287,18 @@ export class AvailabilityService {
     }
 
     const timeZone = restaurant.timezone ?? 'Europe/Paris';
-    const dateStr = query.slotStart.toISOString().slice(0, 10);
-    const timeStr = query.slotStart.toISOString().slice(11, 16);
-    const slotStart = zonedTimeToUtc(dateStr, timeStr, timeZone);
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(query.slotStart);
+    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+    const dateStr = `${part('year')}-${part('month')}-${part('day')}`;
+    const timeStr = `${part('hour')}:${part('minute')}`;
 
     const dto = await this.capacityAware.getAvailability({
       restaurantId: query.restaurantId,
@@ -267,12 +306,27 @@ export class AvailabilityService {
       partySize: query.partySize,
     });
 
-    const slot = dto.slots.find((s) => s.time === slotStart.toISOString().slice(11, 16));
+    const slot = dto.slots.find((s) => s.time === timeStr);
     if (slot?.available) {
       return { available: true };
     }
 
-    return { available: false, reason: 'unknown' };
+    const durationMs = query.slotEnd.getTime() - query.slotStart.getTime();
+    const alternativeSlots = dto.slots
+      .filter((candidate) => candidate.available)
+      .map((candidate) => zonedTimeToUtc(dateStr, candidate.time, timeZone))
+      .filter((start) => start.getTime() > Date.now())
+      .sort(
+        (a, b) =>
+          Math.abs(a.getTime() - query.slotStart.getTime()) -
+          Math.abs(b.getTime() - query.slotStart.getTime()),
+      )
+      .slice(0, 5)
+      .map((start) => ({
+        startsAt: start.toISOString(),
+        endsAt: new Date(start.getTime() + durationMs).toISOString(),
+      }));
+    return { available: false, reason: 'unknown', alternativeSlots };
   }
 
   /**

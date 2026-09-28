@@ -44,6 +44,7 @@ import {
 } from '../../../shared/reservations/reservation-state.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 import {
   IDEMPOTENCY_POLL_INTERVAL_MS,
@@ -51,6 +52,7 @@ import {
 } from '../../../shared/constants/timeouts.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 import { CustomerService } from '../../customers/customer.service';
+import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 import {
   deactivateMarketingConversions,
   recordMarketingAttributionClick,
@@ -81,6 +83,13 @@ export class ReservationSlotUnavailableError extends Error {
       `Reservation slot unavailable: restaurant=${restaurantId} startsAt=${startsAt.toISOString()} party=${partySize}`,
     );
     this.name = 'ReservationSlotUnavailableError';
+  }
+}
+
+export class ReservationModificationNotAllowedError extends Error {
+  constructor() {
+    super('Reservation cannot be modified in its current state');
+    this.name = 'ReservationModificationNotAllowedError';
   }
 }
 
@@ -176,7 +185,7 @@ export class ReservationService {
     if (input.holdToken) {
       const hold = await this.holds.findActiveByToken(input.holdToken);
       if (!hold) {
-        throw new Error(`Invalid or expired hold token: ${input.holdToken}`);
+        throw new Error('Invalid or expired hold token');
       }
       if (hold.restaurantId !== input.restaurantId) {
         throw new Error('Hold does not match restaurant');
@@ -685,6 +694,204 @@ export class ReservationService {
     }
   }
 
+  /** Modifie une réservation sous le même verrou de capacité que sa création. */
+  async modifyReservation(args: {
+    reservationId: string;
+    restaurantId: string;
+    actor: string;
+    publicClient: boolean;
+    customerPhone?: string;
+    partySize?: number;
+    startsAt?: Date;
+    endsAt?: Date;
+    customerName?: string;
+  }): Promise<{ reservationId: string; state: ReservationState; changed: boolean }> {
+    const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockCapacitySlot(tx, args.restaurantId);
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM reservations WHERE id = ${args.reservationId} AND restaurant_id = ${args.restaurantId} FOR UPDATE`,
+      );
+      const current = await tx.reservation.findFirst({
+        where: { id: args.reservationId, restaurantId: args.restaurantId },
+      });
+      if (
+        !current ||
+        (args.publicClient &&
+          (current.createdByClient !== args.actor ||
+            !args.customerPhone ||
+            current.customerPhone !== args.customerPhone))
+      ) {
+        throw new ReservationNotFoundError(args.reservationId);
+      }
+      if (current.state !== 'PENDING' && current.state !== 'CONFIRMED') {
+        throw new ReservationModificationNotAllowedError();
+      }
+
+      const startsAt = args.startsAt ?? current.startsAt ?? current.reservedAt;
+      const endsAt = args.endsAt ?? current.endsAt;
+      const partySize = args.partySize ?? current.partySize;
+      if (!endsAt || endsAt <= startsAt || startsAt <= new Date()) {
+        throw new ReservationModificationNotAllowedError();
+      }
+      const capacityChanged =
+        startsAt.getTime() !== (current.startsAt ?? current.reservedAt).getTime() ||
+        endsAt.getTime() !== current.endsAt?.getTime() ||
+        partySize !== current.partySize;
+      const nameChanged =
+        args.customerName !== undefined && args.customerName !== current.customerName;
+      if (!capacityChanged && !nameChanged) {
+        return { reservation: current, changed: false, capacityChanged: false };
+      }
+
+      let tableId = current.tableId;
+      if (capacityChanged) {
+        const blocker = await this.findGlobalUnassignedBlocker(tx, {
+          restaurantId: args.restaurantId,
+          startsAt,
+          endsAt,
+          now: new Date(),
+          excludeReservationId: current.id,
+        });
+        if (blocker) {
+          throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
+        }
+        if (tableId) {
+          const table = await this.tableAllocation.allocate(
+            {
+              restaurantId: args.restaurantId,
+              partySize,
+              startsAt,
+              endsAt,
+              excludeReservationId: current.id,
+            },
+            tx,
+          );
+          if (!table) {
+            throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
+          }
+          tableId = table.id;
+        } else {
+          const otherReservation = await tx.reservation.findFirst({
+            where: {
+              restaurantId: args.restaurantId,
+              id: { not: current.id },
+              state: { in: [...ACTIVE_RESERVATION_STATES] },
+              startsAt: { lt: endsAt },
+              endsAt: { gt: startsAt },
+            },
+            select: { id: true },
+          });
+          const otherHold = await tx.agenticHold.findFirst({
+            where: {
+              restaurantId: args.restaurantId,
+              type: 'HOLD',
+              status: 'ACTIVE',
+              expiresAt: { gt: new Date() },
+              slotStart: { lt: endsAt },
+              slotEnd: { gt: startsAt },
+            },
+            select: { id: true },
+          });
+          if (otherReservation || otherHold) {
+            throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
+          }
+          const sameSlot = await this.findBlockingReservation(tx, {
+            restaurantId: args.restaurantId,
+            partySize,
+            startsAt,
+            excludeReservationId: current.id,
+          });
+          if (sameSlot) {
+            throw new ReservationSlotUnavailableError(args.restaurantId, startsAt, partySize);
+          }
+        }
+      }
+
+      const reservation = await tx.reservation.update({
+        where: { id: current.id, restaurantId: args.restaurantId },
+        data: {
+          ...(capacityChanged
+            ? { partySize, reservedAt: startsAt, startsAt, endsAt, tableId }
+            : {}),
+          ...(nameChanged ? { customerName: args.customerName } : {}),
+        },
+      });
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'reservation_fields_changed',
+          reservationId: current.id,
+          actor: args.actor,
+          fromState: current.state,
+          toState: current.state,
+          metadata: {
+            source: 'mcp',
+            changedFields: [
+              ...(capacityChanged ? ['partySize', 'startsAt', 'endsAt', 'tableId'] : []),
+              ...(nameChanged ? ['customerName'] : []),
+            ],
+          },
+        },
+      });
+      return { reservation, changed: true, capacityChanged };
+    }, DEFAULT_TRANSACTION_OPTIONS);
+
+    if (result.capacityChanged) {
+      try {
+        await CapacityAwareAvailabilityService.invalidateAvailability(args.restaurantId);
+      } catch (err) {
+        logger.warn(
+          { reservationId: args.reservationId, errorName: (err as Error)?.name },
+          'MCP reservation availability cache invalidation failed',
+        );
+      }
+    }
+    if (result.changed && result.reservation.googleEventId) {
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { id: args.restaurantId },
+        select: { googleRefreshToken: true, googleCalendarId: true },
+      });
+      if (restaurant?.googleRefreshToken && restaurant.googleCalendarId) {
+        try {
+          await GoogleCalendarClient.updateEvent(
+            restaurant.googleRefreshToken,
+            restaurant.googleCalendarId,
+            result.reservation.googleEventId,
+            {
+              start: result.reservation.startsAt ?? result.reservation.reservedAt,
+              end:
+                result.reservation.endsAt ??
+                new Date(result.reservation.reservedAt.getTime() + 7_200_000),
+              summary: `Réservation Sokar - ${result.reservation.customerName}`,
+              description: `Couverts: ${result.reservation.partySize}\nRéservation modifiée via Sokar.`,
+            },
+          );
+        } catch (err) {
+          logger.error(
+            { reservationId: args.reservationId, errorName: (err as Error)?.name },
+            'MCP reservation calendar sync failed',
+          );
+        }
+      }
+    }
+    if (result.changed) {
+      observeReservationMutation({
+        source: 'mcp',
+        operation: 'update',
+        status: result.reservation.status,
+        state: result.reservation.state,
+        idempotency: 'not_applicable',
+        audit: 'written',
+        notification: 'not_sent',
+        capacity: result.capacityChanged ? 'reserved' : 'unchanged',
+      });
+    }
+    return {
+      reservationId: result.reservation.id,
+      state: result.reservation.state,
+      changed: result.changed,
+    };
+  }
+
   /**
    * Annule une réservation et libère le hold si applicable.
    */
@@ -784,11 +991,13 @@ export class ReservationService {
       restaurantId: string;
       partySize: number;
       startsAt: Date;
+      excludeReservationId?: string;
     },
   ): Promise<{ id: string } | null> {
     return tx.reservation.findFirst({
       where: {
         restaurantId: args.restaurantId,
+        ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
         partySize: args.partySize,
         OR: [{ reservedAt: args.startsAt }, { startsAt: args.startsAt }],
         state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
@@ -805,11 +1014,13 @@ export class ReservationService {
       endsAt: Date;
       now: Date;
       excludeHoldId?: string | null;
+      excludeReservationId?: string;
     },
   ): Promise<{ kind: 'reservation' | 'hold'; id: string } | null> {
     const reservation = await tx.reservation.findFirst({
       where: {
         restaurantId: args.restaurantId,
+        ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
         tableId: null,
         state: { in: [...ACTIVE_RESERVATION_STATES] },
         OR: [

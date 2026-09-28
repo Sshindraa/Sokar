@@ -18,19 +18,41 @@
  *   ou { "jsonrpc": "2.0", "id": 1, "error": { "code": -32600, "message": "..." } }
  */
 
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyContextConfig, FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
-import { McpAuthError, authenticateMcpRequest } from './auth';
+import { ALLOWED_ORIGINS, McpAuthError, authenticateMcpRequest } from './auth';
 import { McpRateLimiter } from './rate-limit';
 import { McpToolRegistry, executeTool, type ToolContext } from './tools/registry';
 import { TOOL_LIST } from './tools/tool-definitions';
 import { getIssuer } from './oauth';
-import { alertFailOpen } from '../../../shared/observability/alerts';
 
 // Re-export pour les tests qui importent depuis server.ts
 export { TOOL_LIST };
+
+/**
+ * Version du serveur MCP, indépendante de la version applicative.
+ *
+ * Politique : majeur quand le contrat exposé change de façon incompatible
+ * (outil supprimé, champ retiré, sémantique modifiée), mineur quand on ajoute
+ * un outil ou un champ, correctif pour un changement interne. Les clients MCP
+ * lisent `serverInfo.version` pour leur télémétrie.
+ */
+export const MCP_SERVER_VERSION = '1.0.0';
+
+/**
+ * Un client StreamableHTTP doit accepter `application/json` : notre transport
+ * ne produit pas de SSE. Un header absent est toléré, les clients non
+ * navigateur et les sondes de disponibilité ne l'envoient pas systématiquement.
+ */
+export function acceptsJsonResponse(acceptHeader: string | undefined): boolean {
+  if (!acceptHeader) return true;
+  return acceptHeader.split(',').some((entry) => {
+    const mediaType = entry.split(';')[0]?.trim().toLowerCase();
+    return mediaType === 'application/json' || mediaType === 'application/*' || mediaType === '*/*';
+  });
+}
 
 type JsonRpcRequest = {
   jsonrpc: '2.0';
@@ -69,6 +91,12 @@ export class McpServer {
   }
 
   registerRoutes(app: FastifyInstance): void {
+    const cors = { origin: [...ALLOWED_ORIGINS], credentials: false };
+    app.options(
+      '/mcp',
+      { config: { cors } as FastifyContextConfig & { cors: typeof cors } },
+      async (_req, reply) => reply.status(204).send(),
+    );
     // GET /mcp : utilisé par les clients MCP StreamableHTTP pour tenter d'ouvrir
     // un stream SSE. On ne supporte pas SSE, donc on retourne 405 sans auth.
     // L'authentification n'est pas requise ici : elle est vérifiée sur POST /mcp.
@@ -84,72 +112,76 @@ export class McpServer {
     );
 
     // POST /mcp : endpoint principal JSON-RPC
-    app.post('/mcp', async (req: FastifyRequest, reply: FastifyReply) => {
-      let authCtx: ToolContext;
-      try {
-        const auth = await authenticateMcpRequest(req, this.prisma);
-        authCtx = {
-          clientId: auth.clientId,
-          clientName: auth.clientName,
-          restaurantId: auth.restaurantId,
-          scopes: auth.scopes,
-          actor: `agent:${auth.clientId}`,
-        };
-      } catch (err) {
-        if (err instanceof McpAuthError) {
-          return reply
-            .status(err.statusCode)
-            .header(
-              'WWW-Authenticate',
-              `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
-            )
-            .send({ error: err.message, code: err.code });
+    app.post(
+      '/mcp',
+      { config: { cors } as FastifyContextConfig & { cors: typeof cors } },
+      async (req: FastifyRequest, reply: FastifyReply) => {
+        if (!acceptsJsonResponse(req.headers.accept)) {
+          return reply.status(406).send({
+            error: 'Not Acceptable: this endpoint only produces application/json',
+            code: 'NOT_ACCEPTABLE',
+          });
         }
-        throw err;
-      }
 
-      const body = req.body as JsonRpcRequest | JsonRpcRequest[] | undefined;
-      if (!body) {
-        return reply.status(400).send(jsonRpcError(null, -32700, 'Parse error: empty body'));
-      }
+        let authCtx: ToolContext;
+        try {
+          const auth = await authenticateMcpRequest(req, this.prisma);
+          authCtx = {
+            clientId: auth.clientId,
+            clientName: auth.clientName,
+            restaurantId: auth.restaurantId,
+            scopes: auth.scopes,
+            actor: `agent:${auth.clientId}`,
+          };
+        } catch (err) {
+          if (err instanceof McpAuthError) {
+            reply.status(err.statusCode);
+            if (err.statusCode === 401) {
+              reply.header(
+                'WWW-Authenticate',
+                `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
+              );
+            }
+            if (err.statusCode === 429) reply.header('Retry-After', '60');
+            return reply.send({ error: err.message, code: err.code });
+          }
+          throw err;
+        }
 
-      const isBatch = Array.isArray(body);
-      const messages = isBatch ? body : [body];
-
-      const responses: (JsonRpcResponse | null)[] = [];
-      for (const msg of messages) {
-        responses.push(await this.handleMessage(msg, authCtx));
-      }
-
-      // Filtrer les null (notifications sans response)
-      const filtered = responses.filter((r): r is JsonRpcResponse => r !== null);
-
-      // Si toutes les réponses sont des notifications (pas de response),
-      // retourner 202 Accepted sans body
-      if (filtered.length === 0) {
-        return reply.status(202).send();
-      }
-
-      const payload = isBatch ? filtered : filtered[0];
-
-      // Rate limit headers (best-effort, non-blocking)
-      try {
-        const rl = await this.rateLimiter.check(authCtx.clientId, 'global');
+        // Enforce one shared per-client budget before parsing or executing tools.
+        const limit = await this.rateLimiter.check(authCtx.clientId, 'global');
         reply.header('X-RateLimit-Limit', '60');
-        reply.header('X-RateLimit-Remaining', String(rl.remaining));
-        if (!rl.allowed) {
-          reply.header('Retry-After', String(Math.ceil(rl.resetMs / 1000)));
+        reply.header('X-RateLimit-Remaining', String(limit.remaining));
+        if (!limit.allowed) {
+          return reply
+            .status(429)
+            .header('Retry-After', String(Math.max(1, Math.ceil(limit.resetMs / 1000))))
+            .send({ error: 'Rate limit exceeded', code: 'RATE_LIMITED' });
         }
-      } catch (err) {
-        // Rate limiter down — fail-open, pas de headers
-        alertFailOpen({ source: 'mcp_rate_limit', reason: 'server_rate_check_failed', err });
-      }
 
-      return reply.send(payload);
-    });
+        const body = req.body as JsonRpcRequest | JsonRpcRequest[] | undefined;
+        if (!body) {
+          return reply.status(400).send(jsonRpcError(null, -32700, 'Parse error: empty body'));
+        }
+
+        if (Array.isArray(body)) {
+          return reply
+            .status(400)
+            .send(jsonRpcError(null, -32600, 'Batch requests are not supported'));
+        }
+        const response = await this.handleMessage(body, authCtx);
+        if (response === null) {
+          return reply.status(202).send();
+        }
+        return reply.send(response);
+      },
+    );
   }
 
-  private async handleMessage(msg: JsonRpcRequest, ctx: ToolContext): Promise<JsonRpcResponse> {
+  private async handleMessage(
+    msg: JsonRpcRequest,
+    ctx: ToolContext,
+  ): Promise<JsonRpcResponse | null> {
     const id = msg.id ?? null;
 
     if (msg.jsonrpc !== '2.0') {
@@ -158,6 +190,8 @@ export class McpServer {
     if (!msg.method) {
       return jsonRpcError(id, -32600, 'Invalid Request: method required');
     }
+    // JSON-RPC notifications have no id and must never receive a response.
+    if (msg.id === undefined) return null;
 
     try {
       switch (msg.method) {
@@ -165,30 +199,44 @@ export class McpServer {
           const requestedVersion =
             typeof msg.params?.protocolVersion === 'string' ? msg.params.protocolVersion : null;
           // On supporte les versions StreamableHTTP / HTTP+SSE les plus courantes.
-          const supportedVersions = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
+          const supportedVersions = ['2025-06-18', '2025-03-26'] as const;
           const protocolVersion =
             requestedVersion && supportedVersions.includes(requestedVersion as never)
               ? requestedVersion
-              : '2025-03-26';
+              : supportedVersions[0];
           return jsonRpcResult(id, {
             protocolVersion,
             capabilities: { tools: {} },
-            serverInfo: { name: 'sokar-mcp', version: '0.1.0' },
+            serverInfo: { name: 'sokar-mcp', version: MCP_SERVER_VERSION },
+            instructions:
+              'Search MCP-enabled restaurants, check availability, and ask for customer consent before booking. Use create_hold to keep a slot while confirming. To read, modify, or cancel a public booking, supply the original E.164 customerPhone.',
           });
         }
-
-        case 'notifications/initialized':
-          // Notification client → serveur (pas de response en JSON-RPC).
-          // Retourner un object vide avec id=null serait une réponse,
-          // ce qui violerait la spec. On renvoie null pour que le caller
-          // sache qu'il ne doit pas l'inclure dans le batch response.
-          return null as unknown as JsonRpcResponse;
 
         case 'ping':
           return jsonRpcResult(id, {});
 
         case 'tools/list':
-          return jsonRpcResult(id, { tools: TOOL_LIST });
+          return jsonRpcResult(id, {
+            tools: TOOL_LIST.filter((tool) => {
+              const required = [
+                'create_reservation',
+                'create_quote',
+                'create_hold',
+                'join_waiting_list',
+                'modify_reservation',
+              ].includes(tool.name)
+                ? 'mcp:reserve'
+                : ['cancel_reservation', 'cancel_waiting_list'].includes(tool.name)
+                  ? 'mcp:cancel'
+                  : 'mcp:read';
+              return (
+                ctx.scopes.includes(required) ||
+                ctx.scopes.includes('mcp:*') ||
+                (required !== 'mcp:read' && ctx.scopes.includes('mcp:write'))
+              );
+            }),
+          });
 
         case 'tools/call': {
           const params = msg.params ?? {};
@@ -201,6 +249,7 @@ export class McpServer {
           if (result.ok) {
             return jsonRpcResult(id, {
               content: [{ type: 'text', text: JSON.stringify(result.data) }],
+              structuredContent: result.data,
               isError: false,
             });
           }

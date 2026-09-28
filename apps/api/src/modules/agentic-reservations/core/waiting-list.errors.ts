@@ -21,11 +21,11 @@ export class WaitingListSlotFullError extends Error {
 export class WaitingListAlreadyExistsError extends Error {
   constructor(
     public readonly restaurantId: string,
-    public readonly customerPhoneNormalized: string,
+    _customerPhoneNormalized: string,
     public readonly slotStart: Date,
   ) {
     super(
-      `Waiting list entry already exists: restaurant=${restaurantId} phone=${customerPhoneNormalized} slot=${slotStart.toISOString()}`,
+      `Waiting list entry already exists: restaurant=${restaurantId} slot=${slotStart.toISOString()}`,
     );
     this.name = 'WaitingListAlreadyExistsError';
   }

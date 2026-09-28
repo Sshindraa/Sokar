@@ -112,11 +112,8 @@ export default function AssistantPage() {
 }`}</code>
           </pre>
           <p className="mt-4 text-sm text-muted-foreground">
-            L&apos;authentification se fait par API key. Pour obtenir une clé, contactez-nous à{' '}
-            <a href="mailto:contact@sokar.tech" className="text-blue underline">
-              contact@sokar.tech
-            </a>
-            .
+            La connexion utilise OAuth 2.0 avec une page de consentement. Les intégrations gérées
+            peuvent aussi utiliser une clé API.
           </p>
         </div>
 
@@ -136,8 +133,28 @@ export default function AssistantPage() {
               Vérifier les créneaux disponibles
             </li>
             <li>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">create_quote</code> — Obtenir
+              une estimation sans bloquer la capacité
+            </li>
+            <li>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">create_hold</code> — Garder
+              temporairement un créneau pendant votre confirmation
+            </li>
+            <li>
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">create_reservation</code> —
               Créer une réservation (consentement obligatoire)
+            </li>
+            <li>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">join_waiting_list</code> —
+              Rejoindre la liste d&apos;attente si elle est disponible
+            </li>
+            <li>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">cancel_waiting_list</code> —
+              Quitter la liste d&apos;attente
+            </li>
+            <li>
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">modify_reservation</code> —
+              Modifier l&apos;heure, le nombre de personnes ou le nom
             </li>
             <li>
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">cancel_reservation</code> —
@@ -163,7 +180,7 @@ export default function AssistantPage() {
             • Le numéro de téléphone est obligatoire pour une réservation (format international, ex
             : +33612345678).
           </li>
-          <li>• Les API keys MCP sont révocables à tout moment.</li>
+          <li>• Les connexions OAuth et les clés API MCP sont révocables.</li>
           <li>
             • Sokar ne partage jamais vos données au-delà de ce qui est nécessaire pour la
             réservation.
