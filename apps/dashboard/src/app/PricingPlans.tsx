@@ -78,14 +78,8 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
     */}
       <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:gap-y-0">
         {PLANS.map((plan) => {
-          const monthlyPrice = parseInt(plan.price, 10);
           const yearlyPrice = DISPLAY_PRICE(plan.price, yearly);
           const yearlySitePrice = plan.sitePrice ? DISPLAY_PRICE(plan.sitePrice, yearly) : null;
-          const monthlySavings = monthlyPrice - parseInt(yearlyPrice, 10);
-          const siteSavings =
-            plan.sitePrice && yearlySitePrice
-              ? parseInt(plan.sitePrice, 10) - parseInt(yearlySitePrice, 10)
-              : null;
 
           return (
             <div
@@ -144,13 +138,6 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                     </span>
                   )}
                 </div>
-                {yearly && (
-                  <p className="mt-2 text-xs font-medium text-pricing-accent/80">
-                    Économisez {euros(monthlySavings, 'mois')}
-                    {siteSavings ? ` + ${euros(siteSavings, 'site')}` : ''} avec la facturation
-                    annuelle.
-                  </p>
-                )}
               </div>
 
               {/* 3. Description */}

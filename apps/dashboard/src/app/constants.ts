@@ -40,7 +40,7 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
-    description: 'Pour automatiser vos premiers appels et réservations.',
+    description: 'Pour démarrer.',
     features: [
       'Répond à chaque appel, 24h/24',
       'Réservations prises sans intervention',
@@ -52,13 +52,12 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
-    description: 'Pour les restaurants qui veulent maximiser chaque service.',
+    description: 'Pour maximiser chaque service.',
     features: [
       "Tout l'Essential, sans limite",
       'Vos clients reconnus à chaque appel',
-      'No-shows anticipés et gérés automatiquement',
-      'Revenus récupérés visibles en temps réel',
-      'Réservable depuis ChatGPT, Claude et les IA du marché',
+      'No-shows gérés, revenus récupérés',
+      'Réservable depuis ChatGPT et Claude',
       'Support prioritaire 7j/7',
     ],
     featured: true,
@@ -67,7 +66,7 @@ export const PLANS: PricingPlan[] = [
     label: 'Multi-site',
     price: String(PLAN_PRICES_EUR.PREMIUM),
     sitePrice: '99',
-    description: 'Pour piloter plusieurs établissements avec une seule équipe.',
+    description: 'Pour plusieurs établissements.',
     features: [
       'Plan Pro sur tous vos établissements',
       'Un seul dashboard pour tout piloter',
