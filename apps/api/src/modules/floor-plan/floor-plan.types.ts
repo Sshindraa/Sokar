@@ -55,6 +55,7 @@ export type AllocateTableInput = {
   endsAt: Date;
   preferredSectionId?: string;
   excludeTableIds?: string[];
+  excludeReservationId?: string;
 };
 
 /**

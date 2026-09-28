@@ -43,12 +43,12 @@ L'utilisateur clique sur ce lien et complète le formulaire sur la page Sokar.
 
 Sokar expose un serveur MCP (Model Context Protocol) qui permet aux clients
 MCP (Claude Desktop, Cursor, etc.) de rechercher et réserver directement,
-sans page web. L'authentification se fait par API key (contact@sokar.tech).
+sans page web. L'authentification se fait par OAuth 2.0 ou clé API.
 
 - URL du serveur MCP : ${API_URL}/mcp
 - Discovery OAuth2 : ${API_URL}/.well-known/oauth-authorization-server
 - Scopes disponibles : mcp:read, mcp:reserve, mcp:cancel
-- Auth : API key (Bearer token), contactez contact@sokar.tech pour obtenir une clé
+- Auth : OAuth 2.0 avec PKCE et consentement, ou clé API Bearer pour les intégrations gérées
 
 Tools disponibles :
 
@@ -62,14 +62,29 @@ Tools disponibles :
 3. check_availability(restaurantId, partySize, slotStart, slotEnd, timezone?)
    → Vérifie les créneaux disponibles pour un restaurant. Sans fuseau, celui du restaurant est utilisé.
 
-4. create_reservation(restaurantId, partySize, startsAt, endsAt, timezone?, customerName, customerPhone, idempotencyKey, consents)
+4. create_quote(restaurantId, partySize, slotStart, slotEnd, timezone?)
+   → Vérifie un créneau sans bloquer la capacité.
+
+5. create_hold(restaurantId, partySize, slotStart, slotEnd, timezone?)
+   → Bloque temporairement un créneau et retourne un holdToken à utiliser avant expiration.
+
+6. create_reservation(restaurantId, partySize, startsAt, endsAt, timezone?, customerName, customerPhone, idempotencyKey, consents, holdToken?)
    → Crée une réservation. Le consentement de l'utilisateur est obligatoire.
    → Le téléphone doit être au format E.164 (+33...).
 
-5. cancel_reservation(reservationId, reason?)
+7. join_waiting_list(restaurantId, partySize, slotStart, slotEnd, customerFirstName, customerPhone)
+   → Rejoint la liste d'attente si le restaurant l'a activée.
+
+8. cancel_waiting_list(restaurantId, entryId, actionToken)
+   → Quitte la liste d'attente avec le jeton reçu à l'inscription.
+
+9. modify_reservation(reservationId, customerPhone?, partySize?, startsAt?, endsAt?, customerName?)
+   → Modifie une réservation après contrôle de la disponibilité.
+
+10. cancel_reservation(reservationId, customerPhone?, reason?)
    → Annule une réservation existante.
 
-6. get_reservation_status(reservationId)
+11. get_reservation_status(reservationId, customerPhone?)
    → Récupère le statut d'une réservation.
 
 ### Option 3 : Page web directe

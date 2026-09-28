@@ -20,6 +20,16 @@
 - Deploy scripts fail-fast if a critical `.env` is missing (API, dashboard, connect).
 - `packages/database/.env` is the only intentional duplicate: Prisma CLI does not follow symlinks and does not read `.env.local` from the root.
 
+## MCP et OAuth
+
+- `OAUTH_ISSUER_URL` est une URL validée au démarrage. En son absence, `API_URL` sert d'issuer ;
+  les métadonnées OAuth ne retombent plus sur localhost en production.
+- `MCP_ALLOWED_ORIGINS` est une liste facultative d'origines navigateur supplémentaires, séparées
+  par des virgules et validées au démarrage. Les origines MCP connues sont déjà autorisées sur
+  `/mcp`, y compris pour le preflight CORS. `CORS_ORIGINS` continue de protéger les autres routes.
+- Les échecs d'authentification MCP sont limités à 30 par minute et par IP ; un token valide est
+  ensuite soumis au budget partagé de 60 requêtes par minute et par client.
+
 ## Files
 
 | File                         | Role                                                              |

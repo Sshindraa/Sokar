@@ -34,7 +34,11 @@ export const SearchRestaurantsInputSchema = z.object({
   timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
   maxResults: z.number().int().min(1).max(20).default(5),
-  cursor: z.string().optional(),
+  cursor: z
+    .string()
+    .max(100)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
 });
 export type SearchRestaurantsInput = z.infer<typeof SearchRestaurantsInputSchema>;
 
@@ -55,6 +59,10 @@ export const CheckAvailabilityInputSchema = z.object({
   timezone: McpTimezoneSchema.optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema>;
+
+// A quote leaves capacity free; a hold temporarily reserves it.
+export const CreateQuoteInputSchema = CheckAvailabilityInputSchema;
+export const CreateHoldInputSchema = CheckAvailabilityInputSchema;
 
 // ─── create_reservation ──────────────────────────────────────────
 
@@ -86,13 +94,60 @@ export type CreateReservationInput = z.infer<typeof CreateReservationInputSchema
 
 export const CancelReservationInputSchema = z.object({
   reservationId: z.string().uuid(),
+  customerPhone: z
+    .string()
+    .regex(/^\+[1-9]\d{9,14}$/)
+    .optional(),
   reason: z.string().max(500).optional(),
 });
 export type CancelReservationInput = z.infer<typeof CancelReservationInputSchema>;
+
+export const ModifyReservationInputSchema = z
+  .object({
+    reservationId: z.string().uuid(),
+    customerPhone: z
+      .string()
+      .regex(/^\+[1-9]\d{9,14}$/)
+      .optional(),
+    partySize: z.number().int().min(1).max(50).optional(),
+    startsAt: McpDateTimeSchema.optional(),
+    endsAt: McpDateTimeSchema.optional(),
+    timezone: McpTimezoneSchema.optional(),
+    customerName: z.string().min(1).max(100).optional(),
+  })
+  .refine((value) => Boolean(value.partySize || value.startsAt || value.customerName), {
+    message: 'At least one field to modify is required',
+  })
+  .refine((value) => Boolean(value.startsAt) === Boolean(value.endsAt), {
+    message: 'startsAt and endsAt must be provided together',
+  });
+export type ModifyReservationInput = z.infer<typeof ModifyReservationInputSchema>;
 
 // ─── get_reservation_status (interne) ────────────────────────────
 
 export const GetReservationStatusInputSchema = z.object({
   reservationId: z.string().uuid(),
+  customerPhone: z
+    .string()
+    .regex(/^\+[1-9]\d{9,14}$/)
+    .optional(),
 });
 export type GetReservationStatusInput = z.infer<typeof GetReservationStatusInputSchema>;
+
+export const JoinWaitingListInputSchema = z.object({
+  restaurantId: z.string().uuid(),
+  partySize: z.number().int().min(1).max(50),
+  slotStart: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
+  customerFirstName: z.string().min(1).max(100),
+  customerLastName: z.string().max(100).optional(),
+  customerPhone: z.string().regex(/^\+[1-9]\d{9,14}$/),
+  customerEmail: z.string().email().optional(),
+});
+
+export const CancelWaitingListInputSchema = z.object({
+  restaurantId: z.string().uuid(),
+  entryId: z.string().uuid(),
+  actionToken: z.string().min(20).max(100),
+});
