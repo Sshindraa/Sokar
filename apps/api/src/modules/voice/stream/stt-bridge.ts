@@ -1606,6 +1606,21 @@ export function deepgramStallFinalizeMs(env: NodeJS.ProcessEnv = process.env): n
   return Number.isFinite(parsed) && parsed >= 300 && parsed <= 10_000 ? parsed : 1_200;
 }
 
+/** Au plus ce nombre de mots, une partielle est une réponse courte (« 4 », « oui », « demain »). */
+export const DEEPGRAM_SHORT_PARTIAL_MAX_WORDS = 2;
+
+/**
+ * Délai de partielle figée pour une réponse courte. Appel c5d6b07d : « 4 » attendait
+ * 2,7 s avant la fin de tour, dont 1,2 s de partielle figée. Une fin trop tôt reste
+ * rattrapable : le tour structuré renvoie turnComplete=false et recolle le fragment.
+ * Par défaut égal au délai normal (désactivé).
+ */
+export function deepgramShortStallFinalizeMs(env: NodeJS.ProcessEnv = process.env): number {
+  const fallback = deepgramStallFinalizeMs(env);
+  const parsed = Number(env.VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS ?? fallback);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= fallback ? parsed : fallback;
+}
+
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -1646,7 +1661,9 @@ function clearDeepgramStallTimer(session: CallSession): void {
  */
 function armDeepgramStallTimer(session: CallSession): void {
   clearDeepgramStallTimer(session);
-  const stallMs = deepgramStallFinalizeMs();
+  const words = session.sttDeepgramPartials?.lastWordCount ?? 0;
+  const short = words > 0 && words <= DEEPGRAM_SHORT_PARTIAL_MAX_WORDS;
+  const stallMs = short ? deepgramShortStallFinalizeMs() : deepgramStallFinalizeMs();
   const timer = setTimeout(() => {
     deepgramStallTimers.delete(session);
     const ws = session.sttWs;
@@ -1662,7 +1679,12 @@ function armDeepgramStallTimer(session: CallSession): void {
     session.sttDeepgramFinalizeRequested = true;
     deepgramFinalizeReasons.set(session, 'stalled');
     logger.info(
-      { callId: session.callControlId, stallMs, partialCount: session.sttDeepgramPartials?.count },
+      {
+        callId: session.callControlId,
+        stallMs,
+        short,
+        partialCount: session.sttDeepgramPartials?.count,
+      },
       '[stt] Deepgram partial stalled, Finalize sent',
     );
     session.sttAdapter.finalize(ws);

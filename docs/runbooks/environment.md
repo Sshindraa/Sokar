@@ -202,6 +202,10 @@ VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
 VOICE_STRUCTURED_SPECULATION_MS="250"
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
+# Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
+# appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
+# structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
+VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
