@@ -208,6 +208,22 @@ VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
 ```
 
+Relance quand l'appelant n'est pas entendu (appel c5d6b07d du 28 septembre : « euh…
+trois » rendu vide par Deepgram, 12 s de silence, raccroché). L'agent repose sa
+dernière question : « Pardon, je n'ai pas bien entendu. … » quand Deepgram signale
+une parole sans aucun mot reconnu, ou « Vous êtes toujours là ? … » après un
+silence. Deux relances au plus par appel, jamais pendant une clôture, et seulement
+si la dernière réplique de l'agent était une question. Les petits nombres (« deux »
+à « dix ») sont aussi envoyés en tête des mots-clés Deepgram quand les mots-clés
+sont activés pour le restaurant.
+
+```dotenv
+# Restaurants où la relance est active (liste d'identifiants séparés par des virgules).
+VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS=""
+# Silence après une question de l'agent avant « Vous êtes toujours là ? » (3000–20000).
+VOICE_NO_INPUT_TIMEOUT_MS="7000"
+```
+
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
 fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
 refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx

@@ -11,6 +11,22 @@ export interface DeepgramKeytermSources {
   menuTerms?: readonly string[];
 }
 
+/**
+ * Tailles de groupe dites seules au téléphone : « trois » isolé revenait vide de
+ * Deepgram (appel c5d6b07d). « un » est exclu, trop fréquent comme article.
+ */
+export const DEEPGRAM_PARTY_SIZE_KEYTERMS = [
+  'deux',
+  'trois',
+  'quatre',
+  'cinq',
+  'six',
+  'sept',
+  'huit',
+  'neuf',
+  'dix',
+] as const;
+
 function estimatedTokenCount(value: string): number {
   const wordCount = value.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0;
   return Math.max(wordCount, Math.ceil(value.length / 3));
@@ -57,4 +73,26 @@ export function buildDeepgramKeyterms(
   }
 
   return keyterms;
+}
+
+/**
+ * Mots-clés d'un appel : les tailles de groupe d'abord (budget réservé), puis
+ * les termes propres au restaurant dans le budget restant.
+ */
+export function buildDeepgramCallKeyterms(
+  sources: DeepgramKeytermSources,
+  tokenBudget = DEEPGRAM_KEYTERM_TOKEN_BUDGET,
+): string[] {
+  const partyTokens = DEEPGRAM_PARTY_SIZE_KEYTERMS.reduce(
+    (total, term) => total + estimatedTokenCount(term),
+    0,
+  );
+  if (partyTokens > tokenBudget) return buildDeepgramKeyterms(sources, tokenBudget);
+  const business = buildDeepgramKeyterms(sources, tokenBudget - partyTokens).filter(
+    (term) =>
+      !(DEEPGRAM_PARTY_SIZE_KEYTERMS as readonly string[]).includes(
+        term.toLocaleLowerCase('fr-FR'),
+      ),
+  );
+  return [...DEEPGRAM_PARTY_SIZE_KEYTERMS, ...business].slice(0, DEEPGRAM_KEYTERM_MAX_TERMS);
 }

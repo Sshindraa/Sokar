@@ -10,7 +10,7 @@ import {
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
 } from './stream/feature-flags';
-import { buildDeepgramKeyterms } from './stream/stt-deepgram-keyterms';
+import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
@@ -234,7 +234,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         const deepgramKeyterms =
           isVoiceFeatureEnabledForRestaurant('deepgramStt', ctx.id) &&
           isVoiceDeepgramKeytermsEnabled(ctx.id)
-            ? buildDeepgramKeyterms({
+            ? buildDeepgramCallKeyterms({
                 restaurantName: ctx.name,
                 address: ctx.formattedAddress,
                 city: ctx.city,

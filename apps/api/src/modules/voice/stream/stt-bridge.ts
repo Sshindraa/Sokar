@@ -41,6 +41,7 @@ import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 import { voiceConfig } from '../../../env';
 import { filterAssistantEcho, hasBargeInWordThreshold } from './assistant-echo';
+import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -1682,6 +1683,7 @@ export function handleNormalizedSttMessage(
       return;
     case 'partial':
       if (event.transcript.trim()) {
+        cancelNoInputRecovery(session);
         session.sttConsecutiveFailures = 0;
         const partialAt = Date.now();
         session.sttLastNonEmptyPartialAt = partialAt;
@@ -1750,6 +1752,12 @@ export function handleNormalizedSttMessage(
         });
         session.sttConsecutiveFailures = 0;
       }
+      if (event.transcript.trim()) cancelNoInputRecovery(session);
+      else if (event.speechFinal && !parts.length && session.sttAdapter?.id === 'deepgram') {
+        // Parole détectée mais aucun mot reconnu (« euh… trois » rendu vide) :
+        // sans relance, l'appelant attend une réponse qui ne vient jamais.
+        scheduleUnheardRecovery(session, CallSessionManager.getInstance());
+      }
       if (session.sttAdapter?.id === 'deepgram') {
         session.sttDeepgramPendingInterim = false;
         logDeepgramEvent(session, 'final_segment', {
@@ -1807,6 +1815,7 @@ export function handleNormalizedSttMessage(
       }
       return;
     case 'speech_started':
+      cancelNoInputRecovery(session);
       session.sttLastSpeechStartedAt =
         event.speechStartOffsetMs !== undefined &&
         session.sttConnectionAudioStartedAt !== undefined &&
