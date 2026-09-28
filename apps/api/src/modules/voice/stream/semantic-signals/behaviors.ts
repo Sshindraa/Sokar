@@ -88,11 +88,14 @@ const BEHAVIOR_SOURCES = [
   },
   {
     id: 'needs_clarification',
+    // Jeu figé du 28/09 : rappel au seuil 0,8 de 30 % → 70 %, sans faux positif
+    // (l'ancienne question abstraite laissait les hésitations entre 0,4 et 0,76).
     instructions:
-      'Est-il impossible de savoir ce que veut le client à partir de son dernier message ?',
+      "Après le MESSAGE À ÉVALUER, l'agent doit-il faire préciser avant de pouvoir noter une réponse ?",
     present:
-      'Sa réponse ne permet pas de choisir entre les options proposées (par exemple « oui » à « A ou B ? »), ou elle est hésitante, inaudible ou contradictoire',
-    absent: "On sait ce qu'il veut",
+      'Oui : le client hésite, donne plusieurs possibilités sans choisir (« le 14 ou le 15 », « sept ou huit »), dit « je sais pas », « faut voir », « à confirmer », répond « oui » à une question « A ou B ? », ou son message est coupé ou incompréhensible',
+    absent:
+      "Non : le client donne une réponse que l'agent peut noter telle quelle, ou pose une autre question claire",
   },
 ] as const satisfies readonly BehaviorSource[];
 
@@ -138,7 +141,7 @@ export const CHOICE_OPTIONS = Object.fromEntries(
   CHOICE_SOURCES.map((choice) => [choice.id, Object.keys(choice.criteria)]),
 ) as unknown as Record<ChoiceId, readonly string[]>;
 
-export const BEHAVIOR_SET_VERSION = '2026-09-28.3-jev';
+export const BEHAVIOR_SET_VERSION = '2026-09-28.4-jev';
 
 export type Behavior = (typeof BEHAVIORS)[number];
 export type BehaviorId = Behavior['id'];
