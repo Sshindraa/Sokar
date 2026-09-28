@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BEHAVIORS } from './behaviors';
 import type { BehaviorId } from './behaviors';
-import type { EvalExample } from './eval-request';
+import { formatDecisionState, type EvalExample } from './eval-request';
 
 export type JudgeLabel = boolean | 'not_observable';
 export type JudgeLabels = Record<BehaviorId, JudgeLabel>;
@@ -115,9 +115,8 @@ export async function judgeAnnotation(
             { role: 'system', content: buildJudgeSystemPrompt() },
             {
               role: 'user',
-              content: example.input
-                .map(({ role, content }) => `${role === 'user' ? 'Client' : 'Agent'} : ${content}`)
-                .join('\n'),
+              // Même cadrage que Jev, sans la réponse de l'agent (le juge ne la voit pas).
+              content: formatDecisionState(example.input),
             },
           ],
           response_format: {

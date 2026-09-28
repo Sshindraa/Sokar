@@ -1,6 +1,7 @@
 import type { CallSession, PendingInteractionKind } from '../types';
 import { redactPii } from '../pii-redact';
 import { BEHAVIORS, CHOICE_QUESTIONS } from './behaviors';
+import { formatDecisionState } from './eval-request';
 import type { DecisionRequest, SpanMessage, SpanRequest } from './types';
 
 interface BuildInput {
@@ -108,12 +109,7 @@ export function buildDecisionState(
   );
   return {
     model: input.model,
-    state: [
-      ...turns.input.map(
-        (message) => `${message.role === 'user' ? 'Client' : 'Agent'} : ${message.content}`,
-      ),
-      `Agent (réponse évaluée) : ${turns.reply}`,
-    ].join('\n'),
+    state: formatDecisionState(turns.input, turns.reply),
     questions: {
       ...Object.fromEntries(
         BEHAVIORS.map(({ id, instructions, present, absent }) => [
