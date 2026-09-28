@@ -701,6 +701,7 @@ export async function runStructuredTurn(
         historyBefore.filter((message) => message.role === 'assistant').at(-1)?.content ?? null,
       activeInteraction: 'none',
       turnId,
+      agentInterpretation: final.interpretation,
     });
     recordVoiceTurnEventIfCurrent(session, turnId, 'llm_completed', {
       mode: 'structured',
