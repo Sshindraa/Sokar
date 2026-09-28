@@ -337,6 +337,8 @@ modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-28.3-jev`.
 `openrouter`). Le JSONL doit déjà être anonymisé ; les rapports agrégés vont dans
 `apps/api/scratch/semantic-signals-eval/` (ignoré par git).
 
+Jeu de référence figé : `apps/api/scripts/fixtures/semantic-eval/synthetic-v1.jsonl` (144 cas synthétiques, actions sensibles comprises). À passer à `semantic:eval` après chaque changement de définitions ; construction et limites dans `scripts/ops/semantic-dataset/README.md`.
+
 Annotation : `pnpm --filter api semantic:annotation-export [--days 14] [--limit 400]
 [--no-prioritize]`, à lancer sur le VPS de production. Le script lit
 `voice_debug_turns` (appels de test des restaurants de
