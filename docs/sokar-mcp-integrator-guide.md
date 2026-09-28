@@ -439,17 +439,50 @@ Réponse:
 }
 ```
 
+### join_waiting_list
+
+Rejoint la liste d'attente quand le créneau est complet et que le restaurateur
+l'a activée (`capacitySpecials.waitingListEnabled`). Sur un créneau encore
+disponible, l'outil renvoie `SLOT_AVAILABLE` et invite à réserver directement.
+
+Arguments:
+
+```json
+{
+  "restaurantId": "550e8400-e29b-41d4-a716-446655440000",
+  "partySize": 4,
+  "slotStart": "2026-09-10T20:00:00+02:00",
+  "slotEnd": "2026-09-10T22:00:00+02:00",
+  "customerFirstName": "Alice",
+  "customerPhone": "+33612345678"
+}
+```
+
+Réponse: `{ "entryId": "…", "position": 2, "actionToken": "…" }`. L'`actionToken`
+est nécessaire pour retirer l'entrée, conservez-le jusqu'à la réponse du client.
+
+### cancel_waiting_list
+
+Retire une entrée de liste d'attente avec `entryId` et l'`actionToken` renvoyé à
+l'inscription. Le code de retrait est `INVALID_STATE` si la table a déjà été
+proposée entre-temps.
+
 ## Rate limit et sécurité
 
-Chaque outil est rate-limité par client MCP. Les réponses sont filtrées avant
-sortie:
+Chaque outil est rate-limité par client MCP, et `POST /mcp` applique en plus un
+budget global de 60 requêtes par minute et par client, vérifié avant tout
+traitement (HTTP 429 avec `Retry-After`). Les identifiants invalides répétés
+depuis une même IP sont limités avant le calcul de hash du secret. Les réponses
+sont filtrées avant sortie:
 
 - secrets et tokens remplacés par `[REDACTED]`
 - emails inline remplacés par `[REDACTED_EMAIL]`
 - téléphones inline remplacés par `[REDACTED_PHONE]`
 - longues chaînes hexadécimales remplacées par `[REDACTED_HEX]`
 
-Les appels sont audités via le core agentic.
+Les mutations sont auditées via le core agentic. Les outils de lecture
+(`search_restaurants`, `check_availability`) ne sont pas écrits dans le journal
+d'audit, ils sont comptés dans les métriques.
 
 ## Test local E2E
 
