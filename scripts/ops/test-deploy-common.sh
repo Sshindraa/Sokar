@@ -70,8 +70,26 @@ test "$(cat "$TMP_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js"
 test "$(cat "$TMP_ROOT/apps/connect/.next/standalone/apps/connect/server.js")" = 'newer-connect'
 test "$(cat "$NEXT_PREVIOUS_DIR_DASHBOARD/standalone/apps/dashboard/server.js")" = 'new-dashboard'
 test "$(cat "$NEXT_PREVIOUS_DIR_CONNECT/standalone/apps/connect/server.js")" = 'new-connect'
+# Le dossier servi par l'ancien processus PM2 doit rester à son chemin d'origine
+# tant que le redémarrage + health checks n'ont pas eu lieu (incident 2026-09-27).
+test "$NEXT_PREVIOUS_DIR_DASHBOARD" = "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard"
+test -f "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard/standalone/apps/dashboard/server.js"
+test -f "$TMP_ROOT/apps/connect/.next-deploy-fixture-connect/standalone/apps/connect/server.js"
 restore_activated_next_builds
+test -L "$TMP_ROOT/apps/dashboard/.next"
+test "$(readlink "$TMP_ROOT/apps/dashboard/.next")" = '.next-deploy-fixture-dashboard'
 test "$(cat "$TMP_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js")" = 'new-dashboard'
 test "$(cat "$TMP_ROOT/apps/connect/.next/standalone/apps/connect/server.js")" = 'new-connect'
+
+# Après bascule + health checks, le nettoyage supprime l'ancienne release
+# mais jamais la cible active.
+activate_next_builds
+cleanup_previous_next_builds
+test ! -e "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard"
+test ! -e "$TMP_ROOT/apps/connect/.next-deploy-fixture-connect"
+test "$(cat "$TMP_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js")" = 'newer-dashboard'
+NEXT_PREVIOUS_DIR_DASHBOARD="$TMP_ROOT/apps/dashboard/.next-deploy-fixture2-dashboard"
+cleanup_previous_next_builds
+test -d "$TMP_ROOT/apps/dashboard/.next-deploy-fixture2-dashboard"
 
 echo 'deploy-common release activation/rollback: OK'

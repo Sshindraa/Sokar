@@ -280,6 +280,20 @@ cleanup_next_build_dirs() {
     restore_next_build_configs
 }
 
+# Remplace atomiquement le symlink `<app_dir>/.next` par `<target>` (rename(2)
+# via `mv -T` sur le VPS Linux ; repli `ln -sfn` pour les fixtures macOS).
+swap_next_symlink() {
+    local app_dir="$1" target="$2"
+    local tmp_link="$app_dir/.next-swap-$$"
+    rm -f "$tmp_link"
+    ln -s "$target" "$tmp_link" || return 1
+    if mv -Tf "$tmp_link" "$app_dir/.next" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$tmp_link"
+    ln -sfn "$target" "$app_dir/.next"
+}
+
 # Expose les dossiers `.next-deploy-*` via un symlink `.next` uniquement après
 # compilation et validation. Le serveur standalone conserve ainsi le distDir
 # sérialisé par Next.js tout en permettant un changement atomique de cible.
@@ -311,33 +325,36 @@ activate_next_builds() {
         fi
 
         app_dir="$SOKAR_ROOT/apps/$app"
-        rm -rf "$previous_dir"
         if [ -L "$active_dir" ]; then
             active_target="$(readlink "$active_dir")"
             case "$active_target" in
-                .next-deploy-*)
-                    rm "$active_dir"
-                    if ! mv "$app_dir/$active_target" "$previous_dir"; then
-                        ln -s "$active_target" "$active_dir"
-                        restore_activated_next_builds
-                        return 1
-                    fi
-                    ;;
+                .next-deploy-*) ;;
                 *)
                     log_error "Symlink .next inattendu pour $app : $active_target"
                     restore_activated_next_builds
                     return 1
                     ;;
             esac
+            # Le processus PM2 en cours a résolu son distDir au démarrage
+            # (NEXT_DIST_DIR=.next-deploy-...) : ce dossier doit rester intact,
+            # à son chemin d'origine, jusqu'au redémarrage sur la nouvelle release
+            # et à la réussite des health checks (incident 2026-09-27, CSS en 400).
+            # On ne fait donc que basculer le symlink, de façon atomique.
+            previous_dir="$app_dir/$active_target"
+            if ! swap_next_symlink "$app_dir" "$dist_dir"; then
+                restore_activated_next_builds
+                return 1
+            fi
         else
+            # Ancien format (.next réel, sans symlink) : déplacement nécessaire.
+            rm -rf "$previous_dir"
             mv "$active_dir" "$previous_dir"
-        fi
-
-        if ! ln -s "$dist_dir" "$active_dir"; then
-            rm -f "$active_dir"
-            mv "$previous_dir" "$active_dir" 2>/dev/null || true
-            restore_activated_next_builds
-            return 1
+            if ! ln -s "$dist_dir" "$active_dir"; then
+                rm -f "$active_dir"
+                mv "$previous_dir" "$active_dir" 2>/dev/null || true
+                restore_activated_next_builds
+                return 1
+            fi
         fi
 
         if [ "$app" = dashboard ]; then
@@ -360,7 +377,7 @@ activate_next_builds() {
 }
 
 restore_activated_next_builds() {
-    local app previous_dir active_dir
+    local app previous_dir active_dir app_dir
     for app in dashboard connect; do
         if [ "$app" = dashboard ]; then
             previous_dir="${NEXT_PREVIOUS_DIR_DASHBOARD:-}"
@@ -368,11 +385,19 @@ restore_activated_next_builds() {
             previous_dir="${NEXT_PREVIOUS_DIR_CONNECT:-}"
         fi
         [ -n "$previous_dir" ] || continue
-        active_dir="$SOKAR_ROOT/apps/$app/.next"
-        if [ -e "$previous_dir" ]; then
-            rm -rf "$active_dir"
-            mv "$previous_dir" "$active_dir"
-        fi
+        app_dir="$SOKAR_ROOT/apps/$app"
+        active_dir="$app_dir/.next"
+        [ -e "$previous_dir" ] || continue
+        case "${previous_dir##*/}" in
+            .next-deploy-*)
+                # Release précédente restée en place : on repointe le symlink.
+                swap_next_symlink "$app_dir" "${previous_dir##*/}"
+                ;;
+            *)
+                rm -rf "$active_dir"
+                mv "$previous_dir" "$active_dir"
+                ;;
+        esac
     done
     NEXT_PREVIOUS_DIR_DASHBOARD=""
     NEXT_PREVIOUS_DIR_CONNECT=""
@@ -381,9 +406,24 @@ restore_activated_next_builds() {
     NEXT_BUILDS_ACTIVATED=false
 }
 
+# À appeler uniquement après restart PM2 + health checks OK : supprime la
+# release Next précédente. Ne supprime jamais la cible actuelle de `.next`.
 cleanup_previous_next_builds() {
-    [ -n "${NEXT_PREVIOUS_DIR_DASHBOARD:-}" ] && rm -rf "$NEXT_PREVIOUS_DIR_DASHBOARD"
-    [ -n "${NEXT_PREVIOUS_DIR_CONNECT:-}" ] && rm -rf "$NEXT_PREVIOUS_DIR_CONNECT"
+    local app previous_dir active_target
+    for app in dashboard connect; do
+        if [ "$app" = dashboard ]; then
+            previous_dir="${NEXT_PREVIOUS_DIR_DASHBOARD:-}"
+        else
+            previous_dir="${NEXT_PREVIOUS_DIR_CONNECT:-}"
+        fi
+        [ -n "$previous_dir" ] || continue
+        active_target="$(readlink "$SOKAR_ROOT/apps/$app/.next" 2>/dev/null || true)"
+        if [ -n "$active_target" ] && [ "${previous_dir##*/}" = "$active_target" ]; then
+            log_warn " $app : $previous_dir est la release active, conservée."
+            continue
+        fi
+        rm -rf "$previous_dir"
+    done
     NEXT_PREVIOUS_DIR_DASHBOARD=""
     NEXT_PREVIOUS_DIR_CONNECT=""
 }
@@ -883,6 +923,21 @@ health_checks() {
           log_warn " Aucun chunk JS/CSS trouvé dans le HTML du dashboard (build cassé ?)"
         fi
 
+        # /pricing doit être servi avec sa feuille de style (incident 2026-09-27 :
+        # HTML 200 mais /_next/static/css/*.css en 400 → page sans CSS).
+        local PRICING_CSS_STATUS PRICING_CSS
+        PRICING_CSS_STATUS="FAIL"
+        PRICING_CSS=$(curl -s -H "Host: sokar.tech" http://127.0.0.1/pricing 2>/dev/null \
+          | grep -oE '/_next/static/css/[^"]+\.css' \
+          | head -1 || true)
+        if [ -n "$PRICING_CSS" ]; then
+          PRICING_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Host: sokar.tech" "http://127.0.0.1${PRICING_CSS}" 2>/dev/null || echo "FAIL")
+          log info "   /pricing CSS ${PRICING_CSS} → $PRICING_CSS_STATUS"
+        else
+          log_warn " Aucune feuille CSS trouvée dans le HTML de /pricing"
+        fi
+
         local FREE_AFTER
         FREE_AFTER=$(free -m | awk '/^Mem:/ {print $4}')
         log info "   Memory free: ${FREE_AFTER}MB"
@@ -898,11 +953,13 @@ health_checks() {
             && [ "$WIDGET_IFRAME_STATUS" = "OK" ] \
             && [ "$GIFT_CARD_WIDGET_STATUS" = "200" ] \
             && [ "$SUBDOMAIN_STATUS" = "200" ] \
-            && [ "$DASH_CSS_STATUS" = "200" ]; then
+            && [ "$DASH_CSS_STATUS" = "200" ] \
+            && [ "$PRICING_CSS_STATUS" = "200" ]; then
             DEPLOY_HEALTH_OK=true
-        elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then
+        elif [ "$DASH_STATUS" = "200" ] \
+            && { [ "$DASH_CSS_STATUS" != "200" ] || [ "$PRICING_CSS_STATUS" != "200" ]; }; then
             log info ""
-            log_error "Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques 404."
+            log_error "Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques en échec (dashboard=$DASH_CSS_STATUS, /pricing CSS=$PRICING_CSS_STATUS)."
             log info "   Cause probable : scripts/copy-static.sh non exécuté ou .next/static manquant."
             log info "   Fix manuel : cd /opt/sokar/apps/dashboard && bash scripts/copy-static.sh && pm2 restart sokar-dashboard"
             notify "🔴 Sokar production deploy REGRESSED (static assets 404, branch ${BRANCH})"

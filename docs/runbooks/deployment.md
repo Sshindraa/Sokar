@@ -26,6 +26,16 @@ migrations et la validation Nginx. En cas d'échec avant la bascule, la release
 actuelle continue de servir les visiteurs ; après la bascule, les health checks
 peuvent restaurer automatiquement le snapshot précédent.
 
+La bascule ne fait que repointer atomiquement le symlink `.next` : l'ancien
+dossier `.next-deploy-*` reste à son chemin d'origine, car le processus PM2 en
+cours a résolu son `NEXT_DIST_DIR` au démarrage. Il n'est supprimé
+(`cleanup_previous_next_builds`) qu'après le redémarrage PM2 et des health
+checks verts ; `cleanup_previous_next_builds` refuse de supprimer la cible
+active. En prod, les health checks vérifient aussi que `/pricing` et sa
+première feuille `/_next/static/css/*.css` répondent 200, sinon
+`recover_services` repointe `.next` vers la release précédente
+(incident du 2026-09-27 : CSS en 400 pendant ~1 min).
+
 Le redémarrage PM2 final est limité aux applications réellement reconstruites.
 Un déploiement qui ne touche qu'au Dashboard ou à Connect ne redémarre pas
 l'API.
@@ -47,6 +57,8 @@ l'API.
 - CI/CD: `.github/workflows/deploy-prod.yml` triggered on `Deploy Staging` workflow success (branch `main`).
 - GitHub secrets: `PROD_SSH_KEY`, `PROD_HOST`, `PROD_USER` (or reuse `STAGING_*` if same VPS).
 - Script on VPS: `scripts/deploy.sh --env prod --confirm-production`.
+- Redundant runs are skipped (`workflow_run` only): the job exits 0 when the triggering staging run's `head_sha` is no longer the tip of `main` (a newer run will deploy it), or when `releases/.latest-hash` already equals the target SHA. `workflow_dispatch` always deploys. Runs are serialized by the `deploy-prod` concurrency group (`cancel-in-progress: false`).
+- The production smoke-test job also fetches `https://sokar.tech/pricing` and requires its CSS asset to return 200.
 - From Mac:
   ```zsh
   # Production (automatique via CI après staging green)
