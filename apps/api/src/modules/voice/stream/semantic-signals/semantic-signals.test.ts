@@ -358,9 +358,9 @@ describe('span builder', () => {
       historyTurns: 1,
     });
     const lines = built.state.split('\n');
-    expect(lines.at(-1)).toBe('Agent (réponse évaluée) : Merci <CUSTOMER_NAME>.');
-    expect(lines.at(-2)).toBe('Client : Vers 20 heures pour <CUSTOMER_NAME>.');
-    expect(lines.at(-3)).toBe('Agent : Quelle heure souhaitez-vous ?');
+    expect(lines.at(-1)).toBe("RÉPONSE DE L'AGENT (à ne pas évaluer) : Merci <CUSTOMER_NAME>.");
+    expect(lines.at(-2)).toBe('MESSAGE DU CLIENT À ÉVALUER : Vers 20 heures pour <CUSTOMER_NAME>.');
+    expect(lines.at(-3)).toBe("DERNIÈRE QUESTION DE L'AGENT : Quelle heure souhaitez-vous ?");
     expect(built.state).not.toContain('Alice Martin');
     expect(built.model).toBe('respan/span-01');
     for (const behavior of BEHAVIORS) {

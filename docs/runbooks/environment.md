@@ -309,7 +309,7 @@ vaut `https://api.respan.ai/api/v1` par défaut ; l'appel direct cible `/scores`
 `span-01-pro` consomme des crédits Respan : sans crédit, l'API répond HTTP 402
 (statut `payment_required`). `span-01-free` applique un quota quotidien remis à zéro à 00:00 UTC.
 `VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS` vaut 2000 (200–10000) et
-`VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS` vaut 6 (1–30). Aucun résultat Span-01
+`VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS` vaut 3 (1–30). L'état envoyé à Jev isole le message du client à évaluer, précédé de la dernière question de l'agent ; les échanges plus anciens sont marqués « à ne pas évaluer » (appel c5d6b07d : 14/23 → 21/23). Aucun résultat Span-01
 ne modifie la policy, l'état, les outils ou la réponse. Le 403 d'accès anticipé
 est mesuré `forbidden`.
 
@@ -329,7 +329,7 @@ pertinentes — `human_fallback_choice` sous `humanFallback` et
 le client direct ne reçoit pas ces deux questions. La probabilité maximale de
 chaque `choice` alimente l'histogramme
 `sokar_voice_semantic_choice_confidence`, qui surveille la surconfiance du
-modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-27.2-jev`.
+modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-28.3-jev`.
 
 Évaluation hors ligne : `pnpm --filter api semantic:eval [fichier.jsonl]
 [--provider openrouter|respan]` avec la clé du fournisseur dans l'environnement

@@ -16,44 +16,50 @@ interface BehaviorSource {
 const BEHAVIOR_SOURCES = [
   {
     id: 'answers_active_question',
-    instructions: "Le client répond-il vraiment à la question que l'agent vient de poser ?",
-    present: "Sa réponse apporte l'information demandée",
+    instructions: "Le MESSAGE À ÉVALUER répond-il à la DERNIÈRE QUESTION DE L'AGENT ?",
+    present: "Il apporte l'information demandée",
     absent:
-      'Il répond à côté, change de sujet, ou répond « oui »/« non » à une question qui demandait de choisir',
+      'Il répond à côté, pose une autre question, ou répond « oui »/« non » à une question qui demandait de choisir',
   },
   {
     id: 'corrects_existing_fact',
     instructions:
-      "Le client corrige-t-il ou remplace-t-il une information qu'il avait donnée plus tôt (date, heure, nombre de personnes, nom…) ?",
-    present: 'Il annonce une valeur différente de celle déjà notée',
-    absent: 'Il répète la même information ou ne corrige rien',
+      "Dans le MESSAGE À ÉVALUER lui-même, le client corrige-t-il une information qu'il avait donnée plus tôt (date, heure, nombre de personnes, nom) ?",
+    present:
+      'Ce message remplace une valeur déjà donnée (« non, plutôt samedi », « finalement on sera quatre »)',
+    absent:
+      'Ce message ne corrige rien : une correction faite dans un échange précédent ne compte pas',
   },
   {
     id: 'changes_topic',
-    instructions: 'Le client abandonne-t-il le sujet en cours pour une autre demande ou question ?',
-    present: 'Sa demande porte sur autre chose que le sujet en cours',
-    absent: 'Il reste sur le sujet en cours',
+    instructions:
+      "Le MESSAGE À ÉVALUER quitte-t-il le sujet de la DERNIÈRE QUESTION DE L'AGENT pour une autre demande ou question ?",
+    present: 'Il pose une autre question ou fait une autre demande (horaires, terrasse, menu…)',
+    absent: 'Il reste sur la question posée',
   },
   {
     id: 'fact_is_tentative',
     instructions:
-      'Le client présente-t-il une information comme incertaine ou approximative (« peut-être », « vers », « je crois ») ?',
-    present: "Il marque lui-même le doute ou l'approximation",
-    absent: "Il donne l'information comme certaine et précise",
+      'Dans le MESSAGE À ÉVALUER, le client présente-t-il une information comme incertaine (« peut-être », « je ne sais pas encore », « à confirmer ») ?',
+    present: "Il exprime un doute sur l'information qu'il donne",
+    absent: "Il donne l'information fermement, même avec « vers 19 h » ou « plutôt »",
   },
   {
     id: 'explicitly_confirms_proposal',
     instructions:
-      "Le client accepte-t-il la proposition que l'agent vient de récapituler, même de façon familière (« ouais », « vas-y », « c'est bon ») ?",
-    present: 'Il accepte sans réserve',
-    absent: "Il hésite, refuse, pose une condition ou dit « oui mais… » suivi d'autre chose",
+      "La DERNIÈRE QUESTION DE L'AGENT contenait-elle une proposition précise que le MESSAGE À ÉVALUER accepte, même familièrement (« ouais », « vas-y », « c'est bon ») ?",
+    present: "L'agent proposait quelque chose de précis et le client l'accepte sans réserve",
+    absent:
+      "L'agent posait une question ouverte, ou le client hésite, refuse ou pose une condition",
   },
   {
     id: 'rejects_proposal',
     instructions:
-      'Le client refuse-t-il la proposition ou veut-il autre chose, y compris sous la forme « oui mais en fait… », « plutôt… », « finalement… » ?',
-    present: 'Il refuse ou demande un changement',
-    absent: 'Il accepte ou hésite seulement',
+      "La DERNIÈRE QUESTION DE L'AGENT contenait-elle une proposition précise (récapitulatif, créneau, confirmation) que le MESSAGE À ÉVALUER refuse ou conteste ?",
+    present:
+      "L'agent proposait quelque chose de précis et le client le refuse ou demande autre chose",
+    absent:
+      "L'agent posait une question ouverte (jour, heure, nombre…), ou le client accepte ou hésite seulement",
   },
   {
     id: 'explicitly_requests_transfer',
@@ -132,7 +138,7 @@ export const CHOICE_OPTIONS = Object.fromEntries(
   CHOICE_SOURCES.map((choice) => [choice.id, Object.keys(choice.criteria)]),
 ) as unknown as Record<ChoiceId, readonly string[]>;
 
-export const BEHAVIOR_SET_VERSION = '2026-09-27.2-jev';
+export const BEHAVIOR_SET_VERSION = '2026-09-28.3-jev';
 
 export type Behavior = (typeof BEHAVIORS)[number];
 export type BehaviorId = Behavior['id'];

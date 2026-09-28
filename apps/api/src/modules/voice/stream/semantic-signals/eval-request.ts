@@ -7,14 +7,38 @@ export interface EvalExample {
   output: SpanMessage;
 }
 
-/** Même format que `buildDecisionState` en production : ordre et rôles du span. */
-export function buildEvalState(example: EvalExample): string {
+/**
+ * État envoyé à Jev, en production comme hors ligne. Le dernier message du
+ * client est isolé et nommé, précédé de la dernière question de l'agent ; les
+ * échanges plus anciens sont marqués « à ne pas évaluer ». Sans ce cadrage,
+ * Jev reportait une correction d'un tour précédent sur les tours suivants
+ * (appel c5d6b07d : 14/23 bonnes réponses, 21/23 avec ce format).
+ */
+export function formatDecisionState(messages: SpanMessage[], reply?: string): string {
+  const lastUser = messages.map((message) => message.role).lastIndexOf('user');
+  const message = lastUser >= 0 ? messages[lastUser].content : '';
+  const questionIndex =
+    lastUser > 0 && messages[lastUser - 1].role === 'assistant' ? lastUser - 1 : -1;
+  const question = questionIndex >= 0 ? messages[questionIndex].content : null;
+  const context = messages.slice(0, questionIndex >= 0 ? questionIndex : Math.max(lastUser, 0));
+  const speaker = (role: SpanMessage['role']) => (role === 'user' ? 'Client' : 'Agent');
   return [
-    ...example.input.map(
-      (message) => `${message.role === 'user' ? 'Client' : 'Agent'} : ${message.content}`,
-    ),
-    `Agent (réponse évaluée) : ${example.output.content}`,
-  ].join('\n');
+    context.length
+      ? `CONTEXTE ANTÉRIEUR (à ne pas évaluer) :\n${context
+          .map((entry) => `${speaker(entry.role)} : ${entry.content}`)
+          .join('\n')}`
+      : null,
+    question ? `DERNIÈRE QUESTION DE L'AGENT : ${question}` : null,
+    `MESSAGE DU CLIENT À ÉVALUER : ${message}`,
+    reply === undefined ? null : `RÉPONSE DE L'AGENT (à ne pas évaluer) : ${reply}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Même format que `buildDecisionState` en production. */
+export function buildEvalState(example: EvalExample): string {
+  return formatDecisionState(example.input, example.output.content);
 }
 
 /**

@@ -134,7 +134,7 @@ export const VoiceConfigSchema = z
     VOICE_SEMANTIC_SIGNALS_PROVIDER: z.enum(['openrouter', 'respan']).default('openrouter'),
     VOICE_SEMANTIC_SIGNALS_MODEL: z.string().optional(),
     VOICE_SEMANTIC_SIGNALS_TIMEOUT_MS: z.coerce.number().int().min(200).max(10_000).default(2_000),
-    VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS: z.coerce.number().int().min(1).max(30).default(6),
+    VOICE_SEMANTIC_SIGNALS_HISTORY_TURNS: z.coerce.number().int().min(1).max(30).default(3),
     VOICE_SEMANTIC_AUTO_EVAL_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_AUTO_EVAL_MAX_TURNS: z.coerce.number().int().min(1).max(5_000).default(300),
     VOICE_SEMANTIC_JUDGE_MODEL: z.string().default('xiaomi/mimo-v2.6-pro'),

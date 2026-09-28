@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BEHAVIORS } from './behaviors';
-import {
-  computeEvalReport,
-  runSemanticAutoEval,
-  type LabeledEvalExample,
-} from './auto-eval';
+import { computeEvalReport, runSemanticAutoEval, type LabeledEvalExample } from './auto-eval';
 import type { SemanticScoreResult } from './types';
 
 const behavior = BEHAVIORS[0].id;

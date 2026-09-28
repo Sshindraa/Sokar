@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAnnotationItems } from './annotation';
 import { renderAnnotationPage } from './annotation-page';
-import { buildEvalDecisionRequest, buildEvalState } from './eval-request';
+import { buildEvalDecisionRequest, buildEvalState, formatDecisionState } from './eval-request';
 import { BEHAVIORS, CHOICE_QUESTIONS } from './behaviors';
 
 const turn = (sequence: number, callerText: string | null, agentText: string | null) => ({
@@ -80,7 +80,7 @@ describe('buildEvalDecisionRequest', () => {
     const request = buildEvalDecisionRequest(example, 'typesafe/jev-1.13-20260917');
     expect(request.state).toBe(buildEvalState(example));
     expect(request.state).toBe(
-      'Agent : Je confirme ?\nClient : Oui.\nAgent (réponse évaluée) : C’est noté.',
+      "DERNIÈRE QUESTION DE L'AGENT : Je confirme ?\nMESSAGE DU CLIENT À ÉVALUER : Oui.\nRÉPONSE DE L'AGENT (à ne pas évaluer) : C’est noté.",
     );
     expect(Object.keys(request.questions).sort()).toEqual(
       [...BEHAVIORS.map((b) => b.id), ...CHOICE_QUESTIONS.map((c) => c.id)].sort(),
@@ -107,5 +107,33 @@ describe('renderAnnotationPage', () => {
     expect(scriptBody).toContain('\\u003c/script\\u003e');
     expect(html.match(/<\/script>/g)).toHaveLength(1);
     expect(html).toContain('<html lang="fr">');
+  });
+});
+
+describe('formatDecisionState', () => {
+  it('isole le dernier message du client et marque les échanges antérieurs comme contexte', () => {
+    const state = formatDecisionState(
+      [
+        { role: 'user', content: 'demain non après-demain plutôt' },
+        { role: 'assistant', content: 'Vers quelle heure ?' },
+        { role: 'user', content: 'vous êtes ouvert à quelle heure' },
+      ],
+      'On ouvre à midi.',
+    );
+    expect(state).toBe(
+      [
+        'CONTEXTE ANTÉRIEUR (à ne pas évaluer) :',
+        'Client : demain non après-demain plutôt',
+        "DERNIÈRE QUESTION DE L'AGENT : Vers quelle heure ?",
+        'MESSAGE DU CLIENT À ÉVALUER : vous êtes ouvert à quelle heure',
+        "RÉPONSE DE L'AGENT (à ne pas évaluer) : On ouvre à midi.",
+      ].join('\n'),
+    );
+  });
+
+  it("n'invente pas de question quand le client parle en premier", () => {
+    expect(formatDecisionState([{ role: 'user', content: 'Bonjour' }], 'Bonjour !')).toBe(
+      "MESSAGE DU CLIENT À ÉVALUER : Bonjour\nRÉPONSE DE L'AGENT (à ne pas évaluer) : Bonjour !",
+    );
   });
 });
