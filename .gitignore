@@ -3,6 +3,11 @@ dist
 coverage
 *.tsbuildinfo
 .next
+# Releases Next préparées par scripts/deploy.sh : `git clean -fd` ne doit
+# jamais toucher au build servi (incident 2026-09-28).
+.next-deploy-*
+.next-previous-*
+.next-swap-*
 .turbo
 *.local
 .env.local
