@@ -49,6 +49,8 @@ jobs:
           STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL: ${{ vars.STRIPE_PRODUCTION_MULTI_SITE_ADDON_ANNUAL }}
           SOKAR_OPERATOR_USER_IDS: ${{ vars.SOKAR_OPERATOR_USER_IDS }}
           MARKETING_FEATURES_ENABLED: ${{ vars.MARKETING_FEATURES_ENABLED }}
+          DEPLOY_EVENT: ${{ github.event_name }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
           # Prod et staging sont sur le même VPS → on réutilise STAGING_*.
           # Si un jour prod a son propre VPS, créer PROD_HOST/PROD_SSH_KEY/PROD_USER.
@@ -56,7 +58,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,HEALTHCHECKS_PING_URL,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,GRAFANA_ADMIN_PASSWORD,RESERVATION_SERVICE_TOKEN,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,SOKAR_OPERATOR_USER_IDS,MARKETING_FEATURES_ENABLED
+          envs: ALERT_WEBHOOK,HEALTHCHECKS_PING_URL,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,GRAFANA_ADMIN_PASSWORD,RESERVATION_SERVICE_TOKEN,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,SOKAR_OPERATOR_USER_IDS,MARKETING_FEATURES_ENABLED,DEPLOY_EVENT,TRIGGER_SHA
           script: |
             set -euo pipefail
             cd /opt/sokar
@@ -64,6 +66,22 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
+            # Évite les déploiements redondants (incident 2026-09-27 : deux runs
+            # staging rapprochés → deux déploiements prod du même commit, et une
+            # seconde fenêtre d'indisponibilité des assets). Un run manuel
+            # (workflow_dispatch) n'est jamais sauté.
+            TARGET_SHA="$(git rev-parse HEAD)"
+            ACTIVE_SHA="$(cat releases/.latest-hash 2>/dev/null || true)"
+            if [ "${DEPLOY_EVENT:-}" = "workflow_run" ]; then
+              if [ -n "${TRIGGER_SHA:-}" ] && [ "$TRIGGER_SHA" != "$TARGET_SHA" ]; then
+                echo "Skip : le run staging déclencheur ($TRIGGER_SHA) n'est plus la tête de main ($TARGET_SHA) ; le run suivant déploiera."
+                exit 0
+              fi
+              if [ "$ACTIVE_SHA" = "$TARGET_SHA" ]; then
+                echo "Skip : $TARGET_SHA est déjà la release active en production."
+                exit 0
+              fi
+            fi
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
@@ -169,6 +187,19 @@ jobs:
             echo "Subdomain content: WRONG (expected restaurant page, got landing page)"
             exit 1
           fi
+
+          # /pricing doit être servi avec sa CSS (incident 2026-09-27 : CSS en 400).
+          PRICING_HTML=$(curl -s --max-time 10 "$PROD_URL/pricing" || echo "")
+          PRICING_CSS=$(printf '%s' "$PRICING_HTML" \
+            | grep -oE '/_next/static/css/[^"]+\.css' | head -1 || true)
+          if [ -z "$PRICING_CSS" ]; then
+            echo "sokar.tech/pricing → aucune feuille CSS dans le HTML"
+            exit 1
+          fi
+          PRICING_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$PROD_URL$PRICING_CSS" || echo "FAIL")
+          echo "sokar.tech$PRICING_CSS → $PRICING_CSS_STATUS"
+          [ "$PRICING_CSS_STATUS" = "200" ] || exit 1
 
           echo ""
           echo "✅ All production smoke tests passed"
