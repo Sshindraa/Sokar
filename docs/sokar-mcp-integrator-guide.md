@@ -66,9 +66,17 @@ La clé est vérifiée via la table `AgentClient`:
 - `lastUsedAt`: mis à jour à chaque appel réussi
 
 Les tokens OAuth publics couvrent les restaurants qui ont activé MCP. L'intégration peut
-demander `restaurant_id` à `/oauth/authorize` pour limiter le token à un seul restaurant.
-Pour lire ou annuler une réservation avec un token public, indiquez le numéro E.164
-utilisé lors de sa création. La réservation doit aussi provenir du même client MCP.
+demander `restaurant_id` à `/oauth/authorize` pour limiter le token à un seul restaurant,
+mais ce paramètre ne donne aucun accès staff : pour lire, modifier ou annuler une
+réservation avec un token OAuth, indiquez le numéro E.164 utilisé lors de sa création.
+La réservation doit aussi provenir du même client MCP. Seules les clés API liées à un
+restaurant peuvent agir sur toutes les réservations de ce restaurant sans cette preuve.
+Quand `scope` est absent, OAuth accorde uniquement `mcp:read`.
+
+L'enregistrement dynamique accepte les redirect URIs HTTPS, ainsi que les callbacks
+HTTP sur `localhost`, `127.0.0.1` ou `[::1]` avec un port. Les clients peuvent utiliser
+`client_secret_basic`, `client_secret_post` ou `none`; les clients `none` reposent sur
+PKCE S256 et ne reçoivent pas de secret.
 
 Le fallback `AGENT_DEV_KEY` n'est accepté que lorsque `ENABLE_DEV_AUTH=true` et que la clé respecte
 les contraintes de format et de longueur. Il doit rester désactivé sur les environnements partagés.
@@ -131,9 +139,9 @@ Réponse:
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "protocolVersion": "2025-06-18",
+    "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "0.1.0" }
+    "serverInfo": { "name": "sokar-mcp", "version": "2.0.0" }
   }
 }
 ```
@@ -151,7 +159,8 @@ Requête:
 }
 ```
 
-Réponse: `result.tools` contient les outils publics:
+Réponse: `result.tools` contient les outils publics. Chaque outil expose son
+`inputSchema`, son `outputSchema` et ses annotations:
 
 - `search_restaurants`
 - `get_restaurant_details`
@@ -335,7 +344,8 @@ du même jour compatibles avec l'exposition du restaurant.
 
 Ces outils prennent les mêmes arguments que `check_availability`. `create_quote`
 ne bloque pas la capacité. `create_hold` renvoie `holdToken` et `expiresAt` ;
-transmettez le token à `create_reservation` avant expiration.
+transmettez le token à `create_reservation` avant expiration. Le hold est lié au
+restaurant, à la taille du groupe et aux deux bornes exactes du créneau.
 
 ### create_reservation
 
@@ -454,12 +464,21 @@ Arguments:
   "slotStart": "2026-09-10T20:00:00+02:00",
   "slotEnd": "2026-09-10T22:00:00+02:00",
   "customerFirstName": "Alice",
-  "customerPhone": "+33612345678"
+  "customerPhone": "+33612345678",
+  "consents": {
+    "waitingListProcessing": true,
+    "reservationProcessing": true,
+    "transactionalSms": true,
+    "transactionalEmail": false,
+    "marketingOptIn": false
+  }
 }
 ```
 
 Réponse: `{ "entryId": "…", "position": 2, "actionToken": "…" }`. L'`actionToken`
 est nécessaire pour retirer l'entrée, conservez-le jusqu'à la réponse du client.
+`waitingListProcessing` et `reservationProcessing` sont obligatoires car une promotion
+peut créer automatiquement la réservation.
 
 ### cancel_waiting_list
 

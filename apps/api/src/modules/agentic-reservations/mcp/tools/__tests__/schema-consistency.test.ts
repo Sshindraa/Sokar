@@ -51,6 +51,13 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     }
   });
 
+  it('every tool exposes an object output schema', () => {
+    for (const tool of TOOL_LIST) {
+      expect(tool.outputSchema, `${tool.name} missing outputSchema`).toBeDefined();
+      expect((tool.outputSchema as { type?: string }).type).toBe('object');
+    }
+  });
+
   it('every tool declares readOnly or destructive behavior', () => {
     for (const tool of TOOL_LIST) {
       const ann = tool.annotations || {};
@@ -96,5 +103,17 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
       | Record<string, unknown>
       | undefined;
     expect(props?.cursor).toBeDefined();
+  });
+
+  it('join_waiting_list requires explicit processing consent', () => {
+    const result = JoinWaitingListInputSchema.safeParse({
+      restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+      partySize: 2,
+      slotStart: '2026-12-01T19:00:00Z',
+      slotEnd: '2026-12-01T21:00:00Z',
+      customerFirstName: 'Alice',
+      customerPhone: '+33612345678',
+    });
+    expect(result.success).toBe(false);
   });
 });

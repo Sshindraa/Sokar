@@ -168,7 +168,7 @@ describe('MCP server', () => {
           params: { protocolVersion: '1999-01-01' },
         },
       });
-      expect(res.json().result.protocolVersion).toBe('2025-06-18');
+      expect(res.json().result.protocolVersion).toBe('2025-11-25');
     });
   });
 
@@ -203,6 +203,22 @@ describe('MCP server', () => {
       });
       expect(res.statusCode).toBe(200);
     });
+
+    it('refuse un MCP-Protocol-Version non supporté', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-protocol-version': '1999-01-01',
+          ...AUTH,
+        },
+        payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toContain('MCP-Protocol-Version');
+    });
   });
 
   describe('tools/list', () => {
@@ -223,6 +239,9 @@ describe('MCP server', () => {
       expect(names).toContain('create_reservation');
       expect(names).toContain('cancel_reservation');
       expect(names).toContain('get_reservation_status');
+      for (const tool of body.result.tools) {
+        expect(tool.outputSchema?.type).toBe('object');
+      }
     });
   });
 

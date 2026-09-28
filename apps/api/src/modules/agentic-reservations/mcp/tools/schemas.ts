@@ -144,10 +144,122 @@ export const JoinWaitingListInputSchema = z.object({
   customerLastName: z.string().max(100).optional(),
   customerPhone: z.string().regex(/^\+[1-9]\d{9,14}$/),
   customerEmail: z.string().email().optional(),
+  consents: z
+    .object({
+      waitingListProcessing: z.literal(true),
+      reservationProcessing: z.literal(true),
+      transactionalSms: z.boolean().default(false),
+      transactionalEmail: z.boolean().default(false),
+      marketingOptIn: z.boolean().default(false),
+    })
+    .refine(
+      (value) => value.waitingListProcessing === true && value.reservationProcessing === true,
+      {
+        message: 'waitingListProcessing and reservationProcessing consents are mandatory',
+      },
+    ),
 });
 
 export const CancelWaitingListInputSchema = z.object({
   restaurantId: z.string().uuid(),
   entryId: z.string().uuid(),
   actionToken: z.string().min(20).max(100),
+});
+
+// ─── output schemas MCP ────────────────────────────────────────
+
+const OutputUuidSchema = z.string().uuid();
+const OutputDateTimeSchema = z.string();
+const NullableOutputStringSchema = z.string().nullable();
+
+const RestaurantSummaryOutputSchema = z.object({
+  id: OutputUuidSchema,
+  name: z.string(),
+  slug: NullableOutputStringSchema,
+  maxOnlinePartySize: z.number().int(),
+});
+
+export const SearchRestaurantsOutputSchema = z.object({
+  restaurants: z.array(RestaurantSummaryOutputSchema),
+  capacityLimits: z.array(RestaurantSummaryOutputSchema),
+  nextCursor: z.string().optional(),
+});
+
+export const GetRestaurantDetailsOutputSchema = z.object({
+  id: OutputUuidSchema,
+  name: z.string(),
+  slug: NullableOutputStringSchema,
+  formattedAddress: NullableOutputStringSchema,
+  websiteUrl: NullableOutputStringSchema,
+  cuisineType: z.array(z.string()),
+  priceRange: z.number().int().nullable(),
+  ambiance: z.array(z.string()),
+  noiseLevel: z.string().nullable(),
+  dietary: z.array(z.string()),
+  openingHours: z.unknown(),
+  maxOnlinePartySize: z.number().int(),
+});
+
+export const CheckAvailabilityOutputSchema = z.object({
+  available: z.boolean(),
+  alternativeSlots: z
+    .array(
+      z.object({
+        startsAt: OutputDateTimeSchema,
+        endsAt: OutputDateTimeSchema,
+      }),
+    )
+    .optional(),
+  conflictingHoldId: OutputUuidSchema.optional(),
+  conflictingReservationId: OutputUuidSchema.optional(),
+  reason: z
+    .enum(['hold_active', 'reservation_confirmed', 'party_size_exceeds_capacity', 'unknown'])
+    .optional(),
+  maxOnlinePartySize: z.number().int().optional(),
+});
+
+export const CreateQuoteOutputSchema = z.object({
+  quoteId: OutputUuidSchema,
+  expiresAt: OutputDateTimeSchema,
+});
+
+export const CreateHoldOutputSchema = z.object({
+  holdToken: z.string(),
+  expiresAt: OutputDateTimeSchema,
+});
+
+export const CreateReservationOutputSchema = z.object({
+  reservationId: OutputUuidSchema,
+  state: z.string(),
+  reused: z.boolean(),
+});
+
+export const JoinWaitingListOutputSchema = z.object({
+  entryId: OutputUuidSchema,
+  position: z.number().int(),
+  actionToken: z.string(),
+});
+
+export const CancelWaitingListOutputSchema = z.object({
+  entryId: OutputUuidSchema,
+  status: z.string(),
+});
+
+export const ModifyReservationOutputSchema = z.object({
+  reservationId: OutputUuidSchema,
+  state: z.string(),
+  changed: z.boolean(),
+});
+
+export const CancelReservationOutputSchema = z.object({
+  cancelled: z.literal(true),
+});
+
+export const GetReservationStatusOutputSchema = z.object({
+  id: OutputUuidSchema,
+  state: z.string(),
+  partySize: z.number().int(),
+  startsAt: OutputDateTimeSchema,
+  endsAt: OutputDateTimeSchema.nullable(),
+  createdAt: OutputDateTimeSchema,
 });

@@ -54,6 +54,13 @@ export class WaitingListService {
     customerLastName?: string | null;
     customerPhone: string;
     customerEmail?: string | null;
+    consents?: {
+      waitingListProcessing: boolean;
+      reservationProcessing: boolean;
+      transactionalSms: boolean;
+      transactionalEmail: boolean;
+      marketingOptIn: boolean;
+    };
     slotStart: Date;
     preferredSectionId?: string | null;
     source: string;
@@ -109,6 +116,7 @@ export class WaitingListService {
             customerPhone: args.customerPhone,
             customerPhoneNormalized,
             customerEmail: args.customerEmail ?? null,
+            consents: args.consents ?? {},
             source: args.source,
             slotStart: args.slotStart,
             slotEnd,
@@ -270,7 +278,8 @@ export class WaitingListService {
           channel: 'WEB' as ReservationChannel,
           source: 'waiting_list',
           privacyPolicyVersion: '2026-06-20',
-          consents: {},
+          consents:
+            entry.consents === null ? Prisma.JsonNull : (entry.consents as Prisma.InputJsonValue),
         },
       });
 
