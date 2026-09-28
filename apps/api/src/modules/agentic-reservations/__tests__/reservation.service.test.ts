@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { AuditLogService } from '../core/audit-log.service.js';
-import { HoldService } from '../core/hold.service.js';
+import { HoldNotFoundError, HoldService } from '../core/hold.service.js';
 import {
   IdempotencyService,
   type IdempotencyStore,
@@ -450,6 +450,55 @@ describe('reservation.service', () => {
     expect(fakes.holds.get('expired-hold')?.status).toBe('EXPIRED');
     expect(fakes.audits.map((audit) => audit.event)).toContain('hold_expired');
     expect([...fakes.holds.values()].filter((hold) => hold.status === 'CONSUMED')).toHaveLength(1);
+  });
+
+  it('rejects a hold whose end time differs from the reservation', async () => {
+    const fakes = makeFakes();
+    const startsAt = new Date(Date.now() + 3_600_000);
+    const heldEndsAt = new Date(startsAt.getTime() + 60 * 60_000);
+    const durationHoldToken = ['duration', 'token'].join('-');
+    fakes.holds.set('duration-hold', {
+      id: 'duration-hold',
+      restaurantId: 'r-1',
+      type: 'HOLD',
+      partySize: 4,
+      slotStart: startsAt,
+      slotEnd: heldEndsAt,
+      channel: 'MCP',
+      holdToken: durationHoldToken,
+      quoteToken: null,
+      expiresAt: new Date(Date.now() + 300_000),
+      consumedAt: null,
+      status: 'ACTIVE',
+      policyVersion: policy.policyVersion,
+      reservationId: null,
+      tableId: null,
+      createdAt: new Date(),
+    });
+
+    await expect(
+      fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 4,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+          customerName: 'Jean Test',
+          customerPhone: '+33600000000',
+          channel: 'MCP',
+          policy,
+          actor: 'agent:test',
+          holdToken: durationHoldToken,
+        },
+        {
+          scope: 'scope-hold-duration',
+          key: 'key-hold-duration',
+          payloadHash: hashPayload({ holdDuration: true }),
+          ttlSeconds: 300,
+        },
+      ),
+    ).rejects.toThrow(HoldNotFoundError);
+    expect(fakes.holds.get('duration-hold')?.status).toBe('ACTIVE');
   });
 
   it('caractérise la dualité : validation manuelle = state PENDING mais status CONFIRMED', async () => {

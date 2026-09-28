@@ -39,7 +39,8 @@ export { TOOL_LIST };
  * un outil ou un champ, correctif pour un changement interne. Les clients MCP
  * lisent `serverInfo.version` pour leur télémétrie.
  */
-export const MCP_SERVER_VERSION = '1.0.0';
+export const MCP_SERVER_VERSION = '2.0.0';
+const SUPPORTED_MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
 
 /**
  * Un client StreamableHTTP doit accepter `application/json` : notre transport
@@ -123,6 +124,24 @@ export class McpServer {
           });
         }
 
+        const protocolVersionHeader = req.headers['mcp-protocol-version'];
+        const hasSupportedProtocolVersion =
+          typeof protocolVersionHeader === 'string' &&
+          SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(
+            protocolVersionHeader as (typeof SUPPORTED_MCP_PROTOCOL_VERSIONS)[number],
+          );
+        if (protocolVersionHeader !== undefined && !hasSupportedProtocolVersion) {
+          return reply
+            .status(400)
+            .send(
+              jsonRpcError(
+                null,
+                -32000,
+                `Bad Request: unsupported MCP-Protocol-Version ${String(protocolVersionHeader)}`,
+              ),
+            );
+        }
+
         let authCtx: ToolContext;
         try {
           const auth = await authenticateMcpRequest(req, this.prisma);
@@ -132,6 +151,8 @@ export class McpServer {
             restaurantId: auth.restaurantId,
             scopes: auth.scopes,
             actor: `agent:${auth.clientId}`,
+            trustedRestaurantAccess:
+              auth.credentialType === 'api_key' && auth.restaurantId !== null,
           };
         } catch (err) {
           if (err instanceof McpAuthError) {
@@ -198,12 +219,10 @@ export class McpServer {
         case 'initialize': {
           const requestedVersion =
             typeof msg.params?.protocolVersion === 'string' ? msg.params.protocolVersion : null;
-          // On supporte les versions StreamableHTTP / HTTP+SSE les plus courantes.
-          const supportedVersions = ['2025-06-18', '2025-03-26'] as const;
           const protocolVersion =
-            requestedVersion && supportedVersions.includes(requestedVersion as never)
+            requestedVersion && SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(requestedVersion as never)
               ? requestedVersion
-              : supportedVersions[0];
+              : SUPPORTED_MCP_PROTOCOL_VERSIONS[0];
           return jsonRpcResult(id, {
             protocolVersion,
             capabilities: { tools: {} },

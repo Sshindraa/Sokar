@@ -151,6 +151,7 @@ function makeFakes() {
           customerPhone: data.customerPhone as string,
           customerPhoneNormalized,
           customerEmail: (data.customerEmail as string | null | undefined) ?? null,
+          consents: (data.consents as WaitingListRow['consents'] | undefined) ?? {},
           source: (data.source as string | null | undefined) ?? null,
           slotStart,
           slotEnd: data.slotEnd as Date,
@@ -325,6 +326,23 @@ describe('waiting-list.service', () => {
       });
     });
 
+    it('stores explicit waiting-list and reservation consents', async () => {
+      const consents = {
+        waitingListProcessing: true,
+        reservationProcessing: true,
+        transactionalSms: true,
+        transactionalEmail: false,
+        marketingOptIn: false,
+      } as const;
+      const { entry } = await fakes.service.join({
+        ...baseArgs,
+        consents,
+        slotStart: futureSlot(),
+      });
+
+      expect(entry.consents).toEqual(consents);
+    });
+
     it('refuses when waitingListEnabled is false', async () => {
       await expect(
         fakes.service.join({
@@ -455,8 +473,16 @@ describe('waiting-list.service', () => {
   describe('promoteEntry', () => {
     it('creates a reservation and marks the entry as PROMOTED', async () => {
       const slotStart = futureSlot();
+      const consents = {
+        waitingListProcessing: true,
+        reservationProcessing: true,
+        transactionalSms: false,
+        transactionalEmail: true,
+        marketingOptIn: false,
+      } as const;
       const { entry } = await fakes.service.join({
         ...baseArgs,
+        consents,
         slotStart,
       });
 
@@ -472,6 +498,7 @@ describe('waiting-list.service', () => {
       expect(reservation!.state).toBe('CONFIRMED');
       expect(reservation!.status).toBe('CONFIRMED');
       expect(reservation!.tableId).toBe('table-1');
+      expect(reservation!.consents).toEqual(consents);
 
       const updated = fakes.entries.get(entry.id)!;
       expect(updated.status).toBe('PROMOTED');

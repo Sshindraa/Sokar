@@ -62,6 +62,8 @@ export type ToolContext = {
   scopes: string[];
   actor: string;
   channel?: ReservationChannel;
+  /** Restaurant-scoped API keys act as trusted staff; OAuth tokens do not. */
+  trustedRestaurantAccess?: boolean;
 };
 
 export type ToolResult<T = unknown> =
@@ -113,6 +115,10 @@ function hasScope(ctx: ToolContext, scope: McpScope): boolean {
 
 function assertScope(ctx: ToolContext, scope: McpScope): ToolResult | null {
   return hasScope(ctx, scope) ? null : toolError(`Missing scope: ${scope}`, 'FORBIDDEN');
+}
+
+function requiresPublicReservationProof(ctx: ToolContext): boolean {
+  return !ctx.trustedRestaurantAccess;
 }
 
 function localDayAndMinutes(date: Date, timeZone: string): { day: string; minutes: number } {
@@ -498,6 +504,9 @@ export class McpToolRegistry {
       if (errName === 'InvalidStateTransitionError') return toolError(errMsg, 'INVALID_STATE');
       if (errName === 'PolicyValidationError') return toolError(errMsg, 'POLICY_VIOLATION');
       if (errName === 'IdempotencyConflictError') return toolError(errMsg, 'IDEMPOTENCY_CONFLICT');
+      if (errName === 'HoldNotFoundError')
+        return toolError('Invalid or expired hold', 'INVALID_HOLD');
+      if (errName === 'HoldConflictError') return toolError('Slot unavailable', 'SLOT_UNAVAILABLE');
       return toolError('Internal error', 'INTERNAL');
     }
   }
@@ -613,6 +622,7 @@ export class McpToolRegistry {
         customerLastName: input.customerLastName,
         customerPhone: input.customerPhone,
         customerEmail: input.customerEmail,
+        consents: input.consents,
         slotStart: range.start,
         source: `mcp:${ctx.clientId}`,
         waitingListEnabled: true,
@@ -684,7 +694,7 @@ export class McpToolRegistry {
       if (
         !current ||
         (ctx.restaurantId && ctx.restaurantId !== current.restaurantId) ||
-        (!ctx.restaurantId &&
+        (requiresPublicReservationProof(ctx) &&
           (current.createdByClient !== ctx.actor ||
             !input.customerPhone ||
             current.customerPhone !== input.customerPhone))
@@ -717,7 +727,7 @@ export class McpToolRegistry {
           reservationId: input.reservationId,
           restaurantId: current.restaurantId,
           actor: ctx.actor,
-          publicClient: !ctx.restaurantId,
+          publicClient: requiresPublicReservationProof(ctx),
           customerPhone: input.customerPhone,
           partySize: input.partySize,
           startsAt: range?.ok ? range.start : undefined,
@@ -764,7 +774,7 @@ export class McpToolRegistry {
         return toolError('Reservation not found', 'NOT_FOUND');
       }
       if (
-        !ctx.restaurantId &&
+        requiresPublicReservationProof(ctx) &&
         (reservation.createdByClient !== ctx.actor ||
           !input.customerPhone ||
           reservation.customerPhone !== input.customerPhone)
@@ -825,7 +835,7 @@ export class McpToolRegistry {
         return toolError('Reservation not found', 'NOT_FOUND');
       }
       if (
-        !ctx.restaurantId &&
+        requiresPublicReservationProof(ctx) &&
         (reservation.createdByClient !== ctx.actor ||
           !input.customerPhone ||
           reservation.customerPhone !== input.customerPhone)

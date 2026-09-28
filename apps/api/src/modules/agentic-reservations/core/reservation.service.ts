@@ -185,16 +185,16 @@ export class ReservationService {
     if (input.holdToken) {
       const hold = await this.holds.findActiveByToken(input.holdToken);
       if (!hold) {
-        throw new Error('Invalid or expired hold token');
+        throw new HoldNotFoundError(input.holdToken);
       }
-      if (hold.restaurantId !== input.restaurantId) {
-        throw new Error('Hold does not match restaurant');
-      }
-      if (hold.partySize !== input.partySize) {
-        throw new Error('Hold party size mismatch');
-      }
-      if (hold.type !== 'HOLD') {
-        throw new Error('Provided token is a quote, not a hold');
+      if (
+        hold.restaurantId !== input.restaurantId ||
+        hold.partySize !== input.partySize ||
+        hold.slotStart.getTime() !== input.startsAt.getTime() ||
+        hold.slotEnd.getTime() !== input.endsAt.getTime() ||
+        hold.type !== 'HOLD'
+      ) {
+        throw new HoldNotFoundError(input.holdToken);
       }
       holdId = hold.id;
       tableId = tableId ?? hold.tableId ?? null;
@@ -287,7 +287,8 @@ export class ReservationService {
             hold.expiresAt.getTime() <= now.getTime() ||
             hold.restaurantId !== input.restaurantId ||
             hold.partySize !== input.partySize ||
-            hold.slotStart.getTime() !== input.startsAt.getTime()
+            hold.slotStart.getTime() !== input.startsAt.getTime() ||
+            hold.slotEnd.getTime() !== input.endsAt.getTime()
           ) {
             throw new HoldNotFoundError(input.holdToken ?? holdId);
           }

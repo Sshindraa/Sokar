@@ -33,6 +33,7 @@ describe('mcp auth', () => {
         restaurantId: null,
         scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
         allowedOrigins: [],
+        credentialType: 'api_key',
       });
     });
 
@@ -90,6 +91,7 @@ describe('mcp auth', () => {
         restaurantId: 'rest-1',
         scopes: ['mcp:read'],
         allowedOrigins: ['https://claude.ai'],
+        credentialType: 'api_key',
       });
     });
 

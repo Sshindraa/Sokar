@@ -1,5 +1,5 @@
 /**
- * Auth MCP : authentification par API key (Bearer) + validation Origin.
+ * Auth MCP : OAuth opaque ou API key (Bearer) + validation Origin.
  *
  * - API key : préfixe `sk_sokar_agent_` + secret opaque. En P1, on valide
  *   contre AgentClient.keyHash. En dev uniquement, AGENT_DEV_KEY reste un
@@ -61,6 +61,7 @@ export type AuthContext = {
   restaurantId: string | null;
   scopes: string[];
   allowedOrigins: string[];
+  credentialType: 'api_key' | 'oauth';
 };
 
 // Construction runtime pour contourner le masquage statique de secrets
@@ -122,6 +123,7 @@ export function validateDevApiKey(key: string): AuthContext | null {
       restaurantId: null,
       scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
       allowedOrigins: [],
+      credentialType: 'api_key',
     };
   }
 
@@ -180,6 +182,7 @@ export async function validateApiKey(
       restaurantId: client.restaurantId,
       scopes: client.scopes,
       allowedOrigins: client.allowedOrigins,
+      credentialType: 'api_key',
     };
   }
 

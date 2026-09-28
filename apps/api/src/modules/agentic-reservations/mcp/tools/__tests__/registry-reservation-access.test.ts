@@ -97,3 +97,35 @@ it('returns the one-time hold capability to the caller', async () => {
   const result = await executeTool(registry, 'create_hold', {}, ctx);
   expect(result).toMatchObject({ ok: true, data: { holdToken } });
 });
+
+it('requires public-client proof for an OAuth token scoped to a restaurant', async () => {
+  const registry = makeRegistry('agent:client-b');
+  const scopedCtx: ToolContext = {
+    ...ctx,
+    restaurantId: RESTAURANT_ID,
+    trustedRestaurantAccess: false,
+  };
+  const input = { reservationId: RESERVATION_ID, customerPhone: PHONE };
+
+  expect(await registry.getReservationStatus(input, scopedCtx)).toMatchObject({
+    ok: false,
+    code: 'NOT_FOUND',
+  });
+  expect(await registry.cancelReservation(input, scopedCtx)).toMatchObject({
+    ok: false,
+    code: 'NOT_FOUND',
+  });
+});
+
+it('allows a trusted restaurant API key to read its own restaurant', async () => {
+  const registry = makeRegistry('agent:client-b');
+  const staffCtx: ToolContext = {
+    ...ctx,
+    restaurantId: RESTAURANT_ID,
+    trustedRestaurantAccess: true,
+  };
+
+  expect(
+    await registry.getReservationStatus({ reservationId: RESERVATION_ID }, staffCtx),
+  ).toMatchObject({ ok: true });
+});
