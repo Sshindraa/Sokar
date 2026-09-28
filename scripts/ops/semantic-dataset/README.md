@@ -26,10 +26,28 @@ OPENROUTER_API_KEY=… pnpm --filter api semantic:eval \
   scripts/fixtures/semantic-eval/synthetic-v1.jsonl --provider openrouter
 ```
 
-Référence v1 (définitions `2026-09-28.3-jev`, 28/09/2026), précision / rappel au
-seuil 0,8 : répond à la question 98/87, corrige 100/87, change de sujet 95/88,
-incertain 100/93, confirme 100/85, refuse 94/77, gérant, message, annulation et
-carte cadeau 100/100, besoin de précision 100/**26**.
+Référence (précision / rappel au seuil 0,8) :
+
+| Comportement                              | `2026-09-28.3-jev` | `2026-09-28.4-jev` |
+| ----------------------------------------- | ------------------ | ------------------ |
+| répond à la question                      | 98 / 87            | 98 / 84            |
+| corrige une information                   | 100 / 87           | 100 / 87           |
+| change de sujet                           | 95 / 88            | 95 / 88            |
+| information incertaine                    | 100 / 93           | 100 / 93           |
+| confirme la proposition                   | 100 / 85           | 100 / 85           |
+| refuse la proposition                     | 94 / 77            | 94 / 77            |
+| gérant, message, annulation, carte cadeau | 100 / 100          | 100 / 100          |
+| besoin de précision                       | 100 / 26           | **100 / 64**       |
+
+Les écarts de 2 à 3 points d'un passage à l'autre viennent de Jev lui-même.
+
+Corrections manuelles (champ `manualCorrections`) : `syn-018` (« midi trente midi
+quarante cinq… je sais pas trop encore ») et `syn-044` (« euh un an dix neuf ») :
+`needs_clarification` passé à vrai, le juge les avait marqués faux.
+
+Écarté le 28/09 : une définition de `rejects_proposal` plus large (rappel 90 %)
+comptait comme refus les demandes de gérant ou d'annulation faites pendant une
+proposition, précision 83 % : pour une action sensible, la précision prime.
 
 ## Limites
 

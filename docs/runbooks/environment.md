@@ -329,7 +329,7 @@ pertinentes — `human_fallback_choice` sous `humanFallback` et
 le client direct ne reçoit pas ces deux questions. La probabilité maximale de
 chaque `choice` alimente l'histogramme
 `sokar_voice_semantic_choice_confidence`, qui surveille la surconfiance du
-modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-28.3-jev`.
+modèle. `BEHAVIOR_SET_VERSION` vaut `2026-09-28.4-jev`.
 
 Évaluation hors ligne : `pnpm --filter api semantic:eval [fichier.jsonl]
 [--provider openrouter|respan]` avec la clé du fournisseur dans l'environnement
