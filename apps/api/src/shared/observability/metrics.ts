@@ -522,6 +522,13 @@ export const voiceSemanticWouldClarifyTotal = new Counter({
   labelNames: ['sensitive_action'] as const,
   registers: [getRegistry()],
 });
+/** Phase 2 (avis) : ce que Jev aurait changé, comparé à ce que l'agent a fait. */
+export const voiceSemanticAdvisoryTotal = new Counter({
+  name: 'sokar_voice_semantic_advisory_total',
+  help: 'Advisory comparison between Jev and the agent (jev_only = Jev would have changed the turn)',
+  labelNames: ['behavior', 'outcome', 'behavior_set_version'] as const,
+  registers: [getRegistry()],
+});
 export const voiceSemanticInputTokensTotal = new Counter({
   name: 'sokar_voice_semantic_input_tokens_total',
   help: 'Span-01 input tokens',
@@ -855,6 +862,7 @@ export function __resetMetrics(): void {
   voiceSemanticAgreementTotal.reset();
   voiceSemanticConflictTotal.reset();
   voiceSemanticWouldClarifyTotal.reset();
+  voiceSemanticAdvisoryTotal.reset();
   voiceSemanticInputTokensTotal.reset();
   voiceSemanticChoiceConfidence.reset();
   voiceSemanticAnswerSkippedTotal.reset();

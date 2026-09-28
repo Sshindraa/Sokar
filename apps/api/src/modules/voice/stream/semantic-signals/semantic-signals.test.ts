@@ -11,9 +11,10 @@ import {
   voiceSemanticChoiceConfidence,
   voiceSemanticDurationMs,
   voiceSemanticStatusTotal,
+  voiceSemanticAdvisoryTotal,
 } from '../../../../shared/observability/metrics';
 import { logger } from '../../../../shared/logger/pino';
-import { BEHAVIORS } from './behaviors';
+import { BEHAVIORS, BEHAVIOR_SET_VERSION } from './behaviors';
 import { scoreSpan } from './client';
 import { decisionsUrl, scoreDecisions } from './openrouter-client';
 import { env } from '../../../../env';
@@ -695,6 +696,27 @@ describe('shadow boundary', () => {
     observeSemanticSignalsShadow(session, turn, { config: openrouterConfig, fetcher });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetcher.mock.calls[0][0]).toBe('https://example.test/api/alpha/decisions');
+  });
+
+  it('counts a jev_only advisory when Jev would clarify but the agent moved on', async () => {
+    const advisory = vi.spyOn(voiceSemanticAdvisoryTotal, 'inc');
+    observeSemanticSignalsShadow(
+      session,
+      { ...turn, agentInterpretation: 'answer' },
+      {
+        config: openrouterConfig,
+        fetcher: response(200, {
+          answers: { needs_clarification: { type: 'noul', noul: 0.91 } },
+        }),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(advisory).toHaveBeenCalledWith({
+      behavior: 'needs_clarification',
+      outcome: 'jev_only',
+      behavior_set_version: BEHAVIOR_SET_VERSION,
+    });
+    advisory.mockRestore();
   });
 
   it('labels duration and status metrics with the provider', async () => {

@@ -10,6 +10,7 @@ import {
   voiceSemanticInputTokensTotal,
   voiceSemanticStatusTotal,
   voiceSemanticWouldClarifyTotal,
+  voiceSemanticAdvisoryTotal,
 } from '../../../../shared/observability/metrics';
 import { BEHAVIOR_SET_VERSION, CHOICE_OPTIONS } from './behaviors';
 import { buildDecisionState, buildSemanticSpan } from './span-builder';
@@ -17,6 +18,7 @@ import { scoreSpan } from './client';
 import { scoreDecisions } from './openrouter-client';
 import { validateSemanticSignals } from './validate';
 import { compareSemanticSignals } from './compare';
+import { classifyClarifyAdvisory } from './advisory';
 import type { SemanticProvider, SemanticScoreResult } from './types';
 
 /** Défauts par fournisseur : Respan n'accepte que ses modèles, OpenRouter passe par Jev. */
@@ -70,6 +72,8 @@ export function observeSemanticSignalsShadow(
     activeInteraction: PendingInteractionKind | 'none';
     turnId?: string;
     spanSession?: Pick<CallSession, 'history' | 'conversation' | 'from'>;
+    /** Interprétation du moteur structuré, qui n'a pas de TurnPlan (`unclear` = l'agent fait préciser). */
+    agentInterpretation?: string;
   },
   options: { config?: SemanticShadowConfig; fetcher?: typeof fetch; random?: () => number } = {},
 ): void {
@@ -120,7 +124,12 @@ export function observeSemanticSignalsShadow(
 function recordSemanticResult(
   result: SemanticScoreResult,
   session: CallSession,
-  turn: { plan?: TurnPlan; activeInteraction: PendingInteractionKind | 'none'; turnId?: string },
+  turn: {
+    plan?: TurnPlan;
+    activeInteraction: PendingInteractionKind | 'none';
+    turnId?: string;
+    agentInterpretation?: string;
+  },
   config: Pick<SemanticShadowConfig, 'model' | 'provider'>,
   currentIntent: CallSession['conversation']['intent'],
 ): void {
@@ -157,6 +166,17 @@ function recordSemanticResult(
   if (comparison.wouldClarify) {
     voiceSemanticWouldClarifyTotal.inc({ sensitive_action: comparison.wouldClarify });
   }
+  const advisoryClarify = classifyClarifyAdvisory(
+    result.signals,
+    turn.plan?.interpretation ?? turn.agentInterpretation,
+  );
+  if (advisoryClarify) {
+    voiceSemanticAdvisoryTotal.inc({
+      behavior: 'needs_clarification',
+      outcome: advisoryClarify,
+      behavior_set_version: BEHAVIOR_SET_VERSION,
+    });
+  }
   for (const [id, choice] of Object.entries(result.choices ?? {})) {
     const knownOptions = CHOICE_OPTIONS[id as keyof typeof CHOICE_OPTIONS] ?? [];
     const maxProbability = Math.max(
@@ -188,6 +208,7 @@ function recordSemanticResult(
     disagreeCount: Object.values(comparison.agreements).filter((outcome) => outcome === 'disagree')
       .length,
     wouldClarify: comparison.wouldClarify ?? null,
+    advisoryClarify: advisoryClarify ?? null,
     ...Object.fromEntries(
       Object.entries(result.choices ?? {}).flatMap(([id, choice]) => {
         if (!choice) return [];
