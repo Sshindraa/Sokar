@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDeepgramCallKeyterms,
   buildDeepgramKeyterms,
+  DEEPGRAM_PARTY_SIZE_KEYTERMS,
   DEEPGRAM_KEYTERM_MAX_TERMS,
   DEEPGRAM_KEYTERM_TOKEN_BUDGET,
 } from '../stream/stt-deepgram-keyterms';
@@ -56,5 +58,20 @@ describe('buildDeepgramKeyterms', () => {
   it('respecte un budget nul ou invalide sans générer de termes', () => {
     expect(buildDeepgramKeyterms({ restaurantName: 'Chez Exemple' }, 0)).toEqual([]);
     expect(buildDeepgramKeyterms({ restaurantName: 'Chez Exemple' }, -1)).toEqual([]);
+  });
+
+  it("place les tailles de groupe en tête d'un appel sans évincer les termes du restaurant", () => {
+    const keyterms = buildDeepgramCallKeyterms({
+      restaurantName: 'Chez Exemple',
+      menuTerms: ['Trois', 'Plat du jour'],
+    });
+
+    expect(keyterms.slice(0, DEEPGRAM_PARTY_SIZE_KEYTERMS.length)).toEqual([
+      ...DEEPGRAM_PARTY_SIZE_KEYTERMS,
+    ]);
+    expect(keyterms).toContain('trois');
+    expect(keyterms).not.toContain('Trois');
+    expect(keyterms).toEqual(expect.arrayContaining(['Chez Exemple', 'Plat du jour']));
+    expect(keyterms).not.toContain('un');
   });
 });

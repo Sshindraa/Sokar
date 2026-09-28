@@ -51,6 +51,7 @@ import {
   type VoiceTransferMotive,
   type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+import { armSilenceRecovery, cancelNoInputRecovery } from './no-input-recovery';
 
 function recordVoiceTransfer(
   session: CallSession,
@@ -697,8 +698,13 @@ export class CallSessionManager {
 
     if (!valid[session.state].includes(newState)) return false;
 
+    const previousState = session.state;
     session.state = newState;
     session.lastActivityAt = Date.now();
+    // Fin d'une réplique de l'agent : relance si l'appelant ne dit rien ; tout
+    // autre changement d'état (l'appelant parle, clôture…) annule la relance.
+    if (newState === 'LISTENING' && previousState === 'SPEAKING') armSilenceRecovery(session, this);
+    else if (newState !== 'LISTENING') cancelNoInputRecovery(session);
     if (newState === 'SPEAKING') {
       try {
         session.onAgentSpeaking?.();
