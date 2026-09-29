@@ -1,0 +1,720 @@
+{
+  "version": 1,
+  "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant.",
+  "today": "2026-09-29",
+  "histories": {
+    "opening": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      }
+    ],
+    "toHeure": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      }
+    ],
+    "toName": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      }
+    ],
+    "toRecap": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      }
+    ],
+    "done": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      },
+      {
+        "role": "user",
+        "content": "oui oui"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est réservé. Vous recevrez un SMS de confirmation. Bonne soirée."
+      }
+    ],
+    "done-dernier": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      }
+    ],
+    "toHeure+": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "attend-annonce-intention",
+      "behavior": "attente",
+      "source": "appel b686b241 tour 4 : « je voudrais bien venir » coupé par l'agent",
+      "history": "toHeure",
+      "transcript": "je voudrais bien venir",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "attend-annonce-intention-2",
+      "behavior": "attente",
+      "source": "variante de b686b241 tour 4",
+      "history": "toHeure",
+      "transcript": "j'aimerais bien",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "attend-correction-annoncee",
+      "behavior": "attente",
+      "source": "appel 8ae1e63e tour 9 : « demain à 14 heures non » coupé",
+      "history": "toHeure",
+      "transcript": "demain à 14 heures non",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "samples": 30,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.6
+        }
+      ]
+    },
+    {
+      "id": "attend-correction-explicite",
+      "behavior": "attente",
+      "source": "variante de 8ae1e63e tour 9",
+      "history": "toHeure",
+      "transcript": "vers 20 heures enfin non",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "repond-reponse-complete",
+      "behavior": "attente (témoin)",
+      "source": "témoin : ne pas attendre une réponse complète",
+      "history": "toHeure",
+      "transcript": "à 14 heures s'il vous plaît",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        },
+        {
+          "kind": "draft",
+          "field": "time",
+          "equals": "14:00",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "repond-refus-avec-valeur",
+      "behavior": "attente (témoin)",
+      "source": "témoin : un refus suivi de sa valeur est complet",
+      "history": "toHeure",
+      "transcript": "non je préfère plutôt le soir vers 20 heures",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        },
+        {
+          "kind": "draft",
+          "field": "time",
+          "equals": "20:00",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "extrait-correction-heure",
+      "behavior": "extraction",
+      "source": "appel 8ae1e63e tour 10 : « plutôt à 16 heures 30 » remplace 14 h",
+      "history": [
+        {
+          "role": "user",
+          "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "vous êtes ouvert demain"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+        },
+        {
+          "role": "user",
+          "content": "oui demain"
+        },
+        {
+          "role": "assistant",
+          "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "demain à 14 heures non"
+        },
+        {
+          "role": "assistant",
+          "content": "Bien, 14 heures demain. Vous serez combien ?"
+        }
+      ],
+      "transcript": "plutôt à 16 heures 30",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:00"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "time",
+          "equals": "16:30",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "extrait-taille-groupe",
+      "behavior": "extraction",
+      "source": "appel 8ae1e63e tour 11",
+      "history": "toHeure+",
+      "transcript": "6 s'il vous plaît",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "partySize",
+          "equals": 6,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "extrait-nom-epele",
+      "behavior": "extraction",
+      "source": "appel 8ae1e63e tour 13 : épellation lettre par lettre",
+      "history": "toName",
+      "transcript": "h o u e t",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "extrait-nom-epele-double-k",
+      "behavior": "extraction",
+      "source": "appel b686b241 : « a 2 k i f » = deux K",
+      "history": "toName",
+      "transcript": "au nom de a 2 k i f",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "AKKIF",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "conge-salut",
+      "behavior": "prise de congé",
+      "source": "appel 8ae1e63e tour 16 : « salut » après « Bonne soirée »",
+      "history": "done",
+      "transcript": "salut",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "end_call",
+          "minRate": 0.85
+        },
+        {
+          "kind": "say",
+          "pattern": "puis-je|bonjour|comment",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "conge-merci",
+      "behavior": "prise de congé",
+      "source": "témoin : un remerciement termine l'appel",
+      "history": "done",
+      "transcript": "merci beaucoup",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "end_call",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "nouvelle-demande-apres-resa",
+      "behavior": "prise de congé (témoin)",
+      "source": "témoin : une nouvelle demande ne termine pas l'appel",
+      "history": "done",
+      "transcript": "ah attendez j'ai une autre réservation à faire",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "notEquals": "end_call",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "date-dans-question",
+      "behavior": "redemande à vide",
+      "source": "appel b686b241/8ae1e63e tour 2 : « vous êtes ouvert demain » avant toute date",
+      "history": "opening",
+      "transcript": "vous êtes ouvert demain",
+      "awaiting": "date",
+      "samples": 30,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "quel jour|pour quand|quelle date",
+          "expect": false,
+          "minRate": 0.4
+        }
+      ]
+    },
+    {
+      "id": "recap-court",
+      "behavior": "récapitulatif",
+      "source": "appel 8ae1e63e tour 14 : récapitulatif de 10 s puis 5 s",
+      "history": "toRecap",
+      "transcript": "c'est ça",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "sayWords",
+          "maxMean": 22
+        },
+        {
+          "kind": "say",
+          "pattern": "\\b[A-Z],\\s*[A-Z],",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "au-revoir-selon-heure",
+      "behavior": "politesse",
+      "source": "appel b686b241 : « Bonne soirée » à 15 h 09",
+      "history": "done-dernier",
+      "transcript": "oui c'est tout",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "actionResult": "Réservation créée pour Houet, 6 personnes, demain à 16 h 30. SMS de confirmation envoyé.",
+      "dayPart": "15 h, après-midi",
+      "samples": 30,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "soirée",
+          "expect": false,
+          "minRate": 0.65
+        }
+      ]
+    },
+    {
+      "id": "pas-de-dispo-sans-effectif",
+      "behavior": "disponibilité",
+      "source": "#288 : ne pas annoncer un horaire libre avant le nombre de personnes",
+      "history": "toHeure",
+      "transcript": "est-ce que c'est possible de venir à 18 heures",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "c'est possible|c'est libre|ça marche|disponible",
+          "expect": false,
+          "minRate": 0.8
+        }
+      ]
+    },
+    {
+      "id": "pas-de-repetition-mot-pour-mot",
+      "behavior": "répétition",
+      "source": "#293 : ne pas recopier sa dernière question",
+      "history": "toHeure",
+      "transcript": "et vous avez une terrasse",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "noRepeatOf",
+          "text": "Vers quelle heure vous aimeriez venir",
+          "minRate": 0.8
+        }
+      ]
+    }
+  ]
+}

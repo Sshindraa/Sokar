@@ -464,3 +464,21 @@ une lecture de réconciliation transforme ensuite un `unknown` en
 `failure_certain`, elle ne reconstitue pas le payload source absent de la
 claim : le cas reste en revue manuelle jusqu'à décision sur une référence de
 rejeu sûre.
+
+
+## Jeu de test de comportements vocaux
+
+Mesure si le tour structuré tient des comportements de conversation (attendre une correction annoncée, ne pas
+rouvrir un accueil après l'au revoir, ne pas redemander à vide, récapitulatif court, extraction du brouillon…).
+Chaque cas rejoue un moment réel d'appel (`apps/api/scripts/fixtures/voice-behavior/cases.json`) devant le modèle
+de production, plusieurs tirages, et compare la part de réponses conformes à un seuil. Contrôles structurels ;
+un motif dans la phrase ne sert qu'à interdire une dérive connue.
+
+```bash
+scripts/ops/voice-behavior-eval.sh        # compose ici, rejoue sur le VPS (la clé y reste), note ici
+```
+
+- À relancer après tout changement de `structured-turn/prompt.ts`, du schéma ou du modèle vocal.
+- Un cas se tire d'un appel : ajouter l'historique, la phrase, l'état du brouillon et un ou deux contrôles.
+- Consomme du quota Cerebras (~250 requêtes) : utiliser `CEREBRAS_EVAL_API_KEY` (clé dédiée), jamais la clé des appels.
+- Hors CI (pas de clé) ; la logique de notation est testée (`behavior-eval.test.ts`).
