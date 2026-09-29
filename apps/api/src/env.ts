@@ -109,6 +109,22 @@ const voiceLlmHedgeSchema = z.preprocess((value) => {
     : DEFAULT_VOICE_LLM_HEDGE_MS;
 }, z.number().min(0));
 
+/** Moteurs de suppression de bruit Telnyx ; toute autre valeur équivaut à « off ». */
+export const NOISE_SUPPRESSION_ENGINES = [
+  'Krisp',
+  'DeepFilterNet',
+  'AiCoustics',
+  'Denoiser',
+] as const;
+
+const voiceNoiseSuppressionEngineSchema = z.preprocess(
+  (value) => {
+    const engine = typeof value === 'string' ? value.trim() : '';
+    return (NOISE_SUPPRESSION_ENGINES as readonly string[]).includes(engine) ? engine : 'off';
+  },
+  z.enum(['off', ...NOISE_SUPPRESSION_ENGINES]),
+);
+
 const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
   const parsed = Number(value);
@@ -169,6 +185,8 @@ export const VoiceConfigSchema = z
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
     VOICE_LLM_HEDGE_MS: voiceLlmHedgeSchema,
+    VOICE_NOISE_SUPPRESSION_ENGINE: voiceNoiseSuppressionEngineSchema,
+    VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS: z.string().optional(),
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
