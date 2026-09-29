@@ -43,6 +43,7 @@ import {
   bookingKey,
   createStructuredTurnState,
   isBookingComplete,
+  dayPartInTimezone,
   todayInTimezone,
   type StructuredTurnState,
 } from './fact-guards';
@@ -274,6 +275,7 @@ function passRequest(
     state,
     openingHours: session.openingHours,
     today,
+    dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
     ...extra,
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore

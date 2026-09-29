@@ -71,6 +71,21 @@ export function todayInTimezone(timezone: string, now = new Date()): string {
   }).format(now);
 }
 
+/**
+ * Heure locale pleine et moment de la journée dans le fuseau du restaurant (« 15 h,
+ * après-midi ») : un fait pour les formules de politesse. Sans les minutes, pour que la
+ * requête spéculative reste identique à celle du tour final.
+ */
+export function dayPartInTimezone(timezone: string, now = new Date()): string {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hourCycle: 'h23' })
+      .formatToParts(now)
+      .find((part) => part.type === 'hour')?.value,
+  );
+  const part = hour < 5 ? 'nuit' : hour < 12 ? 'matin' : hour < 18 ? 'après-midi' : 'soir';
+  return `${hour} h, ${part}`;
+}
+
 function isValidField(
   field: DraftField,
   value: StructuredTurnDraft[DraftField],
