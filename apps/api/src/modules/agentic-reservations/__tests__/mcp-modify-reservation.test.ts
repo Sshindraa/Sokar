@@ -24,6 +24,7 @@ const original = {
 };
 
 function makeService(blocker = false) {
+  let current = { ...original };
   const tx = {
     $executeRaw: vi.fn().mockResolvedValue(1),
     $queryRaw: vi.fn().mockResolvedValue([{ id: reservationId }]),
@@ -33,9 +34,12 @@ function makeService(blocker = false) {
       findFirst: vi
         .fn()
         .mockImplementation(async ({ where }: { where?: { id?: string } }) =>
-          where?.id === reservationId ? original : blocker ? { id: 'other' } : null,
+          where?.id === reservationId ? current : blocker ? { id: 'other' } : null,
         ),
-      update: vi.fn().mockImplementation(async ({ data }) => ({ ...original, ...data })),
+      update: vi.fn().mockImplementation(async ({ data }) => {
+        current = { ...current, ...data };
+        return current;
+      }),
     },
     agenticHold: { findFirst: vi.fn().mockResolvedValue(null) },
     reservationAuditLog: { create: vi.fn().mockResolvedValue({}) },
@@ -114,5 +118,26 @@ describe('MCP reservation modification', () => {
         }),
       }),
     );
+  });
+
+  it('treats an identical retry as a no-op without a second audit entry', async () => {
+    vi.spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability').mockResolvedValue();
+    const { service, tx } = makeService();
+    const args = {
+      reservationId,
+      restaurantId,
+      actor: original.createdByClient,
+      publicClient: true,
+      customerPhone: original.customerPhone,
+      customerName: 'Alice Martin',
+    };
+
+    const first = await service.modifyReservation(args);
+    const retry = await service.modifyReservation(args);
+
+    expect(first).toEqual({ reservationId, state: 'CONFIRMED', changed: true });
+    expect(retry).toEqual({ reservationId, state: 'CONFIRMED', changed: false });
+    expect(tx.reservation.update).toHaveBeenCalledTimes(1);
+    expect(tx.reservationAuditLog.create).toHaveBeenCalledTimes(1);
   });
 });

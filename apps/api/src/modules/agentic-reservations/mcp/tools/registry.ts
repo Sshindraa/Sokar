@@ -29,6 +29,7 @@ import { ReservationService } from '../../core/reservation.service';
 import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.service';
 import { redactPiiInString, redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
+import { getToolOutputSchema } from './tool-definitions';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
   checkAvailabilityDuration,
@@ -808,7 +809,7 @@ export class McpToolRegistry {
     try {
       const reservation = await this.prisma.reservation.findUnique({
         where: { id: input.reservationId },
-        select: { restaurantId: true, createdByClient: true, customerPhone: true },
+        select: { restaurantId: true, createdByClient: true, customerPhone: true, state: true },
       });
       if (!reservation) return toolError('Reservation not found', 'NOT_FOUND');
 
@@ -829,12 +830,31 @@ export class McpToolRegistry {
       const exposure = await this.getMcpExposure(reservation.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
-      await this.reservationService.cancelReservation({
-        reservationId: input.reservationId,
-        restaurantId: reservation.restaurantId,
-        actor: ctx.actor,
-        reason: input.reason,
-      });
+      // A retry after a successful cancellation is an idempotent success.
+      if (reservation.state === 'CANCELLED') return ok({ cancelled: true });
+
+      try {
+        await this.reservationService.cancelReservation({
+          reservationId: input.reservationId,
+          restaurantId: reservation.restaurantId,
+          actor: ctx.actor,
+          reason: input.reason,
+        });
+      } catch (err: unknown) {
+        // Two identical requests can both read the active state. If the other
+        // request wins the lifecycle lock, confirm its final state and return
+        // the same successful result without repeating side effects.
+        if ((err as { name?: string })?.name === 'InvalidStateTransitionError') {
+          const latest = await this.prisma.reservation.findUnique({
+            where: { id: input.reservationId },
+            select: { restaurantId: true, state: true },
+          });
+          if (latest?.restaurantId === reservation.restaurantId && latest.state === 'CANCELLED') {
+            return ok({ cancelled: true });
+          }
+        }
+        throw err;
+      }
       return ok({ cancelled: true });
     } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'cancel_reservation failed');
@@ -1058,15 +1078,8 @@ export async function executeTool(
       return toolError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL');
   }
 
-  recordMcpToolCall(
-    toolName,
-    result.ok ? 'success' : 'error',
-    ctx.credentialType,
-    result.ok ? undefined : result.code,
-    ctx.transport,
-  );
-
-  // Redacte la réponse avant retour
+  // Redact and validate the exact payload exposed to the MCP client. Output
+  // schemas are strict, so validation cannot silently strip undeclared fields.
   if (result.ok) {
     const data = redactResponse(result.data);
     // The hold token is an intentional one-time capability returned only by
@@ -1084,7 +1097,39 @@ export async function executeTool(
       }
     }
     assertNoPiiLeak(data, toolName);
-    return { ...result, data };
+    if (ctx.transport === 'mcp') {
+      const outputSchema = getToolOutputSchema(toolName);
+      const output = outputSchema?.safeParse(data);
+      if (!outputSchema || !output || !output.success) {
+        logger.error(
+          {
+            toolName,
+            issues:
+              output && !output.success
+                ? output.error.issues.map((issue) => ({
+                    code: issue.code,
+                    path: issue.path.map(String),
+                  }))
+                : undefined,
+          },
+          'MCP tool output did not match its declared output schema',
+        );
+        result = toolError('Tool output failed schema validation', 'INTERNAL');
+      } else {
+        result = { ...result, data };
+      }
+    } else {
+      result = { ...result, data };
+    }
   }
+
+  recordMcpToolCall(
+    toolName,
+    result.ok ? 'success' : 'error',
+    ctx.credentialType,
+    result.ok ? undefined : result.code,
+    ctx.transport,
+  );
+
   return result;
 }

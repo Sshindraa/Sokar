@@ -156,7 +156,7 @@ Réponse:
   "result": {
     "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "2.0.0" }
+    "serverInfo": { "name": "sokar-mcp", "version": "2.1.0" }
   }
 }
 ```
@@ -212,7 +212,8 @@ Succès:
   "jsonrpc": "2.0",
   "id": 3,
   "result": {
-    "content": [{ "type": "text", "text": "{\"ok\":\"payload JSON sérialisé\"}" }],
+    "content": [{ "type": "text", "text": "{\"available\":true}" }],
+    "structuredContent": { "available": true },
     "isError": false
   }
 }
@@ -228,10 +229,17 @@ Erreur métier:
     "content": [
       { "type": "text", "text": "{\"ok\":false,\"error\":\"...\",\"code\":\"INVALID_INPUT\"}" }
     ],
+    "_meta": {
+      "com.sokar/error": { "code": "INVALID_INPUT", "message": "..." }
+    },
     "isError": true
   }
 }
 ```
+
+Le code et le message lisibles par machine sont dans `_meta["com.sokar/error"]`.
+Le bloc texte JSON reste présent pour les anciens clients. Sur un succès, Sokar
+valide `structuredContent` contre l'`outputSchema` publié avant de répondre.
 
 Les dates invalides ou les plages inversées renvoient le code métier
 `INVALID_DATETIME` avec un message indiquant le format attendu.
@@ -384,7 +392,11 @@ dispose du scope `mcp:reserve`, et `request_reserve_scope` sinon.
 ### create_quote et create_hold
 
 Ces outils prennent les mêmes arguments que `check_availability`. `create_quote`
-ne bloque pas la capacité. `create_hold` renvoie `holdToken` et `expiresAt` ;
+crée un enregistrement informatif temporaire. Il ne bloque pas la capacité et
+son `quoteId` ne permet pas de réserver ; le créneau peut être pris avant la
+réservation. Revérifiez la disponibilité ou utilisez `create_hold` pour garder
+le créneau. `create_hold`
+renvoie `holdToken` et `expiresAt` ;
 transmettez le token à `create_reservation` avant expiration. Le hold est lié au
 restaurant, à la taille du groupe et aux deux bornes exactes du créneau.
 
@@ -467,10 +479,14 @@ Réponse:
 Prend `reservationId`, `customerPhone` pour un token public, puis au moins un des
 champs `partySize`, `startsAt`/`endsAt` ou `customerName`. Le nouveau créneau et la
 capacité sont vérifiés dans une transaction avant la mise à jour.
+Renvoyer le même changement est sûr : après la première réussite, la réponse
+indique `changed: false` et aucune seconde écriture ni entrée d'audit n'est créée.
 
 ### cancel_reservation
 
 Annule une réservation existante.
+Un appel répété après l'annulation réussie renvoie `cancelled: true` sans rejouer
+la transition ni ses effets secondaires.
 
 Arguments:
 

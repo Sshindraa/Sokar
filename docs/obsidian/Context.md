@@ -19,9 +19,11 @@
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
 - [ ] MCP : réconcilier `mcp:sandbox reset` avec l’audit append-only ; capturer un consentement OAuth frais et les messages bruts `initialize` / `tools/list` après le correctif ChatGPT si les clients les exposent.
-- [ ] MCP : finaliser les erreurs structurées, l’idempotence de modification/annulation, la décision sur `create_quote` et la validation runtime des `outputSchema`.
+- [ ] MCP : publier la PR de fiabilité des tool calls et vérifier ses déploiements staging/production.
 
 ## Décisions récentes
+
+2026-09-29 — [MCP, contrats] **Retries sûrs et résultats validés à l'exécution** — Une modification répétée avec les mêmes valeurs devient un no-op (`changed: false`) ; une annulation déjà réussie renvoie `cancelled: true` sans rejouer les effets. Les erreurs exposent aussi un code/message stable dans `_meta["com.sokar/error"]`, en conservant le texte existant. Sokar vérifie les sorties après redaction contre les schémas publiés. `create_quote` est conservé sans changement de contrat comme référence informative temporaire ; son `quoteId` ne réserve pas la capacité et ne peut pas finaliser une réservation. `create_hold` reste l'action qui garde un créneau.
 
 2026-09-29 — [MCP, contrats et observabilité] **Contrats de recherche additifs, métriques indépendantes du client** — `search_restaurants` expose adresse, cuisine, gamme de prix et créneau exact ; `check_availability` expose décision, alternatives et action recommandée, sans IDs internes de conflit. Les dimensions Prometheus restent outil, statut, type d’authentification et transport ; ChatGPT/Claude sont comparés dans la matrice plutôt que distingués par un nouveau label.
 

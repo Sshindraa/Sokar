@@ -12,9 +12,10 @@ const ctx: ToolContext = {
   restaurantId: null,
   scopes: ['mcp:read', 'mcp:cancel'],
   actor: 'agent:client-a',
+  transport: 'mcp',
 };
 
-function makeRegistry(createdByClient = ctx.actor) {
+function makeRegistry(createdByClient = ctx.actor, state = 'CONFIRMED') {
   const prisma = {
     reservation: {
       findUnique: vi.fn().mockResolvedValue({
@@ -22,7 +23,7 @@ function makeRegistry(createdByClient = ctx.actor) {
         restaurantId: RESTAURANT_ID,
         createdByClient,
         customerPhone: PHONE,
-        state: 'CONFIRMED',
+        state,
         partySize: 2,
         startsAt: new Date('2026-12-01T19:00:00Z'),
         endsAt: new Date('2026-12-01T21:00:00Z'),
@@ -85,6 +86,68 @@ describe('public MCP reservation access', () => {
     expect(result).toMatchObject({ ok: true, data: { id: RESERVATION_ID, state: 'CONFIRMED' } });
     if (result.ok) expect(result.data).not.toHaveProperty('customerPhone');
   });
+
+  it('returns success when a reservation was already cancelled', async () => {
+    const registry = makeRegistry(ctx.actor, 'CANCELLED');
+    const reservationService = (
+      registry as unknown as {
+        reservationService: { cancelReservation: (args: unknown) => Promise<void> };
+      }
+    ).reservationService;
+    const cancel = vi.spyOn(reservationService, 'cancelReservation');
+
+    const result = await registry.cancelReservation(
+      { reservationId: RESERVATION_ID, customerPhone: PHONE },
+      ctx,
+    );
+
+    expect(result).toEqual({ ok: true, data: { cancelled: true } });
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('treats a concurrent successful cancellation as an idempotent success', async () => {
+    const findUnique = vi
+      .fn()
+      .mockResolvedValueOnce({
+        restaurantId: RESTAURANT_ID,
+        createdByClient: ctx.actor,
+        customerPhone: PHONE,
+        state: 'CONFIRMED',
+      })
+      .mockResolvedValueOnce({ restaurantId: RESTAURANT_ID, state: 'CANCELLED' });
+    const prisma = {
+      reservation: { findUnique },
+      restaurant: {
+        findFirst: vi.fn().mockResolvedValue({
+          timezone: 'Europe/Paris',
+          exposureSettings: { maxPartySize: 7, minLeadTimeMinutes: 0, exposedCreneaux: [] },
+          floorPlans: [],
+        }),
+      },
+    } as unknown as PrismaClient;
+    const limiter = {
+      check: vi.fn().mockResolvedValue({ allowed: true }),
+    } as unknown as McpRateLimiter;
+    const registry = new McpToolRegistry(prisma, limiter);
+    const reservationService = (
+      registry as unknown as {
+        reservationService: { cancelReservation: (args: unknown) => Promise<void> };
+      }
+    ).reservationService;
+    vi.spyOn(reservationService, 'cancelReservation').mockRejectedValue(
+      Object.assign(new Error('Reservation is already cancelled'), {
+        name: 'InvalidStateTransitionError',
+      }),
+    );
+
+    const result = await registry.cancelReservation(
+      { reservationId: RESERVATION_ID, customerPhone: PHONE },
+      ctx,
+    );
+
+    expect(result).toEqual({ ok: true, data: { cancelled: true } });
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
 });
 
 it('returns the one-time hold capability to the caller', async () => {
@@ -96,6 +159,30 @@ it('returns the one-time hold capability to the caller', async () => {
   });
   const result = await executeTool(registry, 'create_hold', {}, ctx);
   expect(result).toMatchObject({ ok: true, data: { holdToken } });
+});
+
+it('rejects tool output containing fields outside its declared schema', async () => {
+  const registry = makeRegistry();
+  vi.spyOn(registry, 'getReservationStatus').mockResolvedValue({
+    ok: true,
+    data: {
+      id: RESERVATION_ID,
+      state: 'CONFIRMED',
+      partySize: 2,
+      startsAt: '2026-12-01T19:00:00.000Z',
+      endsAt: '2026-12-01T21:00:00.000Z',
+      createdAt: '2026-09-28T19:00:00.000Z',
+      undocumentedField: 'not part of outputSchema',
+    },
+  });
+
+  const result = await executeTool(registry, 'get_reservation_status', {}, ctx);
+
+  expect(result).toMatchObject({
+    ok: false,
+    code: 'INTERNAL',
+    error: 'Tool output failed schema validation',
+  });
 });
 
 it('requires public-client proof for an OAuth token scoped to a restaurant', async () => {

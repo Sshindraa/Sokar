@@ -55,6 +55,9 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     for (const tool of TOOL_LIST) {
       expect(tool.outputSchema, `${tool.name} missing outputSchema`).toBeDefined();
       expect((tool.outputSchema as { type?: string }).type).toBe('object');
+      expect((tool.outputSchema as { additionalProperties?: boolean }).additionalProperties).toBe(
+        false,
+      );
     }
   });
 
@@ -90,6 +93,11 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
         `${tool.name} must have readOnlyHint or destructiveHint`,
       ).toBe(true);
     }
+  });
+
+  it('marks reservation cancellation as safe to retry', () => {
+    const cancelTool = TOOL_LIST.find((tool) => tool.name === 'cancel_reservation');
+    expect(cancelTool?.annotations).toMatchObject({ idempotentHint: true });
   });
 
   it('every tool name matches a Zod schema', () => {
