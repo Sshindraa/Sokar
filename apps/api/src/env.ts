@@ -134,7 +134,19 @@ export const optionalUrlSchema = z.preprocess((value) => {
   return trimmed === '' ? undefined : trimmed;
 }, z.string().url().optional());
 
+/** Hôtes Deepgram autorisés : la clé API leur est envoyée, jamais à une valeur libre. */
+export const DEEPGRAM_API_HOSTS = ['api.deepgram.com', 'api.eu.deepgram.com'] as const;
+
+const deepgramApiHostSchema = z.preprocess((value) => {
+  const host = typeof value === 'string' ? value.trim().replace(/^["']|["']$/g, '') : '';
+  return (DEEPGRAM_API_HOSTS as readonly string[]).includes(host) ? host : 'api.deepgram.com';
+}, z.enum(DEEPGRAM_API_HOSTS));
+
 export const VoiceDeepgramConfigSchema = z.object({
+  // Endpoint EU : 7 ms de latence réseau depuis le VPS contre 110 ms vers les États-Unis ; la
+  // transcription revient ~165 ms plus tôt à chaque résultat, avec des textes identiques (rejeu du
+  // 29/09 : 11/11). Toute autre valeur retombe sur api.deepgram.com.
+  DEEPGRAM_API_HOST: deepgramApiHostSchema,
   // 200 ms : −110 ms en médiane sur le rejeu des appels réels du 27/09 (958 → 849 ms) ;
   // les phrases coupées sont rattrapées par l'attente des tours inachevés.
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
