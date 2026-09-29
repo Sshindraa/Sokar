@@ -28,6 +28,7 @@ import {
   isPunctuationOnlyTranscript,
   deepgramShortStallFinalizeMs,
   finalizeOnSemanticEndOfTurn,
+  looksLikeSpelledLetters,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
@@ -1024,6 +1025,48 @@ describe('Deepgram final dispatch', () => {
         finalTrigger: 'spelling_hold',
       }),
     );
+  });
+
+  it("n'attend pas d'autres lettres quand la réponse à la relecture n'est pas de l'épellation (appel 8ae1e63e)", () => {
+    const { session, onEvent } = deepgramSession();
+    session.conversation.pendingQuestion = 'customerName';
+    session.structuredTurn = { lastAwaiting: 'customerNameConfirmation' } as never;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: "c'est ça",
+      speechFinal: true,
+    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', transcript: "c'est ça" }),
+    );
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ finalTrigger: 'spelling_hold' }),
+    );
+  });
+
+  it('garde l’attente d’épellation quand l’appelant ré-épelle pendant la relecture', () => {
+    const { session, onEvent } = deepgramSession();
+    session.conversation.pendingQuestion = 'customerName';
+    session.structuredTurn = { lastAwaiting: 'customerNameConfirmation' } as never;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'non a 2 k',
+      speechFinal: true,
+    });
+    expect(onEvent).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(600);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ finalTrigger: 'spelling_hold' }),
+    );
+  });
+
+  it('reconnaît une épellation lettre par lettre sans liste de mots', () => {
+    for (const spelled of ['h o u e t', 'a 2 k i f', 'A, K', 'non a k i f', 'h']) {
+      expect(looksLikeSpelledLetters(spelled)).toBe(true);
+    }
+    for (const spoken of ["c'est ça", 'oui exactement', 'au nom de Houet', 'non', '']) {
+      expect(looksLikeSpelledLetters(spoken)).toBe(false);
+    }
   });
 
   it('marque utterance_end comme cause de dispatch et conserve ses offsets provider', () => {

@@ -1468,8 +1468,14 @@ function dispatchCommittedTranscript(
   if (allowBargeIn)
     handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
 
+  // Relecture de l'orthographe : le profil d'épellation reste actif pour une ré-épellation, mais
+  // une réponse qui n'est pas de l'épellation (« c'est ça ») n'a aucune raison d'attendre encore
+  // des lettres (appel 8ae1e63e : 600 ms d'attente sur la confirmation, le tour le plus lent).
+  const confirmingSpelling = session.structuredTurn?.lastAwaiting === 'customerNameConfirmation';
   const spellingProfileActive =
-    isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName';
+    (isNameCollectionBlocking(session) ||
+      session.conversation.pendingQuestion === 'customerName') &&
+    !(confirmingSpelling && !looksLikeSpelledLetters(cleanTranscript));
   if (spellingProfileActive) {
     session.pendingSttEndOfTurn = {
       transcript: cleanTranscript,
@@ -1619,6 +1625,20 @@ export function deepgramShortStallFinalizeMs(env: NodeJS.ProcessEnv = process.en
   const fallback = deepgramStallFinalizeMs(env);
   const parsed = Number(env.VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS ?? fallback);
   return Number.isFinite(parsed) && parsed >= 300 && parsed <= fallback ? parsed : fallback;
+}
+
+/**
+ * Épellation lettre par lettre : la plupart des mots sont des lettres isolées
+ * (« h o u e t », « a 2 k i f »). Structurel, sans liste de mots : « c'est ça » n'en est pas.
+ */
+export function looksLikeSpelledLetters(transcript: string): boolean {
+  const tokens = transcript
+    .toLowerCase()
+    .split(/[\s,.;:!?-]+/u)
+    .filter(Boolean);
+  if (tokens.length < 2) return tokens.length === 1 && /^\p{L}$/u.test(tokens[0]);
+  const singles = tokens.filter((token) => /^[\p{L}\p{N}]$/u.test(token)).length;
+  return singles / tokens.length >= 0.5;
 }
 
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();

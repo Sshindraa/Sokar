@@ -10,11 +10,14 @@
  */
 import type { CallSession, ChatMessage } from '../types';
 import type { CallSessionManager } from '../manager';
+import { logger } from '../../../../shared/logger/pino';
+import { voiceStructuredSpeculationTotal } from '../../../../shared/observability/metrics';
 
 type StructuredFormat = Parameters<CallSessionManager['streamStructuredCompletion']>[2];
 
 interface Speculation {
   key: string;
+  messages: ChatMessage[];
   deltas: string[];
   listeners: Set<(delta: string) => void>;
   controller: AbortController;
@@ -40,6 +43,54 @@ export function isStructuredSpeculationEnabled(env: NodeJS.ProcessEnv = process.
   return env.VOICE_STRUCTURED_SPECULATION_ENABLED === 'true';
 }
 
+export type SpeculationOutcome =
+  | 'hit'
+  | 'none'
+  | 'miss_format'
+  | 'miss_state'
+  | 'miss_history'
+  | 'miss_transcript_format'
+  | 'miss_transcript_extended'
+  | 'miss_transcript_shorter'
+  | 'miss_transcript_changed';
+
+const normalizeText = (text: unknown): string =>
+  String(text ?? '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Pourquoi la requête spéculée n'est pas celle du tour final : catégories seulement,
+ * jamais le texte (données personnelles). Les causes sont testées de la plus grosse
+ * (état vérifié, historique) à la plus fine (ponctuation de la phrase).
+ */
+export function classifySpeculationMiss(
+  speculated: ChatMessage[],
+  actual: ChatMessage[],
+): SpeculationOutcome {
+  const [speculatedSystem, ...speculatedRest] = speculated;
+  const [actualSystem, ...actualRest] = actual;
+  if (speculatedSystem?.content !== actualSystem?.content) return 'miss_state';
+  const speculatedLast = speculatedRest.at(-1);
+  const actualLast = actualRest.at(-1);
+  const speculatedHistory = JSON.stringify(speculatedRest.slice(0, -1));
+  const actualHistory = JSON.stringify(actualRest.slice(0, -1));
+  if (speculatedHistory !== actualHistory) return 'miss_history';
+  const before = normalizeText(speculatedLast?.content);
+  const after = normalizeText(actualLast?.content);
+  if (before === after) return 'miss_transcript_format';
+  if (after.startsWith(before)) return 'miss_transcript_extended';
+  if (before.startsWith(after)) return 'miss_transcript_shorter';
+  return 'miss_transcript_changed';
+}
+
+function recordOutcome(session: CallSession, outcome: SpeculationOutcome): void {
+  voiceStructuredSpeculationTotal.inc({ outcome });
+  logger.info({ callId: session.callControlId, outcome }, '[structured-turn] Speculation outcome');
+}
+
 /** Lance (ou garde) la requête spéculative ; une requête différente remplace la précédente. */
 export function startSpeculation(
   session: CallSession,
@@ -56,6 +107,7 @@ export function startSpeculation(
   let verdictSent = false;
   const speculation: Speculation = {
     key,
+    messages,
     deltas: [],
     listeners: new Set(),
     controller,
@@ -93,11 +145,21 @@ export function takeSpeculation(
 ): Promise<string> | null {
   const speculation = speculations.get(session);
   speculations.delete(session);
-  if (!speculation) return null;
-  if (speculation.key !== requestKey(messages, format)) {
-    speculation.controller.abort();
+  if (!speculation) {
+    recordOutcome(session, 'none');
     return null;
   }
+  if (speculation.key !== requestKey(messages, format)) {
+    speculation.controller.abort();
+    recordOutcome(
+      session,
+      JSON.stringify(speculation.messages) === JSON.stringify(messages)
+        ? 'miss_format'
+        : classifySpeculationMiss(speculation.messages, messages),
+    );
+    return null;
+  }
+  recordOutcome(session, 'hit');
   signal.addEventListener('abort', () => speculation.controller.abort(), { once: true });
   for (const delta of speculation.deltas) onDelta(delta);
   speculation.listeners.add(onDelta);
