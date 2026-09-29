@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import { McpToolRegistry } from '../registry';
 import { McpRateLimiter } from '../../rate-limit';
+import { SearchRestaurantsOutputSchema } from '../schemas';
 
 const makePrisma = () =>
   ({
@@ -29,9 +30,12 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
       searchAvailableRestaurantsPage: vi.fn().mockResolvedValue({ results: [] }),
       findCapacityLimits: vi.fn().mockResolvedValue([
         {
-          restaurantId: 'restaurant-1',
+          restaurantId: '550e8400-e29b-41d4-a716-446655440003',
           name: 'Chez Sokar',
           slug: 'chez-sokar',
+          formattedAddress: '12 Rue de la République, 69001 Lyon',
+          cuisineType: ['Bistrot', 'Française'],
+          priceRange: 2,
           maxOnlinePartySize: 6,
         },
       ]),
@@ -60,15 +64,19 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
         restaurants: [],
         capacityLimits: [
           {
-            id: 'restaurant-1',
+            id: '550e8400-e29b-41d4-a716-446655440003',
             name: 'Chez Sokar',
             slug: 'chez-sokar',
+            formattedAddress: '12 Rue de la République, 69001 Lyon',
+            cuisineType: ['Bistrot', 'Française'],
+            priceRange: 2,
             maxOnlinePartySize: 6,
           },
         ],
         nextCursor: undefined,
       },
     });
+    if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
     expect(availabilityService.findCapacityLimits).toHaveBeenCalledWith({
       city: 'Lyon',
       partySize: 20,
@@ -96,7 +104,17 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
           nextCursor: '550e8400-e29b-41d4-a716-446655440002',
         })
         .mockResolvedValueOnce({
-          results: [{ restaurantId, name: 'Chez Sokar', slug: 'chez-sokar' }],
+          results: [
+            {
+              restaurantId,
+              name: 'Chez Sokar',
+              slug: 'chez-sokar',
+              formattedAddress: '12 Rue de la République, 69001 Lyon',
+              cuisineType: ['Bistrot', 'Française'],
+              priceRange: 2,
+              distanceMeters: null,
+            },
+          ],
         }),
       findCapacityLimits: vi.fn(),
     };
@@ -119,8 +137,25 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
     );
     expect(result).toMatchObject({
       ok: true,
-      data: { restaurants: [{ id: restaurantId }], nextCursor: undefined },
+      data: {
+        restaurants: [
+          {
+            id: restaurantId,
+            formattedAddress: '12 Rue de la République, 69001 Lyon',
+            cuisineType: ['Bistrot', 'Française'],
+            priceRange: 2,
+            availableSlots: [
+              {
+                startsAt: '2026-12-17T19:00:00.000Z',
+                endsAt: '2026-12-17T21:00:00.000Z',
+              },
+            ],
+          },
+        ],
+        nextCursor: undefined,
+      },
     });
+    if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
     expect(availabilityService.searchAvailableRestaurantsPage).toHaveBeenCalledTimes(2);
     expect(availabilityService.searchAvailableRestaurantsPage).toHaveBeenLastCalledWith(
       expect.objectContaining({ cursor: '550e8400-e29b-41d4-a716-446655440002' }),

@@ -44,7 +44,20 @@ export type CapacityLimitHint = {
   restaurantId: string;
   name: string;
   slug: string | null;
+  formattedAddress: string | null;
+  cuisineType: string[];
+  priceRange: number | null;
   maxOnlinePartySize: number;
+};
+
+type RestaurantSearchResult = {
+  restaurantId: string;
+  name: string;
+  slug: string | null;
+  formattedAddress: string | null;
+  cuisineType: string[];
+  priceRange: number | null;
+  distanceMeters: number | null;
 };
 
 type FloorPlanCapacitySnapshot = {
@@ -95,14 +108,7 @@ export class AvailabilityService {
     cuisineType?: string[];
     maxResults: number;
     cursor?: string;
-  }): Promise<
-    Array<{
-      restaurantId: string;
-      name: string;
-      slug: string | null;
-      distanceMeters: number | null;
-    }>
-  > {
+  }): Promise<RestaurantSearchResult[]> {
     return (await this.searchAvailableRestaurantsPage(args)).results;
   }
 
@@ -115,12 +121,7 @@ export class AvailabilityService {
     maxResults: number;
     cursor?: string;
   }): Promise<{
-    results: Array<{
-      restaurantId: string;
-      name: string;
-      slug: string | null;
-      distanceMeters: number | null;
-    }>;
+    results: RestaurantSearchResult[];
     nextCursor?: string;
   }> {
     // Étape 1 : candidats (filtre ville + cuisine + opt-in)
@@ -145,6 +146,8 @@ export class AvailabilityService {
         lat: true,
         lng: true,
         formattedAddress: true,
+        cuisineType: true,
+        priceRange: true,
       },
       take: SEARCH_CANDIDATES_MAX, // garde-fou
     });
@@ -153,7 +156,14 @@ export class AvailabilityService {
     // un LIKE — l'index GIN pg_trgm accélérera en P1)
     const lowerCity = args.city.toLowerCase();
     // Étape 2 : pour chaque candidat, vérifie la dispo sur le slot exact
-    const results: Array<{ id: string; name: string; slug: string | null }> = [];
+    const results: Array<{
+      id: string;
+      name: string;
+      slug: string | null;
+      formattedAddress: string | null;
+      cuisineType: string[];
+      priceRange: number | null;
+    }> = [];
     let lastScannedId: string | undefined;
     for (const c of candidates) {
       lastScannedId = c.id;
@@ -166,7 +176,14 @@ export class AvailabilityService {
         slotEnd: args.slotEnd,
       });
       if (check.available) {
-        results.push({ id: c.id, name: c.name, slug: c.slug });
+        results.push({
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          formattedAddress: c.formattedAddress,
+          cuisineType: c.cuisineType,
+          priceRange: c.priceRange,
+        });
         if (results.length >= args.maxResults) break;
       }
     }
@@ -176,6 +193,9 @@ export class AvailabilityService {
         restaurantId: r.id,
         name: r.name,
         slug: r.slug,
+        formattedAddress: r.formattedAddress,
+        cuisineType: r.cuisineType,
+        priceRange: r.priceRange,
         distanceMeters: null, // PostGIS en P1 si besoin
       })),
       nextCursor:
@@ -210,6 +230,8 @@ export class AvailabilityService {
         name: true,
         slug: true,
         formattedAddress: true,
+        cuisineType: true,
+        priceRange: true,
         exposureSettings: { select: { maxPartySize: true } },
         floorPlans: {
           where: { isActive: true },
@@ -240,6 +262,9 @@ export class AvailabilityService {
           restaurantId: restaurant.id,
           name: restaurant.name,
           slug: restaurant.slug,
+          formattedAddress: restaurant.formattedAddress,
+          cuisineType: restaurant.cuisineType,
+          priceRange: restaurant.priceRange,
           maxOnlinePartySize,
         } satisfies CapacityLimitHint;
       })

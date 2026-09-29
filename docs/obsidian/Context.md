@@ -18,7 +18,9 @@
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
-- [ ] MCP : valider en staging les nouveaux compteurs par outil, transport (`mcp`/`generic_agent`), type d’authentification et code d’erreur ; décider si distinguer ChatGPT/Claude vaut le coût au-delà d’OAuth/API key. Puis adapter `mcp:sandbox reset` à l’audit append-only et exporter les captures OAuth / relever `initialize` et `tools/list` bruts si les clients le permettent.
+- [ ] MCP : provoquer un appel de lecture staging puis vérifier l’incrément des compteurs ; décider si distinguer ChatGPT/Claude au-delà d’OAuth/API key apporte une valeur. Adapter `mcp:sandbox reset` à l’audit append-only et capturer un consentement OAuth frais / `initialize` / `tools/list` bruts si les clients le permettent.
+- [ ] MCP : enrichir de manière additive `search_restaurants` (adresse, cuisine, prix, créneaux) et `check_availability` (décision, alternatives, action recommandée).
+- [ ] MCP : finaliser les erreurs structurées, l’idempotence de modification/annulation, la décision sur `create_quote` et la validation runtime des `outputSchema`.
 
 ## Décisions récentes
 

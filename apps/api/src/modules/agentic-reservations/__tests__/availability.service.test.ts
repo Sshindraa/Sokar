@@ -69,6 +69,8 @@ describe('AvailabilityService', () => {
           lat: 48.85,
           lng: 2.35,
           formattedAddress: '12 Rue de la Paix, 75002 Paris',
+          cuisineType: ['Française'],
+          priceRange: 2,
         },
         {
           id: 'r-lyon',
@@ -77,6 +79,8 @@ describe('AvailabilityService', () => {
           lat: 45.76,
           lng: 4.83,
           formattedAddress: '5 Place Bellecour, 69002 Lyon',
+          cuisineType: ['Bistrot'],
+          priceRange: 1,
         },
       ]);
       const findUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' });
@@ -108,6 +112,9 @@ describe('AvailabilityService', () => {
       expect(result[0].restaurantId).toBe('r-paris');
       expect(result[0].name).toBe('Bistrot Paris');
       expect(result[0].slug).toBe('bistrot-paris');
+      expect(result[0].formattedAddress).toBe('12 Rue de la Paix, 75002 Paris');
+      expect(result[0].cuisineType).toEqual(['Française']);
+      expect(result[0].priceRange).toBe(2);
       expect(result[0].distanceMeters).toBeNull();
     });
 
@@ -187,6 +194,8 @@ describe('AvailabilityService', () => {
           name: 'Chez Lyon',
           slug: 'chez-lyon',
           formattedAddress: '12 Rue de la République, 69001 Lyon',
+          cuisineType: ['Bistrot', 'Française'],
+          priceRange: 2,
           exposureSettings: { maxPartySize: 12 },
           floorPlans: [{ tables: [{ capacity: 2 }, { capacity: 6 }] }],
         },
@@ -204,6 +213,9 @@ describe('AvailabilityService', () => {
           restaurantId: 'r-lyon',
           name: 'Chez Lyon',
           slug: 'chez-lyon',
+          formattedAddress: '12 Rue de la République, 69001 Lyon',
+          cuisineType: ['Bistrot', 'Française'],
+          priceRange: 2,
           maxOnlinePartySize: 6,
         },
       ]);
