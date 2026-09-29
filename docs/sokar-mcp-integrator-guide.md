@@ -1,8 +1,9 @@
 # Guide intégrateur MCP Sokar
 
-> **Statut : ACTIF / PRODUCTION — vérifié le 12 septembre 2026.**
-> Des parcours OAuth et réservation E2E ont été exécutés avec ChatGPT et Claude. Le transport
-> actuel est JSON-RPC 2.0 stateless sur HTTP `POST /mcp`. Voir
+> **Statut : ACTIF / PRODUCTION — métadonnées et appels de lecture vérifiés le 29 septembre 2026.**
+> Des parcours OAuth et réservation E2E ont été exécutés avec ChatGPT et Claude ; la matrice
+> complète et ses limites sont consignées dans [`la preuve de compatibilité`](./release/evidence/mcp-connector-compatibility-matrix-2026-09-29.md).
+> Le transport actuel est JSON-RPC 2.0 stateless sur HTTP `POST /mcp`. Voir
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 Sokar expose les restaurants opt-in via un serveur MCP générique. Un agent peut
@@ -516,6 +517,36 @@ sont filtrées avant sortie:
 Les mutations sont auditées via le core agentic. Les outils de lecture
 (`search_restaurants`, `check_availability`) ne sont pas écrits dans le journal
 d'audit, ils sont comptés dans les métriques.
+
+## Observabilité des outils MCP
+
+Prometheus expose les appels par outil, résultat, transport, type d’authentification
+(`oauth`, `api_key`, `unknown`) et les codes d’erreur normalisés :
+
+- `sokar_mcp_tool_calls_total{tool,status}` : compteur historique commun aux appels MCP et à l’adaptateur `generic_agent` ;
+- `sokar_mcp_tool_calls_by_auth_type_total{tool,status,auth_type,transport}` : volumes détaillés ;
+- `sokar_mcp_tool_errors_by_code_total{tool,error_code,auth_type,transport}` : erreurs par code stable.
+
+`transport` vaut `mcp`, `generic_agent` ou `unknown`. Filtrez `transport="mcp"`
+pour isoler le trafic MCP.
+
+Les labels sont bornés. Aucun `clientId`, nom OAuth libre, numéro de réservation ou
+autre donnée client n’est ajouté aux métriques. La dimension d’auth distingue OAuth
+d’une API key, mais ne différencie pas encore ChatGPT de Claude.
+Les codes d’erreur sont une allowlist stable ; tout nouveau code non répertorié est
+regroupé sous `OTHER` jusqu’à son ajout explicite.
+
+Pour comparer les volumes du parcours, additionnez les compteurs par outil :
+
+```promql
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool="search_restaurants"}[7d]))
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool="check_availability"}[7d]))
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool=~"create_hold|create_reservation"}[7d]))
+```
+
+Ces valeurs décrivent les volumes agrégés de chaque étape. Le protocole ne fournit
+pas d’identifiant de parcours partagé entre appels ; elles ne mesurent donc pas une
+conversion individuelle recherche → disponibilité → réservation.
 
 ## Test local E2E
 

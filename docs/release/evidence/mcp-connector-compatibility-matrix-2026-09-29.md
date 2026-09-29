@@ -1,6 +1,6 @@
 # Matrice de compatibilité MCP — 29 septembre 2026
 
-> **Statut : parcours fonctionnels terminés dans ChatGPT et Claude sur le staging Chez Sokar.**
+> **Statut au 29 septembre 2026 :** parcours complets avant correctif, puis retests MCP en lecture seule après déploiement OAuth dans ChatGPT et Claude.
 > Les deux réservations de test sont annulées. La purge physique complète a échoué car la base protège ses journaux d’audit append-only ; la transaction a été annulée et les compteurs sont inchangés.
 > Les connecteurs de production existants n’ont servi à aucune mutation.
 
@@ -35,14 +35,41 @@ Le connecteur Sokar déjà enregistré dans chaque client pointe vers api.sokar.
 
 ### Correctif OAuth ChatGPT
 
-Les lignes ci-dessus décrivent le serveur staging au moment de l’essai, avant le correctif. Le code en cours ajoute maintenant :
+Les écrans de consentement et le parcours d’écriture décrits plus haut ont été testés avant le correctif. La [PR #294](https://github.com/Sshindraa/Sokar/pull/294), commit `5e1645db9a1be92780763f2abc3b3fbc40993a0b`, a ensuite été fusionnée sur `main` et déployée sur staging puis en production.
+
+Le correctif ajoute :
 
 - la propagation stricte de `resource` entre autorisation, code et échange de jeton, puis sa conservation dans le jeton et son contrôle sur les appels MCP ;
 - `authorization_response_iss_parameter_supported: true` et `iss` sur les redirections OAuth de succès comme de refus ;
 - `securitySchemes` et leurs scopes OAuth pour chacun des outils, plus `_meta["mcp/www_authenticate"]` quand un appel manque d’un scope ;
 - le callback ChatGPT stable associé à RFC 9207.
 
-DCR reste le mode d’enregistrement pris en charge. CIMD n’est pas implémenté et `client_id_metadata_document_supported` n’est donc pas annoncé. Ces changements ont des tests d’intégration locaux, mais ne sont pas encore déployés ni revérifiés dans ChatGPT ou Claude sur le staging.
+DCR reste le mode d’enregistrement pris en charge. CIMD n’est pas implémenté et `client_id_metadata_document_supported` n’est donc pas annoncé.
+
+| Vérification après déploiement     | Résultat observé                                                                                                            |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| CI de `main`                       | Succès ; tous les jobs requis sont verts                                                                                    |
+| Déploiement staging                | Succès ; smoke tests et E2E staging verts                                                                                   |
+| Déploiement production             | Succès ; smoke tests verts, `GET /health` renvoie 200                                                                       |
+| Métadonnées ressource protégée     | `resource=https://api-staging.sokar.tech`, serveur OAuth staging et scopes `mcp:read`, `mcp:reserve`, `mcp:cancel`          |
+| Métadonnées serveur d’autorisation | `authorization_response_iss_parameter_supported: true`; CIMD non annoncé                                                    |
+| Défi sans jeton sur `/mcp`         | HTTP 401 avec `WWW-Authenticate` pointant vers `/.well-known/oauth-protected-resource`                                      |
+| Redirections avec `iss`            | Couvertes par les tests d’intégration de la PR pour succès et refus ; pas capturées dans une nouvelle autorisation manuelle |
+
+### Retest client en lecture seule après déploiement
+
+Le 29 septembre, les connecteurs staging déjà installés ont été réutilisés dans les deux clients. Aucun écran de consentement neuf n’a été accepté pendant ce retest et aucun outil d’écriture n’a été appelé.
+
+| Vérification                                                           | ChatGPT                                                                                             | Claude                                                                                                                        |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Recherche de Chez Sokar                                                | Réussie ; nom, slug `chez-sokar-demo`, adresse à Lyon, cuisine, gamme de prix et horaires retournés | Réussie après précision de la ville Lyon ; nom, slug et ID retournés. L’adresse ne fait pas partie de la réponse de recherche |
+| Disponibilité — 2 personnes, 1 octobre 2026, 19:30–21:00, Europe/Paris | `available: true`, aucune alternative                                                               | `available: true`, aucune alternative                                                                                         |
+| Écriture après correctif                                               | Aucune réservation ni hold créé                                                                     | Aucune réservation ni hold créé                                                                                               |
+| OAuth frais après correctif                                            | Non retesté : compte staging existant réutilisé                                                     | Non retesté : connecteur staging existant réutilisé                                                                           |
+
+Claude a d’abord interprété la recherche sans ville comme Paris, puis a proposé une recherche à Monaco. Cette deuxième recherche a été refusée. La requête a été relancée explicitement sur Lyon et a retourné Chez Sokar. Cela montre qu’il faut préciser la ville dans les essais de recherche.
+
+Les interfaces des clients ne montrent toujours pas le `protocolVersion` d’`initialize` ni la réponse JSON-RPC brute de `tools/list`. Les appels réussis confirment que les outils sont utilisables après déploiement, mais ne prouvent pas les versions négociées ni le contenu brut des schémas `securitySchemes`. Le nouveau parcours d’autorisation, ses écrans et les paramètres `iss` restent à capturer manuellement si une nouvelle connexion est nécessaire.
 
 ## Parcours fonctionnel réel
 
@@ -81,7 +108,7 @@ La simulation de reset a ciblé exactement ces artefacts. L’application de res
 
 Les deux réservations sont déjà CANCELLED et les deux holds ont servi à créer ces réservations ; aucun créneau de test n’est encore retenu. Les journaux d’audit ne contiennent pas de téléphone ni de nom bruts selon le service d’audit. Ils sont conservés par conception avec les réservations auxquelles ils se rapportent. Aucun trigger, contrainte ou garde-fou d’audit n’a été désactivé pour forcer la purge.
 
-**Conclusion opérationnelle :** l’authentification et les appels fonctionnels ont passé dans les deux clients. La matrice n’est pas entièrement close, car le nettoyage physique du run n’a pas abouti. Le script et le runbook de sandbox doivent être réconciliés avec la règle d’audit append-only avant qu’un futur run puisse être annoncé comme purgé.
+**Conclusion opérationnelle :** le parcours complet recherche/réservation/modification/annulation a réussi avant le correctif OAuth ; après déploiement, les métadonnées OAuth et les outils de recherche/disponibilité ont aussi été vérifiés dans les deux clients. La matrice reste ouverte : le parcours de consentement post-correctif et la version MCP négociée ne sont pas visibles dans l’interface, et le nettoyage physique du run n’a pas abouti. Le reset sandbox doit respecter l’audit append-only avant qu’un futur run puisse être annoncé comme purgé.
 
 ## Captures et limites de preuve
 
