@@ -214,7 +214,9 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
-# structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
+# structuré (turnComplete=false, fragment recollé). S'applique aussi à une confirmation
+# courte (« oui c'est tout », « tout à fait ») répondant à une question de l'agent
+# (appel b686b241 : 1,4 s d'attente). Défaut : égal au délai normal ; 500 en production.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
