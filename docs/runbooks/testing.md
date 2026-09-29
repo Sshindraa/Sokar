@@ -480,5 +480,6 @@ scripts/ops/voice-behavior-eval.sh        # compose ici, rejoue sur le VPS (la c
 
 - À relancer après tout changement de `structured-turn/prompt.ts`, du schéma ou du modèle vocal.
 - Un cas se tire d'un appel : ajouter l'historique, la phrase, l'état du brouillon et un ou deux contrôles.
-- Consomme du quota Cerebras : ≈ 294 requêtes, ≈ 0,8 M tokens en entrée par passage complet (chaque requête renvoie tout le prompt, ≈ 2 650 tokens). L'estimation s'affiche avant l'envoi, le facturé après. Utiliser `CEREBRAS_EVAL_API_KEY` (clé dédiée), jamais la clé des appels.
+- Consomme le quota Cerebras **des appels réels** (même clé) : chaque requête renvoie tout le prompt (≈ 2 650 tokens en entrée). Passage complet ≈ 174 requêtes, ≈ 0,46 M tokens. L'estimation s'affiche avant l'envoi (plafond `VBE_MAX_INPUT_TOKENS`, 500 000 par défaut) et les tokens facturés après.
+- Pendant qu'on itère sur un prompt : cibler (`--only id,comportement`) et réduire (`--samples 6`) ; réserver le passage complet à la validation avant fusion.
 - Hors CI (pas de clé) ; la logique de notation est testée (`behavior-eval.test.ts`).

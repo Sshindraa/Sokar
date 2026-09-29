@@ -221,10 +221,6 @@ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
 # modèle juge dans le contexte. turnComplete=false ne change rien (le minuteur reste le filet).
 VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
-# Clé Cerebras DÉDIÉE aux tests (jeu de comportements, rejeux) : sans elle, les rejeux consomment
-# le quota des appels réels. Le 29/09 ils l'ont épuisé (402 payment_required) : plus aucune réponse
-# vocale, aucun repli. Ne sert jamais aux appels ; lue seulement par voice-behavior-replay.mjs.
-CEREBRAS_EVAL_API_KEY=""
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).

@@ -2,10 +2,8 @@
 /**
  * Rejoue les requêtes du jeu de comportements contre le modèle de production.
  * À lancer sur le serveur : la clé est lue dans le .env de l'API et ne sort jamais.
- *
- * ATTENTION : sans CEREBRAS_EVAL_API_KEY, le rejeu consomme le quota Cerebras des appels
- * réels (le 29/09, des rejeux ont épuisé ce quota : 402, plus aucune réponse vocale). Une
- * clé Cerebras dédiée aux tests (CEREBRAS_EVAL_API_KEY dans le .env de l'API) isole la production.
+ * *
+ * Consomme le quota des appels réels : le nombre de requêtes est plafonné en amont (voir build).
  *
  *   node voice-behavior-replay.mjs requests.json [/opt/sokar/apps/api/.env] > responses.json
  */
@@ -23,13 +21,7 @@ const env = Object.fromEntries(
     ]),
 );
 const { requests } = JSON.parse(readFileSync(requestsFile, 'utf8'));
-const apiKey = env.CEREBRAS_EVAL_API_KEY || env.CEREBRAS_API_KEY;
-if (!env.CEREBRAS_EVAL_API_KEY) {
-  process.stderr.write(
-    'AVERTISSEMENT : clé de production utilisée (CEREBRAS_EVAL_API_KEY absente). ' +
-      'Ce rejeu consomme le quota des appels réels.\n',
-  );
-}
+const apiKey = env.CEREBRAS_API_KEY;
 const model = env.VOICE_LLM_MODEL || 'qwen-3.8-27b';
 const baseUrl = env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
 const CONCURRENCY = 6;
