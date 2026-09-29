@@ -201,7 +201,7 @@ C'est un filet d'urgence, pas un provider de production.
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut
-VOICE_STRUCTURED_FALLBACK_MODEL="qwen/qwen3.8-27b"        # défaut ; modèle de repli OpenRouter du tour structuré ET du chemin à outils (autres restaurants)
+VOICE_STRUCTURED_FALLBACK_MODEL="xiaomi/mimo-v2.6-flash"  # défaut ; modèle de repli OpenRouter du tour structuré ET du chemin à outils (autres restaurants)
 ```
 
 Latence du tour structuré (mesures du 27 septembre, appel 25650799 et rejeu des
