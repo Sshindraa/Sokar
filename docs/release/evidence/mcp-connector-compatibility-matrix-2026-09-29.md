@@ -56,7 +56,7 @@ DCR reste le mode d’enregistrement pris en charge. CIMD n’est pas implément
 | Défi sans jeton sur `/mcp`         | HTTP 401 avec `WWW-Authenticate` pointant vers `/.well-known/oauth-protected-resource`                                      |
 | Redirections avec `iss`            | Couvertes par les tests d’intégration de la PR pour succès et refus ; pas capturées dans une nouvelle autorisation manuelle |
 
-### Retest client en lecture seule après déploiement
+### Retest client en lecture seule après le correctif OAuth #294
 
 Le 29 septembre, les connecteurs staging déjà installés ont été réutilisés dans les deux clients. Aucun écran de consentement neuf n’a été accepté pendant ce retest et aucun outil d’écriture n’a été appelé.
 
@@ -70,6 +70,18 @@ Le 29 septembre, les connecteurs staging déjà installés ont été réutilisé
 Claude a d’abord interprété la recherche sans ville comme Paris, puis a proposé une recherche à Monaco. Cette deuxième recherche a été refusée. La requête a été relancée explicitement sur Lyon et a retourné Chez Sokar. Cela montre qu’il faut préciser la ville dans les essais de recherche.
 
 Les interfaces des clients ne montrent toujours pas le `protocolVersion` d’`initialize` ni la réponse JSON-RPC brute de `tools/list`. Les appels réussis confirment que les outils sont utilisables après déploiement, mais ne prouvent pas les versions négociées ni le contenu brut des schémas `securitySchemes`. Le nouveau parcours d’autorisation, ses écrans et les paramètres `iss` restent à capturer manuellement si une nouvelle connexion est nécessaire.
+
+### Retest des sorties MCP après la PR #299
+
+Le 29 septembre, après fusion de la PR #299 (`02a72dc`) et les déploiements staging et production, les connecteurs staging existants ont été réutilisés dans ChatGPT et Claude. Le retest a eu lieu après le dernier redémarrage de staging. Aucun nouvel écran OAuth n’a été accepté et aucun outil d’écriture n’a été appelé.
+
+| Vérification — 2 personnes, Lyon, 1 octobre 2026, 19:30–21:00 Europe/Paris | ChatGPT                                                                                                                                                                                                                                  | Claude                       | Conclusion                                                                                                     |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `search_restaurants`                                                       | Chez Sokar, slug `chez-sokar-demo`, adresse `12 Rue de la République, 69001 Lyon`, cuisines `Bistrot` et `Française`, `priceRange: 2`, `maxOnlinePartySize: 6`; créneau `2026-10-01T17:30:00.000Z`–`19:00:00.000Z`; `capacityLimits: []` | Mêmes champs et même créneau | Les nouvelles données publiques et le créneau exact sont rendus dans les deux clients.                         |
+| `check_availability`                                                       | `available: true`, `alternativeSlots: []`, `decision: "available"`, `recommendedAction: "create_hold"`                                                                                                                                   | Même réponse                 | La recommandation est informative ; aucun hold n’a été créé.                                                   |
+| Compteurs après le retest                                                  | `search_restaurants`: 2 succès ; `check_availability`: 2 succès                                                                                                                                                                          | Un appel de chaque outil     | Labels observés : `auth_type="oauth"`, `transport="mcp"`. Aucun appel d’écriture ni erreur dans ce run propre. |
+
+Les compteurs ont été lus sur le loopback de l’API staging après le dernier redéploiement. Les deux clients contribuent chacun un succès pour chacun des deux outils. Les interfaces confirment le contenu rendu, mais ne fournissent toujours pas le `protocolVersion` brut d’`initialize` ni la réponse brute de `tools/list`. Le consentement OAuth n’a pas été refait et ses écrans n’ont pas été capturés.
 
 ## Parcours fonctionnel réel
 
