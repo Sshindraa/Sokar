@@ -10,6 +10,10 @@
  * - `silence` : aucune parole après la question de l'agent.
  * Au plus MAX_RECOVERIES_PER_CALL relances par appel, jamais pendant une
  * clôture, et seulement si la dernière réplique de l'agent était une question.
+ *
+ * Appel 126f433a (29/09) : après l'accueil « Je vous écoute. » (qui n'est pas une
+ * question), l'appelant ne dit rien d'intelligible et l'agent reste muet 15 s.
+ * Tant que l'appelant n'a rien dit, on relance donc avec une question d'ouverture.
  */
 import type { CallSession } from './types';
 import type { CallSessionManager } from './manager';
@@ -69,6 +73,18 @@ export function lastAgentQuestion(session: Pick<CallSession, 'history'>): string
   return question && question.endsWith('?') ? question : null;
 }
 
+/** Question d'ouverture, quand l'appelant n'a encore rien dit après l'accueil. */
+export const OPENING_RECOVERY_QUESTION = 'Comment puis-je vous aider ?';
+
+/** Ce que l'agent redemande : sa dernière question, ou l'ouverture si personne n'a encore parlé. */
+export function recoveryQuestion(session: Pick<CallSession, 'history'>): string | null {
+  const question = lastAgentQuestion(session);
+  if (question) return question;
+  return session.history.some((message) => message.role === 'user')
+    ? null
+    : OPENING_RECOVERY_QUESTION;
+}
+
 export function recoveryPhrase(kind: NoInputRecoveryKind, question: string): string {
   return kind === 'unheard'
     ? `Pardon, je n'ai pas bien entendu. ${question}`
@@ -91,7 +107,7 @@ async function speakRecovery(
   kind: NoInputRecoveryKind,
 ): Promise<void> {
   if (!canRecover(session)) return;
-  const question = lastAgentQuestion(session);
+  const question = recoveryQuestion(session);
   if (!question) return;
   const phrase = recoveryPhrase(kind, question);
   const state = stateOf(session);
