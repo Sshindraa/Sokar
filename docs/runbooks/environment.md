@@ -279,6 +279,11 @@ VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 # Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
 # ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
 DEEPGRAM_API_HOST="api.deepgram.com"
+# Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
+# ou Krisp | DeepFilterNet | AiCoustics | Denoiser ; uniquement pour les restaurants listés.
+# Facturée par direction et par minute (une seule direction utilisée). Un échec n'arrête pas l'appel.
+VOICE_NOISE_SUPPRESSION_ENGINE="off"
+VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS=""
 VOICE_DEEPGRAM_MODEL="nova-3"
 # Optional; Flux is used only when this CSV contains the restaurant ID.
 VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""

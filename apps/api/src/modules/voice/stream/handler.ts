@@ -38,6 +38,7 @@ import { handleSttEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
+import { startNoiseSuppression } from '../noise-suppression';
 import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
 import { finalizeVoiceCall } from '../call-finalization.service';
 import { callFinalizationDependencies } from '../call-finalization.dependencies';
@@ -299,6 +300,8 @@ function handleTelnyxMessage(
       const greeting = buildInitialGreeting(restaurantName);
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
+      // Avant l'accueil : l'audio de l'appelant doit être nettoyé dès ses premiers mots.
+      void startNoiseSuppression(session);
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
         .then(async () => {

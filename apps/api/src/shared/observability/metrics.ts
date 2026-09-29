@@ -272,6 +272,12 @@ export const voiceLlmHedgeTotal = new Counter({
   labelNames: ['outcome'] as const,
   registers: [getRegistry()],
 });
+export const voiceNoiseSuppressionTotal = new Counter({
+  name: 'sokar_voice_noise_suppression_total',
+  help: 'Telnyx noise suppression starts: engine, outcome (started|rejected|error)',
+  labelNames: ['engine', 'outcome'] as const,
+  registers: [getRegistry()],
+});
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.
