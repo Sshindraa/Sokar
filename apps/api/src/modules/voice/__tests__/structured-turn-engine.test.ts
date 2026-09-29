@@ -266,6 +266,152 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toContain('À quel nom ?');
   });
 
+  describe('créneau exclu par les disponibilités lues (appel 1b3f85e9)', () => {
+    const conflicting = { date: TOMORROW, time: '15:30', partySize: 5, customerName: '' };
+    const day = (slots: string[]) => ({
+      date: TOMORROW,
+      closed: false,
+      slotsBySize: { 5: slots },
+    });
+    const secondPassContext = (mgr: CallSessionManager) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+
+    it('ne promet pas le créneau, vérifie pour de bon et laisse le modèle proposer des alternatives', async () => {
+      const { session, mgr, outputs } = fixture();
+      session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: { ...conflicting, partySize: 0 },
+        lastAwaiting: 'partySize',
+        dayAvailability: day(['12:00', '18:30', '19:00']),
+      };
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+        restaurantId: RESTAURANT_ID,
+        date: TOMORROW,
+        partySize: 5,
+        slots: ['12:00', '18:30', '19:00'],
+        allSlots: [
+          { time: '12:00', available: true },
+          { time: '15:30', available: true },
+          { time: '18:30', available: true },
+          { time: '19:00', available: true },
+        ],
+      });
+      outputs.push(
+        turn({
+          draft: conflicting,
+          awaiting: 'customerName',
+          say: 'Pour 5, 15 h 30 est libre. C’est à quel nom ?',
+        }),
+        turn({
+          draft: { ...conflicting, time: '' },
+          awaiting: 'time',
+          say: '15 h 30 n’est pas disponible pour 5. Je peux vous proposer 18 h 30.',
+        }),
+      );
+
+      await processTranscriptStreaming(session, '5 5 5', mgr);
+
+      expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 5);
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain("15:30 n'est pas disponible");
+      expect(secondPassContext(mgr)).toContain('12:00, 18:30, 19:00');
+      expect(spoken().join(' ')).not.toContain('est libre');
+      expect(spoken().join(' ')).toContain('18 h 30');
+    });
+
+    it('laisse parler normalement quand le créneau est libre', async () => {
+      const { session, mgr, outputs } = fixture();
+      session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: { ...conflicting, partySize: 0 },
+        lastAwaiting: 'partySize',
+        dayAvailability: day(['12:00', '15:30', '19:00']),
+      };
+      outputs.push(
+        turn({
+          draft: conflicting,
+          awaiting: 'customerName',
+          say: 'Pour 5, 15 h 30 est libre. C’est à quel nom ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, '5 personnes', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toContain('C’est à quel nom ?');
+    });
+
+    it('ne répète pas l’indisponibilité quand l’appelant pose une autre question sans changer le créneau', async () => {
+      const { session, mgr, outputs } = fixture();
+      session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: conflicting,
+        lastAwaiting: 'time',
+        dayAvailability: day(['12:00', '18:30']),
+      };
+      outputs.push(
+        turn({
+          interpretation: 'question',
+          draft: conflicting,
+          awaiting: 'time',
+          say: 'Oui, nous avons une terrasse.',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'et vous avez une terrasse', mgr);
+
+      // Un seul passage du modèle : pas de vérification déclenchée par le créneau resté en conflit.
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toContain('Oui, nous avons une terrasse.');
+      expect(spoken().join(' ')).not.toContain('disponible');
+    });
+
+    it('donne les faits réels au modèle quand la garde refuse la création (créneau non vérifié)', async () => {
+      const { session, mgr, outputs } = fixture();
+      session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: { ...conflicting, customerName: 'Akkis' },
+        lastAwaiting: 'confirmation',
+        recapKey: bookingKey({ ...conflicting, customerName: 'Akkis' }),
+        availability: { date: TOMORROW, partySize: 5, slots: ['12:00', '18:30'] },
+      };
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+        restaurantId: RESTAURANT_ID,
+        date: TOMORROW,
+        partySize: 5,
+        slots: ['12:00', '18:30'],
+        allSlots: [
+          { time: '12:00', available: true },
+          { time: '15:30', available: true },
+          { time: '18:30', available: true },
+        ],
+      });
+      const draft = { ...conflicting, customerName: 'Akkis' };
+      outputs.push(
+        turn({
+          interpretation: 'affirmation',
+          draft,
+          action: 'create_reservation',
+          awaiting: 'none',
+        }),
+        turn({
+          draft,
+          awaiting: 'time',
+          say: '15 h 30 est complet pour 5. Je peux vous proposer 18 h 30.',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'oui parfait', mgr);
+
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+      expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 5);
+      expect(secondPassContext(mgr)).toContain("15:30 n'est pas disponible");
+      expect(spoken().join(' ')).toContain('18 h 30');
+    });
+  });
+
   it('ne crée pas la réservation sans récapitulatif accepté', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };

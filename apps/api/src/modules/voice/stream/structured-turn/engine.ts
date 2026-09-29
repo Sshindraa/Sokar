@@ -46,6 +46,8 @@ import {
   dayPartInTimezone,
   todayInTimezone,
   type StructuredTurnState,
+  parseStreamedDraft,
+  requestedSlotConflict,
 } from './fact-guards';
 import { buildStructuredTurnMessages } from './prompt';
 import {
@@ -142,6 +144,8 @@ function mirrorConversation(session: CallSession, state: StructuredTurnState): v
 interface PassResult {
   output: StructuredTurnOutput;
   spoken: boolean;
+  /** Le brouillon annoncé par le modèle vise un créneau que les disponibilités lues excluent : rien n'a été dit. */
+  slotConflict: boolean;
 }
 
 /**
@@ -438,6 +442,7 @@ export async function runStructuredTurn(
     const splitter = new PhraseSplitter();
     let action: string | null = null;
     let turnComplete: boolean | null = null;
+    let slotConflict = false;
     let firstToken = true;
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
@@ -457,7 +462,28 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
-      const mayContinue = turnComplete === true || options.callerFinished === true;
+      // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
+      // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
+      if (!actionResult && !slotConflict && action === 'none') {
+        const streamedDraft = parseStreamedDraft(extractor.raw);
+        // Seulement quand le créneau vient de changer : si l'appelant pose une autre question sans
+        // toucher à l'heure, la réponse ne doit pas répéter l'indisponibilité déjà annoncée.
+        const before = state.draft;
+        const changed =
+          streamedDraft &&
+          (streamedDraft.date !== before.date ||
+            streamedDraft.time !== before.time ||
+            streamedDraft.partySize !== before.partySize);
+        if (
+          streamedDraft &&
+          changed &&
+          requestedSlotConflict(state.dayAvailability, streamedDraft)
+        ) {
+          slotConflict = true;
+        }
+      }
+      const mayContinue =
+        (turnComplete === true || options.callerFinished === true) && !slotConflict;
       if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
     };
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
@@ -478,12 +504,15 @@ export async function runStructuredTurn(
     });
     const output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
-    const spoken = output.action === 'none' && (output.turnComplete || !!options.callerFinished);
+    const spoken =
+      output.action === 'none' &&
+      (output.turnComplete || !!options.callerFinished) &&
+      !slotConflict;
     if (spoken) {
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
     }
-    return { output, spoken };
+    return { output, spoken, slotConflict };
   };
 
   let speculationUsed = false;
@@ -618,15 +647,26 @@ export async function runStructuredTurn(
       confidence: first.output.confidence,
       changedFields: applied.changed.join(',') || null,
       rejectedFields: applied.rejected.join(',') || null,
-      actionDecision: decision.allowed ? 'allowed' : decision.reason,
+      actionDecision: first.slotConflict
+        ? 'slot_conflict'
+        : decision.allowed
+          ? 'allowed'
+          : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
       speculated: speculationUsed,
     });
 
     let final = first.output;
     let actionResult: string | null = null;
-    if (!decision.allowed) {
+    if (!decision.allowed && decision.reason === 'slot_not_verified') {
+      // Créneau non vérifié (appel 1b3f85e9) : un refus générique laissait l'appelant sans explication ni
+      // alternative. La vérification réelle donne les créneaux libres et dit si l'heure demandée l'est.
+      actionResult = await runAvailability();
+    } else if (!decision.allowed) {
       actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
+    } else if (first.slotConflict) {
+      // Le modèle visait un créneau que les disponibilités lues excluent : rien n'a été dit.
+      actionResult = await runAvailability();
     } else {
       switch (first.output.action) {
         case 'end_call':

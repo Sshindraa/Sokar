@@ -9,6 +9,8 @@ import {
   authorizeStructuredAction,
   bookingKey,
   createStructuredTurnState,
+  parseStreamedDraft,
+  requestedSlotConflict,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 
@@ -162,5 +164,45 @@ describe('authorizeStructuredAction', () => {
 describe('todayInTimezone', () => {
   it('suit le fuseau du restaurant', () => {
     expect(todayInTimezone('Europe/Paris', new Date('2026-09-25T23:30:00Z'))).toBe('2026-09-26');
+  });
+});
+
+describe('créneau demandé et disponibilités lues', () => {
+  const day = {
+    date: '2026-09-30',
+    closed: false,
+    slotsBySize: { 5: ['12:00', '18:30'], 2: [] as string[] },
+  };
+  const draft = (over: Partial<{ date: string; time: string; partySize: number }> = {}) => ({
+    date: '2026-09-30',
+    time: '15:30',
+    partySize: 5,
+    ...over,
+  });
+
+  it('signale un créneau absent des disponibilités du groupe, jamais quand on ne sait pas', () => {
+    expect(requestedSlotConflict(day, draft())).toBe(true);
+    expect(requestedSlotConflict(day, draft({ time: '18:30' }))).toBe(false);
+    // Aucun créneau pour ce nombre : l'heure demandée n'y est pas non plus.
+    expect(requestedSlotConflict(day, draft({ partySize: 2 }))).toBe(true);
+    // Inconnu : jour non lu, autre jour, groupe hors lecture, brouillon incomplet.
+    expect(requestedSlotConflict(null, draft())).toBe(false);
+    expect(requestedSlotConflict(day, draft({ date: '2026-10-01' }))).toBe(false);
+    expect(requestedSlotConflict(day, draft({ partySize: 9 }))).toBe(false);
+    expect(requestedSlotConflict(day, draft({ time: '' }))).toBe(false);
+    expect(requestedSlotConflict(day, draft({ partySize: 0 }))).toBe(false);
+  });
+
+  it('lit le brouillon dans un flux JSON partiel, avant la première phrase', () => {
+    const streamed =
+      '{"turnComplete":true,"interpretation":"answer","draft":{"date":"2026-09-30","time":"15:30","partySize":5,"customerName":""},"awaiting":"none"';
+    expect(parseStreamedDraft(streamed)).toEqual({
+      date: '2026-09-30',
+      time: '15:30',
+      partySize: 5,
+    });
+    // Tant que l'objet n'est pas fermé, rien n'est lisible.
+    expect(parseStreamedDraft('{"turnComplete":true,"draft":{"date":"2026-09-30","ti')).toBeNull();
+    expect(parseStreamedDraft('')).toBeNull();
   });
 });
