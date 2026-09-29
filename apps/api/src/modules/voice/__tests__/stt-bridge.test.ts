@@ -27,7 +27,7 @@ import {
   isLikelyRepeatedNoiseTranscript,
   isPunctuationOnlyTranscript,
   deepgramShortStallFinalizeMs,
-  isShortConfirmationReply,
+  finalizeOnSemanticEndOfTurn,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
@@ -812,54 +812,60 @@ describe('Deepgram final dispatch', () => {
     vi.useRealTimers();
   });
 
-  it("reconnaît une confirmation courte seulement après une question de l'agent (appel b686b241)", () => {
-    const asked = [
-      {
-        role: 'assistant' as const,
-        content: 'Je confirme donc une table pour 4. C’est bon pour vous ?',
-      },
-    ];
-    for (const reply of [
-      'oui c’est tout',
-      "Oui, c'est bon.",
-      'tout à fait',
-      'oui exactement',
-      "c'est bien ça",
-    ]) {
-      expect(isShortConfirmationReply(reply, asked)).toBe(true);
+  describe('fin de tour jugée par le modèle', () => {
+    function pendingSession(partial: string) {
+      vi.useFakeTimers();
+      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+      const { session } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      session.state = 'LISTENING';
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: partial });
+      return { session, ws };
     }
-    // Un complément après le oui : la phrase n'est pas finie.
-    for (const reply of [
-      'oui c’est bon pour 19 heures',
-      'oui mais',
-      'non plutôt samedi',
-      'demain du coup',
-    ]) {
-      expect(isShortConfirmationReply(reply, asked)).toBe(false);
-    }
-    // Pas de question de l'agent : pas de raccourci.
-    expect(
-      isShortConfirmationReply('oui c’est tout', [
-        { role: 'assistant' as const, content: 'C’est noté.' },
-      ]),
-    ).toBe(false);
-    expect(isShortConfirmationReply('oui c’est tout', [])).toBe(false);
-  });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
 
-  it('conclut vite une confirmation de trois mots après une question fermée', () => {
-    vi.useFakeTimers();
-    vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
-    const { session } = deepgramSession();
-    session.history.push({ role: 'assistant', content: 'C’est bon pour vous ?' });
-    const ws = makeWsMock();
-    session.sttWs = ws;
-    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui c’est tout' });
-    vi.advanceTimersByTime(499);
-    expect(ws.send).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
-    vi.unstubAllEnvs();
-    vi.useRealTimers();
+    it('envoie Finalize dès que le modèle juge le tour terminé, sans attendre le minuteur', () => {
+      const { session, ws } = pendingSession('tout est bon pour moi');
+      expect(finalizeOnSemanticEndOfTurn(session, 'tout est bon pour moi', true)).toBe(true);
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+    });
+
+    it('ne fait rien quand le modèle juge le tour inachevé : le minuteur reste le filet', () => {
+      const { session, ws } = pendingSession('je voudrais');
+      expect(finalizeOnSemanticEndOfTurn(session, 'je voudrais', false)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('ignore un verdict périmé : la partielle a changé depuis la spéculation', () => {
+      const { session, ws } = pendingSession('demain soir');
+      handleNormalizedSttMessage(session, {
+        type: 'partial',
+        transcript: 'demain soir vers vingt',
+      });
+      expect(finalizeOnSemanticEndOfTurn(session, 'demain soir', true)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it("n'agit pas pendant que l'agent parle, ni quand la fonction est désactivée", () => {
+      const { session, ws } = pendingSession('oui');
+      session.state = 'SPEAKING';
+      expect(finalizeOnSemanticEndOfTurn(session, 'oui', true)).toBe(false);
+      session.state = 'LISTENING';
+      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'false');
+      expect(finalizeOnSemanticEndOfTurn(session, 'oui', true)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('ne demande Finalize qu’une fois par segment', () => {
+      const { session, ws } = pendingSession('très bien merci');
+      expect(finalizeOnSemanticEndOfTurn(session, 'très bien merci', true)).toBe(true);
+      expect(finalizeOnSemanticEndOfTurn(session, 'très bien merci', true)).toBe(false);
+      expect(ws.send).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('garde le délai normal pour une phrase longue même avec le délai court configuré', () => {

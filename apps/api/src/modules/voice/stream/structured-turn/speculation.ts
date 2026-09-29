@@ -23,6 +23,15 @@ interface Speculation {
 
 const speculations = new WeakMap<CallSession, Speculation>();
 
+/**
+ * Verdict du modèle sur la fin de tour : `turnComplete` est le premier champ du
+ * JSON, il arrive donc avant la première phrase. Null tant qu'il n'est pas lisible.
+ */
+export function parseTurnCompleteVerdict(streamed: string): boolean | null {
+  const match = /"turnComplete"\s*:\s*(true|false)/.exec(streamed);
+  return match ? match[1] === 'true' : null;
+}
+
 function requestKey(messages: ChatMessage[], format: StructuredFormat): string {
   return JSON.stringify([messages, format]);
 }
@@ -37,12 +46,14 @@ export function startSpeculation(
   mgr: CallSessionManager,
   messages: ChatMessage[],
   format: StructuredFormat,
+  onVerdict?: (turnComplete: boolean) => void,
 ): void {
   const key = requestKey(messages, format);
   const current = speculations.get(session);
   if (current?.key === key) return;
   current?.controller.abort();
   const controller = new AbortController();
+  let verdictSent = false;
   const speculation: Speculation = {
     key,
     deltas: [],
@@ -55,6 +66,13 @@ export function startSpeculation(
     onDelta: (delta) => {
       speculation.deltas.push(delta);
       for (const listener of speculation.listeners) listener(delta);
+      if (onVerdict && !verdictSent) {
+        const verdict = parseTurnCompleteVerdict(speculation.deltas.join(''));
+        if (verdict !== null) {
+          verdictSent = true;
+          onVerdict(verdict);
+        }
+      }
     },
   });
   // Une spéculation abandonnée ou échouée n'est jamais une erreur du tour.
