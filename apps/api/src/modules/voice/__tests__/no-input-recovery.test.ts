@@ -9,6 +9,8 @@ import {
   lastAgentQuestion,
   MAX_RECOVERIES_PER_CALL,
   noInputTimeoutMs,
+  OPENING_RECOVERY_QUESTION,
+  recoveryQuestion,
   scheduleUnheardRecovery,
   UNHEARD_GRACE_MS,
 } from '../stream/no-input-recovery';
@@ -58,6 +60,38 @@ describe('no-input recovery', () => {
         makeSession({ history: [{ role: 'assistant', content: 'C’est noté, à demain.' }] }),
       ),
     ).toBeNull();
+  });
+
+  it("relance avec une question d'ouverture quand l'appelant n'a rien dit après l'accueil", async () => {
+    const greetingOnly = () => makeSession({ history: [] });
+    expect(recoveryQuestion(greetingOnly())).toBe(OPENING_RECOVERY_QUESTION);
+    // Un appelant qui a déjà parlé et un agent qui n'a pas posé de question : pas de relance.
+    expect(
+      recoveryQuestion(
+        makeSession({
+          history: [
+            { role: 'user', content: 'demain' },
+            { role: 'assistant', content: 'C’est noté.' },
+          ],
+        }),
+      ),
+    ).toBeNull();
+
+    const silent = greetingOnly();
+    armSilenceRecovery(silent, makeManager());
+    await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      silent,
+      'Vous êtes toujours là ? Comment puis-je vous aider ?',
+    );
+
+    const unheard = greetingOnly();
+    scheduleUnheardRecovery(unheard, makeManager());
+    await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS);
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      unheard,
+      "Pardon, je n'ai pas bien entendu. Comment puis-je vous aider ?",
+    );
   });
 
   it('relance quand une parole est détectée sans aucun mot reconnu', async () => {
