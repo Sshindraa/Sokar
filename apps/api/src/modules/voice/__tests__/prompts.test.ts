@@ -129,6 +129,22 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain('15 h, après-midi');
   });
 
+  it('attend une correction annoncée et prend congé après la réservation (appel 8ae1e63e)', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'demain à 14 heures non',
+      state: createStructuredTurnState(),
+    });
+    // Rejeu Qwen sur les tours réels du 29/09 (18 h 39) : une valeur suivie d'un rejet
+    // n'était jamais jugée inachevée (0/20) → 25/30 ; « salut » après « Bonne soirée »
+    // rouvrait un accueil 13/20 → 0/20 (fin d'appel 7/20 → 20/20) ; témoins inchangés.
+    expect(system.content).toContain('est une correction en cours');
+    expect(system.content).toContain("N'agis pas sur la valeur rejetée");
+    expect(system.content).toContain('sa façon de prendre congé, pas un nouvel appel');
+    expect(system.content).toContain('action=end_call');
+  });
+
   it("n'ajoute aucun moment de la journée quand il n'est pas fourni", () => {
     const [system] = buildStructuredTurnMessages({
       systemPrompt: 'Prompt',
