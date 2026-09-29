@@ -30,7 +30,11 @@ import {
   HoldNotFoundError,
   HoldService,
 } from './hold.service.js';
-import { IdempotencyPendingError, IdempotencyService } from './idempotency.service.js';
+import {
+  IdempotencyConflictError,
+  IdempotencyPendingError,
+  IdempotencyService,
+} from './idempotency.service.js';
 import { type PolicySnapshot, validateReservationAgainstPolicy } from './policies.service.js';
 import { type ReservationChannel } from './state-machine.js';
 import {
@@ -171,6 +175,40 @@ export class ReservationService {
     idempotency: { scope: string; key: string; payloadHash: string; ttlSeconds: number },
   ): Promise<CreateReservationResult> {
     const observationSource = inferReservationObservationSource(input.actor, input.channel);
+
+    // Un rejeu avec un hold consommé doit retrouver la réservation avant la
+    // validation du token, qui n'est actif que pour la première création.
+    if (input.holdToken) {
+      const lookup = await this.idempotency.lookup(
+        idempotency.scope,
+        idempotency.key,
+        idempotency.payloadHash,
+      );
+      if (lookup.kind === 'conflict') {
+        throw new IdempotencyConflictError(idempotency.scope, idempotency.key);
+      }
+      if (lookup.kind === 'hit') {
+        const existing = await this.waitForCompletedIdempotency(
+          idempotency.scope,
+          idempotency.key,
+          idempotency.payloadHash,
+        );
+        if (existing) {
+          observeReservationMutation({
+            source: observationSource,
+            operation: 'create_replay',
+            state: existing.state,
+            idempotency: 'reused',
+            audit: 'not_applicable',
+            notification: 'not_applicable',
+            capacity: 'unchanged',
+            mutated: false,
+          });
+          return existing;
+        }
+        throw new IdempotencyPendingError(idempotency.scope, idempotency.key);
+      }
+    }
 
     // 1. Valider la policy
     validateReservationAgainstPolicy(input.policy, {
