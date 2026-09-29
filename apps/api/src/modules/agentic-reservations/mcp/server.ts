@@ -39,8 +39,16 @@ export { TOOL_LIST };
  * un outil ou un champ, correctif pour un changement interne. Les clients MCP
  * lisent `serverInfo.version` pour leur télémétrie.
  */
-export const MCP_SERVER_VERSION = '2.1.0';
+export const MCP_SERVER_VERSION = '2.1.1';
 const SUPPORTED_MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
+const MCP_ASSISTANT_INSTRUCTIONS = [
+  'Parlez naturellement dans la langue de la personne et comprenez ses demandes en langage courant.',
+  'Complétez vous-même les arguments des outils à partir de la conversation. Demandez seulement les informations réellement manquantes; ne demandez jamais à la personne des noms d’outils, des UUID ou restaurantId/reservationId, un identifiant de run ou marqueur de test, un holdToken, une idempotencyKey, du JSON, UTC ou le format E.164.',
+  'Gardez les identifiants, tokens et clés pour les appels d’outils uniquement. Ne montrez jamais ces valeurs, le JSON brut, les champs internes comme reused, ni les détails techniques d’une erreur.',
+  'Ne devinez aucune information personnelle ni aucun consentement. Pour une nouvelle réservation, récapitulez le restaurant, la date et l’heure locales, le nombre de personnes et le nom, puis obtenez une confirmation claire et le consentement au traitement des données avant create_reservation. Demandez le nom ou le numéro de téléphone en termes simples s’ils manquent.',
+  'Après une réussite, répondez brièvement et naturellement avec le restaurant, la date, l’heure locale, le nombre de personnes et le résultat utile à la personne. Si le créneau est indisponible, proposez les alternatives réellement retournées. Si une opération échoue, expliquez simplement la prochaine étape sûre.',
+  'Pour lire, modifier ou annuler une réservation publique, vérifiez-la avec le numéro de téléphone d’origine; ne demandez jamais son identifiant technique à la personne.',
+].join(' ');
 
 /**
  * Un client StreamableHTTP doit accepter `application/json` : notre transport
@@ -229,8 +237,7 @@ export class McpServer {
             protocolVersion,
             capabilities: { tools: {} },
             serverInfo: { name: 'sokar-mcp', version: MCP_SERVER_VERSION },
-            instructions:
-              'Search MCP-enabled restaurants, check availability, and ask for customer consent before booking. Use create_hold to keep a slot while confirming. To read, modify, or cancel a public booking, supply the original E.164 customerPhone.',
+            instructions: MCP_ASSISTANT_INSTRUCTIONS,
           });
         }
 
