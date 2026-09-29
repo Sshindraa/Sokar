@@ -147,8 +147,24 @@ interface PassResult {
 /**
  * Silence après un tour jugé inachevé avant de répondre quand même : l'appelant
  * cherchait peut-être ses mots mais attend maintenant une réponse.
+ *
+ * Mesuré depuis le début du tour (transcription finale reçue), pas depuis la fin de la réponse
+ * du modèle : appel 1b3f85e9, le délai commençait ~1 s trop tard (3,3 à 3,8 s de silence perçu).
+ * Sur 14 reprises réelles après un tour inachevé, l'appelant reprend en 1,0 à 4,4 s (médiane
+ * ~2,2 s) ; réglable sans déploiement par VOICE_INCOMPLETE_TURN_SILENCE_MS.
  */
-export const INCOMPLETE_TURN_SILENCE_MS = 2_500;
+export const INCOMPLETE_TURN_SILENCE_MS = 2_000;
+
+export function incompleteTurnSilenceMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_INCOMPLETE_TURN_SILENCE_MS ?? INCOMPLETE_TURN_SILENCE_MS);
+  return Number.isFinite(parsed) && parsed >= 800 && parsed <= 6_000
+    ? parsed
+    : INCOMPLETE_TURN_SILENCE_MS;
+}
+
+/** Tant que des mots sont en cours de reconnaissance, on ne répond pas par-dessus l'appelant. */
+const INCOMPLETE_TURN_RECHECK_MS = 700;
+const INCOMPLETE_TURN_MAX_DEFERRALS = 5;
 
 /** Dite si la relance après un silence ne produit toujours aucune phrase. */
 export const CALLER_FINISHED_FALLBACK = 'Oui, je vous écoute ?';
@@ -165,12 +181,23 @@ function armIncompleteTurnTimer(
   session: CallSession,
   mgr: CallSessionManager,
   fragment: string,
+  turnStartedAt: number,
 ): void {
   clearIncompleteTurnTimer(session);
-  const timer = setTimeout(() => {
+  let deferrals = 0;
+  const fire = () => {
     incompleteTurnTimers.delete(session);
     if (session.ended || session.ending) return;
     if (session.structuredTurn?.pendingFragment !== fragment) return;
+    // L'appelant a repris la parole (des mots arrivent, la transcription finale pas encore) : la
+    // réponse à un fragment ne doit pas partir par-dessus lui (appel 1b3f85e9, tour 9). Report borné.
+    if (session.sttDeepgramPendingInterim === true && deferrals < INCOMPLETE_TURN_MAX_DEFERRALS) {
+      deferrals++;
+      const timer = setTimeout(fire, INCOMPLETE_TURN_RECHECK_MS);
+      timer.unref?.();
+      incompleteTurnTimers.set(session, timer);
+      return;
+    }
     const generation = ++session.responseGeneration;
     runStructuredTurn(
       session,
@@ -184,7 +211,9 @@ function armIncompleteTurnTimer(
         '[structured-turn] Silent-caller turn failed',
       );
     });
-  }, INCOMPLETE_TURN_SILENCE_MS);
+  };
+  const remaining = Math.max(300, incompleteTurnSilenceMs() - (Date.now() - turnStartedAt));
+  const timer = setTimeout(fire, remaining);
   timer.unref?.();
   incompleteTurnTimers.set(session, timer);
 }
@@ -563,7 +592,7 @@ export async function runStructuredTurn(
         confidence: first.output.confidence,
       });
       mgr.transition(session, 'LISTENING');
-      armIncompleteTurnTimer(session, mgr, transcript);
+      armIncompleteTurnTimer(session, mgr, transcript, startedAt);
       return;
     }
     const applied = applyProposedDraft(state.draft, first.output, { today });

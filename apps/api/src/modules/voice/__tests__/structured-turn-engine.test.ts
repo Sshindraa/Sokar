@@ -5,6 +5,7 @@ import { createConversationState } from '../stream/conversation-controller';
 import type { StructuredTurnOutput } from '../stream/structured-turn/schema';
 import {
   CALLER_FINISHED_FALLBACK,
+  incompleteTurnSilenceMs,
   speculateStructuredTurn,
 } from '../stream/structured-turn/engine';
 import {
@@ -383,7 +384,7 @@ describe('tour structuré (canary)', () => {
 
     await processTranscriptStreaming(session, 'non mais attends', mgr);
     expect(spoken()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(2_600);
+    await vi.advanceTimersByTimeAsync(2_100);
     vi.useRealTimers();
 
     expect(spoken()).toEqual(['Je vous écoute, prenez votre temps.']);
@@ -391,6 +392,66 @@ describe('tour structuré (canary)', () => {
       'non mais attends',
       'Je vous écoute, prenez votre temps.',
     ]);
+  });
+
+  describe('minuteur après un tour inachevé (appel 1b3f85e9)', () => {
+    const scripted = (outputs: StructuredTurnOutput[]) =>
+      outputs.push(
+        turn({ turnComplete: false, interpretation: 'unclear', confidence: 'low' }),
+        turn({ interpretation: 'unclear', awaiting: 'open', say: 'Je vous écoute.' }),
+      );
+
+    it('compte depuis le début du tour, pas depuis la réponse du modèle', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      await processTranscriptStreaming(session, 'trois non non', mgr);
+      await vi.advanceTimersByTimeAsync(1_900);
+      expect(spoken()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(200);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it('ne répond pas par-dessus l’appelant tant que des mots arrivent, puis répond', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      await processTranscriptStreaming(session, 'trois non non', mgr);
+      session.sttDeepgramPendingInterim = true;
+      await vi.advanceTimersByTimeAsync(2_100);
+      expect(spoken()).toEqual([]);
+      session.sttDeepgramPendingInterim = false;
+      await vi.advanceTimersByTimeAsync(800);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it('borne le report : une transcription qui ne vient jamais ne bloque pas la réponse', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      await processTranscriptStreaming(session, 'trois non non', mgr);
+      session.sttDeepgramPendingInterim = true;
+      await vi.advanceTimersByTimeAsync(6_000);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it('se règle par VOICE_INCOMPLETE_TURN_SILENCE_MS et ignore une valeur absurde', async () => {
+      expect(incompleteTurnSilenceMs({})).toBe(2_000);
+      expect(incompleteTurnSilenceMs({ VOICE_INCOMPLETE_TURN_SILENCE_MS: '1200' })).toBe(1_200);
+      expect(incompleteTurnSilenceMs({ VOICE_INCOMPLETE_TURN_SILENCE_MS: '50' })).toBe(2_000);
+      expect(incompleteTurnSilenceMs({ VOICE_INCOMPLETE_TURN_SILENCE_MS: 'vite' })).toBe(2_000);
+      vi.useFakeTimers();
+      vi.stubEnv('VOICE_INCOMPLETE_TURN_SILENCE_MS', '1000');
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      await processTranscriptStreaming(session, 'trois non non', mgr);
+      await vi.advanceTimersByTimeAsync(1_100);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
   });
 
   it('impose turnComplete=true à la relance et ne dit jamais « pas compris » (appel cdc95509)', async () => {
