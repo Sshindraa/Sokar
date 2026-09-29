@@ -5,7 +5,10 @@ import {
   describeCalendar,
   describeDate,
 } from '../stream/structured-turn/prompt';
-import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
+import {
+  createStructuredTurnState,
+  dayPartInTimezone,
+} from '../stream/structured-turn/fact-guards';
 
 describe('buildSystemPrompt', () => {
   const baseCtx = {
@@ -103,6 +106,47 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain("« 18 heures, c'est noté »");
     // Groupe connu : lire la ligne de sa taille, refuser un horaire absent (1–2/10 → 9/10).
     expect(system.content).toContain('« 5-8 » contient 6');
+  });
+
+  it('donne au modèle des principes de conversation, pas des phrases (appel b686b241)', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'je voudrais bien venir',
+      state: createStructuredTurnState(),
+      dayPart: '15 h, après-midi',
+    });
+    // Rejeu Qwen sur les tours réels du 29/09 (20 tirages) : phrase d'intention sans
+    // information, attente 14/20 → 20/20 ; nom épelé au récapitulatif 5/20 → 0/20 ;
+    // récapitulatif 23,7 → 17 mots ; redemande à vide (60 tirages) 52/60 → 26/60 ;
+    // « bonne soirée » à 15 h (40 tirages) 20/40 → 4/40.
+    expect(system.content).toContain("sans donner encore l'information que tu attends");
+    expect(system.content).toContain('ne repose jamais à vide la question');
+    expect(system.content).toContain('dis-le comme un nom, pas lettre par lettre');
+    // Le moment de la journée est un fait, placé en dernier au plus près de la formulation.
+    const moment = system.content.indexOf('MOMENT DE LA JOURNÉE');
+    expect(moment).toBeGreaterThan(system.content.indexOf('ÉTAT VÉRIFIÉ'));
+    expect(system.content).toContain('15 h, après-midi');
+  });
+
+  it("n'ajoute aucun moment de la journée quand il n'est pas fourni", () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'bonjour',
+      state: createStructuredTurnState(),
+    });
+    expect(system.content).not.toContain('MOMENT DE LA JOURNÉE (heure locale');
+  });
+
+  it("calcule l'heure locale pleine et le moment de la journée dans le fuseau du restaurant", () => {
+    const at = (iso: string) => dayPartInTimezone('Europe/Paris', new Date(iso));
+    expect(at('2026-09-29T13:09:00Z')).toBe('15 h, après-midi');
+    expect(at('2026-09-29T05:30:00Z')).toBe('7 h, matin');
+    expect(at('2026-09-29T16:00:00Z')).toBe('18 h, soir');
+    expect(at('2026-09-29T01:00:00Z')).toBe('3 h, nuit');
+    // Une minute plus tard, le fait reste identique : la requête spéculative aussi.
+    expect(at('2026-09-29T13:10:00Z')).toBe(at('2026-09-29T13:09:00Z'));
   });
 
   it('interdit de recopier une question restée sans réponse (appel c5d6b07d)', () => {
