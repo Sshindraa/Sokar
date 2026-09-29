@@ -266,6 +266,12 @@ export const voiceLlmFallbackTotal = new Counter({
   labelNames: ['path', 'outcome', 'reason'] as const,
   registers: [getRegistry()],
 });
+export const voiceLlmHedgeTotal = new Counter({
+  name: 'sokar_voice_llm_hedge_total',
+  help: 'Hedged structured-turn requests: outcome (primary_won|hedge_won|both_failed)',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.

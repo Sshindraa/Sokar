@@ -184,6 +184,10 @@ VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
 # Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
 VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
+# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
+# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
+# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
+VOICE_LLM_HEDGE_MS="700"
 ```
 
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
