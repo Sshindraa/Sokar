@@ -51,8 +51,8 @@ export class HoldConflictError extends Error {
 }
 
 export class HoldNotFoundError extends Error {
-  constructor(public readonly token: string) {
-    super(`Hold not found or expired: token=${token}`);
+  constructor(_token: string) {
+    super('Hold not found or expired');
     this.name = 'HoldNotFoundError';
   }
 }

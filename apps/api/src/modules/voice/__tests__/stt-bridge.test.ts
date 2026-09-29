@@ -26,6 +26,7 @@ import {
   isLikelyIncompleteTranscript,
   isLikelyRepeatedNoiseTranscript,
   isPunctuationOnlyTranscript,
+  deepgramShortStallFinalizeMs,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
@@ -793,6 +794,49 @@ describe('Deepgram final dispatch', () => {
       }),
     );
     expect(session.sttDeepgramFinalizeRequested).toBe(false);
+  });
+
+  it('conclut plus vite une réponse courte figée quand le délai court est configuré (appel c5d6b07d)', () => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
+    const { session } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: '4' });
+    vi.advanceTimersByTime(499);
+    expect(ws.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it('garde le délai normal pour une phrase longue même avec le délai court configuré', () => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
+    const { session } = deepgramSession();
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'peut-être vers 18 heures',
+    });
+    vi.advanceTimersByTime(1_199);
+    expect(ws.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it('ignore un délai court plus long que le délai normal', () => {
+    expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '5000' })).toBe(
+      1_200,
+    );
+    expect(deepgramShortStallFinalizeMs({})).toBe(1_200);
+    expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
+      500,
+    );
   });
 
   it('force la fin d’une partielle Deepgram figée (appel 25650799)', () => {

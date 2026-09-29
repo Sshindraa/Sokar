@@ -2502,6 +2502,7 @@ model WaitingListEntry {
   customerPhone           String            @map("customer_phone")
   customerPhoneNormalized String            @map("customer_phone_normalized")
   customerEmail           String?           @map("customer_email")
+  consents                Json              @default("{}") @map("consents")
   source                  String?           @map("source")
   slotStart               DateTime          @map("slot_start")
   slotEnd                 DateTime          @map("slot_end")

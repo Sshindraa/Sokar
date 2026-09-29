@@ -1,5 +1,5 @@
 /**
- * Auth MCP : authentification par API key (Bearer) + validation Origin.
+ * Auth MCP : OAuth opaque ou API key (Bearer) + validation Origin.
  *
  * - API key : préfixe `sk_sokar_agent_` + secret opaque. En P1, on valide
  *   contre AgentClient.keyHash. En dev uniquement, AGENT_DEV_KEY reste un
@@ -12,8 +12,9 @@
 
 import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { env } from '../../../env';
+import { redisCache } from '../../../shared/redis/client';
 import { verifyApiKeyHash } from '../../../shared/crypto/api-key-hash';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
@@ -30,7 +31,7 @@ const DEFAULT_ORIGINS = [
 ];
 
 function buildAllowedOrigins(): ReadonlySet<string> {
-  const envOrigins = process.env.MCP_ALLOWED_ORIGINS;
+  const envOrigins = env.MCP_ALLOWED_ORIGINS;
   if (envOrigins) {
     const extra = envOrigins
       .split(',')
@@ -60,6 +61,7 @@ export type AuthContext = {
   restaurantId: string | null;
   scopes: string[];
   allowedOrigins: string[];
+  credentialType: 'api_key' | 'oauth';
 };
 
 // Construction runtime pour contourner le masquage statique de secrets
@@ -121,6 +123,7 @@ export function validateDevApiKey(key: string): AuthContext | null {
       restaurantId: null,
       scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
       allowedOrigins: [],
+      credentialType: 'api_key',
     };
   }
 
@@ -179,6 +182,7 @@ export async function validateApiKey(
       restaurantId: client.restaurantId,
       scopes: client.scopes,
       allowedOrigins: client.allowedOrigins,
+      credentialType: 'api_key',
     };
   }
 
@@ -219,8 +223,23 @@ export async function authenticateMcpRequest(
       'UNAUTHORIZED',
     );
   }
+  const failedAuthKey = `sokar:mcp:authfail:${createHash('sha256').update(req.ip).digest('hex')}`;
+  try {
+    if (Number(await redisCache.get(failedAuthKey)) >= 30) {
+      throw new McpAuthError('Too many invalid credentials', 429, 'RATE_LIMITED');
+    }
+  } catch (err) {
+    if (err instanceof McpAuthError) throw err;
+    // The Fastify IP limit still applies if Redis is unavailable.
+  }
   const ctx = await validateApiKey(apiKey, prisma);
   if (!ctx) {
+    try {
+      await redisCache.incr(failedAuthKey);
+      await redisCache.expire(failedAuthKey, 60);
+    } catch {
+      // The Fastify IP limit still applies if Redis is unavailable.
+    }
     throw new McpAuthError('Invalid API key', 401, 'INVALID_API_KEY');
   }
   if (!validateOrigin(req.headers.origin)) {

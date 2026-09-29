@@ -15,6 +15,8 @@ import { createHash } from 'crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { env } from '../../../env';
+import { redisCache } from '../../../shared/redis/client';
+import { MCP_SERVER_VERSION } from '../mcp/server';
 
 // Construction runtime pour contourner le masquage statique de secrets
 // sur les patterns qui ressemblent à des API keys.
@@ -133,11 +135,94 @@ describe('MCP server', () => {
       expect(body.result.protocolVersion).toBeDefined();
       expect(body.result.capabilities.tools).toBeDefined();
       expect(body.result.serverInfo.name).toBe('sokar-mcp');
+      expect(body.result.serverInfo.version).toBe(MCP_SERVER_VERSION);
+      expect(body.result.instructions).toContain('customerPhone');
+    });
+
+    it('négocie la version demandée quand elle est supportée', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: { 'content-type': 'application/json', ...AUTH },
+        payload: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26' },
+        },
+      });
+      expect(res.json().result.protocolVersion).toBe('2025-03-26');
+    });
+
+    it('retombe sur la dernière version supportée si la version est inconnue', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: { 'content-type': 'application/json', ...AUTH },
+        payload: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '1999-01-01' },
+        },
+      });
+      expect(res.json().result.protocolVersion).toBe('2025-11-25');
+    });
+  });
+
+  describe('negotiation du contenu', () => {
+    it('refuse un Accept qui exclut application/json', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'text/plain',
+          ...AUTH,
+        },
+        payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      });
+      expect(res.statusCode).toBe(406);
+      expect(res.json().code).toBe('NOT_ACCEPTABLE');
+    });
+
+    it('accepte application/json et text/event-stream', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...AUTH,
+        },
+        payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('refuse un MCP-Protocol-Version non supporté', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/mcp',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-protocol-version': '1999-01-01',
+          ...AUTH,
+        },
+        payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toContain('MCP-Protocol-Version');
     });
   });
 
   describe('tools/list', () => {
-    it('liste 6 outils publics', async () => {
+    it('liste les outils publics', async () => {
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -154,7 +239,66 @@ describe('MCP server', () => {
       expect(names).toContain('create_reservation');
       expect(names).toContain('cancel_reservation');
       expect(names).toContain('get_reservation_status');
+      for (const tool of body.result.tools) {
+        expect(tool.outputSchema?.type).toBe('object');
+      }
     });
+  });
+
+  it('enforces the shared client limit before dispatch', async () => {
+    vi.mocked(redisCache.evalsha).mockResolvedValueOnce([0, 0, 1000]);
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json', ...AUTH },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBe('1');
+  });
+
+  it('throttles repeated invalid credentials before hash verification', async () => {
+    const app = await getApp();
+    vi.mocked(redisCache.get).mockResolvedValueOnce('30');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer invalid-key',
+      },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBe('60');
+  });
+
+  it('accepts MCP browser origins on preflight', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/mcp',
+      headers: {
+        origin: 'https://claude.ai',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('https://claude.ai');
+  });
+
+  it('does not respond to an unknown notification', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: { 'content-type': 'application/json', ...AUTH },
+      payload: { jsonrpc: '2.0', method: 'notifications/cancelled' },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toBe('');
   });
 
   describe('tools/call', () => {
@@ -384,7 +528,7 @@ describe('MCP server', () => {
   });
 
   describe('batch', () => {
-    it('supporte un batch JSON-RPC', async () => {
+    it('refuse un batch JSON-RPC sur Streamable HTTP', async () => {
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -396,8 +540,8 @@ describe('MCP server', () => {
         ],
       });
       const body = res.json();
-      expect(Array.isArray(body)).toBe(true);
-      expect(body).toHaveLength(2);
+      expect(res.statusCode).toBe(400);
+      expect(body.error.code).toBe(-32600);
     });
   });
 });

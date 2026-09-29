@@ -45,7 +45,7 @@ Le body est un message JSON-RPC 2.0:
 }
 ```
 
-Les batchs JSON-RPC sont acceptés en envoyant un tableau de messages.
+Envoyez un seul message JSON-RPC par requête POST ; les batchs sont refusés.
 
 ## Authentification
 
@@ -57,13 +57,26 @@ Authorization: Bearer sk_sokar_agent_xxx
 
 La clé est vérifiée via la table `AgentClient`:
 
-- `keyHash`: hash SHA-256 de la clé complète
+- `keyHash`: hash scrypt salé de la clé complète (anciennes clés SHA-256 acceptées jusqu'à rotation)
 - `keyPrefix`: préfixe affichable pour l'admin et les logs
 - `restaurantId`: optionnel, limite le client à un restaurant
 - `scopes`: `mcp:read`, `mcp:reserve`, `mcp:cancel` ou `mcp:*`
 - `allowedOrigins`: allowlist par client si la requête browser envoie `Origin`
 - `revokedAt`: révocation immédiate
 - `lastUsedAt`: mis à jour à chaque appel réussi
+
+Les tokens OAuth publics couvrent les restaurants qui ont activé MCP. L'intégration peut
+demander `restaurant_id` à `/oauth/authorize` pour limiter le token à un seul restaurant,
+mais ce paramètre ne donne aucun accès staff : pour lire, modifier ou annuler une
+réservation avec un token OAuth, indiquez le numéro E.164 utilisé lors de sa création.
+La réservation doit aussi provenir du même client MCP. Seules les clés API liées à un
+restaurant peuvent agir sur toutes les réservations de ce restaurant sans cette preuve.
+Quand `scope` est absent, OAuth accorde uniquement `mcp:read`.
+
+L'enregistrement dynamique accepte les redirect URIs HTTPS, ainsi que les callbacks
+HTTP sur `localhost`, `127.0.0.1` ou `[::1]` avec un port. Les clients peuvent utiliser
+`client_secret_basic`, `client_secret_post` ou `none`; les clients `none` reposent sur
+PKCE S256 et ne reçoivent pas de secret.
 
 Le fallback `AGENT_DEV_KEY` n'est accepté que lorsque `ENABLE_DEV_AUTH=true` et que la clé respecte
 les contraintes de format et de longueur. Il doit rester désactivé sur les environnements partagés.
@@ -126,9 +139,9 @@ Réponse:
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "protocolVersion": "2025-06-18",
+    "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "0.1.0" }
+    "serverInfo": { "name": "sokar-mcp", "version": "2.0.0" }
   }
 }
 ```
@@ -146,12 +159,18 @@ Requête:
 }
 ```
 
-Réponse: `result.tools` contient les outils publics:
+Réponse: `result.tools` contient les outils publics. Chaque outil expose son
+`inputSchema`, son `outputSchema` et ses annotations:
 
 - `search_restaurants`
 - `get_restaurant_details`
 - `check_availability`
+- `create_quote`
+- `create_hold`
 - `create_reservation`
+- `join_waiting_list`
+- `cancel_waiting_list`
+- `modify_reservation`
 - `cancel_reservation`
 - `get_reservation_status`
 
@@ -318,6 +337,16 @@ Réponse:
 }
 ```
 
+Si le créneau est indisponible, `alternativeSlots` propose jusqu'à cinq horaires
+du même jour compatibles avec l'exposition du restaurant.
+
+### create_quote et create_hold
+
+Ces outils prennent les mêmes arguments que `check_availability`. `create_quote`
+ne bloque pas la capacité. `create_hold` renvoie `holdToken` et `expiresAt` ;
+transmettez le token à `create_reservation` avant expiration. Le hold est lié au
+restaurant, à la taille du groupe et aux deux bornes exactes du créneau.
+
 ### create_reservation
 
 Crée une réservation. L'agent doit avoir obtenu le consentement explicite de
@@ -352,7 +381,7 @@ Contraintes:
 - `reservationProcessing`: obligatoire et doit valoir `true`
 - `idempotencyKey`: obligatoire, stable pour la tentative de création
 - `specialRequests`: optionnel, maximum 500 caractères, filtré anti-injection
-- `holdToken`: optionnel en phase pilote
+- `holdToken`: optionnel ; permet de consommer un hold créé par `create_hold`
 - `startsAt`, `endsAt`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
 - `timezone`: optionnel pour les valeurs locales ; sans offset ni timezone, le fuseau du restaurant est utilisé
 
@@ -374,7 +403,8 @@ Arguments:
 
 ```json
 {
-  "reservationId": "d7aa8415-cec7-4cb0-b7ef-267e14f46993"
+  "reservationId": "d7aa8415-cec7-4cb0-b7ef-267e14f46993",
+  "customerPhone": "+33612345678"
 }
 ```
 
@@ -391,6 +421,12 @@ Réponse:
 }
 ```
 
+### modify_reservation
+
+Prend `reservationId`, `customerPhone` pour un token public, puis au moins un des
+champs `partySize`, `startsAt`/`endsAt` ou `customerName`. Le nouveau créneau et la
+capacité sont vérifiés dans une transaction avant la mise à jour.
+
 ### cancel_reservation
 
 Annule une réservation existante.
@@ -400,6 +436,7 @@ Arguments:
 ```json
 {
   "reservationId": "d7aa8415-cec7-4cb0-b7ef-267e14f46993",
+  "customerPhone": "+33612345678",
   "reason": "Utilisateur indisponible"
 }
 ```
@@ -412,17 +449,59 @@ Réponse:
 }
 ```
 
+### join_waiting_list
+
+Rejoint la liste d'attente quand le créneau est complet et que le restaurateur
+l'a activée (`capacitySpecials.waitingListEnabled`). Sur un créneau encore
+disponible, l'outil renvoie `SLOT_AVAILABLE` et invite à réserver directement.
+
+Arguments:
+
+```json
+{
+  "restaurantId": "550e8400-e29b-41d4-a716-446655440000",
+  "partySize": 4,
+  "slotStart": "2026-09-10T20:00:00+02:00",
+  "slotEnd": "2026-09-10T22:00:00+02:00",
+  "customerFirstName": "Alice",
+  "customerPhone": "+33612345678",
+  "consents": {
+    "waitingListProcessing": true,
+    "reservationProcessing": true,
+    "transactionalSms": true,
+    "transactionalEmail": false,
+    "marketingOptIn": false
+  }
+}
+```
+
+Réponse: `{ "entryId": "…", "position": 2, "actionToken": "…" }`. L'`actionToken`
+est nécessaire pour retirer l'entrée, conservez-le jusqu'à la réponse du client.
+`waitingListProcessing` et `reservationProcessing` sont obligatoires car une promotion
+peut créer automatiquement la réservation.
+
+### cancel_waiting_list
+
+Retire une entrée de liste d'attente avec `entryId` et l'`actionToken` renvoyé à
+l'inscription. Le code de retrait est `INVALID_STATE` si la table a déjà été
+proposée entre-temps.
+
 ## Rate limit et sécurité
 
-Chaque outil est rate-limité par client MCP. Les réponses sont filtrées avant
-sortie:
+Chaque outil est rate-limité par client MCP, et `POST /mcp` applique en plus un
+budget global de 60 requêtes par minute et par client, vérifié avant tout
+traitement (HTTP 429 avec `Retry-After`). Les identifiants invalides répétés
+depuis une même IP sont limités avant le calcul de hash du secret. Les réponses
+sont filtrées avant sortie:
 
 - secrets et tokens remplacés par `[REDACTED]`
 - emails inline remplacés par `[REDACTED_EMAIL]`
 - téléphones inline remplacés par `[REDACTED_PHONE]`
 - longues chaînes hexadécimales remplacées par `[REDACTED_HEX]`
 
-Les appels sont audités via le core agentic.
+Les mutations sont auditées via le core agentic. Les outils de lecture
+(`search_restaurants`, `check_availability`) ne sont pas écrits dans le journal
+d'audit, ils sont comptés dans les métriques.
 
 ## Test local E2E
 
@@ -460,7 +539,7 @@ Le client de test exécute:
 
 ## Claude Desktop via stdio
 
-Le bridge stdio local expose les mêmes 6 tools et proxy les appels vers
+Le bridge stdio local expose les mêmes outils et proxy les appels vers
 `POST /mcp`. L'API Sokar doit tourner à côté.
 
 Commande manuelle:

@@ -29,9 +29,10 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
+import { env } from '../../../env';
 import type { AuthContext } from './auth';
 
 // ─── TTLs ──────────────────────────────────────────────
@@ -43,7 +44,7 @@ const TTL_REFRESH = 60 * 60 * 24 * 90; // 90 jours
 // ─── Helpers ───────────────────────────────────────────
 
 export function getIssuer(): string {
-  return process.env.OAUTH_ISSUER_URL || 'http://localhost:4000';
+  return env.OAUTH_ISSUER_URL || env.API_URL;
 }
 
 function base64url(buf: Buffer): string {
@@ -109,10 +110,13 @@ async function setJson(key: string, value: unknown, ttlSec: number): Promise<voi
 
 type RegisteredClient = {
   clientId: string;
-  clientSecretHash: string; // SHA-256 hash, jamais le plaintext
+  clientSecretHash: string | null; // SHA-256 hash, jamais le plaintext
   redirectUris: string[];
   clientName: string;
   createdAt: string;
+  tokenEndpointAuthMethod: 'client_secret_basic' | 'client_secret_post' | 'none';
+  grantTypes: string[];
+  responseTypes: string[];
 };
 
 type AuthCode = {
@@ -130,6 +134,8 @@ type StoredToken = {
   restaurantId: string | null; // null = public access (any MCP-enabled restaurant)
   restaurantName: string | null;
   scopes: string[];
+  accessToken: string;
+  refreshToken: string;
 };
 
 // ─── Validation des tokens OAuth ───────────────────────
@@ -149,6 +155,7 @@ export async function validateOAuthToken(token: string): Promise<AuthContext | n
     restaurantId: data.restaurantId,
     scopes: data.scopes,
     allowedOrigins: [],
+    credentialType: 'oauth',
   };
 }
 
@@ -176,6 +183,104 @@ function matchKnownRedirect(uri: string): string | null {
     if (entry.pattern.test(uri)) return entry.name;
   }
   return null;
+}
+
+type TokenEndpointAuthMethod = RegisteredClient['tokenEndpointAuthMethod'];
+
+function parseTokenEndpointAuthMethod(value: unknown): TokenEndpointAuthMethod | null {
+  if (value === undefined) return 'client_secret_basic';
+  if (value === 'client_secret_basic' || value === 'client_secret_post' || value === 'none') {
+    return value;
+  }
+  return null;
+}
+
+function normalizeGrantTypes(value: unknown): string[] | null {
+  if (value === undefined) return ['authorization_code', 'refresh_token'];
+  if (!Array.isArray(value) || value.length === 0 || value.length > 2) return null;
+  const grantTypes = [...new Set(value)];
+  if (
+    !grantTypes.includes('authorization_code') ||
+    grantTypes.some((grantType) => !['authorization_code', 'refresh_token'].includes(grantType))
+  ) {
+    return null;
+  }
+  return grantTypes;
+}
+
+function normalizeResponseTypes(value: unknown): string[] | null {
+  if (value === undefined) return ['code'];
+  if (!Array.isArray(value) || value.length !== 1 || value[0] !== 'code') return null;
+  return ['code'];
+}
+
+function validateRedirectUri(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return false;
+  try {
+    const uri = new URL(value);
+    if (uri.hash || uri.username || uri.password) return false;
+    if (uri.protocol === 'https:') return true;
+    if (uri.protocol !== 'http:' || !uri.port) return false;
+    return ['localhost', '127.0.0.1', '[::1]'].includes(uri.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeRedirectUris(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 10) return null;
+  if (!value.every(validateRedirectUri)) return null;
+  return [...new Set(value)];
+}
+
+function extractClientCredentials(req: FastifyRequest): {
+  clientId?: string;
+  clientSecret?: string;
+  clientSecretSource?: 'basic' | 'body';
+} {
+  const body = (req.body ?? {}) as { client_id?: string; client_secret?: string };
+  let clientId = body.client_id;
+  let clientSecret = body.client_secret;
+  let clientSecretSource: 'basic' | 'body' | undefined = clientSecret ? 'body' : undefined;
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Basic ')) {
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+    const separator = decoded.indexOf(':');
+    if (separator >= 0) {
+      clientId = decoded.slice(0, separator);
+      clientSecret = decoded.slice(separator + 1);
+      clientSecretSource = 'basic';
+    }
+  }
+
+  return { clientId, clientSecret, clientSecretSource };
+}
+
+function isValidClientAuthentication(
+  client: RegisteredClient | null,
+  clientSecret: string | undefined,
+  clientSecretSource: 'basic' | 'body' | undefined,
+): boolean {
+  if (!client) return true; // Public pre-registered MCP clients use PKCE only.
+  const method = client.tokenEndpointAuthMethod;
+  if (method === 'none') return !clientSecret;
+  if (method === 'client_secret_basic' && clientSecretSource !== 'basic') return false;
+  if (method === 'client_secret_post' && clientSecretSource !== 'body') return false;
+  if (!client.clientSecretHash || !clientSecret) return false;
+
+  const providedHash = createHash('sha256').update(clientSecret).digest('hex');
+  const provided = Buffer.from(providedHash);
+  const expected = Buffer.from(client.clientSecretHash);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+async function deleteStoredTokenPair(tokenData: StoredToken): Promise<void> {
+  const keys = [
+    tokenData.accessToken ? `sokar:oauth:token:${tokenData.accessToken}` : null,
+    tokenData.refreshToken ? `sokar:oauth:refresh:${tokenData.refreshToken}` : null,
+  ].filter((key): key is string => Boolean(key));
+  if (keys.length > 0) await redisCache.del(...keys);
 }
 
 // ─── Rate limit Redis pour endpoints OAuth ───────────
@@ -266,27 +371,44 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       response_types?: string[];
     };
 
+    const redirectUris = normalizeRedirectUris(body.redirect_uris);
+    const tokenEndpointAuthMethod = parseTokenEndpointAuthMethod(body.token_endpoint_auth_method);
+    const grantTypes = normalizeGrantTypes(body.grant_types);
+    const responseTypes = normalizeResponseTypes(body.response_types);
+    if (!redirectUris || !tokenEndpointAuthMethod || !grantTypes || !responseTypes) {
+      return reply.status(400).send({
+        error: 'invalid_client_metadata',
+        error_description:
+          'redirect_uris, token_endpoint_auth_method, grant_types and response_types must be valid',
+      });
+    }
     if (
-      !body.redirect_uris ||
-      !Array.isArray(body.redirect_uris) ||
-      body.redirect_uris.length === 0
+      typeof body.client_name !== 'undefined' &&
+      (typeof body.client_name !== 'string' ||
+        body.client_name.length === 0 ||
+        body.client_name.length > 200)
     ) {
       return reply.status(400).send({
         error: 'invalid_client_metadata',
-        error_description: 'redirect_uris is required',
+        error_description: 'client_name must be between 1 and 200 characters',
       });
     }
 
     const clientId = randomUUID();
-    const clientSecret = randomUUID() + randomUUID();
-    const clientSecretHash = createHash('sha256').update(clientSecret).digest('hex');
+    const clientSecret = tokenEndpointAuthMethod === 'none' ? null : randomUUID() + randomUUID();
+    const clientSecretHash = clientSecret
+      ? createHash('sha256').update(clientSecret).digest('hex')
+      : null;
 
     const client: RegisteredClient = {
       clientId,
       clientSecretHash,
-      redirectUris: body.redirect_uris,
+      redirectUris,
       clientName: body.client_name || 'mcp-client',
       createdAt: new Date().toISOString(),
+      tokenEndpointAuthMethod,
+      grantTypes,
+      responseTypes,
     };
 
     await setJson(`sokar:oauth:client:${clientId}`, client, TTL_CLIENT);
@@ -295,14 +417,14 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.status(201).send({
       client_id: clientId,
-      client_secret: clientSecret,
       client_name: client.clientName,
       redirect_uris: client.redirectUris,
-      token_endpoint_auth_method: body.token_endpoint_auth_method || 'client_secret_basic',
-      grant_types: body.grant_types || ['authorization_code', 'refresh_token'],
-      response_types: body.response_types || ['code'],
+      token_endpoint_auth_method: client.tokenEndpointAuthMethod,
+      grant_types: client.grantTypes,
+      response_types: client.responseTypes,
       client_id_issued_at: Math.floor(Date.now() / 1000),
-      client_secret_expires_at: 0, // N'expire pas (TTL Redis géré séparément)
+      ...(clientSecret ? { client_secret_expires_at: 0 } : {}),
+      ...(clientSecret ? { client_secret: clientSecret } : {}),
     });
   });
 
@@ -320,9 +442,21 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         response_type?: string;
         state?: string;
         scope?: string;
+        restaurant_id?: string;
         code_challenge?: string;
         code_challenge_method?: string;
       };
+
+      const requestedScopes = query.scope ? query.scope.split(' ').filter(Boolean) : ['mcp:read'];
+      if (
+        requestedScopes.length === 0 ||
+        requestedScopes.some((scope) => !['mcp:read', 'mcp:reserve', 'mcp:cancel'].includes(scope))
+      ) {
+        return reply.status(400).type('text/html').send(renderError('Scope invalide', ''));
+      }
+      if (query.restaurant_id && !/^[0-9a-f-]{36}$/i.test(query.restaurant_id)) {
+        return reply.status(400).type('text/html').send(renderError('Restaurant invalide', ''));
+      }
 
       // Valider les params
       if (!query.client_id || !query.redirect_uri) {
@@ -337,6 +471,16 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .status(400)
           .type('text/html')
           .send(renderError('Type non supporté', 'Seul response_type=code est supporté.'));
+      }
+      if (
+        query.code_challenge_method !== 'S256' ||
+        !query.code_challenge ||
+        !/^[A-Za-z0-9_-]{43,128}$/.test(query.code_challenge)
+      ) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(renderError('PKCE requis', 'Utilisez code_challenge_method=S256.'));
       }
 
       const knownClientName = matchKnownRedirect(query.redirect_uri);
@@ -393,7 +537,10 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       // est inutile. Pas de scoping Clerk : le MCP est un API publique pour les
       // clients (ChatGPT, Claude.ai, Mistral), pas pour les restaurateurs.
       const anyMcp = await db.restaurantExposureSettings.findFirst({
-        where: { mcpEnabled: true },
+        where: {
+          mcpEnabled: true,
+          ...(query.restaurant_id ? { restaurantId: query.restaurant_id } : {}),
+        },
         select: { restaurantId: true },
       });
 
@@ -408,16 +555,32 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
             ),
           );
       }
-
-      const scopes = query.scope
-        ? query.scope.split(' ').filter(Boolean)
-        : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
+      // tenant-scoping: global — l'authorize OAuth n'a pas encore de contexte
+      // tenant ; on vérifie seulement que l'id demandé existe et a opté pour MCP.
+      const scopedRestaurant = query.restaurant_id
+        ? await db.restaurant.findUnique({
+            where: { id: query.restaurant_id },
+            select: { name: true, agenticOptIn: true },
+          })
+        : null;
+      if (query.restaurant_id && !scopedRestaurant?.agenticOptIn) {
+        return reply.status(400).type('text/html').send(renderError('Restaurant indisponible', ''));
+      }
 
       // Générer un token CSRF pour protéger le consent form
       const csrfToken = randomUUID();
       await setJson(
         `sokar:oauth:csrf:${csrfToken}`,
-        { clientId: query.client_id, redirectUri: query.redirect_uri },
+        {
+          clientId: query.client_id,
+          redirectUri: query.redirect_uri,
+          state: query.state || '',
+          scopes: requestedScopes,
+          codeChallenge: query.code_challenge || undefined,
+          codeChallengeMethod: query.code_challenge_method || undefined,
+          restaurantId: query.restaurant_id || null,
+          restaurantName: scopedRestaurant?.name ?? null,
+        },
         TTL_CODE, // 10 min — même TTL que les auth codes
       );
 
@@ -427,7 +590,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           clientId: query.client_id,
           redirectUri: query.redirect_uri,
           state: query.state || '',
-          scope: scopes.join(' '),
+          scope: requestedScopes.join(' '),
+          restaurantName: scopedRestaurant?.name ?? null,
           codeChallenge: query.code_challenge || '',
           codeChallengeMethod: query.code_challenge_method || '',
           csrfToken,
@@ -460,9 +624,16 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .type('text/html')
           .send(renderError('Token CSRF manquant', 'Veuillez recharger la page de consentement.'));
       }
-      const csrfData = await getJson<{ clientId: string; redirectUri: string }>(
-        `sokar:oauth:csrf:${body.csrf_token}`,
-      );
+      const csrfData = await getJson<{
+        clientId: string;
+        redirectUri: string;
+        state: string;
+        scopes: string[];
+        codeChallenge?: string;
+        codeChallengeMethod?: string;
+        restaurantId: string | null;
+        restaurantName: string | null;
+      }>(`sokar:oauth:csrf:${body.csrf_token}`);
       if (!csrfData) {
         return reply
           .status(403)
@@ -479,8 +650,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
       // Vérifier la cohérence client_id / redirect_uri entre le CSRF et le form
       if (
-        (body.client_id && csrfData.clientId && body.client_id !== csrfData.clientId) ||
-        (body.redirect_uri && csrfData.redirectUri && body.redirect_uri !== csrfData.redirectUri)
+        (body.client_id && body.client_id !== csrfData.clientId) ||
+        (body.redirect_uri && body.redirect_uri !== csrfData.redirectUri) ||
+        (body.state && body.state !== csrfData.state) ||
+        (body.scope && body.scope !== csrfData.scopes.join(' ')) ||
+        (body.restaurant_id && body.restaurant_id !== csrfData.restaurantId) ||
+        (body.code_challenge && body.code_challenge !== csrfData.codeChallenge) ||
+        (body.code_challenge_method && body.code_challenge_method !== csrfData.codeChallengeMethod)
       ) {
         return reply
           .status(403)
@@ -492,6 +668,10 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
             ),
           );
       }
+
+      body.client_id = csrfData.clientId;
+      body.redirect_uri = csrfData.redirectUri;
+      body.state = csrfData.state;
 
       // Valider le client
       const postClient = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
@@ -548,18 +728,15 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       // les restaurants qui ont MCP activé. Le scoping se fait au niveau des
       // tools (getMcpExposure vérifie mcpEnabled par restaurant).
       const code = randomUUID();
-      const scopes = body.scope
-        ? body.scope.split(' ').filter(Boolean)
-        : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
 
       const authCode: AuthCode = {
         clientId: body.client_id || '',
-        restaurantId: null,
-        restaurantName: null,
-        scopes,
+        restaurantId: csrfData.restaurantId,
+        restaurantName: csrfData.restaurantName ?? null,
+        scopes: csrfData.scopes,
         redirectUri: body.redirect_uri || '',
-        codeChallenge: body.code_challenge || undefined,
-        codeChallengeMethod: body.code_challenge_method || undefined,
+        codeChallenge: csrfData.codeChallenge,
+        codeChallengeMethod: csrfData.codeChallengeMethod,
       };
 
       await setJson(`sokar:oauth:code:${code}`, authCode, TTL_CODE);
@@ -595,17 +772,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       refresh_token?: string;
     };
 
-    // Auth client via Basic ou body
-    let clientId = body.client_id;
-    let clientSecret = body.client_secret;
-
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Basic ')) {
-      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
-      const [id, secret] = decoded.split(':');
-      if (id) clientId = id;
-      if (secret) clientSecret = secret;
-    }
+    // Auth client via Basic ou body, selon la méthode enregistrée.
+    const { clientId, clientSecret, clientSecretSource } = extractClientCredentials(req);
 
     if (!clientId) {
       return reply
@@ -616,14 +784,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     // Valider le client (optionnel pour les public clients sans DCR)
     const tokenClient = await getJson<RegisteredClient>(`sokar:oauth:client:${clientId}`);
 
-    // Pour les clients DCR, valider le secret par hash (jamais en plaintext)
-    if (tokenClient && tokenClient.clientSecretHash && clientSecret) {
-      const providedHash = createHash('sha256').update(clientSecret).digest('hex');
-      if (providedHash !== tokenClient.clientSecretHash) {
-        return reply
-          .status(401)
-          .send({ error: 'invalid_client', error_description: 'Invalid client secret' });
-      }
+    if (!isValidClientAuthentication(tokenClient, clientSecret, clientSecretSource)) {
+      return reply.status(401).send({
+        error: 'invalid_client',
+        error_description: 'Client authentication failed',
+      });
     }
 
     const grantType = body.grant_type;
@@ -652,8 +817,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // Valider le redirect_uri
-      if (body.redirect_uri && body.redirect_uri !== authCode.redirectUri) {
+      // authorization_code exige exactement le redirect_uri autorisé.
+      if (!body.redirect_uri || body.redirect_uri !== authCode.redirectUri) {
         return reply
           .status(400)
           .send({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
@@ -678,13 +843,16 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
       // Générer les tokens
       const accessToken = randomUUID();
-      const refreshToken = randomUUID();
+      const supportsRefreshToken = !tokenClient || tokenClient.grantTypes.includes('refresh_token');
+      const refreshToken = supportsRefreshToken ? randomUUID() : '';
 
       const tokenData: StoredToken = {
         clientId,
         restaurantId: authCode.restaurantId,
         restaurantName: authCode.restaurantName,
         scopes: authCode.scopes,
+        accessToken,
+        refreshToken,
       };
 
       await setJson(`sokar:oauth:token:${accessToken}`, tokenData, TTL_TOKEN);
@@ -696,13 +864,19 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: TTL_TOKEN,
-        refresh_token: refreshToken,
+        ...(supportsRefreshToken ? { refresh_token: refreshToken } : {}),
         scope: authCode.scopes.join(' '),
       });
     }
 
     // ── 4b. refresh_token ───────────────────────────────
     if (grantType === 'refresh_token') {
+      if (tokenClient && !tokenClient.grantTypes.includes('refresh_token')) {
+        return reply.status(400).send({
+          error: 'unsupported_grant_type',
+          error_description: 'refresh_token is not enabled for this client',
+        });
+      }
       if (!body.refresh_token) {
         return reply
           .status(400)
@@ -715,16 +889,26 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .status(400)
           .send({ error: 'invalid_grant', error_description: 'Invalid or expired refresh token' });
       }
+      if (oldToken.clientId !== clientId) {
+        return reply
+          .status(400)
+          .send({ error: 'invalid_grant', error_description: 'Refresh token client mismatch' });
+      }
 
-      // Supprimer l'ancien refresh token (rotation)
-      await redisCache.del(`sokar:oauth:refresh:${body.refresh_token}`);
+      // Rotation: l'ancien access token et l'ancien refresh token sont révoqués.
+      await deleteStoredTokenPair(oldToken);
 
       // Générer de nouveaux tokens
       const accessToken = randomUUID();
       const refreshToken = randomUUID();
 
-      await setJson(`sokar:oauth:token:${accessToken}`, oldToken, TTL_TOKEN);
-      await setJson(`sokar:oauth:refresh:${refreshToken}`, oldToken, TTL_REFRESH);
+      const tokenData: StoredToken = {
+        ...oldToken,
+        accessToken,
+        refreshToken,
+      };
+      await setJson(`sokar:oauth:token:${accessToken}`, tokenData, TTL_TOKEN);
+      await setJson(`sokar:oauth:refresh:${refreshToken}`, tokenData, TTL_REFRESH);
 
       return reply.send({
         access_token: accessToken,
@@ -749,16 +933,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'too_many_requests', error_description: 'Too many revocation requests' });
     }
     const body = req.body as { token?: string; token_type_hint?: string };
-
-    // Auth client obligatoire (Basic ou body) pour éviter que n'importe qui
-    // puisse révoquer les tokens des autres
-    let revokeClientId = (body as { client_id?: string }).client_id;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Basic ')) {
-      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
-      const [id] = decoded.split(':');
-      if (id) revokeClientId = id;
-    }
+    const {
+      clientId: revokeClientId,
+      clientSecret,
+      clientSecretSource,
+    } = extractClientCredentials(req);
 
     if (!revokeClientId) {
       return reply
@@ -766,9 +945,27 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'invalid_client', error_description: 'client_id required' });
     }
 
+    const revokeClient = await getJson<RegisteredClient>(`sokar:oauth:client:${revokeClientId}`);
+    if (!isValidClientAuthentication(revokeClient, clientSecret, clientSecretSource)) {
+      return reply
+        .status(401)
+        .send({ error: 'invalid_client', error_description: 'Client authentication failed' });
+    }
+
     if (body.token) {
-      await redisCache.del(`sokar:oauth:token:${body.token}`);
-      await redisCache.del(`sokar:oauth:refresh:${body.token}`);
+      const tokenData =
+        (await getJson<StoredToken>(`sokar:oauth:token:${body.token}`)) ??
+        (await getJson<StoredToken>(`sokar:oauth:refresh:${body.token}`));
+
+      // RFC 7009: rester opaque sur les jetons inconnus ou étrangers.
+      if (tokenData && tokenData.clientId === revokeClientId) {
+        if (tokenData.accessToken && tokenData.refreshToken) {
+          await deleteStoredTokenPair(tokenData);
+        } else {
+          await redisCache.del(`sokar:oauth:token:${body.token}`);
+          await redisCache.del(`sokar:oauth:refresh:${body.token}`);
+        }
+      }
     }
     return reply.status(200).send({});
   });
@@ -791,6 +988,7 @@ function renderConsentPage(params: {
   redirectUri: string;
   state: string;
   scope: string;
+  restaurantName: string | null;
   codeChallenge: string;
   codeChallengeMethod: string;
   csrfToken: string;
@@ -801,10 +999,12 @@ function renderConsentPage(params: {
     redirectUri,
     state,
     scope,
+    restaurantName,
     codeChallenge,
     codeChallengeMethod,
     csrfToken,
   } = params;
+  const grantedScopes = new Set(scope.split(' '));
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -1018,13 +1218,13 @@ function renderConsentPage(params: {
     <div class="provider"><span class="provider-dot"></span><span>${escapeHtml(clientName)}</span></div>
     <h1>Autoriser l’accès à Sokar&nbsp;?</h1>
     <p class="lead"><strong>${escapeHtml(clientName)}</strong> demande l’accès à Sokar pour rechercher des restaurants et gérer vos réservations.</p>
+    ${restaurantName ? `<p class="lead">Accès limité au restaurant <strong>${escapeHtml(restaurantName)}</strong>.</p>` : '<p class="lead">Accès aux restaurants qui ont activé MCP.</p>'}
 
     <div class="permissions">
       <div class="permissions-title">Cette connexion permettra de</div>
-      <div class="scope-item"><span class="scope-icon">✓</span><span>Rechercher des restaurants</span></div>
-      <div class="scope-item"><span class="scope-icon">✓</span><span>Vérifier les disponibilités</span></div>
-      <div class="scope-item"><span class="scope-icon">✓</span><span>Créer des réservations</span></div>
-      <div class="scope-item"><span class="scope-icon">✓</span><span>Annuler des réservations</span></div>
+      ${grantedScopes.has('mcp:read') ? '<div class="scope-item"><span class="scope-icon">✓</span><span>Rechercher des restaurants et vérifier les disponibilités</span></div>' : ''}
+      ${grantedScopes.has('mcp:reserve') ? '<div class="scope-item"><span class="scope-icon">✓</span><span>Créer des réservations</span></div>' : ''}
+      ${grantedScopes.has('mcp:cancel') ? '<div class="scope-item"><span class="scope-icon">✓</span><span>Annuler des réservations</span></div>' : ''}
     </div>
 
     <div class="security"><span class="security-dot"></span><span>Connexion protégée par OAuth 2.0 et PKCE.</span></div>

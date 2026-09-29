@@ -21,11 +21,13 @@ import {
   type CapacityLimitHint,
 } from '../../core/availability.service';
 import { HoldService } from '../../core/hold.service';
+import { WaitingListService } from '../../core/waiting-list.service';
+import { TableAllocationService } from '../../../floor-plan/table-allocation.service';
 import { IdempotencyService } from '../../core/idempotency.service';
 import { PrismaIdempotencyStore } from '../../core/prisma-store';
 import { ReservationService } from '../../core/reservation.service';
 import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.service';
-import { redactResponse } from '../response-redaction';
+import { redactPiiInString, redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
@@ -35,6 +37,11 @@ import {
 import {
   CancelReservationInputSchema,
   CheckAvailabilityInputSchema,
+  CreateHoldInputSchema,
+  CreateQuoteInputSchema,
+  JoinWaitingListInputSchema,
+  CancelWaitingListInputSchema,
+  ModifyReservationInputSchema,
   CreateReservationInputSchema,
   GetRestaurantDetailsInputSchema,
   GetReservationStatusInputSchema,
@@ -55,6 +62,8 @@ export type ToolContext = {
   scopes: string[];
   actor: string;
   channel?: ReservationChannel;
+  /** Restaurant-scoped API keys act as trusted staff; OAuth tokens do not. */
+  trustedRestaurantAccess?: boolean;
 };
 
 export type ToolResult<T = unknown> =
@@ -87,7 +96,7 @@ export function sanitizeSpecialRequests(input: string | undefined): string {
 }
 
 function toolError(error: string, code: string): ToolResult {
-  return { ok: false, error, code };
+  return { ok: false, error: redactPiiInString(error), code };
 }
 
 function ok<T>(data: T): ToolResult<T> {
@@ -106,6 +115,10 @@ function hasScope(ctx: ToolContext, scope: McpScope): boolean {
 
 function assertScope(ctx: ToolContext, scope: McpScope): ToolResult | null {
   return hasScope(ctx, scope) ? null : toolError(`Missing scope: ${scope}`, 'FORBIDDEN');
+}
+
+function requiresPublicReservationProof(ctx: ToolContext): boolean {
+  return !ctx.trustedRestaurantAccess;
 }
 
 function localDayAndMinutes(date: Date, timeZone: string): { day: string; minutes: number } {
@@ -173,6 +186,7 @@ function isWithinExposedCreneaux(args: {
 export class McpToolRegistry {
   private readonly reservationService: ReservationService;
   private readonly holdService: HoldService;
+  private readonly waitingListService: WaitingListService;
   private readonly availabilityService: AvailabilityService;
   private readonly audit: AuditLogService;
   private readonly idem: IdempotencyService;
@@ -183,6 +197,11 @@ export class McpToolRegistry {
   ) {
     this.audit = new AuditLogService(prisma);
     this.holdService = new HoldService(prisma, this.audit);
+    this.waitingListService = new WaitingListService(
+      prisma,
+      new TableAllocationService(prisma),
+      this.audit,
+    );
     this.availabilityService = new AvailabilityService(prisma);
     const idemStore = new PrismaIdempotencyStore(prisma);
     this.idem = new IdempotencyService(idemStore);
@@ -202,6 +221,16 @@ export class McpToolRegistry {
     if (!parsed.success) return toolError(parsed.error.message, 'INVALID_INPUT');
     const input: SearchRestaurantsInput = parsed.data;
 
+    const cursorId = input.cursor
+      ? Buffer.from(input.cursor, 'base64url').toString('utf8')
+      : undefined;
+    if (
+      cursorId &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cursorId)
+    ) {
+      return toolError('Invalid cursor', 'INVALID_INPUT');
+    }
+
     const rl = await this.rateLimiter.check(ctx.clientId, 'search_restaurants');
     if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
 
@@ -214,30 +243,41 @@ export class McpToolRegistry {
       });
       if (!range.ok) return toolError(range.error, range.code);
       const { start: slotStart, end: slotEnd } = range;
-      const results = await this.availabilityService.searchAvailableRestaurants({
-        city: input.city,
-        partySize: input.partySize,
-        slotStart,
-        slotEnd,
-        cuisineType: input.cuisineType,
-        maxResults: input.maxResults,
-      });
-
-      const exposedResults: Array<(typeof results)[number] & { maxOnlinePartySize: number }> = [];
-      for (const result of results) {
-        const exposure = await this.getMcpExposure(result.restaurantId, ctx);
-        if (!exposure.ok) continue;
-        const violation = this.validateExposureConstraints(exposure.settings, {
+      const exposedResults: Array<{
+        restaurantId: string;
+        name: string;
+        slug: string | null;
+        maxOnlinePartySize: number;
+      }> = [];
+      let scanCursor = cursorId;
+      for (let page = 0; page < 10 && exposedResults.length <= input.maxResults; page++) {
+        const batch = await this.availabilityService.searchAvailableRestaurantsPage({
+          city: input.city,
           partySize: input.partySize,
-          startsAt: slotStart,
-          endsAt: slotEnd,
+          slotStart,
+          slotEnd,
+          cuisineType: input.cuisineType,
+          maxResults: input.maxResults + 1,
+          cursor: scanCursor,
         });
-        if (!violation) {
-          exposedResults.push({
-            ...result,
-            maxOnlinePartySize: exposure.settings.maxPartySize,
+        for (const result of batch.results) {
+          const exposure = await this.getMcpExposure(result.restaurantId, ctx);
+          if (!exposure.ok) continue;
+          const violation = this.validateExposureConstraints(exposure.settings, {
+            partySize: input.partySize,
+            startsAt: slotStart,
+            endsAt: slotEnd,
           });
+          if (!violation) {
+            exposedResults.push({
+              ...result,
+              maxOnlinePartySize: exposure.settings.maxPartySize,
+            });
+            if (exposedResults.length > input.maxResults) break;
+          }
         }
+        scanCursor = batch.nextCursor;
+        if (!scanCursor) break;
       }
 
       // Keep a named restaurant discoverable when the requested group is too
@@ -258,30 +298,19 @@ export class McpToolRegistry {
         if (exposure.ok) exposedCapacityLimits.push(hint);
       }
 
-      await this.audit.record({
-        event: 'state_transition',
-        actor: ctx.actor,
-        metadata: {
-          tool: 'search_restaurants',
-          city: input.city,
-          partySize: input.partySize,
-          count: exposedResults.length,
-          capacityLimitCount: exposedCapacityLimits.length,
-        },
-      });
-
       // Pagination cursor: si on a exactement maxResults résultats,
       // on encode le dernier ID comme cursor pour la page suivante.
-      const hasMore = exposedResults.length >= input.maxResults;
-      const nextCursor =
-        hasMore && exposedResults.length > 0
-          ? Buffer.from(exposedResults[exposedResults.length - 1].restaurantId).toString(
-              'base64url',
-            )
-          : undefined;
+      const hasMore = exposedResults.length > input.maxResults || Boolean(scanCursor);
+      const nextCursor = hasMore
+        ? Buffer.from(
+            exposedResults.length >= input.maxResults
+              ? exposedResults[input.maxResults - 1].restaurantId
+              : scanCursor!,
+          ).toString('base64url')
+        : undefined;
 
       return ok({
-        restaurants: exposedResults.map((r) => ({
+        restaurants: exposedResults.slice(0, input.maxResults).map((r) => ({
           id: r.restaurantId,
           name: r.name,
           slug: r.slug,
@@ -378,8 +407,15 @@ export class McpToolRegistry {
         slotStart,
         slotEnd,
       });
-
-      return ok(result);
+      const alternativeSlots = result.alternativeSlots?.filter(
+        (slot) =>
+          !this.validateExposureConstraints(exposure.settings, {
+            partySize: input.partySize,
+            startsAt: new Date(slot.startsAt),
+            endsAt: new Date(slot.endsAt),
+          }),
+      );
+      return ok({ ...result, alternativeSlots });
     } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'check_availability failed');
       return toolError('Internal error', 'INTERNAL');
@@ -468,6 +504,248 @@ export class McpToolRegistry {
       if (errName === 'InvalidStateTransitionError') return toolError(errMsg, 'INVALID_STATE');
       if (errName === 'PolicyValidationError') return toolError(errMsg, 'POLICY_VIOLATION');
       if (errName === 'IdempotencyConflictError') return toolError(errMsg, 'IDEMPOTENCY_CONFLICT');
+      if (errName === 'HoldNotFoundError')
+        return toolError('Invalid or expired hold', 'INVALID_HOLD');
+      if (errName === 'HoldConflictError') return toolError('Slot unavailable', 'SLOT_UNAVAILABLE');
+      return toolError('Internal error', 'INTERNAL');
+    }
+  }
+
+  async createQuoteOrHold(
+    rawInput: unknown,
+    ctx: ToolContext,
+    kind: 'quote' | 'hold',
+  ): Promise<ToolResult> {
+    const scopeError = assertScope(ctx, 'mcp:reserve');
+    if (scopeError) return scopeError;
+    const parsed = (kind === 'hold' ? CreateHoldInputSchema : CreateQuoteInputSchema).safeParse(
+      rawInput,
+    );
+    if (!parsed.success) return toolError(parsed.error.message, 'INVALID_INPUT');
+    const input = parsed.data;
+    const rl = await this.rateLimiter.check(ctx.clientId, `create_${kind}`);
+    if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
+
+    try {
+      const exposure = await this.getMcpExposure(input.restaurantId, ctx);
+      if (!exposure.ok) return exposure.error;
+      const range = parseMcpDateRange({
+        start: input.slotStart,
+        end: input.slotEnd,
+        timezone: input.timezone,
+        defaultTimezone: exposure.settings.timezone,
+      });
+      if (!range.ok) return toolError(range.error, range.code);
+      const violation = this.validateExposureConstraints(exposure.settings, {
+        partySize: input.partySize,
+        startsAt: range.start,
+        endsAt: range.end,
+      });
+      if (violation) return violation;
+      const available = await this.availabilityService.checkAvailability({
+        restaurantId: input.restaurantId,
+        partySize: input.partySize,
+        slotStart: range.start,
+        slotEnd: range.end,
+      });
+      if (!available.available) return toolError('Slot unavailable', 'SLOT_UNAVAILABLE');
+      const { policy } = await this.availabilityService.getPolicyFor(input.restaurantId);
+      const args = {
+        restaurantId: input.restaurantId,
+        partySize: input.partySize,
+        slotStart: range.start,
+        slotEnd: range.end,
+        channel: ctx.channel ?? 'MCP',
+        policy,
+        actor: ctx.actor,
+      } as const;
+      if (kind === 'quote') {
+        const quote = await this.holdService.createQuote(args);
+        return ok({ quoteId: quote.id, expiresAt: quote.expiresAt.toISOString() });
+      }
+      const hold = await this.holdService.createHold(args);
+      return ok({ holdToken: hold.holdToken, expiresAt: hold.expiresAt.toISOString() });
+    } catch (err: unknown) {
+      logger.error({ err, clientId: ctx.clientId }, `create_${kind} failed`);
+      if ((err as { name?: string })?.name === 'HoldConflictError') {
+        return toolError('Slot unavailable', 'SLOT_UNAVAILABLE');
+      }
+      return toolError('Internal error', 'INTERNAL');
+    }
+  }
+
+  async joinWaitingList(rawInput: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const scopeError = assertScope(ctx, 'mcp:reserve');
+    if (scopeError) return scopeError;
+    const parsed = JoinWaitingListInputSchema.safeParse(rawInput);
+    if (!parsed.success) return toolError(parsed.error.message, 'INVALID_INPUT');
+    const input = parsed.data;
+    const rl = await this.rateLimiter.check(ctx.clientId, 'join_waiting_list');
+    if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
+    try {
+      const exposure = await this.getMcpExposure(input.restaurantId, ctx);
+      if (!exposure.ok) return exposure.error;
+      const range = parseMcpDateRange({
+        start: input.slotStart,
+        end: input.slotEnd,
+        timezone: input.timezone,
+        defaultTimezone: exposure.settings.timezone,
+      });
+      if (!range.ok) return toolError(range.error, range.code);
+      const violation = this.validateExposureConstraints(exposure.settings, {
+        partySize: input.partySize,
+        startsAt: range.start,
+        endsAt: range.end,
+      });
+      if (violation) return violation;
+      const availability = await this.availabilityService.checkAvailability({
+        restaurantId: input.restaurantId,
+        partySize: input.partySize,
+        slotStart: range.start,
+        slotEnd: range.end,
+      });
+      if (availability.available) {
+        return toolError('Slot available; book directly', 'SLOT_AVAILABLE');
+      }
+      const settings = await this.prisma.restaurantExposureSettings.findUnique({
+        where: { restaurantId: input.restaurantId },
+        select: { capacitySpecials: true },
+      });
+      const capacitySpecials = (settings?.capacitySpecials ?? {}) as Record<string, unknown>;
+      if (capacitySpecials.waitingListEnabled !== true) {
+        return toolError('Waiting list disabled', 'WAITING_LIST_DISABLED');
+      }
+      const joined = await this.waitingListService.join({
+        restaurantId: input.restaurantId,
+        partySize: input.partySize,
+        customerFirstName: input.customerFirstName,
+        customerLastName: input.customerLastName,
+        customerPhone: input.customerPhone,
+        customerEmail: input.customerEmail,
+        consents: input.consents,
+        slotStart: range.start,
+        source: `mcp:${ctx.clientId}`,
+        waitingListEnabled: true,
+        waitingListMaxEntriesPerSlot:
+          typeof capacitySpecials.waitingListMaxEntriesPerSlot === 'number'
+            ? capacitySpecials.waitingListMaxEntriesPerSlot
+            : 5,
+      });
+      return ok({
+        entryId: joined.entry.id,
+        position: joined.entry.position,
+        actionToken: joined.actionToken,
+      });
+    } catch (err: unknown) {
+      logger.error({ err, clientId: ctx.clientId }, 'join_waiting_list failed');
+      const name = (err as { name?: string })?.name;
+      if (name === 'WaitingListAlreadyExistsError')
+        return toolError('Already joined', 'ALREADY_EXISTS');
+      if (name === 'WaitingListSlotFullError')
+        return toolError('Waiting list full', 'WAITING_LIST_FULL');
+      return toolError('Internal error', 'INTERNAL');
+    }
+  }
+
+  async cancelWaitingList(rawInput: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const scopeError = assertScope(ctx, 'mcp:cancel');
+    if (scopeError) return scopeError;
+    const parsed = CancelWaitingListInputSchema.safeParse(rawInput);
+    if (!parsed.success) return toolError(parsed.error.message, 'INVALID_INPUT');
+    const input = parsed.data;
+    const rl = await this.rateLimiter.check(ctx.clientId, 'cancel_waiting_list');
+    if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
+    try {
+      const exposure = await this.getMcpExposure(input.restaurantId, ctx);
+      if (!exposure.ok) return exposure.error;
+      const entry = await this.waitingListService.cancelByToken(input);
+      return ok({ entryId: entry.id, status: entry.status });
+    } catch (err: unknown) {
+      logger.error({ err, clientId: ctx.clientId }, 'cancel_waiting_list failed');
+      const name = (err as { name?: string })?.name;
+      if (name === 'WaitingListEntryNotFoundError')
+        return toolError('Entry not found', 'NOT_FOUND');
+      if (name === 'WaitingListAlreadyPromotedError')
+        return toolError('Entry already promoted', 'INVALID_STATE');
+      return toolError('Internal error', 'INTERNAL');
+    }
+  }
+
+  async modifyReservation(rawInput: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const scopeError = assertScope(ctx, 'mcp:reserve');
+    if (scopeError) return scopeError;
+    const parsed = ModifyReservationInputSchema.safeParse(rawInput);
+    if (!parsed.success) return toolError(parsed.error.message, 'INVALID_INPUT');
+    const input = parsed.data;
+    const rl = await this.rateLimiter.check(ctx.clientId, 'modify_reservation');
+    if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
+    try {
+      const current = await this.prisma.reservation.findUnique({
+        where: { id: input.reservationId },
+        select: {
+          restaurantId: true,
+          createdByClient: true,
+          customerPhone: true,
+          startsAt: true,
+          endsAt: true,
+          partySize: true,
+        },
+      });
+      if (
+        !current ||
+        (ctx.restaurantId && ctx.restaurantId !== current.restaurantId) ||
+        (requiresPublicReservationProof(ctx) &&
+          (current.createdByClient !== ctx.actor ||
+            !input.customerPhone ||
+            current.customerPhone !== input.customerPhone))
+      ) {
+        return toolError('Reservation not found', 'NOT_FOUND');
+      }
+      const exposure = await this.getMcpExposure(current.restaurantId, ctx);
+      if (!exposure.ok) return exposure.error;
+      const range = input.startsAt
+        ? parseMcpDateRange({
+            start: input.startsAt,
+            end: input.endsAt!,
+            timezone: input.timezone,
+            defaultTimezone: exposure.settings.timezone,
+          })
+        : null;
+      if (range && !range.ok) return toolError(range.error, range.code);
+      const startsAt = range?.ok ? range.start : current.startsAt;
+      const endsAt = range?.ok ? range.end : current.endsAt;
+      if (!startsAt || !endsAt)
+        return toolError('Reservation has no editable slot', 'INVALID_STATE');
+      const violation = this.validateExposureConstraints(exposure.settings, {
+        partySize: input.partySize ?? current.partySize,
+        startsAt,
+        endsAt,
+      });
+      if (violation) return violation;
+      return ok(
+        await this.reservationService.modifyReservation({
+          reservationId: input.reservationId,
+          restaurantId: current.restaurantId,
+          actor: ctx.actor,
+          publicClient: requiresPublicReservationProof(ctx),
+          customerPhone: input.customerPhone,
+          partySize: input.partySize,
+          startsAt: range?.ok ? range.start : undefined,
+          endsAt: range?.ok ? range.end : undefined,
+          customerName: input.customerName,
+        }),
+      );
+    } catch (err: unknown) {
+      logger.error({ err, clientId: ctx.clientId }, 'modify_reservation failed');
+      const name = (err as { name?: string })?.name;
+      if (name === 'ReservationNotFoundError')
+        return toolError('Reservation not found', 'NOT_FOUND');
+      if (name === 'ReservationModificationNotAllowedError') {
+        return toolError('Reservation cannot be modified', 'INVALID_STATE');
+      }
+      if (name === 'ReservationSlotUnavailableError') {
+        return toolError('Slot unavailable', 'SLOT_UNAVAILABLE');
+      }
       return toolError('Internal error', 'INTERNAL');
     }
   }
@@ -486,13 +764,21 @@ export class McpToolRegistry {
     try {
       const reservation = await this.prisma.reservation.findUnique({
         where: { id: input.reservationId },
-        select: { restaurantId: true },
+        select: { restaurantId: true, createdByClient: true, customerPhone: true },
       });
       if (!reservation) return toolError('Reservation not found', 'NOT_FOUND');
 
       // IDOR protection: un client lié à un restaurant ne peut agir
       // que sur les réservations de SON restaurant.
       if (ctx.restaurantId && ctx.restaurantId !== reservation.restaurantId) {
+        return toolError('Reservation not found', 'NOT_FOUND');
+      }
+      if (
+        requiresPublicReservationProof(ctx) &&
+        (reservation.createdByClient !== ctx.actor ||
+          !input.customerPhone ||
+          reservation.customerPhone !== input.customerPhone)
+      ) {
         return toolError('Reservation not found', 'NOT_FOUND');
       }
 
@@ -533,6 +819,8 @@ export class McpToolRegistry {
         select: {
           id: true,
           restaurantId: true,
+          createdByClient: true,
+          customerPhone: true,
           state: true,
           partySize: true,
           startsAt: true,
@@ -546,11 +834,24 @@ export class McpToolRegistry {
       if (ctx.restaurantId && ctx.restaurantId !== reservation.restaurantId) {
         return toolError('Reservation not found', 'NOT_FOUND');
       }
+      if (
+        requiresPublicReservationProof(ctx) &&
+        (reservation.createdByClient !== ctx.actor ||
+          !input.customerPhone ||
+          reservation.customerPhone !== input.customerPhone)
+      ) {
+        return toolError('Reservation not found', 'NOT_FOUND');
+      }
 
       const exposure = await this.getMcpExposure(reservation.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
-      const { restaurantId: _restaurantId, ...publicReservation } = reservation;
+      const {
+        restaurantId: _restaurantId,
+        createdByClient: _createdByClient,
+        customerPhone: _customerPhone,
+        ...publicReservation
+      } = reservation;
       return ok(publicReservation);
     } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'get_reservation_status failed');
@@ -687,6 +988,21 @@ export async function executeTool(
     case 'create_reservation':
       result = await registry.createReservation(rawInput, ctx);
       break;
+    case 'create_quote':
+      result = await registry.createQuoteOrHold(rawInput, ctx, 'quote');
+      break;
+    case 'create_hold':
+      result = await registry.createQuoteOrHold(rawInput, ctx, 'hold');
+      break;
+    case 'join_waiting_list':
+      result = await registry.joinWaitingList(rawInput, ctx);
+      break;
+    case 'cancel_waiting_list':
+      result = await registry.cancelWaitingList(rawInput, ctx);
+      break;
+    case 'modify_reservation':
+      result = await registry.modifyReservation(rawInput, ctx);
+      break;
     case 'cancel_reservation':
       result = await registry.cancelReservation(rawInput, ctx);
       break;
@@ -704,6 +1020,20 @@ export async function executeTool(
   // Redacte la réponse avant retour
   if (result.ok) {
     const data = redactResponse(result.data);
+    // The hold token is an intentional one-time capability returned only by
+    // create_hold. The generic redactor hides every other token field.
+    if (typeof result.data === 'object' && result.data !== null) {
+      if (toolName === 'create_hold') {
+        (data as { holdToken?: string | null }).holdToken = (
+          result.data as { holdToken?: string | null }
+        ).holdToken;
+      }
+      if (toolName === 'join_waiting_list') {
+        (data as { actionToken?: string }).actionToken = (
+          result.data as { actionToken?: string }
+        ).actionToken;
+      }
+    }
     assertNoPiiLeak(data, toolName);
     return { ...result, data };
   }

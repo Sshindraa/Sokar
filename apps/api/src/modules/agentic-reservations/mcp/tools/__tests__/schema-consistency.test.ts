@@ -14,7 +14,12 @@ import {
   SearchRestaurantsInputSchema,
   GetRestaurantDetailsInputSchema,
   CheckAvailabilityInputSchema,
+  CreateQuoteInputSchema,
+  CreateHoldInputSchema,
   CreateReservationInputSchema,
+  JoinWaitingListInputSchema,
+  CancelWaitingListInputSchema,
+  ModifyReservationInputSchema,
   CancelReservationInputSchema,
   GetReservationStatusInputSchema,
 } from '../schemas';
@@ -24,13 +29,18 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     search_restaurants: SearchRestaurantsInputSchema,
     get_restaurant_details: GetRestaurantDetailsInputSchema,
     check_availability: CheckAvailabilityInputSchema,
+    create_quote: CreateQuoteInputSchema,
+    create_hold: CreateHoldInputSchema,
     create_reservation: CreateReservationInputSchema,
+    join_waiting_list: JoinWaitingListInputSchema,
+    cancel_waiting_list: CancelWaitingListInputSchema,
+    modify_reservation: ModifyReservationInputSchema,
     cancel_reservation: CancelReservationInputSchema,
     get_reservation_status: GetReservationStatusInputSchema,
   };
 
-  it('TOOL_LIST has exactly 6 tools', () => {
-    expect(TOOL_LIST).toHaveLength(6);
+  it('TOOL_LIST has exactly 11 tools', () => {
+    expect(TOOL_LIST).toHaveLength(11);
   });
 
   it('every tool has a title', () => {
@@ -41,11 +51,18 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     }
   });
 
-  it('every tool has annotations with readOnly or destructive hint', () => {
+  it('every tool exposes an object output schema', () => {
+    for (const tool of TOOL_LIST) {
+      expect(tool.outputSchema, `${tool.name} missing outputSchema`).toBeDefined();
+      expect((tool.outputSchema as { type?: string }).type).toBe('object');
+    }
+  });
+
+  it('every tool declares readOnly or destructive behavior', () => {
     for (const tool of TOOL_LIST) {
       const ann = tool.annotations || {};
-      const hasReadOnly = ann.readOnlyHint === true;
-      const hasDestructive = ann.destructiveHint === true;
+      const hasReadOnly = typeof ann.readOnlyHint === 'boolean';
+      const hasDestructive = typeof ann.destructiveHint === 'boolean';
       expect(
         hasReadOnly || hasDestructive,
         `${tool.name} must have readOnlyHint or destructiveHint`,
@@ -67,7 +84,9 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
       const jsonRequired = (tool.inputSchema as { required?: string[] }).required;
       if (!jsonRequired) continue;
 
-      const zodShape = (schema as unknown as { shape: Record<string, unknown> }).shape;
+      const base =
+        (schema as unknown as { sourceType?: () => ZodTypeAny }).sourceType?.() ?? schema;
+      const zodShape = (base as unknown as { shape: Record<string, unknown> }).shape;
       for (const field of jsonRequired) {
         expect(
           zodShape[field],
@@ -84,5 +103,17 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
       | Record<string, unknown>
       | undefined;
     expect(props?.cursor).toBeDefined();
+  });
+
+  it('join_waiting_list requires explicit processing consent', () => {
+    const result = JoinWaitingListInputSchema.safeParse({
+      restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+      partySize: 2,
+      slotStart: '2026-12-01T19:00:00Z',
+      slotEnd: '2026-12-01T21:00:00Z',
+      customerFirstName: 'Alice',
+      customerPhone: '+33612345678',
+    });
+    expect(result.success).toBe(false);
   });
 });

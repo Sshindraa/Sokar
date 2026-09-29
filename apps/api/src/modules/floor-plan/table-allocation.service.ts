@@ -74,6 +74,7 @@ export class TableAllocationService {
           tableId: table.id,
           startsAt: input.startsAt,
           endsAt: input.endsAt,
+          excludeReservationId: input.excludeReservationId,
         },
         tx,
       );
@@ -509,6 +510,7 @@ export class TableAllocationService {
       where: {
         restaurantId: input.restaurantId,
         tableId: null,
+        ...(input.excludeReservationId ? { id: { not: input.excludeReservationId } } : {}),
         state: { in: [...ACTIVE_RESERVATION_STATES] },
         OR: [
           {

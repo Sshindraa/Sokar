@@ -459,9 +459,12 @@ Module : `apps/api/src/modules/agentic-reservations/mcp/server.ts`
 ### GET/POST /mcp
 
 Endpoint JSON-RPC MCP. **Public** via OAuth 2.0 (RFC 8414 discovery,
-RFC 7591 DCR) ou API key. Sert les tools :
-`search_restaurants`, `check_availability`, `create_hold`,
-`confirm_reservation`, `cancel_reservation`.
+RFC 7591 DCR) ou API key ; un token peut être limité à un restaurant via
+`restaurant_id` sur `/oauth/authorize`. Sert les tools :
+`search_restaurants`, `get_restaurant_details`, `check_availability`,
+`create_quote`, `create_hold`, `create_reservation`, `join_waiting_list`,
+`cancel_waiting_list`, `modify_reservation`, `cancel_reservation`,
+`get_reservation_status`. Budget global de 60 requêtes/minute par client.
 
 Voir `docs/sokar-mcp-integrator-guide.md` pour le détail intégrateur.
 

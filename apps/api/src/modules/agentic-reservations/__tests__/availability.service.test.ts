@@ -81,10 +81,7 @@ describe('AvailabilityService', () => {
       ]);
       const findUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' });
 
-      // Stub CapacityAware pour ne rendre dispo que r-paris sur le slot 19:00 Paris
-      // (= 17:00 UTC en septembre, CEST). Le code fait
-      // slotStart.toISOString().slice(11,16) après zonedTimeToUtc, donc
-      // on doit matcher la valeur UTC.
+      // UTC 19:00 correspond à 21:00 à Paris en septembre.
       vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockImplementation(
         async ({ restaurantId }) => {
           const available = restaurantId === 'r-paris';
@@ -92,7 +89,7 @@ describe('AvailabilityService', () => {
             restaurantId,
             date: '2026-09-01',
             partySize: PARTY_SIZE,
-            slots: [{ time: '17:00', available }],
+            slots: [{ time: '21:00', available }],
           };
         },
       );
@@ -132,7 +129,7 @@ describe('AvailabilityService', () => {
           restaurantId,
           date: '2026-09-01',
           partySize: PARTY_SIZE,
-          slots: [{ time: '17:00', available: true }],
+          slots: [{ time: '21:00', available: true }],
         }));
 
       const service = new AvailabilityService(makeFakePrisma({ findMany, findUnique }));
@@ -231,13 +228,12 @@ describe('AvailabilityService', () => {
 
     it('retourne available=true si le slot est marqué dispo par CapacityAware', async () => {
       const findUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' });
-      // slotStart UTC=19:00 → après zonedTimeToUtc('2026-09-01','19:00','Europe/Paris')
-      // le code re-slice en UTC → "17:00" (CEST = UTC+2 en septembre)
+      // Le DTO utilise l'heure locale du restaurant (21:00 à Paris).
       vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
         restaurantId: RESTAURANT_ID,
         date: '2026-09-01',
         partySize: PARTY_SIZE,
-        slots: [{ time: '17:00', available: true }],
+        slots: [{ time: '21:00', available: true }],
       } as never);
 
       const service = new AvailabilityService(makeFakePrisma({ findUnique }));
@@ -283,7 +279,7 @@ describe('AvailabilityService', () => {
         restaurantId: RESTAURANT_ID,
         date: '2026-09-01',
         partySize: 8,
-        slots: [{ time: '17:00', available: true }],
+        slots: [{ time: '21:00', available: true }],
       } as never);
 
       const service = new AvailabilityService(makeFakePrisma({ findUnique }));
@@ -299,12 +295,12 @@ describe('AvailabilityService', () => {
 
     it("retourne available=false si le slot n'est pas dans la liste", async () => {
       const findUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' });
-      // On met un slot à "21:00" mais la lookup cherche "17:00"
+      // On met un slot à 17:00 alors que la recherche porte sur 21:00.
       vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
         restaurantId: RESTAURANT_ID,
         date: '2026-09-01',
         partySize: PARTY_SIZE,
-        slots: [{ time: '21:00', available: true }],
+        slots: [{ time: '17:00', available: true }],
       } as never);
 
       const service = new AvailabilityService(makeFakePrisma({ findUnique }));

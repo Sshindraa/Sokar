@@ -17,6 +17,8 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
+- [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
+- [ ] MCP : exécuter la matrice ChatGPT/Claude sur `chez-sokar-demo`, archiver les captures OAuth, puis corriger les écarts observés avant d’ajouter prompts/resources.
 
 ## Décisions récentes
 
