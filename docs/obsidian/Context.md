@@ -17,7 +17,7 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : fusionner puis déployer le reset compatible avec l’audit, nettoyer le run existant du staging et rejouer les écritures après déploiement. Claude staging est reconnecté avec la portée multi-restaurants approuvée par l’utilisateur ; seuls les tests Chez Sokar sont autorisés pour ce run. Les clients n’exposent pas `initialize`/`tools/list` bruts.
+- [ ] MCP : run `connector-20260929-01` purgé sur staging après déploiement de la PR #310 ; 2 réservations anonymisées en tombstones, 12 audits append-only conservés, aucun artefact opérationnel restant. Rejouer les parcours d’écriture ChatGPT/Claude après correctif sur le run `connector-20260929-02`, limité à Chez Sokar, puis le purger. L’utilisateur a accepté la portée multi-restaurants affichée au consentement Claude staging. `initialize`/`tools/list` bruts ne sont pas visibles dans les clients.
 
 ## Décisions récentes
 
