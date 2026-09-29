@@ -2351,7 +2351,13 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
       expect(requestHost(url)).toBe('openrouter.ai');
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       expect(body.response_format).toEqual(format);
-      expect(body.provider).toEqual({ require_parameters: true, sort: 'latency' });
+      expect(body.provider).toEqual({
+        require_parameters: true,
+        order: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER.split(',').map((name) =>
+          name.trim(),
+        ),
+        allow_fallbacks: true,
+      });
       expect(body).not.toHaveProperty('reasoning_effort');
     });
 
