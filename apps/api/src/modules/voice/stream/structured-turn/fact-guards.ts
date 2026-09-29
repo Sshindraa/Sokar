@@ -171,6 +171,43 @@ export function isSlotVerified(state: StructuredTurnState, draft: StructuredTurn
   );
 }
 
+/**
+ * Brouillon lu dans le flux JSON du modèle : `draft` précède `say` dans le schéma, il est donc
+ * lisible avant la première phrase. Null tant qu'il n'est pas complet ou s'il est illisible.
+ */
+export function parseStreamedDraft(
+  streamed: string,
+): { date: string; time: string; partySize: number } | null {
+  const match = /"draft"\s*:\s*(\{[^{}]*\})/.exec(streamed);
+  if (!match) return null;
+  try {
+    const draft = JSON.parse(match[1]) as Record<string, unknown>;
+    return {
+      date: typeof draft.date === 'string' ? draft.date : '',
+      time: typeof draft.time === 'string' ? draft.time : '',
+      partySize: typeof draft.partySize === 'number' ? draft.partySize : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Vrai quand les créneaux du jour, déjà lus pour ce nombre de personnes, ne contiennent pas
+ * l'heure du brouillon : le modèle ne doit pas annoncer ce créneau comme libre (appel 1b3f85e9 :
+ * « Pour 5, 15 h 30 est libre » alors que 15 h à 18 h était complet). Faux quand on ne sait pas
+ * (brouillon incomplet, jour non lu, taille de groupe hors lecture) : le modèle reste libre.
+ */
+export function requestedSlotConflict(
+  dayAvailability: DayAvailability | null,
+  draft: { date: string; time: string; partySize: number },
+): boolean {
+  if (!dayAvailability || dayAvailability.date !== draft.date) return false;
+  if (!/^\d{2}:\d{2}$/.test(draft.time) || draft.partySize < 1) return false;
+  const slots = dayAvailability.slotsBySize[draft.partySize];
+  return Array.isArray(slots) && !slots.includes(draft.time);
+}
+
 export type ActionDecision = { allowed: true } | { allowed: false; reason: string };
 
 /**
