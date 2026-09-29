@@ -47,6 +47,22 @@ export function getIssuer(): string {
   return env.OAUTH_ISSUER_URL || env.API_URL;
 }
 
+export function getProtectedResourceMetadataUrl(): string {
+  return `${getIssuer().replace(/\/+$/u, '')}/.well-known/oauth-protected-resource`;
+}
+
+function buildAuthorizationRedirect(
+  redirectUri: string,
+  parameters: Record<string, string>,
+): string {
+  const redirect = new URL(redirectUri);
+  for (const [name, value] of Object.entries(parameters)) {
+    redirect.searchParams.set(name, value);
+  }
+  redirect.searchParams.set('iss', getIssuer());
+  return redirect.toString();
+}
+
 function base64url(buf: Buffer): string {
   return buf.toString('base64url');
 }
@@ -125,6 +141,7 @@ type AuthCode = {
   restaurantName: string | null;
   scopes: string[];
   redirectUri: string;
+  resource?: string;
   codeChallenge?: string;
   codeChallengeMethod?: string;
 };
@@ -134,6 +151,7 @@ type StoredToken = {
   restaurantId: string | null; // null = public access (any MCP-enabled restaurant)
   restaurantName: string | null;
   scopes: string[];
+  resource?: string;
   accessToken: string;
   refreshToken: string;
 };
@@ -147,6 +165,8 @@ type StoredToken = {
 export async function validateOAuthToken(token: string): Promise<AuthContext | null> {
   const data = await getJson<StoredToken>(`sokar:oauth:token:${token}`);
   if (!data) return null;
+  // Legacy tokens without resource remain valid until expiry; new tokens are bound below.
+  if (data.resource !== undefined && data.resource !== getIssuer()) return null;
 
   // Convertir vers AuthContext (même forme que l'auth par API key)
   return {
@@ -171,6 +191,11 @@ const KNOWN_REDIRECT_PATTERNS: { pattern: RegExp; name: string }[] = [
   {
     // ChatGPT's current custom-connector flow uses this callback shape.
     pattern: /^https:\/\/chatgpt\.com\/connector\/oauth\/[a-zA-Z0-9_-]+$/,
+    name: 'ChatGPT',
+  },
+  {
+    // Stable callback used when RFC 9207 issuer identification is advertised.
+    pattern: /^https:\/\/chatgpt\.com\/connector_platform_oauth_redirect$/,
     name: 'ChatGPT',
   },
   { pattern: /^https:\/\/chat\.mistral\.ai\/[a-zA-Z0-9_-]+\/callback$/, name: 'Mistral' },
@@ -326,6 +351,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         resource: issuer,
         authorization_servers: [issuer],
         bearer_methods_supported: ['header'],
+        scopes_supported: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
         resource_documentation: `${issuer}/docs`,
       });
     },
@@ -337,8 +363,10 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       const issuer = getIssuer();
+      // Client ID Metadata Documents are not implemented; DCR remains available.
       return reply.header('Cache-Control', 'public, max-age=3600').send({
         issuer,
+        authorization_response_iss_parameter_supported: true,
         authorization_endpoint: `${issuer}/oauth/authorize`,
         token_endpoint: `${issuer}/oauth/token`,
         registration_endpoint: `${issuer}/oauth/register`,
@@ -443,6 +471,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         state?: string;
         scope?: string;
         restaurant_id?: string;
+        resource?: string;
         code_challenge?: string;
         code_challenge_method?: string;
       };
@@ -456,6 +485,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       }
       if (query.restaurant_id && !/^[0-9a-f-]{36}$/i.test(query.restaurant_id)) {
         return reply.status(400).type('text/html').send(renderError('Restaurant invalide', ''));
+      }
+      if (query.resource !== undefined && query.resource !== getIssuer()) {
+        return reply.status(400).type('text/html').send(renderError('Ressource invalide', ''));
       }
 
       // Valider les params
@@ -580,6 +612,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           codeChallengeMethod: query.code_challenge_method || undefined,
           restaurantId: query.restaurant_id || null,
           restaurantName: scopedRestaurant?.name ?? null,
+          resource: query.resource,
         },
         TTL_CODE, // 10 min — même TTL que les auth codes
       );
@@ -592,6 +625,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           state: query.state || '',
           scope: requestedScopes.join(' '),
           restaurantName: scopedRestaurant?.name ?? null,
+          resource: query.resource,
           codeChallenge: query.code_challenge || '',
           codeChallengeMethod: query.code_challenge_method || '',
           csrfToken,
@@ -610,6 +644,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         state?: string;
         scope?: string;
         restaurant_id?: string;
+        resource?: string;
         code_challenge?: string;
         code_challenge_method?: string;
         action?: string; // "approve" ou "deny"
@@ -633,6 +668,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         codeChallengeMethod?: string;
         restaurantId: string | null;
         restaurantName: string | null;
+        resource?: string;
       }>(`sokar:oauth:csrf:${body.csrf_token}`);
       if (!csrfData) {
         return reply
@@ -655,6 +691,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         (body.state && body.state !== csrfData.state) ||
         (body.scope && body.scope !== csrfData.scopes.join(' ')) ||
         (body.restaurant_id && body.restaurant_id !== csrfData.restaurantId) ||
+        (body.resource !== undefined && body.resource !== csrfData.resource) ||
         (body.code_challenge && body.code_challenge !== csrfData.codeChallenge) ||
         (body.code_challenge_method && body.code_challenge_method !== csrfData.codeChallengeMethod)
       ) {
@@ -708,11 +745,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         if (!body.redirect_uri) {
           return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
         }
-        const denyUrl = new URL(body.redirect_uri);
-        denyUrl.searchParams.set('error', 'access_denied');
-        denyUrl.searchParams.set('error_description', 'User denied access');
-        if (body.state) denyUrl.searchParams.set('state', body.state);
-        return reply.redirect(denyUrl.toString());
+        return reply.redirect(
+          buildAuthorizationRedirect(body.redirect_uri, {
+            error: 'access_denied',
+            error_description: 'User denied access',
+            ...(body.state ? { state: body.state } : {}),
+          }),
+        );
       }
 
       // Refuser les requêtes sans client_id valide
@@ -735,6 +774,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         restaurantName: csrfData.restaurantName ?? null,
         scopes: csrfData.scopes,
         redirectUri: body.redirect_uri || '',
+        resource: csrfData.resource,
         codeChallenge: csrfData.codeChallenge,
         codeChallengeMethod: csrfData.codeChallengeMethod,
       };
@@ -747,11 +787,12 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       if (!body.redirect_uri) {
         return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
       }
-      const redirectUrl = new URL(body.redirect_uri);
-      redirectUrl.searchParams.set('code', code);
-      if (body.state) redirectUrl.searchParams.set('state', body.state);
-
-      return reply.redirect(redirectUrl.toString());
+      return reply.redirect(
+        buildAuthorizationRedirect(body.redirect_uri, {
+          code,
+          ...(body.state ? { state: body.state } : {}),
+        }),
+      );
     },
   );
 
@@ -770,6 +811,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       client_secret?: string;
       code_verifier?: string;
       refresh_token?: string;
+      resource?: string;
     };
 
     // Auth client via Basic ou body, selon la méthode enregistrée.
@@ -817,6 +859,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      if (body.resource !== authCode.resource) {
+        return reply.status(400).send({
+          error: 'invalid_target',
+          error_description: 'resource must match the authorization request',
+        });
+      }
+
       // authorization_code exige exactement le redirect_uri autorisé.
       if (!body.redirect_uri || body.redirect_uri !== authCode.redirectUri) {
         return reply
@@ -851,6 +900,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         restaurantId: authCode.restaurantId,
         restaurantName: authCode.restaurantName,
         scopes: authCode.scopes,
+        resource: authCode.resource ?? getIssuer(),
         accessToken,
         refreshToken,
       };
@@ -894,6 +944,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .status(400)
           .send({ error: 'invalid_grant', error_description: 'Refresh token client mismatch' });
       }
+      const refreshResource = oldToken.resource ?? getIssuer();
+      if (body.resource !== undefined && body.resource !== refreshResource) {
+        return reply.status(400).send({
+          error: 'invalid_target',
+          error_description: 'resource must match the refresh token',
+        });
+      }
 
       // Rotation: l'ancien access token et l'ancien refresh token sont révoqués.
       await deleteStoredTokenPair(oldToken);
@@ -904,6 +961,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
       const tokenData: StoredToken = {
         ...oldToken,
+        resource: refreshResource,
         accessToken,
         refreshToken,
       };
@@ -989,6 +1047,7 @@ function renderConsentPage(params: {
   state: string;
   scope: string;
   restaurantName: string | null;
+  resource?: string;
   codeChallenge: string;
   codeChallengeMethod: string;
   csrfToken: string;

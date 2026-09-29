@@ -17,6 +17,7 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { env } from '../../../env';
 import { redisCache } from '../../../shared/redis/client';
 import { MCP_SERVER_VERSION } from '../mcp/server';
+import { getProtectedResourceMetadataUrl } from '../mcp/oauth';
 
 // Construction runtime pour contourner le masquage statique de secrets
 // sur les patterns qui ressemblent à des API keys.
@@ -61,6 +62,9 @@ describe('MCP server', () => {
         payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
       });
       expect(res.statusCode).toBe(401);
+      expect(res.headers['www-authenticate']).toContain(
+        `resource_metadata="${getProtectedResourceMetadataUrl()}"`,
+      );
     });
 
     it('retourne 401 avec une clé invalide', async () => {
@@ -241,7 +245,19 @@ describe('MCP server', () => {
       expect(names).toContain('get_reservation_status');
       for (const tool of body.result.tools) {
         expect(tool.outputSchema?.type).toBe('object');
+        expect(tool.securitySchemes).toEqual([
+          expect.objectContaining({ type: 'oauth2', scopes: [expect.any(String)] }),
+        ]);
       }
+
+      expect(
+        body.result.tools.find((tool: { name: string }) => tool.name === 'create_reservation')
+          .securitySchemes[0].scopes,
+      ).toEqual(['mcp:reserve']);
+      expect(
+        body.result.tools.find((tool: { name: string }) => tool.name === 'cancel_reservation')
+          .securitySchemes[0].scopes,
+      ).toEqual(['mcp:cancel']);
     });
   });
 
@@ -402,6 +418,10 @@ describe('MCP server', () => {
       const body = res.json();
       expect(body.result.isError).toBe(true);
       expect(body.result.content[0].text).toContain('FORBIDDEN');
+      expect(body.result._meta['mcp/www_authenticate']).toEqual([
+        expect.stringContaining('error="insufficient_scope"'),
+      ]);
+      expect(body.result._meta['mcp/www_authenticate'][0]).toContain('scope="mcp:reserve"');
     });
 
     it('masque un restaurant non exposé MCP', async () => {
