@@ -28,7 +28,18 @@ async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   if (command === 'build') {
     const file = await readJson<BehaviorCasesFile>(rest[0] ?? DEFAULT_CASES);
-    process.stdout.write(JSON.stringify({ requests: buildRequests(file) }));
+    const requests = buildRequests(file);
+    // Estimation avant envoi (≈ 3,5 caractères par token) : ce passage consomme le quota du fournisseur.
+    const estimated = requests.reduce(
+      (sum, request) =>
+        sum + request.samples * Math.round(JSON.stringify(request.messages).length / 3.5),
+      0,
+    );
+    const count = requests.reduce((sum, request) => sum + request.samples, 0);
+    process.stderr.write(
+      `≈ ${count} requêtes, ≈ ${(estimated / 1e6).toFixed(2)} M tokens en entrée\n`,
+    );
+    process.stdout.write(JSON.stringify({ requests }));
     return;
   }
   if (command === 'score') {
@@ -37,7 +48,11 @@ async function main(): Promise<void> {
     const file = await readJson<BehaviorCasesFile>(casesArg);
     const responses = await readJson<BehaviorResponses>(responsesArg);
     const results = scoreAll(file.cases, responses);
-    process.stdout.write(`Modèle : ${responses.model}\n\n${formatReport(results)}\n`);
+    const used = responses.usage;
+    const usage = used
+      ? `Tokens facturés : ${used.promptTokens + used.completionTokens} (${used.requests} requêtes)\n`
+      : '';
+    process.stdout.write(`Modèle : ${responses.model}\n${usage}\n${formatReport(results)}\n`);
     if (results.some((result) => !result.passed)) process.exitCode = 1;
     return;
   }

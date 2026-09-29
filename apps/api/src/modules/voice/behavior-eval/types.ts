@@ -51,8 +51,16 @@ export interface BehaviorCasesFile {
   cases: BehaviorCase[];
 }
 
+export interface BehaviorUsage {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface BehaviorResponses {
   model: string;
+  /** Tokens réellement facturés par le fournisseur pour ce passage. */
+  usage?: BehaviorUsage;
   /** Sorties JSON du modèle par cas ; null quand la réponse est invalide. */
   responses: Record<string, (Record<string, unknown> | null)[]>;
 }

@@ -34,6 +34,8 @@ const model = env.VOICE_LLM_MODEL || 'qwen-3.8-27b';
 const baseUrl = env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
 const CONCURRENCY = 6;
 
+const usage = { requests: 0, promptTokens: 0, completionTokens: 0 };
+
 async function sample(request) {
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -49,7 +51,11 @@ async function sample(request) {
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    return JSON.parse((await response.json()).choices[0].message.content);
+    const body = await response.json();
+    usage.requests += 1;
+    usage.promptTokens += body.usage?.prompt_tokens ?? 0;
+    usage.completionTokens += body.usage?.completion_tokens ?? 0;
+    return JSON.parse(body.choices[0].message.content);
   } catch {
     return null;
   }
@@ -68,4 +74,4 @@ await Promise.all(
 );
 const responses = {};
 jobs.forEach((job, index) => (responses[job.id] ??= []).push(results[index]));
-process.stdout.write(JSON.stringify({ model, responses }));
+process.stdout.write(JSON.stringify({ model, usage, responses }));
