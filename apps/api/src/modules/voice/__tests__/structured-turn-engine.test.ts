@@ -290,7 +290,12 @@ describe('tour structuré (canary)', () => {
         date: TOMORROW,
         partySize: 5,
         slots: ['12:00', '18:30', '19:00'],
-        allSlots: ['12:00', '15:30', '18:30', '19:00'],
+        allSlots: [
+          { time: '12:00', available: true },
+          { time: '15:30', available: true },
+          { time: '18:30', available: true },
+          { time: '19:00', available: true },
+        ],
       });
       outputs.push(
         turn({
@@ -376,7 +381,11 @@ describe('tour structuré (canary)', () => {
         date: TOMORROW,
         partySize: 5,
         slots: ['12:00', '18:30'],
-        allSlots: ['12:00', '15:30', '18:30'],
+        allSlots: [
+          { time: '12:00', available: true },
+          { time: '15:30', available: true },
+          { time: '18:30', available: true },
+        ],
       });
       const draft = { ...conflicting, customerName: 'Akkis' };
       outputs.push(
