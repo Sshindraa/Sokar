@@ -260,6 +260,12 @@ export const voiceTtsFirstAudioMs = new Histogram({
  * Permet de mesurer la fiabilité de chaque provider indépendamment.
  * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | cerebras | openrouter) × type borné.
  */
+export const voiceLlmFallbackTotal = new Counter({
+  name: 'sokar_voice_llm_fallback_total',
+  help: 'Voice LLM fallback attempts: path (structured|legacy), outcome (used|failed|no_key), reason',
+  labelNames: ['path', 'outcome', 'reason'] as const,
+  registers: [getRegistry()],
+});
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.

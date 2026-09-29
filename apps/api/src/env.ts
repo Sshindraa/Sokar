@@ -77,6 +77,8 @@ const PROD_HOST_ALLOWLIST = [
 ];
 
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
+/** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
+const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
 
@@ -95,6 +97,14 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_TIMEOUT_MS;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
+}, z.number().positive());
+
+const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
+  if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 500 && parsed <= 8000
+    ? parsed
+    : DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
 }, z.number().positive());
 
 /**
@@ -135,6 +145,7 @@ export const VoiceConfigSchema = z
   .object({
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
+    VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),

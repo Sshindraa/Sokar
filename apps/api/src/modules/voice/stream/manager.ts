@@ -44,6 +44,7 @@ import {
   estimateTokenCount,
 } from '../../usage/voice-usage.service';
 import {
+  voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
   voiceActiveSessionsGauge,
   voiceCallsTotal,
@@ -78,6 +79,28 @@ function recordVoiceTransfer(
 // Fournisseur LLM unique : Cerebras. Le label de la métrique porte son nom.
 
 type LlmProvider = VoiceLlmProvider;
+/** Le fournisseur qui a réellement répondu : le principal, ou OpenRouter en repli. */
+type LlmProviderUsed = LlmProvider | 'openrouter';
+type StreamChunkRead = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>['read']>>;
+
+type FallbackReason =
+  | 'quota'
+  | 'rate_limited'
+  | 'server_error'
+  | 'client_error'
+  | 'circuit_open'
+  | 'first_chunk_timeout'
+  | 'timeout'
+  | 'network';
+
+/** Pourquoi le fournisseur principal n'a pas pu prendre le tour (catégories pour la métrique). */
+function classifyFallbackReason(input: { status?: number; error?: unknown }): FallbackReason {
+  if (input.status === 402) return 'quota';
+  if (input.status === 429) return 'rate_limited';
+  if (input.status !== undefined) return input.status >= 500 ? 'server_error' : 'client_error';
+  const name = input.error instanceof Error ? input.error.name : '';
+  return name === 'AbortError' || name === 'TimeoutError' ? 'timeout' : 'network';
+}
 
 function classifyLlmHttpStatus(status: number): string {
   if (status === 429) return '429';
@@ -960,32 +983,49 @@ export class CallSessionManager {
       temperature: 0.3,
       signal: options.signal,
     };
-    let response: Response;
-    let provider: string;
-    try {
-      ({ response, provider } = await this.fetchLlmStreaming(session, messages, request));
-      if (!response.ok || !response.body) {
-        await response.body?.cancel().catch(() => undefined);
-        throw new Error(`Structured LLM request failed (${response.status})`);
-      }
-    } catch (err) {
-      if (isSessionAbortError(err, options.signal)) throw err;
-      // Rien n'a encore été dit : un second fournisseur peut prendre le tour.
-      const fallback = await this.fetchStructuredFallback(session, messages, request, err);
-      if (!fallback) throw err;
-      response = fallback;
-      provider = 'openrouter';
+    const primaryProvider = getVoiceLlmProvider();
+    const { response, provider: firstProvider } = await this.fetchLlmStreaming(
+      session,
+      messages,
+      request,
+    );
+    let provider: string = firstProvider;
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Structured LLM request failed (${response.status})`);
     }
-    // Les deux chemins ont vérifié le corps ci-dessus.
-    const reader = response.body!.getReader();
+    let reader = response.body.getReader();
     const decoder = new TextDecoder();
+    // Premier fragment trop lent : le modèle principal est abandonné pour ce tour (et compte comme
+    // un échec pour le disjoncteur), OpenRouter reprend avant que l'appelant n'attende 8 s.
+    let firstRead = await this.readFirstChunk(
+      reader,
+      provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
+    );
+    if (firstRead === 'timeout') {
+      recordProviderFailure(primaryProvider);
+      reader.cancel().catch(() => undefined);
+      const fallback = await this.fetchFallbackStreaming(
+        session,
+        messages,
+        request,
+        'first_chunk_timeout',
+        new Error('LLM first chunk timeout'),
+      );
+      if (!fallback?.body) throw new Error('Structured LLM first chunk timed out, no fallback');
+      provider = 'openrouter';
+      reader = fallback.body.getReader();
+      firstRead = await reader.read();
+    }
+    let nextRead: StreamChunkRead | null = firstRead;
     let pending = '';
     let text = '';
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = nextRead ?? (await reader.read());
+        nextRead = null;
         if (done) break;
         pending += decoder.decode(value, { stream: true });
         const lines = pending.split('\n');
@@ -1391,7 +1431,9 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM streaming — chemin unique, provider actif.
+   * Fetch LLM streaming : le provider actif d'abord ; s'il échoue avant le premier octet (quota,
+   * 429, 5xx, réseau, coupure), OpenRouter prend le tour, pour le tour structuré comme pour le
+   * chemin à outils des autres restaurants.
    */
   private async fetchLlmStreaming(
     session: CallSession,
@@ -1403,56 +1445,84 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
-  ): Promise<{ response: Response; provider: LlmProvider }> {
+  ): Promise<{ response: Response; provider: LlmProviderUsed }> {
     const provider = getVoiceLlmProvider();
+    let primaryResponse: Response | null = null;
+    let primaryError: unknown = null;
+    let reason: FallbackReason = 'network';
+
     if (isCircuitBreakerOpen(provider)) {
       logger.warn({ provider }, '[circuit-breaker] provider LLM open, streaming ignoré');
-      throw new Error('LLM provider unavailable (circuit open)');
+      primaryError = new Error('LLM provider unavailable (circuit open)');
+      reason = 'circuit_open';
+    } else {
+      try {
+        const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
+        if (response.ok) {
+          recordProviderSuccess(provider);
+          return { response, provider };
+        }
+        recordProviderFailure(provider);
+        recordLlmHttpError(provider, response.status);
+        primaryResponse = response;
+        primaryError = new Error(`LLM ${response.status}`);
+        reason = classifyFallbackReason({ status: response.status });
+      } catch (err) {
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException(provider, err, opts.signal);
+          throw err;
+        }
+        recordProviderFailure(provider);
+        recordLlmException(provider, err, opts.signal);
+        primaryError = err;
+        reason = classifyFallbackReason({ error: err });
+      }
     }
 
-    try {
-      const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
-      if (response.ok) {
-        recordProviderSuccess(provider);
-        return { response, provider };
-      }
-      recordProviderFailure(provider);
-      recordLlmHttpError(provider, response.status);
-      return { response, provider };
-    } catch (err) {
-      if (isSessionAbortError(err, opts.signal)) {
-        recordLlmException(provider, err, opts.signal);
-        throw err;
-      }
-      recordProviderFailure(provider);
-      recordLlmException(provider, err, opts.signal);
-      throw err;
+    // Rien n'a encore été dit : un second fournisseur peut prendre le tour.
+    const fallback = await this.fetchFallbackStreaming(
+      session,
+      messages,
+      opts,
+      reason,
+      primaryError,
+    );
+    if (fallback) {
+      await primaryResponse?.body?.cancel().catch(() => undefined);
+      return { response: fallback, provider: 'openrouter' };
     }
+    // Pas de secours : comportement historique (l'appelant lit le corps de l'erreur ou reçoit l'exception).
+    if (primaryResponse) return { response: primaryResponse, provider };
+    throw primaryError;
   }
 
   /**
-   * Secours du tour structuré : OpenRouter, routé vers l'hébergeur le plus
-   * rapide qui accepte le JSON Schema strict. Utilisé seulement quand le
-   * provider principal échoue avant le premier fragment (quota, 429, 5xx,
-   * réseau, circuit ouvert). Renvoie null sans clé ou si le secours échoue.
+   * Secours : OpenRouter, routé vers l'hébergeur le plus rapide qui accepte les paramètres
+   * demandés (JSON Schema strict pour le tour structuré, outils pour l'autre chemin). Utilisé
+   * seulement quand le provider principal échoue avant le premier fragment (quota, 429, 5xx,
+   * réseau, circuit ouvert, premier fragment trop lent). Renvoie null sans clé ou si le secours échoue.
    */
-  private async fetchStructuredFallback(
+  private async fetchFallbackStreaming(
     session: CallSession,
     messages: ChatMessage[],
     opts: {
-      responseFormat: StructuredResponseFormat;
+      tools?: ReturnType<typeof getRestaurantTools>;
+      responseFormat?: StructuredResponseFormat;
       maxTokens: number;
       temperature: number;
       signal?: AbortSignal;
     },
+    reason: FallbackReason,
     primaryError: unknown,
   ): Promise<Response | null> {
+    const path = opts.responseFormat ? 'structured' : 'legacy';
     const apiKey = voiceConfig.OPENROUTER_API_KEY?.trim();
-    const reason = primaryError instanceof Error ? primaryError.message : String(primaryError);
+    const detail = primaryError instanceof Error ? primaryError.message : String(primaryError);
     if (!apiKey) {
+      voiceLlmFallbackTotal.inc({ path, outcome: 'no_key', reason });
       logger.warn(
-        { callId: session.callControlId, reason },
-        '[structured-llm] Primary failed, no fallback key',
+        { callId: session.callControlId, path, reason, detail },
+        '[llm-fallback] Primary failed, no fallback key',
       );
       return null;
     }
@@ -1469,8 +1539,9 @@ export class CallSessionManager {
           temperature: opts.temperature,
           top_p: 0.8,
           reasoning: { enabled: false },
-          response_format: opts.responseFormat,
-          // Uniquement des hébergeurs qui respectent response_format, le plus rapide d'abord.
+          ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
+          ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+          // Uniquement des hébergeurs qui respectent les paramètres, le plus rapide d'abord.
           provider: { require_parameters: true, sort: 'latency' },
           stream: true,
           stream_options: { include_usage: true },
@@ -1478,28 +1549,53 @@ export class CallSessionManager {
       });
       if (!response.ok || !response.body) {
         await response.body?.cancel().catch(() => undefined);
+        voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
         logger.error(
-          { callId: session.callControlId, reason, status: response.status },
-          '[structured-llm] Primary and fallback failed',
+          { callId: session.callControlId, path, reason, detail, status: response.status },
+          '[llm-fallback] Primary and fallback failed',
         );
         return null;
       }
+      voiceLlmFallbackTotal.inc({ path, outcome: 'used', reason });
       logger.warn(
-        { callId: session.callControlId, reason, fallbackMs: Date.now() - startedAt },
-        '[structured-llm] Primary failed, OpenRouter fallback used',
+        { callId: session.callControlId, path, reason, detail, fallbackMs: Date.now() - startedAt },
+        '[llm-fallback] Primary failed, OpenRouter fallback used',
       );
       return response;
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) throw err;
+      voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
       logger.error(
         {
           callId: session.callControlId,
+          path,
           reason,
+          detail,
           err: err instanceof Error ? err.name : String(err),
         },
-        '[structured-llm] Primary and fallback failed',
+        '[llm-fallback] Primary and fallback failed',
       );
       return null;
+    }
+  }
+
+  /**
+   * Premier fragment du flux, avec un délai maximal : un modèle principal lent (file d'attente,
+   * incident partiel) ne doit pas laisser l'appelant attendre le délai total de 8 s.
+   */
+  private async readFirstChunk(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    timeoutMs?: number,
+  ): Promise<StreamChunkRead | 'timeout'> {
+    if (!timeoutMs) return reader.read();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), timeoutMs);
+    });
+    try {
+      return await Promise.race([reader.read(), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -1631,7 +1727,7 @@ export class CallSessionManager {
       let reportedInputTokens: number | undefined;
       let reportedOutputTokens: number | undefined;
       let usageReported = false;
-      const usageProvider: LlmProvider = providerUsed;
+      const usageProvider: LlmProviderUsed = providerUsed;
       const phrasePromises: Promise<void>[] = [];
       const enqueuePhrase = (phrase: string) => {
         phrasesYielded = true;
@@ -1775,8 +1871,8 @@ export class CallSessionManager {
             throw streamErr;
           }
           // Le timeout a fire (pas la session) → retry sur l'autre provider
-          // Record failure for circuit breaker
-          recordProviderFailure(providerUsed);
+          // Record failure for circuit breaker (le repli OpenRouter n'a pas de disjoncteur ici)
+          if (providerUsed !== 'openrouter') recordProviderFailure(providerUsed);
 
           if (!phrasesYielded && !fullText.trim() && !hasToolCall) {
             // Aucun audio envoyé à l'utilisateur et aucun tool call commencé.
