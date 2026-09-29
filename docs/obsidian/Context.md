@@ -18,11 +18,12 @@
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
-- [ ] MCP : provoquer un appel de lecture staging puis vérifier l’incrément des compteurs ; décider si distinguer ChatGPT/Claude au-delà d’OAuth/API key apporte une valeur. Adapter `mcp:sandbox reset` à l’audit append-only et capturer un consentement OAuth frais / `initialize` / `tools/list` bruts si les clients le permettent.
-- [ ] MCP : enrichir de manière additive `search_restaurants` (adresse, cuisine, prix, créneaux) et `check_availability` (décision, alternatives, action recommandée).
+- [ ] MCP : réconcilier `mcp:sandbox reset` avec l’audit append-only ; capturer un consentement OAuth frais et les messages bruts `initialize` / `tools/list` après le correctif ChatGPT si les clients les exposent.
 - [ ] MCP : finaliser les erreurs structurées, l’idempotence de modification/annulation, la décision sur `create_quote` et la validation runtime des `outputSchema`.
 
 ## Décisions récentes
+
+2026-09-29 — [MCP, contrats et observabilité] **Contrats de recherche additifs, métriques indépendantes du client** — `search_restaurants` expose adresse, cuisine, gamme de prix et créneau exact ; `check_availability` expose décision, alternatives et action recommandée, sans IDs internes de conflit. Les dimensions Prometheus restent outil, statut, type d’authentification et transport ; ChatGPT/Claude sont comparés dans la matrice plutôt que distingués par un nouveau label.
 
 2026-09-25 — [voice, deepgram, keyterms] **Keyterms par restaurant en opt-in** — Les termes métier générés (budget estimé dédié de 200 tokens) s'activent par allowlist. Hors allowlist, conserver les keyterms historiques pour préserver le comportement ; aucune donnée client/personnel ou note libre n'est chargée. `VOICE_DEEPGRAM_MIP_OPT_OUT=true` devient le seul changement Deepgram par défaut.
 
