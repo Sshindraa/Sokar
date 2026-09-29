@@ -276,6 +276,9 @@ démarrage par Zod :
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 VOICE_DEEPGRAM_UTTERANCE_END_MS="1000"
 VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
+# Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
+# ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
+DEEPGRAM_API_HOST="api.deepgram.com"
 VOICE_DEEPGRAM_MODEL="nova-3"
 # Optional; Flux is used only when this CSV contains the restaurant ID.
 VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""

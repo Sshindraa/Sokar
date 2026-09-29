@@ -31,6 +31,7 @@ import {
   looksLikeSpelledLetters,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
+import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
 
 function makeWsMock(): WebSocket {
   return {
@@ -173,6 +174,29 @@ describe('buildSttUrl', () => {
 });
 
 describe('buildDeepgramSttUrl', () => {
+  it("vise l'endpoint Deepgram configuré (UE) pour Nova-3 et Flux, sinon api.deepgram.com", () => {
+    const saved = voiceConfig.DEEPGRAM_API_HOST;
+    try {
+      Object.assign(voiceConfig, { DEEPGRAM_API_HOST: 'api.eu.deepgram.com' });
+      expect(new URL(buildDeepgramSttUrl('PCMA', [])).hostname).toBe('api.eu.deepgram.com');
+      expect(new URL(buildDeepgramSttUrl('PCMA', [], 'flux-general-multi')).hostname).toBe(
+        'api.eu.deepgram.com',
+      );
+    } finally {
+      Object.assign(voiceConfig, { DEEPGRAM_API_HOST: saved });
+    }
+  });
+
+  it("n'accepte que les hôtes Deepgram connus : la clé API ne part jamais vers une valeur libre", () => {
+    const parse = (value: unknown) =>
+      VoiceDeepgramConfigSchema.parse({ DEEPGRAM_API_HOST: value }).DEEPGRAM_API_HOST;
+    expect(parse(undefined)).toBe('api.deepgram.com');
+    expect(parse('api.eu.deepgram.com')).toBe('api.eu.deepgram.com');
+    expect(parse(' "api.eu.deepgram.com" ')).toBe('api.eu.deepgram.com');
+    expect(parse('evil.example.com')).toBe('api.deepgram.com');
+    expect(parse('api.eu.deepgram.com.evil.io')).toBe('api.deepgram.com');
+  });
+
   it.each([
     ['PCMA', 'alaw', '8000'],
     ['PCMU', 'mulaw', '8000'],

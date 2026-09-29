@@ -615,7 +615,7 @@ export function buildDeepgramSttUrl(
       mip_opt_out: String(mipOptOut),
     });
     for (const keyterm of keyterms) params.append('keyterm', keyterm);
-    return `wss://api.deepgram.com/v2/listen?${params.toString()}`;
+    return `wss://${voiceConfig.DEEPGRAM_API_HOST}/v2/listen?${params.toString()}`;
   }
   const params = new URLSearchParams({
     model: 'nova-3',
@@ -634,7 +634,7 @@ export function buildDeepgramSttUrl(
     mip_opt_out: String(mipOptOut),
   });
   for (const keyterm of keyterms) params.append('keyterm', keyterm);
-  return `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+  return `wss://${voiceConfig.DEEPGRAM_API_HOST}/v1/listen?${params.toString()}`;
 }
 
 function createSttAdapter(session: CallSession, provider: SttProviderId): SttProviderAdapter {
