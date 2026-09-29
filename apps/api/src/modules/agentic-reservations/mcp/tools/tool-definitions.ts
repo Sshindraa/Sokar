@@ -56,7 +56,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'search_restaurants',
     title: 'Rechercher un restaurant',
     description:
-      'À partir de la demande en langage courant, recherchez des restaurants par ville, taille du groupe, date et horaire. Renseignez vous-même ces critères et le fuseau horaire; demandez seulement les précisions manquantes. Les identifiants retournés sont réservés aux appels d’outils et ne doivent pas être montrés à la personne. Vérifiez capacityLimits avant d’affirmer qu’un restaurant nommé n’existe pas ou avant de proposer une taille de groupe différente.',
+      'À partir de la demande en langage courant, recherchez des restaurants par ville, taille du groupe, date et horaire. Renseignez vous-même ces critères et le fuseau horaire; demandez seulement les précisions manquantes. Si seule l’heure de début est donnée, omettez slotEnd : Sokar ajoute une durée de 120 minutes, sauf durée différente connue ou précisée, puis vérifie ce créneau exact. Si searchOutcome vaut no_exact_slot_available, cela ne signifie pas que le restaurant est introuvable : dites simplement qu’aucune place n’a été trouvée sur ce créneau et proposez une autre heure. Ne demandez jamais de restaurantId ou d’UUID. Vérifiez capacityLimits avant de proposer une taille de groupe différente. Gardez les identifiants retournés pour les appels d’outils, sans les montrer à la personne.',
     schema: SearchRestaurantsInputSchema,
     output: SearchRestaurantsOutputSchema,
     requiredScope: 'mcp:read',

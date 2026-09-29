@@ -61,6 +61,7 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
     expect(result).toEqual({
       ok: true,
       data: {
+        searchOutcome: 'capacity_exceeded',
         restaurants: [],
         capacityLimits: [
           {
@@ -83,6 +84,46 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
       cuisineType: undefined,
       maxResults: 5,
     });
+  });
+
+  it('indique que des résultats vides ne prouvent pas que le restaurant est introuvable', async () => {
+    const registry = new McpToolRegistry(makePrisma(), makeRateLimiter());
+    const availabilityService = {
+      searchAvailableRestaurantsPage: vi.fn().mockResolvedValue({ results: [] }),
+      findCapacityLimits: vi.fn().mockResolvedValue([]),
+    };
+    (registry as unknown as Record<string, unknown>).availabilityService = availabilityService;
+
+    const result = await registry.searchRestaurants(
+      {
+        city: 'Lyon',
+        partySize: 2,
+        slotStart: '2026-09-17T19:00:00+02:00',
+      },
+      {
+        clientId: 'client-1',
+        clientName: 'Claude',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        searchOutcome: 'no_exact_slot_available',
+        restaurants: [],
+        capacityLimits: [],
+      },
+    });
+    expect(availabilityService.searchAvailableRestaurantsPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slotStart: new Date('2026-09-17T17:00:00.000Z'),
+        slotEnd: new Date('2026-09-17T19:00:00.000Z'),
+      }),
+    );
+    if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
   });
 
   it('continues past filtered restaurants and consumes the cursor', async () => {
@@ -138,6 +179,7 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
+        searchOutcome: 'available',
         restaurants: [
           {
             id: restaurantId,

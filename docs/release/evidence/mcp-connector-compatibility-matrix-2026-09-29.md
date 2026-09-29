@@ -123,7 +123,7 @@ Les mêmes paramètres ont été utilisés pour comparer les deux clients. Resta
 
 ### Observation sur les heures implicites
 
-Lors d’une première demande sans heure de fin, ChatGPT a vérifié 19 h 30–21 h 30, tandis que Claude a pris 19 h 30–21 h 00. Les deux réponses étaient disponibles, mais la comparaison n’était pas équivalente. Le test a ensuite été rejoué avec un début et une fin explicitement identiques ; les deux ont renvoyé available=true. Les futurs tests doivent toujours fixer slotStart et slotEnd.
+Lors d’une première demande sans heure de fin, ChatGPT a vérifié 19 h 30–21 h 30, tandis que Claude a pris 19 h 30–21 h 00. Les deux réponses étaient disponibles, mais la comparaison n’était pas équivalente. Le test de disponibilité exacte a ensuite été rejoué avec un début et une fin explicitement identiques ; les deux ont renvoyé `available=true`. Pour tester le comportement naturel, l’heure de fin doit être omise et le serveur doit appliquer sa durée par défaut de 120 minutes.
 
 ## Parcours d’écriture post-correctif — ChatGPT
 
@@ -223,3 +223,14 @@ Les dry-runs correspondaient aux artefacts connus avant chaque reset. Les audits
 - Les captures des résultats post-correctif Claude et ChatGPT sont visibles dans le fil de cette session ; les réponses détaillées sont transcrites dans les tableaux ci-dessus. Les images n’ont pas été exportées comme fichiers dans ce dossier.
 - Les clients ne montrent pas les messages JSON-RPC bruts d’initialisation MCP, la version négociée, ni le contenu brut de tools/list. Les versions de protocole sont donc indiquées comme non observables, pas comme vérifiées.
 - Les identifiants OAuth, codes de retour, challenge et jetons ne sont pas consignés dans cette matrice.
+
+## Vérification de la conversation naturelle
+
+Après PR #318 et son déploiement staging, une demande en lecture seule a été saisie sans valeurs MCP ni consignes techniques : « Je cherche une table au restaurant Chez Sokar, à Lyon, pour deux personnes jeudi 1er octobre vers 19 h. Est-ce qu’il y a de la place ? Ne fais pas la réservation pour l’instant. » Seul le connecteur `Sokar Staging` était activé; aucun outil d’écriture, aucun hold et aucune réservation n’ont été appelés.
+
+| Client  | Résultat                                                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT | Réponse naturelle : Chez Sokar a une table pour 2 le 1er octobre à 19 h (créneau annoncé 19 h–21 h); précise qu’aucune réservation ni aucun blocage n’a été effectué.                   |
+| Claude  | A demandé des fenêtres horaires d’1 h puis 5 h; après deux résultats vides, a conclu qu’il ne pouvait pas confirmer le restaurant et a demandé son UUID. Aucun outil d’écriture appelé. |
+
+Cause trouvée : le schéma imposait `slotEnd`, donc Claude inventait la durée au lieu d’utiliser la durée par défaut de Sokar. La branche `codex/mcp-natural-window-guidance` rend maintenant `slotEnd` facultatif et fait compléter 120 minutes par le serveur. La réponse ajoute aussi `searchOutcome`, pour qu’un résultat vide ne soit pas interprété comme preuve que le restaurant n’existe pas. Retest naturel de Claude à faire après le déploiement staging de ce correctif; cette consigne serveur reste indicative et le client contrôle la réponse finale.
