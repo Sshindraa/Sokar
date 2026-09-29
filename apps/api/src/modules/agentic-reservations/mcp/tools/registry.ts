@@ -32,7 +32,7 @@ import { McpRateLimiter } from '../rate-limit';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
   checkAvailabilityDuration,
-  mcpToolCallsTotal,
+  recordMcpToolCall,
 } from '../../../../shared/observability/metrics';
 import {
   CancelReservationInputSchema,
@@ -61,6 +61,8 @@ export type ToolContext = {
   restaurantId: string | null;
   scopes: string[];
   actor: string;
+  credentialType?: 'api_key' | 'oauth';
+  transport?: 'mcp' | 'generic_agent';
   channel?: ReservationChannel;
   /** Restaurant-scoped API keys act as trusted staff; OAuth tokens do not. */
   trustedRestaurantAccess?: boolean;
@@ -1010,12 +1012,17 @@ export async function executeTool(
       result = await registry.getReservationStatus(rawInput, ctx);
       break;
     default:
-      mcpToolCallsTotal.inc({ tool: toolName, status: 'error' });
+      recordMcpToolCall(toolName, 'error', ctx.credentialType, 'UNKNOWN_TOOL', ctx.transport);
       return toolError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL');
   }
 
-  // Metric : tracker quels tools MCP sont réellement utilisés
-  mcpToolCallsTotal.inc({ tool: toolName, status: result.ok ? 'success' : 'error' });
+  recordMcpToolCall(
+    toolName,
+    result.ok ? 'success' : 'error',
+    ctx.credentialType,
+    result.ok ? undefined : result.code,
+    ctx.transport,
+  );
 
   // Redacte la réponse avant retour
   if (result.ok) {

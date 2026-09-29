@@ -825,6 +825,8 @@ export function __resetMetrics(): void {
   connectReservationsConfirmedTotal.reset();
   connectRequestDuration.reset();
   mcpToolCallsTotal.reset();
+  mcpToolCallsByAuthTypeTotal.reset();
+  mcpToolErrorsByCodeTotal.reset();
   connectIaBotHitsTotal.reset();
   openaiReserveFeedRequestsTotal.reset();
   failOpenTotal.reset();
@@ -928,18 +930,97 @@ export const connectRequestDuration = new Histogram({
 // ─── MCP Server (agentic reservations) ─────────────────────────────
 
 /**
- * Compteur des appels par tool MCP. Permet de savoir quels tools sont
- * réellement utilisés par les clients MCP (Claude Desktop, Cursor, etc.)
- * et par quel agent (label agentClient).
- * Labels : tool (search, details, availability, create, cancel, status)
- *          × status (success, error, denied).
+ * Compteur historique des appels au registre d'outils par nom et résultat.
+ * Il agrège MCP et generic_agent ; les nouvelles ventilations permettent de
+ * filtrer le transport.
  */
 export const mcpToolCallsTotal = new Counter({
   name: 'sokar_mcp_tool_calls_total',
-  help: 'Total MCP tool calls by tool name and status',
+  help: 'Total tool registry calls by tool name and status',
   labelNames: ['tool', 'status'] as const,
   registers: [getRegistry()],
 });
+
+/**
+ * Appels d'outils ventilés par transport et OAuth/API key. `tool`, `status`,
+ * `auth_type` et `transport` sont normalisés vers des valeurs finies ; aucun ID client, nom fourni par un
+ * client ou détail de réservation n'est exposé.
+ */
+export const mcpToolCallsByAuthTypeTotal = new Counter({
+  name: 'sokar_mcp_tool_calls_by_auth_type_total',
+  help: 'Total tool calls by tool, result, bounded authentication type and transport',
+  labelNames: ['tool', 'status', 'auth_type', 'transport'] as const,
+  registers: [getRegistry()],
+});
+
+/** Erreurs d'outils par code stable, transport et type d'authentification. */
+export const mcpToolErrorsByCodeTotal = new Counter({
+  name: 'sokar_mcp_tool_errors_by_code_total',
+  help: 'Total tool errors by tool, bounded error code, authentication type and transport',
+  labelNames: ['tool', 'error_code', 'auth_type', 'transport'] as const,
+  registers: [getRegistry()],
+});
+
+const MCP_TOOL_LABELS = new Set([
+  'search_restaurants',
+  'get_restaurant_details',
+  'check_availability',
+  'create_reservation',
+  'create_quote',
+  'create_hold',
+  'join_waiting_list',
+  'cancel_waiting_list',
+  'modify_reservation',
+  'cancel_reservation',
+  'get_reservation_status',
+]);
+
+const MCP_ERROR_CODE_LABELS = new Set([
+  'ALREADY_EXISTS',
+  'FORBIDDEN',
+  'IDEMPOTENCY_CONFLICT',
+  'INVALID_DATETIME',
+  'INTERNAL',
+  'INVALID_HOLD',
+  'INVALID_INPUT',
+  'INVALID_STATE',
+  'NOT_FOUND',
+  'POLICY_VIOLATION',
+  'RATE_LIMITED',
+  'SLOT_AVAILABLE',
+  'SLOT_UNAVAILABLE',
+  'UNKNOWN_TOOL',
+  'WAITING_LIST_DISABLED',
+  'WAITING_LIST_FULL',
+]);
+
+/** Enregistre les métriques d'outils sans laisser les labels dépendre de l'entrée brute. */
+export function recordMcpToolCall(
+  toolName: string,
+  status: 'success' | 'error',
+  credentialType?: 'api_key' | 'oauth',
+  errorCode?: string,
+  transport?: 'mcp' | 'generic_agent',
+): void {
+  const tool = MCP_TOOL_LABELS.has(toolName) ? toolName : 'unknown';
+  const authType =
+    credentialType === 'oauth' || credentialType === 'api_key' ? credentialType : 'unknown';
+  const transportLabel =
+    transport === 'mcp' || transport === 'generic_agent' ? transport : 'unknown';
+  const labels = { tool, status };
+
+  mcpToolCallsTotal.inc(labels);
+  mcpToolCallsByAuthTypeTotal.inc({ ...labels, auth_type: authType, transport: transportLabel });
+
+  if (status === 'error') {
+    mcpToolErrorsByCodeTotal.inc({
+      tool,
+      auth_type: authType,
+      error_code: errorCode && MCP_ERROR_CODE_LABELS.has(errorCode) ? errorCode : 'OTHER',
+      transport: transportLabel,
+    });
+  }
+}
 
 /**
  * Hits par bot IA sur les pages publiques Connect (crawl web).

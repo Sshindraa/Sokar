@@ -3,6 +3,7 @@ import {
   __resetMetrics,
   renderMetrics,
   recordNotificationClaimEvent,
+  recordMcpToolCall,
   piiLeaksTotal,
   openaiReserveFeedRequestsTotal,
 } from '../metrics';
@@ -93,5 +94,28 @@ describe('Prometheus metrics', () => {
     expect(payload).toMatch(/sokar_notification_claim_events_total\{event="orphan_recovered"\} 1/);
     expect(payload).toMatch(/sokar_notification_claim_events_total\{event="queue_unavailable"\} 1/);
     expect(payload).not.toContain('reservation-should-not-be-a-label');
+  });
+
+  it('ventile les appels MCP par auth et code avec des labels bornés', async () => {
+    recordMcpToolCall('search_restaurants', 'success', 'oauth', undefined, 'mcp');
+    recordMcpToolCall('create_reservation', 'error', 'api_key', 'FORBIDDEN', 'generic_agent');
+    recordMcpToolCall('check_availability', 'error', 'oauth', 'INVALID_DATETIME', 'mcp');
+    recordMcpToolCall('untrusted-client-tool-name', 'error', undefined, 'private-id-value');
+
+    const payload = await renderMetrics();
+    expect(payload).toMatch(
+      /sokar_mcp_tool_calls_by_auth_type_total\{[^}]*tool="search_restaurants"[^}]*status="success"[^}]*auth_type="oauth"[^}]*transport="mcp"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_mcp_tool_errors_by_code_total\{[^}]*tool="create_reservation"[^}]*auth_type="api_key"[^}]*error_code="FORBIDDEN"[^}]*transport="generic_agent"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_mcp_tool_errors_by_code_total\{[^}]*tool="check_availability"[^}]*error_code="INVALID_DATETIME"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_mcp_tool_errors_by_code_total\{[^}]*tool="unknown"[^}]*auth_type="unknown"[^}]*error_code="OTHER"[^}]*transport="unknown"[^}]*\} 1/,
+    );
+    expect(payload).not.toContain('untrusted-client-tool-name');
+    expect(payload).not.toContain('private-id-value');
   });
 });

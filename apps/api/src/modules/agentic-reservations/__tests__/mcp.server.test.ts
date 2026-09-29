@@ -16,6 +16,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { getApp, closeApp } from '../../../test/helpers';
 import { env } from '../../../env';
 import { redisCache } from '../../../shared/redis/client';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
 import { MCP_SERVER_VERSION } from '../mcp/server';
 import { getProtectedResourceMetadataUrl } from '../mcp/oauth';
 
@@ -333,6 +334,7 @@ describe('MCP server', () => {
     });
 
     it('refuse des params invalides sur search_restaurants', async () => {
+      __resetMetrics();
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -343,6 +345,14 @@ describe('MCP server', () => {
       const body = res.json();
       expect(body.result.isError).toBe(true);
       expect(body.result.content[0].text).toContain('INVALID_INPUT');
+
+      const metrics = await renderMetrics();
+      expect(metrics).toMatch(
+        /sokar_mcp_tool_calls_by_auth_type_total\{tool="search_restaurants",status="error",auth_type="api_key",transport="mcp"\} 1/,
+      );
+      expect(metrics).toMatch(
+        /sokar_mcp_tool_errors_by_code_total\{tool="search_restaurants",auth_type="api_key",error_code="INVALID_INPUT",transport="mcp"\} 1/,
+      );
     });
 
     it('réponse est redactée (pas de leak PII)', async () => {
