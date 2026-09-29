@@ -156,7 +156,8 @@ Réponse:
   "result": {
     "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "2.1.0" }
+    "serverInfo": { "name": "sokar-mcp", "version": "2.1.1" },
+    "instructions": "Consignes conversationnelles fournies par Sokar…"
   }
 }
 ```
@@ -188,6 +189,28 @@ Réponse: `result.tools` contient les outils publics. Chaque outil expose son
 - `modify_reservation`
 - `cancel_reservation`
 - `get_reservation_status`
+
+## Expérience conversationnelle
+
+Les champs MCP (`restaurantId`, `holdToken`, `idempotencyKey`, dates ISO, etc.) sont
+des détails entre l’assistant et le serveur. La personne formule son besoin en
+langage courant; l’assistant extrait les informations fournies, demande seulement
+ce qui manque et remplit lui-même ces champs. Il ne faut jamais demander à la
+personne un identifiant de restaurant ou de réservation, un jeton, une clé
+d’idempotence, du JSON ou un format de date/téléphone technique.
+
+Après confirmation et consentement, l’assistant appelle les outils nécessaires,
+en gardant leurs identifiants et résultats techniques internes. Il répond ensuite
+brièvement dans la langue de la personne, par exemple : « C’est confirmé pour deux
+personnes chez Chez Sokar, jeudi 1er octobre à 19 h. » Il ne montre ni UUID, ni
+`reused`, ni réponse JSON. En cas d’indisponibilité, il propose uniquement les
+créneaux alternatifs retournés.
+
+Le serveur transmet ces règles dans `initialize.instructions` et dans les
+descriptions des outils. Ce sont des consignes au modèle, pas une contrainte
+d’affichage imposée par MCP : le client conserve la main sur sa réponse. Une
+intégration qui exige une formulation garantie doit aussi appliquer ses propres
+instructions système et vérifier le rendu dans son client.
 
 ## Format tools/call
 
