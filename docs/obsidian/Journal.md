@@ -945,6 +945,6 @@ Flux a 9 finals manquants sur 31 clips bruités et 2 sur 31 propres; Nova a 3 se
 - Appel de test : l'accueil est joué (Cartesia en direct, cache MISS), puis l'appelant n'émet que du bruit de ligne (deux claquements, aucun mot) ; Deepgram rend six `speech_final` vides et l'agent reste muet 15 s.
 - Cause : la relance no-input (#283) exigeait une question de l'agent ; « Je vous écoute. » n'en est pas une. `recoveryQuestion` retombe sur « Comment puis-je vous aider ? » tant que l'appelant n'a rien dit (silence : « Vous êtes toujours là ? … », parole non comprise : « Pardon, je n'ai pas bien entendu. … »). Max 2 relances par appel inchangé.
 
-## 2026-09-29 — Fin de tour rapide sur les confirmations courtes (appel b686b241)
-- Appel abouti (réservation 4 personnes), médiane 1,35 s de fin de parole au premier son ; 4 tours sur 9 au-dessus de 1,7 s, dont « oui c'est tout » (trois mots) : 1,44 s d'attente STT alors que la réponse à « C'est bon pour vous ? » est évidente.
-- `isShortConfirmationReply` : une partielle qui est seulement une confirmation (« oui c'est tout », « tout à fait », « c'est bien ça »…) après une question de l'agent utilise le délai court `VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS` (500 ms en prod) au lieu de 1200 ms. Un complément (« oui c'est bon pour 19 heures ») ne correspond pas et garde le délai normal.
+## 2026-09-29 — Fin de tour jugée par le modèle (appel b686b241)
+- Appel abouti, médiane 1,35 s ; « oui c'est tout » attendait 1,44 s la fin de tour STT. Première approche (liste de confirmations) abandonnée : décision produit, pas de phrases codées en dur, un système qui juge.
+- Le premier passage spéculatif (partielle stable 250 ms) émet `turnComplete` en tout premier champ. Dès qu'il vaut true et que la partielle n'a pas bougé, `finalizeOnSemanticEndOfTurn` envoie `Finalize` sans attendre le minuteur. false : rien, le minuteur reste le filet. Activation : `VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED=true` (défaut false).

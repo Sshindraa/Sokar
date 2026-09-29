@@ -1621,32 +1621,6 @@ export function deepgramShortStallFinalizeMs(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(parsed) && parsed >= 300 && parsed <= fallback ? parsed : fallback;
 }
 
-/**
- * Réponses courtes de confirmation (« oui c'est tout », « tout à fait »), seules ou
- * précédées d'un oui/non. Appel b686b241 : « oui c'est tout » (trois mots) attendait
- * 1,4 s la fin de tour, alors que la réponse à « C'est bon pour vous ? » est connue.
- */
-const CONFIRMATION_REPLY =
-  /^(?:(?:oui|ouais|ouaip|non|bah oui|ah oui)\s+)?(?:tout à fait|c'est (?:tout|bon|ça|bien ça|exact|correct|parfait|très bien)|exactement|parfait|d'accord|ça marche|ça me va|correct|nickel|impeccable|absolument|voilà)$/u;
-
-/** Vrai si la partielle est une confirmation courte en réponse à une question de l'agent. */
-export function isShortConfirmationReply(
-  transcript: string,
-  history: Pick<CallSession, 'history'>['history'],
-): boolean {
-  const lastAgent = [...history].reverse().find((message) => message.role === 'assistant');
-  if (typeof lastAgent?.content !== 'string' || !lastAgent.content.trim().endsWith('?')) {
-    return false;
-  }
-  const normalized = transcript
-    .toLowerCase()
-    .replace(/’/g, "'")
-    .replace(/[.,!?;:]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return CONFIRMATION_REPLY.test(normalized);
-}
-
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -1663,7 +1637,9 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
     speculationTimers.delete(session);
     if (!session.sttDeepgramPendingInterim) return;
     if (session.sttDeepgramPartials?.lastText !== transcript) return;
-    speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript);
+    speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript, (complete) =>
+      finalizeOnSemanticEndOfTurn(session, transcript, complete),
+    );
   }, structuredSpeculationDelayMs());
   timer.unref?.();
   speculationTimers.set(session, timer);
@@ -1688,37 +1664,69 @@ function clearDeepgramStallTimer(session: CallSession): void {
 function armDeepgramStallTimer(session: CallSession): void {
   clearDeepgramStallTimer(session);
   const words = session.sttDeepgramPartials?.lastWordCount ?? 0;
-  const short =
-    (words > 0 && words <= DEEPGRAM_SHORT_PARTIAL_MAX_WORDS) ||
-    isShortConfirmationReply(session.sttDeepgramPartials?.lastText ?? '', session.history);
+  const short = words > 0 && words <= DEEPGRAM_SHORT_PARTIAL_MAX_WORDS;
   const stallMs = short ? deepgramShortStallFinalizeMs() : deepgramStallFinalizeMs();
   const timer = setTimeout(() => {
     deepgramStallTimers.delete(session);
-    const ws = session.sttWs;
-    if (
-      session.ended ||
-      session.sttAdapter?.id !== 'deepgram' ||
-      !session.sttDeepgramPendingInterim ||
-      session.sttDeepgramFinalizeRequested ||
-      ws?.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-    session.sttDeepgramFinalizeRequested = true;
-    deepgramFinalizeReasons.set(session, 'stalled');
-    logger.info(
-      {
-        callId: session.callControlId,
-        stallMs,
-        short,
-        partialCount: session.sttDeepgramPartials?.count,
-      },
-      '[stt] Deepgram partial stalled, Finalize sent',
-    );
-    session.sttAdapter.finalize(ws);
+    requestDeepgramFinalize(session, { trigger: 'stall', stallMs, short });
   }, stallMs);
   timer.unref?.();
   deepgramStallTimers.set(session, timer);
+}
+
+/** Envoie `Finalize` si un segment Deepgram est en attente ; la réponse clôt le tour. */
+function requestDeepgramFinalize(
+  session: CallSession,
+  fields: { trigger: 'stall' | 'semantic'; stallMs?: number; short?: boolean },
+): boolean {
+  const ws = session.sttWs;
+  if (
+    session.ended ||
+    session.sttAdapter?.id !== 'deepgram' ||
+    !session.sttDeepgramPendingInterim ||
+    session.sttDeepgramFinalizeRequested ||
+    ws?.readyState !== WebSocket.OPEN
+  ) {
+    return false;
+  }
+  session.sttDeepgramFinalizeRequested = true;
+  deepgramFinalizeReasons.set(session, 'stalled');
+  logger.info(
+    {
+      callId: session.callControlId,
+      ...fields,
+      partialCount: session.sttDeepgramPartials?.count,
+      msSinceLastPartialChange: session.sttDeepgramPartials
+        ? Date.now() - session.sttDeepgramPartials.lastChangeAt
+        : undefined,
+    },
+    fields.trigger === 'semantic'
+      ? '[stt] Model judged the turn complete, Finalize sent'
+      : '[stt] Deepgram partial stalled, Finalize sent',
+  );
+  session.sttAdapter.finalize(ws);
+  return true;
+}
+
+export function isSemanticEndOfTurnEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED === 'true';
+}
+
+/**
+ * Fin de tour jugée par le modèle, sans liste de phrases : le premier passage
+ * spéculatif dit si l'appelant a fini (`turnComplete`). Vrai, et la partielle n'a
+ * pas bougé depuis : inutile d'attendre le minuteur de partielle figée. Faux : on
+ * ne fait rien, le minuteur reste le filet de sécurité.
+ */
+export function finalizeOnSemanticEndOfTurn(
+  session: CallSession,
+  speculatedTranscript: string,
+  turnComplete: boolean,
+): boolean {
+  if (!turnComplete || !isSemanticEndOfTurnEnabled()) return false;
+  if (session.state !== 'LISTENING') return false;
+  if (session.sttDeepgramPartials?.lastText !== speculatedTranscript) return false;
+  return requestDeepgramFinalize(session, { trigger: 'semantic' });
 }
 
 export function handleNormalizedSttMessage(

@@ -214,10 +214,13 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
-# structuré (turnComplete=false, fragment recollé). S'applique aussi à une confirmation
-# courte (« oui c'est tout », « tout à fait ») répondant à une question de l'agent
-# (appel b686b241 : 1,4 s d'attente). Défaut : égal au délai normal ; 500 en production.
+# structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
+# Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
+# le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
+# envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
+# modèle juge dans le contexte. turnComplete=false ne change rien (le minuteur reste le filet).
+VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).

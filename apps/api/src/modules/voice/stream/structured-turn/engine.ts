@@ -292,6 +292,7 @@ export function speculateStructuredTurn(
   session: CallSession,
   mgr: CallSessionManager,
   partialTranscript: string,
+  onVerdict?: (turnComplete: boolean) => void,
 ): void {
   if (!isStructuredSpeculationEnabled() || !isStructuredTurnEnabled(session.restaurantId)) return;
   if (session.ended || session.ending || session.state !== 'LISTENING') return;
@@ -303,7 +304,7 @@ export function speculateStructuredTurn(
   if (!transcript) return;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
-  startSpeculation(session, mgr, messages, format);
+  startSpeculation(session, mgr, messages, format, onVerdict);
 }
 
 export async function runStructuredTurn(
