@@ -141,7 +141,10 @@ describe('MCP server', () => {
       expect(body.result.capabilities.tools).toBeDefined();
       expect(body.result.serverInfo.name).toBe('sokar-mcp');
       expect(body.result.serverInfo.version).toBe(MCP_SERVER_VERSION);
-      expect(body.result.instructions).toContain('customerPhone');
+      expect(body.result.instructions).toContain('langage courant');
+      expect(body.result.instructions).toContain('ne demandez jamais');
+      expect(body.result.instructions).toContain('idempotencyKey');
+      expect(body.result.instructions).toContain('Après une réussite');
     });
 
     it('négocie la version demandée quand elle est supportée', async () => {
@@ -259,6 +262,12 @@ describe('MCP server', () => {
         body.result.tools.find((tool: { name: string }) => tool.name === 'cancel_reservation')
           .securitySchemes[0].scopes,
       ).toEqual(['mcp:cancel']);
+
+      const createReservation = body.result.tools.find(
+        (tool: { name: string }) => tool.name === 'create_reservation',
+      );
+      expect(createReservation.description).toContain('Générez et réutilisez vous-même');
+      expect(createReservation.description).toContain('sans exposer reused');
     });
   });
 
