@@ -321,7 +321,7 @@ function makeFakes() {
   const idempotency = new IdempotencyService(makeIdempotencyStore());
   const reservationsService = new ReservationService(prisma, audit, holdService, idempotency);
 
-  return { audits, holds, reservations, reservationsService };
+  return { audits, holdService, holds, reservations, reservationsService };
 }
 
 const policy = buildPolicySnapshot({
@@ -613,6 +613,70 @@ describe('reservation.service', () => {
     });
     expect(fakes.holds.size).toBe(holdCount);
     expect(fakes.reservations.size).toBe(reservationCount);
+    expect(fakes.audits).toHaveLength(auditCount);
+  });
+
+  it('rejoue avant de revalider un hold déjà consommé', async () => {
+    const fakes = makeFakes();
+    const startsAt = new Date(Date.now() + 3_600_000);
+    const endsAt = new Date(startsAt.getTime() + 90 * 60_000);
+    const holdToken = 'test';
+    const hold: HoldRow = {
+      id: 'hold-replay',
+      restaurantId: 'r-1',
+      type: 'HOLD',
+      partySize: 4,
+      slotStart: startsAt,
+      slotEnd: endsAt,
+      channel: 'MCP',
+      holdToken,
+      quoteToken: null,
+      expiresAt: new Date(Date.now() + 300_000),
+      consumedAt: null,
+      status: 'ACTIVE',
+      policyVersion: policy.policyVersion,
+      reservationId: null,
+      tableId: null,
+      createdAt: new Date(),
+    };
+    fakes.holds.set(hold.id, hold);
+    const findActiveByToken = vi
+      .spyOn(fakes.holdService, 'findActiveByToken')
+      .mockResolvedValueOnce(hold as never)
+      .mockResolvedValue(null);
+    const input = {
+      restaurantId: 'r-1',
+      partySize: 4,
+      startsAt,
+      endsAt,
+      customerName: 'Jean Test',
+      customerPhone: '+33600000000',
+      channel: 'MCP' as const,
+      policy,
+      actor: 'agent:test',
+      holdToken,
+    };
+    const idempotency = {
+      scope: 'scope-replay-with-hold',
+      key: 'key-replay-with-hold',
+      payloadHash: hashPayload({ replayWithHold: true, startsAt, holdToken }),
+      ttlSeconds: 300,
+    };
+
+    const first = await fakes.reservationsService.createReservation(input, idempotency);
+    const auditCount = fakes.audits.length;
+    expect(hold.status).toBe('CONSUMED');
+
+    const replay = await fakes.reservationsService.createReservation(input, idempotency);
+
+    expect(replay).toEqual({
+      reservationId: first.reservationId,
+      state: first.state,
+      reused: true,
+    });
+    expect(findActiveByToken).toHaveBeenCalledTimes(1);
+    expect(fakes.reservations.size).toBe(1);
+    expect(fakes.holds.size).toBe(1);
     expect(fakes.audits).toHaveLength(auditCount);
   });
 
