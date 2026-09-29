@@ -19,7 +19,6 @@
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
 - [ ] MCP : réconcilier `mcp:sandbox reset` avec l’audit append-only ; capturer un consentement OAuth frais et les messages bruts `initialize` / `tools/list` après le correctif ChatGPT si les clients les exposent.
-- [ ] MCP : publier la PR de fiabilité des tool calls et vérifier ses déploiements staging/production.
 
 ## Décisions récentes
 
