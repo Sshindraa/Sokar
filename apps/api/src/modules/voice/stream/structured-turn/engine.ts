@@ -26,6 +26,7 @@ import {
 import {
   appendDebugSpeechText,
   recordDebugAgentSpeech,
+  rememberRecentAgentSpeech,
   recordDebugTool,
   settleDebugSpeech,
 } from '../debug-dialogue';
@@ -400,8 +401,11 @@ export async function runStructuredTurn(
     if (contextTts) {
       // Une réplique du relevé par réponse, mesurée par les trames du contexte
       // (appel 25650799 : relevé vide côté agent sans cela).
-      if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, phrase);
-      else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
+      if (contextDebugEntry) {
+        appendDebugSpeechText(contextDebugEntry, phrase);
+        // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
+        rememberRecentAgentSpeech(session, phrase);
+      } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
       contextTts.push(cleanTextForTts(phrase, effectiveVoiceLanguage(session)));
       return;
     }

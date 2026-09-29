@@ -53,15 +53,26 @@ export function recordDebugAgentSpeech(
   return entry;
 }
 
-export function rememberRecentAgentSpeech(session: CallSession, text: string): void {
+/** Un écho revient avec le retard acoustique de l'appelant plus celui de la transcription. */
+export const RECENT_AGENT_SPEECH_MS = 20_000;
+
+/**
+ * Mémorise ce que l'agent dit, toutes répliques confondues (accueil, phrases suivantes d'une
+ * réponse). Le texte de référence de l'anti-écho est celui des dernières secondes, et non celui du
+ * tour courant : l'écho d'une phrase arrive dans le tour suivant (appel 1b3f85e9).
+ */
+export function rememberRecentAgentSpeech(
+  session: CallSession,
+  text: string,
+  now = Date.now(),
+): void {
   if (!text.trim()) return;
-  const turnId = session.currentTurn?.id;
-  if (session.recentAgentSpeechTurnId !== turnId) {
-    session.recentAgentSpeechText = '';
-    session.recentAgentSpeechTurnId = turnId;
-  }
-  session.recentAgentSpeechText = `${session.recentAgentSpeechText ?? ''} ${text.trim()}`
-    .trim()
+  const log = (session.agentSpeechLog ??= []);
+  log.push({ text: text.trim(), at: now });
+  while (log.length && now - log[0].at > RECENT_AGENT_SPEECH_MS) log.shift();
+  session.recentAgentSpeechText = log
+    .map((entry) => entry.text)
+    .join(' ')
     .slice(-2_000);
 }
 

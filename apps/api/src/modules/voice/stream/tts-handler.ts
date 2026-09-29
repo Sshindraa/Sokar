@@ -45,12 +45,17 @@ import {
 } from './telnyx-codec';
 import {
   markVoiceTurnAudioSent,
+  noteAgentAudioStarted,
   markVoiceTurnTtsSynthesisFirstByte,
   recordVoiceTurnEventIfCurrent,
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
-import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
+import {
+  recordDebugAgentSpeech,
+  rememberRecentAgentSpeech,
+  settleDebugSpeech,
+} from './debug-dialogue';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -62,6 +67,8 @@ export function isSessionActiveForTts(session: CallSession, generation?: number)
 }
 
 function persistFirstAudioFrame(session: CallSession, turnId?: string): void {
+  // Sans trace de latence (accueil, relances), l'audio part quand même : la fenêtre anti-écho s'ouvre.
+  noteAgentAudioStarted(session);
   if (!session.latencyTrace || session.latencyTrace.totalE2eMs !== undefined) return;
 
   markVoiceTurnAudioSent(session, { ttsPath: 'http_stream', isFiller: false }, turnId);
@@ -293,6 +300,8 @@ async function speakTtsFragment(
   writeDebugLog(
     `[speakTtsStreamed] Starting synthesis ${JSON.stringify(describeTranscript(cleanedText))}`,
   );
+  // Ce que l'agent dit doit pouvoir être reconnu s'il revient par l'écho de l'appelant.
+  rememberRecentAgentSpeech(session, cleanedText);
   const synthesisStartedAt = Date.now();
   recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_started', {
     source: 'http_stream',

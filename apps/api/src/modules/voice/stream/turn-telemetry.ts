@@ -364,14 +364,35 @@ export function markVoiceTurnTtsSynthesisFirstByte(
   return elapsedMs;
 }
 
+const MAX_AGENT_AUDIO_SPANS = 8;
+
+/**
+ * L'audio de l'agent part vers l'appelant : ouvre un intervalle (fenêtre anti-écho). Appelé aussi
+ * pour l'accueil, qui n'a pas de trace de latence (appel 1b3f85e9 : son écho était pris pour l'appelant).
+ */
+export function noteAgentAudioStarted(session: CallSession, now = Date.now()): void {
+  if (session.agentAudioActive) return;
+  session.agentAudioActive = true;
+  session.agentAudioEndedAt = undefined;
+  const spans = (session.agentAudioSpans ??= []);
+  spans.push({ startedAt: now });
+  if (spans.length > MAX_AGENT_AUDIO_SPANS) spans.shift();
+}
+
+export function noteAgentAudioEnded(session: CallSession, now = Date.now()): void {
+  session.agentAudioActive = false;
+  session.agentAudioEndedAt = now;
+  const open = session.agentAudioSpans?.at(-1);
+  if (open && open.endedAt === undefined) open.endedAt = now;
+}
+
 /** Mesure le premier frame effectivement envoyé au Media Stream Telnyx. */
 export function markVoiceTurnAudioSent(
   session: CallSession,
   fields: VoiceTurnEventFields = {},
   turnId?: string,
 ): void {
-  session.agentAudioActive = true;
-  session.agentAudioEndedAt = undefined;
+  noteAgentAudioStarted(session);
   if (!isCurrentVoiceTurn(session, turnId)) return;
   const trace = session.latencyTrace;
   if (!trace || trace.totalE2eMs !== undefined) return;
@@ -396,16 +417,14 @@ export function recordVoiceTurnEvent(
   event: VoiceTurnEvent,
   fields: VoiceTurnEventFields = {},
 ): void {
-  if (event === 'tts_completed' || event === 'filler_completed') {
-    session.agentAudioActive = false;
-    session.agentAudioEndedAt = Date.now();
-  } else if (
+  if (
+    event === 'tts_completed' ||
+    event === 'filler_completed' ||
     event === 'tts_interrupted' ||
     event === 'filler_interrupted' ||
     event === 'barge_in'
   ) {
-    session.agentAudioActive = false;
-    session.agentAudioEndedAt = Date.now();
+    noteAgentAudioEnded(session);
   }
   const turn = session.currentTurn;
   if (!turn) return;

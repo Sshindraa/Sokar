@@ -610,6 +610,10 @@ export interface CallSession {
   recentAgentSpeechTurnId?: string;
   agentAudioActive?: boolean;
   agentAudioEndedAt?: number;
+  /** Intervalles récents où l'audio de l'agent est parti vers l'appelant (fenêtre anti-écho). */
+  agentAudioSpans?: { startedAt: number; endedAt?: number }[];
+  /** Répliques récentes de l'agent, avec l'instant où elles ont été demandées. */
+  agentSpeechLog?: { text: string; at: number }[];
   /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
   /** Tour utilisateur courant, créé à la finalisation STT. */
