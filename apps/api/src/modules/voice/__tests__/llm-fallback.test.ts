@@ -94,6 +94,7 @@ beforeEach(() => {
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS,
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -136,7 +137,11 @@ describe('repli du tour structuré', () => {
     expect(bodyOf(fetchMock.mock.calls[1])).toMatchObject({
       model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL,
       response_format: format,
-      provider: { require_parameters: true, sort: 'latency' },
+      provider: {
+        require_parameters: true,
+        order: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER.split(',').map((n) => n.trim()),
+        allow_fallbacks: true,
+      },
     });
     const counter = await voiceLlmFallbackTotal.get();
     expect(counter.values).toContainEqual(
@@ -145,6 +150,35 @@ describe('repli du tour structuré', () => {
         labels: { path: 'structured', outcome: 'used', reason: 'quota' },
       }),
     );
+  });
+
+  it("impose l'ordre d'hébergeurs configuré, ou retombe sur le tri par latence quand il est vide", async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, { VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: ' Cohere , Wafer ,' });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      order: ['Cohere', 'Wafer'],
+      allow_fallbacks: true,
+    });
+
+    fetchMock.mockClear();
+    Object.assign(voiceConfig, { VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: '' });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      sort: 'latency',
+    });
   });
 
   it('bascule aussi quand le premier fragment tarde (modèle principal lent)', async () => {

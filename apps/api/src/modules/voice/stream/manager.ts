@@ -93,6 +93,17 @@ type FallbackReason =
   | 'timeout'
   | 'network';
 
+/** Hébergeurs OpenRouter du repli : ordre configuré, avec repli sur les autres si tous échouent. */
+function fallbackProviderPreferences(): Record<string, unknown> {
+  const order = (voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return order.length
+    ? { require_parameters: true, order, allow_fallbacks: true }
+    : { require_parameters: true, sort: 'latency' };
+}
+
 /** Pourquoi le fournisseur principal n'a pas pu prendre le tour (catégories pour la métrique). */
 function classifyFallbackReason(input: { status?: number; error?: unknown }): FallbackReason {
   if (input.status === 402) return 'quota';
@@ -1541,8 +1552,9 @@ export class CallSessionManager {
           reasoning: { enabled: false },
           ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
           ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
-          // Uniquement des hébergeurs qui respectent les paramètres, le plus rapide d'abord.
-          provider: { require_parameters: true, sort: 'latency' },
+          // Uniquement des hébergeurs qui respectent les paramètres. Ordre imposé : le tri par latence
+          // historique a donné des pointes de 5 à 30 s (mesures du 29/09) ; vide = ce tri.
+          provider: fallbackProviderPreferences(),
           stream: true,
           stream_options: { include_usage: true },
         }),

@@ -165,7 +165,9 @@ export const VoiceConfigSchema = z
     /** Secours du tour structuré (JSON Schema strict) si le provider principal échoue. */
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-    VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('xiaomi/mimo-v2.6-flash'),
+    VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('deepseek/deepseek-v4-flash-0731'),
+    // Hébergeurs OpenRouter du repli, dans l'ordre (vide = tri par latence historique, instable).
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: z.string().default('Cohere,Wafer,Baidu'),
   })
   .merge(VoiceDeepgramConfigSchema);
 
