@@ -105,6 +105,19 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain('« 5-8 » contient 6');
   });
 
+  it('interdit de recopier une question restée sans réponse (appel c5d6b07d)', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'et vous avez une terrasse',
+      state: createStructuredTurnState(),
+    });
+    // Rejeu Qwen du 29/09, question à côté (« terrasse ») : 8/10 répétaient
+    // « Vous voulez venir vers quelle heure ? » mot pour mot ; 2/10 avec cette consigne.
+    expect(system.content).toContain('ne recopie jamais ta dernière phrase');
+    expect(system.content).toContain('« Et vers quelle heure ? »');
+  });
+
   it('donne un calendrier calculé de 14 jours, jours fermés compris (appel 88921164)', () => {
     const hours = { tue: { open: '12:00', close: '22:00' } };
     const calendar = describeCalendar('2026-09-27', hours).split('\n');
