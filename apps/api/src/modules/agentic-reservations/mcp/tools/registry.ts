@@ -54,7 +54,11 @@ import {
   type GetReservationStatusInput,
   type SearchRestaurantsInput,
 } from './schemas';
-import { DEFAULT_MCP_TIMEZONE, parseMcpDateRange } from './date-time';
+import {
+  DEFAULT_MCP_SEARCH_DURATION_MINUTES,
+  DEFAULT_MCP_TIMEZONE,
+  parseMcpDateRange,
+} from './date-time';
 
 export type ToolContext = {
   clientId: string;
@@ -241,6 +245,7 @@ export class McpToolRegistry {
       const range = parseMcpDateRange({
         start: input.slotStart,
         end: input.slotEnd,
+        defaultDurationMinutes: DEFAULT_MCP_SEARCH_DURATION_MINUTES,
         timezone: input.timezone,
         defaultTimezone: DEFAULT_MCP_TIMEZONE,
       });
@@ -319,6 +324,12 @@ export class McpToolRegistry {
         : undefined;
 
       return ok({
+        searchOutcome:
+          exposedResults.length > 0
+            ? 'available'
+            : exposedCapacityLimits.length > 0
+              ? 'capacity_exceeded'
+              : 'no_exact_slot_available',
         restaurants: exposedResults.slice(0, input.maxResults).map((r) => ({
           id: r.restaurantId,
           name: r.name,
