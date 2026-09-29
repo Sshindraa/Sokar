@@ -331,6 +331,10 @@ describe('MCP server', () => {
       // Le tool unknown retourne isError=true dans result, pas une JSON-RPC error
       expect(body.result.isError).toBe(true);
       expect(body.result.content[0].text).toContain('UNKNOWN_TOOL');
+      expect(body.result._meta['com.sokar/error']).toEqual({
+        code: 'UNKNOWN_TOOL',
+        message: 'Unknown tool: unknown_tool',
+      });
     });
 
     it('refuse des params invalides sur search_restaurants', async () => {
@@ -355,7 +359,7 @@ describe('MCP server', () => {
       );
     });
 
-    it('réponse est redactée (pas de leak PII)', async () => {
+    it('la réponse respecte le schéma sans exposer de téléphone', async () => {
       const validUuid = '550e8400-e29b-41d4-a716-446655440000';
       const { db } = await import('../../../shared/db/client');
       vi.mocked(db.restaurant.findFirst).mockResolvedValueOnce({
@@ -371,7 +375,6 @@ describe('MCP server', () => {
         name: 'Le Bistrot',
         slug: 'le-bistrot',
         formattedAddress: '1 rue de Paris',
-        phoneE164: '+33****0000',
         websiteUrl: 'https://example.com',
         cuisineType: ['french'],
         priceRange: 2,
@@ -389,9 +392,9 @@ describe('MCP server', () => {
       });
       const body = res.json();
       const text = body.result.content[0].text;
-      // phoneE164 est redacté par clé
       expect(text).not.toContain('+33');
-      expect(text).toContain('[REDACTED]');
+      expect(text).not.toContain('phoneE164');
+      expect(body.result.structuredContent).not.toHaveProperty('phoneE164');
     });
 
     it('refuse une mutation avec un client read-only', async () => {
@@ -432,6 +435,10 @@ describe('MCP server', () => {
         expect.stringContaining('error="insufficient_scope"'),
       ]);
       expect(body.result._meta['mcp/www_authenticate'][0]).toContain('scope="mcp:reserve"');
+      expect(body.result._meta['com.sokar/error']).toEqual({
+        code: 'FORBIDDEN',
+        message: 'Missing scope: mcp:reserve',
+      });
     });
 
     it('masque un restaurant non exposé MCP', async () => {

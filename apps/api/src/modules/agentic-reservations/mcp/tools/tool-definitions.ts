@@ -85,7 +85,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'create_quote',
     title: 'Quote Reservation',
-    description: 'Check a slot and return a short-lived quote without reserving capacity.',
+    description:
+      'Create a short-lived informational quote record. It does not hold capacity and its quoteId cannot be used to book; availability may change. Recheck availability or create a hold to keep the slot.',
     schema: CreateQuoteInputSchema,
     output: CreateQuoteOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -134,7 +135,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'modify_reservation',
     title: 'Modify Reservation',
     description:
-      'Change a reservation time, party size, or customer name after verifying the original phone number. Availability is rechecked atomically.',
+      'Change a reservation time, party size, or customer name after verifying the original phone number. Availability is rechecked atomically. Repeating the same modification is safe and returns changed=false after the first successful change.',
     schema: ModifyReservationInputSchema,
     output: ModifyReservationOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -144,11 +145,11 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'cancel_reservation',
     title: 'Cancel Reservation',
     description:
-      'Cancel an existing reservation by ID. Public OAuth clients must supply the original E.164 customerPhone. The reservation status changes to cancelled and the customer is notified.',
+      'Cancel an existing reservation by ID. Public OAuth clients must supply the original E.164 customerPhone. Repeating a successful cancellation returns cancelled=true without repeating the cancellation transition or its side effects.',
     schema: CancelReservationInputSchema,
     output: CancelReservationOutputSchema,
     requiredScope: 'mcp:cancel',
-    annotations: { destructiveHint: true },
+    annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
     name: 'get_reservation_status',
@@ -161,6 +162,14 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     annotations: { readOnlyHint: true },
   },
 ];
+
+const TOOL_DEFINITION_BY_NAME = new Map(
+  TOOL_DEFINITIONS.map((definition) => [definition.name, definition]),
+);
+
+export function getToolOutputSchema(toolName: string): z.ZodTypeAny | undefined {
+  return TOOL_DEFINITION_BY_NAME.get(toolName)?.output;
+}
 
 // zod-to-json-schema a des types récursifs lourds qui peuvent faire exploser
 // TypeScript (`TS2589`) avec nos schémas. Le runtime est simple, donc on garde

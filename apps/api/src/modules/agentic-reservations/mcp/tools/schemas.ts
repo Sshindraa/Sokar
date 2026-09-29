@@ -172,118 +172,146 @@ const OutputUuidSchema = z.string().uuid();
 const OutputDateTimeSchema = z.string();
 const NullableOutputStringSchema = z.string().nullable();
 
-const RestaurantSummaryOutputSchema = z.object({
-  id: OutputUuidSchema,
-  name: z.string(),
-  slug: NullableOutputStringSchema,
-  formattedAddress: NullableOutputStringSchema,
-  cuisineType: z.array(z.string()),
-  priceRange: z.number().int().nullable(),
-  maxOnlinePartySize: z.number().int(),
-});
+const RestaurantSummaryOutputSchema = z
+  .object({
+    id: OutputUuidSchema,
+    name: z.string(),
+    slug: NullableOutputStringSchema,
+    formattedAddress: NullableOutputStringSchema,
+    cuisineType: z.array(z.string()),
+    priceRange: z.number().int().nullable(),
+    maxOnlinePartySize: z.number().int(),
+  })
+  .strict();
 
-const RestaurantAvailableSlotOutputSchema = z.object({
-  startsAt: OutputDateTimeSchema,
-  endsAt: OutputDateTimeSchema,
-});
+const RestaurantAvailableSlotOutputSchema = z
+  .object({
+    startsAt: OutputDateTimeSchema,
+    endsAt: OutputDateTimeSchema,
+  })
+  .strict();
 
 const AvailableRestaurantSummaryOutputSchema = RestaurantSummaryOutputSchema.extend({
   availableSlots: z.array(RestaurantAvailableSlotOutputSchema).min(1),
-});
+}).strict();
 
-export const SearchRestaurantsOutputSchema = z.object({
-  restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
-  capacityLimits: z.array(RestaurantSummaryOutputSchema),
-  nextCursor: z.string().optional(),
-});
+export const SearchRestaurantsOutputSchema = z
+  .object({
+    restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
+    capacityLimits: z.array(RestaurantSummaryOutputSchema),
+    nextCursor: z.string().optional(),
+  })
+  .strict();
 
-export const GetRestaurantDetailsOutputSchema = z.object({
-  id: OutputUuidSchema,
-  name: z.string(),
-  slug: NullableOutputStringSchema,
-  formattedAddress: NullableOutputStringSchema,
-  websiteUrl: NullableOutputStringSchema,
-  cuisineType: z.array(z.string()),
-  priceRange: z.number().int().nullable(),
-  ambiance: z.array(z.string()),
-  noiseLevel: z.string().nullable(),
-  dietary: z.array(z.string()),
-  openingHours: z.unknown(),
-  maxOnlinePartySize: z.number().int(),
-});
+export const GetRestaurantDetailsOutputSchema = z
+  .object({
+    id: OutputUuidSchema,
+    name: z.string(),
+    slug: NullableOutputStringSchema,
+    formattedAddress: NullableOutputStringSchema,
+    websiteUrl: NullableOutputStringSchema,
+    cuisineType: z.array(z.string()),
+    priceRange: z.number().int().nullable(),
+    ambiance: z.array(z.string()),
+    noiseLevel: z.string().nullable(),
+    dietary: z.array(z.string()),
+    openingHours: z.unknown(),
+    maxOnlinePartySize: z.number().int(),
+  })
+  .strict();
 
-export const CheckAvailabilityOutputSchema = z.object({
-  available: z.boolean(),
-  alternativeSlots: z
-    .array(
-      z.object({
-        startsAt: OutputDateTimeSchema,
-        endsAt: OutputDateTimeSchema,
-      }),
-    )
-    .optional(),
-  conflictingHoldId: OutputUuidSchema.optional().describe(
-    'Compatibility field; the adapter does not return internal hold identifiers.',
-  ),
-  conflictingReservationId: OutputUuidSchema.optional().describe(
-    'Compatibility field; the adapter does not return internal reservation identifiers.',
-  ),
-  reason: z
-    .enum(['hold_active', 'reservation_confirmed', 'party_size_exceeds_capacity', 'unknown'])
-    .optional(),
-  maxOnlinePartySize: z.number().int().optional(),
-  decision: z.enum(['available', 'unavailable', 'capacity_exceeded']),
-  recommendedAction: z.enum([
-    'create_hold',
-    'request_reserve_scope',
-    'choose_alternative_slot',
-    'reduce_party_size',
-    'choose_another_slot',
-  ]),
-});
+export const CheckAvailabilityOutputSchema = z
+  .object({
+    available: z.boolean(),
+    alternativeSlots: z
+      .array(
+        z
+          .object({
+            startsAt: OutputDateTimeSchema,
+            endsAt: OutputDateTimeSchema,
+          })
+          .strict(),
+      )
+      .optional(),
+    conflictingHoldId: OutputUuidSchema.optional().describe(
+      'Compatibility field; the adapter does not return internal hold identifiers.',
+    ),
+    conflictingReservationId: OutputUuidSchema.optional().describe(
+      'Compatibility field; the adapter does not return internal reservation identifiers.',
+    ),
+    reason: z
+      .enum(['hold_active', 'reservation_confirmed', 'party_size_exceeds_capacity', 'unknown'])
+      .optional(),
+    maxOnlinePartySize: z.number().int().optional(),
+    decision: z.enum(['available', 'unavailable', 'capacity_exceeded']),
+    recommendedAction: z.enum([
+      'create_hold',
+      'request_reserve_scope',
+      'choose_alternative_slot',
+      'reduce_party_size',
+      'choose_another_slot',
+    ]),
+  })
+  .strict();
 
-export const CreateQuoteOutputSchema = z.object({
-  quoteId: OutputUuidSchema,
-  expiresAt: OutputDateTimeSchema,
-});
+export const CreateQuoteOutputSchema = z
+  .object({
+    quoteId: OutputUuidSchema,
+    expiresAt: OutputDateTimeSchema,
+  })
+  .strict();
 
-export const CreateHoldOutputSchema = z.object({
-  holdToken: z.string(),
-  expiresAt: OutputDateTimeSchema,
-});
+export const CreateHoldOutputSchema = z
+  .object({
+    holdToken: z.string(),
+    expiresAt: OutputDateTimeSchema,
+  })
+  .strict();
 
-export const CreateReservationOutputSchema = z.object({
-  reservationId: OutputUuidSchema,
-  state: z.string(),
-  reused: z.boolean(),
-});
+export const CreateReservationOutputSchema = z
+  .object({
+    reservationId: OutputUuidSchema,
+    state: z.string(),
+    reused: z.boolean(),
+  })
+  .strict();
 
-export const JoinWaitingListOutputSchema = z.object({
-  entryId: OutputUuidSchema,
-  position: z.number().int(),
-  actionToken: z.string(),
-});
+export const JoinWaitingListOutputSchema = z
+  .object({
+    entryId: OutputUuidSchema,
+    position: z.number().int(),
+    actionToken: z.string(),
+  })
+  .strict();
 
-export const CancelWaitingListOutputSchema = z.object({
-  entryId: OutputUuidSchema,
-  status: z.string(),
-});
+export const CancelWaitingListOutputSchema = z
+  .object({
+    entryId: OutputUuidSchema,
+    status: z.string(),
+  })
+  .strict();
 
-export const ModifyReservationOutputSchema = z.object({
-  reservationId: OutputUuidSchema,
-  state: z.string(),
-  changed: z.boolean(),
-});
+export const ModifyReservationOutputSchema = z
+  .object({
+    reservationId: OutputUuidSchema,
+    state: z.string(),
+    changed: z.boolean(),
+  })
+  .strict();
 
-export const CancelReservationOutputSchema = z.object({
-  cancelled: z.literal(true),
-});
+export const CancelReservationOutputSchema = z
+  .object({
+    cancelled: z.literal(true),
+  })
+  .strict();
 
-export const GetReservationStatusOutputSchema = z.object({
-  id: OutputUuidSchema,
-  state: z.string(),
-  partySize: z.number().int(),
-  startsAt: OutputDateTimeSchema,
-  endsAt: OutputDateTimeSchema.nullable(),
-  createdAt: OutputDateTimeSchema,
-});
+export const GetReservationStatusOutputSchema = z
+  .object({
+    id: OutputUuidSchema,
+    state: z.string(),
+    partySize: z.number().int(),
+    startsAt: OutputDateTimeSchema,
+    endsAt: OutputDateTimeSchema.nullable(),
+    createdAt: OutputDateTimeSchema,
+  })
+  .strict();
