@@ -67,6 +67,14 @@ pnpm --filter @sokar/database mcp:sandbox status \
 
 ## Purger le run
 
+> **Blocage vérifié le 29 septembre 2026 :** sur un run qui a créé des réservations MCP,
+> `reset --apply` tente de supprimer les journaux de `reservation_audit_log`. Le trigger
+> PostgreSQL append-only refuse cette suppression et annule toute la transaction. Ne
+> désactivez pas ce trigger pour forcer le nettoyage. Les réservations du run de matrice
+> sont déjà annulées et leurs holds consommés ; les traces restent dans la base.
+> Le script de reset doit être réconcilié avec cette règle avant de promettre une purge
+> physique complète.
+
 La purge est d’abord simulée :
 
 ```zsh
@@ -84,11 +92,14 @@ pnpm --filter @sokar/database mcp:sandbox reset \
   --apply
 ```
 
-La purge ne touche qu’aux réservations MCP marquées, aux holds MCP créés
-pendant le run, aux entrées de liste d’attente du téléphone de test, au client
-de test créé pendant le run et aux journaux/idempotence associés. Elle refuse
-une base de production dont le nom ne contient pas `staging`, `test`, `dev` ou
-`local`.
+Le reset est conçu pour cibler les réservations MCP marquées, les holds MCP
+créés pendant le run, les entrées de liste d’attente du téléphone de test, le
+client de test créé pendant le run et les journaux/idempotence associés. En
+pratique, la suppression des journaux d’audit append-only échoue lorsque le run
+a généré des événements et fait annuler toute la transaction. Une sortie de
+simulation positive ne garantit donc pas que `--apply` aboutira. La commande
+refuse aussi une base de production dont le nom ne contient pas `staging`,
+`test`, `dev` ou `local`.
 
 ## Matrice de compatibilité
 
@@ -97,3 +108,8 @@ Compléter
 avec les captures d’écran OAuth et les résultats observés dans ChatGPT et
 Claude. Une matrice vide ou `À exécuter` ne constitue pas une preuve de
 compatibilité.
+
+Le correctif OAuth ChatGPT (propagation/audience `resource`, RFC 9207,
+`securitySchemes` et challenges de scopes) doit être rejoué sur le staging après
+déploiement avant de remplacer les observations précédentes. Le serveur utilise
+DCR ; CIMD n’est pas annoncé.

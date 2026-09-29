@@ -78,6 +78,20 @@ HTTP sur `localhost`, `127.0.0.1` ou `[::1]` avec un port. Les clients peuvent u
 `client_secret_basic`, `client_secret_post` ou `none`; les clients `none` reposent sur
 PKCE S256 et ne reçoivent pas de secret.
 
+La découverte MCP publie le `resource` canonique et les scopes disponibles. Un client
+qui envoie `resource` à `/oauth/authorize` doit renvoyer exactement la même valeur à
+`/oauth/token`; Sokar lie le jeton à cette audience et la vérifie sur chaque appel MCP.
+Les parcours sans paramètre `resource` restent acceptés et les nouveaux jetons sont
+quand même liés à l’issuer Sokar courant. Les refresh tokens conservent cette audience.
+
+La métadonnée d’autorisation annonce l’identification d’issuer RFC 9207. Sokar renvoie
+`iss` dans les redirections de succès et de refus. Chaque outil MCP déclare aussi son
+scope OAuth dans `securitySchemes`; lorsqu’un appel échoue faute de scope, la réponse
+MCP fournit `_meta["mcp/www_authenticate"]` pour proposer la liaison ou la
+réautorisation. Les outils restent découvrables dans `tools/list`, mais le serveur
+vérifie le scope avant toute exécution. Sokar prend en charge le Dynamic Client
+Registration (DCR) ; CIMD n’est pas annoncé.
+
 Le fallback `AGENT_DEV_KEY` n'est accepté que lorsque `ENABLE_DEV_AUTH=true` et que la clé respecte
 les contraintes de format et de longueur. Il doit rester désactivé sur les environnements partagés.
 Le seed local peut créer un client `AgentClient` hashé pour la démo.

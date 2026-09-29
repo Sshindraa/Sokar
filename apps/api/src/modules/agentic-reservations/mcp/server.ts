@@ -26,7 +26,7 @@ import { ALLOWED_ORIGINS, McpAuthError, authenticateMcpRequest } from './auth';
 import { McpRateLimiter } from './rate-limit';
 import { McpToolRegistry, executeTool, type ToolContext } from './tools/registry';
 import { TOOL_LIST } from './tools/tool-definitions';
-import { getIssuer } from './oauth';
+import { getProtectedResourceMetadataUrl } from './oauth';
 
 // Re-export pour les tests qui importent depuis server.ts
 export { TOOL_LIST };
@@ -160,7 +160,7 @@ export class McpServer {
             if (err.statusCode === 401) {
               reply.header(
                 'WWW-Authenticate',
-                `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
+                `Bearer realm="sokar", resource_metadata="${getProtectedResourceMetadataUrl()}"`,
               );
             }
             if (err.statusCode === 429) reply.header('Retry-After', '60');
@@ -237,24 +237,10 @@ export class McpServer {
 
         case 'tools/list':
           return jsonRpcResult(id, {
-            tools: TOOL_LIST.filter((tool) => {
-              const required = [
-                'create_reservation',
-                'create_quote',
-                'create_hold',
-                'join_waiting_list',
-                'modify_reservation',
-              ].includes(tool.name)
-                ? 'mcp:reserve'
-                : ['cancel_reservation', 'cancel_waiting_list'].includes(tool.name)
-                  ? 'mcp:cancel'
-                  : 'mcp:read';
-              return (
-                ctx.scopes.includes(required) ||
-                ctx.scopes.includes('mcp:*') ||
-                (required !== 'mcp:read' && ctx.scopes.includes('mcp:write'))
-              );
-            }),
+            // Keep scoped tools discoverable so clients can explain the
+            // required permission and trigger reauthorization on a call.
+            // executeTool still enforces scopes before any operation runs.
+            tools: TOOL_LIST,
           });
 
         case 'tools/call': {
@@ -272,9 +258,22 @@ export class McpServer {
               isError: false,
             });
           }
+          const missingScope =
+            result.code === 'FORBIDDEN'
+              ? /^Missing scope: (mcp:(?:read|reserve|cancel))$/u.exec(result.error)?.[1]
+              : undefined;
           return jsonRpcResult(id, {
             content: [{ type: 'text', text: JSON.stringify(result) }],
             isError: true,
+            ...(missingScope
+              ? {
+                  _meta: {
+                    'mcp/www_authenticate': [
+                      `Bearer resource_metadata="${getProtectedResourceMetadataUrl()}", error="insufficient_scope", scope="${missingScope}", error_description="Additional permission is required to use this tool."`,
+                    ],
+                  },
+                }
+              : {}),
           });
         }
 

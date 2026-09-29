@@ -23,7 +23,8 @@ import { redisCache } from '../../../shared/redis/client';
 import { db } from '../../../shared/db/client';
 
 const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback';
-const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/koTiD-YLRKbF';
+const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector_platform_oauth_redirect';
+const MCP_RESOURCE = 'http://localhost:4000';
 const SCOPES = 'mcp:read mcp:reserve mcp:cancel';
 const PKCE_VERIFIER = 'sokar-test-pkce-verifier-with-more-than-43-characters';
 const PKCE_CHALLENGE = createHash('sha256').update(PKCE_VERIFIER).digest('base64url');
@@ -55,10 +56,30 @@ describe('OAuth MCP integration flow', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.issuer).toBe('http://localhost:4000');
+    expect(body.authorization_response_iss_parameter_supported).toBe(true);
     expect(body.authorization_endpoint).toContain('/oauth/authorize');
     expect(body.token_endpoint).toContain('/oauth/token');
     expect(body.registration_endpoint).toContain('/oauth/register');
     expect(body.code_challenge_methods_supported).toContain('S256');
+    expect(body.token_endpoint_auth_methods_supported).toEqual(
+      expect.arrayContaining(['client_secret_basic', 'client_secret_post', 'none']),
+    );
+    expect(body.client_id_metadata_document_supported).toBeUndefined();
+  });
+
+  it('GET /.well-known/oauth-protected-resource declares the MCP resource and scopes', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/.well-known/oauth-protected-resource',
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      resource: MCP_RESOURCE,
+      authorization_servers: [MCP_RESOURCE],
+      scopes_supported: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
+    });
   });
 
   // ── 2. Dynamic Client Registration ───────────────────
@@ -94,7 +115,7 @@ describe('OAuth MCP integration flow', () => {
     const app = await getApp();
     const res = await app.inject({
       method: 'GET',
-      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256&state=test-state`,
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&resource=${encodeURIComponent(MCP_RESOURCE)}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256&state=test-state`,
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
@@ -127,6 +148,17 @@ describe('OAuth MCP integration flow', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatch(/name="scope" value="mcp:read"/);
+  });
+
+  it('rejects a resource that does not match protected-resource metadata', async () => {
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=mcp%3Aread&state=wrong-resource&resource=${encodeURIComponent('https://other.example/mcp')}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256`,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('Ressource invalide');
   });
 
   it('rejects a scope change after consent was rendered', async () => {
@@ -165,6 +197,7 @@ describe('OAuth MCP integration flow', () => {
     expect(location).toContain(REDIRECT_URI);
     expect(location).toContain('code=');
     expect(location).toContain('state=test-state');
+    expect(new URL(location).searchParams.get('iss')).toBe(MCP_RESOURCE);
 
     // Extract the code
     const url = new URL(location);
@@ -183,11 +216,29 @@ describe('OAuth MCP integration flow', () => {
     });
     expect(missingRedirect.statusCode).toBe(400);
 
-    const res = await app.inject({
+    const missingResource = await app.inject({
       method: 'POST',
       url: '/oauth/token',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: `grant_type=authorization_code&code=${authCode}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}`,
+    });
+    expect(missingResource.statusCode).toBe(400);
+    expect(missingResource.json().error).toBe('invalid_target');
+
+    const wrongResource = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `grant_type=authorization_code&code=${authCode}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}&resource=${encodeURIComponent('https://other.example/mcp')}`,
+    });
+    expect(wrongResource.statusCode).toBe(400);
+    expect(wrongResource.json().error).toBe('invalid_target');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `grant_type=authorization_code&code=${authCode}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}&resource=${encodeURIComponent(MCP_RESOURCE)}`,
     });
 
     expect(res.statusCode).toBe(200);
@@ -206,6 +257,8 @@ describe('OAuth MCP integration flow', () => {
     expect(returnedScopes).toHaveLength(3);
     // The bug would have produced ["mcp:read+mcp:reserve+mcp:cancel"] (1 element)
     expect(returnedScopes).not.toContain('mcp:read+mcp:reserve+mcp:cancel');
+    const stored = await redisCache.get(`sokar:oauth:token:${accessToken}`);
+    expect(JSON.parse(stored!)).toMatchObject({ resource: MCP_RESOURCE });
   });
 
   // ── 6. MCP call with OAuth token ──────────────────────
@@ -282,7 +335,7 @@ describe('OAuth MCP integration flow', () => {
     const app = await getApp();
     const get = await app.inject({
       method: 'GET',
-      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=mcp%3Aread&state=scoped&restaurant_id=${restaurantId}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256`,
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=mcp%3Aread&state=scoped&restaurant_id=${restaurantId}&resource=${encodeURIComponent(MCP_RESOURCE)}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256`,
     });
     expect(get.statusCode).toBe(200);
     expect(get.body).toContain('Chez Sokar');
@@ -299,11 +352,115 @@ describe('OAuth MCP integration flow', () => {
       method: 'POST',
       url: '/oauth/token',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `grant_type=authorization_code&code=${code}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}`,
+      payload: `grant_type=authorization_code&code=${code}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_id=${clientId}&client_secret=${clientSecret}&code_verifier=${PKCE_VERIFIER}&resource=${encodeURIComponent(MCP_RESOURCE)}`,
     });
     expect(token.statusCode).toBe(200);
     const stored = await redisCache.get(`sokar:oauth:token:${token.json().access_token}`);
-    expect(JSON.parse(stored!)).toMatchObject({ restaurantId, scopes: ['mcp:read'] });
+    expect(JSON.parse(stored!)).toMatchObject({
+      restaurantId,
+      scopes: ['mcp:read'],
+      resource: MCP_RESOURCE,
+    });
+
+    const accessToken = token.json().access_token as string;
+    const toolsList = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${accessToken}`,
+      },
+      payload: { jsonrpc: '2.0', id: 8, method: 'tools/list' },
+    });
+    const listedReservationTool = toolsList
+      .json()
+      .result.tools.find((tool: { name: string }) => tool.name === 'create_reservation');
+    expect(listedReservationTool.securitySchemes).toEqual([
+      { type: 'oauth2', scopes: ['mcp:reserve'] },
+    ]);
+
+    const insufficientScopeCall = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${accessToken}`,
+      },
+      payload: {
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'create_reservation', arguments: {} },
+      },
+    });
+    expect(insufficientScopeCall.json().result._meta['mcp/www_authenticate'][0]).toContain(
+      'scope="mcp:reserve"',
+    );
+
+    const wrongRefresh = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `grant_type=refresh_token&refresh_token=${token.json().refresh_token}&client_id=${clientId}&client_secret=${clientSecret}&resource=${encodeURIComponent('https://other.example/mcp')}`,
+    });
+    expect(wrongRefresh.statusCode).toBe(400);
+    expect(wrongRefresh.json().error).toBe('invalid_target');
+
+    const refresh = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `grant_type=refresh_token&refresh_token=${token.json().refresh_token}&client_id=${clientId}&client_secret=${clientSecret}&resource=${encodeURIComponent(MCP_RESOURCE)}`,
+    });
+    expect(refresh.statusCode).toBe(200);
+    const refreshedAccessToken = refresh.json().access_token as string;
+    const refreshed = await redisCache.get(`sokar:oauth:token:${refreshedAccessToken}`);
+    expect(JSON.parse(refreshed!)).toMatchObject({ resource: MCP_RESOURCE });
+
+    const wrongAudienceData = JSON.parse(refreshed!) as Record<string, unknown>;
+    wrongAudienceData.resource = 'https://other.example/mcp';
+    await redisCache.set(
+      `sokar:oauth:token:${refreshedAccessToken}`,
+      JSON.stringify(wrongAudienceData),
+      'EX',
+      '3600',
+    );
+    const wrongAudienceCall = await app.inject({
+      method: 'POST',
+      url: '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${refreshedAccessToken}`,
+      },
+      payload: { jsonrpc: '2.0', id: 10, method: 'tools/list' },
+    });
+    expect(wrongAudienceCall.statusCode).toBe(401);
+  });
+
+  it('includes iss in a denied authorization response', async () => {
+    vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
+      restaurantId: 'test-resto-1',
+      mcpEnabled: true,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
+    const app = await getApp();
+    const consent = await app.inject({
+      method: 'GET',
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=mcp%3Aread&state=denied&resource=${encodeURIComponent(MCP_RESOURCE)}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256`,
+    });
+    const csrf = consent.body.match(/name="csrf_token" value="([^"]+)"/)?.[1];
+    expect(csrf).toBeDefined();
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/oauth/authorize',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `action=deny&csrf_token=${csrf}`,
+    });
+    expect(denied.statusCode).toBe(302);
+    const response = new URL(denied.headers.location as string);
+    expect(response.searchParams.get('error')).toBe('access_denied');
+    expect(response.searchParams.get('state')).toBe('denied');
+    expect(response.searchParams.get('iss')).toBe(MCP_RESOURCE);
   });
 
   // ── 8. 405 sur GET /mcp (pas de SSE pour StreamableHTTP) ───

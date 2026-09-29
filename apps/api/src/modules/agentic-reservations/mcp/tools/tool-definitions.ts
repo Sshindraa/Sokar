@@ -47,6 +47,7 @@ type ToolDefinition = {
   description: string;
   schema: z.ZodTypeAny;
   output: z.ZodTypeAny;
+  requiredScope: 'mcp:read' | 'mcp:reserve' | 'mcp:cancel';
   annotations: ToolAnnotations;
 };
 
@@ -58,6 +59,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Returns matching restaurants with basic info and maxOnlinePartySize. If restaurants is empty, check capacityLimits before saying that a named restaurant does not exist: each entry gives the authoritative maxOnlinePartySize for online bookings. Never infer a maximum by trying several party sizes.',
     schema: SearchRestaurantsInputSchema,
     output: SearchRestaurantsOutputSchema,
+    requiredScope: 'mcp:read',
     annotations: { readOnlyHint: true },
   },
   {
@@ -67,6 +69,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Get details of a specific restaurant by ID, including name, address, cuisine, price range, opening hours, and maxOnlinePartySize.',
     schema: GetRestaurantDetailsInputSchema,
     output: GetRestaurantDetailsOutputSchema,
+    requiredScope: 'mcp:read',
     annotations: { readOnlyHint: true },
   },
   {
@@ -76,6 +79,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Returns availability; if the group exceeds the online capacity, the response states the exact maxOnlinePartySize instead of returning an ambiguous unavailable result.',
     schema: CheckAvailabilityInputSchema,
     output: CheckAvailabilityOutputSchema,
+    requiredScope: 'mcp:read',
     annotations: { readOnlyHint: true },
   },
   {
@@ -84,6 +88,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'Check a slot and return a short-lived quote without reserving capacity.',
     schema: CreateQuoteInputSchema,
     output: CreateQuoteOutputSchema,
+    requiredScope: 'mcp:reserve',
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
   {
@@ -93,6 +98,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Temporarily reserve a slot while the customer confirms. Pass the returned holdToken to create_reservation before it expires.',
     schema: CreateHoldInputSchema,
     output: CreateHoldOutputSchema,
+    requiredScope: 'mcp:reserve',
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
   {
@@ -102,6 +108,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Create a reservation at a restaurant. startsAt and endsAt accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Requires explicit user consent for data processing. Returns reservation confirmation with ID.',
     schema: CreateReservationInputSchema,
     output: CreateReservationOutputSchema,
+    requiredScope: 'mcp:reserve',
     annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
@@ -111,6 +118,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Join the waiting list for a full slot when the restaurant has enabled it. Requires customer consent.',
     schema: JoinWaitingListInputSchema,
     output: JoinWaitingListOutputSchema,
+    requiredScope: 'mcp:reserve',
     annotations: { destructiveHint: true, openWorldHint: true },
   },
   {
@@ -119,6 +127,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     description: 'Cancel a waiting list entry with the action token returned when joining.',
     schema: CancelWaitingListInputSchema,
     output: CancelWaitingListOutputSchema,
+    requiredScope: 'mcp:cancel',
     annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
@@ -128,6 +137,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Change a reservation time, party size, or customer name after verifying the original phone number. Availability is rechecked atomically.',
     schema: ModifyReservationInputSchema,
     output: ModifyReservationOutputSchema,
+    requiredScope: 'mcp:reserve',
     annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
@@ -137,6 +147,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Cancel an existing reservation by ID. Public OAuth clients must supply the original E.164 customerPhone. The reservation status changes to cancelled and the customer is notified.',
     schema: CancelReservationInputSchema,
     output: CancelReservationOutputSchema,
+    requiredScope: 'mcp:cancel',
     annotations: { destructiveHint: true },
   },
   {
@@ -146,6 +157,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       'Get the status of an existing reservation by ID, including party size, date, and current state. Public OAuth clients must supply the original E.164 customerPhone.',
     schema: GetReservationStatusInputSchema,
     output: GetReservationStatusOutputSchema,
+    requiredScope: 'mcp:read',
     annotations: { readOnlyHint: true },
   },
 ];
@@ -171,5 +183,6 @@ export const TOOL_LIST = TOOL_DEFINITIONS.map((def) => ({
   description: def.description,
   inputSchema: cleanJsonSchema(toJsonSchema(def.schema, { target: 'openApi3' })),
   outputSchema: cleanJsonSchema(toJsonSchema(def.output, { target: 'openApi3' })),
+  securitySchemes: [{ type: 'oauth2' as const, scopes: [def.requiredScope] }],
   annotations: def.annotations,
 }));

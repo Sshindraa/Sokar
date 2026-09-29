@@ -58,6 +58,28 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     }
   });
 
+  it('every tool declares the OAuth scope required by its operation', () => {
+    const expectedScopes: Record<string, string> = {
+      search_restaurants: 'mcp:read',
+      get_restaurant_details: 'mcp:read',
+      check_availability: 'mcp:read',
+      create_quote: 'mcp:reserve',
+      create_hold: 'mcp:reserve',
+      create_reservation: 'mcp:reserve',
+      join_waiting_list: 'mcp:reserve',
+      cancel_waiting_list: 'mcp:cancel',
+      modify_reservation: 'mcp:reserve',
+      cancel_reservation: 'mcp:cancel',
+      get_reservation_status: 'mcp:read',
+    };
+
+    for (const tool of TOOL_LIST) {
+      expect(tool.securitySchemes, `${tool.name} missing securitySchemes`).toEqual([
+        { type: 'oauth2', scopes: [expectedScopes[tool.name]] },
+      ]);
+    }
+  });
+
   it('every tool declares readOnly or destructive behavior', () => {
     for (const tool of TOOL_LIST) {
       const ann = tool.annotations || {};
