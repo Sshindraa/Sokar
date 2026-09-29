@@ -32,7 +32,7 @@ import { McpRateLimiter } from '../rate-limit';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
   checkAvailabilityDuration,
-  mcpToolCallsTotal,
+  recordMcpToolCall,
 } from '../../../../shared/observability/metrics';
 import {
   CancelReservationInputSchema,
@@ -61,6 +61,8 @@ export type ToolContext = {
   restaurantId: string | null;
   scopes: string[];
   actor: string;
+  credentialType?: 'api_key' | 'oauth';
+  transport?: 'mcp' | 'generic_agent';
   channel?: ReservationChannel;
   /** Restaurant-scoped API keys act as trusted staff; OAuth tokens do not. */
   trustedRestaurantAccess?: boolean;
@@ -247,6 +249,9 @@ export class McpToolRegistry {
         restaurantId: string;
         name: string;
         slug: string | null;
+        formattedAddress: string | null;
+        cuisineType: string[];
+        priceRange: number | null;
         maxOnlinePartySize: number;
       }> = [];
       let scanCursor = cursorId;
@@ -271,6 +276,9 @@ export class McpToolRegistry {
           if (!violation) {
             exposedResults.push({
               ...result,
+              formattedAddress: result.formattedAddress ?? null,
+              cuisineType: result.cuisineType ?? [],
+              priceRange: result.priceRange ?? null,
               maxOnlinePartySize: exposure.settings.maxPartySize,
             });
             if (exposedResults.length > input.maxResults) break;
@@ -314,12 +322,24 @@ export class McpToolRegistry {
           id: r.restaurantId,
           name: r.name,
           slug: r.slug,
+          formattedAddress: r.formattedAddress,
+          cuisineType: r.cuisineType,
+          priceRange: r.priceRange,
           maxOnlinePartySize: r.maxOnlinePartySize,
+          availableSlots: [
+            {
+              startsAt: slotStart.toISOString(),
+              endsAt: slotEnd.toISOString(),
+            },
+          ],
         })),
         capacityLimits: exposedCapacityLimits.map((hint) => ({
           id: hint.restaurantId,
           name: hint.name,
           slug: hint.slug,
+          formattedAddress: hint.formattedAddress ?? null,
+          cuisineType: hint.cuisineType ?? [],
+          priceRange: hint.priceRange ?? null,
           maxOnlinePartySize: hint.maxOnlinePartySize,
         })),
         nextCursor,
@@ -415,7 +435,31 @@ export class McpToolRegistry {
             endsAt: new Date(slot.endsAt),
           }),
       );
-      return ok({ ...result, alternativeSlots });
+      const decision = result.available
+        ? 'available'
+        : result.reason === 'party_size_exceeds_capacity'
+          ? 'capacity_exceeded'
+          : 'unavailable';
+      const recommendedAction = result.available
+        ? ctx.scopes.includes('mcp:reserve')
+          ? 'create_hold'
+          : 'request_reserve_scope'
+        : decision === 'capacity_exceeded'
+          ? 'reduce_party_size'
+          : alternativeSlots && alternativeSlots.length > 0
+            ? 'choose_alternative_slot'
+            : 'choose_another_slot';
+
+      return ok({
+        available: result.available,
+        alternativeSlots: alternativeSlots ?? [],
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.maxOnlinePartySize !== undefined
+          ? { maxOnlinePartySize: result.maxOnlinePartySize }
+          : {}),
+        decision,
+        recommendedAction,
+      });
     } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'check_availability failed');
       return toolError('Internal error', 'INTERNAL');
@@ -1010,12 +1054,17 @@ export async function executeTool(
       result = await registry.getReservationStatus(rawInput, ctx);
       break;
     default:
-      mcpToolCallsTotal.inc({ tool: toolName, status: 'error' });
+      recordMcpToolCall(toolName, 'error', ctx.credentialType, 'UNKNOWN_TOOL', ctx.transport);
       return toolError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL');
   }
 
-  // Metric : tracker quels tools MCP sont réellement utilisés
-  mcpToolCallsTotal.inc({ tool: toolName, status: result.ok ? 'success' : 'error' });
+  recordMcpToolCall(
+    toolName,
+    result.ok ? 'success' : 'error',
+    ctx.credentialType,
+    result.ok ? undefined : result.code,
+    ctx.transport,
+  );
 
   // Redacte la réponse avant retour
   if (result.ok) {

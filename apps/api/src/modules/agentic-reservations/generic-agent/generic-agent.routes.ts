@@ -138,6 +138,8 @@ export async function genericAgentRoutes(app: FastifyInstance): Promise<void> {
           restaurantId: auth.restaurantId,
           scopes: auth.scopes,
           actor: `generic-agent:${auth.clientId}`,
+          credentialType: auth.credentialType,
+          transport: 'generic_agent' as const,
           channel: 'API' as ReservationChannel,
         };
       } catch (err) {

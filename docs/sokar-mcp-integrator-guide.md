@@ -1,8 +1,9 @@
 # Guide intégrateur MCP Sokar
 
-> **Statut : ACTIF / PRODUCTION — vérifié le 12 septembre 2026.**
-> Des parcours OAuth et réservation E2E ont été exécutés avec ChatGPT et Claude. Le transport
-> actuel est JSON-RPC 2.0 stateless sur HTTP `POST /mcp`. Voir
+> **Statut : ACTIF / PRODUCTION — métadonnées et appels de lecture vérifiés le 29 septembre 2026.**
+> Des parcours OAuth et réservation E2E ont été exécutés avec ChatGPT et Claude ; la matrice
+> complète et ses limites sont consignées dans [`la preuve de compatibilité`](./release/evidence/mcp-connector-compatibility-matrix-2026-09-29.md).
+> Le transport actuel est JSON-RPC 2.0 stateless sur HTTP `POST /mcp`. Voir
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 Sokar expose les restaurants opt-in via un serveur MCP générique. Un agent peut
@@ -286,11 +287,26 @@ Réponse:
     {
       "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
       "name": "Chez Sokar",
-      "slug": "chez-sokar-demo"
+      "slug": "chez-sokar-demo",
+      "formattedAddress": "12 Rue de la République, 69001 Lyon",
+      "cuisineType": ["Bistrot", "Française"],
+      "priceRange": 2,
+      "maxOnlinePartySize": 6,
+      "availableSlots": [
+        {
+          "startsAt": "2026-06-23T17:00:00.000Z",
+          "endsAt": "2026-06-23T19:00:00.000Z"
+        }
+      ]
     }
-  ]
+  ],
+  "capacityLimits": []
 }
 ```
+
+Chaque résultat disponible reprend le créneau exact demandé. `capacityLimits`
+identifie séparément les restaurants opt-in dont la capacité en ligne est trop
+basse ; ces entrées ne sont pas présentées comme disponibles.
 
 ### get_restaurant_details
 
@@ -347,12 +363,23 @@ Réponse:
 
 ```json
 {
-  "available": true
+  "available": true,
+  "alternativeSlots": [],
+  "decision": "available",
+  "recommendedAction": "create_hold"
 }
 ```
 
 Si le créneau est indisponible, `alternativeSlots` propose jusqu'à cinq horaires
-du même jour compatibles avec l'exposition du restaurant.
+du même jour compatibles avec l'exposition du restaurant. `recommendedAction`
+vaut `choose_alternative_slot` si une alternative existe, ou
+`choose_another_slot` sinon. Si la taille du groupe dépasse le maximum en ligne,
+l'outil renvoie l'erreur métier `POLICY_VIOLATION` avec le `maxPartySize` exact
+dans son message ; réduisez le groupe. Les identifiants internes de holds et de
+réservations ne sont pas renvoyés.
+
+Pour un créneau disponible, `recommendedAction` vaut `create_hold` si le jeton
+dispose du scope `mcp:reserve`, et `request_reserve_scope` sinon.
 
 ### create_quote et create_hold
 
@@ -516,6 +543,36 @@ sont filtrées avant sortie:
 Les mutations sont auditées via le core agentic. Les outils de lecture
 (`search_restaurants`, `check_availability`) ne sont pas écrits dans le journal
 d'audit, ils sont comptés dans les métriques.
+
+## Observabilité des outils MCP
+
+Prometheus expose les appels par outil, résultat, transport, type d’authentification
+(`oauth`, `api_key`, `unknown`) et les codes d’erreur normalisés :
+
+- `sokar_mcp_tool_calls_total{tool,status}` : compteur historique commun aux appels MCP et à l’adaptateur `generic_agent` ;
+- `sokar_mcp_tool_calls_by_auth_type_total{tool,status,auth_type,transport}` : volumes détaillés ;
+- `sokar_mcp_tool_errors_by_code_total{tool,error_code,auth_type,transport}` : erreurs par code stable.
+
+`transport` vaut `mcp`, `generic_agent` ou `unknown`. Filtrez `transport="mcp"`
+pour isoler le trafic MCP.
+
+Les labels sont bornés. Aucun `clientId`, nom OAuth libre, numéro de réservation ou
+autre donnée client n’est ajouté aux métriques. La dimension d’auth distingue OAuth
+d’une API key, mais ne différencie pas encore ChatGPT de Claude.
+Les codes d’erreur sont une allowlist stable ; tout nouveau code non répertorié est
+regroupé sous `OTHER` jusqu’à son ajout explicite.
+
+Pour comparer les volumes du parcours, additionnez les compteurs par outil :
+
+```promql
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool="search_restaurants"}[7d]))
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool="check_availability"}[7d]))
+sum(increase(sokar_mcp_tool_calls_by_auth_type_total{transport="mcp",tool=~"create_hold|create_reservation"}[7d]))
+```
+
+Ces valeurs décrivent les volumes agrégés de chaque étape. Le protocole ne fournit
+pas d’identifiant de parcours partagé entre appels ; elles ne mesurent donc pas une
+conversion individuelle recherche → disponibilité → réservation.
 
 ## Test local E2E
 

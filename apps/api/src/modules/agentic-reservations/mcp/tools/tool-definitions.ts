@@ -56,7 +56,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'search_restaurants',
     title: 'Search Restaurants',
     description:
-      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Returns matching restaurants with basic info and maxOnlinePartySize. If restaurants is empty, check capacityLimits before saying that a named restaurant does not exist: each entry gives the authoritative maxOnlinePartySize for online bookings. Never infer a maximum by trying several party sizes.',
+      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Each match includes its public address, cuisine, price range, online party-size limit, and the exact available slot. If restaurants is empty, check capacityLimits before saying that a named restaurant does not exist: each entry gives the public restaurant details and authoritative maxOnlinePartySize for online bookings. Never infer a maximum by trying several party sizes.',
     schema: SearchRestaurantsInputSchema,
     output: SearchRestaurantsOutputSchema,
     requiredScope: 'mcp:read',
@@ -76,7 +76,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'check_availability',
     title: 'Check Availability',
     description:
-      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Returns availability; if the group exceeds the online capacity, the response states the exact maxOnlinePartySize instead of returning an ambiguous unavailable result.',
+      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Successful availability results include a decision and recommendedAction: create_hold when an available slot and mcp:reserve scope are present, request_reserve_scope when the slot is available but the scope is missing, choose_alternative_slot when alternatives exist, or choose_another_slot otherwise. If party size exceeds the online capacity, the existing POLICY_VIOLATION error message includes the exact maxPartySize; reduce the requested party size. Internal hold and reservation identifiers are never returned.',
     schema: CheckAvailabilityInputSchema,
     output: CheckAvailabilityOutputSchema,
     requiredScope: 'mcp:read',

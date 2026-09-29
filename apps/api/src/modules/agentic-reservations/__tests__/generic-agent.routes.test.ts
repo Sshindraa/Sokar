@@ -14,6 +14,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { env } from '../../../env';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
 
 const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'test_fixture_' + 'b'.repeat(32);
 const AUTH = {
@@ -103,6 +104,7 @@ describe('Generic Agent REST adapter', () => {
     });
 
     it('retourne 400 pour des params invalides', async () => {
+      __resetMetrics();
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -113,6 +115,11 @@ describe('Generic Agent REST adapter', () => {
       expect(res.statusCode).toBe(400);
       const body = res.json();
       expect(body.code).toBe('INVALID_INPUT');
+
+      const metrics = await renderMetrics();
+      expect(metrics).toMatch(
+        /sokar_mcp_tool_calls_by_auth_type_total\{tool="search_restaurants",status="error",auth_type="api_key",transport="generic_agent"\} 1/,
+      );
     });
   });
 
