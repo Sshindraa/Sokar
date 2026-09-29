@@ -92,4 +92,24 @@ NEXT_PREVIOUS_DIR_DASHBOARD="$TMP_ROOT/apps/dashboard/.next-deploy-fixture2-dash
 cleanup_previous_next_builds
 test -d "$TMP_ROOT/apps/dashboard/.next-deploy-fixture2-dashboard"
 
+# Élagage des vieux dossiers de build : garde les 2 plus récents et la cible active de `.next`.
+SOKAR_ROOT_BEFORE_PRUNE="$SOKAR_ROOT"
+SOKAR_ROOT="$TMP_ROOT/prune"
+for app in dashboard connect; do
+  mkdir -p "$SOKAR_ROOT/apps/$app"
+  for stamp in 20260101T000000Z 20260102T000000Z 20260103T000000Z 20260104T000000Z 20260105T000000Z; do
+    mkdir -p "$SOKAR_ROOT/apps/$app/.next-deploy-$stamp-1-$app"
+  done
+  ln -s ".next-deploy-20260101T000000Z-1-$app" "$SOKAR_ROOT/apps/$app/.next"
+done
+prune_stale_next_builds 2
+for app in dashboard connect; do
+  test -d "$SOKAR_ROOT/apps/$app/.next-deploy-20260105T000000Z-1-$app"
+  test -d "$SOKAR_ROOT/apps/$app/.next-deploy-20260104T000000Z-1-$app"
+  test -d "$SOKAR_ROOT/apps/$app/.next-deploy-20260101T000000Z-1-$app"
+  test ! -e "$SOKAR_ROOT/apps/$app/.next-deploy-20260103T000000Z-1-$app"
+  test ! -e "$SOKAR_ROOT/apps/$app/.next-deploy-20260102T000000Z-1-$app"
+done
+SOKAR_ROOT="$SOKAR_ROOT_BEFORE_PRUNE"
+
 echo 'deploy-common release activation/rollback: OK'

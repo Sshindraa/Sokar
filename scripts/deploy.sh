@@ -461,6 +461,7 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
             cleanup_releases "$KEEP_RELEASES"
         fi
         cleanup_previous_next_builds
+        prune_stale_next_builds
         # Sauvegarder le hash pour le prochain déploiement incrémental
         git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
 
@@ -498,6 +499,7 @@ else
         # Nettoyer le snapshot pré-build
         rm -rf "${PREV_RELEASE}" 2>/dev/null || true
         cleanup_previous_next_builds
+        prune_stale_next_builds
 
         # ── Résultat ─────────────────────────────────────
         log info ""

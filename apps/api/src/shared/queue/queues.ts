@@ -137,6 +137,15 @@ export const queues = {
       removeOnFail: 100,
     },
   }),
+  openrouterCredit: new Queue('openrouter-credit', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 24,
+      removeOnFail: 100,
+    },
+  }),
   idempotencyPurge: new Queue('idempotency-purge', {
     connection: redisQueue,
     defaultJobOptions: {

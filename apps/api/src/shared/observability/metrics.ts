@@ -487,6 +487,13 @@ export function recordVoiceChoiceAnswer(kind: VoiceQualityKind, outcome: VoiceCh
   voiceChoiceAnswerTotal.inc({ kind, outcome });
 }
 
+/** Crédit OpenRouter restant (repli vocal, Jev, juge), lu chaque heure. */
+export const openRouterCreditUsd = new Gauge({
+  name: 'sokar_openrouter_credit_usd',
+  help: 'Crédit OpenRouter restant en dollars',
+  registers: [getRegistry()],
+});
+
 /** État du quota ElevenLabs observé via l'endpoint subscription. */
 export const elevenLabsCharacterCount = new Gauge({
   name: 'sokar_elevenlabs_character_count',
@@ -881,6 +888,7 @@ export function __resetMetrics(): void {
   voiceSttProviderAudioMessagesTotal.reset();
   voiceSttProviderChunkBytes.reset();
   elevenLabsCharacterCount.reset();
+  openRouterCreditUsd.reset();
   elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
   voiceSemanticDurationMs.reset();
