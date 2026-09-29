@@ -30,7 +30,9 @@ export const SearchRestaurantsInputSchema = z.object({
   city: z.string().min(1).max(100),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
-  slotEnd: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema.optional().describe(
+    'Optional end time. Omit when only a start time is known; Sokar uses a 120-minute default.',
+  ),
   timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
   maxResults: z.number().int().min(1).max(20).default(5),
@@ -197,6 +199,11 @@ const AvailableRestaurantSummaryOutputSchema = RestaurantSummaryOutputSchema.ext
 
 export const SearchRestaurantsOutputSchema = z
   .object({
+    searchOutcome: z
+      .enum(['available', 'capacity_exceeded', 'no_exact_slot_available'])
+      .describe(
+        'Whether the exact search found a slot, hit a party-size limit, or found no match for that exact request. no_exact_slot_available does not mean the restaurant does not exist; offer another time and never ask the person for a restaurant ID.',
+      ),
     restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
     capacityLimits: z.array(RestaurantSummaryOutputSchema),
     nextCursor: z.string().optional(),
