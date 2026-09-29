@@ -301,7 +301,7 @@ function handleTelnyxMessage(
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       // Avant l'accueil : l'audio de l'appelant doit être nettoyé dès ses premiers mots.
-      void startNoiseSuppression(session);
+      startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
         .then(async () => {
