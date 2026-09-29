@@ -1,5 +1,6 @@
 import type { CallSession } from './types';
 import { voiceEchoSuppressedTotal } from '../../../shared/observability/metrics';
+import { logger } from '../../../shared/logger/pino';
 
 export type EchoStage = 'partial' | 'committed';
 
@@ -52,10 +53,27 @@ function orderedOverlap(caller: string[], agent: string[]): number {
   return matched;
 }
 
+/** Retard acoustique de l'écho après la fin de l'audio de l'agent (haut-parleur → micro). */
+export const ECHO_ACOUSTIC_TAIL_MS = 900;
+
 function isInEchoWindow(session: CallSession, now: number): boolean {
-  return Boolean(
+  if (
     session.agentAudioActive ||
-    (session.agentAudioEndedAt !== undefined && now - session.agentAudioEndedAt <= 1_000),
+    (session.agentAudioEndedAt !== undefined && now - session.agentAudioEndedAt <= 1_000)
+  ) {
+    return true;
+  }
+  // Aligné sur le moment où l'appelant a été *entendu* et non sur l'arrivée de la transcription :
+  // une transcription d'écho arrive 0,5 à 1,5 s après le son, souvent hors des 1 s ci-dessus.
+  // Un « c'est bien ça » dit après la fin de l'agent commence après le tail et n'est pas touché.
+  const heardAt = session.sttLastSpeechStartedAt;
+  if (heardAt === undefined || now - heardAt > 15_000) return false;
+  return Boolean(
+    session.agentAudioSpans?.some(
+      (span) =>
+        heardAt >= span.startedAt &&
+        (span.endedAt === undefined || heardAt <= span.endedAt + ECHO_ACOUSTIC_TAIL_MS),
+    ),
   );
 }
 
@@ -90,6 +108,16 @@ export function filterAssistantEcho(
       nonEchoWordCount: remainder.length,
     };
     voiceEchoSuppressedTotal.inc({ stage });
+    logger.info(
+      {
+        callId: session.callControlId,
+        stage,
+        outcome: 'prefix_stripped',
+        callerWords: callerWords.length,
+        keptWords: remainder.length,
+      },
+      '[stt] Assistant echo filtered',
+    );
     return result;
   }
 
@@ -100,6 +128,15 @@ export function filterAssistantEcho(
     (overlap === callerWords.length || overlap / callerWords.length >= 0.7)
   ) {
     voiceEchoSuppressedTotal.inc({ stage });
+    logger.info(
+      {
+        callId: session.callControlId,
+        stage,
+        outcome: 'suppressed',
+        callerWords: callerWords.length,
+      },
+      '[stt] Assistant echo filtered',
+    );
     return { ...unchanged, transcript: '', suppressed: true, nonEchoWordCount: 0 };
   }
 
