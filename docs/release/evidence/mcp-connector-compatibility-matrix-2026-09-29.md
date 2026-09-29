@@ -1,7 +1,7 @@
-# Matrice de compatibilité MCP — 29 septembre 2026
+# Matrice de compatibilité MCP — 29–30 septembre 2026
 
-> **Statut au 29 septembre 2026 :** après le correctif OAuth, OAuth frais et lectures MCP réussis dans ChatGPT et Claude. Le parcours d’écriture ChatGPT passe. Dans Claude, recherche, disponibilité, création, modification, annulation et lectures passent, mais le rejeu avec la même clé et le hold consommé échoue en `INVALID_HOLD`. Le correctif de l’ordre de vérification est testé localement ; son déploiement staging et le retest restent à faire. Les trois runs ci-dessous sont purgés avec leurs tombstones et audits conservés.
-> Le consentement Claude staging couvre tous les restaurants ayant activé MCP ; l’utilisateur l’a accepté pour le staging. Les essais restent limités à Chez Sokar. Aucun test ni changement n’a ciblé la production.
+> **Statut au 30 septembre 2026 :** PR #314 fusionnée ; CI, déploiement staging et smoke tests verts. Le rejeu idempotent avec un hold déjà consommé réussit maintenant dans Claude et ChatGPT (`reused=true`, même réservation, aucun doublon). Dans les deux clients, recherche, disponibilité, hold, création, lecture, modification et annulation sont passés. Les cinq runs sont purgés ; seuls les tombstones anonymisés et leurs audits append-only restent.
+> Le consentement Claude staging couvre tous les restaurants ayant activé MCP ; l’utilisateur l’a accepté pour le staging. Les essais et appels MCP restent limités à Chez Sokar sur staging ; seul le workflow de déploiement automatique a publié le code en production.
 > Les connecteurs de production existants n’ont servi à aucune mutation.
 
 ## Cible et isolation
@@ -13,9 +13,13 @@
 - Run initial, maintenant purgé : `connector-20260929-01`, commencé le 29 septembre 2026 à 00:48:18.731 UTC
 - Run `connector-20260929-02`, commencé le 29 septembre 2026 à 20:01:23.879 UTC, maintenant purgé après ChatGPT et une première tentative Claude avec paramètres erronés
 - Run `connector-20260929-03`, commencé le 29 septembre 2026 à 21:06:38.994 UTC, maintenant purgé après le parcours Claude exact
+- Run `connector-20260929-04`, commencé le 29 septembre 2026 à 21:55:03.699 UTC, maintenant purgé après le retest Claude post-correctif
+- Run `connector-20260930-05`, commencé le 29 septembre 2026 à 22:04:32.908 UTC (30 septembre à 00:04:32 CEST), maintenant purgé après le retest ChatGPT post-correctif
 - Marqueur du run initial : `MCP-SANDBOX:connector-20260929-01`
 - Marqueur du run 02 : `MCP-SANDBOX:connector-20260929-02`
 - Marqueur du run 03 : `MCP-SANDBOX:connector-20260929-03`
+- Marqueur du run 04 : `MCP-SANDBOX:connector-20260929-04`
+- Marqueur du run 05 : `MCP-SANDBOX:connector-20260930-05`
 - Téléphone factice du manifeste : +33612345600
 - Référence OAuth OpenAI : [Authentication – Plugins](https://developers.openai.com/plugins/build/auth)
 
@@ -151,7 +155,23 @@ Le 29 septembre, le connecteur `Sokar Staging` a été utilisé sur Chez Sokar u
 | Relecture après modification                          | Réussie ; 18:00Z–19:30Z, soit 20 h–21 h 30 à Paris. Une première lecture a eu une erreur transport et a réussi au retry |
 | Annulation et relecture finale                        | Réussies ; `cancelled=true`, état `CANCELLED`                                                                           |
 
-Le rejeu identique échoue parce que le service valide le hold comme actif avant de consulter l’idempotence. Après la première création, ce hold est déjà consommé. Le correctif en cours consulte d’abord la clé et le hash déjà terminés lorsqu’un holdToken est fourni ; il ne réexécute pas les validations ni ne crée une nouvelle réservation. Le test unitaire couvrant ce cas passe. Le correctif n’est pas encore déployé sur staging et doit être retesté dans les deux clients.
+Le rejeu du run 03 a échoué parce que le service validait le hold comme actif avant de consulter l’idempotence. Après la première création, ce hold est déjà consommé. La PR #314 consulte maintenant d’abord la clé et le hash déjà terminés lorsqu’un `holdToken` est fourni ; elle ne réexécute pas les validations et ne crée pas de réservation supplémentaire. Les retests des runs 04 et 05 ci-dessous confirment le comportement dans les deux clients.
+
+## Retest du rejeu après le correctif — Claude et ChatGPT
+
+La PR [#314](https://github.com/Sshindraa/Sokar/pull/314), commit `e53169b0`, a été fusionnée. La CI de `main`, le déploiement staging et ses smoke tests/E2E ont réussi. Les deux clients ont ensuite utilisé `Sokar Staging` et Chez Sokar exclusivement. Pour chaque client, la seconde création a repris tous les mêmes arguments, y compris le `holdToken` consommé.
+
+| Étape                                             | Claude — run `connector-20260929-04`                                                          | ChatGPT — run `connector-20260930-05`                                                                   |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Recherche, détails, disponibilité                 | Chez Sokar trouvé ; détails OK ; `available=true`, 1er octobre 2026, 19:00–20:30 Europe/Paris | Chez Sokar trouvé ; détails et horaires OK ; `available=true`, 2 octobre 2026, 19:00–20:30 Europe/Paris |
+| Hold et première création                         | Hold créé ; `CONFIRMED`, ID `8a81494e-bbaa-486b-82da-6fba4a9f2861`, `reused=false`            | Hold créé ; `CONFIRMED`, ID `07f035a5-a836-4dc3-8bed-769551c83463`, `reused=false`                      |
+| Rejeu strictement identique avec le hold consommé | `reused=true`, même ID, aucun doublon ni erreur                                               | `reused=true`, même ID, aucun doublon ni erreur                                                         |
+| Lecture après création                            | `CONFIRMED`, 2 personnes, 19:00–20:30 Paris                                                   | `CONFIRMED`, 2 personnes, 19:00–20:30 Paris                                                             |
+| Modification et relecture                         | `changed=true`, créneau 20:00–21:30 Paris confirmé                                            | `changed=true`, créneau 20:00–21:30 Paris confirmé                                                      |
+| Annulation et relecture finale                    | `cancelled=true`, état `CANCELLED`                                                            | `cancelled=true`, état `CANCELLED`                                                                      |
+| Purge vérifiée                                    | 1 réservation anonymisée, 6 audits ; 0 hold, client, clé d’idempotence ou consentement        | 1 réservation anonymisée, 6 audits ; 0 hold, client, clé d’idempotence ou consentement                  |
+
+Les captures des comptes rendus Claude et ChatGPT ont été prises dans les clients pendant cette session et sont visibles dans le fil. Aucun secret OAuth n’a été consigné. Les réservations de test ont été annulées avant chaque reset.
 
 ## Purge du run
 
@@ -190,14 +210,16 @@ Le run 02 contenait la réservation ChatGPT et une première réservation Claude
 | ----------------------- | -----------------------: | ----: | ------: | -----------------: | ---------------: | ------------: |
 | `connector-20260929-02` |                        2 |     0 |       0 |                  0 |               11 |             0 |
 | `connector-20260929-03` |                        1 |     0 |       0 |                  0 |                6 |             0 |
+| `connector-20260929-04` |                        1 |     0 |       0 |                  0 |                6 |             0 |
+| `connector-20260930-05` |                        1 |     0 |       0 |                  0 |                6 |             0 |
 
-Les dry-runs correspondaient aux artefacts connus avant chaque reset. Les audits restent append-only ; les holds, clients de manifeste, clés d’idempotence et données opérationnelles ont disparu. Le code d’idempotence est en cours de correction avant un nouveau run de validation.
+Les dry-runs correspondaient aux artefacts connus avant chaque reset. Les audits restent append-only ; les holds, clients de manifeste, clés d’idempotence et données opérationnelles ont disparu.
 
-**Conclusion opérationnelle :** OAuth frais et lectures MCP sont validés dans les deux clients. Le cycle métier est validé dans ChatGPT. Claude valide création, lecture, modification et annulation, mais révèle le défaut de rejeu idempotent corrigé localement ; il reste à déployer et à confirmer sur staging. Les interfaces ne montrent toujours pas le `protocolVersion` brut d’`initialize` ni la réponse JSON-RPC brute de `tools/list`.
+**Conclusion opérationnelle :** OAuth frais et lectures MCP sont validés dans les deux clients. Le cycle métier complet, y compris le rejeu avec hold consommé, est validé dans Claude et ChatGPT. Tous les runs sont nettoyés comme documenté. Après le feu vert staging, le workflow automatique du dépôt a aussi exécuté `Deploy Production` (run [36637029278](https://github.com/Sshindraa/Sokar/actions/runs/36637029278)) avec smoke tests verts ; aucun client MCP de production ni aucune réservation de production n’a été utilisé pour cette matrice. Les interfaces ne montrent toujours pas le `protocolVersion` brut d’`initialize` ni la réponse JSON-RPC brute de `tools/list`.
 
 ## Captures et limites de preuve
 
 - Les nouveaux écrans de consentement ChatGPT et Claude après le correctif ont été capturés ; Claude affiche la portée multi-restaurants staging acceptée par l’utilisateur.
-- Les captures d’écran et retours d’outils sont visibles dans le fil de cette session, mais les images n’ont pas été exportées comme fichiers dans ce dossier.
+- Les captures des résultats post-correctif Claude et ChatGPT sont visibles dans le fil de cette session ; les réponses détaillées sont transcrites dans les tableaux ci-dessus. Les images n’ont pas été exportées comme fichiers dans ce dossier.
 - Les clients ne montrent pas les messages JSON-RPC bruts d’initialisation MCP, la version négociée, ni le contenu brut de tools/list. Les versions de protocole sont donc indiquées comme non observables, pas comme vérifiées.
 - Les identifiants OAuth, codes de retour, challenge et jetons ne sont pas consignés dans cette matrice.

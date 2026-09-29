@@ -17,7 +17,7 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : runs `connector-20260929-01`, `-02` et `-03` purgés sur staging, avec 2/11/6 audits conservés et aucune donnée opérationnelle. ChatGPT passe le cycle d’écriture ; Claude passe recherche, création, lecture, modification et annulation, mais le rejeu idempotent avec hold consommé renvoie `INVALID_HOLD`. Correctif unitaire en cours sur la branche `codex/mcp-client-write-evidence` ; fusion/déploiement staging et retest ciblé restent à faire. Essais limités à Chez Sokar ; portée multi-restaurants du consentement Claude staging acceptée par l’utilisateur. `initialize`/`tools/list` bruts non visibles dans les clients.
+- [ ] MCP : PR #314 fusionnée ; recherche, disponibilité, réservation, rejeu idempotent avec hold consommé, modification et annulation validés dans Claude et ChatGPT sur staging, uniquement chez Chez Sokar. Runs 01–05 purgés ; 2/11/6/6/6 audits et tombstones anonymisés conservés, aucun artefact opérationnel. Le pipeline a aussi déployé automatiquement la release en production après le feu vert staging ; aucun test ni appel MCP de production n’a été effectué. `initialize`/`tools/list` bruts et le `protocolVersion` restent non visibles dans les clients ; garder ce point comme limite de preuve.
 
 ## Décisions récentes
 
