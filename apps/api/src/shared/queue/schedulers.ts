@@ -222,6 +222,15 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Crédit OpenRouter (repli vocal, Jev, juge) : une lecture par heure, alerte sous 2 $ puis 0,5 $.
+  await register('openrouter-credit/hourly', () =>
+    queues.openrouterCredit.upsertJobScheduler(
+      'openrouter-credit-hourly',
+      { pattern: '15 * * * *', tz: 'Europe/Paris' },
+      { name: 'check-credit' },
+    ),
+  );
+
   // Les enregistrements sont privés et temporaires : purge quotidienne
   // des objets dont la rétention applicative est arrivée à échéance.
   await register('telnyx-webhooks/recordings-purge', () =>

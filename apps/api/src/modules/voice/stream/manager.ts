@@ -53,6 +53,12 @@ import {
   type VoiceTransferMotive,
   type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+import {
+  alertLlmCircuitOpened,
+  alertLlmPrimaryUnavailable,
+  recordLlmBothProvidersFailed,
+  recordLlmHedgeFired,
+} from './llm-alerts';
 import { armSilenceRecovery, cancelNoInputRecovery } from './no-input-recovery';
 
 function recordVoiceTransfer(
@@ -100,6 +106,11 @@ interface StructuredStreamRequest {
   maxTokens: number;
   temperature: number;
   signal?: AbortSignal;
+}
+
+/** Les alertes ne doivent jamais ralentir ni casser un tour : lancées sans attente. */
+function notify(alert: Promise<unknown>): void {
+  alert.catch(() => undefined);
 }
 
 /** Flux LLM ouvert, premier fragment déjà lu. */
@@ -532,6 +543,7 @@ function recordHedgeOutcome(provider: LlmProvider, hedgeWon: boolean): void {
     { provider },
     `[circuit-breaker] ${provider} opened: the hedged request won ${HEDGE_LOSSES_TO_OPEN_BREAKER} turns in a row`,
   );
+  notify(alertLlmCircuitOpened());
 }
 
 function recordProviderFailure(provider: LlmProvider): void {
@@ -545,6 +557,7 @@ function recordProviderFailure(provider: LlmProvider): void {
         { provider, failures: state.failures },
         `[circuit-breaker] ${provider} opened after ${state.failures} consecutive failures`,
       );
+      notify(alertLlmCircuitOpened());
     } else {
       logger.warn(
         { provider, failures: state.failures },
@@ -1223,6 +1236,7 @@ export class CallSessionManager {
     // maximal du principal est tombé avant le délai de hedging, c'est un repli classique.
     const isHedge = early === 'hedge';
     const canHedge = !trace.fellBack;
+    if (isHedge && canHedge) notify(recordLlmHedgeFired());
     const duplicate = canHedge
       ? (async (): Promise<OpenedStream | null> => {
           const response = await this.fetchFallbackStreaming(
@@ -1241,7 +1255,10 @@ export class CallSessionManager {
 
     const winner = await firstNonNull([primary, duplicate]);
     if (!winner) {
-      if (isHedge) voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
+      if (isHedge) {
+        voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
+        notify(recordLlmBothProvidersFailed());
+      }
       if (primaryError) throw primaryError;
       throw new Error('Structured LLM first chunk timed out, no fallback');
     }
@@ -1665,6 +1682,10 @@ export class CallSessionManager {
         }
         recordProviderFailure(provider);
         recordLlmHttpError(provider, response.status);
+        if (response.status === 402) notify(alertLlmPrimaryUnavailable('quota'));
+        else if (response.status === 401 || response.status === 403) {
+          notify(alertLlmPrimaryUnavailable('auth'));
+        }
         primaryResponse = response;
         primaryError = new Error(`LLM ${response.status}`);
         reason = classifyFallbackReason({ status: response.status });
@@ -1722,6 +1743,7 @@ export class CallSessionManager {
     const detail = primaryError instanceof Error ? primaryError.message : String(primaryError);
     if (!apiKey) {
       voiceLlmFallbackTotal.inc({ path, outcome: 'no_key', reason });
+      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.warn(
         { callId: session.callControlId, path, reason, detail },
         '[llm-fallback] Primary failed, no fallback key',
@@ -1753,6 +1775,7 @@ export class CallSessionManager {
       if (!response.ok || !response.body) {
         await response.body?.cancel().catch(() => undefined);
         voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
+        if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
         logger.error(
           { callId: session.callControlId, path, reason, detail, status: response.status },
           '[llm-fallback] Primary and fallback failed',
@@ -1770,6 +1793,7 @@ export class CallSessionManager {
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) throw err;
       voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
+      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.error(
         {
           callId: session.callControlId,
