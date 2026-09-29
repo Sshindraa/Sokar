@@ -39,7 +39,7 @@ export { TOOL_LIST };
  * un outil ou un champ, correctif pour un changement interne. Les clients MCP
  * lisent `serverInfo.version` pour leur télémétrie.
  */
-export const MCP_SERVER_VERSION = '2.0.0';
+export const MCP_SERVER_VERSION = '2.1.0';
 const SUPPORTED_MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
 
 /**
@@ -264,18 +264,20 @@ export class McpServer {
             result.code === 'FORBIDDEN'
               ? /^Missing scope: (mcp:(?:read|reserve|cancel))$/u.exec(result.error)?.[1]
               : undefined;
+          const errorMeta = {
+            'com.sokar/error': { code: result.code, message: result.error },
+            ...(missingScope
+              ? {
+                  'mcp/www_authenticate': [
+                    `Bearer resource_metadata="${getProtectedResourceMetadataUrl()}", error="insufficient_scope", scope="${missingScope}", error_description="Additional permission is required to use this tool."`,
+                  ],
+                }
+              : {}),
+          };
           return jsonRpcResult(id, {
             content: [{ type: 'text', text: JSON.stringify(result) }],
             isError: true,
-            ...(missingScope
-              ? {
-                  _meta: {
-                    'mcp/www_authenticate': [
-                      `Bearer resource_metadata="${getProtectedResourceMetadataUrl()}", error="insufficient_scope", scope="${missingScope}", error_description="Additional permission is required to use this tool."`,
-                    ],
-                  },
-                }
-              : {}),
+            _meta: errorMeta,
           });
         }
 
