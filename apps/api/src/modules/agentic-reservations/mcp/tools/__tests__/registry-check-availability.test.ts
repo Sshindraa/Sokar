@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { McpToolRegistry } from '../registry';
 import { McpRateLimiter } from '../../rate-limit';
 import { renderMetrics } from '../../../../../shared/observability/metrics';
+import { CheckAvailabilityOutputSchema } from '../schemas';
 
 const makePrisma = () =>
   ({
@@ -95,12 +96,21 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
           clientId: 'c1',
           clientName: 'test',
           restaurantId: null,
-          scopes: ['mcp:read'],
+          scopes: ['mcp:read', 'mcp:reserve'],
           actor: 'test',
         },
       );
 
-      expect(result).toEqual({ ok: true, data: { available: true } });
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          available: true,
+          alternativeSlots: [],
+          decision: 'available',
+          recommendedAction: 'create_hold',
+        },
+      });
+      if (result.ok) expect(CheckAvailabilityOutputSchema.parse(result.data)).toEqual(result.data);
       expect(checkAvailability).toHaveBeenCalledWith({
         restaurantId: '550e8400-e29b-41d4-a716-446655440000',
         partySize: 2,
@@ -138,6 +148,87 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'INVALID_DATETIME' });
     expect(checkAvailability).not.toHaveBeenCalled();
+  });
+
+  it("ne recommande pas de créer un hold si le jeton n'a que le scope lecture", async () => {
+    const prisma = makePrisma();
+    const registry = new McpToolRegistry(prisma, makeRateLimiter());
+    (registry as unknown as Record<string, unknown>).availabilityService = {
+      checkAvailability: vi.fn().mockResolvedValue({ available: true }),
+    };
+
+    const result = await registry.checkAvailability(
+      {
+        restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+        partySize: 2,
+        slotStart: '2026-12-01T19:00:00Z',
+        slotEnd: '2026-12-01T21:00:00Z',
+      },
+      {
+        clientId: 'c1',
+        clientName: 'test',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        available: true,
+        decision: 'available',
+        recommendedAction: 'request_reserve_scope',
+      },
+    });
+  });
+
+  it('recommande une alternative sans exposer les identifiants internes de conflit', async () => {
+    const prisma = makePrisma();
+    const registry = new McpToolRegistry(prisma, makeRateLimiter());
+    const alternativeSlots = [
+      {
+        startsAt: '2026-12-01T21:00:00.000Z',
+        endsAt: '2026-12-01T23:00:00.000Z',
+      },
+    ];
+    (registry as unknown as Record<string, unknown>).availabilityService = {
+      checkAvailability: vi.fn().mockResolvedValue({
+        available: false,
+        alternativeSlots,
+        reason: 'hold_active',
+        conflictingHoldId: '550e8400-e29b-41d4-a716-446655440001',
+        conflictingReservationId: '550e8400-e29b-41d4-a716-446655440002',
+      }),
+    };
+
+    const result = await registry.checkAvailability(
+      {
+        restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+        partySize: 2,
+        slotStart: '2026-12-01T19:00:00Z',
+        slotEnd: '2026-12-01T21:00:00Z',
+      },
+      {
+        clientId: 'c1',
+        clientName: 'test',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        available: false,
+        alternativeSlots,
+        reason: 'hold_active',
+        decision: 'unavailable',
+        recommendedAction: 'choose_alternative_slot',
+      },
+    });
+    if (result.ok) expect(CheckAvailabilityOutputSchema.parse(result.data)).toEqual(result.data);
   });
 
   it('refuse un groupe supérieur à la capacité physique avec la limite exacte', async () => {

@@ -287,11 +287,26 @@ Réponse:
     {
       "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
       "name": "Chez Sokar",
-      "slug": "chez-sokar-demo"
+      "slug": "chez-sokar-demo",
+      "formattedAddress": "12 Rue de la République, 69001 Lyon",
+      "cuisineType": ["Bistrot", "Française"],
+      "priceRange": 2,
+      "maxOnlinePartySize": 6,
+      "availableSlots": [
+        {
+          "startsAt": "2026-06-23T17:00:00.000Z",
+          "endsAt": "2026-06-23T19:00:00.000Z"
+        }
+      ]
     }
-  ]
+  ],
+  "capacityLimits": []
 }
 ```
+
+Chaque résultat disponible reprend le créneau exact demandé. `capacityLimits`
+identifie séparément les restaurants opt-in dont la capacité en ligne est trop
+basse ; ces entrées ne sont pas présentées comme disponibles.
 
 ### get_restaurant_details
 
@@ -348,12 +363,23 @@ Réponse:
 
 ```json
 {
-  "available": true
+  "available": true,
+  "alternativeSlots": [],
+  "decision": "available",
+  "recommendedAction": "create_hold"
 }
 ```
 
 Si le créneau est indisponible, `alternativeSlots` propose jusqu'à cinq horaires
-du même jour compatibles avec l'exposition du restaurant.
+du même jour compatibles avec l'exposition du restaurant. `recommendedAction`
+vaut `choose_alternative_slot` si une alternative existe, ou
+`choose_another_slot` sinon. Si la taille du groupe dépasse le maximum en ligne,
+l'outil renvoie l'erreur métier `POLICY_VIOLATION` avec le `maxPartySize` exact
+dans son message ; réduisez le groupe. Les identifiants internes de holds et de
+réservations ne sont pas renvoyés.
+
+Pour un créneau disponible, `recommendedAction` vaut `create_hold` si le jeton
+dispose du scope `mcp:reserve`, et `request_reserve_scope` sinon.
 
 ### create_quote et create_hold
 

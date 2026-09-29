@@ -176,11 +176,23 @@ const RestaurantSummaryOutputSchema = z.object({
   id: OutputUuidSchema,
   name: z.string(),
   slug: NullableOutputStringSchema,
+  formattedAddress: NullableOutputStringSchema,
+  cuisineType: z.array(z.string()),
+  priceRange: z.number().int().nullable(),
   maxOnlinePartySize: z.number().int(),
 });
 
+const RestaurantAvailableSlotOutputSchema = z.object({
+  startsAt: OutputDateTimeSchema,
+  endsAt: OutputDateTimeSchema,
+});
+
+const AvailableRestaurantSummaryOutputSchema = RestaurantSummaryOutputSchema.extend({
+  availableSlots: z.array(RestaurantAvailableSlotOutputSchema).min(1),
+});
+
 export const SearchRestaurantsOutputSchema = z.object({
-  restaurants: z.array(RestaurantSummaryOutputSchema),
+  restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
   capacityLimits: z.array(RestaurantSummaryOutputSchema),
   nextCursor: z.string().optional(),
 });
@@ -210,12 +222,24 @@ export const CheckAvailabilityOutputSchema = z.object({
       }),
     )
     .optional(),
-  conflictingHoldId: OutputUuidSchema.optional(),
-  conflictingReservationId: OutputUuidSchema.optional(),
+  conflictingHoldId: OutputUuidSchema.optional().describe(
+    'Compatibility field; the adapter does not return internal hold identifiers.',
+  ),
+  conflictingReservationId: OutputUuidSchema.optional().describe(
+    'Compatibility field; the adapter does not return internal reservation identifiers.',
+  ),
   reason: z
     .enum(['hold_active', 'reservation_confirmed', 'party_size_exceeds_capacity', 'unknown'])
     .optional(),
   maxOnlinePartySize: z.number().int().optional(),
+  decision: z.enum(['available', 'unavailable', 'capacity_exceeded']),
+  recommendedAction: z.enum([
+    'create_hold',
+    'request_reserve_scope',
+    'choose_alternative_slot',
+    'reduce_party_size',
+    'choose_another_slot',
+  ]),
 });
 
 export const CreateQuoteOutputSchema = z.object({
