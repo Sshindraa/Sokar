@@ -9,6 +9,7 @@ import {
  * acceptent toujours un champ `timezone` explicite pour les autres zones.
  */
 export const DEFAULT_MCP_TIMEZONE = DEFAULT_RESTAURANT_TIMEZONE;
+export const DEFAULT_MCP_SEARCH_DURATION_MINUTES = 120;
 
 /**
  * ISO 8601 avec ou sans offset :
@@ -170,7 +171,8 @@ export function parseMcpDateTime(value: string, timezone = DEFAULT_MCP_TIMEZONE)
 
 export function parseMcpDateRange(args: {
   start: string;
-  end: string;
+  end?: string;
+  defaultDurationMinutes?: number;
   timezone?: string;
   defaultTimezone?: string;
 }):
@@ -186,7 +188,12 @@ export function parseMcpDateRange(args: {
   }
 
   const start = parseMcpDateTime(args.start, timezone);
-  const end = parseMcpDateTime(args.end, timezone);
+  const end =
+    args.end !== undefined
+      ? parseMcpDateTime(args.end, timezone)
+      : start && args.defaultDurationMinutes && args.defaultDurationMinutes > 0
+        ? new Date(start.getTime() + args.defaultDurationMinutes * 60_000)
+        : null;
   if (!start || !end) {
     return {
       ok: false,

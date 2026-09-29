@@ -156,7 +156,7 @@ Réponse:
   "result": {
     "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "2.1.1" },
+    "serverInfo": { "name": "sokar-mcp", "version": "2.2.0" },
     "instructions": "Consignes conversationnelles fournies par Sokar…"
   }
 }
@@ -205,6 +205,14 @@ brièvement dans la langue de la personne, par exemple : « C’est confirmé po
 personnes chez Chez Sokar, jeudi 1er octobre à 19 h. » Il ne montre ni UUID, ni
 `reused`, ni réponse JSON. En cas d’indisponibilité, il propose uniquement les
 créneaux alternatifs retournés.
+
+Quand la personne indique seulement une heure de début, l’assistant omet
+`slotEnd` et le serveur complète automatiquement une fenêtre de 120 minutes par
+défaut, sauf si une durée différente est connue ou précisée. `search_restaurants`
+teste le créneau exact. `searchOutcome` égal à
+`no_exact_slot_available` signifie qu’aucun résultat ne correspond à cette
+recherche; cela ne permet pas de conclure que le restaurant n’existe pas. Il faut
+proposer de chercher à une autre heure, jamais demander un UUID.
 
 Le serveur transmet ces règles dans `initialize.instructions` et dans les
 descriptions des outils. Ce sont des consignes au modèle, pas une contrainte
@@ -305,7 +313,8 @@ Contraintes:
 
 - `city`: string, 1 à 100 caractères
 - `partySize`: entier, 1 à 50
-- `slotStart`, `slotEnd`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `slotStart`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `slotEnd`: optionnel; même format que `slotStart`. S’il est omis, Sokar applique une durée de 120 minutes.
 - `timezone`: optionnel pour les valeurs locales (fuseau IANA, par ex. `Europe/Paris`) ; Europe/Paris est utilisé par défaut
 - `cuisineType`: optionnel, maximum 10 valeurs
 - `maxResults`: optionnel, entier 1 à 20, défaut 5
@@ -314,6 +323,7 @@ Réponse:
 
 ```json
 {
+  "searchOutcome": "available",
   "restaurants": [
     {
       "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
@@ -338,6 +348,11 @@ Réponse:
 Chaque résultat disponible reprend le créneau exact demandé. `capacityLimits`
 identifie séparément les restaurants opt-in dont la capacité en ligne est trop
 basse ; ces entrées ne sont pas présentées comme disponibles.
+
+`searchOutcome` vaut `available`, `capacity_exceeded` ou
+`no_exact_slot_available`. Une recherche exacte vide ne prouve pas qu’un
+restaurant nommé n’existe pas : elle ne trouve pas de correspondance pour la
+ville, le groupe et le créneau fournis.
 
 ### get_restaurant_details
 

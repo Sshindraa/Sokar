@@ -144,6 +144,8 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('langage courant');
       expect(body.result.instructions).toContain('ne demandez jamais');
       expect(body.result.instructions).toContain('idempotencyKey');
+      expect(body.result.instructions).toContain('120 minutes');
+      expect(body.result.instructions).toContain('no_exact_slot_available');
       expect(body.result.instructions).toContain('Après une réussite');
     });
 
@@ -268,6 +270,13 @@ describe('MCP server', () => {
       );
       expect(createReservation.description).toContain('Générez et réutilisez vous-même');
       expect(createReservation.description).toContain('sans exposer reused');
+
+      const searchRestaurants = body.result.tools.find(
+        (tool: { name: string }) => tool.name === 'search_restaurants',
+      );
+      expect(searchRestaurants.description).toContain('omettez slotEnd');
+      expect(searchRestaurants.description).toContain('Ne demandez jamais de restaurantId');
+      expect(searchRestaurants.inputSchema.required).not.toContain('slotEnd');
     });
   });
 
