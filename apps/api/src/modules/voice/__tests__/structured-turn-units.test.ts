@@ -10,6 +10,7 @@ import {
   bookingKey,
   createStructuredTurnState,
   parseStreamedDraft,
+  outsideOpeningHoursFact,
   requestedSlotConflict,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
@@ -204,5 +205,33 @@ describe('créneau demandé et disponibilités lues', () => {
     // Tant que l'objet n'est pas fermé, rien n'est lisible.
     expect(parseStreamedDraft('{"turnComplete":true,"draft":{"date":"2026-09-30","ti')).toBeNull();
     expect(parseStreamedDraft('')).toBeNull();
+  });
+});
+
+describe('outsideOpeningHoursFact', () => {
+  const hours = {
+    tue: { open: '12:00', close: '14:30' },
+    sat: { open: '12:00', close: '23:00' },
+    fri: { open: '18:00', close: '02:00' },
+  };
+  // 2026-10-06 est un mardi, 2026-10-10 un samedi, 2026-10-09 un vendredi, 2026-10-05 un lundi.
+  it('donne le fait quand l’heure sort du service d’un jour ouvert', () => {
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '20:00' })).toContain(
+      'en dehors des horaires du mardi (12:00–14:30)',
+    );
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '11:00' })).not.toBeNull();
+  });
+
+  it('reste muet quand tout est compatible ou inconnu', () => {
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '12:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-10', time: '21:00' })).toBeNull();
+    // Jour fermé : le calendrier donné au modèle le dit déjà.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-05', time: '20:00' })).toBeNull();
+    // Service de nuit (fermeture après minuit) : non tranché ici.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-09', time: '23:30' })).toBeNull();
+    expect(outsideOpeningHoursFact(null, { date: '2026-10-06', time: '20:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '', time: '20:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '' })).toBeNull();
   });
 });

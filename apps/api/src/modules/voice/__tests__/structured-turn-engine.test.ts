@@ -266,6 +266,71 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toContain('À quel nom ?');
   });
 
+  describe('heure hors horaires du jour (profil ouvert le midi seulement)', () => {
+    const LUNCH_ONLY = {
+      tue: { open: '12:00', close: '14:30' },
+      wed: { open: '12:00', close: '14:30' },
+      sat: { open: '12:00', close: '23:00' },
+    };
+    // Prochain mardi à partir de demain : jour ouvert 12 h–14 h 30 dans ce profil.
+    const NEXT_TUESDAY = (() => {
+      const date = new Date(`${TOMORROW}T00:00:00.000Z`);
+      while (date.getUTCDay() !== 2) date.setUTCDate(date.getUTCDate() + 1);
+      return date.toISOString().slice(0, 10);
+    })();
+    const draftAt = (time: string) => ({
+      date: NEXT_TUESDAY,
+      time,
+      partySize: 0,
+      customerName: '',
+    });
+    const secondPassContext = (mgr: CallSessionManager) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+
+    it('ne laisse pas accepter « mardi à 20 heures » : silence, fait réel donné au second passage', async () => {
+      const { session, mgr, outputs } = fixture();
+      (session as { openingHours?: unknown }).openingHours = LUNCH_ONLY;
+      outputs.push(
+        turn({
+          draft: draftAt('20:00'),
+          awaiting: 'partySize',
+          say: 'Mardi soir, ça tombe bien. Vous serez combien ?',
+        }),
+        turn({
+          draft: draftAt(''),
+          awaiting: 'time',
+          say: 'Le mardi, nous fermons à 14 h 30. Quelle heure vous conviendrait ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'mardi à 20 heures', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain('en dehors des horaires du mardi (12:00–14:30)');
+      expect(spoken().join(' ')).not.toContain('tombe bien');
+      expect(spoken().join(' ')).toContain('14 h 30');
+    });
+
+    it("laisse parler normalement quand l'heure est dans le service", async () => {
+      const { session, mgr, outputs } = fixture();
+      (session as { openingHours?: unknown }).openingHours = LUNCH_ONLY;
+      outputs.push(
+        turn({
+          draft: draftAt('13:00'),
+          awaiting: 'partySize',
+          say: 'Mardi à 13 heures. Vous serez combien ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'mardi à 13 heures', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toContain('Vous serez combien ?');
+    });
+  });
+
   describe('créneau exclu par les disponibilités lues (appel 1b3f85e9)', () => {
     const conflicting = { date: TOMORROW, time: '15:30', partySize: 5, customerName: '' };
     const day = (slots: string[]) => ({

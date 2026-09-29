@@ -3,6 +3,7 @@ import {
   STRUCTURED_TURN_SCHEMA_NAME,
 } from '../stream/structured-turn/schema';
 import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
+import { buildSystemPrompt } from '../prompts';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import type { BehaviorCase, BehaviorCasesFile } from './types';
 
@@ -42,12 +43,26 @@ export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): B
   state.draft = { date: '', time: '', partySize: 0, customerName: '', ...testCase.draft };
   state.lastAwaiting = (testCase.awaiting ?? 'open') as typeof state.lastAwaiting;
   state.reservationCreated = testCase.reservationCreated === true;
+  const profile = testCase.profile ? file.profiles?.[testCase.profile] : undefined;
+  if (testCase.profile && !profile) {
+    throw new Error(`Profil inconnu « ${testCase.profile} » (cas ${testCase.id})`);
+  }
   const messages = buildStructuredTurnMessages({
-    systemPrompt: SYSTEM_PROMPT,
+    // Avec un profil, la vraie consigne du restaurant (même constructeur qu'en appel).
+    systemPrompt: profile
+      ? buildSystemPrompt(
+          {
+            name: profile.name,
+            openingHours: profile.openingHours as never,
+            timezone: 'Europe/Paris',
+          },
+          new Date(`${file.today}T12:00:00Z`),
+        )
+      : SYSTEM_PROMPT,
     history: historyOf(testCase, file) as never,
     transcript: testCase.transcript,
     state,
-    openingHours: OPENING_HOURS,
+    openingHours: profile ? profile.openingHours : OPENING_HOURS,
     today: file.today,
     ...(testCase.dayPart ? { dayPart: testCase.dayPart } : {}),
     ...(testCase.actionResult ? { actionResult: testCase.actionResult } : {}),

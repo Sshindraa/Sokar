@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant.",
+  "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant. Les cas « midi-* » mesurent le modèle seul sur un second profil (Bouchon Lyonnais) ; l'heure hors service (« mardi à 20 heures ») est traitée par le code (outsideOpeningHoursFact), pas mesurée ici.",
   "today": "2026-09-29",
   "histories": {
     "opening": [
@@ -715,6 +715,93 @@
           "minRate": 0.8
         }
       ]
+    },
+    {
+      "id": "midi-jour-ferme",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "lundi soir",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "time",
+          "minRate": 0.75
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "partySize",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "midi-dimanche-ferme",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "dimanche midi",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "time",
+          "minRate": 0.75
+        }
+      ]
+    },
+    {
+      "id": "midi-samedi-soir-ouvert",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi (témoin : le samedi soir est ouvert, ne pas refuser à tort)",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "samedi à 20 heures",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.7
+        }
+      ]
     }
-  ]
+  ],
+  "profiles": {
+    "midi": {
+      "name": "Chez Sokar — Bouchon Lyonnais",
+      "openingHours": {
+        "tue": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "wed": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "thu": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "fri": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "sat": {
+          "open": "12:00",
+          "close": "23:00"
+        }
+      }
+    }
+  }
 }
