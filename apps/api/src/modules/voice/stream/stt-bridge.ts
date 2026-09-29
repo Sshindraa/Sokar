@@ -1621,6 +1621,32 @@ export function deepgramShortStallFinalizeMs(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(parsed) && parsed >= 300 && parsed <= fallback ? parsed : fallback;
 }
 
+/**
+ * Réponses courtes de confirmation (« oui c'est tout », « tout à fait »), seules ou
+ * précédées d'un oui/non. Appel b686b241 : « oui c'est tout » (trois mots) attendait
+ * 1,4 s la fin de tour, alors que la réponse à « C'est bon pour vous ? » est connue.
+ */
+const CONFIRMATION_REPLY =
+  /^(?:(?:oui|ouais|ouaip|non|bah oui|ah oui)\s+)?(?:tout à fait|c'est (?:tout|bon|ça|bien ça|exact|correct|parfait|très bien)|exactement|parfait|d'accord|ça marche|ça me va|correct|nickel|impeccable|absolument|voilà)$/u;
+
+/** Vrai si la partielle est une confirmation courte en réponse à une question de l'agent. */
+export function isShortConfirmationReply(
+  transcript: string,
+  history: Pick<CallSession, 'history'>['history'],
+): boolean {
+  const lastAgent = [...history].reverse().find((message) => message.role === 'assistant');
+  if (typeof lastAgent?.content !== 'string' || !lastAgent.content.trim().endsWith('?')) {
+    return false;
+  }
+  const normalized = transcript
+    .toLowerCase()
+    .replace(/’/g, "'")
+    .replace(/[.,!?;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return CONFIRMATION_REPLY.test(normalized);
+}
+
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -1662,7 +1688,9 @@ function clearDeepgramStallTimer(session: CallSession): void {
 function armDeepgramStallTimer(session: CallSession): void {
   clearDeepgramStallTimer(session);
   const words = session.sttDeepgramPartials?.lastWordCount ?? 0;
-  const short = words > 0 && words <= DEEPGRAM_SHORT_PARTIAL_MAX_WORDS;
+  const short =
+    (words > 0 && words <= DEEPGRAM_SHORT_PARTIAL_MAX_WORDS) ||
+    isShortConfirmationReply(session.sttDeepgramPartials?.lastText ?? '', session.history);
   const stallMs = short ? deepgramShortStallFinalizeMs() : deepgramStallFinalizeMs();
   const timer = setTimeout(() => {
     deepgramStallTimers.delete(session);

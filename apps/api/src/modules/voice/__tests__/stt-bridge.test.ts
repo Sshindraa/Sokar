@@ -27,6 +27,7 @@ import {
   isLikelyRepeatedNoiseTranscript,
   isPunctuationOnlyTranscript,
   deepgramShortStallFinalizeMs,
+  isShortConfirmationReply,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
@@ -803,6 +804,56 @@ describe('Deepgram final dispatch', () => {
     const ws = makeWsMock();
     session.sttWs = ws;
     handleNormalizedSttMessage(session, { type: 'partial', transcript: '4' });
+    vi.advanceTimersByTime(499);
+    expect(ws.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("reconnaît une confirmation courte seulement après une question de l'agent (appel b686b241)", () => {
+    const asked = [
+      {
+        role: 'assistant' as const,
+        content: 'Je confirme donc une table pour 4. C’est bon pour vous ?',
+      },
+    ];
+    for (const reply of [
+      'oui c’est tout',
+      "Oui, c'est bon.",
+      'tout à fait',
+      'oui exactement',
+      "c'est bien ça",
+    ]) {
+      expect(isShortConfirmationReply(reply, asked)).toBe(true);
+    }
+    // Un complément après le oui : la phrase n'est pas finie.
+    for (const reply of [
+      'oui c’est bon pour 19 heures',
+      'oui mais',
+      'non plutôt samedi',
+      'demain du coup',
+    ]) {
+      expect(isShortConfirmationReply(reply, asked)).toBe(false);
+    }
+    // Pas de question de l'agent : pas de raccourci.
+    expect(
+      isShortConfirmationReply('oui c’est tout', [
+        { role: 'assistant' as const, content: 'C’est noté.' },
+      ]),
+    ).toBe(false);
+    expect(isShortConfirmationReply('oui c’est tout', [])).toBe(false);
+  });
+
+  it('conclut vite une confirmation de trois mots après une question fermée', () => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
+    const { session } = deepgramSession();
+    session.history.push({ role: 'assistant', content: 'C’est bon pour vous ?' });
+    const ws = makeWsMock();
+    session.sttWs = ws;
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui c’est tout' });
     vi.advanceTimersByTime(499);
     expect(ws.send).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
