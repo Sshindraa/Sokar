@@ -17,10 +17,11 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : décider d’exposer `prompts`/`resources` si le produit en a besoin. Les `outputSchema` par outil et le protocole `2025-11-25` sont en place.
-- [ ] MCP : réconcilier `mcp:sandbox reset` avec l’audit append-only ; capturer un consentement OAuth frais et les messages bruts `initialize` / `tools/list` après le correctif ChatGPT si les clients les exposent.
+- [ ] MCP : fusionner puis déployer le reset compatible avec l’audit, nettoyer le run existant du staging et rejouer les écritures après déploiement. Claude staging est reconnecté avec la portée multi-restaurants approuvée par l’utilisateur ; seuls les tests Chez Sokar sont autorisés pour ce run. Les clients n’exposent pas `initialize`/`tools/list` bruts.
 
 ## Décisions récentes
+
+2026-09-29 — [MCP, UX] **Prompts et resources différés** — Les parcours ChatGPT/Claude déjà observés utilisent directement recherche, disponibilité et réservations ; aucune demande produit ne justifie une surface `prompts`/`resources` supplémentaire. Réévaluer lorsqu’un parcours récurrent nécessite un workflow guidé ou un contenu restaurant statique dans le client.
 
 2026-09-29 — [MCP, contrats] **Retries sûrs et résultats validés à l'exécution** — Une modification répétée avec les mêmes valeurs devient un no-op (`changed: false`) ; une annulation déjà réussie renvoie `cancelled: true` sans rejouer les effets. Les erreurs exposent aussi un code/message stable dans `_meta["com.sokar/error"]`, en conservant le texte existant. Sokar vérifie les sorties après redaction contre les schémas publiés. `create_quote` est conservé sans changement de contrat comme référence informative temporaire ; son `quoteId` ne réserve pas la capacité et ne peut pas finaliser une réservation. `create_hold` reste l'action qui garde un créneau.
 
