@@ -18,12 +18,17 @@ type Options = {
 
 type SandboxCounts = {
   reservations: number;
+  anonymizedReservations: number;
   holds: number;
   waitingListEntries: number;
   customers: number;
+  customersReferencedOutsideRun: number;
   idempotencyRecords: number;
   auditLogs: number;
+  consentRecords: number;
 };
+
+const ANONYMIZED_CUSTOMER_NAME = 'Réservation de test anonymisée';
 
 function fail(message: string): never {
   throw new Error(message);
@@ -80,8 +85,12 @@ function parseOptions(argv: string[]): Options {
   };
 }
 
-function markerFor(runId: string): string {
+export function markerFor(runId: string): string {
   return `MCP-SANDBOX:${runId}`;
+}
+
+function purgedMarkerFor(runId: string): string {
+  return `${markerFor(runId)}:PURGED`;
 }
 
 function assertSandboxDatabase(): void {
@@ -131,7 +140,7 @@ async function loadDemoRestaurant(prisma: PrismaClient) {
   return restaurant;
 }
 
-async function readCounts(
+export async function readCounts(
   prisma: PrismaClient,
   restaurantId: string,
   runId: string,
@@ -146,11 +155,19 @@ async function readCounts(
       specialRequests: { contains: marker },
       createdAt: { gte: startedAt },
     },
-    select: { id: true },
+    select: { id: true, specialRequests: true },
   });
   const reservationIds = reservations.map((reservation) => reservation.id);
 
-  const [holds, waitingListEntries, customers, idempotencyRecords, auditLogs] = await Promise.all([
+  const [
+    holds,
+    waitingListEntries,
+    customers,
+    customersReferencedOutsideRun,
+    idempotencyRecords,
+    auditLogs,
+    consentRecords,
+  ] = await Promise.all([
     prisma.agenticHold.count({
       where: {
         restaurantId,
@@ -173,6 +190,20 @@ async function readCounts(
         createdAt: { gte: startedAt },
       },
     }),
+    prisma.customer.count({
+      where: {
+        restaurantId,
+        phone: customerPhone,
+        createdAt: { gte: startedAt },
+        reservations: {
+          some: {
+            NOT: {
+              id: { in: reservationIds.length > 0 ? reservationIds : ['__no_run_reservations__'] },
+            },
+          },
+        },
+      },
+    }),
     reservationIds.length
       ? prisma.idempotencyRecord.count({
           where: { reservationId: { in: reservationIds } },
@@ -183,19 +214,29 @@ async function readCounts(
           where: { reservationId: { in: reservationIds } },
         })
       : Promise.resolve(0),
+    reservationIds.length
+      ? prisma.customerConsent.count({
+          where: { reservationId: { in: reservationIds } },
+        })
+      : Promise.resolve(0),
   ]);
 
   return {
     reservations: reservations.length,
+    anonymizedReservations: reservations.filter((reservation) =>
+      reservation.specialRequests?.includes(purgedMarkerFor(runId)),
+    ).length,
     holds,
     waitingListEntries,
     customers,
+    customersReferencedOutsideRun,
     idempotencyRecords,
     auditLogs,
+    consentRecords,
   };
 }
 
-async function resetRun(
+export async function resetRun(
   prisma: PrismaClient,
   restaurantId: string,
   runId: string,
@@ -203,18 +244,32 @@ async function resetRun(
   customerPhone: string,
 ): Promise<void> {
   const marker = markerFor(runId);
-  const reservations = await prisma.reservation.findMany({
-    where: {
-      restaurantId,
-      channel: 'MCP',
-      specialRequests: { contains: marker },
-      createdAt: { gte: startedAt },
-    },
-    select: { id: true },
-  });
-  const reservationIds = reservations.map((reservation) => reservation.id);
-
   await prisma.$transaction(async (tx) => {
+    const reservations = await tx.reservation.findMany({
+      where: {
+        restaurantId,
+        channel: 'MCP',
+        specialRequests: { contains: marker },
+        createdAt: { gte: startedAt },
+      },
+      select: {
+        id: true,
+        state: true,
+        specialRequests: true,
+      },
+    });
+    const reservationIds = reservations.map((reservation) => reservation.id);
+    const reservationIdSet = new Set(reservationIds);
+    const existingAuditRows = reservationIds.length
+      ? await tx.reservationAuditLog.findMany({
+          where: { reservationId: { in: reservationIds } },
+          select: { reservationId: true },
+        })
+      : [];
+    const auditedReservationIds = new Set(
+      existingAuditRows.flatMap((row) => (row.reservationId ? [row.reservationId] : [])),
+    );
+
     await tx.waitingListEntry.deleteMany({
       where: {
         restaurantId,
@@ -224,21 +279,63 @@ async function resetRun(
       },
     });
     if (reservationIds.length > 0) {
-      await tx.reservationAuditLog.deleteMany({
-        where: { reservationId: { in: reservationIds } },
-      });
       await tx.idempotencyRecord.deleteMany({
         where: { reservationId: { in: reservationIds } },
       });
     }
-    await tx.reservation.deleteMany({
-      where: {
-        restaurantId,
-        channel: 'MCP',
-        specialRequests: { contains: marker },
-        createdAt: { gte: startedAt },
-      },
-    });
+
+    for (const reservation of reservations) {
+      if (!auditedReservationIds.has(reservation.id)) {
+        await tx.reservation.delete({ where: { id: reservation.id } });
+        continue;
+      }
+
+      const wasPurged = reservation.specialRequests?.includes(purgedMarkerFor(runId)) ?? false;
+      const isCapacityBlocking = ['PENDING', 'CONFIRMED', 'SEATED'].includes(reservation.state);
+      if (isCapacityBlocking) {
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_cancelled',
+            reservationId: reservation.id,
+            actor: 'system:mcp-sandbox',
+            fromState: reservation.state,
+            toState: 'CANCELLED',
+            correlationId: runId,
+            metadata: { reason: 'sandbox_reset', runId },
+          },
+        });
+      }
+
+      if (!wasPurged) {
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_anonymized',
+            reservationId: reservation.id,
+            actor: 'system:mcp-sandbox',
+            fromState: isCapacityBlocking ? 'CANCELLED' : reservation.state,
+            toState: isCapacityBlocking ? 'CANCELLED' : reservation.state,
+            correlationId: runId,
+            metadata: { reason: 'sandbox_reset', runId },
+          },
+        });
+      }
+
+      await tx.reservation.update({
+        where: { id: reservation.id },
+        data: {
+          ...(isCapacityBlocking ? { status: 'CANCELLED', state: 'CANCELLED' } : {}),
+          customerName: ANONYMIZED_CUSTOMER_NAME,
+          customerPhone: null,
+          customerEmail: null,
+          customerId: null,
+          specialRequests: purgedMarkerFor(runId),
+          idempotencyScope: null,
+          idempotencyKey: null,
+          idempotencyPayloadHash: null,
+        },
+      });
+    }
+
     await tx.agenticHold.deleteMany({
       where: {
         restaurantId,
@@ -246,13 +343,29 @@ async function resetRun(
         createdAt: { gte: startedAt },
       },
     });
-    await tx.customer.deleteMany({
+    const runCustomers = await tx.customer.findMany({
       where: {
         restaurantId,
         phone: customerPhone,
         createdAt: { gte: startedAt },
       },
+      select: { id: true },
     });
+    const runCustomerIds = runCustomers.map((customer) => customer.id);
+    const externalReservationCount =
+      runCustomerIds.length > 0
+        ? await tx.reservation.count({
+            where: {
+              customerId: { in: runCustomerIds },
+              ...(reservationIdSet.size > 0 ? { id: { notIn: [...reservationIdSet] } } : {}),
+            },
+          })
+        : 0;
+    if (externalReservationCount === 0) {
+      await tx.customer.deleteMany({
+        where: { id: { in: runCustomerIds } },
+      });
+    }
   });
 }
 
@@ -318,7 +431,8 @@ async function main() {
             restaurantId: restaurant.id,
             customerPhone: options.customerPhone,
             counts,
-            nextStep: 'Add --apply to delete only these sandbox artifacts.',
+            nextStep:
+              'Add --apply to remove operational artifacts; audited reservations and consent proofs are retained.',
           },
           null,
           2,
@@ -343,7 +457,7 @@ async function main() {
           startedAt: startedAt.toISOString(),
           restaurantId: restaurant.id,
           customerPhone: options.customerPhone,
-          deletedBeforeReset: counts,
+          beforeReset: counts,
           remaining,
         },
         null,
@@ -355,7 +469,11 @@ async function main() {
   }
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`[mcp-sandbox] ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error: unknown) => {
+    process.stderr.write(
+      `[mcp-sandbox] ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
+}

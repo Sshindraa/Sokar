@@ -67,15 +67,8 @@ pnpm --filter @sokar/database mcp:sandbox status \
 
 ## Purger le run
 
-> **Blocage vérifié le 29 septembre 2026 :** sur un run qui a créé des réservations MCP,
-> `reset --apply` tente de supprimer les journaux de `reservation_audit_log`. Le trigger
-> PostgreSQL append-only refuse cette suppression et annule toute la transaction. Ne
-> désactivez pas ce trigger pour forcer le nettoyage. Les réservations du run de matrice
-> sont déjà annulées et leurs holds consommés ; les traces restent dans la base.
-> Le script de reset doit être réconcilié avec cette règle avant de promettre une purge
-> physique complète.
-
-La purge est d’abord simulée :
+La purge est d’abord simulée. Le résultat sépare les réservations anonymisées, les
+journaux d’audit et les consentements conservés des artefacts opérationnels à retirer :
 
 ```zsh
 pnpm --filter @sokar/database mcp:sandbox reset \
@@ -92,14 +85,26 @@ pnpm --filter @sokar/database mcp:sandbox reset \
   --apply
 ```
 
-Le reset est conçu pour cibler les réservations MCP marquées, les holds MCP
-créés pendant le run, les entrées de liste d’attente du téléphone de test, le
-client de test créé pendant le run et les journaux/idempotence associés. En
-pratique, la suppression des journaux d’audit append-only échoue lorsque le run
-a généré des événements et fait annuler toute la transaction. Une sortie de
-simulation positive ne garantit donc pas que `--apply` aboutira. La commande
-refuse aussi une base de production dont le nom ne contient pas `staging`,
-`test`, `dev` ou `local`.
+Le reset supprime les holds, entrées de liste d’attente et clés d’idempotence du
+run. Une réservation sans journal d’audit est supprimée. Une réservation déjà
+auditée reste comme tombstone : si elle bloque encore un créneau, le reset
+l’annule avec un nouvel événement d’audit, puis retire son nom, téléphone, email,
+lien client, texte libre et clés d’idempotence. Son marqueur devient
+`MCP-SANDBOX:<run-id>:PURGED`, ce qui rend le reset répétable sans ajouter des
+événements d’anonymisation en double.
+
+Les événements `reservation_audit_log` restent intacts et append-only. Les lignes
+`customer_consents` sont aussi conservées comme preuves de consentement ; elles
+ne contiennent que le hash du sujet, les choix, la version de politique et des
+horodatages. Le compteur `customersReferencedOutsideRun` empêche de supprimer un
+client encore rattaché à une réservation d’un autre run. Après reset, des
+réservations anonymisées, journaux ou consentements peuvent donc rester visibles
+dans les compteurs : ce sont les preuves conservées, pas des données de test
+opérationnelles encore utilisables.
+
+Ne désactivez pas le trigger append-only pour forcer leur suppression. La
+commande refuse aussi une base de production dont le nom ne contient pas
+`staging`, `test`, `dev` ou `local`.
 
 ## Matrice de compatibilité
 

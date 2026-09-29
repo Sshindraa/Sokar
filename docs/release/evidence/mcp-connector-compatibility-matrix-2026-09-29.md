@@ -1,7 +1,7 @@
 # Matrice de compatibilité MCP — 29 septembre 2026
 
-> **Statut au 29 septembre 2026 :** parcours complets avant correctif, puis retests MCP en lecture seule après déploiement OAuth dans ChatGPT et Claude.
-> Les deux réservations de test sont annulées. La purge physique complète a échoué car la base protège ses journaux d’audit append-only ; la transaction a été annulée et les compteurs sont inchangés.
+> **Statut au 29 septembre 2026 :** parcours complets dans les deux clients avant le correctif OAuth ; consentements frais et essais MCP en lecture seule réussis dans ChatGPT et Claude après le correctif. Le nouveau consentement Claude donne accès aux restaurants staging ayant activé MCP ; l’utilisateur l’a accepté pour le staging et les essais ont été limités à Chez Sokar.
+> Les réservations du run existant sont annulées. La purge physique complète avait échoué car la base protège ses journaux d’audit append-only ; le correctif de reset est en cours de revue avant son déploiement staging et le nettoyage du run.
 > Les connecteurs de production existants n’ont servi à aucune mutation.
 
 ## Cible et isolation
@@ -46,30 +46,44 @@ Le correctif ajoute :
 
 DCR reste le mode d’enregistrement pris en charge. CIMD n’est pas implémenté et `client_id_metadata_document_supported` n’est donc pas annoncé.
 
-| Vérification après déploiement     | Résultat observé                                                                                                            |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| CI de `main`                       | Succès ; tous les jobs requis sont verts                                                                                    |
-| Déploiement staging                | Succès ; smoke tests et E2E staging verts                                                                                   |
-| Déploiement production             | Succès ; smoke tests verts, `GET /health` renvoie 200                                                                       |
-| Métadonnées ressource protégée     | `resource=https://api-staging.sokar.tech`, serveur OAuth staging et scopes `mcp:read`, `mcp:reserve`, `mcp:cancel`          |
-| Métadonnées serveur d’autorisation | `authorization_response_iss_parameter_supported: true`; CIMD non annoncé                                                    |
-| Défi sans jeton sur `/mcp`         | HTTP 401 avec `WWW-Authenticate` pointant vers `/.well-known/oauth-protected-resource`                                      |
-| Redirections avec `iss`            | Couvertes par les tests d’intégration de la PR pour succès et refus ; pas capturées dans une nouvelle autorisation manuelle |
+| Vérification après déploiement     | Résultat observé                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI de `main`                       | Succès ; tous les jobs requis sont verts                                                                                                       |
+| Déploiement staging                | Succès ; smoke tests et E2E staging verts                                                                                                      |
+| Déploiement production             | Succès ; smoke tests verts, `GET /health` renvoie 200                                                                                          |
+| Métadonnées ressource protégée     | `resource=https://api-staging.sokar.tech`, serveur OAuth staging et scopes `mcp:read`, `mcp:reserve`, `mcp:cancel`                             |
+| Métadonnées serveur d’autorisation | `authorization_response_iss_parameter_supported: true`; CIMD non annoncé                                                                       |
+| Défi sans jeton sur `/mcp`         | HTTP 401 avec `WWW-Authenticate` pointant vers `/.well-known/oauth-protected-resource`                                                         |
+| Redirections avec `iss`            | Couvertes par les tests d’intégration de la PR ; l’autorisation ChatGPT fraîche a abouti, mais l’interface a masqué les paramètres du callback |
 
 ### Retest client en lecture seule après le correctif OAuth #294
 
 Le 29 septembre, les connecteurs staging déjà installés ont été réutilisés dans les deux clients. Aucun écran de consentement neuf n’a été accepté pendant ce retest et aucun outil d’écriture n’a été appelé.
 
-| Vérification                                                           | ChatGPT                                                                                             | Claude                                                                                                                        |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Recherche de Chez Sokar                                                | Réussie ; nom, slug `chez-sokar-demo`, adresse à Lyon, cuisine, gamme de prix et horaires retournés | Réussie après précision de la ville Lyon ; nom, slug et ID retournés. L’adresse ne fait pas partie de la réponse de recherche |
-| Disponibilité — 2 personnes, 1 octobre 2026, 19:30–21:00, Europe/Paris | `available: true`, aucune alternative                                                               | `available: true`, aucune alternative                                                                                         |
-| Écriture après correctif                                               | Aucune réservation ni hold créé                                                                     | Aucune réservation ni hold créé                                                                                               |
-| OAuth frais après correctif                                            | Non retesté : compte staging existant réutilisé                                                     | Non retesté : connecteur staging existant réutilisé                                                                           |
+| Vérification                                                           | ChatGPT                                                                                                      | Claude                                                                                                                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Recherche de Chez Sokar                                                | Réussie ; nom, slug `chez-sokar-demo`, adresse à Lyon, cuisine, gamme de prix et horaires retournés          | Réussie après précision de la ville Lyon ; nom, slug et ID retournés. L’adresse ne fait pas partie de la réponse de recherche |
+| Disponibilité — 2 personnes, 1 octobre 2026, 19:30–21:00, Europe/Paris | `available: true`, aucune alternative                                                                        | `available: true`, aucune alternative                                                                                         |
+| Écriture après correctif                                               | Aucune réservation ni hold créé pendant ce retest en lecture seule                                           | Aucune réservation ni hold créé                                                                                               |
+| OAuth frais après correctif                                            | Réussi le 29 septembre : nouveau compte staging ; écran limité à Chez Sokar, `resource` et 3 scopes visibles | Réussi le 29 septembre après accord utilisateur ; l’écran couvre les restaurants staging ayant activé MCP                     |
 
 Claude a d’abord interprété la recherche sans ville comme Paris, puis a proposé une recherche à Monaco. Cette deuxième recherche a été refusée. La requête a été relancée explicitement sur Lyon et a retourné Chez Sokar. Cela montre qu’il faut préciser la ville dans les essais de recherche.
 
-Les interfaces des clients ne montrent toujours pas le `protocolVersion` d’`initialize` ni la réponse JSON-RPC brute de `tools/list`. Les appels réussis confirment que les outils sont utilisables après déploiement, mais ne prouvent pas les versions négociées ni le contenu brut des schémas `securitySchemes`. Le nouveau parcours d’autorisation, ses écrans et les paramètres `iss` restent à capturer manuellement si une nouvelle connexion est nécessaire.
+Les interfaces des clients ne montrent toujours pas le `protocolVersion` d’`initialize` ni la réponse JSON-RPC brute de `tools/list`. Les appels réussis confirment que les outils sont utilisables après déploiement, mais ne prouvent pas les versions négociées ni le contenu brut des schémas `securitySchemes`. Le consentement ChatGPT frais a été capturé dans cette session ; les paramètres `iss` du callback restent non observables dans l’interface.
+
+#### ChatGPT avec un nouveau consentement staging
+
+Le 29 septembre, une deuxième connexion `Sokar Staging` a été ajoutée sans retirer la connexion existante. L’écran affiche Chez Sokar, `resource=https://api-staging.sokar.tech`, les scopes `mcp:read`, `mcp:reserve`, `mcp:cancel` et PKCE S256. Le retour vers `chatgpt.com/connector/oauth_callback` a abouti. L’interface ne laisse pas voir les paramètres de redirection, donc `iss` n’a pas pu être relevé manuellement.
+
+Avec cette nouvelle connexion, la recherche à Lyon a retourné Chez Sokar, 12 rue de la République, cuisine bistrot/française, prix `€€`, pour 2 personnes le 30 septembre de 19 h à 21 h. La recherche à 21 h–23 h le soir même n’a retourné aucun résultat. Aucun hold ni réservation n’a été créé pendant ce retest.
+
+Un appel séparé de disponibilité pour Chez Sokar, 2 personnes, le 30 septembre à 19 h a répondu `available=true` pour 19 h–21 h. ChatGPT a confirmé qu’aucun hold ni réservation n’avait été créé.
+
+#### Claude avec un nouveau consentement staging
+
+Le 29 septembre, Sokar Staging a été reconnecté depuis Claude Desktop. Après validation explicite de l’utilisateur, l’écran a été accepté. Il affiche `resource=https://api-staging.sokar.tech`, les scopes `mcp:read`, `mcp:reserve`, `mcp:cancel`, PKCE S256 et le retour `claude.ai/api/mcp/auth_callback`. La portée annoncée est « restaurants qui ont activé MCP » sur le staging, donc plus large que Chez Sokar. Seul Chez Sokar a été utilisé dans les essais ci-dessous. Claude demande une approbation ponctuelle par outil ; seules les approbations nécessaires à ces lectures ont été accordées.
+
+Avec cette nouvelle liaison, `search_restaurants` a trouvé Chez Sokar à Lyon pour 2 personnes le 30 septembre, 19 h–21 h : 12 rue de la République, cuisine bistrot/française, gamme de prix 2. `check_availability` a répondu disponible pour la plage exacte, sans alternative, avec `create_hold` comme action recommandée. Aucun hold ni réservation n’a été créé.
 
 ### Retest des sorties MCP après la PR #299
 
@@ -124,7 +138,7 @@ Les deux réservations sont déjà CANCELLED et les deux holds ont servi à cré
 
 ## Captures et limites de preuve
 
-- Les écrans de consentement OAuth ont été observés pendant les deux liaisons, avec le périmètre Chez Sokar, les scopes et le retour réussi vers chaque client.
+- Les nouveaux écrans de consentement ChatGPT et Claude après le correctif ont été capturés ; Claude affiche la portée multi-restaurants staging acceptée par l’utilisateur.
 - Les captures d’écran et retours d’outils sont visibles dans le fil de cette session, mais les images n’ont pas été exportées comme fichiers dans ce dossier.
 - Les clients ne montrent pas les messages JSON-RPC bruts d’initialisation MCP, la version négociée, ni le contenu brut de tools/list. Les versions de protocole sont donc indiquées comme non observables, pas comme vérifiées.
 - Les identifiants OAuth, codes de retour, challenge et jetons ne sont pas consignés dans cette matrice.
