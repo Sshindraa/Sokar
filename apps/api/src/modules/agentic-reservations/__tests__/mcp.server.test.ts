@@ -153,7 +153,15 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('utilisez « vous », jamais « tu »');
       expect(body.result.instructions).toContain('sans ajouter « chez » devant le nom');
       expect(body.result.instructions).toContain('ne testez pas les horaires voisins');
-      expect(body.result.instructions).toContain('ne l’invitez pas à réserver');
+      expect(body.result.instructions).toContain(
+        'ne commentez pas le processus ou l’absence de réservation',
+      );
+      expect(body.result.instructions).toContain(
+        'n’employez aucun terme technique comme hold ou blocage',
+      );
+      expect(body.result.instructions).not.toContain(
+        'confirmez simplement qu’aucune réservation n’a été faite',
+      );
       expect(body.result.instructions).toContain(
         'reprenez exactement le texte lisible de l’outil comme réponse complète',
       );
