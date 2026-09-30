@@ -17,9 +17,10 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : PR #314, #324, #325, #326, #327 et #328 fusionnées. La recherche MCP renvoie une phrase correcte, mais après #328 ChatGPT ajoute encore 19 h–21 h et Claude écrit « chez Chez Sokar » et propose de réserver. Les réponses finales sont générées par les clients; les consignes seules ne les contrôlent pas. Branche `codex/mcp-conversational-availability-tool` : ajout d’`answer_availability`, outil additif en lecture seule dont la réponse structurée contient uniquement le message humain. Déployer et retester la sélection de cet outil sur staging; cette réduction des données aide sans garantir le texte final. Aucun appel MCP de production. initialize/tools/list et protocolVersion restent non visibles dans les clients.
 
 ## Décisions récentes
+
+2026-09-30 — [MCP, UX] Pour une question simple de disponibilité, utiliser `answer_availability`, dont la sortie est limitée à `{ message }`. Après l’ajout d’un outil MCP, actualiser la liste côté client si elle est en cache : Claude a gardé l’ancien outil jusqu’à « Refresh tools list ». Le client reste responsable de sa formulation finale.
 
 2026-09-29 — [MCP, UX] **Prompts et resources différés** — Les parcours ChatGPT/Claude déjà observés utilisent directement recherche, disponibilité et réservations ; aucune demande produit ne justifie une surface `prompts`/`resources` supplémentaire. Réévaluer lorsqu’un parcours récurrent nécessite un workflow guidé ou un contenu restaurant statique dans le client.
 

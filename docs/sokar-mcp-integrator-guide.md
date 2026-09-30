@@ -315,6 +315,12 @@ Utilisez cet outil pour une question comme « Vous auriez une table pour deux de
 restaurant Chez Sokar à Lyon ? ». Utilisez `search_restaurants` si la personne demande une
 comparaison détaillée ou si le parcours doit réutiliser des données structurées pour une réservation.
 
+Certains clients MCP gardent en cache la liste des outils. Après un déploiement qui ajoute un outil,
+actualisez la liste du connecteur puis ouvrez une nouvelle conversation. Dans Claude, ouvrez
+**Settings → Customize → Connectors → Sokar Staging → More options → Refresh tools list**. Sans
+cette actualisation, Claude peut continuer à appeler `search_restaurants` et ne pas proposer
+`answer_availability`.
+
 ### search_restaurants
 
 Recherche les restaurants opt-in exposés MCP.
