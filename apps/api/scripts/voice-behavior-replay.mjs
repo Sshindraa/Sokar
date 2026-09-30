@@ -34,25 +34,36 @@ const model = env.VOICE_LLM_MODEL || 'qwen-3.8-27b';
 const baseUrl = env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
 const CONCURRENCY = 6;
 
+const MAX_ATTEMPTS = 6;
+
+/** Cerebras limite les tokens par minute : un 429 se rattrape en attendant, il n'est pas un verdict. */
 async function sample(request) {
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: request.messages,
-        response_format: request.format,
-        temperature: 0.3,
-        max_tokens: 400,
-        reasoning_effort: 'none',
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    return JSON.parse((await response.json()).choices[0].message.content);
-  } catch {
-    return null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: request.messages,
+          response_format: request.format,
+          temperature: 0.3,
+          max_tokens: 400,
+          reasoning_effort: 'none',
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.status === 429 && attempt < MAX_ATTEMPTS) {
+        const waitS = Number(response.headers.get('retry-after')) || 5 * attempt;
+        await new Promise((resolve) => setTimeout(resolve, waitS * 1000));
+        continue;
+      }
+      return JSON.parse((await response.json()).choices[0].message.content);
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 const jobs = requests.flatMap((request) => Array.from({ length: request.samples }, () => request));

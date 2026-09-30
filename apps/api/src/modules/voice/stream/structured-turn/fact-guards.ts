@@ -150,6 +150,82 @@ export function applyProposedDraft(
   return { draft, rejected, changed };
 }
 
+const SPELLING_AWAITING: ReadonlySet<StructuredTurnOutput['awaiting']> = new Set([
+  'customerName',
+  'customerNameConfirmation',
+  'confirmation',
+]);
+
+const stripToLetters = (text: string): string =>
+  text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}]/gu, '')
+    .toUpperCase();
+
+/**
+ * Dernière suite de lettres épelées d'une phrase : des jetons d'une lettre, un chiffre
+ * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Vide sans trois lettres.
+ */
+export function spelledLettersOf(transcript: string): string {
+  const tokens = transcript
+    .toLowerCase()
+    .split(/[\s,.;:!?-]+/u)
+    .filter(Boolean);
+  let run = '';
+  let last = '';
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const next = tokens[index + 1];
+    if (/^\p{L}$/u.test(token)) {
+      run += token;
+    } else if (/^[2-9]$/.test(token) && next && /^\p{L}$/u.test(next)) {
+      run += next.repeat(Number(token));
+      index++;
+    } else {
+      if (run.length >= 3) last = run;
+      run = '';
+    }
+  }
+  if (run.length >= 3) last = run;
+  return stripToLetters(last);
+}
+
+/** `needle` est une suite de lettres prise dans `haystack`, dans l'ordre. */
+function isSubsequence(needle: string, haystack: string): boolean {
+  let position = 0;
+  for (const letter of haystack) if (letter === needle[position]) position++;
+  return position === needle.length;
+}
+
+/**
+ * Le nom du brouillon doit dire les lettres que l'appelant vient d'épeler. Le modèle lit
+ * parfois les bonnes lettres à voix haute mais écrit un nom auquel il en manque (« hoët h o
+ * u e t » → HOËT, « a 2 k i f » → AKIF) : le récapitulatif et la réservation lisent ce champ.
+ * On ne corrige que ce cas précis, un nom auquel il manque une ou deux des lettres épelées.
+ * Un nom plus long que l'épellation (morceaux répartis sur plusieurs tours) ou qui en est la
+ * fin (faux départ suivi de la bonne épellation) reste celui du modèle.
+ */
+export function reconcileSpelledName(
+  draft: StructuredTurnDraft,
+  transcript: string,
+  previousAwaiting: StructuredTurnOutput['awaiting'],
+): StructuredTurnDraft {
+  if (!SPELLING_AWAITING.has(previousAwaiting)) return draft;
+  const spelled = spelledLettersOf(transcript);
+  const named = stripToLetters(draft.customerName);
+  if (spelled.length < 3 || named.length < 2 || named === spelled) return draft;
+  const missing = spelled.length - named.length;
+  if (missing < 1 || missing > 2) return draft;
+  if (spelled.endsWith(named) || !isSubsequence(named, spelled)) return draft;
+  const original = draft.customerName.trim();
+  const upper = original === original.toLocaleUpperCase('fr-FR');
+  const customerName = upper
+    ? spelled
+    : spelled.charAt(0) + spelled.slice(1).toLocaleLowerCase('fr-FR');
+  return { ...draft, customerName };
+}
+
 export function isBookingComplete(draft: StructuredTurnDraft): boolean {
   return Boolean(draft.date && draft.time && draft.partySize > 0 && draft.customerName.trim());
 }

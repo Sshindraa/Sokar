@@ -346,6 +346,114 @@
         "role": "assistant",
         "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
       }
+    ],
+    "toNameRead": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "hoët h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, H, O, Ë, T. C'est bien ça ?"
+      }
+    ],
+    "toRecapHouet": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "houet h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "oui"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET. C'est bon ?"
+      }
     ]
   },
   "cases": [
@@ -921,6 +1029,114 @@
           "field": "customerName",
           "equals": "AKKIF",
           "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epele-apres-mot-entendu",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tour 15 (30/09) : « hoët h o u e t » enregistré HOËT",
+      "history": "toName",
+      "transcript": "hoët h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epele-apres-mot-entendu-intro",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tours 14-15 recollés",
+      "history": "toName",
+      "transcript": "c'est au nom de hoët h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-epellation-complete",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tour 16 : l'appelant re-épelle après une lecture fausse",
+      "history": "toNameRead",
+      "transcript": "non h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOËT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epellation-en-cours-pas-fini",
+      "behavior": "fin de tour",
+      "source": "appel 5cebe456 tour 16 : « h o u e » jugé fini, le t arrive 0,6 s après",
+      "history": "toNameRead",
+      "transcript": "non h o u e",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOËT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "exclamation-apres-recap-pas-de-relecture",
+      "behavior": "répétition",
+      "source": "appel 5cebe456 tours 18-19 : « waouh » puis une phrase hors sujet relisent deux fois le récapitulatif",
+      "history": "toRecapHouet",
+      "transcript": "waouh",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUET"
+      },
+      "awaiting": "confirmation",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "noRepeatOf",
+          "text": "jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET",
+          "minRate": 0.8
         }
       ]
     }

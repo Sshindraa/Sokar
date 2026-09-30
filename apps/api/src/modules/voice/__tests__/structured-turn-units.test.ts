@@ -11,7 +11,9 @@ import {
   createStructuredTurnState,
   parseStreamedDraft,
   outsideOpeningHoursFact,
+  reconcileSpelledName,
   requestedSlotConflict,
+  spelledLettersOf,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 
@@ -233,5 +235,50 @@ describe('outsideOpeningHoursFact', () => {
     expect(outsideOpeningHoursFact(null, { date: '2026-10-06', time: '20:00' })).toBeNull();
     expect(outsideOpeningHoursFact(hours, { date: '', time: '20:00' })).toBeNull();
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '' })).toBeNull();
+  });
+});
+
+describe('reconcileSpelledName', () => {
+  const draft = (customerName: string) => ({ date: '', time: '', partySize: 0, customerName });
+
+  it('reads letters and doubles like a caller spells them', () => {
+    expect(spelledLettersOf('hoët h o u e t')).toBe('HOUET');
+    expect(spelledLettersOf('au nom de a 2 k i f')).toBe('AKKIF');
+    expect(spelledLettersOf('4 1 non 5 5')).toBe('');
+    expect(spelledLettersOf('oui')).toBe('');
+  });
+
+  it('restores letters the model dropped from the name it wrote', () => {
+    expect(reconcileSpelledName(draft('Hoët'), 'hoët h o u e t', 'customerName').customerName).toBe(
+      'Houet',
+    );
+    expect(reconcileSpelledName(draft('HOËT'), 'non h o u e t', 'confirmation').customerName).toBe(
+      'HOUET',
+    );
+    expect(
+      reconcileSpelledName(draft('AKIF'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+  });
+
+  it('leaves a name that already matches, or a false start followed by the right spelling', () => {
+    expect(reconcileSpelledName(draft('HOUET'), 'h o u e t', 'customerName').customerName).toBe(
+      'HOUET',
+    );
+    expect(
+      reconcileSpelledName(draft('AKKIF'), 'a k f a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+  });
+
+  it('never shortens or replaces a name built over several turns', () => {
+    expect(reconcileSpelledName(draft('HOUET'), 'u e t', 'customerName').customerName).toBe(
+      'HOUET',
+    );
+    expect(reconcileSpelledName(draft('Durand'), 'h o u e t', 'customerName').customerName).toBe(
+      'Durand',
+    );
+  });
+
+  it('does nothing when no name was being asked for', () => {
+    expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });
 });
