@@ -10,6 +10,22 @@ export function parseRestaurantIdList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Parcours vocal moderne par défaut (tour structuré, Deepgram, mots-clés Deepgram, écoute Dialogue V2 avec
+ * filtre d'écho) pour tout restaurant, sans le lister un par un. `VOICE_V2_DISABLED_RESTAURANT_IDS` ramène un
+ * restaurant à l'ancien chemin ; il n'annule pas les listes explicites, qui gardent leur effet.
+ * Désactivé tant que `VOICE_V2_DEFAULT` n'est pas `true`.
+ */
+export function isVoiceV2Default(
+  restaurantId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return (
+    env.VOICE_V2_DEFAULT === 'true' &&
+    !parseRestaurantIdList(env.VOICE_V2_DISABLED_RESTAURANT_IDS).includes(restaurantId)
+  );
+}
+
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,
@@ -18,13 +34,17 @@ export function isVoiceFeatureEnabledForRestaurant(
   if (feature === 'dialogueListeningV2') {
     return (
       env.VOICE_DIALOGUE_LISTENING_V2 === 'true' ||
-      parseRestaurantIdList(env.VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS).includes(restaurantId)
+      parseRestaurantIdList(env.VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS).includes(
+        restaurantId,
+      ) ||
+      isVoiceV2Default(restaurantId, env)
     );
   }
 
   return (
     env.VOICE_STT_PROVIDER === 'deepgram' &&
-    parseRestaurantIdList(env.VOICE_STT_PROVIDER_RESTAURANT_IDS).includes(restaurantId)
+    (parseRestaurantIdList(env.VOICE_STT_PROVIDER_RESTAURANT_IDS).includes(restaurantId) ||
+      isVoiceV2Default(restaurantId, env))
   );
 }
 
@@ -41,7 +61,10 @@ export function isVoiceDeepgramKeytermsEnabled(
   restaurantId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return parseRestaurantIdList(env.VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS).includes(restaurantId);
+  return (
+    parseRestaurantIdList(env.VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS).includes(restaurantId) ||
+    isVoiceV2Default(restaurantId, env)
+  );
 }
 
 export function resolveVoiceFeatureSnapshot(

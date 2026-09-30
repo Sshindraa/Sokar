@@ -279,6 +279,12 @@ VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 # Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
 # ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
 DEEPGRAM_API_HOST="api.deepgram.com"
+# Parcours vocal moderne par défaut : tour structuré, Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés
+# Deepgram et écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false
+# (seules les listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion ramène un restaurant à l'ancien
+# chemin (outils, Scribe) mais n'annule pas ses listes explicites. Le hedging suit le tour structuré.
+VOICE_V2_DEFAULT="false"
+VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
 # ou Krisp | DeepFilterNet | AiCoustics | Denoiser ; uniquement pour les restaurants listés.
 # Facturée par direction et par minute (une seule direction utilisée). Un échec n'arrête pas l'appel.
