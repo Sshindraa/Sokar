@@ -1,5 +1,6 @@
 import type { InterruptedReply } from './interrupted-reply';
 import type { CallerVoiceActivity } from './caller-voice-activity';
+import type { FastBargeInState } from './fast-barge-in';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
 import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
@@ -239,6 +240,9 @@ export interface ConversationState {
 /** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
 export interface ActiveTtsContext {
   cancel(): void;
+  /** Met la lecture en pause (l'appelant a pris la parole) ; `resume` la reprend là où elle en était. */
+  pause?(): void;
+  resume?(): void;
   /** Texte poussé et audio joué, à lire avant `cancel` : de quoi estimer ce que l'appelant a entendu. */
   interruptionSnapshot?(): { text: string; playedMs: number; totalMs: number | null };
 }
@@ -483,6 +487,8 @@ export interface CallSession {
   sttConnectionAudioBytesSent?: number;
   /** Voix entendue sur l'audio de l'appelant : garde de silence des fins de tour forcées. */
   callerVoice?: CallerVoiceActivity;
+  /** Coupure rapide de l'agent : voix détectée pendant qu'il parle, pause en attente de confirmation. */
+  fastBargeIn?: FastBargeInState;
   sttLastNonEmptyPartialAt?: number;
   sttLastSpeechStartedAt?: number;
   sttTurnStartedAt?: number;

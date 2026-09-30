@@ -314,6 +314,14 @@ export const voiceSilenceGuardTotal = new Counter({
   registers: [getRegistry()],
 });
 
+/** Coupure rapide de l'agent par le détecteur de voix : pause, puis coupure ou reprise. */
+export const voiceFastBargeInTotal = new Counter({
+  name: 'sokar_voice_fast_barge_in_total',
+  help: 'Fast barge-in by caller voice detection: paused, escalated (cut) or resumed (false alarm)',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
 /** Attente avant le premier son d'une réponse, par issue. */
 export const voiceFirstAudioHoldTotal = new Counter({
   name: 'sokar_voice_first_audio_hold_total',

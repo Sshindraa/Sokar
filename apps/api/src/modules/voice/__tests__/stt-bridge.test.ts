@@ -31,6 +31,7 @@ import {
   looksLikeSpelledLetters,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
+import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
 
 function makeWsMock(): WebSocket {
@@ -263,6 +264,24 @@ describe('sendAudioToStt', () => {
     vi.stubEnv('NODE_ENV', 'test');
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
+  });
+
+  it('met l’agent en pause dès 80 ms de voix entrante pendant qu’il parle (coupure rapide)', () => {
+    const session = makeSession({ codec: 'L16' });
+    session.sttWs = makeWsMock();
+    session.state = 'SPEAKING';
+    session.agentAudioActive = true;
+    const pause = vi.fn();
+    session.ttsContext = { cancel: vi.fn(), pause, resume: vi.fn() };
+    // 20 ms de voix forte (L16 : 16 kHz, grand-boutiste, comme Telnyx).
+    const loud = Buffer.alloc(640);
+    for (let index = 0; index < 320; index++)
+      loud.writeInt16BE(index % 2 ? 3_000 : -3_000, index * 2);
+    for (let frame = 0; frame < 3; frame++) sendAudioToStt(session, loud.toString('base64'));
+    expect(pause).not.toHaveBeenCalled();
+    sendAudioToStt(session, loud.toString('base64'));
+    expect(pause).toHaveBeenCalledTimes(1);
+    clearFastBargeIn(session);
   });
 
   it('bufferise les trames et supprime la plus ancienne au-delà de la limite', () => {

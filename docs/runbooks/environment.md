@@ -239,6 +239,15 @@ VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
 # sokar_voice_first_audio_hold_ms ; télémétrie de tour : événement first_audio_hold.
 VOICE_FIRST_AUDIO_SILENCE_MS="600"
 VOICE_FIRST_AUDIO_HOLD_CAP_MS="1200"
+# Coupure rapide de l'agent : quand la voix de l'appelant (audio entrant) dépasse le niveau RMS
+# indiqué pendant cette durée alors que l'agent parle, la lecture est mise EN PAUSE tout de suite
+# (~0,14 s), au lieu d'attendre la première transcription partielle (0,7 à 1,3 s). Comme l'écho de
+# l'agent peut déclencher la détection, on confirme : transcription = barge-in habituel ; sinon, après
+# CONFIRM_MS, appelant encore en train de parler = coupure, silence = la lecture reprend. 0 désactive.
+# Contexte Cartesia seulement. Métrique : sokar_voice_fast_barge_in_total{outcome=paused|escalated|resumed}.
+VOICE_FAST_BARGE_IN_MS="80"
+VOICE_FAST_BARGE_IN_MIN_RMS="800"
+VOICE_FAST_BARGE_IN_CONFIRM_MS="500"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
 # le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le

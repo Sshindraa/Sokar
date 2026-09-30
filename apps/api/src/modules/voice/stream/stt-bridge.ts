@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { callerSilenceMs, trackCallerVoice } from './caller-voice-activity';
+import { checkFastBargeIn } from './fast-barge-in';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
@@ -2271,7 +2272,7 @@ export function connectStt(
 export function sendAudioToStt(session: CallSession, audioPayload: string): void {
   if (session.sttTerminalFailure || session.sttFallbackTriggered) return;
   const input = Buffer.from(audioPayload, 'base64');
-  trackCallerVoice(session, input);
+  checkFastBargeIn(session, trackCallerVoice(session, input), CallSessionManager.getInstance());
 
   if (
     !session.sttWs &&

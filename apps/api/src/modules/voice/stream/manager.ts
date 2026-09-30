@@ -28,6 +28,7 @@ import {
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
 import { splitHeardReply } from './interrupted-reply';
+import { clearFastBargeIn } from './fast-barge-in';
 import { recordDebugTool } from './debug-dialogue';
 import { cancelScheduledFiller } from './filler-scheduler';
 import {
@@ -824,6 +825,7 @@ export class CallSessionManager {
   handleBargeIn(session: CallSession): void {
     if (session.state !== 'SPEAKING') return;
     cancelScheduledFiller(session);
+    clearFastBargeIn(session);
     session.responseGeneration++;
     session.ttsGeneration++;
     // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
