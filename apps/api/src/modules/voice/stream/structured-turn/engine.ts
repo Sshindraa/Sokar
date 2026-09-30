@@ -12,7 +12,11 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { isVoiceV2Default, parseRestaurantIdList } from '../feature-flags';
+import {
+  isVoiceUnderstandingCheckEnabled,
+  isVoiceV2Default,
+  parseRestaurantIdList,
+} from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -76,7 +80,7 @@ export function isStructuredTurnEnabled(
 
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
-  options: { turnCompleteOnly?: boolean } = {},
+  options: { turnCompleteOnly?: boolean; understanding?: boolean } = {},
 ) {
   return {
     type: 'json_schema' as const,
@@ -309,6 +313,7 @@ function passRequest(
   today: string,
   extra: { actionResult?: string; callerFinished?: boolean } = {},
 ) {
+  const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
     history,
@@ -317,12 +322,14 @@ function passRequest(
     openingHours: session.openingHours,
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
+    ...(understanding ? { understanding } : {}),
     ...extra,
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
   // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
   const format = responseFormat(extra.actionResult ? AFTER_ACTION_ACTIONS : undefined, {
     turnCompleteOnly: extra.callerFinished === true,
+    ...(understanding ? { understanding } : {}),
   });
   return { messages, format };
 }
@@ -683,6 +690,7 @@ export async function runStructuredTurn(
       action: first.output.action,
       awaiting: first.output.awaiting,
       confidence: first.output.confidence,
+      ...(first.output.understanding ? { understanding: first.output.understanding } : {}),
       changedFields: applied.changed.join(',') || null,
       rejectedFields: applied.rejected.join(',') || null,
       actionDecision: first.slotConflict
@@ -701,6 +709,8 @@ export async function runStructuredTurn(
       transcript,
       say: first.output.say,
       draft: JSON.stringify(first.output.draft),
+      ...(first.output.reading ? { reading: first.output.reading } : {}),
+      ...(first.output.understanding ? { understanding: first.output.understanding } : {}),
       changedFields: applied.changed.join(',') || undefined,
       speculated: speculationUsed,
     });
@@ -782,6 +792,7 @@ export async function runStructuredTurn(
         action: second.output.action,
         awaiting: second.output.awaiting,
         confidence: second.output.confidence,
+        ...(second.output.understanding ? { understanding: second.output.understanding } : {}),
         changedFields: reapplied.changed.join(',') || null,
         rejectedFields: reapplied.rejected.join(',') || null,
       });

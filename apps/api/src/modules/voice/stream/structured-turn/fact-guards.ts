@@ -126,15 +126,21 @@ function isUnset(field: DraftField, value: StructuredTurnDraft[DraftField]): boo
  */
 export function applyProposedDraft(
   previous: StructuredTurnDraft,
-  output: Pick<StructuredTurnOutput, 'draft' | 'interpretation'>,
+  output: Pick<StructuredTurnOutput, 'draft' | 'interpretation' | 'understanding'>,
   context: { today: string },
 ): { draft: StructuredTurnDraft; rejected: DraftField[]; changed: DraftField[] } {
   const draft = { ...previous };
   const rejected: DraftField[] = [];
   const changed: DraftField[] = [];
+  // Le modèle déclare avoir deviné : rien n'entre dans le brouillon, quelle que soit la valeur proposée.
+  const doubtful = output.understanding === 'doubtful';
   for (const field of Object.keys(previous) as DraftField[]) {
     const proposed = output.draft[field];
     if (proposed === previous[field]) continue;
+    if (doubtful) {
+      rejected.push(field);
+      continue;
+    }
     if (isUnset(field, proposed)) {
       if (output.interpretation === 'correction') {
         (draft as Record<DraftField, unknown>)[field] = field === 'partySize' ? 0 : '';
@@ -330,6 +336,10 @@ export function authorizeStructuredAction(
   draft: StructuredTurnDraft,
   context: { maxPartySize: number; recapHeard?: boolean },
 ): ActionDecision {
+  // Compréhension douteuse : aucune action, pas même une vérification de disponibilité sur une valeur devinée.
+  if (output.understanding === 'doubtful' && output.action !== 'none') {
+    return { allowed: false, reason: 'doubtful_understanding' };
+  }
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
   if (sideEffect && output.confidence === 'low') {
     return { allowed: false, reason: 'low_confidence' };

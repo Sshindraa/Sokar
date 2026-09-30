@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { PhraseSplitter, SayStreamExtractor } from '../stream/structured-turn/say-stream';
 import {
+  buildStructuredTurnJsonSchema,
   parseStructuredTurnOutput,
   type StructuredTurnOutput,
 } from '../stream/structured-turn/schema';
+import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
+import { isVoiceUnderstandingCheckEnabled } from '../stream/feature-flags';
 import {
   applyProposedDraft,
   authorizeStructuredAction,
@@ -68,6 +71,94 @@ describe('parseStructuredTurnOutput', () => {
     expect(parseStructuredTurnOutput(JSON.stringify(output()))).toEqual(output());
     expect(parseStructuredTurnOutput('{"say":"x"}')).toBeNull();
     expect(parseStructuredTurnOutput('pas du json')).toBeNull();
+  });
+});
+
+describe('vérification de compréhension', () => {
+  const today = '2026-09-26';
+  const previous = { date: '', time: '', partySize: 0, customerName: '' };
+  const proposed = { date: '2026-09-27', time: '20:00', partySize: 0, customerName: '' };
+
+  it('schéma : reading et understanding viennent avant le brouillon, seulement avec le drapeau', () => {
+    const on = buildStructuredTurnJsonSchema(undefined, { understanding: true });
+    const keys = Object.keys(on.properties);
+    expect(keys.indexOf('reading')).toBeGreaterThan(keys.indexOf('turnComplete'));
+    expect(keys.indexOf('understanding')).toBeLessThan(keys.indexOf('draft'));
+    expect(on.required).toEqual(expect.arrayContaining(['reading', 'understanding']));
+    const off = buildStructuredTurnJsonSchema();
+    expect(Object.keys(off.properties)).not.toContain('reading');
+    expect(off.required).not.toContain('understanding');
+  });
+
+  it("parse : garde reading et understanding quand ils sont là, et n'en ajoute pas sinon", () => {
+    const withReading = output({ reading: 'lecture', understanding: 'doubtful' });
+    expect(parseStructuredTurnOutput(JSON.stringify(withReading))).toEqual(withReading);
+    expect(parseStructuredTurnOutput(JSON.stringify(output()))).not.toHaveProperty('understanding');
+    const bad = { ...withReading, understanding: 'peut-être' };
+    expect(parseStructuredTurnOutput(JSON.stringify(bad))).not.toHaveProperty('understanding');
+  });
+
+  it("doubtful : aucune valeur n'entre dans le brouillon, elles sont listées comme rejetées", () => {
+    const result = applyProposedDraft(
+      previous,
+      output({ draft: proposed, understanding: 'doubtful', interpretation: 'unclear' }),
+      { today },
+    );
+    expect(result.draft).toEqual(previous);
+    expect(result.changed).toEqual([]);
+    expect(result.rejected).toEqual(['date', 'time']);
+  });
+
+  it('clear ou absent : comportement inchangé', () => {
+    for (const understanding of [undefined, 'clear' as const]) {
+      const result = applyProposedDraft(
+        previous,
+        output({ draft: proposed, ...(understanding ? { understanding } : {}) }),
+        { today },
+      );
+      expect(result.changed).toEqual(['date', 'time']);
+    }
+  });
+
+  it('doubtful : aucune action, pas même une vérification de disponibilité', () => {
+    const state = createStructuredTurnState();
+    const draft = { date: '2026-09-27', time: '20:00', partySize: 2, customerName: '' };
+    for (const action of ['check_availability', 'take_message', 'transfer', 'end_call'] as const) {
+      expect(
+        authorizeStructuredAction(state, output({ action, understanding: 'doubtful' }), draft, {
+          maxPartySize: 7,
+        }),
+      ).toEqual({ allowed: false, reason: 'doubtful_understanding' });
+    }
+    expect(
+      authorizeStructuredAction(state, output({ understanding: 'doubtful' }), draft, {
+        maxPartySize: 7,
+      }),
+    ).toEqual({ allowed: true });
+  });
+
+  it("le prompt n'ajoute les consignes que sous le drapeau, et sans phrase à imiter", () => {
+    const input = {
+      systemPrompt: 'Tu es un agent.',
+      history: [],
+      transcript: 'bonjour',
+      state: createStructuredTurnState(),
+    };
+    const off = buildStructuredTurnMessages(input)[0].content as string;
+    const on = buildStructuredTurnMessages({ ...input, understanding: true })[0].content as string;
+    expect(off).not.toContain('COMPRÉHENSION VÉRIFIÉE');
+    expect(on).toContain('COMPRÉHENSION VÉRIFIÉE');
+    // Aucun guillemet français dans le bloc : pas d'exemple de formulation.
+    const block = on.slice(on.indexOf('COMPRÉHENSION VÉRIFIÉE'), on.indexOf('ÉTAT VÉRIFIÉ'));
+    expect(block).not.toMatch(/[«»]/);
+  });
+
+  it('drapeau par restaurant : vide = aucun', () => {
+    const env = { VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS: 'a, b' } as NodeJS.ProcessEnv;
+    expect(isVoiceUnderstandingCheckEnabled('a', env)).toBe(true);
+    expect(isVoiceUnderstandingCheckEnabled('c', env)).toBe(false);
+    expect(isVoiceUnderstandingCheckEnabled(undefined, env)).toBe(false);
+    expect(isVoiceUnderstandingCheckEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 

@@ -502,6 +502,9 @@ VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/avant.json scripts/ops/
 cd apps/api && npx tsx scripts/voice-behavior-eval.ts compare /…/avant.json /…/apres.json
 ```
 
+- `VBE_UNDERSTANDING=1` compose les requêtes avec la vérification de compréhension (drapeau de production
+  `VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`) ; sans, comportement historique. Pour juger ce drapeau : même suite
+  sans puis avec, puis `compare`.
 - `VBE_SUITE=default|perturb|all`. `perturb` = 27 variantes × 5 tirages = 135 requêtes (plafond 150).
 - Indicateurs par découpage : **fausse acceptation** (part des tirages d'ablation où une valeur absente de la phrase
   entre dans le brouillon ; le pire cas, à faire baisser), **fidélité** (substitution), **robustesse au bruit**.
