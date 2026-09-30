@@ -25,6 +25,12 @@ export type BehaviorCheck =
   /** Part des tirages où la dernière phrase dite ne recopie pas la question donnée. */
   | { kind: 'noRepeatOf'; text: string; minRate: number };
 
+/** Restaurant du jeu : nom et horaires réels d'une fiche, pour ne pas tout mesurer sur un seul profil. */
+export interface BehaviorProfile {
+  name: string;
+  openingHours: Record<string, { open: string; close: string } | null>;
+}
+
 export interface BehaviorCase {
   id: string;
   /** Comportement visé, pour regrouper le rapport. */
@@ -40,6 +46,8 @@ export interface BehaviorCase {
   /** Résultat d'action déjà exécutée : la réponse ne peut plus qu'être dite ou terminer l'appel. */
   actionResult?: string;
   dayPart?: string;
+  /** Profil restaurant de `profiles` ; absent : Chez Sokar, ouvert tous les jours 12 h–22 h. */
+  profile?: string;
   samples?: number;
   checks: BehaviorCheck[];
 }
@@ -48,6 +56,7 @@ export interface BehaviorCasesFile {
   version: number;
   today: string;
   histories?: Record<string, BehaviorMessage[]>;
+  profiles?: Record<string, BehaviorProfile>;
   cases: BehaviorCase[];
 }
 

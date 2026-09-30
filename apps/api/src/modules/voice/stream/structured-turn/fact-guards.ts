@@ -4,6 +4,7 @@
  * format valide, sont plausibles, et qu'une action à effet réel repose sur
  * des faits vérifiés (disponibilité réelle, récapitulatif accepté).
  */
+import { normalizeOpeningHours } from '@sokar/shared';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
 
 export type DraftField = keyof StructuredTurnDraft;
@@ -206,6 +207,35 @@ export function requestedSlotConflict(
   if (!/^\d{2}:\d{2}$/.test(draft.time) || draft.partySize < 1) return false;
   const slots = dayAvailability.slotsBySize[draft.partySize];
   return Array.isArray(slots) && !slots.includes(draft.time);
+}
+
+/**
+ * L'heure du brouillon tombe hors du service du jour ouvert de sa date (« mardi à 20 heures »
+ * pour un restaurant ouvert 12 h–14 h 30 ce jour-là) : le modèle, sans raisonnement, répondait
+ * « ça tombe bien » 5 fois sur 6 sur ce profil. Sans nombre de personnes ni lecture de créneaux, seul
+ * le code peut le savoir à ce stade. Renvoie le fait à donner au modèle, ou null quand tout est
+ * compatible ou inconnu (horaires absents, jour fermé traité par le calendrier, service de nuit).
+ */
+export function outsideOpeningHoursFact(
+  openingHours: unknown,
+  draft: { date: string; time: string },
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || !/^\d{2}:\d{2}$/.test(draft.time)) return null;
+  const days = normalizeOpeningHours(openingHours);
+  if (!days.length) return null;
+  const [year, month, day] = draft.date.split('-').map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
+  if (!slot || slot.close <= slot.open) return null;
+  if (draft.time >= slot.open && draft.time <= slot.close) return null;
+  const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
+    utc,
+  );
+  return (
+    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${slot.open}–${slot.close}). ` +
+    "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
+    'et laisse-le choisir une heure dans ces horaires.'
+  );
 }
 
 export type ActionDecision = { allowed: true } | { allowed: false; reason: string };

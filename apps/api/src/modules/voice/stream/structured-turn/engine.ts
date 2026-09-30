@@ -48,6 +48,7 @@ import {
   todayInTimezone,
   type StructuredTurnState,
   parseStreamedDraft,
+  outsideOpeningHoursFact,
   requestedSlotConflict,
 } from './fact-guards';
 import { buildStructuredTurnMessages } from './prompt';
@@ -148,6 +149,8 @@ interface PassResult {
   spoken: boolean;
   /** Le brouillon annoncé par le modèle vise un créneau que les disponibilités lues excluent : rien n'a été dit. */
   slotConflict: boolean;
+  /** Fait à donner au second passage quand l'heure visée est hors horaires (sinon lecture des créneaux). */
+  hoursFact?: string;
 }
 
 /**
@@ -448,6 +451,7 @@ export async function runStructuredTurn(
     let action: string | null = null;
     let turnComplete: boolean | null = null;
     let slotConflict = false;
+    let hoursFact: string | undefined;
     let firstToken = true;
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
@@ -479,12 +483,17 @@ export async function runStructuredTurn(
           (streamedDraft.date !== before.date ||
             streamedDraft.time !== before.time ||
             streamedDraft.partySize !== before.partySize);
+        const outsideHours =
+          streamedDraft && changed
+            ? outsideOpeningHoursFact(session.openingHours, streamedDraft)
+            : null;
         if (
           streamedDraft &&
           changed &&
-          requestedSlotConflict(state.dayAvailability, streamedDraft)
+          (outsideHours || requestedSlotConflict(state.dayAvailability, streamedDraft))
         ) {
           slotConflict = true;
+          hoursFact = outsideHours ?? undefined;
         }
       }
       const mayContinue =
@@ -517,7 +526,7 @@ export async function runStructuredTurn(
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
     }
-    return { output, spoken, slotConflict };
+    return { output, spoken, slotConflict, ...(hoursFact ? { hoursFact } : {}) };
   };
 
   let speculationUsed = false;
@@ -653,7 +662,9 @@ export async function runStructuredTurn(
       changedFields: applied.changed.join(',') || null,
       rejectedFields: applied.rejected.join(',') || null,
       actionDecision: first.slotConflict
-        ? 'slot_conflict'
+        ? first.hoursFact
+          ? 'outside_hours'
+          : 'slot_conflict'
         : decision.allowed
           ? 'allowed'
           : decision.reason,
@@ -670,8 +681,9 @@ export async function runStructuredTurn(
     } else if (!decision.allowed) {
       actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
     } else if (first.slotConflict) {
-      // Le modèle visait un créneau que les disponibilités lues excluent : rien n'a été dit.
-      actionResult = await runAvailability();
+      // Le modèle visait une heure hors horaires ou un créneau que les disponibilités lues excluent :
+      // rien n'a été dit ; le second passage reçoit le fait réel.
+      actionResult = first.hoursFact ?? (await runAvailability());
     } else {
       switch (first.output.action) {
         case 'end_call':
