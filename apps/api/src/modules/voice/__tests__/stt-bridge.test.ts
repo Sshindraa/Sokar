@@ -921,6 +921,86 @@ describe('Deepgram final dispatch', () => {
     );
   });
 
+  describe('garde de silence des fins de tour forcées', () => {
+    function speaking(session: CallSession, lastVoiceAt: number) {
+      session.callerVoice = { noiseFloor: 0, voiceRun: 2, lastVoiceAt };
+    }
+    // En production, la fin d'une réponse courte (≤ 2 mots) est forcée après 500 ms.
+    beforeEach(() => {
+      vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
+      return () => vi.unstubAllEnvs();
+    });
+
+    it('retarde le Finalize tant que l’appelant parle, puis l’envoie au premier vrai silence (appel 5cebe456)', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-30T15:00:00Z'));
+      const { session } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'plutôt plutôt' });
+      // Le minuteur des réponses courtes (2 mots) tombe à 500 ms, l'appelant parle encore.
+      vi.setSystemTime(new Date('2026-09-30T15:00:00.400Z'));
+      speaking(session, Date.now());
+      vi.advanceTimersByTime(100);
+      expect(ws.send).not.toHaveBeenCalled();
+      // La voix continue 1 s de plus : toujours retenu.
+      vi.advanceTimersByTime(300);
+      speaking(session, Date.now());
+      vi.advanceTimersByTime(300);
+      speaking(session, Date.now());
+      expect(ws.send).not.toHaveBeenCalled();
+      // L'appelant se tait : 350 ms plus tard, la fin de tour part.
+      vi.advanceTimersByTime(400);
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      vi.useRealTimers();
+    });
+
+    it('rend la main au bout du report maximal quand le bruit empêche tout silence', () => {
+      vi.useFakeTimers();
+      vi.stubEnv('VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS', '1000');
+      const { session } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui' });
+      const noisy = setInterval(() => speaking(session, Date.now()), 20);
+      vi.advanceTimersByTime(500 + 900);
+      expect(ws.send).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(300);
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      clearInterval(noisy);
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+
+    it('abandonne le report quand la partielle change : l’appelant a continué', () => {
+      vi.useFakeTimers();
+      const { session } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'plutôt' });
+      speaking(session, Date.now() + 500);
+      vi.advanceTimersByTime(500);
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'plutôt 18 heures 30' });
+      vi.advanceTimersByTime(700);
+      expect(ws.send).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it('ne change rien quand la garde est désactivée ou sans voix mesurée', () => {
+      vi.useFakeTimers();
+      vi.stubEnv('VOICE_STT_SILENCE_GUARD_MS', '0');
+      const { session } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      speaking(session, Date.now());
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui' });
+      vi.advanceTimersByTime(500);
+      expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+  });
+
   it('force la fin d’une partielle Deepgram figée (appel 25650799)', () => {
     vi.useFakeTimers();
     const { session, onEvent } = deepgramSession();

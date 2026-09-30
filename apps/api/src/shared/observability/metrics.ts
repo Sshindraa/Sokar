@@ -306,6 +306,14 @@ export const voiceSttChunkBytes = new Histogram({
   registers: [getRegistry()],
 });
 
+/** Fins de tour forcées retardées faute de silence réel chez l'appelant. */
+export const voiceSilenceGuardTotal = new Counter({
+  name: 'sokar_voice_silence_guard_total',
+  help: 'Forced end-of-turn requests held by the caller silence guard, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
 /** STT messages by selected provider; existing Scribe metric remains unchanged. */
 export const voiceSttProviderAudioMessagesTotal = new Counter({
   name: 'sokar_voice_stt_provider_audio_messages_total',

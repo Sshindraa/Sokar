@@ -1,4 +1,5 @@
 import type { InterruptedReply } from './interrupted-reply';
+import type { CallerVoiceActivity } from './caller-voice-activity';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
 import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
@@ -480,6 +481,8 @@ export interface CallSession {
   sttConnectionAudioStartedAt?: number;
   /** Bytes successfully sent on the current provider socket, after conversion. */
   sttConnectionAudioBytesSent?: number;
+  /** Voix entendue sur l'audio de l'appelant : garde de silence des fins de tour forcées. */
+  callerVoice?: CallerVoiceActivity;
   sttLastNonEmptyPartialAt?: number;
   sttLastSpeechStartedAt?: number;
   sttTurnStartedAt?: number;
