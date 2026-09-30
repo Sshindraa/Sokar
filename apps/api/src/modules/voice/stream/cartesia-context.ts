@@ -146,6 +146,7 @@ export class CartesiaContextTurn {
   private firstAudioOutput = false;
   private playbackStarted = false;
   private holdDone = false;
+  private paused = false;
   /** Appelé quand l'appelant reprend la parole avant le premier son : la réponse préparée est jetée. */
   onHoldCancelled?: () => void;
   private sentFrames = 0;
@@ -174,6 +175,15 @@ export class CartesiaContextTurn {
       source: 'cartesia_context',
     });
     this.connect();
+  }
+
+  /** L'appelant a pris la parole : plus aucune trame n'est envoyée tant que la pause dure. */
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.paused = false;
   }
 
   get hasAudioOutput(): boolean {
@@ -375,6 +385,10 @@ export class CartesiaContextTurn {
           return;
         }
         if (hold.outcome === 'aborted') return;
+      }
+      if (this.paused) {
+        await wait(TTS_UNDERFEED_PAUSE_MS);
+        continue;
       }
       this.playbackStarted = true;
       const frame = this.audioFrames.shift();

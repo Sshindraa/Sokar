@@ -7,7 +7,7 @@
  * Calé sur l'enregistrement de cet appel, piste appelant, contre les mots réellement prononcés :
  * seuil RMS 300 et deux trames consécutives, 15 fins de tour sur 17 bien classées, aucune manquée.
  */
-import { decodeTelnyxToPcm16 } from './telnyx-codec';
+import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import type { CallSession } from './types';
 
 /** Sous ce niveau (RMS, échantillons 16 bits), c'est du silence ou un bruit de ligne. */
@@ -45,9 +45,10 @@ export function trackCallerVoice(
   session: CallSession,
   telnyxAudio: Buffer,
   now = Date.now(),
-): void {
+): { rms: number; chunkMs: number } {
   const state = (session.callerVoice ??= { noiseFloor: 0, voiceRun: 0 });
   const rms = chunkRms(decodeTelnyxToPcm16(session.codec, telnyxAudio));
+  const chunkMs = telnyxAudio.length / telnyxBytesPerMs(session.codec);
   const threshold = Math.min(
     MAX_VOICE_RMS,
     Math.max(MIN_VOICE_RMS, state.noiseFloor * NOISE_MARGIN),
@@ -55,13 +56,14 @@ export function trackCallerVoice(
   if (rms > threshold) {
     state.voiceRun++;
     if (state.voiceRun >= VOICE_RUN_CHUNKS) state.lastVoiceAt = now;
-    return;
+    return { rms, chunkMs };
   }
   state.voiceRun = 0;
   state.noiseFloor =
     rms < state.noiseFloor
       ? rms
       : Math.min(FLOOR_CEILING, state.noiseFloor + (rms - state.noiseFloor) * FLOOR_RISE);
+  return { rms, chunkMs };
 }
 
 /** Durée sans voix, en ms ; infinie tant qu'aucune voix n'a été entendue. */

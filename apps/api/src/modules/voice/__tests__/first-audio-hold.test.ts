@@ -165,6 +165,24 @@ describe('contexte Cartesia : aucun son avant le silence exigé', () => {
     expect(mediaSent(session)).toBe(0);
   });
 
+  it('ne joue plus rien pendant une pause, et reprend là où il en était', async () => {
+    const { session, turn } = await setup(Date.now() - 2_000);
+    await vi.advanceTimersByTimeAsync(40);
+    const before = mediaSent(session);
+    expect(before).toBeGreaterThan(0);
+    turn.pause();
+    await vi.advanceTimersByTimeAsync(400);
+    const during = mediaSent(session);
+    // Au plus la trame déjà partie : la pause agit dans les 100 ms d'une trame.
+    expect(during - before).toBeLessThanOrEqual(1);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(mediaSent(session)).toBe(during);
+    turn.resume();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(mediaSent(session)).toBeGreaterThan(during);
+    turn.cancel();
+  });
+
   it('joue tout de suite quand l’appelant se tait depuis longtemps', async () => {
     const { session, turn } = await setup(Date.now() - 2_000);
     await vi.advanceTimersByTimeAsync(40);

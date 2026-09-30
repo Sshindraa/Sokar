@@ -64,6 +64,7 @@ export type VoiceTurnEvent =
   | 'tts_synthesis_completed'
   | 'tts_first_audio'
   | 'first_audio_hold'
+  | 'fast_barge_in'
   | 'tts_completed'
   | 'tts_interrupted'
   | 'barge_in'
@@ -162,6 +163,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
       return 'audio';
     case 'tts_interrupted':
     case 'barge_in':
+    case 'fast_barge_in':
       return 'interruption';
   }
 }
