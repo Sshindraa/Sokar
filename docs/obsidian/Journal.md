@@ -1094,3 +1094,6 @@ Flux a 9 finals manquants sur 31 clips bruités et 2 sur 31 propres; Nova a 3 se
 
 ## 2026-09-30 — Voix : reprise après fragments
 Consigne de prompt (sans liste de phrases) : après des bribes, reprendre le fil ou inviter à continuer au lieu de « Vous vouliez dire quoi, là ? ».
+
+## 2026-09-30 — Voix : sortie brute du modèle en diagnostic
+Log `[voice-debug] raw text` événement `structured_output` (transcription reçue, say, brouillon, champs changés, spéculé) pour les restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS uniquement ; téléphones/e-mails masqués. Cause : « vous êtes 20 demain » enregistré comme 20 h, non reproduit sur le banc.

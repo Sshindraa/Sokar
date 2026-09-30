@@ -4,6 +4,7 @@
  * les faits proposés, exécute les actions autorisées et rend leur résultat au
  * modèle pour la formulation. Aucune règle lexicale n'interprète l'appelant.
  */
+import { logVoiceDebugText } from '../debug-dialogue';
 import type { CallSession, DebugSpeechEntry } from '../types';
 import { observeSemanticSignalsShadow } from '../turn-plan-shadow';
 import type { CallSessionManager } from '../manager';
@@ -692,6 +693,15 @@ export async function runStructuredTurn(
           ? 'allowed'
           : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
+      speculated: speculationUsed,
+    });
+    // Texte reçu et sortie brute du modèle, pour comprendre une erreur de compréhension (appel de test
+    // du 30/09 : « vous êtes 20 demain » enregistré comme 20 h). Restaurants de test uniquement.
+    logVoiceDebugText(session, 'structured_output', {
+      transcript,
+      say: first.output.say,
+      draft: JSON.stringify(first.output.draft),
+      changedFields: applied.changed.join(',') || undefined,
       speculated: speculationUsed,
     });
 
