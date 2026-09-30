@@ -75,6 +75,38 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
     expect(after).toBe(before + 1);
   });
 
+  it('vérifie deux heures par défaut quand la fin manque', async () => {
+    const prisma = makePrisma();
+    const registry = new McpToolRegistry(prisma, makeRateLimiter());
+    const checkAvailability = vi.fn().mockResolvedValue({ available: true });
+    (registry as unknown as Record<string, unknown>).availabilityService = {
+      checkAvailability,
+    };
+
+    const result = await registry.checkAvailability(
+      {
+        restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+        partySize: 2,
+        slotStart: '2026-10-01T19:00:00',
+      },
+      {
+        clientId: 'c1',
+        clientName: 'test',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(checkAvailability).toHaveBeenCalledWith({
+      restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+      partySize: 2,
+      slotStart: new Date('2026-10-01T17:00:00.000Z'),
+      slotEnd: new Date('2026-10-01T19:00:00.000Z'),
+    });
+    expect(result).toMatchObject({ ok: true, data: { available: true, decision: 'available' } });
+  });
+
   it('convertit un horaire local MCP dans le fuseau du restaurant', async () => {
     vi.useFakeTimers({ now: new Date('2026-01-01T12:00:00.000Z') });
     try {

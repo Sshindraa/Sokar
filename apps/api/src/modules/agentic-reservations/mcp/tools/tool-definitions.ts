@@ -76,7 +76,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'check_availability',
     title: 'Vérifier les disponibilités',
     description:
-      'Vérifiez le créneau demandé par la personne dans l’heure locale du restaurant. Utilisez l’identifiant obtenu par la recherche et gardez-le interne. Si le créneau est indisponible, présentez uniquement les alternatives retournées; si la capacité en ligne est dépassée, expliquez simplement la limite et demandez si la personne souhaite un autre nombre de convives.',
+      'Vérifiez le créneau demandé par la personne dans l’heure locale du restaurant. Si aucune durée ou heure de fin n’a été donnée, omettez slotEnd : Sokar vérifie alors 120 minutes à partir de slotStart. Ne réduisez pas ce contrôle à un créneau plus court. Utilisez l’identifiant obtenu par la recherche et gardez-le interne. Si le créneau est indisponible, présentez uniquement les alternatives retournées; si la capacité en ligne est dépassée, expliquez simplement la limite et demandez si la personne souhaite un autre nombre de convives.',
     schema: CheckAvailabilityInputSchema,
     output: CheckAvailabilityOutputSchema,
     requiredScope: 'mcp:read',

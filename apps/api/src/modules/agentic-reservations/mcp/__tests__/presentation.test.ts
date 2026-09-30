@@ -35,6 +35,16 @@ describe('MCP human-facing messages', () => {
     expect(message).not.toContain('{');
   });
 
+  it('formule une disponibilité naturelle sans inventer une fin de créneau', () => {
+    expect(
+      formatMcpSuccessMessage(
+        'check_availability',
+        { available: true, decision: 'available' },
+        { partySize: 2, slotStart: '2026-10-01T19:00:00', timezone: 'Europe/Paris' },
+      ),
+    ).toBe('Une table est disponible le jeudi 1er octobre à 19 h pour 2 personnes.');
+  });
+
   it('distingue une fiche absente sans dire au client de fournir un identifiant', () => {
     expect(
       formatMcpSuccessMessage(

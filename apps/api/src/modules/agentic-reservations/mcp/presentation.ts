@@ -111,6 +111,25 @@ function formatRestaurantSearch(args: DataRecord, data: DataRecord): string {
   return `Je n’ai trouvé aucune disponibilité${when ? ` ${when}` : ''}${partySize ? ` pour ${partySize}` : ''} à ${city}.`;
 }
 
+function formatAvailability(args: DataRecord, data: DataRecord): string {
+  const when = formatRequestedSearchTime(args);
+  const partySize = formatPartySize(args.partySize);
+  const context = [when, partySize ? 'pour ' + partySize : undefined].filter(Boolean).join(' ');
+  const suffix = context ? ' ' + context : '';
+
+  if (data.decision === 'available') return 'Une table est disponible' + suffix + '.';
+  if (data.decision === 'capacity_exceeded') {
+    return typeof data.maxOnlinePartySize === 'number'
+      ? 'Le restaurant accepte jusqu’à ' +
+          data.maxOnlinePartySize +
+          ' personnes par réservation en ligne.'
+      : 'Ce nombre de convives dépasse la capacité de réservation en ligne du restaurant.';
+  }
+  return Array.isArray(data.alternativeSlots) && data.alternativeSlots.length > 0
+    ? 'Il n’y a pas de disponibilité' + suffix + ', mais d’autres horaires sont possibles.'
+    : 'Il n’y a pas de disponibilité' + suffix + '.';
+}
+
 function reservationState(state: unknown): string {
   if (typeof state !== 'string') return 'mise à jour';
   switch (state.toUpperCase()) {
@@ -150,15 +169,7 @@ export function formatMcpSuccessMessage(
     case 'get_restaurant_details':
       return `Voici les informations sur ${cleanLabel(data.name, 'ce restaurant')}.`;
     case 'check_availability':
-      if (data.decision === 'available') return 'Le créneau demandé est disponible.';
-      if (data.decision === 'capacity_exceeded') {
-        return typeof data.maxOnlinePartySize === 'number'
-          ? `Le restaurant accepte jusqu’à ${data.maxOnlinePartySize} personnes par réservation en ligne.`
-          : 'Ce nombre de convives dépasse la capacité de réservation en ligne du restaurant.';
-      }
-      return Array.isArray(data.alternativeSlots) && data.alternativeSlots.length > 0
-        ? 'Le créneau demandé n’est pas disponible, mais d’autres horaires sont possibles.'
-        : 'Le créneau demandé n’est pas disponible.';
+      return formatAvailability(args, data);
     case 'create_quote':
       return 'L’estimation est prête. Elle ne bloque pas le créneau.';
     case 'create_hold':

@@ -63,14 +63,23 @@ export const CheckAvailabilityInputSchema = z.object({
   restaurantId: z.string().uuid(),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
-  slotEnd: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema.optional().describe(
+    'Include only if the person supplied an end time or duration. Otherwise Sokar checks 120 minutes from slotStart.',
+  ),
   timezone: McpTimezoneSchema.optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema>;
 
-// A quote leaves capacity free; a hold temporarily reserves it.
-export const CreateQuoteInputSchema = CheckAvailabilityInputSchema;
-export const CreateHoldInputSchema = CheckAvailabilityInputSchema;
+// Quotes and holds affect a requested time range, so they require an explicit end.
+const ExplicitReservationSlotInputSchema = z.object({
+  restaurantId: z.string().uuid(),
+  partySize: z.number().int().min(1).max(50),
+  slotStart: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
+});
+export const CreateQuoteInputSchema = ExplicitReservationSlotInputSchema;
+export const CreateHoldInputSchema = ExplicitReservationSlotInputSchema;
 
 // ─── create_reservation ──────────────────────────────────────────
 
