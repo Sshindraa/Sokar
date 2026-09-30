@@ -218,6 +218,15 @@ appels enregistrés) :
 # la requête finale est identique (rien n'est dit ni exécuté avant).
 VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
 VOICE_STRUCTURED_SPECULATION_MS="250"
+# Spéculation à la pause : la requête part dès que l'appelant a été silencieux ce délai (détecteur de
+# voix sur l'audio entrant), pas 250 ms après la dernière partielle, et pas pendant qu'il parle ;
+# ainsi la réponse est prête pendant l'attente avant le premier son (VOICE_FIRST_AUDIO_SILENCE_MS).
+# 0 : ancien déclenchement (VOICE_STRUCTURED_SPECULATION_MS). Plafond de requêtes spéculatives
+# par tour (~3 k tokens chacune ; la clé Cerebras est limitée à 150 k tokens/minute).
+# Métriques : sokar_voice_structured_speculation_total{outcome=hit|miss_*|none},
+# sokar_voice_structured_speculation_launch_total{result=started|capped}.
+VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
+VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :

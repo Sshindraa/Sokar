@@ -558,6 +558,12 @@ export const voiceStructuredSpeculationTotal = new Counter({
   labelNames: ['outcome'] as const,
   registers: [getRegistry()],
 });
+export const voiceStructuredSpeculationLaunchTotal = new Counter({
+  name: 'sokar_voice_structured_speculation_launch_total',
+  help: 'Structured-turn speculative requests: started, or capped by the per-turn launch limit',
+  labelNames: ['result'] as const,
+  registers: [getRegistry()],
+});
 export const voiceSemanticAgreementTotal = new Counter({
   name: 'sokar_voice_semantic_agreement_total',
   help: 'Agreement between Span-01 signals and TurnPlan',
