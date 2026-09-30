@@ -95,6 +95,15 @@ export function isLiveStripeSecretKey(value: string | undefined): boolean {
 
 // Même compatibilité que manager.ts avant centralisation : une valeur absente,
 // invalide, non positive ou non finie retombe sur 8 secondes.
+/**
+ * URL OpenRouter du seul secours vocal. Une ligne vide du .env vaut « absente » : elle ne doit pas faire échouer
+ * le démarrage, et le secours retombe alors sur OPENROUTER_BASE_URL.
+ */
+export const openRouterFallbackBaseUrlSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().url().optional(),
+);
+
 const voiceLlmTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_TIMEOUT_MS;
   const parsed = Number(value);
@@ -206,6 +215,12 @@ export const VoiceConfigSchema = z
     /** Secours du tour structuré (JSON Schema strict) si le provider principal échoue. */
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
+    /**
+     * Adresse du secours vocal seul (tour structuré et doublon de hedging) ; absente = OPENROUTER_BASE_URL. Séparée
+     * parce que le routage UE (`https://eu.openrouter.ai/api/v1`) ne porte pas Jev (l'API decisions y répond 404) :
+     * Jev, le juge et le suivi de crédit gardent OPENROUTER_BASE_URL.
+     */
+    OPENROUTER_FALLBACK_BASE_URL: openRouterFallbackBaseUrlSchema,
     VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('deepseek/deepseek-v4-flash-0731'),
     // Hébergeurs OpenRouter du repli, dans l'ordre (vide = tri par latence historique, instable).
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: z.string().default('Cohere,Wafer,Baidu'),
