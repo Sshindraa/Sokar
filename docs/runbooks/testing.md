@@ -465,7 +465,6 @@ une lecture de réconciliation transforme ensuite un `unknown` en
 claim : le cas reste en revue manuelle jusqu'à décision sur une référence de
 rejeu sûre.
 
-
 ## Jeu de test de comportements vocaux
 
 Mesure si le tour structuré tient des comportements de conversation (attendre une correction annoncée, ne pas
@@ -480,5 +479,41 @@ scripts/ops/voice-behavior-eval.sh        # compose ici, rejoue sur le VPS (la c
 
 - À relancer après tout changement de `structured-turn/prompt.ts`, du schéma ou du modèle vocal.
 - Un cas se tire d'un appel : ajouter l'historique, la phrase, l'état du brouillon et un ou deux contrôles.
-- Consomme du quota Cerebras (~250 requêtes) : utiliser `CEREBRAS_EVAL_API_KEY` (clé dédiée), jamais la clé des appels.
+- Consomme du quota Cerebras : une seule clé sert aux appels et aux rejeux, donc le crédit des appels réels. Plafond
+  de 150 requêtes (`VBE_MAX_REQUESTS`) ; vérifier le solde avant de lancer.
 - Hors CI (pas de clé) ; la logique de notation est testée (`behavior-eval.test.ts`).
+
+### Suite « dégradation » et découpage calibration / contrôle
+
+La suite par défaut mesure des comportements connus. La suite `perturb` mesure autre chose : ce que fait le modèle
+quand la transcription est abîmée, sans qu'on écrive de phrase. Les variantes sont **générées** à partir des cas
+annotés (`valueSpans` : la sous-chaîne exacte de la phrase qui porte une heure, un nombre ou un nom, et la valeur
+qu'elle porte ; `spanPool` : spans supplémentaires servant de donneurs) avec une graine fixe (`PERTURB_SEED`).
+
+| Famille      | Altération                                       | Comportement attendu                                                              |
+| ------------ | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| ablation     | la sous-chaîne annotée est retirée               | brouillon inchangé sur ce champ, OU `interpretation=unclear`, OU `confidence=low` |
+| substitution | remplacée par celle d'un autre appel, même champ | le brouillon porte la nouvelle valeur                                             |
+| bruit        | un mot du corpus des cas est inséré à côté       | la valeur annotée reste extraite                                                  |
+
+```bash
+VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/avant.json scripts/ops/voice-behavior-eval.sh
+# après un changement : même commande vers apres.json, puis
+cd apps/api && npx tsx scripts/voice-behavior-eval.ts compare /…/avant.json /…/apres.json
+```
+
+- `VBE_SUITE=default|perturb|all`. `perturb` = 27 variantes × 5 tirages = 135 requêtes (plafond 150).
+- Indicateurs par découpage : **fausse acceptation** (part des tirages d'ablation où une valeur absente de la phrase
+  entre dans le brouillon ; le pire cas, à faire baisser), **fidélité** (substitution), **robustesse au bruit**.
+- Les variantes et le cas `truthStatus: "unverified"` sont **informatifs** : rapportés (`·`), jamais bloquants. Les
+  seuils se fixent après la mesure de référence.
+- **Découpage** : un tiers des cas est en `holdout`, par hachage de l'identifiant (jamais choisi à la main ; un
+  `split` explicite reste possible). On règle et on diagnostique sur `calibration`, **jamais** sur `holdout`. Une
+  variante suit le découpage de son cas de départ. Attention : les 29 cas d'origine ont déjà servi à régler les
+  prompts, leur `holdout` n'est donc pas vierge. Seuls les cas ajoutés à partir de maintenant peuvent l'être.
+- **Aucune liste de phrases, de mots ou de formulations** dans le code, les prompts d'exemple ou les cas générés.
+  Un contrôle porte sur la structure de la sortie (champs, brouillon, `interpretation`, `confidence`, `action`),
+  jamais sur le texte dit. Pas de nouveau contrôle `say`. Ce qui s'apparente à une phrase est de la donnée
+  annotée dans `cases.json`.
+- Un cas dont la vérité terrain n'est pas établie (ex. `appel-bf3893ae-enonce-incoherent`) porte
+  `truthStatus: "unverified"` jusqu'à une écoute humaine de l'enregistrement.

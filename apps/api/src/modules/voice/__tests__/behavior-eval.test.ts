@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { buildRequests } from '../behavior-eval/build';
-import { MIN_VALID_RATE, scoreCase } from '../behavior-eval/score';
+import { casesForSuite, generatePerturbations, PERTURB_SAMPLES } from '../behavior-eval/perturb';
+import {
+  compareRuns,
+  formatReport,
+  MIN_VALID_RATE,
+  scoreAll,
+  scoreCase,
+  splitOf,
+  summarize,
+} from '../behavior-eval/score';
 import type { BehaviorCase, BehaviorCasesFile } from '../behavior-eval/types';
 
 const baseCase = (checks: BehaviorCase['checks']): BehaviorCase => ({
@@ -105,6 +114,242 @@ describe('scoreCase', () => {
   });
 });
 
+describe('nouveaux contrôles structurels', () => {
+  const withDraft = (draft: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    say: '',
+    draft,
+    ...extra,
+  });
+  const empty = { date: '', time: '', partySize: 0, customerName: '' };
+
+  it('draftUnchanged : vrai seulement si les champs listés gardent leur valeur entrante', () => {
+    const testCase = {
+      ...baseCase([{ kind: 'draftUnchanged', fields: ['time', 'partySize'], minRate: 1 }]),
+      draft: { date: '2026-09-30', time: '14:00' },
+    };
+    const kept = scoreCase(testCase, [withDraft({ ...empty, date: '2026-10-01', time: '14:00' })]);
+    const changed = scoreCase(testCase, [withDraft({ ...empty, time: '20:00' })]);
+    const noDraft = scoreCase(testCase, [{ say: '' }]);
+    expect(kept.checks[0].rate).toBe(1);
+    expect(changed.checks[0].rate).toBe(0);
+    expect(noDraft.checks[0].rate).toBe(0);
+  });
+
+  it('fieldIn : le champ appartient à la liste', () => {
+    const result = scoreCase(
+      baseCase([{ kind: 'fieldIn', path: 'confidence', values: ['low'], minRate: 0.5 }]),
+      [{ confidence: 'low' }, { confidence: 'high' }],
+    );
+    expect(result.checks[0].rate).toBe(0.5);
+    expect(result.passed).toBe(true);
+  });
+
+  it('anyOf se mesure tirage par tirage, pas en moyenne des sous-contrôles', () => {
+    const testCase = baseCase([
+      {
+        kind: 'anyOf',
+        of: [
+          { kind: 'draftUnchanged', fields: ['time'] },
+          { kind: 'fieldIn', path: 'interpretation', values: ['unclear'] },
+          { kind: 'fieldIn', path: 'confidence', values: ['low'] },
+        ],
+        minRate: 0,
+      },
+    ]);
+    const result = scoreCase(testCase, [
+      withDraft(empty), // heure inchangée
+      withDraft({ ...empty, time: '20:00' }, { interpretation: 'unclear' }), // changée mais dit ne pas comprendre
+      withDraft({ ...empty, time: '20:00' }, { interpretation: 'answer', confidence: 'low' }),
+      withDraft({ ...empty, time: '20:00' }, { interpretation: 'answer', confidence: 'high' }), // sûr de lui et faux
+    ]);
+    expect(result.checks[0].rate).toBe(0.75);
+  });
+});
+
+describe('split calibration / contrôle', () => {
+  it("est stable et dérivé de l'identifiant, sauf valeur explicite", () => {
+    expect(splitOf({ id: 'cas-a' })).toBe(splitOf({ id: 'cas-a' }));
+    expect(splitOf({ id: 'cas-a', split: 'holdout' })).toBe('holdout');
+    const splits = Array.from({ length: 300 }, (_, index) => splitOf({ id: `cas-${index}` }));
+    const holdout = splits.filter((split) => split === 'holdout').length;
+    expect(holdout).toBeGreaterThan(70);
+    expect(holdout).toBeLessThan(130);
+  });
+
+  it('une variante suit le découpage de son cas de départ', () => {
+    const base = splitOf({ id: 'extrait-taille-groupe' });
+    expect(
+      splitOf({
+        id: 'extrait-taille-groupe~noise~partySize',
+        perturbation: { kind: 'noise', base: 'extrait-taille-groupe', field: 'partySize' },
+      }),
+    ).toBe(base);
+  });
+});
+
+const fixture = JSON.parse(
+  readFileSync(
+    path.join(__dirname, '../../../../scripts/fixtures/voice-behavior/cases.json'),
+    'utf8',
+  ),
+) as BehaviorCasesFile;
+
+describe('variantes dégradées générées', () => {
+  const variants = generatePerturbations(fixture);
+  const byKind = (kind: string) => variants.filter((v) => v.perturbation?.kind === kind);
+
+  it('est déterministe : deux générations donnent exactement les mêmes variantes', () => {
+    expect(generatePerturbations(fixture)).toEqual(variants);
+  });
+
+  it('change avec la graine', () => {
+    expect(generatePerturbations(fixture, 1)).not.toEqual(variants);
+  });
+
+  it('génère les trois familles, sous le plafond de requêtes du rejeu', () => {
+    expect(byKind('ablation').length).toBeGreaterThan(0);
+    expect(byKind('substitution').length).toBeGreaterThan(0);
+    expect(byKind('noise').length).toBeGreaterThan(0);
+    const requests = variants.length * PERTURB_SAMPLES;
+    expect(requests).toBeLessThanOrEqual(150);
+  });
+
+  it('identifiants uniques, distincts de ceux des cas, chaque variante a un contrôle', () => {
+    const ids = [...fixture.cases, ...variants].map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const v of variants) expect(v.checks).toHaveLength(1);
+  });
+
+  it("l'ablation retire exactement la sous-chaîne annotée, jamais plus", () => {
+    for (const v of byKind('ablation')) {
+      const base = fixture.cases.find((c) => c.id === v.perturbation?.base)!;
+      const span = base.valueSpans![v.perturbation!.field]!;
+      expect(v.transcript).not.toContain(span.text);
+      expect(v.transcript.length).toBeGreaterThan(0);
+      expect(base.transcript.replace(span.text, ' ').replace(/\s+/g, ' ').trim()).toBe(
+        v.transcript,
+      );
+    }
+  });
+
+  it("la substitution attend la valeur du donneur, différente de celle d'origine", () => {
+    for (const v of byKind('substitution')) {
+      const base = fixture.cases.find((c) => c.id === v.perturbation?.base)!;
+      const span = base.valueSpans![v.perturbation!.field]!;
+      const check = v.checks[0];
+      expect(check.kind).toBe('draft');
+      if (check.kind === 'draft') {
+        expect(String(check.equals).toLowerCase()).not.toBe(String(span.value).toLowerCase());
+        expect(v.transcript).not.toBe(base.transcript);
+      }
+    }
+  });
+
+  it("le bruit garde la sous-chaîne annotée intacte et n'insère aucun mot qui porte une valeur", () => {
+    for (const v of byKind('noise')) {
+      const base = fixture.cases.find((c) => c.id === v.perturbation?.base)!;
+      const span = base.valueSpans![v.perturbation!.field]!;
+      expect(v.transcript).toContain(span.text);
+      const inserted = v.transcript
+        .replace(span.text, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter((word) => !base.transcript.split(/\s+/).includes(word));
+      for (const word of inserted) expect(word).not.toMatch(/\d/);
+    }
+  });
+
+  it('refuse une annotation dont la sous-chaîne est absente de la phrase', () => {
+    const broken: BehaviorCasesFile = {
+      ...fixture,
+      cases: [{ ...baseCase([]), valueSpans: { time: { text: 'introuvable', value: '20:00' } } }],
+    };
+    expect(() => generatePerturbations(broken)).toThrow(/introuvable/);
+  });
+
+  it('les variantes sont informatives : elles ne font jamais échouer le jeu', () => {
+    const results = scoreAll(variants, {
+      model: 'test',
+      responses: Object.fromEntries(
+        variants.map((v) => [
+          v.id,
+          Array.from({ length: PERTURB_SAMPLES }, () => ({ say: '', draft: {} })),
+        ]),
+      ),
+    });
+    expect(results.every((r) => r.informational)).toBe(true);
+    expect(formatReport(results)).toContain('informatif');
+  });
+
+  it('casesForSuite : default, perturb et all', () => {
+    expect(casesForSuite(fixture, 'default')).toEqual(fixture.cases);
+    expect(casesForSuite(fixture, 'perturb')).toEqual(variants);
+    expect(casesForSuite(fixture, 'all')).toHaveLength(fixture.cases.length + variants.length);
+  });
+});
+
+describe('indicateurs agrégés', () => {
+  const variants = generatePerturbations(fixture);
+  const respond = (draftFor: (variantKind: string) => Record<string, unknown>) => ({
+    model: 'test',
+    responses: Object.fromEntries(
+      variants.map((v) => [
+        v.id,
+        Array.from({ length: PERTURB_SAMPLES }, () => ({
+          say: '',
+          ...draftFor(v.perturbation!.kind),
+        })),
+      ]),
+    ),
+  });
+
+  it('un modèle qui invente la valeur retirée, ignore la phrase et perd la valeur au bruit', () => {
+    // Sortie : brouillon vide + sûr de lui. Ablation : inchangé si le brouillon entrant est vide.
+    const never = summarize(
+      scoreAll(
+        variants,
+        respond(() => ({ draft: { date: '', time: '', partySize: 0, customerName: '' } })),
+      ),
+    );
+    expect(never.calibration.fidelityRate).toBe(0);
+    expect(never.calibration.noiseRobustness).toBe(0);
+    const total = never.calibration.variants.substitution + never.holdout.variants.substitution;
+    expect(total).toBe(variants.filter((v) => v.perturbation?.kind === 'substitution').length);
+  });
+
+  it('ne compte pas une variante dont trop de réponses sont invalides', () => {
+    const responses = respond(() => ({ draft: {} }));
+    const victim = variants.find((v) => v.perturbation?.kind === 'ablation')!;
+    responses.responses[victim.id] = Array.from({ length: PERTURB_SAMPLES }, () => null) as never;
+    const before = summarize(
+      scoreAll(
+        variants,
+        respond(() => ({ draft: {} })),
+      ),
+    );
+    const after = summarize(scoreAll(variants, responses));
+    const split = splitOf(victim);
+    expect(after[split].variants.ablation).toBe(before[split].variants.ablation - 1);
+  });
+
+  it('compareRuns montre les écarts de taux par cas et par indicateur', () => {
+    const a = scoreAll(
+      variants,
+      respond(() => ({ draft: {} })),
+    );
+    const b = scoreAll(
+      variants,
+      respond(() => ({ draft: {}, confidence: 'low' })),
+    );
+    const report = compareRuns(
+      { results: a, summary: summarize(a) },
+      { results: b, summary: summarize(b) },
+    );
+    expect(report).toContain('▲');
+    expect(report).toContain('falseAcceptRate');
+  });
+});
+
 describe('cas réels du jeu de comportements', () => {
   const file = JSON.parse(
     readFileSync(
@@ -121,6 +366,13 @@ describe('cas réels du jeu de comportements', () => {
       expect(request.messages.at(-1)?.role).toBe('user');
       expect(request.samples).toBeGreaterThan(0);
     }
+  });
+
+  it('le cas bf3893ae est informatif : la vérité terrain attend une écoute humaine', () => {
+    const real = file.cases.find((c) => c.id === 'appel-bf3893ae-enonce-incoherent');
+    expect(real?.truthStatus).toBe('unverified');
+    const result = scoreCase(real!, [{ say: '', draft: { time: '20:00' }, confidence: 'high' }]);
+    expect(result.informational).toBe(true);
   });
 
   it('les identifiants sont uniques et chaque cas a au moins un contrôle', () => {

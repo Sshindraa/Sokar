@@ -265,10 +265,6 @@ VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
 # Silence avant de répondre à un tour que le modèle juge inachevé (ms, 800 à 6000, défaut 2000),
 # mesuré depuis la transcription finale. Tant que des mots arrivent, la réponse est reportée (5 fois max).
 VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
-# Clé Cerebras DÉDIÉE aux tests (jeu de comportements, rejeux) : sans elle, les rejeux consomment
-# le quota des appels réels. Le 29/09 ils l'ont épuisé (402 payment_required) : plus aucune réponse
-# vocale, aucun repli. Ne sert jamais aux appels ; lue seulement par voice-behavior-replay.mjs.
-CEREBRAS_EVAL_API_KEY=""
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
