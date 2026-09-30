@@ -144,8 +144,9 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('langage courant');
       expect(body.result.instructions).toContain('ne demandez jamais');
       expect(body.result.instructions).toContain('idempotencyKey');
+      expect(body.result.instructions).toContain('restaurantName');
       expect(body.result.instructions).toContain('120 minutes');
-      expect(body.result.instructions).toContain('no_exact_slot_available');
+      expect(body.result.instructions).toContain('Ne demandez jamais un identifiant');
       expect(body.result.instructions).toContain('Après une réussite');
     });
 
@@ -274,9 +275,11 @@ describe('MCP server', () => {
       const searchRestaurants = body.result.tools.find(
         (tool: { name: string }) => tool.name === 'search_restaurants',
       );
-      expect(searchRestaurants.description).toContain('omettez slotEnd');
+      expect(searchRestaurants.description).toContain('restaurantName');
+      expect(searchRestaurants.description).toContain('« Vers 19 h » signifie commencer à 19 h');
       expect(searchRestaurants.description).toContain('Ne demandez jamais de restaurantId');
       expect(searchRestaurants.inputSchema.required).not.toContain('slotEnd');
+      expect(searchRestaurants.inputSchema.required).not.toContain('restaurantName');
     });
   });
 
@@ -348,7 +351,9 @@ describe('MCP server', () => {
       const body = res.json();
       // Le tool unknown retourne isError=true dans result, pas une JSON-RPC error
       expect(body.result.isError).toBe(true);
-      expect(body.result.content[0].text).toContain('UNKNOWN_TOOL');
+      expect(body.result.content[0].text).toBe(
+        'Je n’ai pas pu terminer cette demande. Réessayez ou demandez de l’aide.',
+      );
       expect(body.result._meta['com.sokar/error']).toEqual({
         code: 'UNKNOWN_TOOL',
         message: 'Unknown tool: unknown_tool',
@@ -366,7 +371,10 @@ describe('MCP server', () => {
       });
       const body = res.json();
       expect(body.result.isError).toBe(true);
-      expect(body.result.content[0].text).toContain('INVALID_INPUT');
+      expect(body.result.content[0].text).toBe(
+        'Je n’ai pas pu traiter la demande telle quelle. Vérifiez les informations fournies.',
+      );
+      expect(body.result._meta['com.sokar/error'].code).toBe('INVALID_INPUT');
 
       const metrics = await renderMetrics();
       expect(metrics).toMatch(
@@ -410,6 +418,9 @@ describe('MCP server', () => {
       });
       const body = res.json();
       const text = body.result.content[0].text;
+      expect(text).toBe('Voici les informations sur Le Bistrot.');
+      expect(text).not.toContain(validUuid);
+      expect(text).not.toContain('{');
       expect(text).not.toContain('+33');
       expect(text).not.toContain('phoneE164');
       expect(body.result.structuredContent).not.toHaveProperty('phoneE164');
@@ -448,7 +459,10 @@ describe('MCP server', () => {
       });
       const body = res.json();
       expect(body.result.isError).toBe(true);
-      expect(body.result.content[0].text).toContain('FORBIDDEN');
+      expect(body.result.content[0].text).toBe(
+        'Cette action nécessite une autorisation supplémentaire.',
+      );
+      expect(body.result._meta['com.sokar/error'].code).toBe('FORBIDDEN');
       expect(body.result._meta['mcp/www_authenticate']).toEqual([
         expect.stringContaining('error="insufficient_scope"'),
       ]);
@@ -473,7 +487,8 @@ describe('MCP server', () => {
       });
       const body = res.json();
       expect(body.result.isError).toBe(true);
-      expect(body.result.content[0].text).toContain('NOT_FOUND');
+      expect(body.result.content[0].text).toBe('Je ne trouve pas la fiche de ce restaurant.');
+      expect(body.result._meta['com.sokar/error'].code).toBe('NOT_FOUND');
     });
 
     it('create_reservation sanitize les prompt injections', async () => {
@@ -519,7 +534,7 @@ describe('MCP server', () => {
       });
       const body = res.json();
       expect(body.result.isError).toBe(true);
-      expect(body.result.content[0].text).toContain('INVALID_INPUT');
+      expect(body.result._meta['com.sokar/error'].code).toBe('INVALID_INPUT');
     });
 
     it('create_reservation exige customerPhone E.164', async () => {

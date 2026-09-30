@@ -28,10 +28,16 @@ const McpTimezoneSchema = z
 
 export const SearchRestaurantsInputSchema = z.object({
   city: z.string().min(1).max(100),
+  restaurantName: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Optional name supplied by the person. Include it when they name a restaurant.'),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema.optional().describe(
-    'Optional end time. Omit when only a start time is known; Sokar uses a 120-minute default.',
+    'Include only if the person supplied an end time or duration. For « vers 19 h », use slotStart at 19:00 and omit slotEnd; Sokar uses a 120-minute default.',
   ),
   timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
@@ -204,6 +210,20 @@ export const SearchRestaurantsOutputSchema = z
       .describe(
         'Whether the exact search found a slot, hit a party-size limit, or found no match for that exact request. no_exact_slot_available does not mean the restaurant does not exist; offer another time and never ask the person for a restaurant ID.',
       ),
+    requestedRestaurant: z
+      .object({
+        id: OutputUuidSchema.optional().describe(
+          'Internal ID. Never show or ask the person for it.',
+        ),
+        name: z.string(),
+        status: z
+          .enum(['available', 'unavailable', 'capacity_exceeded', 'not_found'])
+          .describe(
+            'Authoritative result for a restaurantName supplied in the request. unavailable means the named restaurant was found but has no availability for this exact request; not_found means no matching MCP-visible restaurant was found in the requested city. Never infer this from the restaurants array and never ask for an ID.',
+          ),
+      })
+      .strict()
+      .optional(),
     restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
     capacityLimits: z.array(RestaurantSummaryOutputSchema),
     nextCursor: z.string().optional(),

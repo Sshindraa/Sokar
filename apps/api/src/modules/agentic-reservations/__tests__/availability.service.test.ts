@@ -187,6 +187,39 @@ describe('AvailabilityService', () => {
       expect(call.where.cuisineType).toBeUndefined();
     });
 
+    it('recherche un restaurant par nom et conserve sa fiche même sans disponibilité au créneau', async () => {
+      const findMany = vi.fn().mockResolvedValue([
+        {
+          id: 'r-sokar',
+          name: 'Chez Sokar',
+          slug: 'chez-sokar',
+          lat: 45.76,
+          lng: 4.83,
+          formattedAddress: '12 Rue de la République, 69001 Lyon',
+          cuisineType: ['Bistrot'],
+          priceRange: 2,
+        },
+      ]);
+      const service = new AvailabilityService(makeFakePrisma({ findMany }));
+      vi.spyOn(service, 'checkAvailability').mockResolvedValue({ available: false });
+
+      const result = await service.searchAvailableRestaurantsPage({
+        city: 'Lyon',
+        restaurantName: 'Chez Sokar',
+        partySize: 2,
+        slotStart: new Date('2026-09-17T17:00:00Z'),
+        slotEnd: new Date('2026-09-17T19:00:00Z'),
+        maxResults: 5,
+      });
+
+      expect(findMany.mock.calls[0][0].where.name).toEqual({
+        contains: 'Chez Sokar',
+        mode: 'insensitive',
+      });
+      expect(result.results).toEqual([]);
+      expect(result.restaurantMatches).toEqual([{ restaurantId: 'r-sokar', name: 'Chez Sokar' }]);
+    });
+
     it('expose la limite en ligne quand un groupe dépasse la capacité', async () => {
       const findMany = vi.fn().mockResolvedValue([
         {
