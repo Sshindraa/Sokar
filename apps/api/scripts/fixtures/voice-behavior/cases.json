@@ -288,6 +288,64 @@
         "role": "assistant",
         "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
       }
+    ],
+    "recapAsked": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      }
     ]
   },
   "cases": [
@@ -773,6 +831,96 @@
           "path": "awaiting",
           "equals": "partySize",
           "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "recap-fragment-apres-silence",
+      "behavior": "pas de récapitulatif redit",
+      "source": "appel 1b3f85e9 tour 14 : « donc » puis silence, l'agent a relu tout le récapitulatif (« Je vous ai lu le récapitulatif : … ») — cause réelle : refus « slot_not_verified » puis relecture (corrigé par #307) ; reste ~20 % de relectures des détails, jugées bénignes",
+      "history": "recapAsked",
+      "transcript": "donc",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "callerFinished": true,
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "notEquals": "create_reservation",
+          "minRate": 0.95
+        },
+        {
+          "kind": "noRepeatOf",
+          "text": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?",
+          "minRate": 0.9
+        },
+        {
+          "kind": "sayWords",
+          "maxMean": 10
+        },
+        {
+          "kind": "say",
+          "pattern": "au nom de|à 16 h 30|six personnes|pour 6",
+          "expect": false,
+          "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "recap-fragment-attente",
+      "behavior": "pas de récapitulatif redit",
+      "source": "appel 1b3f85e9 tour 14 : « donc » juste après le récapitulatif : la phrase est inachevée",
+      "history": "recapAsked",
+      "transcript": "donc",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.8
+        }
+      ]
+    },
+    {
+      "behavior": "extraction",
+      "history": "toName",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "samples": 20,
+      "id": "epele-sans-preambule",
+      "source": "« a 2 k i f » sans préambule : le modèle perdait le double K (15 % de AKKIF avant la règle du chiffre doublant la lettre, 100 % après)",
+      "transcript": "a 2 k i f",
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "\\bS\\b",
+          "expect": false,
+          "minRate": 0.9
+        },
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "AKKIF",
+          "minRate": 0.9
         }
       ]
     }

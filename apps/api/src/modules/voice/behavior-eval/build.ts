@@ -65,6 +65,7 @@ export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): B
     openingHours: profile ? profile.openingHours : OPENING_HOURS,
     today: file.today,
     ...(testCase.dayPart ? { dayPart: testCase.dayPart } : {}),
+    ...(testCase.callerFinished ? { callerFinished: true } : {}),
     ...(testCase.actionResult ? { actionResult: testCase.actionResult } : {}),
   });
   return {
@@ -78,6 +79,8 @@ export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): B
         strict: true,
         schema: buildStructuredTurnJsonSchema(
           testCase.actionResult ? (AFTER_ACTION_ACTIONS as never) : undefined,
+          // Comme en appel : la relance après un silence impose turnComplete=true.
+          { turnCompleteOnly: testCase.callerFinished === true },
         ),
       },
     },
