@@ -23,7 +23,13 @@ vi.mock('../stream/tts-handler', () => ({
   isSessionActiveForTts: vi.fn().mockReturnValue(true),
   cleanTextForTts: (text: string) => text,
 }));
-const contextTurn = {
+const contextTurn: {
+  push: ReturnType<typeof vi.fn>;
+  finish: ReturnType<typeof vi.fn>;
+  cancel: ReturnType<typeof vi.fn>;
+  hasAudioOutput: boolean;
+  onHoldCancelled?: () => void;
+} = {
   push: vi.fn(),
   finish: vi.fn().mockResolvedValue(undefined),
   cancel: vi.fn(),
@@ -79,6 +85,7 @@ function fixture() {
   } as unknown as CallSession;
   const outputs: StructuredTurnOutput[] = [];
   const mgr = {
+    handleBargeIn: vi.fn(),
     transition: vi.fn((s: CallSession, state: CallSession['state']) => {
       s.state = state;
       return true;
@@ -607,6 +614,21 @@ describe('tour structuré (canary)', () => {
 
       expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('jette la réponse préparée comme un barge-in quand l’appelant reprend avant le premier son', async () => {
+    vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'true');
+    const { session, mgr, outputs } = fixture();
+    outputs.push(turn({ say: 'Bonjour. Pour quel jour ?', awaiting: 'date' }));
+    contextTurn.onHoldCancelled = undefined;
+
+    await processTranscriptStreaming(session, 'oui bonjour', mgr);
+
+    const onHoldCancelled = contextTurn.onHoldCancelled as (() => void) | undefined;
+    expect(onHoldCancelled).toBeTypeOf('function');
+    onHoldCancelled?.();
+    expect(session.sttAfterBargeIn).toBe(true);
+    expect(mgr.handleBargeIn).toHaveBeenCalledWith(session);
   });
 
   it('refuse une date passée proposée par le modèle', async () => {
