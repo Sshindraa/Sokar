@@ -265,6 +265,12 @@ VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
 # Silence avant de répondre à un tour que le modèle juge inachevé (ms, 800 à 6000, défaut 2000),
 # mesuré depuis la transcription finale. Tant que des mots arrivent, la réponse est reportée (5 fois max).
 VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
+# Vérification de compréhension du tour structuré (restaurants listés, vide = aucun). Le modèle lit
+# littéralement ce que l'appelant a dit (`reading`) et déclare `understanding` clear/doubtful ; sur
+# doubtful le code n'applique aucun changement de brouillon ni aucune action (même pas une
+# vérification de disponibilité) et le modèle redemande. Aucune liste de phrases : le jugement est celui du
+# modèle, dans le contexte. Change le schéma et le prompt de ces restaurants : activer d'abord Chez Sokar.
+VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS=""
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).

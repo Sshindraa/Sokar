@@ -31,7 +31,17 @@ Une formule de politesse se rapporte au moment où tu parles (MOMENT DE LA JOURN
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
 La disponibilité dépend du nombre de personnes : tant que draft.partySize vaut 0, ne dis jamais qu'un horaire est possible, libre ou que « ça marche », même si « dayAvailability » le montre libre. Note l'horaire (« 18 heures, c'est noté ») et demande le nombre ; tu confirmeras la disponibilité une fois le nombre connu. Dès que la date, l'heure et le nombre sont connus, lis dans « freeSlotsByPartySize » la ligne qui contient ce nombre (« 5-8 » contient 6) : si l'heure demandée n'y figure pas, dis clairement qu'elle n'est pas disponible pour ce nombre et propose les horaires libres les plus proches de cette ligne ; ne demande pas le nom et ne dis pas « c'est noté » pour cet horaire.
 Quand l'ÉTAT VÉRIFIÉ contient « dateFacts », c'est la vérité pour le jour demandé : ses horaires (ou FERMÉ) priment sur tout ce qui a été dit plus tôt dans l'appel, y compris par toi ; si tu t'étais trompé, corrige-toi.
-L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. « deux K », « 2 k » ou « double K » signifient deux lettres K à la suite : dans une épellation, un chiffre suivi d'une lettre double cette lettre, même sans autre mot autour (« a 2 k i f » = A K K I F, cinq lettres, jamais AKIF) ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom (ex. « a k f a 2 k i f » = faux départ « a k f » puis « A, 2 K, I, F »), ne garde que la DERNIÈRE épellation complète, ici A K K I F, jamais un mélange des deux. Relis toujours toutes les lettres retenues, y compris les doubles (« A, deux K, I, F »). Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement (« hoët h o u e t » = HOUET, jamais HOËT) ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Relis-la lettre par lettre et fais-la confirmer. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
+L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. « deux K », « 2 k » ou « double K » signifient deux lettres K à la suite : dans une épellation, un chiffre suivi d'une lettre double cette lettre, même sans autre mot autour (« a 2 k i f » = A K K I F, cinq lettres, jamais AKIF) ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom (ex. « a k f a 2 k i f » = faux départ « a k f » puis « A, 2 K, I, F »), ne garde que la DERNIÈRE épellation complète, ici A K K I F, jamais un mélange des deux. Relis toujours toutes les lettres retenues, y compris les doubles (« A, deux K, I, F »). Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement (« hoët h o u e t » = HOUET, jamais HOËT) ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Seules les lettres épelées forment le nom : un mot dit en plus avant ou après l'épellation n'en fait jamais partie, même s'il ressemble à un nom, et il ne figure ni dans customerName ni dans ta relecture. Relis-la lettre par lettre et fais-la confirmer. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
+
+/**
+ * Vérification de compréhension (drapeau par restaurant). Consignes de principe, sans formulation à imiter :
+ * appel bf3893ae, une transcription incohérente était retenue comme une valeur sûre (confidence=high).
+ * Le code applique la déclaration `doubtful` (voir applyProposedDraft et authorizeStructuredAction).
+ */
+const UNDERSTANDING_INSTRUCTIONS = `COMPRÉHENSION VÉRIFIÉE (prioritaire sur la retenue de valeur ci-dessus) :
+- reading : avant de remplir le brouillon, redis en une courte phrase littérale ce que l'appelant a dit, sans l'interpréter au-delà de ses mots et sans compléter ce qui manque. La transcription vient d'une reconnaissance vocale au téléphone : un mot peut être faux, surtout un nombre, et une phrase peut être incomplète ou ne rien vouloir dire.
+- understanding : clear seulement si, pour CHAQUE valeur que tu ajoutes ou changes dans draft, les mots de l'appelant suffisent à savoir de quelle information il s'agit (le jour, l'heure, le nombre de personnes ou le nom) et que c'est la seule lecture raisonnable compte tenu de ta dernière question. doubtful dans tous les autres cas : une valeur qui pourrait désigner autre chose, une phrase qui n'a pas de sens comme réponse à ta question, une valeur que tu devrais deviner ou déduire plutôt qu'entendre.
+- Quand understanding vaut doubtful : draft reste exactement celui de l'ÉTAT VÉRIFIÉ, interpretation=unclear, action none, confidence low. Ta phrase ne confirme, n'annonce et ne répète aucune valeur douteuse : elle redemande naturellement ce qui manque, en une seule question, sans reprocher quoi que ce soit à l'appelant.`;
 
 /**
  * Jour de la semaine et horaires de la date du brouillon, calculés par le code.
@@ -137,6 +147,8 @@ export function buildStructuredTurnMessages(input: {
   dayPart?: string;
   /** L'appelant s'est tu après un tour jugé inachevé : il faut lui répondre. */
   callerFinished?: boolean;
+  /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
+  understanding?: boolean;
 }): ChatMessage[] {
   const verified = {
     draft: input.state.draft,
@@ -154,6 +166,7 @@ export function buildStructuredTurnMessages(input: {
   const system = [
     input.systemPrompt,
     STRUCTURED_TURN_INSTRUCTIONS,
+    input.understanding ? UNDERSTANDING_INSTRUCTIONS : '',
     calendar
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
       : '',

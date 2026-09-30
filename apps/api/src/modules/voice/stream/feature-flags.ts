@@ -26,6 +26,21 @@ export function isVoiceV2Default(
   );
 }
 
+/**
+ * Vérification de compréhension du tour structuré : le modèle lit littéralement ce que l'appelant a dit et
+ * déclare s'il a dû deviner ; le code n'applique alors aucun changement ni aucune action. Seulement pour les
+ * restaurants listés (`VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoiceUnderstandingCheckEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,

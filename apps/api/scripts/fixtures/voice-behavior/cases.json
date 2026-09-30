@@ -1237,6 +1237,11 @@
               "kind": "fieldIn",
               "path": "confidence",
               "values": ["low"]
+            },
+            {
+              "kind": "fieldIn",
+              "path": "understanding",
+              "values": ["doubtful"]
             }
           ],
           "minRate": 0.9
