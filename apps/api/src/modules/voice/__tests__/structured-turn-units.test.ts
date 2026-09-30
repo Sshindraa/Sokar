@@ -17,6 +17,7 @@ import {
   reconcileSpelledName,
   requestedSlotConflict,
   spelledLettersOf,
+  spelledNameFact,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 
@@ -403,6 +404,26 @@ describe('reconcileSpelledName', () => {
       reconcileSpelledName(draft('DE LA FONTAINE'), 'd e l a f o n t a i n e', 'customerName')
         .customerName,
     ).toBe('DE LA FONTAINE');
+  });
+
+  it('spelledNameFact : dit quand le nom relu diffère des lettres épelées, sans connaître aucun mot', () => {
+    const fact = (
+      name: string,
+      said: string,
+      awaiting: StructuredTurnOutput['awaiting'] = 'customerName',
+    ) => spelledNameFact(name, said, awaiting);
+    // Lettre absente, mot entendu qui l'emporte sur les lettres, mot collé derrière.
+    expect(fact('AKIF', 'a 2 k i f')).toContain('customerName = « AKKIF »');
+    expect(fact('Hoët', 'hoët h o u e t')).toContain('customerName = « Houet »');
+    expect(fact('HOUET DIMANCHE', 'h o u e t dimanche')).toContain('customerName = « HOUET »');
+    // Les mêmes lettres, autre casse ou mise en forme : rien à dire.
+    expect(fact('HOUET', 'h o u e t')).toBeNull();
+    expect(fact('Houet', 'h o u e t')).toBeNull();
+    // Mêmes limites que le garde-fou : nom assemblé sur plusieurs tours, nom complété, pas d'épellation.
+    expect(fact('AK KIF', 'k i f')).toBeNull();
+    expect(fact('DUPONT', 'd u p o n')).toBeNull();
+    expect(fact('Durand', 'oui merci')).toBeNull();
+    expect(fact('Hoët', 'h o u e t', 'date')).toBeNull();
   });
 
   it('does nothing when no name was being asked for', () => {
