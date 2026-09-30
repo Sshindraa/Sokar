@@ -9,6 +9,7 @@ import { CallSessionManager } from './stream/manager';
 import {
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
+  isVoiceStructuredTurnEnabled,
 } from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
@@ -188,6 +189,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           customerExtra,
           customerGreeting,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
+          structuredTurn: isVoiceStructuredTurnEnabled(ctx.id),
         });
 
         // Créer un enregistrement Call minimal dès l'init

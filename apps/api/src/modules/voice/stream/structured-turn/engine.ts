@@ -12,11 +12,7 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import {
-  isVoiceUnderstandingCheckEnabled,
-  isVoiceV2Default,
-  parseRestaurantIdList,
-} from '../feature-flags';
+import { isVoiceStructuredTurnEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -73,11 +69,7 @@ export function isStructuredTurnEnabled(
   restaurantId: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return Boolean(
-    restaurantId &&
-    (parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId) ||
-      isVoiceV2Default(restaurantId, env)),
-  );
+  return isVoiceStructuredTurnEnabled(restaurantId, env);
 }
 
 function responseFormat(

@@ -26,6 +26,18 @@ export function isVoiceV2Default(
   );
 }
 
+/** Restaurants sur le tour structuré : liste explicite, ou parcours moderne par défaut. */
+export function isVoiceStructuredTurnEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    (parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId) ||
+      isVoiceV2Default(restaurantId, env)),
+  );
+}
+
 /**
  * Vérification de compréhension du tour structuré : le modèle lit littéralement ce que l'appelant a dit et
  * déclare s'il a dû deviner ; le code n'applique alors aucun changement ni aucune action. Seulement pour les

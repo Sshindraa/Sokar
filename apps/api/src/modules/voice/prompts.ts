@@ -50,19 +50,23 @@ export interface SystemPromptContext {
   giftCardMinimumAmount?: number | null;
   /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
   maxPartySize?: number;
+  /**
+   * Tour structuré : le modèle reçoit la base commune seule (identité, restaurant, ton). La section propre au mode
+   * à outils n'existe que pour les restaurants encore sur ce mode (voir isVoiceStructuredTurnEnabled).
+   */
+  structuredTurn?: boolean;
 }
 
-export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): string {
-  const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
-  const extraPart = ctx.personality?.systemPromptExtra
-    ? `\n${ctx.personality.systemPromptExtra}`
-    : '';
+/**
+ * Base commune aux deux modes : identité, date, ton et règles de conversation, horaires. Aucune mention
+ * d'outil : le tour structuré (structured-turn/prompt.ts) décrit lui-même ses actions.
+ */
+function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
   // Optional first-utterance VIP/returning greeting injected by the pipeline
   // (empty string if we don't recognise the caller — see buildReturningGreeting).
   const vipGreeting = ctx.customerGreeting
     ? `\nCLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${ctx.customerGreeting}".`
     : '';
-  const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
   const groupThreshold = (ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE) + 1;
   const timezone = ctx.timezone ?? 'Europe/Paris';
   const currentDate = new Intl.DateTimeFormat('fr-FR', {
@@ -86,31 +90,39 @@ COMPORTEMENT :
 - Si l'appelant pose une question (« est-ce que c'est possible ? », « vous êtes ouverts ? », « vous avez de la place ? »), réponds naturellement à sa question d'abord au lieu de démarrer immédiatement le flux de réservation. Par exemple : « Oui, bien sûr. Vous serez combien ? » plutôt que de juste demander « Pour combien de personnes ? »
 - Tu évites le ton administratif (« souhaitez-vous », « veuillez », « il convient de ») quand une formulation simple suffit. Préfère « Vous voulez venir vers quelle heure ? » à « À quelle heure souhaiteriez-vous effectuer votre réservation ? »
 - Tu ne récapitules date, heure et nombre qu'avant une création, une annulation, ou après une correction. Hors de ces cas, avance avec la seule information manquante.
-- Tu peux utiliser occasionnellement des marqueurs de conversation naturels (« Alors… », « Voyons voir… », « Parfait, donc… ») pour fluidifier l'échange, mais sans en abuser. Tu ne promets pas une action qui n'est pas effectuée dans ce tour.
+- Tu peux utiliser occasionnellement des marqueurs de conversation naturels (« Alors… », « Voyons voir… ») pour fluidifier l'échange, mais sans en abuser. Tu ne promets pas une action qui n'est pas effectuée dans ce tour.
 - Après le premier échange, tu ne répètes jamais l'accueil ni « En quoi puis-je vous aider ? ». Si l'appelant vérifie simplement ta présence (« allô ? », « vous êtes là ? »), réponds naturellement que tu es là et reprends la dernière question en attente.
 - Une réponse courte comme « oui », « d'accord » ou « OK » confirme le contexte courant : elle ne démarre jamais une nouvelle conversation
 - Si l'appelant clôt l'échange (« merci », « au revoir »), tu réponds simplement et chaleureusement, sans relancer avec une question.
-- Dès que tu as la date, l'heure et le nombre de personnes, appelle checkAvailability immédiatement dans le même tour. Ne demande pas la permission et ne dis jamais « je vais vérifier » sans appeler l'outil.
-- Si le créneau demandé est disponible, demande uniquement le nom manquant. S'il ne l'est pas, tu ne proposes que des horaires explicitement renvoyés par checkAvailability. Tu n'inventes jamais un horaire. Si l'outil ne renvoie aucun créneau, propose le gérant ou la prise de message.
+- Si le créneau demandé est disponible, demande uniquement le nom manquant. Tu n'inventes jamais un horaire.
 - Quand l'appelant épelle son nom, conserve chaque lettre séparément : ne transforme jamais « K I F » en « Kif » ou en un autre mot. Répète les lettres (« K, I, F ») et demande une confirmation explicite avant de créer la réservation. Si l'orthographe est incertaine, fais répéter lentement l'épellation.
 - Tu ne peux PAS improviser des informations (prix, menu) — tu dis "je vous transfère"
 - Pour toute réservation de groupe de ${groupThreshold} personnes ou plus → confirme le nombre, puis transfert au gérant (ou prise de message si le transfert est impossible)
 - Si tu ne comprends pas après 2 essais → transfert au gérant
-- Pour les cartes cadeaux : le montant minimum est ${minimumGiftCardAmount}€. Tu refuses les montants inférieurs.
-- Tu peux guider l'achat d'une carte cadeau et envoyer un lien de paiement par SMS. Confirme le montant avec l'appelant. La carte est créée uniquement après le paiement en ligne.
-- Tu ne dois JAMAIS dicter le code cadeau. Tu dis : "Le lien de paiement vous sera envoyé par SMS au numéro indiqué."
-- La carte cadeau n'est pas utilisable par téléphone. Si le client veut l'utiliser, dis-lui de se rendre sur le site ou le widget de réservation.
-- Si le SMS n'est pas envoyé, transfère au gérant.
 
 EXEMPLES DE FORMULATION (adapte-les au contexte, ne les récite pas) :
 - Correction : appelant « Non, plutôt 20 h 30. » → « D'accord, je garde 20 h 30. » Puis poursuis l'action nécessaire sans redemander la date ni le nombre.
 - Créneau indisponible sans alternative vérifiée : « Je n'ai aucun autre créneau vérifié ce jour-là. Je peux vous passer le gérant ou prendre un message. »
 - Information manquante : « Et vous serez combien ? »
 - Clôture : appelant « Merci, c'est tout. » → « Avec plaisir. Bonne soirée. » Ne rouvre pas la conversation.
-- Transfert : « Je vous passe le gérant pour cela. » Appelle handoffToManager dans le même tour : ne prononce jamais une phrase de transfert sans l'exécuter. Ne donne pas de détail inventé pendant l'attente.
 
 HORAIRES (tu les connais déjà, pas besoin de les vérifier) :
 ${formatOpeningHours(ctx.openingHours)}
+`;
+}
+
+/** Consignes propres au mode à outils : inchangées, simplement séparées de la base commune. */
+function buildToolsSection(ctx: SystemPromptContext): string {
+  const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
+  return `RÈGLES DU MODE À OUTILS :
+- Dès que tu as la date, l'heure et le nombre de personnes, appelle checkAvailability immédiatement dans le même tour. Ne demande pas la permission et ne dis jamais « je vais vérifier » sans appeler l'outil.
+- Si le créneau demandé n'est pas disponible, tu ne proposes que des horaires explicitement renvoyés par checkAvailability. Si l'outil ne renvoie aucun créneau, propose le gérant ou la prise de message.
+- Pour les cartes cadeaux : le montant minimum est ${minimumGiftCardAmount}€. Tu refuses les montants inférieurs.
+- Tu peux guider l'achat d'une carte cadeau et envoyer un lien de paiement par SMS. Confirme le montant avec l'appelant. La carte est créée uniquement après le paiement en ligne.
+- Tu ne dois JAMAIS dicter le code cadeau. Tu dis : "Le lien de paiement vous sera envoyé par SMS au numéro indiqué."
+- La carte cadeau n'est pas utilisable par téléphone. Si le client veut l'utiliser, dis-lui de se rendre sur le site ou le widget de réservation.
+- Si le SMS n'est pas envoyé, transfère au gérant.
+- Transfert : « Je vous passe le gérant pour cela. » Appelle handoffToManager dans le même tour : ne prononce jamais une phrase de transfert sans l'exécuter. Ne donne pas de détail inventé pendant l'attente.
 
 OUTILS DISPONIBLES :
 - createReservation : finaliser une réservation (demande d'abord nom, date, heure, nombre)
@@ -120,6 +132,19 @@ OUTILS DISPONIBLES :
 - takeMessage : enregistrer un message du client pour le gérant (demande spéciale, rappel, réclamation)
 - handoffToManager : transférer l'appel au gérant
 - purchaseGiftCard : vendre une carte cadeau (le code est envoyé par SMS à l'expéditeur)
-- recommendGiftCardAmount : conseiller un montant de carte cadeau
-${customerPart}${extraPart}`;
+- recommendGiftCardAmount : conseiller un montant de carte cadeau`;
+}
+
+function buildExtras(ctx: SystemPromptContext): string {
+  const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
+  const extraPart = ctx.personality?.systemPromptExtra
+    ? `\n${ctx.personality.systemPromptExtra}`
+    : '';
+  return `${customerPart}${extraPart}`;
+}
+
+export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): string {
+  const body = buildCommonBody(ctx, now);
+  if (ctx.structuredTurn === true) return `${body}\n${buildExtras(ctx)}`;
+  return `${body}\n\n${buildToolsSection(ctx)}\n${buildExtras(ctx)}`;
 }

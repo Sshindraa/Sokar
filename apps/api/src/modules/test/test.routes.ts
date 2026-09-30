@@ -6,6 +6,7 @@ import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from '../voice/prompts';
 import { CallSessionManager } from '../voice/stream/manager';
+import { isVoiceStructuredTurnEnabled } from '../voice/stream/feature-flags';
 import { logger } from '../../shared/logger/pino';
 
 const SimulateCallSchema = z.object({
@@ -94,6 +95,7 @@ export async function testRoutes(app: FastifyInstance) {
         ...ctx,
         openingHours: ctx.openingHours as OpeningHours,
         customerExtra,
+        structuredTurn: isVoiceStructuredTurnEnabled(ctx.id),
       });
 
       // Créer un Call record en DB
