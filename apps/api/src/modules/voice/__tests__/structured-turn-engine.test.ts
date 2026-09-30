@@ -523,6 +523,92 @@ describe('tour structuré (canary)', () => {
     expect(session.conversation.confirmedReservationKey).not.toBeNull();
   });
 
+  describe('récapitulatif coupé par l’appelant', () => {
+    const RECAP = 'Donc, demain à 20 h, pour 4 personnes, au nom de Akkif. C’est bon ?';
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };
+    function recapFixture(unheard: string) {
+      const context = fixture();
+      context.session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft,
+        availability: { date: draft.date, partySize: 4, slots: ['20:00'] },
+        lastAwaiting: 'confirmation',
+        recapKey: bookingKey(draft),
+      };
+      context.session.interruptedReply = {
+        said: RECAP,
+        heard: RECAP.slice(0, RECAP.length - unheard.length).trim(),
+        unheard,
+      };
+      return context;
+    }
+
+    it('ne réserve pas sur un oui dit avant d’avoir entendu tout le contenu, et donne la suite', async () => {
+      const { session, mgr, outputs } = recapFixture(
+        'pour 4 personnes, au nom de Akkif. C’est bon ?',
+      );
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({
+          draft,
+          awaiting: 'confirmation',
+          say: 'Pour 4 personnes, au nom de Akkif. C’est bon ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'oui', mgr);
+
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+      const secondPass = vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{
+        content: string;
+      }>;
+      expect(secondPass[0].content).toContain('entendu tout le récapitulatif');
+      expect(secondPass[0].content).toContain('pour 4 personnes, au nom de Akkif');
+      expect(session.interruptedReply).toBeUndefined();
+    });
+
+    it('accepte le oui suivant : un seul refus par récapitulatif', async () => {
+      const { session, mgr, outputs } = recapFixture(
+        'pour 4 personnes, au nom de Akkif. C’est bon ?',
+      );
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({
+          draft,
+          awaiting: 'confirmation',
+          say: 'Pour 4 personnes, au nom de Akkif. C’est bon ?',
+        }),
+      );
+      await processTranscriptStreaming(session, 'oui', mgr);
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+
+      // L'appelant répond encore par-dessus la relecture : son accord vaut.
+      session.interruptedReply = {
+        said: RECAP,
+        heard: 'Pour 4',
+        unheard: 'personnes, au nom de Akkif. C’est bon ?',
+      };
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({ draft, say: 'C’est réservé. Bonne soirée !' }),
+      );
+      await processTranscriptStreaming(session, 'oui', mgr);
+      expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it('réserve quand seule la question finale n’a pas été entendue', async () => {
+      const { session, mgr, outputs } = recapFixture('C’est bon ?');
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({ draft, say: 'C’est réservé. Bonne soirée !' }),
+      );
+
+      await processTranscriptStreaming(session, 'oui', mgr);
+
+      expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('refuse une date passée proposée par le modèle', async () => {
     const { session, mgr, outputs } = fixture();
     outputs.push(

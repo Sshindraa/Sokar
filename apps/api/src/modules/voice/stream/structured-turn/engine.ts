@@ -52,6 +52,7 @@ import {
   reconcileSpelledName,
   requestedSlotConflict,
 } from './fact-guards';
+import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages } from './prompt';
 import {
   cancelSpeculation,
@@ -651,8 +652,18 @@ export async function runStructuredTurn(
         slots: prefetched,
       };
     }
+    // La réponse coupée n'a d'effet que sur ce tour : elle est consommée ici.
+    const cutReply = session.interruptedReply;
+    session.interruptedReply = undefined;
+    const bookingId = isBookingComplete(state.draft) ? bookingKey(state.draft) : null;
+    const recapCut =
+      cutReply !== undefined &&
+      replyContentNotFullyHeard(cutReply) &&
+      bookingId !== null &&
+      state.recapCutBlockedKey !== bookingId;
     const decision = authorizeStructuredAction(state, first.output, state.draft, {
       maxPartySize: voiceMaxPartySize(session),
+      recapHeard: !recapCut,
     });
     recordVoiceTurnEvent(session, 'structured_turn', {
       pass: 1,
@@ -679,6 +690,10 @@ export async function runStructuredTurn(
       // Créneau non vérifié (appel 1b3f85e9) : un refus générique laissait l'appelant sans explication ni
       // alternative. La vérification réelle donne les créneaux libres et dit si l'heure demandée l'est.
       actionResult = await runAvailability();
+    } else if (!decision.allowed && decision.reason === 'recap_not_heard' && cutReply) {
+      // Un seul refus par récapitulatif : si l'appelant répond encore par-dessus, son accord vaut.
+      state.recapCutBlockedKey = bookingId;
+      actionResult = `La réservation n'est PAS encore faite : l'appelant a répondu avant d'avoir entendu tout le récapitulatif (il n'a pas entendu : « ${cutReply.unheard} »). Donne-lui brièvement la partie manquante, sans recopier ce qu'il a déjà entendu, et redemande son accord (awaiting=confirmation).`;
     } else if (!decision.allowed) {
       actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
     } else if (first.slotConflict) {

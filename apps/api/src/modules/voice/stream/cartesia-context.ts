@@ -9,7 +9,12 @@ import {
   getCartesiaPronunciationDictId,
   getCartesiaVoiceId,
 } from './cartesia-config';
-import { TTS_INITIAL_BUFFER_FRAMES, TTS_PACE_PAUSE_MS, TTS_UNDERFEED_PAUSE_MS } from './constants';
+import {
+  TTS_FRAME_DURATION_MS,
+  TTS_INITIAL_BUFFER_FRAMES,
+  TTS_PACE_PAUSE_MS,
+  TTS_UNDERFEED_PAUSE_MS,
+} from './constants';
 import {
   encodeTelnyxFromPcm16,
   padTelnyxFrame,
@@ -139,6 +144,8 @@ export class CartesiaContextTurn {
   private playbackPromise: Promise<void> | null = null;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastTranscript = '';
+  private pushedText = '';
+  private outputDone = false;
   private resolveCompletion!: () => void;
   private rejectCompletion!: (error: Error) => void;
   private readonly completion = new Promise<void>((resolve, reject) => {
@@ -170,6 +177,16 @@ export class CartesiaContextTurn {
     return this.sentFrames;
   }
 
+  /** Texte poussé et audio joué ; la durée totale n'est connue qu'une fois la synthèse terminée. */
+  interruptionSnapshot(): { text: string; playedMs: number; totalMs: number | null } {
+    const queuedFrames = this.audioFrames.length + (this.remainder.length > 0 ? 1 : 0);
+    return {
+      text: this.pushedText,
+      playedMs: this.sentFrames * TTS_FRAME_DURATION_MS,
+      totalMs: this.outputDone ? (this.sentFrames + queuedFrames) * TTS_FRAME_DURATION_MS : null,
+    };
+  }
+
   push(transcript: string): void {
     if (this.finishedInput || this.cancelled || !transcript) return;
 
@@ -178,6 +195,7 @@ export class CartesiaContextTurn {
       this.lastTranscript && !/\s$/.test(this.lastTranscript) && !/^[,.;:!?]/.test(transcript);
     const joinedTranscript = `${needsSpace ? ' ' : ''}${transcript}`;
     this.lastTranscript = joinedTranscript;
+    this.pushedText += joinedTranscript;
     this.sendOrQueue(joinedTranscript, true);
   }
 
@@ -295,6 +313,7 @@ export class CartesiaContextTurn {
     // de retarder le tour suivant.
     if (message.type === 'done' || message.done === true) {
       this.finishedOutput = true;
+      this.outputDone = true;
       this.completeAfterPlayback().catch((err: unknown) =>
         this.fail(err instanceof Error ? err : new Error(String(err))),
       );
