@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../shared/logger/pino';
 import { filterAssistantEcho, hasBargeInWordThreshold } from '../stream/assistant-echo';
 import { rememberRecentAgentSpeech } from '../stream/debug-dialogue';
 import { noteAgentAudioEnded, noteAgentAudioStarted } from '../stream/turn-telemetry';
@@ -189,5 +190,45 @@ describe("l'appelant parle clairement : les mots communs avec l'agent ne sont pa
     );
     const result = filterAssistantEcho(session, 'Avec plaisir pour combien', 'partial', NOW);
     expect(result.suppressed).toBe(true);
+  });
+});
+
+describe('texte brut du filtre d’écho pour les restaurants de test', () => {
+  afterEach(() => {
+    delete process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS;
+    vi.restoreAllMocks();
+  });
+
+  it('journalise ce que le filtre a reçu et ce qu’il a rendu, pour comprendre un mot perdu', () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'resto-test';
+    const info = vi.spyOn(logger, 'info');
+    const session = {
+      restaurantId: 'resto-test',
+      callControlId: 'cc-1',
+      recentAgentSpeechText: 'Bonjour. Vous voulez réserver une table ?',
+      agentAudioActive: true,
+    } as unknown as CallSession;
+    filterAssistantEcho(session, 'bonjour vous appelle pour', 'committed');
+    const debug = info.mock.calls
+      .map(([fields]) => fields as Record<string, unknown>)
+      .find((fields) => fields.voiceDebug === 'echo_prefix_stripped');
+    expect(debug).toMatchObject({
+      before: 'bonjour vous appelle pour',
+      after: 'appelle pour',
+      stage: 'committed',
+    });
+  });
+
+  it('ne journalise aucun texte pour un restaurant client', () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'resto-test';
+    const info = vi.spyOn(logger, 'info');
+    const session = {
+      restaurantId: 'resto-client',
+      callControlId: 'cc-2',
+      recentAgentSpeechText: 'Bonjour. Vous voulez réserver une table ?',
+      agentAudioActive: true,
+    } as unknown as CallSession;
+    filterAssistantEcho(session, 'bonjour vous appelle pour', 'committed');
+    expect(info.mock.calls.some(([fields]) => 'voiceDebug' in (fields as object))).toBe(false);
   });
 });

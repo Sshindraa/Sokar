@@ -614,6 +614,15 @@ entier, « [envoi coupé] », ou omise si aucune trame n'est partie. Avec le con
 réponse forme une seule réplique (l'audio ne se rattache pas phrase par phrase). Envoyé ne veut
 pas dire entendu : un barge-in peut encore vider l'audio en attente côté Telnyx.
 
+Pour ces mêmes restaurants de test, les événements STT écrivent aussi leur **texte brut** dans
+les journaux du serveur (`[voice-debug] raw text`, champ `voiceDebug`) : ce que le filtre d'écho a
+reçu et rendu (`echo_prefix_stripped`, `echo_suppressed`, `echo_spared`, avec la parole récente de
+l'agent), chaque segment final Deepgram (`final_segment`) et la partielle au moment d'une fin de
+tour forcée (`finalize_sent`, avec le silence mesuré). Mêmes garde-fous que le dialogue par tour :
+téléphones et e-mails masqués, rien pour un restaurant client, jamais envoyé à un service externe ;
+les journaux tournent chaque jour et sont supprimés après 14 jours (logrotate). Autorisé par le
+propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à comprendre un mot perdu.
+
 `SOKAR_VOICE_READ_TOKEN` (secret, `openssl rand -hex 32`) protège la lecture interne, en
 `Authorization: Bearer <jeton>` ; sans lui, les routes répondent 503. Lecture seule :
 `GET /api/internal/voice/calls?restaurantId=…&limit=20` (derniers appels),
