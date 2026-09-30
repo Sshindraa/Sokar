@@ -136,6 +136,18 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     expect(props?.restaurantName).toBeDefined();
   });
 
+  it('uses the two-hour default for read checks but keeps holds and quotes explicit', () => {
+    const naturalReadRequest = {
+      restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+      partySize: 2,
+      slotStart: '2026-10-01T19:00:00',
+    };
+
+    expect(CheckAvailabilityInputSchema.safeParse(naturalReadRequest).success).toBe(true);
+    expect(CreateQuoteInputSchema.safeParse(naturalReadRequest).success).toBe(false);
+    expect(CreateHoldInputSchema.safeParse(naturalReadRequest).success).toBe(false);
+  });
+
   it('join_waiting_list requires explicit processing consent', () => {
     const result = JoinWaitingListInputSchema.safeParse({
       restaurantId: '550e8400-e29b-41d4-a716-446655440000',

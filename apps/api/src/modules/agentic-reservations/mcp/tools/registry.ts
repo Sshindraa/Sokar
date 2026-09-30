@@ -467,6 +467,7 @@ export class McpToolRegistry {
       const range = parseMcpDateRange({
         start: input.slotStart,
         end: input.slotEnd,
+        defaultDurationMinutes: DEFAULT_MCP_SEARCH_DURATION_MINUTES,
         timezone: input.timezone,
         defaultTimezone: exposure.settings.timezone,
       });
