@@ -314,14 +314,22 @@ describe('phrases à dire : des principes, pas des formules', () => {
       'Alors, quelle heure vous arrange ?',
       'Donc, vous serez combien ?',
       'Vous voulez venir vers quelle heure ?',
-      '« Parfait », « Très bien »',
-      "« c'est noté »",
-      '« ça marche »',
       '16 heures, parfait',
       'lundi 28 septembre',
     ]) {
       expect(prompt).not.toContain(formula);
     }
+  });
+
+  it("garde les interdictions nommées : une liste de formules interdites oriente mieux qu'un principe nu", () => {
+    // Mesuré le 01/10 : converties en principe seul, « c'est noté » passe de 4 à 10 ouvertures sur ~480 et un
+    // « C'est possible » interdit apparaît 2 fois sur 12 (0/12 avant). Ce sont des interdictions, pas des phrases à imiter.
+    expect(prompt).toContain("« Parfait », « Très bien », « C'est noté », « Avec plaisir »");
+    expect(prompt).toContain('pas de « Parfait » ou « Très bien » systématique en ouverture');
+    expect(prompt).toContain(
+      "ne dis jamais qu'un horaire est possible, libre ou que « ça marche »",
+    );
+    expect(prompt).toContain("ne dis pas « c'est noté » pour cet horaire");
   });
 
   it("garde des exemples d'interprétation de l'entrée, avec des valeurs absentes du banc", () => {
