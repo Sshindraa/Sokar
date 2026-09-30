@@ -1669,19 +1669,48 @@ export function structuredSpeculationDelayMs(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(parsed) && parsed >= 50 && parsed <= 2_000 ? parsed : 250;
 }
 
+/**
+ * Silence de l'appelant (audio entrant) avant de lancer la spéculation : à la pause, pas pendant la
+ * parole ni après un délai fixe. La requête part dès que l'appelant s'arrête, pour que la réponse soit
+ * prête pendant l'attente avant le premier son. 0 : ancien déclenchement (partielle stable 250 ms).
+ */
+export function structuredSpeculationPauseMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STRUCTURED_SPECULATION_PAUSE_MS ?? 150);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1_000 ? parsed : 150;
+}
+
+/** Garde-fou : une ligne bruitée sans vrai silence finit par lancer la spéculation quand même. */
+const SPECULATION_MAX_PAUSE_WAITS = 25;
+
 function armSpeculationTimer(session: CallSession, transcript: string): void {
   const previous = speculationTimers.get(session);
   if (previous) clearTimeout(previous);
-  const timer = setTimeout(() => {
+  const pauseMs = structuredSpeculationPauseMs();
+  const usePause = pauseMs > 0 && session.callerVoice !== undefined;
+  let waits = 0;
+  const schedule = (delayMs: number) => {
+    const timer = setTimeout(fire, delayMs);
+    timer.unref?.();
+    speculationTimers.set(session, timer);
+  };
+  const fire = () => {
     speculationTimers.delete(session);
     if (!session.sttDeepgramPendingInterim) return;
     if (session.sttDeepgramPartials?.lastText !== transcript) return;
+    if (usePause) {
+      const silentMs = callerSilenceMs(session);
+      if (silentMs < pauseMs && waits++ < SPECULATION_MAX_PAUSE_WAITS) {
+        schedule(Math.max(40, pauseMs - silentMs + 10));
+        return;
+      }
+    }
     speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript, (complete) =>
       finalizeOnSemanticEndOfTurn(session, transcript, complete),
     );
-  }, structuredSpeculationDelayMs());
-  timer.unref?.();
-  speculationTimers.set(session, timer);
+  };
+  schedule(
+    usePause ? Math.max(60, pauseMs - callerSilenceMs(session)) : structuredSpeculationDelayMs(),
+  );
 }
 const deepgramFinalizeReasons = new WeakMap<CallSession, 'utterance_end' | 'stalled'>();
 

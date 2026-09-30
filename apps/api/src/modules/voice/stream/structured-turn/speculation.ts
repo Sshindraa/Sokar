@@ -11,7 +11,10 @@
 import type { CallSession, ChatMessage } from '../types';
 import type { CallSessionManager } from '../manager';
 import { logger } from '../../../../shared/logger/pino';
-import { voiceStructuredSpeculationTotal } from '../../../../shared/observability/metrics';
+import {
+  voiceStructuredSpeculationLaunchTotal,
+  voiceStructuredSpeculationTotal,
+} from '../../../../shared/observability/metrics';
 
 type StructuredFormat = Parameters<CallSessionManager['streamStructuredCompletion']>[2];
 
@@ -25,6 +28,14 @@ interface Speculation {
 }
 
 const speculations = new WeakMap<CallSession, Speculation>();
+/** Requêtes spéculatives lancées pour le tour en cours : chacune coûte une requête de ~3 k tokens. */
+const launches = new WeakMap<CallSession, number>();
+
+/** Plafond de requêtes spéculatives par tour (limite de tokens par minute du fournisseur). */
+export function structuredSpeculationMaxLaunches(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES ?? 3);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 8 ? parsed : 3;
+}
 
 /**
  * Verdict du modèle sur la fin de tour : `turnComplete` est le premier champ du
@@ -102,6 +113,13 @@ export function startSpeculation(
   const key = requestKey(messages, format);
   const current = speculations.get(session);
   if (current?.key === key) return;
+  const launched = launches.get(session) ?? 0;
+  if (launched >= structuredSpeculationMaxLaunches()) {
+    voiceStructuredSpeculationLaunchTotal.inc({ result: 'capped' });
+    return;
+  }
+  launches.set(session, launched + 1);
+  voiceStructuredSpeculationLaunchTotal.inc({ result: 'started' });
   current?.controller.abort();
   const controller = new AbortController();
   let verdictSent = false;
@@ -113,20 +131,23 @@ export function startSpeculation(
     controller,
     done: Promise.resolve(''),
   };
-  speculation.done = mgr.streamStructuredCompletion(session, messages, format, {
-    signal: controller.signal,
-    onDelta: (delta) => {
-      speculation.deltas.push(delta);
-      for (const listener of speculation.listeners) listener(delta);
-      if (onVerdict && !verdictSent) {
-        const verdict = parseTurnCompleteVerdict(speculation.deltas.join(''));
-        if (verdict !== null) {
-          verdictSent = true;
-          onVerdict(verdict);
+  // Promise.resolve : une réponse inattendue du gestionnaire ne doit jamais faire d'erreur non gérée.
+  speculation.done = Promise.resolve(
+    mgr.streamStructuredCompletion(session, messages, format, {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        speculation.deltas.push(delta);
+        for (const listener of speculation.listeners) listener(delta);
+        if (onVerdict && !verdictSent) {
+          const verdict = parseTurnCompleteVerdict(speculation.deltas.join(''));
+          if (verdict !== null) {
+            verdictSent = true;
+            onVerdict(verdict);
+          }
         }
-      }
-    },
-  });
+      },
+    }),
+  );
   // Une spéculation abandonnée ou échouée n'est jamais une erreur du tour.
   speculation.done.catch(() => undefined);
   speculations.set(session, speculation);
@@ -145,6 +166,7 @@ export function takeSpeculation(
 ): Promise<string> | null {
   const speculation = speculations.get(session);
   speculations.delete(session);
+  launches.delete(session);
   if (!speculation) {
     recordOutcome(session, 'none');
     return null;
@@ -169,4 +191,5 @@ export function takeSpeculation(
 export function cancelSpeculation(session: CallSession): void {
   speculations.get(session)?.controller.abort();
   speculations.delete(session);
+  launches.delete(session);
 }
