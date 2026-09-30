@@ -424,6 +424,18 @@ describe('indépendance du banc', () => {
     });
     return normalize(String(system.content));
   });
+  const NUMBER_WORDS: Record<number, string> = {
+    1: 'un',
+    2: 'deux',
+    3: 'trois',
+    4: 'quatre',
+    5: 'cinq',
+    6: 'six',
+    7: 'sept',
+    8: 'huit',
+    9: 'neuf',
+    10: 'dix',
+  };
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const contains = (prompt: string, needle: string) =>
     new RegExp(`(^|[^\\p{L}\\p{N}])${escape(normalize(needle))}([^\\p{L}\\p{N}]|$)`, 'u').test(
@@ -440,6 +452,10 @@ describe('indépendance du banc', () => {
           ...(span.text.length >= 3 ? [span.text] : []),
           ...(typeof span.value === 'string' && /^[A-ZÀ-Ý]{4,}$/u.test(span.value)
             ? [span.value]
+            : []),
+          // Un nombre du banc dit en toutes lettres (« six » pour 6) : même fuite qu'un extrait.
+          ...(typeof span.value === 'number' && NUMBER_WORDS[span.value]
+            ? [NUMBER_WORDS[span.value]]
             : []),
         ]),
       ];
