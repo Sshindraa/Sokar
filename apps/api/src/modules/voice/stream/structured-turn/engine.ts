@@ -49,6 +49,7 @@ import {
   type StructuredTurnState,
   parseStreamedDraft,
   outsideOpeningHoursFact,
+  reconcileSpelledName,
   requestedSlotConflict,
 } from './fact-guards';
 import { buildStructuredTurnMessages } from './prompt';
@@ -639,7 +640,7 @@ export async function runStructuredTurn(
       return;
     }
     const applied = applyProposedDraft(state.draft, first.output, { today });
-    state.draft = applied.draft;
+    state.draft = reconcileSpelledName(applied.draft, transcript, state.lastAwaiting);
     // Créneaux lus d'avance et couvrant le brouillon : ce sont des faits vérifiés,
     // la réservation reste soumise aux mêmes garde-fous.
     const prefetched = prefetchedSlots(state);
@@ -738,7 +739,7 @@ export async function runStructuredTurn(
       const second = await runPass(actionResult);
       if (!isLive()) return;
       const reapplied = applyProposedDraft(state.draft, second.output, { today });
-      state.draft = reapplied.draft;
+      state.draft = reconcileSpelledName(reapplied.draft, transcript, state.lastAwaiting);
       recordVoiceTurnEvent(session, 'structured_turn', {
         pass: 2,
         interpretation: second.output.interpretation,

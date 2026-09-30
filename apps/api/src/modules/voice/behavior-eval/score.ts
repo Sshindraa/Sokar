@@ -1,3 +1,5 @@
+import { reconcileSpelledName } from '../stream/structured-turn/fact-guards';
+import type { StructuredTurnDraft } from '../stream/structured-turn/schema';
 import type {
   BehaviorCase,
   BehaviorCheck,
@@ -38,7 +40,7 @@ function sameValue(actual: unknown, expected: string | number): boolean {
   return typeof actual === 'string' && actual.trim().toLowerCase() === expected.toLowerCase();
 }
 
-function scoreCheck(check: BehaviorCheck, outputs: Output[]): CheckResult {
+function scoreCheck(check: BehaviorCheck, outputs: Output[], testCase: BehaviorCase): CheckResult {
   switch (check.kind) {
     case 'field': {
       const value = rate(outputs, (output) => {
@@ -53,9 +55,14 @@ function scoreCheck(check: BehaviorCheck, outputs: Output[]): CheckResult {
       return done(`${check.path} ${wanted}`, value, check.minRate);
     }
     case 'draft': {
-      const value = rate(outputs, (output) =>
-        sameValue((output.draft as Output | undefined)?.[check.field], check.equals),
-      );
+      // Le brouillon est mesuré après le garde-fou de l'épellation, comme dans le moteur.
+      const value = rate(outputs, (output) => {
+        const draft = output.draft as StructuredTurnDraft | undefined;
+        const reconciled = draft
+          ? reconcileSpelledName(draft, testCase.transcript, (testCase.awaiting ?? 'open') as never)
+          : undefined;
+        return sameValue((reconciled as Output | undefined)?.[check.field], check.equals);
+      });
       return done(`draft.${check.field} = ${JSON.stringify(check.equals)}`, value, check.minRate);
     }
     case 'say': {
@@ -97,7 +104,7 @@ function done(description: string, value: number, required: number): CheckResult
 export function scoreCase(testCase: BehaviorCase, samples: (Output | null)[]): CaseResult {
   const outputs = samples.filter((sample): sample is Output => sample !== null);
   const validRate = samples.length ? outputs.length / samples.length : 0;
-  const checks = testCase.checks.map((check) => scoreCheck(check, outputs));
+  const checks = testCase.checks.map((check) => scoreCheck(check, outputs, testCase));
   return {
     id: testCase.id,
     behavior: testCase.behavior,

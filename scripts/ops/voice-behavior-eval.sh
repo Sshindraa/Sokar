@@ -2,6 +2,8 @@
 # Jeu de test de comportements du tour structuré : prompt courant → modèle de production → seuils.
 # Compose les requêtes ici, les rejoue sur le VPS (la clé y reste), note ici. ~2 minutes, quelques centimes.
 #   scripts/ops/voice-behavior-eval.sh [hôte-ssh]      (défaut : sokar)
+# Sans CEREBRAS_EVAL_API_KEY le rejeu est refusé (il consommerait le crédit des appels réels) sauf
+# VBE_ALLOW_PROD_KEY=1 ; plafond de 150 requêtes (VBE_MAX_REQUESTS), ~3,4 k tokens chacune.
 set -euo pipefail
 HOST="${1:-sokar}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -10,5 +12,5 @@ trap 'rm -rf "$TMP"; ssh "$HOST" "rm -f /tmp/vbe-requests.json /tmp/vbe-replay.m
 cd "$ROOT/apps/api"
 npx tsx scripts/voice-behavior-eval.ts build > "$TMP/requests.json"
 scp -q "$TMP/requests.json" "$ROOT/apps/api/scripts/voice-behavior-replay.mjs" "$HOST:/tmp/" 
-ssh "$HOST" "mv /tmp/voice-behavior-replay.mjs /tmp/vbe-replay.mjs && mv /tmp/requests.json /tmp/vbe-requests.json && node /tmp/vbe-replay.mjs /tmp/vbe-requests.json" > "$TMP/responses.json"
+ssh "$HOST" "mv /tmp/voice-behavior-replay.mjs /tmp/vbe-replay.mjs && mv /tmp/requests.json /tmp/vbe-requests.json && VBE_ALLOW_PROD_KEY=${VBE_ALLOW_PROD_KEY:-} VBE_MAX_REQUESTS=${VBE_MAX_REQUESTS:-} node /tmp/vbe-replay.mjs /tmp/vbe-requests.json" > "$TMP/responses.json"
 npx tsx scripts/voice-behavior-eval.ts score "$TMP/responses.json"
