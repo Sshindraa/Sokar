@@ -112,7 +112,13 @@ export interface BehaviorResponses {
 
 export interface CheckResult {
   description: string;
+  /** Sortie BRUTE du modèle : le chiffre qui compte, sans aucun garde-fou du code. */
   rate: number;
+  /**
+   * Même contrôle après les garde-fous de fact-guards.ts qui touchent le brouillon (l'épellation du nom).
+   * Absent quand le contrôle ne lit pas le brouillon ou que les garde-fous n'y changent rien.
+   */
+  guardedRate?: number;
   required: number;
   passed: boolean;
 }
@@ -128,8 +134,10 @@ export interface CaseResult {
   passed: boolean;
   checks: CheckResult[];
   perturbation?: BehaviorCase['perturbation'];
-  /** Variantes générées : part des tirages où le comportement attendu est tenu. */
+  /** Variantes générées : part des tirages où le comportement attendu est tenu (sortie brute). */
   successRate?: number;
+  /** Idem après garde-fous du code, quand ils changent quelque chose. */
+  guardedSuccessRate?: number;
 }
 
 export interface SplitSummary {
@@ -144,6 +152,12 @@ export interface SplitSummary {
   fidelityRate: number | null;
   /** Part des tirages avec un mot parasite où la valeur annotée reste extraite. */
   noiseRobustness: number | null;
+  /** Les mêmes indicateurs après garde-fous du code (épellation du nom) : l'écart avec le brut est ce que le code rattrape. */
+  guarded: {
+    falseAcceptRate: number | null;
+    fidelityRate: number | null;
+    noiseRobustness: number | null;
+  };
 }
 
 export type BehaviorSummary = Record<BehaviorSplit, SplitSummary>;
