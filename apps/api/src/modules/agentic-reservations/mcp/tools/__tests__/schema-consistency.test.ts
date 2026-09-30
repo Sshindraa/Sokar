@@ -12,6 +12,7 @@ import type { ZodTypeAny } from 'zod';
 import { TOOL_LIST } from '../../server';
 import {
   SearchRestaurantsInputSchema,
+  AnswerAvailabilityOutputSchema,
   GetRestaurantDetailsInputSchema,
   CheckAvailabilityInputSchema,
   CreateQuoteInputSchema,
@@ -26,6 +27,7 @@ import {
 
 describe('TOOL_LIST ↔ Zod schema consistency', () => {
   const schemas: Record<string, ZodTypeAny> = {
+    answer_availability: SearchRestaurantsInputSchema,
     search_restaurants: SearchRestaurantsInputSchema,
     get_restaurant_details: GetRestaurantDetailsInputSchema,
     check_availability: CheckAvailabilityInputSchema,
@@ -39,8 +41,8 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     get_reservation_status: GetReservationStatusInputSchema,
   };
 
-  it('TOOL_LIST has exactly 11 tools', () => {
-    expect(TOOL_LIST).toHaveLength(11);
+  it('TOOL_LIST has exactly 12 tools', () => {
+    expect(TOOL_LIST).toHaveLength(12);
   });
 
   it('every tool has a title', () => {
@@ -63,6 +65,7 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
 
   it('every tool declares the OAuth scope required by its operation', () => {
     const expectedScopes: Record<string, string> = {
+      answer_availability: 'mcp:read',
       search_restaurants: 'mcp:read',
       get_restaurant_details: 'mcp:read',
       check_availability: 'mcp:read',
@@ -137,10 +140,20 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
   });
 
   it('read-tool descriptions keep natural requests on the exact requested time', () => {
+    const answerTool = TOOL_LIST.find((tool) => tool.name === 'answer_availability');
     const searchTool = TOOL_LIST.find((tool) => tool.name === 'search_restaurants');
     const availabilityTool = TOOL_LIST.find((tool) => tool.name === 'check_availability');
 
+    expect(answerTool?.description).toContain('question simple en langage courant');
+    expect(answerTool?.description).toContain('aucun horaire de fin');
+    expect((answerTool?.outputSchema as { required?: string[] }).required).toEqual(['message']);
+    expect(
+      AnswerAvailabilityOutputSchema.safeParse({
+        message: 'Oui, une table est disponible au restaurant Chez Sokar à 19 h.',
+      }).success,
+    ).toBe(true);
     expect(searchTool?.description).toContain('recherche unique qui commence à 19 h');
+    expect(searchTool?.description).toContain('utilisez answer_availability');
     expect(searchTool?.description).toContain('mentionnez uniquement celle-ci');
     expect(availabilityTool?.description).toContain('ne multipliez pas les appels');
     expect(availabilityTool?.description).toContain('alternatives réellement retournées');

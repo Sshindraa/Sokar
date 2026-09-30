@@ -241,6 +241,15 @@ export const SearchRestaurantsOutputSchema = z
   })
   .strict();
 
+export const AnswerAvailabilityOutputSchema = z
+  .object({
+    message: z
+      .string()
+      .min(1)
+      .describe('A complete, concise sentence ready to show to the person.'),
+  })
+  .strict();
+
 export const GetRestaurantDetailsOutputSchema = z
   .object({
     id: OutputUuidSchema,

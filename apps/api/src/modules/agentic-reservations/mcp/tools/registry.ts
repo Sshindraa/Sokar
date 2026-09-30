@@ -30,6 +30,7 @@ import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.ser
 import { redactPiiInString, redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
 import { getToolOutputSchema } from './tool-definitions';
+import { formatMcpSuccessMessage } from '../presentation';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
   checkAvailabilityDuration,
@@ -1098,6 +1099,15 @@ export async function executeTool(
 ): Promise<ToolResult> {
   let result: ToolResult;
   switch (toolName) {
+    case 'answer_availability': {
+      const searchResult = await registry.searchRestaurants(rawInput, ctx);
+      result = searchResult.ok
+        ? ok({
+            message: formatMcpSuccessMessage('search_restaurants', searchResult.data, rawInput),
+          })
+        : searchResult;
+      break;
+    }
     case 'search_restaurants':
       result = await registry.searchRestaurants(rawInput, ctx);
       break;
