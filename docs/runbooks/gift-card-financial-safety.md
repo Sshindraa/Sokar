@@ -7,6 +7,25 @@ avec `application_fee_amount`. La réservation associe une carte sans consommer 
 solde. Seul un appel authentifié par le restaurant débite le montant réel de l'addition.
 Le bénéficiaire consulte son solde sur `/gift-card/:code`, avec lien depuis les emails et le PDF, et réserve avec son code prérempli. La valeur offerte reste le montant payé : la commission est supportée par le restaurant.
 
+## Création des comptes Stripe Connect
+
+Sokar crée les nouveaux comptes via `POST /v2/core/accounts`, version de requête
+`2026-08-26.dahlia`. Le SDK Stripe existant fournit `rawRequest` et encode les requêtes
+v2 en JSON ; la version des API de paiement et de facturation reste inchangée.
+Le compte français demande la configuration merchant et card_payments, le dashboard
+full et les responsabilités fees_collector/losses_collector à stripe. La commission
+Sokar reste celle du PaymentIntent direct.
+
+Les données personnelles ne sont pas préremplies : Stripe les recueille dans son
+onboarding hébergé. En France, leur préremplissage via Accounts v2 exige un account_token.
+Les comptes déjà associés sont conservés. Leur identifiant reste compatible avec
+Account Links v1, la lecture de readiness et les PaymentIntents existants.
+La clé `gift-card-connect-v2:<restaurantId>:hosted` rend la création rejouable sans doublon.
+Aucun support Accounts v1 supplémentaire n’est à activer pour créer un nouveau compte.
+
+Références : [Accounts v2](https://docs.stripe.com/connect/accounts-v2),
+[création](https://docs.stripe.com/api/v2/core/accounts/create).
+
 ## Configuration et mise en service
 
 1. Déployer la migration additive `20260930170000_gift_card_financial_safety` avant

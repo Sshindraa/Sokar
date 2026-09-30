@@ -169,21 +169,41 @@ export async function retrieveConnectedAccount(accountId: string) {
   };
 }
 
-export async function createConnectedAccount(restaurantId: string, email: string) {
-  const account = await getStripe().accounts.create(
+// Pin Accounts v2 only: billing and payment APIs retain the SDK's existing version.
+const CONNECT_ACCOUNTS_API_VERSION = '2026-08-26.dahlia';
+
+export async function createConnectedAccount(restaurantId: string, _email: string) {
+  // The pinned SDK supports raw v2 JSON requests but predates typed Accounts v2.
+  // Account IDs remain interoperable with v1 Account Links and PaymentIntents.
+  // French personal data must be tokenized if prefilled; hosted onboarding collects it directly.
+  const account = await getStripe().rawRequest(
+    'POST',
+    '/v2/core/accounts',
     {
-      country: 'FR',
-      email,
-      controller: {
-        fees: { payer: 'account' },
-        losses: { payments: 'stripe' },
-        requirement_collection: 'stripe',
-        stripe_dashboard: { type: 'full' },
+      identity: { country: 'FR' },
+      dashboard: 'full',
+      configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
+      defaults: {
+        currency: 'eur',
+        locales: ['fr-FR'],
+        responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' },
       },
       metadata: { restaurantId, source: 'sokar_gift_cards' },
     },
-    { idempotencyKey: `gift-card-connect:${restaurantId}` },
+    {
+      apiVersion: CONNECT_ACCOUNTS_API_VERSION,
+      idempotencyKey: `gift-card-connect-v2:${restaurantId}:hosted`,
+    },
   );
+  if (
+    !account ||
+    typeof account !== 'object' ||
+    !('id' in account) ||
+    typeof account.id !== 'string' ||
+    !/^acct_[A-Za-z0-9]+$/.test(account.id)
+  ) {
+    throw new Error('Stripe n’a pas retourné de compte connecté valide.');
+  }
   return account.id;
 }
 
