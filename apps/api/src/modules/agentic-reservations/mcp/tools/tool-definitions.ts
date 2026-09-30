@@ -57,7 +57,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'answer_availability',
     title: 'Répondre à une question de disponibilité',
     description:
-      'À utiliser pour répondre à une question simple en langage courant sur la disponibilité d’un restaurant, sans réservation ni comparaison détaillée. Cherchez une seule fois l’horaire demandé; « vers 19 h » signifie un début à 19 h. Retournez la phrase du résultat telle quelle comme réponse complète. Cet outil ne fournit aucun horaire de fin, donnée structurée ni identifiant de restaurant. Pour un parcours de réservation ou une comparaison détaillée, utilisez search_restaurants.',
+      'À utiliser pour répondre à une question simple en langage courant sur la disponibilité d’un restaurant, sans réservation ni comparaison détaillée. Cherchez une seule fois l’horaire demandé; « vers 19 h » signifie un début à 19 h. Retournez la phrase du résultat telle quelle comme réponse complète, sans ajouter de commentaire sur l’absence de réservation ni de détail opérationnel. Cet outil ne fournit aucun horaire de fin, donnée structurée ni identifiant de restaurant. Pour un parcours de réservation ou une comparaison détaillée, utilisez search_restaurants.',
     schema: SearchRestaurantsInputSchema,
     output: AnswerAvailabilityOutputSchema,
     requiredScope: 'mcp:read',

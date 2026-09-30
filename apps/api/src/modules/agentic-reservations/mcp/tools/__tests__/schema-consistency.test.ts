@@ -146,6 +146,9 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
 
     expect(answerTool?.description).toContain('question simple en langage courant');
     expect(answerTool?.description).toContain('aucun horaire de fin');
+    expect(answerTool?.description).toContain(
+      'sans ajouter de commentaire sur l’absence de réservation',
+    );
     expect((answerTool?.outputSchema as { required?: string[] }).required).toEqual(['message']);
     expect(
       AnswerAvailabilityOutputSchema.safeParse({
