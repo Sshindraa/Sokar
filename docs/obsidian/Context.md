@@ -10,7 +10,7 @@
 
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 
-- [ ] Banc voix phase 1 : lancer la mesure de référence `VBE_SUITE=perturb` (135 requêtes, même clé que les appels : vérifier le solde Cerebras avant) et annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
+- [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
