@@ -21,11 +21,22 @@ const VOICE_RUN_CHUNKS = 2;
 /** Le bruit de fond monte lentement (constante ~20 s) et jamais au-delà : la voix ne le relève pas. */
 const FLOOR_RISE = 0.001;
 const FLOOR_CEILING = 800;
+/**
+ * Parole claire : niveau et durée qu'un écho de l'agent n'atteint pas. Mesuré sur les appels des 29 et
+ * 30/09 : l'écho revenait à un niveau médian de 20 (0 avec Krisp) et à moins de 2 % du niveau émis au
+ * 90e centile, alors que la voix de l'appelant est à plusieurs milliers.
+ */
+const CLEAR_VOICE_RMS = 800;
+const CLEAR_VOICE_MS = 160;
 
 export interface CallerVoiceActivity {
   noiseFloor: number;
   voiceRun: number;
   lastVoiceAt?: number;
+  /** Durée continue de parole claire en cours, en ms. */
+  clearRunMs?: number;
+  /** Dernier instant où l'appelant parlait clairement depuis au moins CLEAR_VOICE_MS. */
+  lastClearVoiceAt?: number;
 }
 
 /** Niveau efficace d'un bloc PCM 16 bits petit-boutiste. */
@@ -49,6 +60,12 @@ export function trackCallerVoice(
   const state = (session.callerVoice ??= { noiseFloor: 0, voiceRun: 0 });
   const rms = chunkRms(decodeTelnyxToPcm16(session.codec, telnyxAudio));
   const chunkMs = telnyxAudio.length / telnyxBytesPerMs(session.codec);
+  if (rms > CLEAR_VOICE_RMS) {
+    state.clearRunMs = (state.clearRunMs ?? 0) + chunkMs;
+    if (state.clearRunMs >= CLEAR_VOICE_MS) state.lastClearVoiceAt = now;
+  } else {
+    state.clearRunMs = 0;
+  }
   const threshold = Math.min(
     MAX_VOICE_RMS,
     Math.max(MIN_VOICE_RMS, state.noiseFloor * NOISE_MARGIN),
@@ -70,4 +87,10 @@ export function trackCallerVoice(
 export function callerSilenceMs(session: CallSession, now = Date.now()): number {
   const lastVoiceAt = session.callerVoice?.lastVoiceAt;
   return lastVoiceAt === undefined ? Number.POSITIVE_INFINITY : Math.max(0, now - lastVoiceAt);
+}
+
+/** L'appelant a parlé clairement (niveau et durée d'une vraie voix, pas d'un écho) depuis cet instant. */
+export function callerSpokeClearlySince(session: CallSession, sinceMs: number): boolean {
+  const lastClearVoiceAt = session.callerVoice?.lastClearVoiceAt;
+  return lastClearVoiceAt !== undefined && lastClearVoiceAt >= sinceMs;
 }

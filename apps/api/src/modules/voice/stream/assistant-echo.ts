@@ -1,5 +1,9 @@
 import type { CallSession } from './types';
-import { voiceEchoSuppressedTotal } from '../../../shared/observability/metrics';
+import {
+  voiceEchoSparedTotal,
+  voiceEchoSuppressedTotal,
+} from '../../../shared/observability/metrics';
+import { callerSpokeClearlySince } from './caller-voice-activity';
 import { logger } from '../../../shared/logger/pino';
 
 export type EchoStage = 'partial' | 'committed';
@@ -53,6 +57,24 @@ function orderedOverlap(caller: string[], agent: string[]): number {
   return matched;
 }
 
+/**
+ * Quand l'audio montre que l'appelant parle clairement, deux ou trois mots communs avec l'agent sont une
+ * coïncidence (« bonjour vous », « je vous »), pas un écho : appels 5cebe456 et ce dernier test, où
+ * « je vous appelle pour » devenait « appelle pour ». Seule une répétition longue de l'agent reste filtrée.
+ */
+const SPOKEN_OVER_MIN_PREFIX_WORDS = 4;
+const SPOKEN_OVER_MIN_OVERLAP_WORDS = 5;
+const SPOKEN_OVER_MIN_OVERLAP_RATIO = 0.8;
+/** La parole claire compte si elle date de l'énoncé en cours (début de parole entendu, à peu près). */
+const SPEECH_START_MARGIN_MS = 300;
+const DEFAULT_LOOKBACK_MS = 2_000;
+
+function callerIsClearlySpeaking(session: CallSession, now: number): boolean {
+  const since =
+    (session.sttLastSpeechStartedAt ?? now - DEFAULT_LOOKBACK_MS) - SPEECH_START_MARGIN_MS;
+  return callerSpokeClearlySince(session, since);
+}
+
 /** Retard acoustique de l'écho après la fin de l'audio de l'agent (haut-parleur → micro). */
 export const ECHO_ACOUSTIC_TAIL_MS = 900;
 
@@ -95,8 +117,12 @@ export function filterAssistantEcho(
   if (!callerWords.length || !agentWords.length || !isInEchoWindow(session, now)) return unchanged;
   if (isExplicitInterruption(callerWords)) return unchanged;
 
+  const speakingClearly = callerIsClearlySpeaking(session, now);
   const prefixLength = longestPrefixInAgent(callerWords, agentWords);
-  if (prefixLength >= 2 && prefixLength < callerWords.length) {
+  const prefixWouldStrip = prefixLength >= 2 && prefixLength < callerWords.length;
+  const prefixStrips =
+    prefixWouldStrip && (!speakingClearly || prefixLength >= SPOKEN_OVER_MIN_PREFIX_WORDS);
+  if (prefixStrips) {
     const remainder = callerWords.slice(prefixLength);
     const rawWords = [...transcript.matchAll(/[\p{L}\p{N}]+/gu)];
     const suffixStart = rawWords[prefixLength]?.index;
@@ -122,11 +148,17 @@ export function filterAssistantEcho(
   }
 
   const overlap = orderedOverlap(callerWords, agentWords);
-  if (
+  const overlapWouldSuppress =
     callerWords.length >= 2 &&
     overlap >= 2 &&
-    (overlap === callerWords.length || overlap / callerWords.length >= 0.7)
-  ) {
+    (overlap === callerWords.length || overlap / callerWords.length >= 0.7);
+  const overlapSuppresses =
+    overlapWouldSuppress &&
+    (!speakingClearly ||
+      (callerWords.length >= SPOKEN_OVER_MIN_OVERLAP_WORDS &&
+        overlap >= SPOKEN_OVER_MIN_OVERLAP_WORDS - 1 &&
+        overlap / callerWords.length >= SPOKEN_OVER_MIN_OVERLAP_RATIO));
+  if (overlapSuppresses) {
     voiceEchoSuppressedTotal.inc({ stage });
     logger.info(
       {
@@ -140,6 +172,19 @@ export function filterAssistantEcho(
     return { ...unchanged, transcript: '', suppressed: true, nonEchoWordCount: 0 };
   }
 
+  if (prefixWouldStrip || overlapWouldSuppress) {
+    // Les anciennes règles auraient retiré ces mots : l'audio dit que l'appelant parlait.
+    voiceEchoSparedTotal.inc({ stage });
+    logger.info(
+      {
+        callId: session.callControlId,
+        stage,
+        outcome: 'spared_caller_speaking',
+        callerWords: callerWords.length,
+      },
+      '[stt] Assistant echo filter spared the caller',
+    );
+  }
   return unchanged;
 }
 

@@ -815,6 +815,12 @@ export const voiceLlmSpokenFallbackTotal = new Counter({
   registers: [getRegistry()],
 });
 
+export const voiceEchoSparedTotal = new Counter({
+  name: 'sokar_voice_echo_spared_total',
+  help: 'Words the echo filter would have removed but kept because the caller was clearly speaking',
+  labelNames: ['stage'] as const,
+  registers: [getRegistry()],
+});
 export const voiceEchoSuppressedTotal = new Counter({
   name: 'sokar_voice_echo_suppressed_total',
   help: 'Assistant audio echo suppressed from STT by stage',

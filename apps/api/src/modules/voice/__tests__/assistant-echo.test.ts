@@ -119,3 +119,75 @@ describe("écho aligné sur le moment où l'appelant a été entendu (appel 1b3f
     expect(session.agentAudioSpans).toHaveLength(8);
   });
 });
+
+describe("l'appelant parle clairement : les mots communs avec l'agent ne sont pas de l'écho", () => {
+  const NOW = 1_000_000;
+  function speakingOver(agentSpeech: string, clearVoiceAt?: number): CallSession {
+    return {
+      recentAgentSpeechText: agentSpeech,
+      agentAudioActive: true,
+      sttLastSpeechStartedAt: NOW - 1_500,
+      callerVoice: { noiseFloor: 0, voiceRun: 0, lastClearVoiceAt: clearVoiceAt },
+    } as unknown as CallSession;
+  }
+
+  it('garde « bonjour vous appelle pour » quand l’agent vient de dire « Bonjour. Vous voulez… » (dernier test)', () => {
+    const agent = 'Bonjour. Vous voulez réserver une table ?';
+    const withVoice = filterAssistantEcho(
+      speakingOver(agent, NOW - 200),
+      'Bonjour vous appelle pour',
+      'committed',
+      NOW,
+    );
+    expect(withVoice).toMatchObject({
+      suppressed: false,
+      strippedPrefix: false,
+      transcript: 'Bonjour vous appelle pour',
+    });
+    // Sans preuve audio, le comportement d'avant reste : deux mots communs suffisent.
+    const withoutVoice = filterAssistantEcho(
+      speakingOver(agent),
+      'Bonjour vous appelle pour',
+      'committed',
+      NOW,
+    );
+    expect(withoutVoice).toMatchObject({ strippedPrefix: true, transcript: 'appelle pour' });
+  });
+
+  it('garde « je vous appelle pour » malgré « comment puis-je vous aider » dans l’accueil (appel 5cebe456)', () => {
+    const result = filterAssistantEcho(
+      speakingOver('Bonjour, comment puis-je vous aider ? Pour quel jour ?', NOW - 100),
+      'je vous appelle pour pour',
+      'committed',
+      NOW,
+    );
+    expect(result).toMatchObject({ strippedPrefix: false, suppressed: false });
+    expect(result.transcript).toBe('je vous appelle pour pour');
+  });
+
+  it('retire quand même une vraie répétition longue de l’agent, même avec de la voix', () => {
+    const result = filterAssistantEcho(
+      speakingOver('Avec plaisir. Pour combien de personnes souhaitez-vous réserver ?', NOW - 100),
+      'Avec plaisir pour combien de personnes allô bonjour',
+      'committed',
+      NOW,
+    );
+    expect(result).toMatchObject({ strippedPrefix: true, transcript: 'allô bonjour' });
+    const whole = filterAssistantEcho(
+      speakingOver('Avec plaisir. Pour combien de personnes souhaitez-vous réserver ?', NOW - 100),
+      'Avec plaisir pour combien de personnes souhaitez vous réserver',
+      'partial',
+      NOW,
+    );
+    expect(whole).toMatchObject({ suppressed: true, transcript: '' });
+  });
+
+  it('ne tient pas compte d’une voix antérieure au début de l’énoncé (c’est l’écho qui parle)', () => {
+    const session = speakingOver(
+      'Avec plaisir. Pour combien de personnes souhaitez-vous réserver ?',
+      NOW - 4_000,
+    );
+    const result = filterAssistantEcho(session, 'Avec plaisir pour combien', 'partial', NOW);
+    expect(result.suppressed).toBe(true);
+  });
+});
