@@ -3,9 +3,10 @@
  * Rejoue les requêtes du jeu de comportements contre le modèle de production.
  * À lancer sur le serveur : la clé est lue dans le .env de l'API et ne sort jamais.
  *
- * ATTENTION : sans CEREBRAS_EVAL_API_KEY, le rejeu consomme le quota Cerebras des appels
- * réels (le 29/09, des rejeux ont épuisé ce quota : 402, plus aucune réponse vocale). Une
- * clé Cerebras dédiée aux tests (CEREBRAS_EVAL_API_KEY dans le .env de l'API) isole la production.
+ * ATTENTION : une seule clé Cerebras (CEREBRAS_API_KEY) sert aux appels et aux rejeux : chaque
+ * rejeu consomme le quota des appels réels (le 29/09, des rejeux l'ont épuisé : 402, plus aucune
+ * réponse vocale). Le plafond de requêtes (VBE_MAX_REQUESTS) est le seul garde-fou : à vérifier
+ * avant de lancer, surtout quand le solde est bas.
  *
  *   node voice-behavior-replay.mjs requests.json [/opt/sokar/apps/api/.env] > responses.json
  */
@@ -23,15 +24,11 @@ const env = Object.fromEntries(
     ]),
 );
 const { requests } = JSON.parse(readFileSync(requestsFile, 'utf8'));
-const apiKey = env.CEREBRAS_EVAL_API_KEY || env.CEREBRAS_API_KEY;
+const apiKey = env.CEREBRAS_API_KEY;
 const jobCount = requests.reduce((total, request) => total + request.samples, 0);
 const maxRequests = Number(process.env.VBE_MAX_REQUESTS) || 150;
-if (!env.CEREBRAS_EVAL_API_KEY && process.env.VBE_ALLOW_PROD_KEY !== '1') {
-  process.stderr.write(
-    'REFUS : sans CEREBRAS_EVAL_API_KEY, ce rejeu consommerait le crédit Cerebras des appels réels ' +
-      "(le 30/09, ~4 M de tokens en une journée de rejeux : 402, l'agent bascule sur le fallback). " +
-      'Ajouter une clé dédiée aux tests, ou VBE_ALLOW_PROD_KEY=1 en connaissance de cause.\n',
-  );
+if (!apiKey) {
+  process.stderr.write('REFUS : CEREBRAS_API_KEY absente du .env.\n');
   process.exit(1);
 }
 if (jobCount > maxRequests) {
