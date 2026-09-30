@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { CallSession } from '../stream/types';
-import { callerSilenceMs, chunkRms, trackCallerVoice } from '../stream/caller-voice-activity';
+import {
+  callerSilenceMs,
+  callerSpokeClearlySince,
+  chunkRms,
+  trackCallerVoice,
+} from '../stream/caller-voice-activity';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
 
 const session = (): CallSession => ({ codec: 'L16' }) as unknown as CallSession;
@@ -59,5 +64,28 @@ describe('trackCallerVoice / callerSilenceMs', () => {
     trackCallerVoice(s, frame(4_000), 10_000);
     trackCallerVoice(s, frame(4_000), 10_020);
     expect(callerSilenceMs(s, 10_100)).toBe(80);
+  });
+});
+
+describe('parole claire (preuve audio contre l’écho)', () => {
+  // Une trame de ce fichier dure 10 ms (160 échantillons L16 à 16 kHz).
+  it('exige un niveau fort tenu au moins 160 ms : un bruit moyen ou un pic bref ne compte pas', () => {
+    const s = session();
+    for (let index = 0; index < 40; index++) trackCallerVoice(s, frame(600), 1_000 + index * 10);
+    expect(callerSpokeClearlySince(s, 0)).toBe(false);
+    for (let index = 0; index < 15; index++) trackCallerVoice(s, frame(3_000), 2_000 + index * 10);
+    expect(callerSpokeClearlySince(s, 0)).toBe(false);
+    trackCallerVoice(s, frame(3_000), 2_150);
+    expect(callerSpokeClearlySince(s, 0)).toBe(true);
+  });
+
+  it('se souvient du dernier instant de parole claire, et une trame faible coupe la série', () => {
+    const s = session();
+    for (let index = 0; index < 20; index++) trackCallerVoice(s, frame(3_000), 5_000 + index * 10);
+    expect(callerSpokeClearlySince(s, 5_100)).toBe(true);
+    expect(callerSpokeClearlySince(s, 6_000)).toBe(false);
+    trackCallerVoice(s, frame(0), 5_300);
+    for (let index = 0; index < 10; index++) trackCallerVoice(s, frame(3_000), 6_000 + index * 10);
+    expect(callerSpokeClearlySince(s, 6_000)).toBe(false);
   });
 });
