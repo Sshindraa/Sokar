@@ -20,7 +20,7 @@
 
 ## Décisions récentes
 
-2026-09-30 — [MCP, UX] Pour une question simple de disponibilité, utiliser `answer_availability`, dont la sortie est limitée à `{ message }`; répondre uniquement avec le résultat utile, sans commentaire automatique sur l’absence de réservation. Si la personne demande explicitement si une réservation a été créée, répondre clairement. Après l’ajout d’un outil MCP, actualiser la liste côté client si elle est en cache : Claude a gardé l’ancien outil jusqu’à « Refresh tools list ». Le client reste responsable de sa formulation finale.
+2026-09-30 — [MCP, UX] Pour une question simple de disponibilité, utiliser `answer_availability`, dont la sortie est limitée à `{ message }`; répondre uniquement avec le résultat utile, sans commentaire automatique sur l’absence de réservation. Si la personne demande explicitement si une réservation a été créée, répondre clairement. Après tout déploiement ou changement des consignes MCP, actualiser la liste d’outils dans ChatGPT et Claude : les deux peuvent conserver les définitions précédentes en cache. Les clients génèrent encore le texte final.
 
 2026-09-29 — [MCP, UX] **Prompts et resources différés** — Les parcours ChatGPT/Claude déjà observés utilisent directement recherche, disponibilité et réservations ; aucune demande produit ne justifie une surface `prompts`/`resources` supplémentaire. Réévaluer lorsqu’un parcours récurrent nécessite un workflow guidé ou un contenu restaurant statique dans le client.
 
