@@ -156,7 +156,7 @@ Réponse:
   "result": {
     "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "2.2.0" },
+    "serverInfo": { "name": "sokar-mcp", "version": "2.3.0" },
     "instructions": "Consignes conversationnelles fournies par Sokar…"
   }
 }
@@ -206,19 +206,31 @@ personnes chez Chez Sokar, jeudi 1er octobre à 19 h. » Il ne montre ni UUID, n
 `reused`, ni réponse JSON. En cas d’indisponibilité, il propose uniquement les
 créneaux alternatifs retournés.
 
-Quand la personne indique seulement une heure de début, l’assistant omet
-`slotEnd` et le serveur complète automatiquement une fenêtre de 120 minutes par
-défaut, sauf si une durée différente est connue ou précisée. `search_restaurants`
-teste le créneau exact. `searchOutcome` égal à
-`no_exact_slot_available` signifie qu’aucun résultat ne correspond à cette
-recherche; cela ne permet pas de conclure que le restaurant n’existe pas. Il faut
-proposer de chercher à une autre heure, jamais demander un UUID.
+Quand la personne nomme un restaurant, l’assistant passe ce nom dans
+`restaurantName`. `requestedRestaurant.status` distingue le restaurant trouvé
+mais indisponible (`unavailable`) d’une fiche MCP introuvable dans cette ville
+(`not_found`). Un tableau `restaurants` vide ne prouve pas que le restaurant
+n’existe pas. L’assistant ne demande jamais un identifiant.
+
+« Vers 19 h » est interprété comme un début à 19 h, sans décalage ni élargissement
+du créneau. Si la personne n’a donné ni fin ni durée, l’assistant omet
+`slotEnd`; le serveur complète alors 120 minutes par défaut.
 
 Le serveur transmet ces règles dans `initialize.instructions` et dans les
 descriptions des outils. Ce sont des consignes au modèle, pas une contrainte
 d’affichage imposée par MCP : le client conserve la main sur sa réponse. Une
 intégration qui exige une formulation garantie doit aussi appliquer ses propres
 instructions système et vérifier le rendu dans son client.
+
+Avec les versions MCP qui prennent en charge `structuredContent` (`2025-06-18`
+et suivantes), le champ texte `content` d’un résultat d’outil est une phrase
+courte destinée à la conversation; les informations machine, dont les UUID,
+restent dans `structuredContent` pour les appels suivants. Le modèle doit
+utiliser cette phrase comme base de réponse et ne pas afficher le JSON structuré
+à la personne. Les erreurs suivent la même règle : `content` décrit simplement
+le problème, tandis que le code de diagnostic reste dans les métadonnées. Pour
+les clients `2025-03-26`, Sokar conserve le texte JSON historique afin de ne pas
+casser les intégrations qui n’exploitent pas `structuredContent`.
 
 ## Format tools/call
 
@@ -300,6 +312,7 @@ Arguments:
 ```json
 {
   "city": "Lyon",
+  "restaurantName": "Chez Sokar",
   "partySize": 2,
   "slotStart": "2026-06-23T17:00:00.000Z",
   "slotEnd": "2026-06-23T19:00:00.000Z",
@@ -313,6 +326,7 @@ Contraintes:
 
 - `city`: string, 1 à 100 caractères
 - `partySize`: entier, 1 à 50
+- `restaurantName`: optionnel; nom fourni par la personne. Lorsqu’elle nomme un restaurant, transmettez-le pour rechercher cette fiche précise.
 - `slotStart`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
 - `slotEnd`: optionnel; même format que `slotStart`. S’il est omis, Sokar applique une durée de 120 minutes.
 - `timezone`: optionnel pour les valeurs locales (fuseau IANA, par ex. `Europe/Paris`) ; Europe/Paris est utilisé par défaut
@@ -324,6 +338,11 @@ Réponse:
 ```json
 {
   "searchOutcome": "available",
+  "requestedRestaurant": {
+    "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
+    "name": "Chez Sokar",
+    "status": "available"
+  },
   "restaurants": [
     {
       "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
@@ -353,6 +372,11 @@ basse ; ces entrées ne sont pas présentées comme disponibles.
 `no_exact_slot_available`. Une recherche exacte vide ne prouve pas qu’un
 restaurant nommé n’existe pas : elle ne trouve pas de correspondance pour la
 ville, le groupe et le créneau fournis.
+
+Quand `restaurantName` est fourni, `requestedRestaurant.status` vaut
+`available`, `unavailable`, `capacity_exceeded` ou `not_found`. Cette valeur
+distingue un restaurant connu mais sans place à l’heure exacte d’une fiche
+introuvable dans la ville; l’ID reste réservé aux appels MCP internes.
 
 ### get_restaurant_details
 

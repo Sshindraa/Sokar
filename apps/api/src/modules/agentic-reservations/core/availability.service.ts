@@ -50,7 +50,7 @@ export type CapacityLimitHint = {
   maxOnlinePartySize: number;
 };
 
-type RestaurantSearchResult = {
+export type RestaurantSearchResult = {
   restaurantId: string;
   name: string;
   slug: string | null;
@@ -102,6 +102,7 @@ export class AvailabilityService {
    */
   async searchAvailableRestaurants(args: {
     city: string;
+    restaurantName?: string;
     partySize: number;
     slotStart: Date;
     slotEnd: Date;
@@ -114,6 +115,7 @@ export class AvailabilityService {
 
   async searchAvailableRestaurantsPage(args: {
     city: string;
+    restaurantName?: string;
     partySize: number;
     slotStart: Date;
     slotEnd: Date;
@@ -122,12 +124,16 @@ export class AvailabilityService {
     cursor?: string;
   }): Promise<{
     results: RestaurantSearchResult[];
+    restaurantMatches: Array<Pick<RestaurantSearchResult, 'restaurantId' | 'name'>>;
     nextCursor?: string;
   }> {
     // Étape 1 : candidats (filtre ville + cuisine + opt-in)
     const candidates = await this.prisma.restaurant.findMany({
       where: {
         ...(args.cursor ? { id: { gt: args.cursor } } : {}),
+        ...(args.restaurantName
+          ? { name: { contains: args.restaurantName.trim(), mode: 'insensitive' as const } }
+          : {}),
         agenticOptIn: true,
         exposureSettings: {
           is: {
@@ -164,11 +170,13 @@ export class AvailabilityService {
       cuisineType: string[];
       priceRange: number | null;
     }> = [];
+    const restaurantMatches: Array<Pick<RestaurantSearchResult, 'restaurantId' | 'name'>> = [];
     let lastScannedId: string | undefined;
     for (const c of candidates) {
       lastScannedId = c.id;
       const addr = c.formattedAddress?.toLowerCase() ?? '';
       if (lowerCity.length > 0 && !addr.includes(lowerCity)) continue;
+      if (args.restaurantName) restaurantMatches.push({ restaurantId: c.id, name: c.name });
       const check = await this.checkAvailability({
         restaurantId: c.id,
         partySize: args.partySize,
@@ -198,6 +206,7 @@ export class AvailabilityService {
         priceRange: r.priceRange,
         distanceMeters: null, // PostGIS en P1 si besoin
       })),
+      restaurantMatches,
       nextCursor:
         lastScannedId &&
         (results.length >= args.maxResults || candidates.length >= SEARCH_CANDIDATES_MAX)
@@ -213,12 +222,16 @@ export class AvailabilityService {
    */
   async findCapacityLimits(args: {
     city: string;
+    restaurantName?: string;
     partySize: number;
     cuisineType?: string[];
     maxResults: number;
   }): Promise<CapacityLimitHint[]> {
     const candidates = await this.prisma.restaurant.findMany({
       where: {
+        ...(args.restaurantName
+          ? { name: { contains: args.restaurantName.trim(), mode: 'insensitive' as const } }
+          : {}),
         agenticOptIn: true,
         exposureSettings: { is: { mcpEnabled: true } },
         ...(args.cuisineType && args.cuisineType.length > 0

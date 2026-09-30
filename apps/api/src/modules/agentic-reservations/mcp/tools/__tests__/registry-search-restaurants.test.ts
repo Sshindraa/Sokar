@@ -126,6 +126,87 @@ describe('McpToolRegistry.searchRestaurants capacity guidance', () => {
     if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
   });
 
+  it('distingue une fiche nommée trouvée mais indisponible du restaurant introuvable', async () => {
+    const registry = new McpToolRegistry(makePrisma(), makeRateLimiter());
+    const restaurantId = '550e8400-e29b-41d4-a716-446655440003';
+    const availabilityService = {
+      searchAvailableRestaurantsPage: vi.fn().mockResolvedValue({
+        results: [],
+        restaurantMatches: [{ restaurantId, name: 'Chez Sokar' }],
+      }),
+      findCapacityLimits: vi.fn().mockResolvedValue([]),
+    };
+    (registry as unknown as Record<string, unknown>).availabilityService = availabilityService;
+
+    const result = await registry.searchRestaurants(
+      {
+        city: 'Lyon',
+        restaurantName: 'Chez Sokar',
+        partySize: 2,
+        slotStart: '2026-09-17T19:00:00+02:00',
+      },
+      {
+        clientId: 'client-1',
+        clientName: 'Claude',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        searchOutcome: 'no_exact_slot_available',
+        requestedRestaurant: {
+          id: restaurantId,
+          name: 'Chez Sokar',
+          status: 'unavailable',
+        },
+        restaurants: [],
+      },
+    });
+    expect(availabilityService.searchAvailableRestaurantsPage).toHaveBeenCalledWith(
+      expect.objectContaining({ city: 'Lyon', restaurantName: 'Chez Sokar' }),
+    );
+    if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
+  });
+
+  it('signale sans UUID qu’aucune fiche MCP du nom demandé ne correspond à cette ville', async () => {
+    const registry = new McpToolRegistry(makePrisma(), makeRateLimiter());
+    const availabilityService = {
+      searchAvailableRestaurantsPage: vi
+        .fn()
+        .mockResolvedValue({ results: [], restaurantMatches: [] }),
+      findCapacityLimits: vi.fn().mockResolvedValue([]),
+    };
+    (registry as unknown as Record<string, unknown>).availabilityService = availabilityService;
+
+    const result = await registry.searchRestaurants(
+      {
+        city: 'Lyon',
+        restaurantName: 'Chez Sokar',
+        partySize: 2,
+        slotStart: '2026-09-17T19:00:00+02:00',
+      },
+      {
+        clientId: 'client-1',
+        clientName: 'Claude',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        requestedRestaurant: { name: 'Chez Sokar', status: 'not_found' },
+      },
+    });
+    if (result.ok) expect(SearchRestaurantsOutputSchema.safeParse(result.data).success).toBe(true);
+  });
+
   it('continues past filtered restaurants and consumes the cursor', async () => {
     const prisma = makePrisma();
     vi.mocked(prisma.restaurant.findFirst).mockResolvedValueOnce(null);

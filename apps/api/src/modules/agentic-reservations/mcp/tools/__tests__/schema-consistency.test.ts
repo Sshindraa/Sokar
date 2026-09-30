@@ -133,6 +133,7 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
       | Record<string, unknown>
       | undefined;
     expect(props?.cursor).toBeDefined();
+    expect(props?.restaurantName).toBeDefined();
   });
 
   it('join_waiting_list requires explicit processing consent', () => {
