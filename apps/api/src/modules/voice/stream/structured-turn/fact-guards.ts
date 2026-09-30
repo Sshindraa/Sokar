@@ -25,6 +25,8 @@ export interface StructuredTurnState {
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+  /** Récapitulatif dont le « oui » a déjà été refusé une fois parce qu'il avait été coupé. */
+  recapCutBlockedKey: string | null;
 }
 
 export interface DayAvailability {
@@ -44,6 +46,7 @@ export function createStructuredTurnState(): StructuredTurnState {
     dayAvailability: null,
     reservationCreated: false,
     pendingFragment: null,
+    recapCutBlockedKey: null,
   };
 }
 
@@ -325,7 +328,7 @@ export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number },
+  context: { maxPartySize: number; recapHeard?: boolean },
 ): ActionDecision {
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
   if (sideEffect && output.confidence === 'low') {
@@ -354,6 +357,8 @@ export function authorizeStructuredAction(
       if (output.interpretation !== 'affirmation') {
         return { allowed: false, reason: 'recap_not_accepted' };
       }
+      // Coupé avant la fin de son contenu : le « oui » ne porte que sur ce qui a été entendu.
+      if (context.recapHeard === false) return { allowed: false, reason: 'recap_not_heard' };
       return { allowed: true };
     }
   }

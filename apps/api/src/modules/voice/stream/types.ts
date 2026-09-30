@@ -1,3 +1,4 @@
+import type { InterruptedReply } from './interrupted-reply';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
 import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
@@ -237,6 +238,8 @@ export interface ConversationState {
 /** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
 export interface ActiveTtsContext {
   cancel(): void;
+  /** Texte poussé et audio joué, à lire avant `cancel` : de quoi estimer ce que l'appelant a entendu. */
+  interruptionSnapshot?(): { text: string; playedMs: number; totalMs: number | null };
 }
 
 /** Compteurs internes de consommation des providers d'un appel. */
@@ -616,6 +619,8 @@ export interface CallSession {
   agentSpeechLog?: { text: string; at: number }[];
   /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
+  /** Dernière réponse coupée par l'appelant, jusqu'au prochain tour traité. */
+  interruptedReply?: InterruptedReply;
   /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
   /** Tours précédents conservés jusqu'à la finalisation de l'appel. */

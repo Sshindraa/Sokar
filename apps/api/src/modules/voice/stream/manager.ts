@@ -27,6 +27,7 @@ import {
 } from './conversation-controller';
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
+import { splitHeardReply } from './interrupted-reply';
 import { recordDebugTool } from './debug-dialogue';
 import { cancelScheduledFiller } from './filler-scheduler';
 import {
@@ -825,6 +826,11 @@ export class CallSessionManager {
     cancelScheduledFiller(session);
     session.responseGeneration++;
     session.ttsGeneration++;
+    // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
+    const snapshot = session.ttsContext?.interruptionSnapshot?.();
+    session.interruptedReply = snapshot?.text.trim()
+      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs)
+      : undefined;
     session.ttsContext?.cancel();
     session.ttsContext = null;
     this.sendTelnyxClear(session);
