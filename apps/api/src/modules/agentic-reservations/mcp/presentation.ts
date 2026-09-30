@@ -75,7 +75,7 @@ function formatRestaurantSearch(args: DataRecord, data: DataRecord): string {
   const context = [when, partySize ? `pour ${partySize}` : undefined].filter(Boolean).join(' ');
 
   if (status === 'available') {
-    return `${name} est disponible${when ? ` ${when}` : ''}${partySize ? ` pour ${partySize}` : ''}.`;
+    return `Oui, une table est disponible${partySize ? ` pour ${partySize}` : ''} au restaurant ${name}${when ? ` ${when}` : ''}.`;
   }
   if (status === 'unavailable') {
     return `Le restaurant ${name} n’a pas de disponibilité${context ? ` ${context}` : ''}.`;
