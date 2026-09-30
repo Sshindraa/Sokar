@@ -46,6 +46,8 @@ export interface BehaviorCase {
   /** Résultat d'action déjà exécutée : la réponse ne peut plus qu'être dite ou terminer l'appel. */
   actionResult?: string;
   dayPart?: string;
+  /** Le tour vient d'être relancé après un silence de l'appelant sur un fragment inachevé. */
+  callerFinished?: boolean;
   /** Profil restaurant de `profiles` ; absent : Chez Sokar, ouvert tous les jours 12 h–22 h. */
   profile?: string;
   samples?: number;
