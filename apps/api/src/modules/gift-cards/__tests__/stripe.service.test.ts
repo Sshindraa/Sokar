@@ -18,12 +18,18 @@ const sdk = vi.hoisted(() => ({
   refundCreate: vi.fn(),
   refundRetrieve: vi.fn(),
   refundList: vi.fn(),
+  rawRequest: vi.fn(),
+  accountRetrieve: vi.fn(),
+  accountLinkCreate: vi.fn(),
 }));
 
 vi.mock('stripe', () => {
   let shouldThrow = false;
 
   class Stripe {
+    rawRequest = sdk.rawRequest;
+    accounts = { retrieve: sdk.accountRetrieve };
+    accountLinks = { create: sdk.accountLinkCreate };
     paymentIntents = {
       create: sdk.create.mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
       retrieve: sdk.retrieve.mockResolvedValue({
@@ -217,5 +223,76 @@ describe('stripe.service', () => {
       expect.objectContaining({ refund_application_fee: false }),
       { stripeAccount: 'acct_restaurant', idempotencyKey: 'refund-no-fee' },
     );
+  });
+});
+
+describe('Stripe Connect account creation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('creates a French merchant with Accounts v2 and stable restaurant idempotency', async () => {
+    sdk.rawRequest.mockResolvedValue({ id: 'acct_testMerchant' });
+    const { createConnectedAccount } = await import('../stripe.service');
+    await expect(createConnectedAccount('rest-1', 'owner@example.invalid')).resolves.toBe(
+      'acct_testMerchant',
+    );
+    expect(sdk.rawRequest).toHaveBeenCalledWith(
+      'POST',
+      '/v2/core/accounts',
+      {
+        identity: { country: 'FR' },
+        dashboard: 'full',
+        configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
+        defaults: {
+          currency: 'eur',
+          locales: ['fr-FR'],
+          responsibilities: { fees_collector: 'stripe', losses_collector: 'stripe' },
+        },
+        metadata: { restaurantId: 'rest-1', source: 'sokar_gift_cards' },
+      },
+      { apiVersion: '2026-08-26.dahlia', idempotencyKey: 'gift-card-connect-v2:rest-1:hosted' },
+    );
+  });
+
+  it.each([null, {}, { id: 'not-an-account' }])(
+    'rejects malformed provider account responses: %j',
+    async (response) => {
+      sdk.rawRequest.mockResolvedValue(response);
+      const { createConnectedAccount } = await import('../stripe.service');
+      await expect(createConnectedAccount('rest-1', 'owner@example.invalid')).rejects.toThrow(
+        'compte connecté valide',
+      );
+    },
+  );
+
+  it('keeps readiness and onboarding compatible with v2-created account IDs', async () => {
+    sdk.accountRetrieve.mockResolvedValue({
+      id: 'acct_testMerchant',
+      charges_enabled: true,
+      payouts_enabled: true,
+      details_submitted: true,
+    });
+    sdk.accountLinkCreate.mockResolvedValue({ url: 'https://connect.stripe.com/setup/test' });
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech');
+    const { retrieveConnectedAccount, createConnectedAccountLink } =
+      await import('../stripe.service');
+    try {
+      await expect(retrieveConnectedAccount('acct_testMerchant')).resolves.toEqual({
+        id: 'acct_testMerchant',
+        chargesEnabled: true,
+        payoutsEnabled: true,
+        detailsSubmitted: true,
+      });
+      await createConnectedAccountLink('acct_testMerchant');
+      expect(sdk.accountLinkCreate).toHaveBeenCalledWith({
+        account: 'acct_testMerchant',
+        type: 'account_onboarding',
+        refresh_url: 'https://staging.sokar.tech/dashboard/gift-cards?stripeConnect=refresh',
+        return_url: 'https://staging.sokar.tech/dashboard/gift-cards?stripeConnect=return',
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
