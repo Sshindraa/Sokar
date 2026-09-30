@@ -47,6 +47,16 @@ const CONCURRENCY = 6;
 
 const MAX_ATTEMPTS = 6;
 
+/**
+ * Crédit épuisé (402) ou clé refusée (401/403) : inutile de continuer, chaque requête suivante échouerait
+ * et le rejeu renverrait des réponses vides que rien ne distingue d'un modèle muet. Le 30/09, trois passages
+ * sur six sont partis ainsi en silence et ont épuisé le crédit partagé avec les appels réels.
+ */
+let fatal = null;
+const FATAL_STATUSES = new Set([401, 402, 403]);
+/** Au-delà, trop de réponses vides pour que les taux mesurés aient un sens. */
+const MAX_EMPTY_RATE = 0.25;
+
 /** Cerebras limite les tokens par minute : un 429 se rattrape en attendant, il n'est pas un verdict. */
 async function sample(request) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -57,13 +67,17 @@ async function sample(request) {
         body: JSON.stringify({
           model,
           messages: request.messages,
-          response_format: request.format,
+          ...(request.format ? { response_format: request.format } : {}),
           temperature: 0.3,
-          max_tokens: 400,
+          max_tokens: request.maxTokens ?? 400,
           reasoning_effort: 'none',
         }),
         signal: AbortSignal.timeout(30_000),
       });
+      if (FATAL_STATUSES.has(response.status)) {
+        fatal ??= `HTTP ${response.status} du fournisseur (${response.status === 402 ? 'crédit épuisé' : 'clé refusée'})`;
+        return null;
+      }
       if (response.status === 429 && attempt < MAX_ATTEMPTS) {
         const waitS = Number(response.headers.get('retry-after')) || 5 * attempt;
         await new Promise((resolve) => setTimeout(resolve, waitS * 1000));
@@ -77,17 +91,41 @@ async function sample(request) {
   return null;
 }
 
+// Test préalable : une requête minimale. Un refus arrête tout avant de dépenser quoi que ce soit.
+await sample({
+  messages: [{ role: 'user', content: 'ok' }],
+  format: undefined,
+  maxTokens: 3,
+});
+if (fatal) {
+  process.stderr.write(`ARRÊT : ${fatal}. Aucune requête du jeu n'a été envoyée.\n`);
+  process.exit(2);
+}
+
 const jobs = requests.flatMap((request) => Array.from({ length: request.samples }, () => request));
 const results = new Array(jobs.length);
 let cursor = 0;
 await Promise.all(
   Array.from({ length: CONCURRENCY }, async () => {
-    while (cursor < jobs.length) {
+    while (!fatal && cursor < jobs.length) {
       const index = cursor++;
       results[index] = await sample(jobs[index]);
     }
   }),
 );
+if (fatal) {
+  process.stderr.write(
+    `ARRÊT : ${fatal}. Rejeu interrompu, aucune sortie écrite (elle serait faussée par des réponses vides).\n`,
+  );
+  process.exit(2);
+}
+const empty = results.filter((result) => result == null).length;
+if (empty / jobs.length > MAX_EMPTY_RATE) {
+  process.stderr.write(
+    `ARRÊT : ${empty}/${jobs.length} réponses vides (réseau, quota ou format ?). Sortie non écrite.\n`,
+  );
+  process.exit(3);
+}
 const responses = {};
 jobs.forEach((job, index) => (responses[job.id] ??= []).push(results[index]));
 process.stdout.write(JSON.stringify({ model, responses }));
