@@ -31,8 +31,15 @@ import {
   looksLikeSpelledLetters,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
+import { speculateStructuredTurn } from '../stream/structured-turn/engine';
+import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
+
+vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../stream/structured-turn/engine')>()),
+  speculateStructuredTurn: vi.fn(),
+}));
 
 function makeWsMock(): WebSocket {
   return {
@@ -938,6 +945,72 @@ describe('Deepgram final dispatch', () => {
     expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
       500,
     );
+  });
+
+  describe('spéculation du tour structuré à la pause de l’appelant', () => {
+    beforeEach(() => vi.mocked(speculateStructuredTurn).mockClear());
+
+    it('lit le réglage : 150 ms par défaut, 0 pour l’ancien déclenchement', () => {
+      expect(structuredSpeculationPauseMs({})).toBe(150);
+      expect(structuredSpeculationPauseMs({ VOICE_STRUCTURED_SPECULATION_PAUSE_MS: '0' })).toBe(0);
+      expect(structuredSpeculationPauseMs({ VOICE_STRUCTURED_SPECULATION_PAUSE_MS: '99999' })).toBe(
+        150,
+      );
+    });
+
+    it('attend que l’appelant se taise, puis lance dès la pause, sans délai fixe de 250 ms', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-30T17:00:00Z'));
+      const { session } = deepgramSession();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 2, lastVoiceAt: Date.now() };
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'je voudrais réserver' });
+      // L'appelant parle encore : rien ne part, même après plus de 250 ms.
+      for (let elapsed = 0; elapsed < 400; elapsed += 20) {
+        vi.advanceTimersByTime(20);
+        session.callerVoice.lastVoiceAt = Date.now();
+      }
+      expect(speculateStructuredTurn).not.toHaveBeenCalled();
+      // Il s'arrête : la spéculation part environ 150 ms plus tard.
+      vi.advanceTimersByTime(120);
+      expect(speculateStructuredTurn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(80);
+      expect(speculateStructuredTurn).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('ne lance rien pour une partielle périmée : l’appelant a continué', () => {
+      vi.useFakeTimers();
+      const { session } = deepgramSession();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: Date.now() - 1_000 };
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'demain' });
+      vi.advanceTimersByTime(30);
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'demain soir' });
+      vi.advanceTimersByTime(300);
+      expect(speculateStructuredTurn).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(speculateStructuredTurn).mock.calls[0][2]).toBe('demain soir');
+      vi.useRealTimers();
+    });
+
+    it('garde l’ancien déclenchement sans détecteur de voix ou quand il est désactivé', () => {
+      vi.useFakeTimers();
+      const { session } = deepgramSession();
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui' });
+      vi.advanceTimersByTime(249);
+      expect(speculateStructuredTurn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(speculateStructuredTurn).toHaveBeenCalledTimes(1);
+
+      vi.mocked(speculateStructuredTurn).mockClear();
+      vi.stubEnv('VOICE_STRUCTURED_SPECULATION_PAUSE_MS', '0');
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: Date.now() - 5_000 };
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'oui merci' });
+      vi.advanceTimersByTime(249);
+      expect(speculateStructuredTurn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(speculateStructuredTurn).toHaveBeenCalledTimes(1);
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
   });
 
   describe('garde de silence des fins de tour forcées', () => {

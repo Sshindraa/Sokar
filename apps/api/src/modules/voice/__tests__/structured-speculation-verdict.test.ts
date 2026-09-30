@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelSpeculation,
   classifySpeculationMiss,
   parseTurnCompleteVerdict,
   startSpeculation,
+  structuredSpeculationMaxLaunches,
   takeSpeculation,
 } from '../stream/structured-turn/speculation';
 import type { CallSession } from '../stream/types';
@@ -129,5 +130,59 @@ describe('issue de la spéculation', () => {
     expect(
       takeSpeculation(session, messages, format, () => undefined, new AbortController().signal),
     ).toBeNull();
+  });
+});
+
+describe('plafond de requêtes spéculatives par tour', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const manager = () => ({
+    streamStructuredCompletion: vi.fn(async () => '{"turnComplete":true}'),
+  });
+  const format = {} as never;
+  const messages = (text: string) => [{ role: 'user' as const, content: text }];
+
+  it('lit le plafond, 3 par défaut, en ignorant les valeurs absurdes', () => {
+    expect(structuredSpeculationMaxLaunches({})).toBe(3);
+    expect(
+      structuredSpeculationMaxLaunches({ VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES: '2' }),
+    ).toBe(2);
+    expect(
+      structuredSpeculationMaxLaunches({ VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES: '0' }),
+    ).toBe(3);
+    expect(
+      structuredSpeculationMaxLaunches({ VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES: '50' }),
+    ).toBe(3);
+  });
+
+  it('ne lance pas plus de requêtes que le plafond, et garde la dernière lancée', () => {
+    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES', '2');
+    const session = {} as CallSession;
+    const mgr = manager();
+    startSpeculation(session, mgr as never, messages('je voudrais'), format);
+    startSpeculation(session, mgr as never, messages('je voudrais réserver'), format);
+    startSpeculation(session, mgr as never, messages('je voudrais réserver demain'), format);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    cancelSpeculation(session);
+  });
+
+  it('une même requête ne compte pas deux fois, et le compteur repart au tour suivant', () => {
+    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES', '1');
+    const session = {} as CallSession;
+    const mgr = manager();
+    startSpeculation(session, mgr as never, messages('oui'), format);
+    startSpeculation(session, mgr as never, messages('oui'), format);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    // Le tour consomme la spéculation : le suivant repart de zéro.
+    const taken = takeSpeculation(
+      session,
+      messages('oui'),
+      format,
+      () => undefined,
+      new AbortController().signal,
+    );
+    expect(taken).not.toBeNull();
+    startSpeculation(session, mgr as never, messages('non'), format);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    cancelSpeculation(session);
   });
 });
