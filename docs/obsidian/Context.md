@@ -12,6 +12,7 @@
 
 - [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
 - [ ] Vérification de compréhension (PR phase 2) : après déploiement, l'activer pour Chez Sokar seulement (`VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`), refaire un appel d'hésitation, lire `understanding` dans `[voice-turn] structured_turn`.
+- [ ] Banc voix : `pas-de-repetition-mot-pour-mot` est à 20-55 % (seuil 80 %) avant et après l'étape 3 (l'agent reformule mais repose la même question) ; faire utiliser au banc la vraie base `prompts.ts` (prompt minimal aujourd'hui) ; mesurer le mode à outils, non couvert.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.

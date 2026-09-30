@@ -109,7 +109,7 @@ describe('buildSystemPrompt', () => {
     // Une valeur contenue dans une question n'est retenue que si elle est dite clairement.
     expect(system.content).toContain("ses mots suffisent à savoir de quelle information il s'agit");
     // Groupe connu : lire la ligne de sa taille, refuser un horaire absent (1–2/10 → 9/10).
-    expect(system.content).toContain('« 5-8 » contient 6');
+    expect(system.content).toContain('« 9-12 » contient 10');
   });
 
   it('donne au modèle des principes de conversation, pas des phrases (appel b686b241)', () => {
@@ -179,7 +179,7 @@ describe('buildSystemPrompt', () => {
     // Rejeu Qwen du 29/09, question à côté (« terrasse ») : 8/10 répétaient
     // « Vous voulez venir vers quelle heure ? » mot pour mot ; 2/10 avec cette consigne.
     expect(system.content).toContain('ne recopie jamais ta dernière phrase');
-    expect(system.content).toContain('« Et vers quelle heure ? »');
+    expect(system.content).toContain("reprends-la plus brièvement et avec d'autres mots");
   });
 
   it('donne un calendrier calculé de 14 jours, jours fermés compris (appel 88921164)', () => {
@@ -209,8 +209,8 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain("L'accueil a déjà été prononcé");
     expect(prompt).toContain('appelle checkAvailability immédiatement dans le même tour');
     expect(prompt).toContain('Tu évites le ton administratif');
-    expect(prompt).toContain('EXEMPLES DE FORMULATION');
-    expect(prompt).toContain('Non, plutôt 20 h 30.');
+    expect(prompt).toContain('SITUATIONS (des principes');
+    expect(prompt).toContain('Non, plutôt 21 h 15.');
     expect(prompt).toContain("Merci, c'est tout.");
     expect(prompt).toContain('mercredi 22 juillet 2026, fuseau Europe/Paris');
     expect(prompt).not.toContain('Au tout début de chaque appel');
@@ -293,6 +293,63 @@ describe('buildSystemPrompt', () => {
     expect(greetIdx).toBeLessThan(ruleIdx + 200);
   });
 });
+describe('phrases à dire : des principes, pas des formules', () => {
+  const hours = { tue: { open: '12:00', close: '22:00' } };
+  const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn: true });
+  const [system] = buildStructuredTurnMessages({
+    systemPrompt: base,
+    history: [],
+    transcript: 'bonjour',
+    state: createStructuredTurnState(),
+  });
+  const prompt = String(system.content);
+
+  it("ne donne plus de phrase de l'agent à imiter ni de formule d'accusé de réception nommée", () => {
+    for (const formula of [
+      'Oui, bien sûr. Vous serez combien ?',
+      'Avec plaisir. Bonne soirée.',
+      "D'accord, je garde",
+      "Je n'ai aucun autre créneau vérifié",
+      'Et vers quelle heure ?',
+      'Alors, quelle heure vous arrange ?',
+      'Donc, vous serez combien ?',
+      'Vous voulez venir vers quelle heure ?',
+      '16 heures, parfait',
+      'lundi 28 septembre',
+    ]) {
+      expect(prompt).not.toContain(formula);
+    }
+  });
+
+  it("garde les interdictions nommées : une liste de formules interdites oriente mieux qu'un principe nu", () => {
+    // Mesuré le 01/10 : converties en principe seul, « c'est noté » passe de 4 à 10 ouvertures sur ~480 et un
+    // « C'est possible » interdit apparaît 2 fois sur 12 (0/12 avant). Ce sont des interdictions, pas des phrases à imiter.
+    expect(prompt).toContain("« Parfait », « Très bien », « C'est noté », « Avec plaisir »");
+    expect(prompt).toContain('pas de « Parfait » ou « Très bien » systématique en ouverture');
+    expect(prompt).toContain(
+      "ne dis jamais qu'un horaire est possible, libre ou que « ça marche »",
+    );
+    expect(prompt).toContain("ne dis pas « c'est noté » pour cet horaire");
+  });
+
+  it("garde des exemples d'interprétation de l'entrée, avec des valeurs absentes du banc", () => {
+    // Ce que dit l'appelant : on garde, pour apprendre à le comprendre.
+    for (const heard of [
+      '« allô ? »',
+      '« oui »',
+      '« merci »',
+      '« attendez »',
+      '« il reste de la place ? »',
+    ]) {
+      expect(prompt).toContain(heard);
+    }
+    // « six » valait la valeur 6 du banc, « K I F » les lettres de AKKIF : remplacés.
+    expect(prompt).toContain('« trois »');
+    expect(prompt).not.toContain('« six »');
+    expect(prompt).not.toContain('K I F');
+  });
+});
+
 describe('buildSystemPrompt : base commune et section propre au mode à outils', () => {
   const hours = { tue: { open: '12:00', close: '22:00' } };
   const base = { name: 'Chez Test', openingHours: hours, giftCardMinimumAmount: 25 };
