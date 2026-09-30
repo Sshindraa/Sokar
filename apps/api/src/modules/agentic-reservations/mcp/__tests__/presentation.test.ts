@@ -7,6 +7,15 @@ import {
 } from '../presentation';
 
 describe('MCP human-facing messages', () => {
+  it('returns the minimal availability answer unchanged', () => {
+    const message =
+      'Oui, une table est disponible pour 2 personnes au restaurant Chez Sokar à 19 h.';
+    expect(formatMcpSuccessMessage('answer_availability', { message }, {})).toBe(message);
+    expect(formatMcpSuccessContent('2025-06-18', 'answer_availability', { message }, {})).toBe(
+      message,
+    );
+  });
+
   it('résume en français une recherche exacte sans exposer le résultat structuré', () => {
     const message = formatMcpSuccessMessage(
       'search_restaurants',

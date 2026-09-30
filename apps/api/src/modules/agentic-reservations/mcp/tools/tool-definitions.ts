@@ -22,6 +22,7 @@ import {
   CancelReservationInputSchema,
   GetReservationStatusInputSchema,
   SearchRestaurantsOutputSchema,
+  AnswerAvailabilityOutputSchema,
   GetRestaurantDetailsOutputSchema,
   CheckAvailabilityOutputSchema,
   CreateQuoteOutputSchema,
@@ -53,10 +54,20 @@ type ToolDefinition = {
 
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
+    name: 'answer_availability',
+    title: 'Répondre à une question de disponibilité',
+    description:
+      'À utiliser pour répondre à une question simple en langage courant sur la disponibilité d’un restaurant, sans réservation ni comparaison détaillée. Cherchez une seule fois l’horaire demandé; « vers 19 h » signifie un début à 19 h. Retournez la phrase du résultat telle quelle comme réponse complète. Cet outil ne fournit aucun horaire de fin, donnée structurée ni identifiant de restaurant. Pour un parcours de réservation ou une comparaison détaillée, utilisez search_restaurants.',
+    schema: SearchRestaurantsInputSchema,
+    output: AnswerAvailabilityOutputSchema,
+    requiredScope: 'mcp:read',
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'search_restaurants',
     title: 'Rechercher un restaurant',
     description:
-      'Recherchez par ville, taille du groupe, date et horaire à partir de la demande naturelle. Si la personne nomme un restaurant, transmettez son nom dans restaurantName afin de rechercher cette fiche précise. Utilisez requestedRestaurant.status : unavailable signifie que le restaurant existe mais n’a pas de disponibilité à cette heure; not_found signifie qu’aucune fiche MCP visible ne correspond dans cette ville. Ne déduisez jamais l’existence du restaurant de la seule liste restaurants. Ne demandez jamais de restaurantId ou d’UUID. « Vers 19 h » signifie une recherche unique qui commence à 19 h; ne testez pas les horaires voisins (18 h 30 ou 19 h 30) et ne décalez pas l’heure sans demande explicite. Si l’heure demandée est disponible, mentionnez uniquement celle-ci. Envoyez slotEnd uniquement si la personne a donné une heure de fin ou une durée; sinon omettez-le. Réutilisez exactement le texte lisible du résultat comme réponse complète, sans ajouter de fin, de durée ni de proposition de réservation. Gardez les identifiants retournés pour les appels d’outils, sans les montrer.',
+      'Pour une question simple de disponibilité sans réservation, utilisez answer_availability. Utilisez cette recherche détaillée pour une comparaison ou un parcours qui a besoin des informations structurées. Si la personne nomme un restaurant, transmettez son nom dans restaurantName afin de rechercher cette fiche précise. Utilisez requestedRestaurant.status : unavailable signifie que le restaurant existe mais n’a pas de disponibilité à cette heure; not_found signifie qu’aucune fiche MCP visible ne correspond dans cette ville. Ne déduisez jamais l’existence du restaurant de la seule liste restaurants. Ne demandez jamais de restaurantId ou d’UUID. « Vers 19 h » signifie une recherche unique qui commence à 19 h; ne testez pas les horaires voisins (18 h 30 ou 19 h 30) et ne décalez pas l’heure sans demande explicite. Si l’heure demandée est disponible, mentionnez uniquement celle-ci. Envoyez slotEnd uniquement si la personne a donné une heure de fin ou une durée; sinon omettez-le. Réutilisez exactement le texte lisible du résultat comme réponse complète, sans ajouter de fin, de durée ni de proposition de réservation. Gardez les identifiants retournés pour les appels d’outils, sans les montrer.',
     schema: SearchRestaurantsInputSchema,
     output: SearchRestaurantsOutputSchema,
     requiredScope: 'mcp:read',

@@ -144,6 +144,7 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('langage courant');
       expect(body.result.instructions).toContain('ne demandez jamais');
       expect(body.result.instructions).toContain('idempotencyKey');
+      expect(body.result.instructions).toContain('answer_availability');
       expect(body.result.instructions).toContain('restaurantName');
       expect(body.result.instructions).not.toContain('120 minutes');
       expect(body.result.instructions).toContain('ne mentionnez aucune heure de fin');
@@ -253,6 +254,7 @@ describe('MCP server', () => {
       const body = res.json();
       const names = body.result.tools.map((t: { name: string }) => t.name);
       expect(names).toContain('search_restaurants');
+      expect(names).toContain('answer_availability');
       expect(names).toContain('get_restaurant_details');
       expect(names).toContain('check_availability');
       expect(names).toContain('create_reservation');
@@ -283,6 +285,11 @@ describe('MCP server', () => {
       const searchRestaurants = body.result.tools.find(
         (tool: { name: string }) => tool.name === 'search_restaurants',
       );
+      const answerAvailability = body.result.tools.find(
+        (tool: { name: string }) => tool.name === 'answer_availability',
+      );
+      expect(answerAvailability.outputSchema.required).toEqual(['message']);
+      expect(answerAvailability.description).toContain('question simple en langage courant');
       expect(searchRestaurants.description).toContain('restaurantName');
       expect(searchRestaurants.description).toContain(
         '« Vers 19 h » signifie une recherche unique',

@@ -164,6 +164,8 @@ export function formatMcpSuccessMessage(
   const args = asRecord(rawArgs);
 
   switch (toolName) {
+    case 'answer_availability':
+      return cleanLabel(data.message, 'Je n’ai pas pu vérifier cette disponibilité.');
     case 'search_restaurants':
       return formatRestaurantSearch(args, data);
     case 'get_restaurant_details':

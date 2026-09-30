@@ -179,6 +179,7 @@ Réponse: `result.tools` contient les outils publics. Chaque outil expose son
 `inputSchema`, son `outputSchema` et ses annotations:
 
 - `search_restaurants`
+- `answer_availability`
 - `get_restaurant_details`
 - `check_availability`
 - `create_quote`
@@ -302,6 +303,17 @@ Erreurs HTTP auth:
 - `403 ORIGIN_NOT_ALLOWED`: Origin non autorisé
 
 ## Outils
+
+### answer_availability
+
+Recherche un horaire demandé pour une question simple en langage courant et ne renvoie qu’un
+champ `message`, prêt à être affiché à la personne. La réponse ne contient pas les données
+structurées de recherche, les identifiants internes ni la borne de fin utilisée pour vérifier la
+disponibilité.
+
+Utilisez cet outil pour une question comme « Vous auriez une table pour deux demain vers 19 h au
+restaurant Chez Sokar à Lyon ? ». Utilisez `search_restaurants` si la personne demande une
+comparaison détaillée ou si le parcours doit réutiliser des données structurées pour une réservation.
 
 ### search_restaurants
 
