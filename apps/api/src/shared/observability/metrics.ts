@@ -314,6 +314,21 @@ export const voiceSilenceGuardTotal = new Counter({
   registers: [getRegistry()],
 });
 
+/** Attente avant le premier son d'une réponse, par issue. */
+export const voiceFirstAudioHoldTotal = new Counter({
+  name: 'sokar_voice_first_audio_hold_total',
+  help: 'Replies whose first audio waited for caller silence, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceFirstAudioHoldMs = new Histogram({
+  name: 'sokar_voice_first_audio_hold_ms',
+  help: 'Milliseconds a prepared reply was held before its first audio (held replies only)',
+  buckets: [50, 100, 200, 300, 450, 600, 900, 1200],
+  registers: [getRegistry()],
+});
+
 /** STT messages by selected provider; existing Scribe metric remains unchanged. */
 export const voiceSttProviderAudioMessagesTotal = new Counter({
   name: 'sokar_voice_stt_provider_audio_messages_total',

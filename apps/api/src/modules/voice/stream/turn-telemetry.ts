@@ -63,6 +63,7 @@ export type VoiceTurnEvent =
   | 'tts_synthesis_first_byte'
   | 'tts_synthesis_completed'
   | 'tts_first_audio'
+  | 'first_audio_hold'
   | 'tts_completed'
   | 'tts_interrupted'
   | 'barge_in'
@@ -157,6 +158,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'goodbye_filler_hit':
       return 'synthesis';
     case 'tts_first_audio':
+    case 'first_audio_hold':
       return 'audio';
     case 'tts_interrupted':
     case 'barge_in':
