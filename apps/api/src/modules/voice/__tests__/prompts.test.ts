@@ -103,7 +103,11 @@ describe('buildSystemPrompt', () => {
     // Rejeu Qwen du 28/09 : « Oui, 18 heures c'est possible » dans 7 à 8 tirages sur 10
     // sans nombre de personnes ; 0 sur 10 avec cette consigne.
     expect(system.content).toContain('tant que draft.partySize vaut 0');
-    expect(system.content).toContain("« 18 heures, c'est noté »");
+    // Principe, pas de formule à imiter : l'horaire est retenu sans être annoncé comme acquis.
+    expect(system.content).toContain("Retiens l'horaire dans draft sans l'annoncer comme acquis");
+    expect(system.content).not.toContain("« 18 heures, c'est noté »");
+    // Une valeur contenue dans une question n'est retenue que si elle est dite clairement.
+    expect(system.content).toContain("ses mots suffisent à savoir de quelle information il s'agit");
     // Groupe connu : lire la ligne de sa taille, refuser un horaire absent (1–2/10 → 9/10).
     expect(system.content).toContain('« 5-8 » contient 6');
   });
