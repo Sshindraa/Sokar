@@ -102,6 +102,12 @@ describe('CallSessionManager — gift card tools', () => {
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
     vi.clearAllMocks();
+    dbMock.restaurant.findUnique.mockResolvedValue({
+      slug: 'test-resto',
+      giftCardEnabled: true,
+      giftCardStripeAccountId: 'acct_test',
+    } as never);
+    vi.mocked(sendSms).mockResolvedValue(undefined as never);
   });
 
   afterEach(() => {
@@ -169,7 +175,7 @@ describe('CallSessionManager — gift card tools', () => {
       expect(result).toContain('numéro de téléphone valide');
     });
 
-    it('creates the gift card and sends the code by SMS', async () => {
+    it('sends a payment link without issuing an unpaid gift card', async () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
@@ -196,31 +202,16 @@ describe('CallSessionManager — gift card tools', () => {
         }),
       );
 
-      expect(dbMock.giftCard.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            restaurantId: 'rest-gift-1',
-            amount: expect.anything(),
-            senderName: 'Jean Dupont',
-            senderPhone: '+33612345678',
-            recipientName: 'Marie Dupont',
-            occasion: 'Anniversaire',
-            message: 'Joyeux anniversaire !',
-            createdBy: 'VOICE',
-            purchaseReference: 'test',
-          }),
-        }),
-      );
+      expect(dbMock.giftCard.create).not.toHaveBeenCalled();
       expect(sendSms).toHaveBeenCalledWith(
         '+33612345678',
-        expect.stringContaining('SOKAR-1234-5678-9012'),
+        expect.stringContaining('/test-resto'),
         expect.objectContaining({
           restaurantId: 'rest-gift-1',
-          sourceId: 'gift-card-1',
-          sourceType: 'gift_card_voice_delivery',
+          sourceType: 'gift_card_voice_checkout',
         }),
       );
-      expect(result).toContain('Carte cadeau');
+      expect(result).toContain('activée après le paiement');
       expect(result).toContain('SMS');
       expect(result).not.toContain('SOKAR-1234-5678-9012');
     });
@@ -251,8 +242,8 @@ describe('CallSessionManager — gift card tools', () => {
         }),
       );
 
-      expect(result).toContain("le SMS n'a pas été envoyé");
-      expect(result).toContain('laisser un message');
+      expect(result).toContain('site');
+      expect(dbMock.giftCard.create).not.toHaveBeenCalled();
       expect(result).not.toContain('transfér');
       expect(result).not.toContain('SOKAR-9876-5432-1098');
     });

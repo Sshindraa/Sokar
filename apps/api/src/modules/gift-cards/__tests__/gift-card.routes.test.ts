@@ -30,6 +30,24 @@ describe('gift-card routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+    vi.mocked(db.giftCardPaymentEntry.findMany).mockResolvedValue([]);
+    vi.mocked(db.giftCardCheckout.findUnique).mockResolvedValue(null);
+    vi.mocked(db.giftCardCheckout.upsert).mockImplementation(((args: {
+      create: Record<string, unknown>;
+    }) =>
+      Promise.resolve({
+        ...args.create,
+        id: '00000000-0000-4000-8000-000000000001',
+        createdAt: new Date(),
+        stripePaymentIntentId: null,
+      })) as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      name: 'Test Resto',
+      giftCardEnabled: true,
+      giftCardStripeAccountId: 'acct_test',
+      giftCardMinimumAmount: 10,
+      giftCardCommissionRate: d(0.05),
+    } as never);
     vi.mocked(retrievePaymentIntent).mockResolvedValue({
       id: 'pi_test',
       status: 'succeeded',
@@ -37,6 +55,134 @@ describe('gift-card routes', () => {
       amountReceived: 12000,
       currency: 'eur',
       metadata: { restaurantId: RESTAURANT_ID, amount: '120', packId: '' },
+    });
+  });
+
+  describe('cashier operations', () => {
+    it('requires authentication and rejects another restaurant before looking up a card', async () => {
+      const app = await getApp();
+      const anon = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/card/operations`,
+      });
+      expect(anon.statusCode).toBe(401);
+      const foreign = await app.inject({
+        method: 'GET',
+        url: '/restaurants/other/gift-cards/card/operations',
+        headers: AUTH,
+      });
+      expect(foreign.statusCode).toBe(403);
+      expect(db.giftCard.findFirst).not.toHaveBeenCalled();
+    });
+    it('validates cent precision and requires a ticket and UUID retry key', async () => {
+      const app = await getApp();
+      for (const body of [
+        {
+          billAmount: 1.001,
+          ticketReference: 'T42',
+          idempotencyKey: '00000000-0000-4000-8000-000000000001',
+        },
+        { billAmount: 10, ticketReference: '', idempotencyKey: 'invalid' },
+      ]) {
+        const result = await app.inject({
+          method: 'POST',
+          url: `/restaurants/${RESTAURANT_ID}/gift-cards/card/redeem`,
+          headers: { ...AUTH, 'x-test-site-role': 'STAFF' },
+          payload: body,
+        });
+        expect(result.statusCode).toBe(400);
+      }
+      expect(db.giftCard.findFirst).not.toHaveBeenCalled();
+    });
+    it('restricts delivery management to owner/manager and scopes the target delivery', async () => {
+      const app = await getApp();
+      const url = `/restaurants/${RESTAURANT_ID}/gift-cards/card/operations/deliveries/delivery/retry`;
+      const staff = await app.inject({
+        method: 'POST',
+        url,
+        headers: { ...AUTH, 'x-test-site-role': 'STAFF' },
+      });
+      expect(staff.statusCode).toBe(403);
+      expect(db.giftCardDelivery.findFirst).not.toHaveBeenCalled();
+      const foreign = await app.inject({
+        method: 'POST',
+        url: url.replace(RESTAURANT_ID, 'other'),
+        headers: AUTH,
+      });
+      expect(foreign.statusCode).toBe(403);
+      const manager = await app.inject({
+        method: 'POST',
+        url,
+        headers: { ...AUTH, 'x-test-site-role': 'MANAGER' },
+      });
+      expect(manager.statusCode).toBe(404);
+      expect(db.giftCardDelivery.findFirst).toHaveBeenCalledWith({
+        where: { id: 'delivery', giftCardId: 'card', restaurantId: RESTAURANT_ID },
+      });
+    });
+
+    it('requires a provider case reference before resolving uncertainty', async () => {
+      const app = await getApp();
+      const result = await app.inject({
+        method: 'POST',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/card/operations/deliveries/delivery/resolve`,
+        headers: AUTH,
+        payload: { resolution: 'not_accepted', providerCaseReference: 'personal@example.invalid' },
+      });
+      expect(result.statusCode).toBe(400);
+      expect(db.giftCardDelivery.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('reserves the financial export for managers and validates its date range', async () => {
+      const app = await getApp();
+      const url = `/restaurants/${RESTAURANT_ID}/gift-cards/operations/export?from=2026-09-01&until=2026-09-30`;
+      const staff = await app.inject({
+        method: 'GET',
+        url,
+        headers: { ...AUTH, 'x-test-site-role': 'STAFF' },
+      });
+      expect(staff.statusCode).toBe(403);
+      expect(db.giftCardPaymentEntry.findMany).not.toHaveBeenCalled();
+      const invalid = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/operations/export?from=2026-02-30&until=2026-09-30`,
+        headers: AUTH,
+      });
+      expect(invalid.statusCode).toBe(400);
+      vi.mocked(db.giftCardRedemption.findMany).mockResolvedValue([]);
+      const owner = await app.inject({ method: 'GET', url, headers: AUTH });
+      expect(owner.statusCode).toBe(200);
+      expect(owner.json()).toMatchObject({
+        rowCount: 0,
+        filename: 'cartes-cadeaux-2026-09-01-2026-09-30.csv',
+      });
+      expect(db.giftCardPaymentEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            restaurantId: RESTAURANT_ID,
+            createdAt: { gte: new Date('2026-09-01'), lt: new Date('2026-10-01') },
+          },
+        }),
+      );
+    });
+
+    it('looks up a card only within the selected restaurant and normalizes its short code', async () => {
+      const app = await getApp();
+      const result = await app.inject({
+        method: 'POST',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/operations/lookup`,
+        headers: AUTH,
+        payload: { code: 'skr-abcd-12' },
+      });
+      expect(result.statusCode).toBe(404);
+      expect(db.giftCard.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            restaurantId: RESTAURANT_ID,
+            OR: [{ code: 'skr-abcd-12' }, { shortCode: 'SKR-ABCD-12' }],
+          },
+        }),
+      );
     });
   });
 
@@ -63,6 +209,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
+          contributions: [],
         } as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>[number],
       ]);
       vi.mocked(db.giftCard.count).mockResolvedValue(1);
@@ -91,6 +238,7 @@ describe('gift-card routes', () => {
         createdBy: 'DASHBOARD',
         purchaseReference: 'manual',
         redemptions: [],
+        contributions: [],
       };
       vi.mocked(db.giftCard.findMany).mockResolvedValue([
         { id: 'gc-a', status: 'ACTIVE', ...baseCard },
@@ -136,6 +284,7 @@ describe('gift-card routes', () => {
           purchaseReference: 'manual',
           recipientName: 'Alice',
           redemptions: [],
+          contributions: [],
         },
       ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
       (
@@ -178,6 +327,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
+          contributions: [],
         },
         {
           id: 'gc-b',
@@ -191,6 +341,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
+          contributions: [],
         },
       ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
       (
@@ -230,6 +381,7 @@ describe('gift-card routes', () => {
         createdBy: 'DASHBOARD',
         purchaseReference: 'manual',
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
@@ -256,6 +408,7 @@ describe('gift-card routes', () => {
         currency: 'EUR',
         stripePaymentIntentId: null,
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
       vi.mocked(db.giftCard.update).mockResolvedValue({
         id: 'gc-1',
@@ -267,6 +420,7 @@ describe('gift-card routes', () => {
         createdBy: 'DASHBOARD',
         purchaseReference: 'manual',
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
 
       const app = await getApp();
@@ -420,6 +574,7 @@ describe('gift-card routes', () => {
         stripePaymentStatus: 'succeeded',
         sokarCommissionAmount: d(6),
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
@@ -483,6 +638,7 @@ describe('gift-card routes', () => {
         sokarCommissionAmount: d(7.5),
         packId: 'pack-1',
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
       vi.mocked(db.giftCardPack.findUnique).mockResolvedValue({
         id: 'pack-1',
@@ -513,6 +669,7 @@ describe('gift-card routes', () => {
         id: RESTAURANT_ID,
         giftCardMinimumAmount: 10,
         giftCardEnabled: true,
+        giftCardStripeAccountId: 'acct_test',
       } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
@@ -686,10 +843,15 @@ describe('gift-card routes', () => {
         return (fn as (tx: unknown) => unknown)(db);
       });
 
+      vi.mocked(db.reservation.findFirst).mockResolvedValue({
+        id: 'res-1',
+        restaurantId: RESTAURANT_ID,
+      } as never);
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
         url: '/public/gift-cards/apply',
+        headers: AUTH,
         payload: {
           code: 'abc-1234',
           restaurantId: RESTAURANT_ID,
@@ -766,6 +928,7 @@ describe('gift-card routes', () => {
         stripePaymentStatus: 'succeeded',
         sokarCommissionAmount: d(6),
         redemptions: [],
+        contributions: [],
       } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
@@ -1182,10 +1345,19 @@ describe('gift-card routes', () => {
         senderEmail: 'jean@example.com',
         recipientName: 'Marie',
       } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
-      // Mock pour la vérification atomique dans la transaction
-      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
-        id: 'gc-crowd-1',
-      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 2000,
+        amountReceived: 2000,
+        currency: 'eur',
+        metadata: {
+          type: 'crowdfunding_contribution',
+          giftCardCode: CROWDFUNDING_CODE,
+          amount: '20',
+        },
+      });
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Test Resto',
       } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
@@ -1228,7 +1400,7 @@ describe('gift-card routes', () => {
         { id: 'c2', amount: d(30), stripePaymentIntentId: 'pi_2' },
       ];
 
-      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
         id: 'gc-crowd-1',
         restaurantId: RESTAURANT_ID,
         code: CROWDFUNDING_CODE,
@@ -1252,10 +1424,10 @@ describe('gift-card routes', () => {
         id: 'gc-crowd-1',
         restaurantId: RESTAURANT_ID,
         code: CROWDFUNDING_CODE,
-        type: 'SINGLE',
+        type: 'CROWDFUNDED',
         status: 'ACTIVE',
-        amount: d(76), // 80 - 4 (5% commission)
-        remainingAmount: d(76),
+        amount: d(80), // 80 - 4 (5% commission)
+        remainingAmount: d(80),
         currency: 'EUR',
         sokarCommissionAmount: d(4),
         closedAt: new Date(),
@@ -1294,15 +1466,14 @@ describe('gift-card routes', () => {
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.type).toBe('SINGLE');
-      expect(body.amount).toBe(76);
+      expect(body.type).toBe('CROWDFUNDED');
+      expect(body.amount).toBe(80);
       expect(body.sokarCommissionAmount).toBe(4);
       expect(body.status).toBe('ACTIVE');
       expect(db.giftCard.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'gc-crowd-1' },
+          where: { id: 'gc-crowd-1', restaurantId: RESTAURANT_ID },
           data: expect.objectContaining({
-            type: 'SINGLE',
             status: 'ACTIVE',
             sokarCommissionAmount: d(4),
           }),
@@ -1458,6 +1629,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
+          contributions: [],
         } as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>[number],
       ]);
       vi.mocked(db.giftCard.count).mockResolvedValue(1);
@@ -1473,5 +1645,56 @@ describe('gift-card routes', () => {
       const body = res.json();
       expect(body.items[0].shortCode).toBe('SKR-X7F2-9K');
     });
+  });
+  it('exposes a beneficiary balance without sender or recipient contact details', async () => {
+    vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      id: 'gift',
+      restaurantId: RESTAURANT_ID,
+      code: 'gift-code',
+      shortCode: 'SKR-TEST-01',
+      amount: d(100),
+      remainingAmount: d(75),
+      status: 'ACTIVE',
+      expiresAt: null,
+      senderEmail: 'private-sender',
+      recipientEmail: 'private-recipient',
+      recipientName: 'Private recipient',
+      stripePaymentIntentId: null,
+      pack: null,
+    } as never);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      name: 'Restaurant public',
+      slug: 'test-resto',
+    } as never);
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/public/gift-cards/SKR-TEST-01/beneficiary',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      remainingAmount: 75,
+      usable: true,
+      restaurantSlug: 'test-resto',
+    });
+    expect(response.body).not.toContain('private-');
+    expect(response.body).not.toContain('Private recipient');
+  });
+
+  it('requires restaurant authentication for a real debit', async () => {
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/public/gift-cards/apply',
+      payload: {
+        code: 'gift-code',
+        restaurantId: RESTAURANT_ID,
+        reservationId: 'reservation',
+        reservationAmount: 20,
+      },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(db.giftCardRedemption.create).not.toHaveBeenCalled();
   });
 });

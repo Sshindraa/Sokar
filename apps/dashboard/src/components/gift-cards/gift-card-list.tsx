@@ -22,6 +22,10 @@ const STATUS_LABELS: Record<string, string> = {
   REDEEMED: 'Utilisée',
   EXPIRED: 'Expirée',
   CANCELLED: 'Annulée',
+  REFUND_PENDING: 'Remboursement en cours',
+  REFUND_FAILED: 'Remboursement à vérifier',
+  PAYMENT_REVIEW: 'Paiement à vérifier',
+  REFUND_REVIEW: 'Remboursement à vérifier',
   CLOSED: 'Clôturée',
 };
 
@@ -120,7 +124,10 @@ export default function GiftCardList({
                     },
                   ]
                 : []),
-              ...(onClose && card.type === 'CROWDFUNDED' && card.status === 'ACTIVE'
+              ...(onClose &&
+              card.type === 'CROWDFUNDED' &&
+              !card.closedAt &&
+              card.status === 'ACTIVE'
                 ? [
                     {
                       label: closingId === card.id ? 'Clôture...' : 'Clôturer',
@@ -292,16 +299,19 @@ export default function GiftCardList({
                         <Eye size={16} />
                       </button>
                     )}
-                    {onClose && card.type === 'CROWDFUNDED' && card.status === 'ACTIVE' && (
-                      <button
-                        onClick={() => onClose(card)}
-                        disabled={closingId === card.id}
-                        className="p-2 text-white/50 hover:text-metal rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
-                        title="Clôturer la cagnotte"
-                      >
-                        <Lock size={16} />
-                      </button>
-                    )}
+                    {onClose &&
+                      card.type === 'CROWDFUNDED' &&
+                      !card.closedAt &&
+                      card.status === 'ACTIVE' && (
+                        <button
+                          onClick={() => onClose(card)}
+                          disabled={closingId === card.id}
+                          className="p-2 text-white/50 hover:text-metal rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
+                          title="Clôturer la cagnotte"
+                        >
+                          <Lock size={16} />
+                        </button>
+                      )}
                     {onCancel && card.status === 'ACTIVE' && (
                       <button
                         onClick={() => onCancel(card)}

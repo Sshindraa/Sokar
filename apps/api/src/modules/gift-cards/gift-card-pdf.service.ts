@@ -9,11 +9,13 @@
  *
  * Le QR code est optionnel en P2 (non implémenté ici).
  */
+import { giftCardBeneficiaryUrl } from './gift-card-links.util';
 import PDFDocument from 'pdfkit';
 import type { GiftCard } from '@prisma/client';
 import { logger } from '../../shared/logger/pino';
 import { PDF_IMAGE_FETCH_TIMEOUT_MS } from '../../shared/constants/timeouts.js';
 import { PDF_IMAGE_WIDTH, PDF_IMAGE_HEIGHT } from './constants.js';
+import { isIP } from 'node:net';
 
 type GiftCardWithRelations = GiftCard & {
   restaurant?: { name: string } | null;
@@ -25,23 +27,55 @@ type GiftCardWithRelations = GiftCard & {
  * Retourne null si le téléchargement échoue (fail-safe).
  */
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const parsed = new URL(url);
+    const origins = (process.env.GIFT_CARD_IMAGE_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.username ||
+      parsed.password ||
+      isIP(parsed.hostname.replace(/[\[\]]/g, '')) ||
+      /(^|\.)(localhost|local|internal)$/.test(parsed.hostname) ||
+      !origins.includes(parsed.origin)
+    )
+      return null;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PDF_IMAGE_FETCH_TIMEOUT_MS);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) {
-      logger.warn({ url, status: res.status }, '[gift-card-pdf] Image custom inaccessible');
+    timer = setTimeout(() => controller.abort(), PDF_IMAGE_FETCH_TIMEOUT_MS);
+    const res = await fetch(parsed.toString(), { signal: controller.signal, redirect: 'error' });
+    if (!res.ok || !/^image\/(png|jpeg|webp)(;|$)/i.test(res.headers.get('content-type') ?? ''))
+      return null;
+    const maxBytes = 4 * 1024 * 1024;
+    if (Number(res.headers.get('content-length') ?? 0) > maxBytes) {
+      await res.body?.cancel();
       return null;
     }
-    const arrayBuffer = await res.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    const reader = res.body?.getReader();
+    if (!reader) return null;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
   } catch (err: unknown) {
     logger.warn(
-      { url, err: err instanceof Error ? err.message : String(err) },
-      '[gift-card-pdf] Erreur téléchargement image custom',
+      { errorType: err instanceof Error ? err.name : 'unknown' },
+      '[gift-card-pdf] Image indisponible',
     );
     return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -173,6 +207,12 @@ export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<
       : `Valable ${card.validityMonths} mois`;
     doc.fontSize(8).fillColor('#94a3b8').font('Helvetica').text(expiryText, { align: 'center' });
 
+    const beneficiaryUrl = giftCardBeneficiaryUrl(displayCode);
+    if (beneficiaryUrl)
+      doc
+        .moveDown(0.5)
+        .fontSize(8)
+        .text('Consulter le solde et réserver', { align: 'center', link: beneficiaryUrl });
     doc.end();
   });
 }

@@ -7,10 +7,15 @@
  * + aux sous-composants d'étape.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
 import type { GiftCardPack, GiftCardPurchaseResult } from '@/lib/api/gift-cards';
-import { listGiftCardPacks, createPaymentIntent, purchaseGiftCard } from '@/lib/api/gift-cards';
+import {
+  listGiftCardPacks,
+  createPaymentIntent,
+  purchaseGiftCard,
+  getGiftCardCheckoutStatus,
+} from '@/lib/api/gift-cards';
 import { trackEvent } from '@/lib/tracking';
 
 export type GiftCardStep =
@@ -63,6 +68,12 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const checkoutAttempt = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+    accessToken: string;
+    checkoutId?: string;
+  } | null>(null);
   const [result, setResult] = useState<GiftCardPurchaseResult | null>(null);
 
   useEffect(() => {
@@ -72,13 +83,75 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
       .finally(() => setPacksLoading(false));
   }, [slug]);
 
-  // Initialiser Stripe.js au montage
   useEffect(() => {
-    const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (pk) {
-      setStripePromise(loadStripe(pk));
+    const storageKey = `sokar-gift-card-checkout:${restaurantId}`;
+    const stored = sessionStorage.getItem(storageKey);
+    if (!stored) return;
+    let saved: {
+      checkoutId: string;
+      accessToken: string;
+      fingerprint: string;
+      idempotencyKey: string;
+    };
+    try {
+      saved = JSON.parse(stored);
+    } catch {
+      sessionStorage.removeItem(storageKey);
+      return;
     }
-  }, []);
+    checkoutAttempt.current = saved;
+    try {
+      const snapshot = JSON.parse(saved.fingerprint);
+      setAmount(String(snapshot.amount ?? ''));
+      setPackId(snapshot.packId ?? '');
+      setMode(snapshot.packId ? 'pack' : 'free');
+      setOccasion(snapshot.occasion ?? '');
+      setSenderName(snapshot.senderName ?? '');
+      setSenderEmail(snapshot.senderEmail ?? '');
+      setSenderPhone(snapshot.senderPhone ?? '');
+      setRecipientName(snapshot.recipientName ?? '');
+      setRecipientEmail(snapshot.recipientEmail ?? '');
+      setRecipientPhone(snapshot.recipientPhone ?? '');
+      setMessage(snapshot.message ?? '');
+      setTemplateId(snapshot.templateId ?? null);
+      setCustomImageUrl(snapshot.customImageUrl);
+      setBookNow(Boolean(snapshot.preferredDate));
+      setPreferredDate(snapshot.preferredDate ?? '');
+      setPreferredTime(snapshot.preferredTime ?? '');
+      setPreferredPartySize(String(snapshot.preferredPartySize ?? 2));
+    } catch {
+      setError('Impossible de restaurer les informations de la commande.');
+      return;
+    }
+    setStep('payment');
+    if (!saved.checkoutId) return;
+    setLoading(true);
+    getGiftCardCheckoutStatus(saved.checkoutId, saved.accessToken)
+      .then((status) => {
+        if (status.card) {
+          setResult(status.card);
+          setStep('done');
+          sessionStorage.removeItem(storageKey);
+        } else if (status.clientSecret) {
+          const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+          if (pk) setStripePromise(loadStripe(pk, { stripeAccount: status.stripeAccountId }));
+          setClientSecret(status.clientSecret);
+          setPaymentIntentId(status.paymentIntentId);
+          const snapshot = JSON.parse(saved.fingerprint);
+          setAmount(String(snapshot.amount ?? ''));
+          setPackId(snapshot.packId ?? '');
+          setMode(snapshot.packId ? 'pack' : 'free');
+          if (status.status === 'processing')
+            setError('Votre paiement est en cours de confirmation.');
+        }
+      })
+      .catch(() =>
+        setError(
+          'Votre commande précédente reste enregistrée. Réessayez pour retrouver son paiement.',
+        ),
+      )
+      .finally(() => setLoading(false));
+  }, [restaurantId]);
 
   function handleNextFromType() {
     setError(null);
@@ -124,6 +197,11 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
       setError('Une erreur est survenue. Réessayez.');
       return;
     }
+    const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!pk) {
+      setError('Le paiement est momentanément indisponible.');
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -135,14 +213,70 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
     });
 
     try {
-      const piInput: Parameters<typeof createPaymentIntent>[0] = { restaurantId };
-      if (mode === 'free') {
-        piInput.amount = parseFloat(amount);
-      } else {
-        piInput.packId = packId;
+      const previous = checkoutAttempt.current;
+      if (previous?.checkoutId) {
+        const recovered = await getGiftCardCheckoutStatus(
+          previous.checkoutId,
+          previous.accessToken,
+        );
+        if (recovered.card) {
+          setResult(recovered.card);
+          setStep('done');
+          sessionStorage.removeItem(`sokar-gift-card-checkout:${restaurantId}`);
+          return;
+        }
+        if (recovered.status !== 'canceled') {
+          if (!recovered.clientSecret)
+            throw new Error(
+              'Votre paiement précédent est en cours de vérification. Réessayez dans quelques instants.',
+            );
+          setStripePromise(loadStripe(pk, { stripeAccount: recovered.stripeAccountId }));
+          setClientSecret(recovered.clientSecret);
+          setPaymentIntentId(recovered.paymentIntentId);
+          return;
+        }
+        checkoutAttempt.current = null;
       }
 
-      const pi = await createPaymentIntent(piInput);
+      const piInput: Parameters<typeof createPaymentIntent>[0] = {
+        restaurantId,
+        occasion: occasion || undefined,
+        senderName: senderName || undefined,
+        senderEmail: senderEmail || undefined,
+        senderPhone: senderPhone || undefined,
+        recipientName: recipientName || undefined,
+        recipientEmail: recipientEmail || undefined,
+        recipientPhone: recipientPhone || undefined,
+        message: message || undefined,
+        templateId: templateId ?? undefined,
+        customImageUrl,
+        ...(mode === 'free' ? { amount: parseFloat(amount) } : { packId }),
+        ...(bookNow
+          ? {
+              preferredDate,
+              preferredTime: preferredTime || undefined,
+              preferredPartySize: parseInt(preferredPartySize, 10),
+            }
+          : {}),
+      };
+      const fingerprint = JSON.stringify(piInput);
+      if (!checkoutAttempt.current || checkoutAttempt.current.fingerprint !== fingerprint) {
+        checkoutAttempt.current = {
+          fingerprint,
+          idempotencyKey: crypto.randomUUID(),
+          accessToken: `${crypto.randomUUID()}${crypto.randomUUID()}`,
+        };
+      }
+      const attempt = checkoutAttempt.current;
+      sessionStorage.setItem(`sokar-gift-card-checkout:${restaurantId}`, JSON.stringify(attempt));
+      const pi = await createPaymentIntent({
+        ...piInput,
+        idempotencyKey: attempt.idempotencyKey,
+        accessToken: attempt.accessToken,
+      });
+      attempt.checkoutId = pi.checkoutId;
+      sessionStorage.setItem(`sokar-gift-card-checkout:${restaurantId}`, JSON.stringify(attempt));
+      setStripePromise(loadStripe(pk, { stripeAccount: pi.stripeAccountId }));
       setClientSecret(pi.clientSecret);
       setPaymentIntentId(pi.paymentIntentId);
     } catch (err) {
@@ -162,6 +296,8 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
       const input: Parameters<typeof purchaseGiftCard>[0] = {
         restaurantId,
         paymentIntentId: piId,
+        accessToken: checkoutAttempt.current?.accessToken,
+        checkoutId: checkoutAttempt.current?.checkoutId,
         occasion: occasion || undefined,
         senderName: senderName || undefined,
         senderEmail: senderEmail || undefined,
@@ -187,6 +323,7 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
       }
 
       const res = await purchaseGiftCard(input);
+      sessionStorage.removeItem(`sokar-gift-card-checkout:${restaurantId}`);
       setResult(res);
       setStep('done');
 

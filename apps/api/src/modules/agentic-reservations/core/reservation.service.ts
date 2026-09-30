@@ -581,39 +581,18 @@ export class ReservationService {
 
     let giftCardApplication: GiftCardApplicationResult | undefined;
     let giftCardSnapshotUpdated = false;
-    if (
-      input.giftCardCode &&
-      input.giftCardReservationAmount &&
-      input.giftCardReservationAmount > 0
-    ) {
+    if (input.giftCardCode) {
       try {
-        const giftCardService = new GiftCardService(this.prisma);
-        giftCardApplication = await giftCardService.applyToReservation({
+        giftCardApplication = await new GiftCardService(this.prisma).associateToReservation({
           code: input.giftCardCode,
           restaurantId: input.restaurantId,
           reservationId,
-          reservationAmount: input.giftCardReservationAmount,
         });
-
-        if (giftCardApplication.paymentStatus !== 'COMPLEMENT_REQUIRED') {
-          await this.prisma.reservation.update({
-            where: { id: reservationId },
-            data: {
-              giftCardRedemptionSnap: {
-                giftCardId: giftCardApplication.giftCardId,
-                appliedAmount: giftCardApplication.appliedAmount,
-                remainingAmount: giftCardApplication.remainingAmount,
-                paymentStatus: giftCardApplication.paymentStatus,
-                complementAmount: giftCardApplication.complementAmount,
-              } as Prisma.InputJsonValue,
-            },
-          });
-          giftCardSnapshotUpdated = true;
-        }
+        giftCardSnapshotUpdated = true;
       } catch (err) {
         logger.warn(
-          { err, reservationId, giftCardCode: input.giftCardCode },
-          'gift card application failed after reservation creation',
+          { errorType: err instanceof Error ? err.name : 'unknown', reservationId },
+          'gift card association failed after reservation creation',
         );
       }
     }

@@ -1,24 +1,26 @@
+import { logger } from '../../shared/logger/pino';
 /**
  * Gift card crowdfunding service — cagnottes pour cartes cadeaux.
  *
  * Flow :
  *   1. createCrowdfunding : crée une GiftCard type=CROWDFUNDED, amount=0, status=ACTIVE
  *   2. contribute : ajoute une GiftCardContribution (paiement Stripe vérifié)
- *   3. closeCrowdfunding : calcule le total, déduit la commission, met à jour la carte
- *      (amount = total - commission, remainingAmount = amount, status=ACTIVE, type=SINGLE)
+ *   3. closeCrowdfunding : calcule le total, enregistre la commission, met à jour la carte
+ *      (amount = total, remainingAmount = amount, status=ACTIVE, type=CROWDFUNDED)
  *   4. getPublicStatus : retourne le statut public de la cagnotte (sans auth)
  */
 import type { PrismaClient, GiftCard, GiftCardContribution } from '@prisma/client';
 import { Prisma } from '@prisma/client';
+import { GiftCardRefundService } from './gift-card-refund.service';
+import {
+  giftCardAmountCents,
+  giftCardHash,
+  lockGiftCard,
+  lockGiftCardPayment,
+} from './gift-card-finance.util';
 import { GiftCardService } from './gift-card.service';
 import { retrievePaymentIntent } from './stripe.service';
-import {
-  sendContributionConfirmation,
-  sendCrowdfundingContributionNotification,
-  sendCrowdfundingClosed,
-} from './gift-card-email.service';
-import { sendRecipientWhatsApp } from './gift-card-whatsapp.service';
-import { logger } from '../../shared/logger/pino';
+import { enqueueGiftCardDelivery } from './gift-card-delivery.service';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import type {
   CreateCrowdfundingInput,
@@ -47,6 +49,12 @@ export class GiftCardCrowdfundingService {
       throw new CrowdfundingError('La date butoir doit être dans le futur');
     }
 
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: input.restaurantId },
+      select: { giftCardEnabled: true },
+    });
+    if (!restaurant?.giftCardEnabled)
+      throw new CrowdfundingError('Cartes cadeaux non disponibles pour ce restaurant');
     const service = new GiftCardService(this.prisma);
     return service.create({
       restaurantId: input.restaurantId,
@@ -71,56 +79,126 @@ export class GiftCardCrowdfundingService {
    * Contribue à une cagnotte.
    * Vérifie le PaymentIntent Stripe, la deadline, et le statut de la cagnotte.
    */
-  async contribute(input: ContributeInput, paymentIntentId: string): Promise<GiftCardContribution> {
-    // 1. Charger la cagnotte (lecture initiale pour validation rapide)
-    const card = await this.prisma.giftCard.findUnique({
-      where: { code: input.code },
+  async contribute(
+    input: ContributeInput & { accessToken?: string },
+    paymentIntentId: string,
+    webhook?: { stripeAccountId?: string; checkoutId?: string },
+  ): Promise<GiftCardContribution | null> {
+    // tenant-scoping: global — Resolve unique checkout, then require its access-token hash or signed Stripe account before using the snapshot.
+    const checkout = await this.prisma.giftCardCheckout.findUnique({
+      where: webhook?.checkoutId
+        ? { id: webhook.checkoutId }
+        : { stripePaymentIntentId: paymentIntentId },
     });
-
-    if (!card) {
-      throw new CrowdfundingError('Cagnotte introuvable');
+    if (
+      checkout &&
+      (checkout.kind !== 'CONTRIBUTION' ||
+        (checkout.stripePaymentIntentId && checkout.stripePaymentIntentId !== paymentIntentId) ||
+        (webhook
+          ? checkout.stripeAccountId !== webhook.stripeAccountId
+          : giftCardHash(input.accessToken ?? '') !== checkout.accessTokenHash))
+    ) {
+      throw new CrowdfundingError('Accès à la contribution refusé.');
     }
-
-    if (card.type !== 'CROWDFUNDED') {
-      throw new CrowdfundingError("Cette carte cadeau n'est pas une cagnotte");
-    }
-
-    if (card.status === 'CLOSED') {
-      throw new CrowdfundingError('Cette cagnotte est clôturée');
-    }
-
-    if (card.status === 'CANCELLED') {
-      throw new CrowdfundingError('Cette cagnotte est annulée');
-    }
-
-    // 2. Vérifier la deadline
-    if (card.crowdfundedUntil && new Date() > card.crowdfundedUntil) {
-      throw new CrowdfundingError('La date butoir de cette cagnotte est dépassée');
-    }
-
-    // 3. Vérifier le PaymentIntent Stripe (avant la transaction)
-    const pi = await retrievePaymentIntent(paymentIntentId);
-    if (pi.status !== 'succeeded') {
-      throw new CrowdfundingError(`Le paiement n'est pas confirmé (statut: ${pi.status})`);
-    }
-
-    // 4. Transaction atomique : revérifier le statut + créer la contribution
-    //    Cela évite la race condition où la cagnotte est clôturée entre
-    //    la lecture initiale et la création de la contribution.
-    const contribution = await this.prisma.$transaction(async (tx) => {
-      // Revérifier atomiquement que la cagnotte est toujours active
-      const activeCard = await tx.giftCard.findFirst({
-        where: { id: card.id, type: 'CROWDFUNDED', status: 'ACTIVE' },
-        select: { id: true },
-      });
-
-      if (!activeCard) {
-        // La cagnotte n'est plus active (clôturée ou annulée entre-temps)
-        throw new CrowdfundingError("Cette cagnotte n'est plus active");
+    if (!checkout && webhook?.stripeAccountId)
+      throw new CrowdfundingError('Commande Connect introuvable');
+    const pi = await retrievePaymentIntent(paymentIntentId, checkout?.stripeAccountId);
+    if (checkout) {
+      const snapshot = checkout.payload as unknown as ContributeInput;
+      if (
+        snapshot.code !== input.code ||
+        (!webhook && giftCardAmountCents(input.amount) !== checkout.amountCents)
+      ) {
+        throw new CrowdfundingError('La contribution ne correspond pas à la commande.');
       }
-
-      // Créer la contribution dans la même transaction
-      return tx.giftCardContribution.create({
+      input = snapshot;
+    }
+    // tenant-scoping: global — Public card code bootstrap; contribution must match its verified payment and restaurant.
+    const card = await this.prisma.giftCard.findUnique({ where: { code: input.code } });
+    if (!card) throw new CrowdfundingError('Cagnotte introuvable');
+    const cents = giftCardAmountCents(input.amount);
+    if (
+      pi.status !== 'succeeded' ||
+      pi.currency.toLowerCase() !== 'eur' ||
+      pi.amount !== cents ||
+      pi.amountReceived !== cents ||
+      pi.disputed ||
+      pi.pendingRefund ||
+      (checkout
+        ? pi.metadata.checkoutId !== checkout.id ||
+          checkout.giftCardId !== card.id ||
+          checkout.restaurantId !== card.restaurantId ||
+          pi.metadata.restaurantId !== card.restaurantId
+        : pi.metadata.type !== 'crowdfunding_contribution' ||
+          pi.metadata.giftCardCode !== card.code ||
+          Number(pi.metadata.amount) !== input.amount)
+    ) {
+      throw new CrowdfundingError('Le paiement ne correspond pas à cette contribution.');
+    }
+    const result = await this.prisma.$transaction(async (tx) => {
+      await lockGiftCardPayment(tx, paymentIntentId);
+      if (checkout) {
+        const current = await tx.giftCardCheckout.findUniqueOrThrow({
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
+        });
+        if (current.status === 'PAYMENT_REVIEW')
+          throw new CrowdfundingError('Cette commande nécessite une vérification du paiement.');
+      }
+      // tenant-scoping: global — Global payment uniqueness must detect reuse by another restaurant; reject mismatched card/kind.
+      const entry = await tx.giftCardPaymentEntry.findUnique({ where: { paymentIntentId } });
+      if (entry && (entry.kind !== 'CONTRIBUTION' || entry.giftCardId !== card.id)) {
+        throw new CrowdfundingError('Ce paiement est déjà affecté à un autre achat.');
+      }
+      const existing = await tx.giftCardContribution.findFirst({
+        where: { stripePaymentIntentId: paymentIntentId },
+      });
+      if (existing) {
+        if (existing.giftCardId !== card.id || !existing.amount.equals(input.amount))
+          throw new CrowdfundingError('Paiement déjà utilisé');
+        return { contribution: existing, created: false, refund: false };
+      }
+      if (
+        entry ||
+        // tenant-scoping: global — Collision check across all restaurants: the same payment cannot purchase and contribute.
+        (await tx.giftCard.findFirst({ where: { stripePaymentIntentId: paymentIntentId } }))
+      ) {
+        throw new CrowdfundingError('Ce paiement est déjà utilisé pour une carte cadeau.');
+      }
+      await lockGiftCard(tx, card.id);
+      const activeCard = await tx.giftCard.findUnique({
+        where: { id: card.id, restaurantId: card.restaurantId },
+      });
+      if (
+        !activeCard ||
+        activeCard.type !== 'CROWDFUNDED' ||
+        activeCard.closedAt ||
+        activeCard.status !== 'ACTIVE' ||
+        (activeCard.crowdfundedUntil && activeCard.crowdfundedUntil <= new Date()) ||
+        (pi.refundedAmount ?? 0) > 0
+      ) {
+        const refundCents = cents - (pi.refundedAmount ?? 0);
+        if (refundCents > 0)
+          await tx.giftCardRefundRequest.upsert({
+            where: { idempotencyKey: `gift-card-rejected:${paymentIntentId}` },
+            update: {},
+            create: {
+              giftCardId: card.id,
+              paymentIntentId,
+              amountCents: refundCents,
+              stripeAccountId: checkout?.stripeAccountId,
+              actor: 'stripe:webhook',
+              reason: 'REJECTED_CONTRIBUTION',
+              idempotencyKey: `gift-card-rejected:${paymentIntentId}`,
+            },
+          });
+        if (checkout)
+          await tx.giftCardCheckout.update({
+            where: { id: checkout.id, restaurantId: checkout.restaurantId },
+            data: { status: 'REFUND_PENDING' },
+          });
+        return { contribution: null, created: false, refund: true };
+      }
+      const contribution = await tx.giftCardContribution.create({
         data: {
           giftCardId: card.id,
           contributorName: input.contributorName,
@@ -131,53 +209,45 @@ export class GiftCardCrowdfundingService {
           message: input.message ?? null,
         },
       });
+      await tx.giftCardPaymentEntry.create({
+        data: {
+          paymentIntentId,
+          restaurantId: card.restaurantId,
+          giftCardId: card.id,
+          contributionId: contribution.id,
+          kind: 'CONTRIBUTION',
+          amountCents: cents,
+          currency: 'eur',
+          stripeAccountId: checkout?.stripeAccountId,
+        },
+      });
+      if (checkout)
+        await tx.giftCardCheckout.update({
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
+          data: { status: 'FULFILLED' },
+        });
+      for (const kind of ['contribution_email', 'organizer_email'] as const)
+        await enqueueGiftCardDelivery(tx, {
+          restaurantId: card.restaurantId,
+          giftCardId: card.id,
+          kind,
+          referenceId: contribution.id,
+        });
+      return { contribution, created: true, refund: false };
     }, DEFAULT_TRANSACTION_OPTIONS);
-
-    // 5. Notifications (non-bloquantes)
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: card.restaurantId },
-      select: { name: true },
-    });
-    const restaurantName = restaurant?.name ?? 'Restaurant';
-
-    const title = card.occasion ?? 'Cagnotte';
-
-    await Promise.allSettled([
-      // Email au contributeur
-      sendContributionConfirmation({
-        restaurantId: card.restaurantId,
-        giftCardId: card.id,
-        to: input.contributorEmail ?? '',
-        contributorName: input.contributorName,
-        amount: input.amount,
-        title,
-        recipientName: card.recipientName ?? '',
-        restaurantName,
-        code: card.code,
-      }),
-      // Email au créateur
-      sendCrowdfundingContributionNotification({
-        restaurantId: card.restaurantId,
-        giftCardId: card.id,
-        to: card.senderEmail ?? '',
-        creatorName: card.senderName ?? '',
-        contributorName: input.isPublicName ? input.contributorName : 'Anonyme',
-        amount: input.amount,
-        title,
-        recipientName: card.recipientName ?? '',
-        restaurantName,
-        code: card.code,
-      }),
-    ]).then((results) => {
-      for (const r of results) {
-        if (r.status === 'rejected') {
-          logger.warn(
-            { err: r.reason instanceof Error ? r.reason.message : String(r.reason) },
-            '[crowdfunding] Notification email failed',
-          );
-        }
-      }
-    });
+    if (result.refund) {
+      const refundCents = cents - (pi.refundedAmount ?? 0);
+      if (refundCents > 0)
+        await new GiftCardRefundService(this.prisma).refundRejectedContribution({
+          giftCardId: card.id,
+          paymentIntentId,
+          amountCents: refundCents,
+          stripeAccountId: checkout?.stripeAccountId,
+        });
+      return null;
+    }
+    const contribution = result.contribution!;
+    if (!result.created) return contribution;
 
     return contribution;
   }
@@ -191,98 +261,97 @@ export class GiftCardCrowdfundingService {
    *   type = SINGLE, status = ACTIVE, closedAt = now
    * - Envoie email + WhatsApp au destinataire avec le code final
    */
-  async closeCrowdfunding(giftCardId: string): Promise<GiftCard> {
-    const card = await this.prisma.giftCard.findUnique({
-      where: { id: giftCardId },
-      include: { contributions: true },
-    });
-
-    if (!card) {
-      throw new CrowdfundingError('Cagnotte introuvable');
-    }
-
-    if (card.type !== 'CROWDFUNDED') {
-      throw new CrowdfundingError("Cette carte cadeau n'est pas une cagnotte");
-    }
-
-    if (card.status === 'CLOSED') {
-      throw new CrowdfundingError('Cette cagnotte est déjà clôturée');
-    }
-
-    // Calculer le total des contributions
-    const totalCollected = card.contributions.reduce((sum, c) => sum + c.amount.toNumber(), 0);
-
-    // Charger le restaurant pour le taux de commission
+  async closeCrowdfunding(giftCardId: string, restaurantId: string): Promise<GiftCard> {
     const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: card.restaurantId },
-      select: {
-        name: true,
-        giftCardCommissionRate: true,
-        managerEmail: true,
-        managerPhone: true,
-      },
+      where: { id: restaurantId },
+      select: { name: true, giftCardCommissionRate: true },
     });
-
-    if (!restaurant) {
-      throw new CrowdfundingError('Restaurant introuvable');
-    }
-
-    const commissionRate = restaurant.giftCardCommissionRate
-      ? restaurant.giftCardCommissionRate.toNumber()
-      : 0.05;
-    const commissionAmount = Math.round(totalCollected * commissionRate * 100) / 100;
-    const finalAmount = Math.round((totalCollected - commissionAmount) * 100) / 100;
-
-    // Mettre à jour la carte
-    const updated = await this.prisma.giftCard.update({
-      where: { id: giftCardId },
-      data: {
-        type: 'SINGLE',
-        status: 'ACTIVE',
-        amount: new Prisma.Decimal(finalAmount),
-        remainingAmount: new Prisma.Decimal(finalAmount),
-        sokarCommissionAmount: new Prisma.Decimal(commissionAmount),
-        closedAt: new Date(),
-      },
-    });
-
-    // Notifications (non-bloquantes)
-    const publicCode = updated.shortCode ?? updated.code;
-    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${publicCode}/pdf`;
-
-    await Promise.allSettled([
-      sendCrowdfundingClosed({
-        restaurantId: card.restaurantId,
-        giftCardId: card.id,
-        to: card.recipientEmail ?? '',
-        recipientName: card.recipientName ?? '',
-        title: card.occasion ?? 'Cagnotte',
-        totalCollected,
-        commissionAmount,
-        finalAmount,
-        code: updated.code,
-        shortCode: updated.shortCode,
-        restaurantName: restaurant.name,
-        pdfUrl,
-      }),
-      sendRecipientWhatsApp({
-        restaurantId: card.restaurantId,
-        giftCardId: card.id,
-        to: card.recipientPhone ?? '',
-        code: updated.shortCode ?? updated.code,
-        amount: finalAmount,
-        restaurantName: restaurant.name,
-      }),
-    ]).then((results) => {
-      for (const r of results) {
-        if (r.status === 'rejected') {
-          logger.warn(
-            { err: r.reason instanceof Error ? r.reason.message : String(r.reason) },
-            '[crowdfunding] Close notification failed',
+    if (!restaurant) throw new CrowdfundingError('Restaurant introuvable');
+    const { updated, card, totalCollected, commissionAmount, finalAmount } =
+      await this.prisma.$transaction(async (tx) => {
+        await lockGiftCard(tx, giftCardId);
+        const card = await tx.giftCard.findFirst({
+          where: { id: giftCardId, restaurantId },
+          include: { contributions: true },
+        });
+        if (!card || card.type !== 'CROWDFUNDED')
+          throw new CrowdfundingError('Cagnotte introuvable');
+        if (card.closedAt)
+          return {
+            updated: card,
+            card,
+            totalCollected: card.amount.toNumber(),
+            commissionAmount: card.sokarCommissionAmount.toNumber(),
+            finalAmount: card.amount.toNumber(),
+          };
+        if (card.status !== 'ACTIVE')
+          throw new CrowdfundingError("Cette cagnotte n'est plus active");
+        const entries = await tx.giftCardPaymentEntry.findMany({
+          where: { giftCardId, restaurantId: card.restaurantId },
+        });
+        const total = card.contributions.reduce((sum, c) => {
+          const refunded =
+            entries.find((e) => e.paymentIntentId === c.stripePaymentIntentId)
+              ?.refundedAmountCents ?? 0;
+          return sum.plus(
+            Prisma.Decimal.max(0, c.amount.minus(new Prisma.Decimal(refunded).div(100))),
           );
-        }
-      }
-    });
+        }, new Prisma.Decimal(0));
+        if (total.lte(0)) throw new CrowdfundingError('Aucune contribution encaissée à clôturer.');
+        const checkouts = await tx.giftCardCheckout.findMany({
+          where: { giftCardId, restaurantId: card.restaurantId, kind: 'CONTRIBUTION' },
+        });
+        const commission = card.contributions
+          .reduce((sum, contribution) => {
+            const entry = entries.find(
+              (e) => e.paymentIntentId === contribution.stripePaymentIntentId,
+            );
+            const checkout = checkouts.find(
+              (c) => c.stripePaymentIntentId === contribution.stripePaymentIntentId,
+            );
+            const retained = Prisma.Decimal.max(
+              0,
+              contribution.amount.minus(
+                new Prisma.Decimal(entry?.refundedAmountCents ?? 0).div(100),
+              ),
+            );
+            const fee = checkout
+              ? new Prisma.Decimal(checkout.amountCents)
+                  .mul(checkout.commissionRate)
+                  .toDecimalPlaces(0)
+                  .div(100)
+              : contribution.amount
+                  .mul(restaurant.giftCardCommissionRate ?? 0.05)
+                  .toDecimalPlaces(2);
+            return sum.plus(
+              contribution.amount.gt(0) ? fee.mul(retained).div(contribution.amount) : 0,
+            );
+          }, new Prisma.Decimal(0))
+          .toDecimalPlaces(2);
+        // The restaurant bears the fee: the recipient keeps the full face value.
+        const updated = await tx.giftCard.update({
+          where: { id: card.id, restaurantId: card.restaurantId },
+          data: {
+            status: 'ACTIVE',
+            amount: total,
+            remainingAmount: total,
+            sokarCommissionAmount: commission,
+            closedAt: new Date(),
+            expiresAt: new Date(new Date().setMonth(new Date().getMonth() + card.validityMonths)),
+          },
+        });
+        for (const kind of ['closure_email', 'recipient_whatsapp'] as const)
+          await enqueueGiftCardDelivery(tx, { restaurantId, giftCardId: card.id, kind });
+        return {
+          updated,
+          card,
+          totalCollected: total.toNumber(),
+          commissionAmount: commission.toNumber(),
+          finalAmount: total.toNumber(),
+        };
+      }, DEFAULT_TRANSACTION_OPTIONS);
+    // A replay must not reset the balance or send another gift.
+    if (card.closedAt) return updated;
 
     logger.info(
       { giftCardId, totalCollected, commissionAmount, finalAmount },
@@ -312,7 +381,21 @@ export class GiftCardCrowdfundingService {
       throw new CrowdfundingError("Cette carte cadeau n'est pas une cagnotte");
     }
 
-    const collectedAmount = card.contributions.reduce((sum, c) => sum + c.amount.toNumber(), 0);
+    const entries = await this.prisma.giftCardPaymentEntry.findMany({
+      where: { giftCardId: card.id, restaurantId: card.restaurantId },
+    });
+    const collectedAmount = card.contributions.reduce(
+      (sum, c) =>
+        sum +
+        Math.max(
+          0,
+          c.amount.toNumber() -
+            (entries.find((e) => e.paymentIntentId === c.stripePaymentIntentId)
+              ?.refundedAmountCents ?? 0) /
+              100,
+        ),
+      0,
+    );
 
     const publicContributions: PublicContribution[] = card.contributions
       .filter((c) => c.isPublicName || c.message)
@@ -335,7 +418,9 @@ export class GiftCardCrowdfundingService {
       targetAmount: card.targetAmount?.toNumber() ?? null,
       contributionsCount: card.contributions.length,
       crowdfundedUntil: card.crowdfundedUntil?.toISOString() ?? null,
-      status: card.status as PublicCrowdfundingStatus['status'],
+      status: (card.closedAt && card.status === 'ACTIVE'
+        ? 'CLOSED'
+        : card.status) as PublicCrowdfundingStatus['status'],
       contributions: publicContributions,
       creatorName: card.senderName ?? '',
       message: card.message,

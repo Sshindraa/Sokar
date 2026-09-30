@@ -256,7 +256,7 @@ describe('GiftCardPaymentService', () => {
       );
     });
 
-    it('envoie un SMS au restaurateur si managerPhone est défini', async () => {
+    it('persiste le SMS dans l’outbox au lieu de l’envoyer pendant le paiement', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         name: 'Chez Sokar',
@@ -272,9 +272,23 @@ describe('GiftCardPaymentService', () => {
         amount: 100,
       });
 
-      expect(vi.mocked(sendSms)).toHaveBeenCalledWith(
-        '+33100000000',
-        expect.stringContaining('100€'),
+      expect(sendSms).not.toHaveBeenCalled();
+      expect(db.giftCardDelivery.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            kind: 'restaurant_sms',
+            giftCardId: 'gc-1',
+            restaurantId: RESTAURANT_ID,
+          }),
+        }),
+      );
+      expect(db.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            topic: 'gift-card-delivery',
+            payload: { deliveryId: 'delivery-test' },
+          }),
+        }),
       );
     });
 

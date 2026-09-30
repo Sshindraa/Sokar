@@ -17,7 +17,7 @@ import { formatEuro } from '@sokar/shared';
 type Props = {
   clientSecret: string;
   amount: number;
-  onSuccess: (paymentIntentId: string) => void;
+  onSuccess: (paymentIntentId: string) => void | Promise<void>;
   onError: (error: string) => void;
   primaryColor?: string;
   accentColor?: string;
@@ -66,9 +66,11 @@ export function GiftCardPaymentForm({
         setErrorMessage(error.message ?? 'Une erreur est survenue lors du paiement.');
         onError(error.message ?? 'Paiement échoué');
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
-        onSuccess(paymentIntent.id);
+        await onSuccess(paymentIntent.id);
       } else {
-        setErrorMessage('Le paiement est en cours de traitement. Veuillez réessayer.');
+        setErrorMessage(
+          'Le paiement est en cours de traitement. La confirmation peut prendre quelques instants.',
+        );
         onError('Paiement en cours de traitement');
       }
     } catch (err: unknown) {

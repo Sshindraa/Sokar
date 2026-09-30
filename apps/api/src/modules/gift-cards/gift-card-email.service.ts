@@ -7,6 +7,7 @@
  *
  * Utilise Resend HTTP API via shared/email.
  */
+import { giftCardBeneficiaryUrl } from './gift-card-links.util';
 import { sendEmail } from '../../shared/email';
 import { logger } from '../../shared/logger/pino';
 import type { NotificationSendResult } from '../../shared/queue/notification-idempotency';
@@ -48,7 +49,9 @@ function giftCardEmailUsage(
 /**
  * Reçu de paiement envoyé à l'expéditeur.
  */
-export async function sendSenderReceipt(data: GiftCardEmailData): Promise<void> {
+export async function sendSenderReceipt(
+  data: GiftCardEmailData,
+): Promise<void | NotificationSendResult> {
   if (!data.senderEmail) {
     logger.warn(
       { giftCardId: data.giftCardId },
@@ -79,7 +82,7 @@ export async function sendSenderReceipt(data: GiftCardEmailData): Promise<void> 
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: data.senderEmail,
     subject: `Reçu de votre carte cadeau — ${data.restaurantName}`,
     html,
@@ -90,7 +93,9 @@ export async function sendSenderReceipt(data: GiftCardEmailData): Promise<void> 
 /**
  * Carte cadeau envoyée au destinataire (code + lien PDF).
  */
-export async function sendRecipientGiftCard(data: GiftCardEmailData): Promise<void> {
+export async function sendRecipientGiftCard(
+  data: GiftCardEmailData,
+): Promise<void | NotificationSendResult> {
   if (!data.recipientEmail) {
     logger.warn(
       { giftCardId: data.giftCardId },
@@ -111,12 +116,13 @@ export async function sendRecipientGiftCard(data: GiftCardEmailData): Promise<vo
         ${data.shortCode ? `<p style="margin: 4px 0; font-size: 11px; color: #94a3b8;">Référence : ${data.code}</p>` : ''}
       </div>
       ${data.pdfUrl ? `<p><a href="${data.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>` : ''}
-      <p>Utilisez ce code lors de votre réservation sur le site de ${data.restaurantName}.</p>
+      ${giftCardBeneficiaryUrl(data.shortCode ?? data.code) ? `<p><a href="${giftCardBeneficiaryUrl(data.shortCode ?? data.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
+      <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
       <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: data.recipientEmail,
     subject: `Vous avez reçu une carte cadeau de ${data.amount}€ — ${data.restaurantName}`,
     html,
@@ -142,7 +148,7 @@ export async function sendRestaurantSaleNotification(input: {
   senderName: string | null;
   recipientName: string | null;
   giftCardId: string;
-}): Promise<void> {
+}): Promise<void | NotificationSendResult> {
   if (!input.restaurantEmail) {
     logger.warn(
       { giftCardId: input.giftCardId },
@@ -180,7 +186,7 @@ export async function sendRestaurantSaleNotification(input: {
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: input.restaurantEmail,
     subject: `Nouvelle vente de carte cadeau — ${input.amount}€`,
     html,
@@ -209,7 +215,7 @@ export async function sendContributionConfirmation(input: {
   recipientName: string;
   restaurantName: string;
   code: string;
-}): Promise<void> {
+}): Promise<void | NotificationSendResult> {
   if (!input.to) {
     logger.warn('[gift-card-email] sendContributionConfirmation: no email, skipping');
     return;
@@ -227,7 +233,7 @@ export async function sendContributionConfirmation(input: {
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: input.to,
     subject: `Confirmation de votre contribution — ${input.title}`,
     html,
@@ -257,7 +263,7 @@ export async function sendCrowdfundingContributionNotification(input: {
   recipientName: string;
   restaurantName: string;
   code: string;
-}): Promise<void> {
+}): Promise<void | NotificationSendResult> {
   if (!input.to) {
     logger.warn('[gift-card-email] sendCrowdfundingContributionNotification: no email, skipping');
     return;
@@ -274,7 +280,7 @@ export async function sendCrowdfundingContributionNotification(input: {
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: input.to,
     subject: `Nouvelle contribution — ${input.title} (+${input.amount}€)`,
     html,
@@ -307,7 +313,7 @@ export async function sendCrowdfundingClosed(input: {
   shortCode: string | null;
   restaurantName: string;
   pdfUrl: string;
-}): Promise<void> {
+}): Promise<void | NotificationSendResult> {
   if (!input.to) {
     logger.warn('[gift-card-email] sendCrowdfundingClosed: no email, skipping');
     return;
@@ -338,12 +344,13 @@ export async function sendCrowdfundingClosed(input: {
         ${input.shortCode ? `<p style="margin: 4px 0; font-size: 11px; color: #94a3b8;">Référence : ${input.code}</p>` : ''}
       </div>
       <p><a href="${input.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>
-      <p>Utilisez ce code lors de votre réservation sur le site de ${input.restaurantName}.</p>
+      ${giftCardBeneficiaryUrl(input.shortCode ?? input.code) ? `<p><a href="${giftCardBeneficiaryUrl(input.shortCode ?? input.code)}">Consulter votre solde et réserver une table</a></p>` : ''}
+      <p>La réservation ne débite pas votre carte. Présentez ce code au restaurant pour régler votre addition.</p>
       <p style="color: #64748b; font-size: 12px;">Sokar — Plateforme de réservation pour restaurants</p>
     </div>
   `;
 
-  await sendEmail({
+  return sendEmail({
     to: input.to,
     subject: `Votre cagnotte est prête — ${input.finalAmount}€ chez ${input.restaurantName}`,
     html,
@@ -467,7 +474,10 @@ type RefundEmailData = {
 /**
  * Notification de remboursement envoyée à l'expéditeur.
  */
-export async function sendRefundNotificationSender(data: RefundEmailData): Promise<void> {
+export async function sendRefundNotificationSender(
+  data: RefundEmailData,
+  strict = false,
+): Promise<void | NotificationSendResult> {
   if (!data.senderEmail) {
     logger.warn(
       { giftCardId: data.giftCardId },
@@ -497,7 +507,7 @@ export async function sendRefundNotificationSender(data: RefundEmailData): Promi
   `;
 
   try {
-    await sendEmail({
+    const result = await sendEmail({
       to: data.senderEmail,
       subject: `Remboursement carte cadeau ${data.restaurantName}`,
       html,
@@ -512,7 +522,9 @@ export async function sendRefundNotificationSender(data: RefundEmailData): Promi
       { giftCardId: data.giftCardId },
       '[gift-card-email] Refund notification sent to sender',
     );
+    return result;
   } catch (err) {
+    if (strict) throw err;
     logger.error(
       { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },
       '[gift-card-email] Failed to send refund notification to sender',
@@ -523,7 +535,10 @@ export async function sendRefundNotificationSender(data: RefundEmailData): Promi
 /**
  * Notification de remboursement envoyée au restaurateur.
  */
-export async function sendRefundNotificationRestaurant(data: RefundEmailData): Promise<void> {
+export async function sendRefundNotificationRestaurant(
+  data: RefundEmailData,
+  strict = false,
+): Promise<void | NotificationSendResult> {
   if (!data.restaurantEmail) {
     logger.warn(
       { giftCardId: data.giftCardId },
@@ -553,7 +568,7 @@ export async function sendRefundNotificationRestaurant(data: RefundEmailData): P
   `;
 
   try {
-    await sendEmail({
+    const result = await sendEmail({
       to: data.restaurantEmail,
       subject: `Carte cadeau annulée — ${data.restaurantName}`,
       html,
@@ -568,7 +583,9 @@ export async function sendRefundNotificationRestaurant(data: RefundEmailData): P
       { giftCardId: data.giftCardId },
       '[gift-card-email] Refund notification sent to restaurant',
     );
+    return result;
   } catch (err) {
+    if (strict) throw err;
     logger.error(
       { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },
       '[gift-card-email] Failed to send refund notification to restaurant',

@@ -100,6 +100,13 @@ export async function registerJobSchedulers(): Promise<void> {
   );
 
   // Rappel expiration carte cadeau : scan quotidien à 9h
+  await register('gift-card-finance/reconcile', () =>
+    queues.giftCardFinance.upsertJobScheduler(
+      'gift-card-finance-reconcile',
+      { every: 5 * 60 * 1000 },
+      { name: 'gift-card-finance-scan', data: { kind: 'scan' } },
+    ),
+  );
   await register('gift-card-reminder/daily', () =>
     queues.giftCardReminder.upsertJobScheduler(
       'daily-gift-card-reminder',

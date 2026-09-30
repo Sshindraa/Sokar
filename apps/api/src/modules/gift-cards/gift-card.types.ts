@@ -1,4 +1,4 @@
-import type { GiftCard, GiftCardPack } from '@prisma/client';
+import type { Prisma, GiftCard, GiftCardPack } from '@prisma/client';
 
 export type GiftCardStatus = 'ACTIVE' | 'REDEEMED' | 'EXPIRED' | 'CANCELLED' | 'CLOSED';
 
@@ -13,6 +13,8 @@ export type CreateGiftCardInput = {
   expiresAt?: Date;
   validityMonths?: number;
   packId?: string;
+  verifiedAmount?: number;
+  packSnapshot?: Prisma.InputJsonValue;
   preferredDate?: Date;
   preferredTime?: string;
   preferredPartySize?: number;
@@ -55,9 +57,14 @@ export type ApplyGiftCardInput = {
   restaurantId: string;
   reservationId: string;
   reservationAmount: number;
+  actor?: string;
 };
 
-export type GiftCardApplicationPaymentStatus = 'FULLY_COVERED' | 'PARTIAL' | 'COMPLEMENT_REQUIRED';
+export type GiftCardApplicationPaymentStatus =
+  | 'FULLY_COVERED'
+  | 'PARTIAL'
+  | 'COMPLEMENT_REQUIRED'
+  | 'ASSOCIATED';
 
 export type GiftCardApplicationResult = {
   reservationId: string;

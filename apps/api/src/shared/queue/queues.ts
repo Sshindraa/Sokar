@@ -3,6 +3,10 @@ import { redisQueue } from '../redis/client';
 import { defaultReliableJobOptions, highPriorityWebhookJobOptions } from './job-options';
 
 export const queues = {
+  giftCardFinance: new Queue('gift-card-finance', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   outboxDispatcher: new Queue('outbox-dispatcher', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,

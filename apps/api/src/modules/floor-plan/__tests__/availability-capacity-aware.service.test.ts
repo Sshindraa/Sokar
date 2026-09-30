@@ -107,6 +107,7 @@ function makeRestaurant(
     googleRatingSyncedAt: overrides.googleRatingSyncedAt ?? null,
     giftCardMinimumAmount: overrides.giftCardMinimumAmount ?? null,
     giftCardCommissionRate: (overrides.giftCardCommissionRate ?? 0.05) as unknown as Prisma.Decimal,
+    giftCardStripeAccountId: null,
     giftCardEnabled: overrides.giftCardEnabled ?? false,
     crmSensitiveNoteRoles: overrides.crmSensitiveNoteRoles ?? null,
     exposureSettings: overrides.exposureSettings ?? null,

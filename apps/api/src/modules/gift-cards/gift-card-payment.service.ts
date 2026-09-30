@@ -7,22 +7,21 @@
  *   3. Créer la GiftCard avec stripePaymentIntentId, stripePaymentStatus, sokarCommissionAmount
  *   4. Déclencher les notifications (email expéditeur, email destinataire, WhatsApp, notif restaurateur)
  */
-import type { PrismaClient, GiftCard } from '@prisma/client';
+import { Prisma, type PrismaClient, type GiftCard } from '@prisma/client';
+import { GiftCardCheckoutService } from './gift-card-checkout.service';
+import { giftCardHash, lockGiftCardPayment } from './gift-card-finance.util';
+import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
+import { GiftCardRefundService } from './gift-card-refund.service';
 import { GiftCardService } from './gift-card.service';
 import { retrievePaymentIntent } from './stripe.service';
-import {
-  sendSenderReceipt,
-  sendRecipientGiftCard,
-  sendRestaurantSaleNotification,
-} from './gift-card-email.service';
-import { sendRecipientWhatsApp } from './gift-card-whatsapp.service';
-import { sendSms } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
-import { recordAcceptedMessagingUsage } from '../usage/messaging-usage.service';
+import { enqueueGiftCardDelivery } from './gift-card-delivery.service';
 
 export type PurchaseWithPaymentInput = {
   restaurantId: string;
   paymentIntentId: string;
+  checkoutId?: string;
+  accessToken?: string;
   amount?: number;
   packId?: string;
   occasion?: string;
@@ -61,20 +60,58 @@ export class GiftCardPaymentService {
    * Paiement + création de carte + notifications.
    * Retourne la carte cadeau créée.
    */
-  async purchaseWithPayment(input: PurchaseWithPaymentInput): Promise<GiftCard> {
-    // 1. Vérifier le PaymentIntent Stripe
-    const pi = await retrievePaymentIntent(input.paymentIntentId);
-    if (pi.status !== 'succeeded') {
-      throw new GiftCardPaymentError(`Le paiement n'est pas confirmé (statut: ${pi.status}).`);
-    }
-
-    const existing = await this.prisma.giftCard.findFirst({
-      where: { stripePaymentIntentId: input.paymentIntentId },
+  async purchaseWithPayment(
+    input: PurchaseWithPaymentInput,
+    webhook?: { stripeAccountId?: string },
+  ): Promise<GiftCard> {
+    // tenant-scoping: global — Unique checkout bootstrap; access token or authenticated Stripe account is checked before fulfillment.
+    const checkout = await this.prisma.giftCardCheckout.findUnique({
+      where: input.checkoutId
+        ? { id: input.checkoutId }
+        : { stripePaymentIntentId: input.paymentIntentId },
     });
-    if (existing) {
-      throw new GiftCardPaymentConflictError();
+    if (checkout) {
+      if (
+        checkout.kind !== 'PURCHASE' ||
+        checkout.restaurantId !== input.restaurantId ||
+        (checkout.stripePaymentIntentId &&
+          checkout.stripePaymentIntentId !== input.paymentIntentId) ||
+        (webhook
+          ? checkout.stripeAccountId !== webhook.stripeAccountId
+          : giftCardHash(input.accessToken ?? '') !== checkout.accessTokenHash)
+      ) {
+        throw new GiftCardPaymentError('Accès à la commande refusé.');
+      }
+    } else if (webhook?.stripeAccountId) {
+      throw new GiftCardPaymentError('Commande du compte connecté introuvable.');
     }
-
+    const pi = await retrievePaymentIntent(input.paymentIntentId, checkout?.stripeAccountId);
+    if (
+      pi.status !== 'succeeded' ||
+      pi.disputed ||
+      pi.pendingRefund ||
+      (pi.refundedAmount ?? 0) > 0
+    ) {
+      throw new GiftCardPaymentError('Le paiement ne peut pas activer une carte cadeau.');
+    }
+    if (
+      pi.metadata.type === 'crowdfunding_contribution' ||
+      (checkout && pi.metadata.checkoutId !== checkout.id)
+    ) {
+      throw new GiftCardPaymentError('Le paiement ne correspond pas à cet achat.');
+    }
+    if (checkout) {
+      const snapshot = checkout.payload as Record<string, unknown>;
+      input = {
+        ...snapshot,
+        restaurantId: checkout.restaurantId,
+        paymentIntentId: input.paymentIntentId,
+        amount: checkout.amountCents / 100,
+        preferredDate: snapshot.preferredDate
+          ? new Date(String(snapshot.preferredDate))
+          : undefined,
+      } as PurchaseWithPaymentInput;
+    }
     const restaurantId = pi.metadata.restaurantId;
     if (!restaurantId) {
       throw new GiftCardPaymentError('Les informations du paiement sont incomplètes.');
@@ -83,8 +120,12 @@ export class GiftCardPaymentService {
       throw new GiftCardPaymentError('Le restaurant ne correspond pas au paiement.');
     }
 
-    const packId = pi.metadata.packId || undefined;
-    const metadataAmount = pi.metadata.amount ? Number(pi.metadata.amount) : undefined;
+    const packId = checkout ? input.packId : pi.metadata.packId || undefined;
+    const metadataAmount = checkout
+      ? checkout.amountCents / 100
+      : pi.metadata.amount
+        ? Number(pi.metadata.amount)
+        : undefined;
     if (
       !packId &&
       (metadataAmount === undefined || !Number.isFinite(metadataAmount) || metadataAmount <= 0)
@@ -116,7 +157,9 @@ export class GiftCardPaymentService {
 
     // 3. Déterminer le montant
     let amount: number;
-    if (packId) {
+    if (checkout) {
+      amount = checkout.amountCents / 100;
+    } else if (packId) {
       const pack = await this.prisma.giftCardPack.findFirst({
         where: { id: packId, restaurantId },
         select: { amount: true },
@@ -139,126 +182,111 @@ export class GiftCardPaymentService {
 
     // Vérifier le montant minimum
     const minAmount = restaurant.giftCardMinimumAmount ?? 10;
-    if (amount < minAmount) {
+    if (!checkout && amount < minAmount) {
       throw new GiftCardPaymentError(`Le montant minimum est de ${minAmount}€`);
     }
 
     // 4. Calculer la commission
-    const commissionRate = restaurant.giftCardCommissionRate
-      ? restaurant.giftCardCommissionRate.toNumber()
-      : 0.05;
+    const commissionRate = checkout
+      ? checkout.commissionRate.toNumber()
+      : restaurant.giftCardCommissionRate
+        ? restaurant.giftCardCommissionRate.toNumber()
+        : 0.05;
     const sokarCommissionAmount = Math.round(amount * commissionRate * 100) / 100;
 
     // 5. Créer la carte cadeau
-    const service = new GiftCardService(this.prisma);
-    const card = await service.create({
-      restaurantId,
-      amount,
-      packId,
-      occasion: input.occasion,
-      senderName: input.senderName,
-      senderEmail: input.senderEmail,
-      senderPhone: input.senderPhone,
-      recipientName: input.recipientName,
-      recipientEmail: input.recipientEmail,
-      recipientPhone: input.recipientPhone,
-      message: input.message,
-      createdBy: 'CLIENT',
-      purchaseReference: input.paymentIntentId,
-      stripePaymentIntentId: input.paymentIntentId,
-      stripePaymentStatus: 'succeeded',
-      templateId: input.templateId,
-      customImageUrl: input.customImageUrl,
-      sokarCommissionAmount,
-      preferredDate: input.preferredDate,
-      preferredTime: input.preferredTime,
-      preferredPartySize: input.preferredPartySize,
-    });
-
-    // 6. Notifications (non-bloquantes — on log les erreurs mais on ne fait pas échouer l'achat)
-    const publicCode = card.shortCode ?? card.code;
-    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${publicCode}/pdf`;
-
-    await Promise.allSettled([
-      sendSenderReceipt({
-        giftCardId: card.id,
-        restaurantId,
-        code: card.code,
-        shortCode: card.shortCode,
-        amount,
-        restaurantName: restaurant.name,
-        senderName: input.senderName ?? null,
-        senderEmail: input.senderEmail ?? null,
-        recipientName: input.recipientName ?? null,
-        recipientEmail: input.recipientEmail ?? null,
-        message: input.message ?? null,
-        occasion: input.occasion ?? null,
-        pdfUrl,
-      }),
-      sendRecipientGiftCard({
-        giftCardId: card.id,
-        restaurantId,
-        code: card.code,
-        shortCode: card.shortCode,
-        amount,
-        restaurantName: restaurant.name,
-        senderName: input.senderName ?? null,
-        senderEmail: input.senderEmail ?? null,
-        recipientName: input.recipientName ?? null,
-        recipientEmail: input.recipientEmail ?? null,
-        message: input.message ?? null,
-        occasion: input.occasion ?? null,
-        pdfUrl,
-      }),
-      sendRestaurantSaleNotification({
-        restaurantId,
-        restaurantName: restaurant.name,
-        restaurantEmail: restaurant.managerEmail,
-        amount,
-        commissionAmount: sokarCommissionAmount,
-        senderName: input.senderName ?? null,
-        recipientName: input.recipientName ?? null,
-        giftCardId: card.id,
-      }),
-      sendRecipientWhatsApp({
-        restaurantId,
-        giftCardId: card.id,
-        to: input.recipientPhone ?? '',
-        code: card.code,
-        amount,
-        restaurantName: restaurant.name,
-      }),
-    ]);
-
-    // Notification SMS au restaurateur (optionnel)
-    if (restaurant.managerPhone) {
-      try {
-        const result = await sendSms(
-          restaurant.managerPhone,
-          `Nouvelle vente carte cadeau ${amount}€ chez ${restaurant.name}. Commission: ${sokarCommissionAmount}€.`,
-        );
-        await recordAcceptedMessagingUsage({
-          channel: 'sms',
-          provider: 'telnyx',
-          text: `Nouvelle vente carte cadeau ${amount}€ chez ${restaurant.name}. Commission: ${sokarCommissionAmount}€.`,
-          providerMessageId:
-            result && 'providerMessageId' in result && typeof result.providerMessageId === 'string'
-              ? result.providerMessageId
-              : undefined,
-          context: {
-            restaurantId,
-            sourceType: 'gift_card_sale_manager_sms',
-            sourceId: card.id,
-            metadata: { messageType: 'gift_card_sale_manager_sms' },
-          },
+    const { card, created } = await this.prisma.$transaction(async (tx) => {
+      await lockGiftCardPayment(tx, input.paymentIntentId);
+      if (checkout) {
+        const current = await tx.giftCardCheckout.findUniqueOrThrow({
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
         });
-      } catch (smsErr) {
-        logger.warn(
-          { err: smsErr instanceof Error ? smsErr.message : String(smsErr) },
-          '[gift-card-payment] Restaurant SMS notification failed',
-        );
+        if (!['OPEN', 'FULFILLED'].includes(current.status))
+          throw new GiftCardPaymentError('Cette commande nécessite une vérification du paiement.');
       }
-    }
+      // tenant-scoping: global — Global payment ledger collision check; reject any conflicting kind or restaurant.
+      const entry = await tx.giftCardPaymentEntry.findUnique({
+        where: { paymentIntentId: input.paymentIntentId },
+      });
+      if (entry && (entry.kind !== 'PURCHASE' || entry.restaurantId !== restaurantId))
+        throw new GiftCardPaymentConflictError();
+      // tenant-scoping: global — Global payment uniqueness: reject a card owned by another restaurant before returning it.
+      const existing = await tx.giftCard.findFirst({
+        where: { stripePaymentIntentId: input.paymentIntentId },
+      });
+      if (existing) {
+        if (existing.restaurantId !== restaurantId || (!checkout && !webhook))
+          throw new GiftCardPaymentConflictError();
+        if (checkout)
+          await tx.giftCardCheckout.update({
+            where: { id: checkout.id, restaurantId: checkout.restaurantId },
+            data: { status: 'FULFILLED' },
+          });
+        return { card: existing, created: false };
+      }
+      if (
+        entry ||
+        (await tx.giftCardContribution.findFirst({
+          where: { stripePaymentIntentId: input.paymentIntentId },
+        }))
+      ) {
+        throw new GiftCardPaymentConflictError();
+      }
+      const service = new GiftCardService(tx as PrismaClient);
+      const card = await service.create({
+        restaurantId,
+        amount,
+        packId,
+        verifiedAmount: checkout ? amount : undefined,
+        packSnapshot: checkout
+          ? ((checkout.payload as Record<string, unknown>).packSnapshot as Prisma.InputJsonValue)
+          : undefined,
+        occasion: input.occasion,
+        senderName: input.senderName,
+        senderEmail: input.senderEmail,
+        senderPhone: input.senderPhone,
+        recipientName: input.recipientName,
+        recipientEmail: input.recipientEmail,
+        recipientPhone: input.recipientPhone,
+        message: input.message,
+        createdBy: 'CLIENT',
+        purchaseReference: input.paymentIntentId,
+        stripePaymentIntentId: input.paymentIntentId,
+        stripePaymentStatus: 'succeeded',
+        templateId: input.templateId,
+        customImageUrl: input.customImageUrl,
+        sokarCommissionAmount,
+        preferredDate: input.preferredDate,
+        preferredTime: input.preferredTime,
+        preferredPartySize: input.preferredPartySize,
+      });
+      await tx.giftCardPaymentEntry.create({
+        data: {
+          paymentIntentId: input.paymentIntentId,
+          restaurantId,
+          giftCardId: card.id,
+          kind: 'PURCHASE',
+          amountCents: expectedAmountInCents,
+          currency: 'eur',
+          stripeAccountId: checkout?.stripeAccountId,
+        },
+      });
+      if (checkout)
+        await tx.giftCardCheckout.update({
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
+          data: { status: 'FULFILLED' },
+        });
+      for (const kind of [
+        'sender_email',
+        'recipient_email',
+        'restaurant_email',
+        'recipient_whatsapp',
+        'restaurant_sms',
+      ] as const)
+        await enqueueGiftCardDelivery(tx, { restaurantId, giftCardId: card.id, kind });
+      return { card, created: true };
+    }, DEFAULT_TRANSACTION_OPTIONS);
+    if (!created) return card;
 
     return card;
   }
@@ -276,18 +304,29 @@ export class GiftCardPaymentService {
   async handleStripeWebhook(
     paymentIntentId: string,
     metadata: Record<string, string>,
+    stripeAccountId?: string,
   ): Promise<GiftCard | null> {
-    // Idempotence : vérifier si la carte existe déjà
+    if (metadata.checkoutId) {
+      const checkout = await new GiftCardCheckoutService(this.prisma).findForPayment(
+        metadata,
+        paymentIntentId,
+      );
+      if (!checkout || checkout.kind !== 'PURCHASE')
+        throw new GiftCardPaymentError('Commande introuvable.');
+      return this.purchaseWithPayment(
+        {
+          restaurantId: checkout.restaurantId,
+          paymentIntentId,
+          checkoutId: checkout.id,
+        },
+        { stripeAccountId },
+      );
+    }
+    if (stripeAccountId) throw new GiftCardPaymentError('Commande Connect introuvable.');
     const existing = await this.prisma.giftCard.findFirst({
       where: { stripePaymentIntentId: paymentIntentId },
     });
-    if (existing) {
-      logger.info(
-        { paymentIntentId, giftCardId: existing.id },
-        '[gift-card-payment] Webhook: card already exists, skipping (idempotent)',
-      );
-      return existing;
-    }
+    if (existing) return existing;
 
     // Vérifier que les metadata contiennent au moins restaurantId
     if (!metadata.restaurantId) {
@@ -353,7 +392,7 @@ export class GiftCardPaymentService {
     // Vérifier que l'on a soit amount soit packId
     if (!input.amount && !input.packId) {
       logger.warn(
-        { paymentIntentId, metadata },
+        { paymentIntentId, metadataKeys: Object.keys(metadata) },
         '[gift-card-payment] Webhook: incomplete metadata (no amount or packId), skipping',
       );
       return null;
@@ -364,7 +403,7 @@ export class GiftCardPaymentService {
       '[gift-card-payment] Webhook: reconstructing purchase from metadata',
     );
 
-    return this.purchaseWithPayment(input);
+    return this.purchaseWithPayment(input, {});
   }
 
   /**
@@ -416,7 +455,7 @@ export class GiftCardPaymentService {
       }
 
       await this.prisma.giftCard.update({
-        where: { id: existing.id },
+        where: { id: existing.id, restaurantId: existing.restaurantId },
         data: { stripePaymentStatus: 'failed' },
       });
 
@@ -454,38 +493,11 @@ export class GiftCardPaymentService {
    * Gère un webhook Stripe charge.refunded.
    * Met à jour le statut Stripe de la carte cadeau associée.
    */
-  async handleRefundUpdated(paymentIntentId: string, refundStatus: string): Promise<void> {
-    logger.info({ paymentIntentId, refundStatus }, '[gift-card-payment] Refund webhook received');
-
-    try {
-      const existing = await this.prisma.giftCard.findFirst({
-        where: { stripePaymentIntentId: paymentIntentId },
-      });
-
-      if (!existing) {
-        logger.info(
-          { paymentIntentId },
-          '[gift-card-payment] No gift card found for refund webhook, nothing to update',
-        );
-        return;
-      }
-
-      const stripeStatus = refundStatus === 'succeeded' ? 'refunded' : refundStatus;
-      await this.prisma.giftCard.update({
-        where: { id: existing.id },
-        data: { stripePaymentStatus: stripeStatus },
-      });
-
-      logger.info(
-        { paymentIntentId, giftCardId: existing.id, refundStatus },
-        '[gift-card-payment] Gift card Stripe status updated from refund webhook',
-      );
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      logger.error(
-        { paymentIntentId, err: errorMessage },
-        '[gift-card-payment] Failed to update gift card status for refund webhook',
-      );
-    }
+  async handleRefundUpdated(
+    paymentIntentId: string,
+    _refundStatus: string,
+    stripeAccountId?: string,
+  ): Promise<void> {
+    await new GiftCardRefundService(this.prisma).reconcilePayment(paymentIntentId, stripeAccountId);
   }
 }

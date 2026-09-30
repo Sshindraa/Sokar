@@ -30,6 +30,7 @@ type SearchParams = {
   time?: string;
   partySize?: string;
   from?: string;
+  giftCardCode?: string;
 };
 
 export default async function WidgetPage({
@@ -88,6 +89,7 @@ export default async function WidgetPage({
       <BookingWidget
         slug={restaurant.slug}
         initialSource={source}
+        initialGiftCardCode={sp.giftCardCode?.slice(0, 100)}
         marketingAttributionToken={sp.marketingAttributionToken}
         initialPartySize={partySize}
         initialDate={date}

@@ -28,6 +28,11 @@ const service = new GiftCardService(db);
 describe('GiftCardService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.reservation.findFirst).mockResolvedValue({
+      id: 'res-1',
+      restaurantId: RESTAURANT_ID,
+    } as never);
+    vi.mocked(db.giftCardRedemption.findFirst).mockResolvedValue(null);
   });
 
   it('crée une carte cadeau avec remainingAmount égal à amount', async () => {
@@ -378,6 +383,7 @@ describe('GiftCardService', () => {
       id: 'gc-1',
       restaurantId: RESTAURANT_ID,
       status: 'ACTIVE',
+      contributions: [],
       amount: d(100),
       remainingAmount: d(100),
       currency: 'EUR',

@@ -14,54 +14,55 @@ datasource db {
 // Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
-  id                     String                 @id @default(uuid())
+  id                      String                 @id @default(uuid())
   /// Compte commercial auquel appartient cet établissement.
   /// Nullable pendant le backfill initial pour préserver les restaurants existants.
-  accountId              String?                @map("account_id")
-  isPrimary              Boolean                @default(false) @map("is_primary")
-  siteStatus             String                 @default("ACTIVE") @map("site_status")
-  name                   String
-  plan                   Plan                   @default(STARTER)
-  managerPhone           String                 @map("manager_phone")
-  managerEmail           String                 @map("manager_email")
-  phoneNumber            String                 @unique @map("phone_number")
-  openingHours           Json                   @map("opening_hours")
-  carrier                String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
-  smsConfirmEnabled      Boolean                @default(true) @map("sms_confirm_enabled")
-  theforkSavings         Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
-  googleCalendarId       String?                @map("google_calendar_id")
-  googleRefreshToken     String?                @map("google_refresh_token")
-  onboardingTasks        Json                   @default("{}") @map("onboarding_tasks")
-  onboardingDone         Boolean                @default(false) @map("onboarding_done")
-  onboardingCompletedAt  DateTime?              @map("onboarding_completed_at")
-  onboardingActivatedAt  DateTime?              @map("onboarding_activated_at")
-  onboardingLastSeenAt   DateTime?              @map("onboarding_last_seen_at")
-  firstCallAt            DateTime?              @map("first_call_at")
+  accountId               String?                @map("account_id")
+  isPrimary               Boolean                @default(false) @map("is_primary")
+  siteStatus              String                 @default("ACTIVE") @map("site_status")
+  name                    String
+  plan                    Plan                   @default(STARTER)
+  managerPhone            String                 @map("manager_phone")
+  managerEmail            String                 @map("manager_email")
+  phoneNumber             String                 @unique @map("phone_number")
+  openingHours            Json                   @map("opening_hours")
+  carrier                 String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled       Boolean                @default(true) @map("sms_confirm_enabled")
+  theforkSavings          Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  googleCalendarId        String?                @map("google_calendar_id")
+  googleRefreshToken      String?                @map("google_refresh_token")
+  onboardingTasks         Json                   @default("{}") @map("onboarding_tasks")
+  onboardingDone          Boolean                @default(false) @map("onboarding_done")
+  onboardingCompletedAt   DateTime?              @map("onboarding_completed_at")
+  onboardingActivatedAt   DateTime?              @map("onboarding_activated_at")
+  onboardingLastSeenAt    DateTime?              @map("onboarding_last_seen_at")
+  firstCallAt             DateTime?              @map("first_call_at")
   // Provisioning fields
-  provisioningStatus     String                 @default("PENDING") @map("provisioning_status")
-  telnyxPhoneNumberId    String?                @map("telnyx_phone_number_id")
-  forwardingConfiguredAt DateTime?              @map("forwarding_configured_at")
-  testCallValidatedAt    DateTime?              @map("test_call_validated_at")
-  createdAt              DateTime               @default(now()) @map("created_at")
-  updatedAt              DateTime               @default(now()) @updatedAt @map("updated_at")
-  calls                  Call[]
-  reservations           Reservation[]
-  customers              Customer[]
-  messages               Message[]
-  reactivationCampaigns  ReactivationCampaign[]
-  personality            AgentPersonality?
-  callQuotas             CallQuota[]
-  agenticHolds           AgenticHold[]
-  floorPlans             FloorPlan[]
-  giftCards              GiftCard[]
-  giftCardPacks          GiftCardPack[]
-  waitingListEntries     WaitingListEntry[]
-  giftCardMinimumAmount  Int?                   @map("gift_card_minimum_amount")
-  giftCardCommissionRate Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
-  giftCardEnabled        Boolean                @default(false) @map("gift_card_enabled")
+  provisioningStatus      String                 @default("PENDING") @map("provisioning_status")
+  telnyxPhoneNumberId     String?                @map("telnyx_phone_number_id")
+  forwardingConfiguredAt  DateTime?              @map("forwarding_configured_at")
+  testCallValidatedAt     DateTime?              @map("test_call_validated_at")
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at")
+  calls                   Call[]
+  reservations            Reservation[]
+  customers               Customer[]
+  messages                Message[]
+  reactivationCampaigns   ReactivationCampaign[]
+  personality             AgentPersonality?
+  callQuotas              CallQuota[]
+  agenticHolds            AgenticHold[]
+  floorPlans              FloorPlan[]
+  giftCards               GiftCard[]
+  giftCardPacks           GiftCardPack[]
+  waitingListEntries      WaitingListEntry[]
+  giftCardMinimumAmount   Int?                   @map("gift_card_minimum_amount")
+  giftCardCommissionRate  Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
+  giftCardEnabled         Boolean                @default(false) @map("gift_card_enabled")
+  giftCardStripeAccountId String?                @unique @map("gift_card_stripe_account_id")
   /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
   /// Null signifie « utiliser CRM_SENSITIVE_NOTE_ROLES » au niveau de l'API.
-  crmSensitiveNoteRoles  String?                @map("crm_sensitive_note_roles")
+  crmSensitiveNoteRoles   String?                @map("crm_sensitive_note_roles")
 
   // Agentic reservations (P0)
   slug                              String?                            @unique @map("slug")
@@ -2785,6 +2786,7 @@ model GiftCard {
   stripePaymentStatus   String? @default("pending") @map("stripe_payment_status")
   templateId            String? @map("template_id")
   customImageUrl        String? @map("custom_image_url")
+  packSnapshot          Json?   @map("pack_snapshot")
   sokarCommissionAmount Decimal @map("sokar_commission_amount") @db.Decimal(10, 2)
 
   // P3 — Crowdfunding
@@ -2814,10 +2816,19 @@ model GiftCardRedemption {
   amount        Decimal  @db.Decimal(10, 2)
   redeemedAt    DateTime @default(now()) @map("redeemed_at")
 
+  operationKey String? @unique @map("operation_key")
+  restaurantId String? @map("restaurant_id")
+  ticketReference String? @map("ticket_reference")
+  billAmount Decimal? @db.Decimal(10, 2) @map("bill_amount")
+  balanceAfter Decimal? @db.Decimal(10, 2) @map("balance_after")
+  complementAmount Decimal? @db.Decimal(10, 2) @map("complement_amount")
+  actor String?
+
   giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
   @@index([giftCardId])
+  @@unique([restaurantId, ticketReference])
   @@map("gift_card_redemptions")
 }
 
@@ -2853,4 +2864,91 @@ model GiftCardPack {
 
   @@index([restaurantId, isActive, deletedAt])
   @@map("gift_card_packs")
+}
+
+/// Immutable checkout data. Stripe carries its opaque id, never the gift message or contacts.
+model GiftCardCheckout {
+  id                    String   @id @default(uuid())
+  restaurantId          String   @map("restaurant_id")
+  kind                  String
+  status                String   @default("OPEN")
+  giftCardId            String?  @map("gift_card_id")
+  amountCents           Int      @map("amount_cents")
+  currency              String   @default("eur")
+  commissionRate        Decimal  @map("commission_rate") @db.Decimal(5, 4)
+  stripeAccountId       String   @map("stripe_account_id")
+  payload               Json
+  payloadHash           String   @map("payload_hash")
+  accessTokenHash       String   @map("access_token_hash")
+  idempotencyKey        String   @unique @map("idempotency_key")
+  stripePaymentIntentId String?  @unique @map("stripe_payment_intent_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([restaurantId, createdAt])
+  @@index([status, updatedAt])
+  @@map("gift_card_checkouts")
+}
+
+/// One captured PaymentIntent can fund exactly one gift card or contribution.
+/// These financial references are retained independently of the catalogue.
+model GiftCardPaymentEntry {
+  paymentIntentId     String   @id @map("payment_intent_id")
+  restaurantId        String   @map("restaurant_id")
+  giftCardId          String   @map("gift_card_id")
+  contributionId      String?  @map("contribution_id")
+  kind                String
+  amountCents         Int      @map("amount_cents")
+  pendingRefund Boolean @default(false) @map("pending_refund")
+  refundedAmountCents Int      @default(0) @map("refunded_amount_cents")
+  currency            String   @default("eur")
+  stripeAccountId     String?  @map("stripe_account_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@index([giftCardId])
+  @@map("gift_card_payment_entries")
+
+}
+
+/// Persisted before provider calls so a crash can replay the same refund operation.
+model GiftCardRefundRequest {
+  id              String   @id @default(uuid())
+  giftCardId      String   @map("gift_card_id")
+  paymentIntentId String   @map("payment_intent_id")
+  stripeAccountId String?  @map("stripe_account_id")
+  amountCents     Int      @map("amount_cents")
+  idempotencyKey  String   @unique @map("idempotency_key")
+  stripeRefundId  String?  @unique @map("stripe_refund_id")
+  status          String   @default("REQUESTED")
+  actor           String
+  reason          String   @default("CANCELLATION")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([status, updatedAt])
+  @@index([giftCardId])
+  @@map("gift_card_refund_requests")
+}
+
+/// Provider acceptance is separate from financial state and queue dispatch.
+model GiftCardDelivery {
+  id String @id @default(uuid())
+  restaurantId String @map("restaurant_id")
+  giftCardId String @map("gift_card_id")
+  kind String
+  referenceId String? @map("reference_id")
+  channel String
+  status String @default("PENDING")
+  idempotencyKey String @unique @map("idempotency_key")
+  attempts Int @default(0)
+  providerMessageId String? @map("provider_message_id")
+  lastErrorCode String? @map("last_error_code")
+  startedAt DateTime? @map("started_at")
+  sentAt DateTime? @map("sent_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  @@index([restaurantId, status, createdAt])
+  @@index([giftCardId, createdAt])
+  @@map("gift_card_deliveries")
 }
