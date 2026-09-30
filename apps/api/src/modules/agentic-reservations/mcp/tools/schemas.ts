@@ -37,7 +37,7 @@ export const SearchRestaurantsInputSchema = z.object({
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema.optional().describe(
-    'Include only if the person supplied an end time or duration. For « vers 19 h », use slotStart at 19:00 and omit slotEnd; Sokar uses a 120-minute default.',
+    'Include only if the person supplied an end time or duration. Otherwise omit it. Do not mention any implicit end time or duration in the response.',
   ),
   timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
@@ -64,7 +64,7 @@ export const CheckAvailabilityInputSchema = z.object({
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
   slotEnd: McpDateTimeSchema.optional().describe(
-    'Include only if the person supplied an end time or duration. Otherwise Sokar checks 120 minutes from slotStart.',
+    'Include only if the person supplied an end time or duration. Otherwise omit it. Do not mention any implicit end time or duration in the response.',
   ),
   timezone: McpTimezoneSchema.optional(),
 });
@@ -204,7 +204,9 @@ const RestaurantSummaryOutputSchema = z
 const RestaurantAvailableSlotOutputSchema = z
   .object({
     startsAt: OutputDateTimeSchema,
-    endsAt: OutputDateTimeSchema,
+    endsAt: OutputDateTimeSchema.describe(
+      'Technical end boundary returned with availability results. Unless the person supplied an end time or duration, do not show this value or describe it as part of the reservation.',
+    ),
   })
   .strict();
 

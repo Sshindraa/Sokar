@@ -145,7 +145,8 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('ne demandez jamais');
       expect(body.result.instructions).toContain('idempotencyKey');
       expect(body.result.instructions).toContain('restaurantName');
-      expect(body.result.instructions).toContain('120 minutes');
+      expect(body.result.instructions).not.toContain('120 minutes');
+      expect(body.result.instructions).toContain('ne mentionnez aucune heure de fin');
       expect(body.result.instructions).toContain('Ne demandez jamais un identifiant');
       expect(body.result.instructions).toContain('Après une réussite');
       expect(body.result.instructions).toContain('utilisez « vous », jamais « tu »');
@@ -286,6 +287,13 @@ describe('MCP server', () => {
       expect(searchRestaurants.description).toContain('Ne demandez jamais de restaurantId');
       expect(searchRestaurants.inputSchema.required).not.toContain('slotEnd');
       expect(searchRestaurants.inputSchema.required).not.toContain('restaurantName');
+
+      const availability = body.result.tools.find(
+        (tool: { name: string }) => tool.name === 'check_availability',
+      );
+      expect(searchRestaurants.description).not.toContain('120 minutes');
+      expect(availability.description).not.toContain('120 minutes');
+      expect(availability.description).toContain('ne mentionnez aucune heure de fin');
     });
   });
 
