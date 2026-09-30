@@ -69,12 +69,23 @@ function sameValue(actual: unknown, expected: string | number): boolean {
 
 const EMPTY_DRAFT: StructuredTurnDraft = { date: '', time: '', partySize: 0, customerName: '' };
 
-/** Brouillon sortant, mesuré après le garde-fou de l'épellation, comme dans le moteur. */
-function outputDraft(output: Output, testCase: BehaviorCase): Record<string, unknown> | undefined {
+/**
+ * Brouillon sortant. Par défaut la sortie BRUTE du modèle ; `guarded` applique le garde-fou de l'épellation
+ * de fact-guards.ts (seul garde-fou qui retouche le brouillon), comme le moteur en appel. Les chiffres
+ * d'épellation qui comptent sont les bruts : un garde-fou qui rattrape le modèle ne dit rien de ce que
+ * comprend le prompt.
+ */
+function outputDraft(
+  output: Output,
+  testCase: BehaviorCase,
+  guarded: boolean,
+): Record<string, unknown> | undefined {
   const draft = output.draft;
   if (!draft || typeof draft !== 'object') return undefined;
+  const complete = { ...EMPTY_DRAFT, ...(draft as Partial<StructuredTurnDraft>) };
+  if (!guarded) return complete as unknown as Record<string, unknown>;
   return reconcileSpelledName(
-    { ...EMPTY_DRAFT, ...(draft as Partial<StructuredTurnDraft>) },
+    complete,
     testCase.transcript,
     (testCase.awaiting ?? 'open') as never,
   ) as unknown as Record<string, unknown>;
@@ -85,7 +96,12 @@ function inputDraft(testCase: BehaviorCase): Record<string, unknown> {
 }
 
 /** Le contrôle est-il tenu par CE tirage ? */
-export function holds(predicate: SamplePredicate, output: Output, testCase: BehaviorCase): boolean {
+export function holds(
+  predicate: SamplePredicate,
+  output: Output,
+  testCase: BehaviorCase,
+  guarded = false,
+): boolean {
   switch (predicate.kind) {
     case 'field': {
       const actual = output[predicate.path];
@@ -97,9 +113,9 @@ export function holds(predicate: SamplePredicate, output: Output, testCase: Beha
     case 'fieldIn':
       return predicate.values.includes(output[predicate.path]);
     case 'draft':
-      return sameValue(outputDraft(output, testCase)?.[predicate.field], predicate.equals);
+      return sameValue(outputDraft(output, testCase, guarded)?.[predicate.field], predicate.equals);
     case 'draftUnchanged': {
-      const draft = outputDraft(output, testCase);
+      const draft = outputDraft(output, testCase, guarded);
       if (!draft) return false;
       const before = inputDraft(testCase);
       return predicate.fields.every((field) => {
@@ -153,17 +169,32 @@ function scoreCheck(check: BehaviorCheck, outputs: Output[], testCase: BehaviorC
     };
   }
   if (check.kind === 'anyOf') {
-    const value = rate(outputs, (output) =>
-      check.of.some((predicate) => holds(predicate, output, testCase)),
+    const held = (output: Output, guarded: boolean) =>
+      check.of.some((predicate) => holds(predicate, output, testCase, guarded));
+    return done(
+      check.of.map(describe).join(' OU '),
+      rate(outputs, (output) => held(output, false)),
+      check.minRate,
+      rate(outputs, (output) => held(output, true)),
     );
-    return done(check.of.map(describe).join(' OU '), value, check.minRate);
   }
-  const value = rate(outputs, (output) => holds(check, output, testCase));
-  return done(describe(check), value, check.minRate);
+  return done(
+    describe(check),
+    rate(outputs, (output) => holds(check, output, testCase, false)),
+    check.minRate,
+    rate(outputs, (output) => holds(check, output, testCase, true)),
+  );
 }
 
-function done(description: string, value: number, required: number): CheckResult {
-  return { description, rate: value, required, passed: value >= required };
+function done(description: string, value: number, required: number, guarded?: number): CheckResult {
+  return {
+    description,
+    rate: value,
+    required,
+    passed: value >= required,
+    // Seulement quand les garde-fous changent le résultat : sinon le chiffre brut suffit.
+    ...(guarded !== undefined && Math.abs(guarded - value) > 1e-9 ? { guardedRate: guarded } : {}),
+  };
 }
 
 /** Variantes générées et cas à vérité non établie : rapportés, jamais bloquants. */
@@ -185,7 +216,11 @@ export function scoreCase(testCase: BehaviorCase, samples: (Output | null)[]): C
     passed: validRate >= MIN_VALID_RATE && checks.every((check) => check.passed),
     checks,
     ...(testCase.perturbation
-      ? { perturbation: testCase.perturbation, successRate: checks[0]?.rate ?? 0 }
+      ? {
+          perturbation: testCase.perturbation,
+          successRate: checks[0]?.rate ?? 0,
+          guardedSuccessRate: checks[0]?.guardedRate ?? checks[0]?.rate ?? 0,
+        }
       : {}),
   };
 }
@@ -196,9 +231,11 @@ export function scoreAll(cases: BehaviorCase[], responses: BehaviorResponses): C
 
 const PERTURBATION_KINDS: PerturbationKind[] = ['ablation', 'substitution', 'noise'];
 
-function meanRate(results: CaseResult[]): number | null {
+function meanRate(results: CaseResult[], guarded = false): number | null {
   if (!results.length) return null;
-  return results.reduce((sum, result) => sum + (result.successRate ?? 0), 0) / results.length;
+  const pick = (result: CaseResult) =>
+    (guarded ? result.guardedSuccessRate : result.successRate) ?? 0;
+  return results.reduce((sum, result) => sum + pick(result), 0) / results.length;
 }
 
 /** Indicateurs agrégés par découpage, à partir des variantes générées et des comportements tenus. */
@@ -218,6 +255,7 @@ export function summarize(results: CaseResult[]): BehaviorSummary {
     const substitution = usable('substitution');
     const noise = usable('noise');
     const ablationRate = meanRate(ablation);
+    const guardedAblationRate = meanRate(ablation, true);
     const entry: SplitSummary = {
       held: blocking.filter((result) => result.passed).length,
       total: blocking.length,
@@ -229,6 +267,11 @@ export function summarize(results: CaseResult[]): BehaviorSummary {
       falseAcceptRate: ablationRate === null ? null : 1 - ablationRate,
       fidelityRate: meanRate(substitution),
       noiseRobustness: meanRate(noise),
+      guarded: {
+        falseAcceptRate: guardedAblationRate === null ? null : 1 - guardedAblationRate,
+        fidelityRate: meanRate(substitution, true),
+        noiseRobustness: meanRate(noise, true),
+      },
     };
     summary[split] = entry;
   }
@@ -248,6 +291,17 @@ export function formatSummary(summary: BehaviorSummary): string {
         `fausse acceptation ${percent(entry.falseAcceptRate)} ; fidélité ${percent(entry.fidelityRate)} ; ` +
         `robustesse au bruit ${percent(entry.noiseRobustness)} (variantes : ${counts})`,
     );
+    const g = entry.guarded;
+    if (
+      g.falseAcceptRate !== entry.falseAcceptRate ||
+      g.fidelityRate !== entry.fidelityRate ||
+      g.noiseRobustness !== entry.noiseRobustness
+    ) {
+      lines.push(
+        `    après garde-fous du code : fausse acceptation ${percent(g.falseAcceptRate)} ; ` +
+          `fidélité ${percent(g.fidelityRate)} ; robustesse au bruit ${percent(g.noiseRobustness)}`,
+      );
+    }
   }
   return lines.join('\n');
 }
@@ -267,7 +321,12 @@ export function formatReport(results: CaseResult[]): string {
           ? ` : ${(check.rate * 100).toFixed(0)} %`
           : ` : ${(check.rate * 100).toFixed(0)} % (seuil ${(check.required * 100).toFixed(0)} %)`;
       const checkMark = result.informational ? '·' : check.passed ? '✓' : '✗';
-      lines.push(`    ${checkMark} ${check.description}${measured}`);
+      // Le brut est le chiffre qui compte ; l'écart avec l'après garde-fous est ce que le code rattrape.
+      const guarded =
+        check.guardedRate === undefined
+          ? ''
+          : ` [brut ; après garde-fous : ${(check.guardedRate * 100).toFixed(0)} %]`;
+      lines.push(`    ${checkMark} ${check.description}${measured}${guarded}`);
     }
   }
   const blocking = results.filter((result) => !result.informational);

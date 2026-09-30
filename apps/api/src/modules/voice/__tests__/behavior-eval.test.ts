@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { buildRequests } from '../behavior-eval/build';
+import { buildSystemPrompt } from '../prompts';
+import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
+import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { casesForSuite, generatePerturbations, PERTURB_SAMPLES } from '../behavior-eval/perturb';
 import {
   compareRuns,
@@ -347,6 +350,106 @@ describe('indicateurs agrégés', () => {
     );
     expect(report).toContain('▲');
     expect(report).toContain('falseAcceptRate');
+  });
+});
+
+describe('sortie brute et après garde-fous', () => {
+  const spelled: BehaviorCase = {
+    ...baseCase([{ kind: 'draft', field: 'customerName', equals: 'HOUET', minRate: 1 }]),
+    transcript: 'h o u e t dimanche',
+    awaiting: 'customerName',
+  };
+  const glued = { say: '', draft: { customerName: 'HOUET DIMANCHE' } };
+
+  it("note le brouillon brut : le garde-fou de l'épellation ne rattrape pas le modèle", () => {
+    const result = scoreCase(spelled, [glued, glued]);
+    expect(result.checks[0].rate).toBe(0);
+    expect(result.passed).toBe(false);
+  });
+
+  it('rapporte à côté le chiffre après garde-fous, seulement quand il change quelque chose', () => {
+    const result = scoreCase(spelled, [glued, glued]);
+    expect(result.checks[0].guardedRate).toBe(1);
+    const clean = scoreCase(spelled, [{ say: '', draft: { customerName: 'HOUET' } }]);
+    expect(clean.checks[0].rate).toBe(1);
+    expect(clean.checks[0].guardedRate).toBeUndefined();
+    expect(formatReport([result])).toContain('après garde-fous : 100 %');
+  });
+
+  it('les indicateurs agrégés existent en brut et après garde-fous', () => {
+    const variants = generatePerturbations(fixture);
+    const responses = {
+      model: 'test',
+      responses: Object.fromEntries(
+        variants.map((v) => [
+          v.id,
+          Array.from({ length: PERTURB_SAMPLES }, () => ({ say: '', draft: {} })),
+        ]),
+      ),
+    };
+    const summary = summarize(scoreAll(variants, responses));
+    for (const split of ['calibration', 'holdout'] as const) {
+      expect(summary[split].guarded).toHaveProperty('noiseRobustness');
+      expect(summary[split].guarded).toHaveProperty('fidelityRate');
+    }
+  });
+});
+
+describe('indépendance du banc', () => {
+  const benchFile = JSON.parse(
+    readFileSync(
+      path.join(__dirname, '../../../../scripts/fixtures/voice-behavior/cases.json'),
+      'utf8',
+    ),
+  ) as BehaviorCasesFile;
+  const hours = Object.fromEntries(
+    ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [
+      day,
+      { open: '12:00', close: '22:00' },
+    ]),
+  );
+  const normalize = (text: string) =>
+    text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/g, ' ');
+  // Le prompt réel reçu par le modèle, dans les deux modes, consignes de compréhension comprises.
+  const prompts = [true, false].map((structuredTurn) => {
+    const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn });
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: base,
+      history: [],
+      transcript: 'x',
+      state: createStructuredTurnState(),
+      openingHours: hours,
+      today: '2026-09-30',
+      understanding: true,
+    });
+    return normalize(String(system.content));
+  });
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const contains = (prompt: string, needle: string) =>
+    new RegExp(`(^|[^\\p{L}\\p{N}])${escape(normalize(needle))}([^\\p{L}\\p{N}]|$)`, 'u').test(
+      prompt,
+    );
+
+  it('aucune phrase, aucun extrait annoté ni aucun nom attendu du banc ne figure dans le prompt', () => {
+    // Un exemple du prompt qui est aussi un cas du banc fait mesurer la mémorisation, pas la compréhension.
+    const leaks: string[] = [];
+    for (const testCase of benchFile.cases) {
+      const needles = [
+        ...(testCase.transcript.trim().split(/\s+/).length >= 2 ? [testCase.transcript] : []),
+        ...Object.values(testCase.valueSpans ?? {}).flatMap((span) => [
+          ...(span.text.length >= 3 ? [span.text] : []),
+          ...(typeof span.value === 'string' && /^[A-ZÀ-Ý]{4,}$/u.test(span.value)
+            ? [span.value]
+            : []),
+        ]),
+      ];
+      for (const needle of needles) {
+        if (prompts.some((prompt) => contains(prompt, needle))) {
+          leaks.push(`${testCase.id} : « ${needle} »`);
+        }
+      }
+    }
+    expect([...new Set(leaks)]).toEqual([]);
   });
 });
 

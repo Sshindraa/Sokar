@@ -382,6 +382,30 @@ describe('tour structuré (canary)', () => {
       expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
     });
 
+    it('se tait aussi quand le modèle écrit un autre nom que les lettres épelées, sans mot collé', async () => {
+      const { session, mgr, outputs } = askingName();
+      outputs.push(
+        turn({
+          draft: named('Hoët'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Je répète : Hoët, c’est bien ça ?',
+        }),
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'hoët h o u e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain('customerName = « Houet »');
+      expect(spoken().join(' ')).not.toContain('Hoët');
+      expect(spoken().join(' ')).toContain('H, O, U, E, T');
+      expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
+    });
+
     it('ne change rien quand le nom relu est exactement ce qui a été épelé', async () => {
       const { session, mgr, outputs } = askingName();
       outputs.push(

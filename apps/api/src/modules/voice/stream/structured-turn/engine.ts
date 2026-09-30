@@ -51,7 +51,7 @@ import {
   parseStreamedCustomerName,
   parseStreamedDraft,
   outsideOpeningHoursFact,
-  unspelledNameFact,
+  spelledNameFact,
   reconcileSpelledName,
   requestedSlotConflict,
 } from './fact-guards';
@@ -513,11 +513,11 @@ export async function runStructuredTurn(
           slotConflict = true;
           hoursFact = outsideHours ?? undefined;
         }
-        // Nom relu avec des mots que l'appelant n'a pas épelés : on se tait avant de le dire.
+        // Nom relu différent des lettres épelées (lettre absente, mot collé) : on se tait avant de le dire.
         if (!slotConflict) {
           const streamedName = parseStreamedCustomerName(extractor.raw);
           const fact = streamedName
-            ? unspelledNameFact(streamedName, transcript, state.lastAwaiting)
+            ? spelledNameFact(streamedName, transcript, state.lastAwaiting)
             : null;
           if (fact) {
             slotConflict = true;
@@ -711,7 +711,7 @@ export async function runStructuredTurn(
         ? first.hoursFact
           ? 'outside_hours'
           : first.nameFact
-            ? 'unspelled_words'
+            ? 'spelled_name_mismatch'
             : 'slot_conflict'
         : decision.allowed
           ? 'allowed'
