@@ -82,6 +82,8 @@ const unclearOrLowOrUnchanged = (field: SpanField): SamplePredicate[] => [
   { kind: 'draftUnchanged', fields: [field] },
   { kind: 'fieldIn', path: 'interpretation', values: ['unclear'] },
   { kind: 'fieldIn', path: 'confidence', values: ['low'] },
+  // Avec la vérification de compréhension : le modèle déclare avoir deviné (absent sinon, donc faux).
+  { kind: 'fieldIn', path: 'understanding', values: ['doubtful'] },
 ];
 
 function variant(

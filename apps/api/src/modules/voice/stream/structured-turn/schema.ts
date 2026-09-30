@@ -32,6 +32,13 @@ export const STRUCTURED_TURN_AWAITING = [
   'open',
 ] as const;
 
+/**
+ * `clear` : pour chaque valeur ajoutée ou changée dans le brouillon, les mots de l'appelant suffisent à
+ * savoir de quelle information il s'agit. `doubtful` : le modèle a dû deviner (voir COMPRÉHENSION VÉRIFIÉE
+ * dans prompt.ts). Le code applique cette déclaration : aucun changement de brouillon, aucune action.
+ */
+export const STRUCTURED_TURN_UNDERSTANDING = ['clear', 'doubtful'] as const;
+
 export const STRUCTURED_TURN_ACTIONS = [
   'none',
   'check_availability',
@@ -44,6 +51,7 @@ export const STRUCTURED_TURN_ACTIONS = [
 export type StructuredTurnInterpretation = (typeof STRUCTURED_TURN_INTERPRETATIONS)[number];
 export type StructuredTurnAwaiting = (typeof STRUCTURED_TURN_AWAITING)[number];
 export type StructuredTurnAction = (typeof STRUCTURED_TURN_ACTIONS)[number];
+export type StructuredTurnUnderstanding = (typeof STRUCTURED_TURN_UNDERSTANDING)[number];
 
 /** Brouillon tenu par le modèle ; chaîne vide ou 0 = inconnu. */
 export interface StructuredTurnDraft {
@@ -56,6 +64,9 @@ export interface StructuredTurnDraft {
 export interface StructuredTurnOutput {
   /** Faux quand l'appelant n'a visiblement pas fini sa phrase : l'agent se tait. */
   turnComplete: boolean;
+  /** Lecture littérale de ce que l'appelant a dit, avant le brouillon (seulement avec la vérification de compréhension). */
+  reading?: string;
+  understanding?: StructuredTurnUnderstanding;
   interpretation: StructuredTurnInterpretation;
   draft: StructuredTurnDraft;
   awaiting: StructuredTurnAwaiting;
@@ -73,8 +84,15 @@ export const STRUCTURED_TURN_SCHEMA_NAME = 'voice_turn';
  */
 export function buildStructuredTurnJsonSchema(
   actions: readonly StructuredTurnAction[] = STRUCTURED_TURN_ACTIONS,
-  options: { turnCompleteOnly?: boolean } = {},
+  options: { turnCompleteOnly?: boolean; understanding?: boolean } = {},
 ) {
+  // `reading` puis `understanding` avant le brouillon : le modèle lit avant de décider.
+  const understanding = options.understanding
+    ? {
+        reading: { type: 'string' },
+        understanding: { type: 'string', enum: [...STRUCTURED_TURN_UNDERSTANDING] },
+      }
+    : {};
   return {
     type: 'object',
     additionalProperties: false,
@@ -83,6 +101,7 @@ export function buildStructuredTurnJsonSchema(
       turnComplete: options.turnCompleteOnly
         ? { type: 'boolean', enum: [true] }
         : { type: 'boolean' },
+      ...understanding,
       interpretation: { type: 'string', enum: [...STRUCTURED_TURN_INTERPRETATIONS] },
       draft: {
         type: 'object',
@@ -103,6 +122,7 @@ export function buildStructuredTurnJsonSchema(
     },
     required: [
       'turnComplete',
+      ...(options.understanding ? ['reading', 'understanding'] : []),
       'interpretation',
       'draft',
       'awaiting',
@@ -148,6 +168,11 @@ export function parseStructuredTurnOutput(raw: string): StructuredTurnOutput | n
   }
   return {
     turnComplete: record.turnComplete,
+    // Présents seulement avec la vérification de compréhension ; absents = lecture non demandée.
+    ...(typeof record.reading === 'string' ? { reading: record.reading } : {}),
+    ...(isOneOf(STRUCTURED_TURN_UNDERSTANDING, record.understanding)
+      ? { understanding: record.understanding }
+      : {}),
     interpretation: record.interpretation,
     draft: {
       date: draft.date,

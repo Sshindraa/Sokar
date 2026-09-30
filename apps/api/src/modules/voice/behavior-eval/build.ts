@@ -38,7 +38,16 @@ function historyOf(testCase: BehaviorCase, file: BehaviorCasesFile) {
   return named;
 }
 
-export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): BehaviorRequest {
+export interface BuildOptions {
+  /** Vérification de compréhension (reading + understanding), comme le drapeau de production. */
+  understanding?: boolean;
+}
+
+export function buildRequest(
+  testCase: BehaviorCase,
+  file: BehaviorCasesFile,
+  options: BuildOptions = {},
+): BehaviorRequest {
   const state = createStructuredTurnState();
   state.draft = { date: '', time: '', partySize: 0, customerName: '', ...testCase.draft };
   state.lastAwaiting = (testCase.awaiting ?? 'open') as typeof state.lastAwaiting;
@@ -67,6 +76,7 @@ export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): B
     ...(testCase.dayPart ? { dayPart: testCase.dayPart } : {}),
     ...(testCase.callerFinished ? { callerFinished: true } : {}),
     ...(testCase.actionResult ? { actionResult: testCase.actionResult } : {}),
+    ...(options.understanding ? { understanding: true } : {}),
   });
   return {
     id: testCase.id,
@@ -80,13 +90,19 @@ export function buildRequest(testCase: BehaviorCase, file: BehaviorCasesFile): B
         schema: buildStructuredTurnJsonSchema(
           testCase.actionResult ? (AFTER_ACTION_ACTIONS as never) : undefined,
           // Comme en appel : la relance après un silence impose turnComplete=true.
-          { turnCompleteOnly: testCase.callerFinished === true },
+          {
+            turnCompleteOnly: testCase.callerFinished === true,
+            ...(options.understanding ? { understanding: true } : {}),
+          },
         ),
       },
     },
   };
 }
 
-export function buildRequests(file: BehaviorCasesFile): BehaviorRequest[] {
-  return file.cases.map((testCase) => buildRequest(testCase, file));
+export function buildRequests(
+  file: BehaviorCasesFile,
+  options: BuildOptions = {},
+): BehaviorRequest[] {
+  return file.cases.map((testCase) => buildRequest(testCase, file, options));
 }

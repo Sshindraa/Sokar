@@ -1,7 +1,7 @@
 /**
  * Jeu de test de comportements du tour structuré (voir src/modules/voice/behavior-eval).
  *
- *   tsx scripts/voice-behavior-eval.ts build [--suite default|perturb|all] [cas.json]   > requests.json
+ *   [VBE_UNDERSTANDING=1] tsx scripts/voice-behavior-eval.ts build [--suite default|perturb|all] [cas.json]   > requests.json
  *   tsx scripts/voice-behavior-eval.ts score [--suite …] [--json] [cas.json] responses.json
  *   tsx scripts/voice-behavior-eval.ts compare avant.json apres.json
  *
@@ -81,7 +81,9 @@ async function main(): Promise<void> {
   if (command === 'build') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
     file.cases = selectedCases(file, suite);
-    process.stdout.write(JSON.stringify({ requests: buildRequests(file) }));
+    // VBE_UNDERSTANDING=1 : requêtes avec la vérification de compréhension (drapeau de production).
+    const understanding = process.env.VBE_UNDERSTANDING === '1';
+    process.stdout.write(JSON.stringify({ requests: buildRequests(file, { understanding }) }));
     return;
   }
   if (command === 'score') {

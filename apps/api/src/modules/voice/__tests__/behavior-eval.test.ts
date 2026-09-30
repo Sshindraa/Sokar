@@ -358,6 +358,19 @@ describe('cas réels du jeu de comportements', () => {
     ),
   ) as BehaviorCasesFile;
 
+  it('la vérification de compréhension change la requête du banc, sans toucher aux autres', () => {
+    const base = buildRequests(file);
+    const checked = buildRequests(file, { understanding: true });
+    expect(checked).toHaveLength(base.length);
+    const schema = (request: (typeof base)[number]) =>
+      request.format.json_schema.schema as { properties: Record<string, unknown> };
+    for (const [index, request] of checked.entries()) {
+      expect(schema(request).properties).toHaveProperty('understanding');
+      expect(schema(base[index]).properties).not.toHaveProperty('understanding');
+      expect(request.messages[0].content).toContain('COMPRÉHENSION VÉRIFIÉE');
+    }
+  });
+
   it('chaque cas se compose en une requête complète avec le prompt courant', () => {
     const requests = buildRequests(file);
     expect(requests).toHaveLength(file.cases.length);
