@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import { callerSilenceMs, trackCallerVoice } from './caller-voice-activity';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
@@ -17,6 +18,7 @@ import {
   voiceSttRelockTotal,
   voiceSttAudioMessagesTotal,
   voiceSttChunkBytes,
+  voiceSilenceGuardTotal,
   voiceSttProviderAudioMessagesTotal,
   voiceSttProviderChunkBytes,
 } from '../../../shared/observability/metrics';
@@ -1641,6 +1643,23 @@ export function looksLikeSpelledLetters(transcript: string): boolean {
   return singles / tokens.length >= 0.5;
 }
 
+/**
+ * Silence réel exigé chez l'appelant avant une fin de tour forcée (partielle figée, jugement du
+ * modèle). 0 désactive la garde. Appel 5cebe456 : 11 fins de tour forcées sur 17 tombaient pendant la
+ * parole ; la règle « 350 ms sans voix sur l'audio entrant » en classait 15 sur 17 juste, sans en manquer.
+ */
+export function deepgramSilenceGuardMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STT_SILENCE_GUARD_MS ?? 350);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_000 ? parsed : 350;
+}
+
+/** Report maximal cumulé de la garde : au-delà, le comportement d'avant reprend (bruit, écho). */
+export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS ?? 1_500);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 5_000 ? parsed : 1_500;
+}
+
+const silenceGuardTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -1667,6 +1686,9 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
 const deepgramFinalizeReasons = new WeakMap<CallSession, 'utterance_end' | 'stalled'>();
 
 function clearDeepgramStallTimer(session: CallSession): void {
+  const held = silenceGuardTimers.get(session);
+  if (held) clearTimeout(held);
+  silenceGuardTimers.delete(session);
   const timer = deepgramStallTimers.get(session);
   if (timer) clearTimeout(timer);
   deepgramStallTimers.delete(session);
@@ -1697,7 +1719,15 @@ function armDeepgramStallTimer(session: CallSession): void {
 /** Envoie `Finalize` si un segment Deepgram est en attente ; la réponse clôt le tour. */
 function requestDeepgramFinalize(
   session: CallSession,
-  fields: { trigger: 'stall' | 'semantic'; stallMs?: number; short?: boolean },
+  fields: {
+    trigger: 'stall' | 'semantic';
+    stallMs?: number;
+    short?: boolean;
+    /** Phrase sur laquelle le modèle a jugé le tour fini : si la partielle a changé, ce verdict ne vaut plus. */
+    expectedText?: string;
+    /** Début du report de la garde de silence, pour en borner la durée cumulée. */
+    heldSince?: number;
+  },
 ): boolean {
   const ws = session.sttWs;
   if (
@@ -1708,6 +1738,39 @@ function requestDeepgramFinalize(
     ws?.readyState !== WebSocket.OPEN
   ) {
     return false;
+  }
+  if (
+    fields.expectedText !== undefined &&
+    session.sttDeepgramPartials?.lastText !== fields.expectedText
+  ) {
+    return false;
+  }
+  // Garde de silence : une fin de tour forcée ne tombe pas pendant que l'appelant parle encore.
+  const guardMs = deepgramSilenceGuardMs();
+  if (guardMs > 0) {
+    const now = Date.now();
+    const silentMs = callerSilenceMs(session, now);
+    const heldSince = fields.heldSince ?? now;
+    if (silentMs < guardMs) {
+      if (now - heldSince < deepgramSilenceGuardMaxDeferMs()) {
+        voiceSilenceGuardTotal.inc({ outcome: 'held' });
+        const previous = silenceGuardTimers.get(session);
+        if (previous) clearTimeout(previous);
+        const timer = setTimeout(
+          () => {
+            silenceGuardTimers.delete(session);
+            requestDeepgramFinalize(session, { ...fields, heldSince });
+          },
+          Math.max(30, guardMs - silentMs + 10),
+        );
+        timer.unref?.();
+        silenceGuardTimers.set(session, timer);
+        return false;
+      }
+      voiceSilenceGuardTotal.inc({ outcome: 'released_at_cap' });
+    } else if (fields.heldSince !== undefined) {
+      voiceSilenceGuardTotal.inc({ outcome: 'released_after_silence' });
+    }
   }
   session.sttDeepgramFinalizeRequested = true;
   deepgramFinalizeReasons.set(session, 'stalled');
@@ -1746,7 +1809,10 @@ export function finalizeOnSemanticEndOfTurn(
   if (!turnComplete || !isSemanticEndOfTurnEnabled()) return false;
   if (session.state !== 'LISTENING') return false;
   if (session.sttDeepgramPartials?.lastText !== speculatedTranscript) return false;
-  return requestDeepgramFinalize(session, { trigger: 'semantic' });
+  return requestDeepgramFinalize(session, {
+    trigger: 'semantic',
+    expectedText: speculatedTranscript,
+  });
 }
 
 export function handleNormalizedSttMessage(
@@ -2205,6 +2271,7 @@ export function connectStt(
 export function sendAudioToStt(session: CallSession, audioPayload: string): void {
   if (session.sttTerminalFailure || session.sttFallbackTriggered) return;
   const input = Buffer.from(audioPayload, 'base64');
+  trackCallerVoice(session, input);
 
   if (
     !session.sttWs &&

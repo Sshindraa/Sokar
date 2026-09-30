@@ -224,6 +224,13 @@ VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
 # structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
+# Garde de silence : une fin de tour forcée (partielle figée, jugement du modèle) attend que
+# l'audio de l'appelant soit silencieux depuis ce délai, au lieu de tomber pendant qu'il parle
+# (appel 5cebe456 : 11 fins de tour forcées sur 17 tombaient pendant la parole). 0 désactive.
+# Le report cumulé est plafonné (bruit, écho) : au-delà, le comportement d'avant reprend.
+# Métrique : sokar_voice_silence_guard_total{outcome=held|released_after_silence|released_at_cap}.
+VOICE_STT_SILENCE_GUARD_MS="350"
+VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
 # le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
