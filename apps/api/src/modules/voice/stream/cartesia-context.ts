@@ -23,6 +23,11 @@ import {
 } from './telnyx-codec';
 import { logger } from '../../../shared/logger/pino';
 import { persistLatencyTrace } from './session-persistence';
+import { holdFirstAudioForCallerSilence } from './first-audio-hold';
+import {
+  voiceFirstAudioHoldMs,
+  voiceFirstAudioHoldTotal,
+} from '../../../shared/observability/metrics';
 import {
   markVoiceTurnAudioSent,
   markVoiceTurnTtsSynthesisFirstByte,
@@ -140,6 +145,9 @@ export class CartesiaContextTurn {
   private cancelled = false;
   private firstAudioOutput = false;
   private playbackStarted = false;
+  private holdDone = false;
+  /** Appelé quand l'appelant reprend la parole avant le premier son : la réponse préparée est jetée. */
+  onHoldCancelled?: () => void;
   private sentFrames = 0;
   private playbackPromise: Promise<void> | null = null;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -347,6 +355,26 @@ export class CartesiaContextTurn {
       ) {
         await wait(TTS_UNDERFEED_PAUSE_MS);
         continue;
+      }
+      if (!this.holdDone) {
+        this.holdDone = true;
+        // La réponse est prête ; elle ne part qu'après un vrai silence de l'appelant.
+        const hold = await holdFirstAudioForCallerSilence(
+          this.session,
+          () => !this.cancelled && isActive(this.session, this.generation),
+        );
+        voiceFirstAudioHoldTotal.inc({ outcome: hold.outcome });
+        if (hold.heldMs > 0) voiceFirstAudioHoldMs.observe(hold.heldMs);
+        if (hold.outcome === 'cancelled_voice_resumed') {
+          recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'first_audio_hold', {
+            outcome: hold.outcome,
+            heldMs: hold.heldMs,
+          });
+          if (this.onHoldCancelled) this.onHoldCancelled();
+          else this.cancel();
+          return;
+        }
+        if (hold.outcome === 'aborted') return;
       }
       this.playbackStarted = true;
       const frame = this.audioFrames.shift();

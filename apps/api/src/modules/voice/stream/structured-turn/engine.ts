@@ -393,7 +393,18 @@ export async function runStructuredTurn(
   // phrase suivante n'étant synthétisée qu'après la fin de la précédente).
   // Le socket s'ouvre pendant la génération ; repli HTTP sans audio envoyé.
   const contextTts = isCartesiaContextV2Enabled() ? createCartesiaContextTurn(session, true) : null;
-  if (contextTts) session.ttsContext = contextTts;
+  if (contextTts) {
+    session.ttsContext = contextTts;
+    // L'appelant reprend la parole avant le premier son : la réponse préparée est jetée comme
+    // un barge-in, avant qu'il en ait entendu un mot.
+    contextTts.onHoldCancelled = () => {
+      if (!isLive()) return;
+      session.sttAfterBargeIn = true;
+      session.abortController?.abort();
+      session.abortController = null;
+      mgr.handleBargeIn(session);
+    };
+  }
   const spokenPhrases: string[] = [];
   let contextDebugEntry: DebugSpeechEntry | null = null;
   const flushSpeech = async () => {

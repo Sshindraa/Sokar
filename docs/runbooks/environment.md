@@ -231,6 +231,14 @@ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # Métrique : sokar_voice_silence_guard_total{outcome=held|released_after_silence|released_at_cap}.
 VOICE_STT_SILENCE_GUARD_MS="350"
 VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
+# Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
+# que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
+# elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
+# Contexte Cartesia seulement (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
+# qu'un bruit continu bloque une réponse. Métriques : sokar_voice_first_audio_hold_total{outcome},
+# sokar_voice_first_audio_hold_ms ; télémétrie de tour : événement first_audio_hold.
+VOICE_FIRST_AUDIO_SILENCE_MS="600"
+VOICE_FIRST_AUDIO_HOLD_CAP_MS="1200"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
 # le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
