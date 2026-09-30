@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   isVoiceDeepgramDialoguePilot,
+  isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
+  isVoiceV2Default,
   resolveVoiceFeatureSnapshot,
 } from '../stream/feature-flags';
+import { isStructuredTurnEnabled } from '../stream/structured-turn/engine';
 import type { CallSession } from '../stream/types';
 
 const originalEnv = { ...process.env };
@@ -134,5 +137,57 @@ describe('voice feature flags', () => {
       sttProvider: 'scribe',
       dialogueListeningV2Enabled: false,
     });
+  });
+});
+
+describe('parcours vocal moderne par défaut (VOICE_V2_DEFAULT)', () => {
+  const on = { VOICE_V2_DEFAULT: 'true', VOICE_STT_PROVIDER: 'deepgram' } as NodeJS.ProcessEnv;
+
+  it('ne change rien tant que VOICE_V2_DEFAULT n’est pas true', () => {
+    const off = { VOICE_STT_PROVIDER: 'deepgram' } as NodeJS.ProcessEnv;
+    expect(isVoiceV2Default('rest-a', off)).toBe(false);
+    expect(isVoiceV2Default('rest-a', { ...off, VOICE_V2_DEFAULT: 'false' })).toBe(false);
+    expect(isStructuredTurnEnabled('rest-a', off)).toBe(false);
+    expect(isVoiceFeatureEnabledForRestaurant('deepgramStt', 'rest-a', off)).toBe(false);
+    expect(isVoiceFeatureEnabledForRestaurant('dialogueListeningV2', 'rest-a', off)).toBe(false);
+    expect(isVoiceDeepgramKeytermsEnabled('rest-a', off)).toBe(false);
+  });
+
+  it('active tour structuré, Deepgram, mots-clés et Dialogue V2 pour tout restaurant', () => {
+    expect(isStructuredTurnEnabled('nouveau-resto', on)).toBe(true);
+    expect(isVoiceFeatureEnabledForRestaurant('deepgramStt', 'nouveau-resto', on)).toBe(true);
+    expect(isVoiceFeatureEnabledForRestaurant('dialogueListeningV2', 'nouveau-resto', on)).toBe(
+      true,
+    );
+    expect(isVoiceDeepgramKeytermsEnabled('nouveau-resto', on)).toBe(true);
+    const session = { restaurantId: 'nouveau-resto' } as CallSession;
+    process.env.VOICE_V2_DEFAULT = 'true';
+    process.env.VOICE_STT_PROVIDER = 'deepgram';
+    expect(resolveVoiceFeatureSnapshot(session)).toMatchObject({
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramKeytermsEnabled: true,
+    });
+    expect(isVoiceDeepgramDialoguePilot(session)).toBe(true);
+  });
+
+  it('un restaurant exclu retrouve l’ancien chemin (sauf liste explicite)', () => {
+    const optOut = { ...on, VOICE_V2_DISABLED_RESTAURANT_IDS: ' rest-x , rest-y ' };
+    expect(isVoiceV2Default('rest-x', optOut)).toBe(false);
+    expect(isStructuredTurnEnabled('rest-x', optOut)).toBe(false);
+    expect(isVoiceFeatureEnabledForRestaurant('deepgramStt', 'rest-x', optOut)).toBe(false);
+    expect(isStructuredTurnEnabled('rest-z', optOut)).toBe(true);
+    expect(
+      isStructuredTurnEnabled('rest-x', {
+        ...optOut,
+        VOICE_STRUCTURED_TURN_RESTAURANT_IDS: 'rest-x',
+      }),
+    ).toBe(true);
+  });
+
+  it('Deepgram reste désactivé sans VOICE_STT_PROVIDER=deepgram, même par défaut', () => {
+    expect(
+      isVoiceFeatureEnabledForRestaurant('deepgramStt', 'rest-a', { VOICE_V2_DEFAULT: 'true' }),
+    ).toBe(false);
   });
 });

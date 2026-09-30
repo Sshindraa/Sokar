@@ -11,7 +11,7 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { parseRestaurantIdList } from '../feature-flags';
+import { isVoiceV2Default, parseRestaurantIdList } from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -66,7 +66,8 @@ export function isStructuredTurnEnabled(
 ): boolean {
   return Boolean(
     restaurantId &&
-    parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId),
+    (parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId) ||
+      isVoiceV2Default(restaurantId, env)),
   );
 }
 
