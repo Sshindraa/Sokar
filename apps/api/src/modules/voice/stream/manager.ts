@@ -11,7 +11,6 @@ import {
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
-import { GiftCardService } from '../../gift-cards/gift-card.service';
 import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
 import { sendSms } from '../../../shared/telnyx/client';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
@@ -2931,117 +2930,68 @@ export class CallSessionManager {
         }
 
         case 'purchaseGiftCard': {
-          const { amount, occasion, senderName, senderPhone, recipientName, message } = args;
-
+          const { amount, senderPhone } = args;
           const minimumAmount = session.giftCardMinimumAmount ?? 10;
-
-          if (!amount || amount < minimumAmount) {
+          if (!amount || amount < minimumAmount)
             return terminalToolReply(
               executionControl,
               `Le montant minimum pour une carte cadeau est de ${minimumAmount}€. Quel montant souhaitez-vous ?`,
             );
-          }
-
-          // Normalisation du téléphone : supprimer espaces, points, tirets, parenthèses
           const normalizedPhone = (senderPhone || '').replace(/[\s.\-()]/g, '');
-          if (!normalizedPhone || !/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
+          if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone))
             return terminalToolReply(
               executionControl,
-              "Pour envoyer le code par SMS, j'ai besoin d'un numéro de téléphone valide de l'expéditeur au format international.",
+              "Pour envoyer le lien de paiement, j'ai besoin d'un numéro de téléphone valide au format international.",
+            );
+          const restaurant = await db.restaurant.findUnique({
+            where: { id: session.restaurantId },
+            select: { slug: true, giftCardEnabled: true, giftCardStripeAccountId: true },
+          });
+          if (
+            !restaurant?.slug ||
+            !restaurant.giftCardEnabled ||
+            !restaurant.giftCardStripeAccountId
+          ) {
+            return terminalToolReply(
+              executionControl,
+              'La vente de cartes cadeaux est momentanément indisponible.',
             );
           }
-
           await trackGiftCardEvent({
             event: 'gift_card_purchase_started',
             restaurantId: session.restaurantId,
             source: 'voice',
             amount,
           });
-
-          try {
-            const service = new GiftCardService(db);
-            const card = await service.create({
-              restaurantId: session.restaurantId,
-              amount,
-              occasion,
-              senderName,
-              senderPhone: normalizedPhone,
-              recipientName,
-              message,
-              createdBy: 'VOICE',
-              purchaseReference: 'test',
-            });
-
-            const code = card.code;
-            const smsText = `Votre carte cadeau chez ${session.restaurantName} : ${code}. Montant : ${amount}€. À utiliser sur le site de réservation.`;
-
-            try {
-              await sendSms(normalizedPhone, smsText, {
-                restaurantId: session.restaurantId,
-                sourceType: 'gift_card_voice_delivery',
-                sourceId: card.id,
-                metadata: { messageType: 'gift_card_voice_delivery' },
-              });
-            } catch (smsErr: unknown) {
-              logger.error(
-                {
-                  err: smsErr instanceof Error ? smsErr.message : String(smsErr),
-                  callId: session.callControlId,
-                  giftCardId: card.id,
-                },
-                '[tool] purchaseGiftCard SMS failed',
-              );
-              if (process.env.SENTRY_DSN) {
-                Sentry.captureException(smsErr, {
-                  tags: { service: 'manager-tool', tool: 'purchaseGiftCard' },
-                  extra: {
-                    callId: session.callControlId,
-                    giftCardId: card.id,
-                  },
-                });
-              }
-              return managerRecoveryOffer(
-                session,
-                "La carte cadeau a bien été créée, mais le SMS n'a pas été envoyé.",
-                executionControl,
-              );
-            }
-
-            await trackGiftCardEvent({
-              event: 'gift_card_purchase_completed',
-              restaurantId: session.restaurantId,
-              source: 'voice',
-              giftCardId: card.id,
-              amount,
-            });
-
+          const origin = process.env.CONNECT_URL ?? process.env.SITE_URL;
+          if (!origin)
             return terminalToolReply(
               executionControl,
-              `Carte cadeau de ${amount}€ créée pour ${recipientName}. Le code a été envoyé par SMS au ${normalizedPhone}.`,
+              'La vente de cartes cadeaux est momentanément indisponible.',
             );
-          } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            logger.error(
-              { err: errMsg, callId: session.callControlId },
-              '[tool] purchaseGiftCard failed',
+          const paymentUrl = new URL(
+            `/widget/${encodeURIComponent(restaurant.slug)}/gift-card`,
+            origin,
+          ).toString();
+          try {
+            await sendSms(
+              normalizedPhone,
+              `Pour offrir une carte cadeau chez ${session.restaurantName}, finalisez votre achat avec un paiement sécurisé : ${paymentUrl}`,
+              {
+                restaurantId: session.restaurantId,
+                sourceType: 'gift_card_voice_checkout',
+                sourceId: session.callControlId,
+                metadata: { messageType: 'gift_card_voice_checkout' },
+              },
             );
-            if (process.env.SENTRY_DSN) {
-              Sentry.captureException(err, {
-                tags: { service: 'manager-tool', tool: 'purchaseGiftCard' },
-                extra: { callId: session.callControlId },
-              });
-            }
-            await trackGiftCardEvent({
-              event: 'gift_card_purchase_failed',
-              restaurantId: session.restaurantId,
-              source: 'voice',
-              amount,
-              metadata: { error: errMsg },
-            });
-            return managerRecoveryOffer(
-              session,
-              "Désolé, une erreur est survenue ; la carte cadeau n'a pas été créée.",
+            return terminalToolReply(
               executionControl,
+              'Le lien de paiement vous a été envoyé par SMS. Votre carte sera activée après le paiement.',
+            );
+          } catch {
+            return terminalToolReply(
+              executionControl,
+              "Le lien de paiement n'a pas pu être envoyé. Vous pouvez acheter votre carte cadeau sur le site du restaurant.",
             );
           }
         }

@@ -1233,7 +1233,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it('purchaseGiftCard : crée la carte, envoie SMS par WhatsApp et track les events', async () => {
+  it('purchaseGiftCard : envoie un lien de paiement sans émettre de carte', async () => {
     mockFetchToolCall(
       'purchaseGiftCard',
       {
@@ -1246,6 +1246,12 @@ describe('CallSessionManager — tool execution', () => {
       },
       'Carte envoyée !',
     );
+    vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({
+      timezone: 'Europe/Paris',
+      slug: 'test-resto',
+      giftCardEnabled: true,
+      giftCardStripeAccountId: 'acct_test',
+    } as never);
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
     // processUtterance tests the manager below the handler's deterministic
@@ -1253,7 +1259,7 @@ describe('CallSessionManager — tool execution', () => {
     session.conversation.intent = 'gift_card';
     await mgr.processUtterance(session, 'Acheter carte cadeau 50€');
 
-    expect(GiftCardService).toHaveBeenCalledWith(db);
+    expect(GiftCardService).not.toHaveBeenCalled();
     expect(trackGiftCardEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'gift_card_purchase_started',
@@ -1264,19 +1270,14 @@ describe('CallSessionManager — tool execution', () => {
     );
     expect(sendSms).toHaveBeenCalledWith(
       '+33612345678',
-      expect.stringContaining('SKR-ABC123'),
+      expect.stringContaining('/widget/test-resto/gift-card'),
       expect.objectContaining({
         restaurantId: 'rest-1',
-        sourceId: 'gc-1',
-        sourceType: 'gift_card_voice_delivery',
+        sourceType: 'gift_card_voice_checkout',
       }),
     );
-    expect(trackGiftCardEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        event: 'gift_card_purchase_completed',
-        giftCardId: 'gc-1',
-        amount: 50,
-      }),
+    expect(trackGiftCardEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'gift_card_purchase_completed' }),
     );
   });
 

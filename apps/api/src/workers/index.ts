@@ -50,5 +50,6 @@ import '../modules/agentic-reservations/workers/expire-waiting-list.worker';
 import '../modules/agentic-reservations/workers/cleanup-waiting-list.worker';
 import '../modules/agentic-reservations/workers/waiting-list-promote.worker';
 import '../modules/gift-cards/workers/gift-card-reminder.worker';
+import '../modules/gift-cards/workers/gift-card-finance.worker';
 import '../shared/queue/workers/rgpd-anonymization.worker';
 import '../shared/queue/workers/voice-semantic-auto-eval.worker';

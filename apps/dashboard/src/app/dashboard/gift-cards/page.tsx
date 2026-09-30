@@ -1,5 +1,7 @@
 'use client';
 
+import { GiftCardOperationsPanel } from '@/components/gift-cards/gift-card-operations-panel';
+import { GiftCardCashier } from '@/components/gift-cards/gift-card-cashier';
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Gift, Plus, Save, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +25,7 @@ import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
+import { GiftCardStripeConnect } from '@/components/gift-cards/gift-card-stripe-connect';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
 import { DataFetchError } from '@/components/DataFetchError';
 import { SAVED_NOTIFICATION_RESET_MS } from '@/constants/ui';
@@ -56,6 +59,7 @@ export default function GiftCardsPage() {
   } = useGiftCardApi();
   const { get, patch } = useApi();
 
+  const [operationsRevision, setOperationsRevision] = useState(0);
   const [cards, setCards] = useState<GiftCardListItem[]>([]);
   const [stats, setStats] = useState<GiftCardStats | null>(null);
   const [packs, setPacks] = useState<GiftCardPack[]>([]);
@@ -71,6 +75,10 @@ export default function GiftCardsPage() {
   const [closingId, setClosingId] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState<GiftCardListItem | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<GiftCardListItem | null>(null);
+
+  useEffect(() => {
+    setDetailCard(null);
+  }, [orgId]);
 
   // Montant minimum carte cadeau
   const [minAmount, setMinAmount] = useState<number | ''>('');
@@ -136,10 +144,8 @@ export default function GiftCardsPage() {
     setCancelConfirm(null);
     try {
       setError('');
-      await cancelGiftCard(card.id);
-      setCards((prev) =>
-        prev.map((c) => (c.id === card.id ? { ...c, status: 'CANCELLED', remainingAmount: 0 } : c)),
-      );
+      const updated = await cancelGiftCard(card.id);
+      setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, ...updated } : c)));
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Impossible d'annuler la carte cadeau"));
     }
@@ -229,6 +235,14 @@ export default function GiftCardsPage() {
       </div>
 
       <GiftCardSectionNav />
+      <GiftCardStripeConnect />
+      <GiftCardOperationsPanel
+        revision={operationsRevision}
+        onChanged={() => {
+          setOperationsRevision((v) => v + 1);
+          void fetchAll();
+        }}
+      />
 
       {error && <DataFetchError message={error} onRetry={fetchAll} retrying={loading} />}
 
@@ -290,7 +304,7 @@ export default function GiftCardsPage() {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
-            label="CA total vendu"
+            label="Valeur totale émise"
             value={formatEuro(stats.totalSoldAmount)}
             icon={<Gift size={20} />}
           />
@@ -438,10 +452,20 @@ export default function GiftCardsPage() {
 
       {/* Dialog détail */}
       <Dialog open={!!detailCard} onOpenChange={(v) => !v && setDetailCard(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Détail de la carte cadeau</DialogTitle>
           </DialogHeader>
+          {detailCard && (
+            <GiftCardCashier
+              key={`${orgId}:${detailCard.id}`}
+              giftCardId={detailCard.id}
+              onChanged={() => {
+                setOperationsRevision((v) => v + 1);
+                void fetchAll();
+              }}
+            />
+          )}
           {detailCard && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">

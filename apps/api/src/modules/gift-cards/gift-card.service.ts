@@ -10,11 +10,8 @@ import {
 } from './gift-card.types.js';
 import { generateUniqueShortCode } from './gift-card-code.util.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
-import { createRefund } from './stripe.service.js';
-import {
-  sendRefundNotificationSender,
-  sendRefundNotificationRestaurant,
-} from './gift-card-email.service';
+import { GiftCardRefundService } from './gift-card-refund.service';
+import { giftCardAmountCents, lockGiftCard } from './gift-card-finance.util';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -34,6 +31,8 @@ export class GiftCardService {
     // alimenté par les contributions puis fixé à la clôture.
     if (input.type === 'CROWDFUNDED') {
       amount = new Prisma.Decimal(input.amount ?? 0);
+    } else if (input.verifiedAmount !== undefined) {
+      amount = new Prisma.Decimal(input.verifiedAmount);
     } else if (packId) {
       const pack = await this.prisma.giftCardPack.findFirst({
         where: { id: packId, restaurantId: input.restaurantId },
@@ -92,6 +91,7 @@ export class GiftCardService {
             stripePaymentStatus: input.stripePaymentStatus ?? 'pending',
             templateId: input.templateId ?? null,
             customImageUrl: input.customImageUrl ?? null,
+            packSnapshot: input.packSnapshot ?? undefined,
             sokarCommissionAmount: input.sokarCommissionAmount ?? 0,
             type: input.type ?? 'SINGLE',
             targetAmount: input.targetAmount ?? null,
@@ -149,15 +149,23 @@ export class GiftCardService {
       return { valid: false, reason: 'WRONG_RESTAURANT' };
     }
 
-    if (giftCard.status === 'CANCELLED') {
-      return { valid: false, reason: 'CANCELLED' };
+    if (
+      giftCard.status !== 'ACTIVE' ||
+      (giftCard.stripePaymentIntentId &&
+        !['succeeded', 'partially_refunded'].includes(giftCard.stripePaymentStatus ?? ''))
+    ) {
+      return {
+        valid: false,
+        reason:
+          giftCard.status === 'EXPIRED'
+            ? 'EXPIRED'
+            : giftCard.status === 'REDEEMED'
+              ? 'FULLY_REDEEMED'
+              : 'CANCELLED',
+      };
     }
 
-    if (giftCard.status === 'EXPIRED') {
-      return { valid: false, reason: 'EXPIRED' };
-    }
-
-    if (giftCard.status === 'REDEEMED' || giftCard.remainingAmount.lessThanOrEqualTo(0)) {
+    if (giftCard.remainingAmount.lessThanOrEqualTo(0)) {
       return { valid: false, reason: 'FULLY_REDEEMED' };
     }
 
@@ -168,7 +176,68 @@ export class GiftCardService {
     return { valid: true, giftCard };
   }
 
+  async associateToReservation(
+    input: Omit<ApplyGiftCardInput, 'reservationAmount'>,
+  ): Promise<GiftCardApplicationResult> {
+    const validation = await this.validateCode(input.code, input.restaurantId);
+    if (!validation.valid) throw new GiftCardError(`Carte cadeau invalide : ${validation.reason}`);
+    return this.prisma.$transaction(async (tx) => {
+      await lockGiftCard(tx, validation.giftCard.id);
+      const card = await tx.giftCard.findUniqueOrThrow({ where: { id: validation.giftCard.id } });
+      if (
+        card.status !== 'ACTIVE' ||
+        card.remainingAmount.lte(0) ||
+        (card.expiresAt && card.expiresAt < new Date())
+      ) {
+        throw new GiftCardError('Cette carte cadeau ne peut pas être associée.');
+      }
+      await tx.$executeRaw`SELECT id FROM reservations WHERE id = ${input.reservationId} FOR UPDATE`;
+      const reservation = await tx.reservation.findFirst({
+        where: { id: input.reservationId, restaurantId: input.restaurantId },
+      });
+      if (!reservation) throw new GiftCardError('Réservation introuvable pour ce restaurant');
+      const existing = reservation.giftCardRedemptionSnap as {
+        giftCardId?: string;
+        appliedAmount?: number;
+      } | null;
+      if (existing?.giftCardId && existing.giftCardId !== card.id)
+        throw new GiftCardError('Une autre carte est déjà associée.');
+      if (existing?.appliedAmount && existing.appliedAmount > 0)
+        throw new GiftCardError('Cette réservation a déjà un débit.');
+      const result: GiftCardApplicationResult = {
+        reservationId: input.reservationId,
+        giftCardId: card.id,
+        appliedAmount: 0,
+        remainingAmount: card.remainingAmount.toNumber(),
+        paymentStatus: 'ASSOCIATED',
+        complementAmount: 0,
+      };
+      await tx.reservation.update({
+        where: { id: reservation.id },
+        data: {
+          giftCardRedemptionSnap: result as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return result;
+    }, DEFAULT_TRANSACTION_OPTIONS);
+  }
+
   async applyToReservation(input: ApplyGiftCardInput): Promise<GiftCardApplicationResult> {
+    giftCardAmountCents(input.reservationAmount);
+    const candidate = await this.findByCodeOrShortCode(input.code);
+    if (!candidate || candidate.restaurantId !== input.restaurantId)
+      throw new GiftCardError('Carte cadeau introuvable');
+    const replay = await this.prisma.reservation.findFirst({
+      where: { id: input.reservationId, restaurantId: input.restaurantId },
+    });
+    const replaySnapshot = replay?.giftCardRedemptionSnap as
+      | (GiftCardApplicationResult & { requestedAmount?: number })
+      | null;
+    if (
+      replaySnapshot?.giftCardId === candidate.id &&
+      replaySnapshot.requestedAmount === input.reservationAmount
+    )
+      return replaySnapshot;
     const validation = await this.validateCode(input.code, input.restaurantId);
     if (!validation.valid) {
       throw new GiftCardError(`Carte cadeau invalide : ${validation.reason}`);
@@ -186,15 +255,51 @@ export class GiftCardService {
             id: string;
             remainingAmount: Prisma.Decimal;
             status: string;
+            expiresAt: Date | null;
           }[]
         >(
-          Prisma.sql`SELECT id, remaining_amount AS "remainingAmount", status FROM gift_cards WHERE id = ${giftCard.id} FOR UPDATE`,
+          Prisma.sql`SELECT id, remaining_amount AS "remainingAmount", status, expires_at AS "expiresAt" FROM gift_cards WHERE id = ${giftCard.id} FOR UPDATE`,
         );
 
-        if (!locked || locked.status !== 'ACTIVE' || locked.remainingAmount.lessThanOrEqualTo(0)) {
-          throw new GiftCardError('Carte cadeau invalide : FULLY_REDEEMED');
+        await tx.$executeRaw`SELECT id FROM reservations WHERE id = ${input.reservationId} FOR UPDATE`;
+        const reservation = await tx.reservation.findFirst({
+          where: { id: input.reservationId, restaurantId: input.restaurantId },
+        });
+        if (!reservation) throw new GiftCardError('Réservation introuvable pour ce restaurant');
+        const associated = reservation.giftCardRedemptionSnap as { giftCardId?: string } | null;
+        if (associated?.giftCardId && associated.giftCardId !== giftCard.id)
+          throw new GiftCardError('Une autre carte est déjà associée.');
+        const prior = await tx.giftCardRedemption.findFirst({
+          where: { giftCardId: giftCard.id, reservationId: input.reservationId },
+        });
+        if (prior) {
+          const snap = (
+            await tx.reservation.findUniqueOrThrow({ where: { id: input.reservationId } })
+          ).giftCardRedemptionSnap as unknown as GiftCardApplicationResult & {
+            requestedAmount?: number;
+          };
+          if (
+            !snap ||
+            snap.giftCardId !== giftCard.id ||
+            snap.requestedAmount !== input.reservationAmount
+          )
+            throw new GiftCardError('Débit déjà enregistré avec un montant différent');
+          return {
+            updated: { ...giftCard, remainingAmount: locked.remainingAmount },
+            appliedAmount: new Prisma.Decimal(snap.appliedAmount),
+            complementAmount: new Prisma.Decimal(snap.complementAmount),
+            paymentStatus: snap.paymentStatus,
+          };
         }
 
+        if (
+          !locked ||
+          locked.status !== 'ACTIVE' ||
+          locked.remainingAmount.lessThanOrEqualTo(0) ||
+          (locked.expiresAt && locked.expiresAt < new Date())
+        ) {
+          throw new GiftCardError('Carte cadeau invalide : FULLY_REDEEMED');
+        }
         const lockedRemaining = new Prisma.Decimal(locked.remainingAmount);
         const appliedAmount = Prisma.Decimal.min(lockedRemaining, reservationAmount);
         const remainingAmount = lockedRemaining.minus(appliedAmount);
@@ -225,7 +330,34 @@ export class GiftCardService {
             status: newStatus,
           },
         });
+        await tx.reservation.update({
+          where: { id: input.reservationId },
+          data: {
+            giftCardComplementAmount: complementAmount,
+            giftCardRedemptionSnap: {
+              giftCardId: giftCard.id,
+              reservationId: input.reservationId,
+              appliedAmount: appliedAmount.toNumber(),
+              remainingAmount: remainingAmount.toNumber(),
+              paymentStatus,
+              complementAmount: complementAmount.toNumber(),
+              requestedAmount: input.reservationAmount,
+            },
+          },
+        });
 
+        await tx.reservationAuditLog.create({
+          data: {
+            reservationId: input.reservationId,
+            event: 'gift_card_redeemed',
+            actor: input.actor ?? 'gift-card:system',
+            metadata: {
+              giftCardId: giftCard.id,
+              restaurantId: input.restaurantId,
+              amountCents: giftCardAmountCents(appliedAmount.toNumber()),
+            },
+          },
+        });
         return { updated, appliedAmount, complementAmount, paymentStatus };
       }, DEFAULT_TRANSACTION_OPTIONS);
 
@@ -244,96 +376,7 @@ export class GiftCardService {
     restaurantId: string,
     actor = 'dashboard:system',
   ): Promise<GiftCard> {
-    const giftCard = await this.prisma.giftCard.findFirst({
-      where: { id: giftCardId, restaurantId },
-      include: { redemptions: true },
-    });
-
-    if (!giftCard) {
-      throw new GiftCardError('Carte cadeau introuvable');
-    }
-
-    if (giftCard.status === 'CANCELLED') {
-      throw new GiftCardError('La carte cadeau est déjà annulée');
-    }
-
-    let refund: { id: string; amount: number } | undefined;
-    if (giftCard.stripePaymentIntentId && giftCard.remainingAmount.greaterThan(0)) {
-      const refundAmountCents = Math.round(giftCard.remainingAmount.toNumber() * 100);
-      try {
-        refund = await createRefund({
-          paymentIntentId: giftCard.stripePaymentIntentId,
-          amount: refundAmountCents,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new GiftCardError(`Le remboursement Stripe a échoué : ${message}`);
-      }
-    }
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.giftCard.update({
-        where: { id: giftCardId },
-        data: {
-          status: 'CANCELLED',
-          remainingAmount: 0,
-          ...(refund ? { stripePaymentStatus: 'refunded' } : {}),
-        },
-      });
-
-      await tx.reservationAuditLog.create({
-        data: {
-          event: 'gift_card_refunded',
-          actor,
-          metadata: {
-            giftCardId: giftCard.id,
-            stripePaymentIntentId: giftCard.stripePaymentIntentId,
-            refundId: refund?.id,
-            refundAmount: refund ? refund.amount / 100 : giftCard.remainingAmount.toNumber(),
-            currency: giftCard.currency,
-          } as object,
-        },
-      });
-
-      return updated;
-    }, DEFAULT_TRANSACTION_OPTIONS);
-
-    // Notifications de remboursement (non-bloquantes)
-    if (refund) {
-      const refundAmount = refund.amount / 100;
-      const restaurant = await this.prisma.restaurant.findUnique({
-        where: { id: giftCard.restaurantId },
-        select: { name: true, managerEmail: true },
-      });
-      if (restaurant) {
-        await Promise.allSettled([
-          sendRefundNotificationSender({
-            giftCardId: giftCard.id,
-            restaurantId: giftCard.restaurantId,
-            shortCode: giftCard.shortCode,
-            code: giftCard.code,
-            refundAmount,
-            restaurantName: restaurant.name,
-            senderName: giftCard.senderName,
-            senderEmail: giftCard.senderEmail,
-            restaurantEmail: restaurant.managerEmail,
-          }),
-          sendRefundNotificationRestaurant({
-            giftCardId: giftCard.id,
-            restaurantId: giftCard.restaurantId,
-            shortCode: giftCard.shortCode,
-            code: giftCard.code,
-            refundAmount,
-            restaurantName: restaurant.name,
-            senderName: giftCard.senderName,
-            senderEmail: giftCard.senderEmail,
-            restaurantEmail: restaurant.managerEmail,
-          }),
-        ]);
-      }
-    }
-
-    return updated;
+    return new GiftCardRefundService(this.prisma).cancel(giftCardId, restaurantId, actor);
   }
 
   async getStats(restaurantId: string): Promise<GiftCardStats> {

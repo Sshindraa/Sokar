@@ -790,3 +790,15 @@ the city pages (`/restaurants/:city`, which require at least five listings per c
 to render. Those are **refused on a remote database** unless `SEED_DEMO_RESTAURANTS=true` is set:
 seeding them on production once published ten fake restaurants in the public sitemap (2026-06-28,
 cleaned up 2026-09-21). Use the opt-in for staging only, never for production.
+
+### Cartes cadeaux / Stripe Connect
+
+- API : `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (secrets des endpoints plateforme
+  et comptes connectés, liste séparée par des virgules), `DASHBOARD_URL` HTTPS,
+  `CONNECT_URL` pour les liens envoyés par la voix.
+- Connect : `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, injecté à la compilation.
+- PDF : `GIFT_CARD_IMAGE_ORIGINS`, liste d'origines HTTPS de CDN maîtrisés ; vide désactive
+  les téléchargements d'images personnalisées. Aucun domaine fourni par le client.
+- Tests locaux uniquement : `GIFT_CARD_FINANCE_TEST_DATABASE_URL`, base dédiée sur localhost.
+
+Voir [activation et qualification des cartes cadeaux](gift-card-financial-safety.md).

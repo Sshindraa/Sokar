@@ -14,7 +14,7 @@
  *   - La date butoir
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
 import { formatEuro, formatDate } from '@sokar/shared';
@@ -57,6 +57,11 @@ export function GiftCardCrowdfundingPage({
   const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [contributing, setContributing] = useState(false);
   const [contributionError, setContributionError] = useState<string | null>(null);
+  const attempt = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+    accessToken: string;
+  } | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -67,14 +72,6 @@ export function GiftCardCrowdfundingPage({
       )
       .finally(() => setLoading(false));
   }, [code]);
-
-  // Initialiser Stripe.js au montage
-  useEffect(() => {
-    const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (pk) {
-      setStripePromise(loadStripe(pk));
-    }
-  }, []);
 
   const isClosed = status?.status === 'CLOSED' || status?.status === 'CANCELLED';
   const isExpired = status?.crowdfundedUntil && new Date(status.crowdfundedUntil) < new Date();
@@ -104,13 +101,28 @@ export function GiftCardCrowdfundingPage({
     });
 
     try {
-      const pi = await createCrowdfundingPaymentIntent(code, {
+      const details = {
         amount: parsedAmount,
         contributorName,
         contributorEmail: contributorEmail || undefined,
         isPublicName,
         message: message || undefined,
+      };
+      const fingerprint = JSON.stringify(details);
+      if (!attempt.current || attempt.current.fingerprint !== fingerprint)
+        attempt.current = {
+          fingerprint,
+          idempotencyKey: crypto.randomUUID(),
+          accessToken: `${crypto.randomUUID()}${crypto.randomUUID()}`,
+        };
+      const pi = await createCrowdfundingPaymentIntent(code, {
+        ...details,
+        idempotencyKey: attempt.current.idempotencyKey,
+        accessToken: attempt.current.accessToken,
       });
+      const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+      if (!pk) throw new Error('Le paiement est momentanément indisponible.');
+      setStripePromise(loadStripe(pk, { stripeAccount: pi.stripeAccountId }));
       setClientSecret(pi.clientSecret);
       setPaymentIntentId(pi.paymentIntentId);
       setShowPayment(true);
@@ -130,6 +142,7 @@ export function GiftCardCrowdfundingPage({
     try {
       await contributeToCrowdfunding(code, {
         paymentIntentId: piId,
+        accessToken: attempt.current?.accessToken,
         contributorName,
         contributorEmail: contributorEmail || undefined,
         amount: parseFloat(amount),

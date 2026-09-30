@@ -308,4 +308,43 @@ describe('BookingWidget waiting list flow', () => {
       expect(screen.getByText(/votre inscription a été annulée/i)).toBeInTheDocument();
     });
   });
+  it('passes the prefilled gift code to confirmation without a client-calculated debit', async () => {
+    setFetchSequence([
+      jsonResponse({
+        id: 'rest-1',
+        slug,
+        name: 'Chez Sokar',
+        connectAgentic: false,
+        giftCardEnabled: true,
+        city: 'Paris',
+        sections: [],
+      }),
+      jsonResponse({ date: todayIso(), partySize: 2, slots: [{ time: '19:00', available: true }] }),
+      jsonResponse({ holdId: 'hold', holdToken: crypto.randomUUID(), status: 'pending' }),
+      jsonResponse({ reservationId: 'reservation', status: 'confirmed' }),
+    ]);
+    render(<BookingWidget slug={slug} initialGiftCardCode="SKR-TEST-01" />);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+    expect(screen.getByLabelText(/code carte cadeau/i)).toHaveValue('SKR-TEST-01');
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: 'Test' } });
+    fireEvent.change(screen.getByLabelText(/^Téléphone/i), { target: { value: '+33600000000' } });
+    fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+    await waitFor(() =>
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${baseUrl}/public/r/${slug}/confirm`,
+        expect.anything(),
+      ),
+    );
+    const call = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(([url]) => String(url).endsWith('/confirm'));
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.giftCardCode).toBe('SKR-TEST-01');
+    expect(body.giftCardReservationAmount).toBeUndefined();
+  });
 });

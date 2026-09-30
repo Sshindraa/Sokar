@@ -60,6 +60,7 @@ type HoldDto = {
 type Props = {
   slug: string;
   initialSource?: string;
+  initialGiftCardCode?: string;
   marketingAttributionToken?: string;
   initialPartySize?: number;
   initialDate?: string;
@@ -80,6 +81,7 @@ function isValidDate(s: string): boolean {
 export function BookingWidget({
   slug,
   initialSource,
+  initialGiftCardCode,
   marketingAttributionToken,
   initialPartySize,
   initialDate,
@@ -98,6 +100,7 @@ export function BookingWidget({
   const [selectedTime, setSelectedTime] = useState<string | null>(initialTime ?? null);
   const [firstName, setFirstName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
+  const [giftCardCode, setGiftCardCode] = useState(initialGiftCardCode ?? '');
   const [email, setEmail] = useState<string>('');
   const [specialRequests, setSpecialRequests] = useState<string>('');
   // Honeypot (anti-bot). Si rempli, on bloque la soumission.
@@ -287,6 +290,7 @@ export function BookingWidget({
             ...(email.trim() ? { email: email.trim() } : {}),
           },
           specialRequests: specialRequests.trim() || undefined,
+          giftCardCode: giftCardCode.trim() || undefined,
           ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
         }),
       });
@@ -680,6 +684,25 @@ export function BookingWidget({
               honeypot={honeypot}
               setHoneypot={setHoneypot}
             />
+
+            {(restaurant?.giftCardEnabled || initialGiftCardCode) && (
+              <div className="space-y-2">
+                <label htmlFor="booking-gift-card-code" className="block text-sm font-medium">
+                  Code carte cadeau (facultatif)
+                </label>
+                <input
+                  id="booking-gift-card-code"
+                  value={giftCardCode}
+                  onChange={(event) => setGiftCardCode(event.target.value)}
+                  maxLength={100}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 transition-all duration-200"
+                />
+                <p className="text-xs text-muted-foreground">
+                  La réservation ne débite pas votre carte. Présentez votre code au restaurant pour
+                  régler votre addition.
+                </p>
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">

@@ -90,7 +90,37 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(),
     };
+    giftCardCheckout = {
+      findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    giftCardPaymentEntry = {
+      findUnique: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    giftCardDelivery = {
+      findUnique: vi.fn().mockResolvedValue(null),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ id: 'delivery-test' }),
+      update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
+    giftCardRefundRequest = {
+      findUniqueOrThrow: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
     giftCard = {
+      findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -101,6 +131,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
       aggregate: vi.fn(),
     };
     giftCardContribution = {
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn(),
       findMany: vi.fn(),
     };
@@ -625,6 +656,12 @@ vi.mock('../modules/gift-cards/stripe.service', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
+    retrieveConnectedAccount: vi.fn().mockResolvedValue({
+      id: 'acct_test',
+      chargesEnabled: true,
+      payoutsEnabled: true,
+      detailsSubmitted: true,
+    }),
     createPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_test', clientSecret: 'pi_t_s' }),
     retrievePaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_test', status: 'succeeded' }),
     constructWebhookEvent: vi.fn().mockResolvedValue({

@@ -32,6 +32,8 @@ export type GiftCardPack = {
 export type GiftCardPurchaseInput = {
   restaurantId: string;
   paymentIntentId: string;
+  checkoutId?: string;
+  accessToken?: string;
   amount?: number;
   packId?: string;
   occasion?: string;
@@ -65,6 +67,9 @@ export type GiftCardPurchaseResult = {
 };
 
 export type PaymentIntentResult = {
+  checkoutId: string;
+  accessToken: string;
+  stripeAccountId: string;
   paymentIntentId: string;
   clientSecret: string;
 };
@@ -112,11 +117,9 @@ export async function listGiftCardPacks(slug: string): Promise<GiftCardPack[]> {
   return res.json();
 }
 
-export async function createPaymentIntent(input: {
-  restaurantId: string;
-  amount?: number;
-  packId?: string;
-}): Promise<PaymentIntentResult> {
+export async function createPaymentIntent(
+  input: Omit<GiftCardPurchaseInput, 'paymentIntentId'> & { idempotencyKey?: string },
+): Promise<PaymentIntentResult> {
   const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/payment-intent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -229,6 +232,7 @@ export type CrowdfundingStatus = {
 };
 
 export type ContributeInput = {
+  accessToken?: string;
   paymentIntentId: string;
   contributorName: string;
   contributorEmail?: string;
@@ -275,6 +279,8 @@ export async function createCrowdfundingPaymentIntent(
     contributorEmail?: string;
     isPublicName: boolean;
     message?: string;
+    idempotencyKey?: string;
+    accessToken?: string;
   },
 ): Promise<PaymentIntentResult> {
   const res = await fetchWithTimeout(
@@ -304,9 +310,56 @@ export async function contributeToCrowdfunding(
       body: JSON.stringify(input),
     },
   );
+  if (res.status === 202)
+    throw new Error('La cagnotte est clôturée. Votre paiement est en cours de remboursement.');
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Contribution impossible. Réessayez.');
   }
   return res.json();
+}
+
+export async function getGiftCardCheckoutStatus(
+  checkoutId: string,
+  accessToken: string,
+): Promise<{
+  status: string;
+  paymentIntentId: string;
+  clientSecret?: string;
+  stripeAccountId: string;
+  card?: GiftCardPurchaseResult;
+  contribution?: ContributeResult | null;
+}> {
+  const res = await fetchWithTimeout(
+    `${getApiUrl()}/public/gift-cards/checkouts/${checkoutId}/status`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken }),
+    },
+  );
+  if (!res.ok) throw new Error('Impossible de retrouver votre paiement.');
+  return res.json();
+}
+
+export type GiftCardBeneficiary = {
+  displayCode: string;
+  amount: number;
+  remainingAmount: number;
+  expiresAt: string | null;
+  status: string;
+  usable: boolean;
+  restaurantName: string;
+  restaurantSlug: string | null;
+  packName: string | null;
+};
+export async function getGiftCardBeneficiary(code: string): Promise<GiftCardBeneficiary> {
+  const response = await fetchWithTimeout(
+    `${getApiUrl()}/public/gift-cards/${encodeURIComponent(code)}/beneficiary`,
+  );
+  if (!response.ok)
+    throw new Error(
+      'Impossible de consulter cette carte cadeau. Vérifiez votre code ou réessayez.',
+    );
+  return response.json();
 }

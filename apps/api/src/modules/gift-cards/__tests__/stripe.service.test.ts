@@ -12,20 +12,38 @@ vi.mock('../stripe.service', async (importOriginal) => {
   return { ...actual };
 });
 
+const sdk = vi.hoisted(() => ({
+  create: vi.fn(),
+  retrieve: vi.fn(),
+  refundCreate: vi.fn(),
+  refundRetrieve: vi.fn(),
+  refundList: vi.fn(),
+}));
+
 vi.mock('stripe', () => {
   let shouldThrow = false;
 
   class Stripe {
     paymentIntents = {
-      create: vi.fn().mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
-      retrieve: vi.fn().mockResolvedValue({
+      create: sdk.create.mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
+      retrieve: sdk.retrieve.mockResolvedValue({
         id: 'pi_test',
         status: 'succeeded',
         amount: 10000,
         amount_received: 10000,
+        application_fee_amount: 500,
         currency: 'eur',
         metadata: { restaurantId: 'rest-1', amount: '100' },
       }),
+    };
+    refunds = {
+      create: sdk.refundCreate.mockResolvedValue({
+        id: 're_test',
+        amount: 2500,
+        status: 'succeeded',
+      }),
+      retrieve: sdk.refundRetrieve,
+      list: sdk.refundList.mockResolvedValue({ data: [], has_more: false }),
     };
     webhooks = {
       constructEvent: vi.fn().mockImplementation(() => {
@@ -57,6 +75,7 @@ import {
   createPaymentIntent,
   retrievePaymentIntent,
   constructWebhookEvent,
+  createRefund,
 } from '../stripe.service';
 
 describe('stripe.service', () => {
@@ -149,5 +168,54 @@ describe('stripe.service', () => {
         ).setWebhookShouldThrow?.(false);
       }
     });
+  });
+  it('creates direct charges on the restaurant account with the platform fee and a stable key', async () => {
+    await createPaymentIntent({
+      amount: 10000,
+      currency: 'eur',
+      metadata: { checkoutId: 'checkout' },
+      stripeAccountId: 'acct_restaurant',
+      applicationFeeAmount: 500,
+      idempotencyKey: 'checkout-key',
+    });
+    expect(sdk.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 10000, application_fee_amount: 500 }),
+      { stripeAccount: 'acct_restaurant', idempotencyKey: 'checkout-key' },
+    );
+  });
+
+  it('retrieves payment state inside the correct connected account', async () => {
+    await retrievePaymentIntent('pi_test', 'acct_restaurant');
+    expect(sdk.retrieve).toHaveBeenCalledWith(
+      'pi_test',
+      { expand: ['latest_charge'] },
+      { stripeAccount: 'acct_restaurant' },
+    );
+  });
+
+  it('refunds the restaurant charge and its application fee with the same retry key', async () => {
+    await createRefund({
+      paymentIntentId: 'pi_test',
+      amount: 2500,
+      stripeAccountId: 'acct_restaurant',
+      idempotencyKey: 'refund-key',
+    });
+    expect(sdk.refundCreate).toHaveBeenCalledWith(
+      { payment_intent: 'pi_test', amount: 2500, refund_application_fee: true },
+      { stripeAccount: 'acct_restaurant', idempotencyKey: 'refund-key' },
+    );
+  });
+  it('does not request an application fee refund when the restaurant charge had no fee', async () => {
+    sdk.retrieve.mockResolvedValueOnce({ application_fee_amount: null });
+    await createRefund({
+      paymentIntentId: 'pi_zero_fee',
+      amount: 2500,
+      stripeAccountId: 'acct_restaurant',
+      idempotencyKey: 'refund-no-fee',
+    });
+    expect(sdk.refundCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ refund_application_fee: false }),
+      { stripeAccount: 'acct_restaurant', idempotencyKey: 'refund-no-fee' },
+    );
   });
 });

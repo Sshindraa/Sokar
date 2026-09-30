@@ -30,6 +30,8 @@ export type CreatePaymentIntentInput = {
   currency: string;
   metadata: Record<string, string>;
   idempotencyKey?: string;
+  stripeAccountId?: string;
+  applicationFeeAmount?: number;
 };
 
 /**
@@ -46,9 +48,15 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
       amount: input.amount,
       currency: input.currency,
       metadata: input.metadata,
+      ...(input.applicationFeeAmount !== undefined
+        ? { application_fee_amount: input.applicationFeeAmount }
+        : {}),
       automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
     },
-    input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+    {
+      ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+      ...(input.stripeAccountId ? { stripeAccount: input.stripeAccountId } : {}),
+    },
   );
   return {
     id: intent.id,
@@ -59,16 +67,34 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
 /**
  * Récupère le statut d'un PaymentIntent.
  */
-export async function retrievePaymentIntent(paymentIntentId: string): Promise<{
+export async function retrievePaymentIntent(
+  paymentIntentId: string,
+  stripeAccountId?: string,
+): Promise<{
   id: string;
   status: string;
   amount: number;
   amountReceived: number;
   currency: string;
   metadata: Record<string, string>;
+  refundedAmount?: number;
+  disputed?: boolean;
+  pendingRefund?: boolean;
+  clientSecret?: string | null;
 }> {
   const stripe = getStripe();
-  const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  const intent = await stripe.paymentIntents.retrieve(
+    paymentIntentId,
+    { expand: ['latest_charge'] },
+    stripeAccountId ? { stripeAccount: stripeAccountId } : undefined,
+  );
+  const charge = typeof intent.latest_charge === 'object' ? intent.latest_charge : null;
+  const refunds = charge
+    ? await stripe.refunds.list(
+        { payment_intent: intent.id, limit: 100 },
+        stripeAccountId ? { stripeAccount: stripeAccountId } : undefined,
+      )
+    : null;
   return {
     id: intent.id,
     status: intent.status,
@@ -76,12 +102,23 @@ export async function retrievePaymentIntent(paymentIntentId: string): Promise<{
     amountReceived: intent.amount_received,
     currency: intent.currency,
     metadata: intent.metadata,
+    refundedAmount: charge?.amount_refunded ?? 0,
+    disputed: charge?.disputed ?? false,
+    pendingRefund: Boolean(
+      refunds?.has_more ||
+      refunds?.data.some((refund) =>
+        ['pending', 'requires_action'].includes(refund.status ?? 'pending'),
+      ),
+    ),
+    clientSecret: intent.client_secret,
   };
 }
 
 export type CreateRefundInput = {
   paymentIntentId: string;
   amount?: number; // montant en centimes (optionnel = remboursement total)
+  idempotencyKey?: string;
+  stripeAccountId?: string;
 };
 
 /**
@@ -91,11 +128,85 @@ export async function createRefund(
   input: CreateRefundInput,
 ): Promise<{ id: string; amount: number; status: string }> {
   const stripe = getStripe();
-  const refund = await stripe.refunds.create({
-    payment_intent: input.paymentIntentId,
-    amount: input.amount,
-  });
+  const payment = input.stripeAccountId
+    ? await stripe.paymentIntents.retrieve(
+        input.paymentIntentId,
+        {},
+        { stripeAccount: input.stripeAccountId },
+      )
+    : null;
+  const refund = await stripe.refunds.create(
+    {
+      payment_intent: input.paymentIntentId,
+      amount: input.amount,
+      refund_application_fee: Boolean(
+        input.stripeAccountId && (payment?.application_fee_amount ?? 0) > 0,
+      ),
+    },
+    {
+      ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+      ...(input.stripeAccountId ? { stripeAccount: input.stripeAccountId } : {}),
+    },
+  );
   return { id: refund.id, amount: refund.amount, status: refund.status ?? 'pending' };
+}
+
+export async function retrieveRefund(refundId: string, stripeAccountId?: string) {
+  const refund = await getStripe().refunds.retrieve(
+    refundId,
+    stripeAccountId ? { stripeAccount: stripeAccountId } : undefined,
+  );
+  return { id: refund.id, amount: refund.amount, status: refund.status ?? 'pending' };
+}
+
+export async function retrieveConnectedAccount(accountId: string) {
+  const account = await getStripe().accounts.retrieve(accountId);
+  return {
+    id: account.id,
+    chargesEnabled: account.charges_enabled,
+    payoutsEnabled: account.payouts_enabled,
+    detailsSubmitted: account.details_submitted,
+  };
+}
+
+export async function createConnectedAccount(restaurantId: string, email: string) {
+  const account = await getStripe().accounts.create(
+    {
+      country: 'FR',
+      email,
+      controller: {
+        fees: { payer: 'account' },
+        losses: { payments: 'stripe' },
+        requirement_collection: 'stripe',
+        stripe_dashboard: { type: 'full' },
+      },
+      metadata: { restaurantId, source: 'sokar_gift_cards' },
+    },
+    { idempotencyKey: `gift-card-connect:${restaurantId}` },
+  );
+  return account.id;
+}
+
+export async function retrieveChargePaymentIntent(chargeId: string, stripeAccountId?: string) {
+  const charge = await getStripe().charges.retrieve(
+    chargeId,
+    stripeAccountId ? { stripeAccount: stripeAccountId } : undefined,
+  );
+  return typeof charge.payment_intent === 'string'
+    ? charge.payment_intent
+    : charge.payment_intent?.id;
+}
+
+export async function createConnectedAccountLink(accountId: string) {
+  const origin = process.env.DASHBOARD_URL;
+  if (!origin || !/^https:\/\//.test(origin)) throw new Error('DASHBOARD_URL HTTPS est requis');
+  const base = new URL('/dashboard/gift-cards', origin).toString();
+  return getStripe().accountLinks.create({
+    account: accountId,
+    type: 'account_onboarding',
+    refresh_url: `${base}?stripeConnect=refresh`,
+    return_url: `${base}?stripeConnect=return`,
+  });
 }
 
 /**

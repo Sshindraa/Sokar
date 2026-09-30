@@ -1,5 +1,5 @@
+import { giftCardOperationsRoutes } from './gift-card-operations.routes';
 import type { FastifyInstance } from 'fastify';
-import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import type { Prisma, GiftCard, GiftCardRedemption } from '@prisma/client';
 import { db } from '../../shared/db/client';
@@ -8,13 +8,21 @@ import { GiftCardService } from './gift-card.service';
 import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookService } from './gift-card-book.service';
 import { recommendGiftCardAmount } from './gift-card-recommender';
-import { createPaymentIntent, constructWebhookEvent } from './stripe.service';
+import {
+  constructWebhookEvent,
+  retrieveConnectedAccount,
+  createConnectedAccount,
+  createConnectedAccountLink,
+} from './stripe.service';
 import { GiftCardPaymentConflictError, GiftCardPaymentService } from './gift-card-payment.service';
+import { GiftCardCheckoutService } from './gift-card-checkout.service';
 import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
 import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/rate-limit';
 import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
+import { retrievePaymentIntent } from './stripe.service';
+import { giftCardHash } from './gift-card-finance.util';
 import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
 import { handleBillingWebhook } from '../billing/billing.service';
 
@@ -81,6 +89,8 @@ const RecommendGiftCardSchema = z.object({
 });
 
 const PaymentIntentSchema = z.object({
+  idempotencyKey: z.string().uuid().optional(),
+  accessToken: z.string().min(32).max(128).optional(),
   restaurantId: z.string(),
   amount: z.coerce.number().positive().optional(),
   packId: z.string().optional(),
@@ -106,6 +116,8 @@ const PurchaseWithPaymentSchema = z
   .object({
     restaurantId: z.string(),
     paymentIntentId: z.string().min(1),
+    checkoutId: z.string().uuid().optional(),
+    accessToken: z.string().min(32).max(128).optional(),
     amount: z.coerce.number().positive().optional(),
     packId: z.string().optional(),
     occasion: z.string().max(100).optional(),
@@ -125,8 +137,8 @@ const PurchaseWithPaymentSchema = z
       .optional(),
     preferredPartySize: z.coerce.number().int().min(1).optional(),
   })
-  .refine((data) => data.amount || data.packId, {
-    message: 'Le montant ou le pack est requis',
+  .refine((data) => data.amount || data.packId || data.checkoutId, {
+    message: 'Le montant, le pack ou la commande est requis',
   });
 
 const ApplyGiftCardSchema = z.object({
@@ -154,6 +166,8 @@ const CreateCrowdfundingSchema = z.object({
 });
 
 const CrowdfundingPaymentIntentSchema = z.object({
+  idempotencyKey: z.string().uuid().optional(),
+  accessToken: z.string().min(32).max(128).optional(),
   amount: z.coerce.number().positive(),
   contributorName: z.string().min(1).max(100),
   contributorEmail: z.string().email().max(255).optional(),
@@ -162,6 +176,7 @@ const CrowdfundingPaymentIntentSchema = z.object({
 });
 
 const ContributeSchema = z.object({
+  accessToken: z.string().min(32).max(128).optional(),
   paymentIntentId: z.string().min(1),
   contributorName: z.string().min(1).max(100),
   contributorEmail: z.string().email().max(255).optional(),
@@ -196,7 +211,7 @@ function maskCode(code: string): string {
   return code.slice(0, 4) + '-****-****-' + code.slice(-4);
 }
 
-function serializeGiftCard(
+export function serializeGiftCard(
   card: GiftCard & { redemptions?: GiftCardRedemption[]; pack?: { name: string } | null },
 ) {
   return {
@@ -212,7 +227,7 @@ function serializeGiftCard(
     expiresAt: card.expiresAt,
     validityMonths: card.validityMonths,
     packId: card.packId,
-    packName: card.pack?.name ?? null,
+    packName: (card.packSnapshot as { name?: string } | null)?.name ?? card.pack?.name ?? null,
     preferredDate: card.preferredDate,
     preferredTime: card.preferredTime,
     preferredPartySize: card.preferredPartySize,
@@ -238,9 +253,135 @@ function serializeGiftCard(
 }
 
 export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
+  await giftCardOperationsRoutes(app);
   const service = new GiftCardService(db);
   const slotsService = new GiftCardSlotsService(db);
   const bookService = new GiftCardBookService(db, slotsService);
+
+  app.get('/public/gift-cards/:code/beneficiary', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const { code } = z.object({ code: z.string().min(1).max(100) }).parse(req.params);
+    if (!(await checkRateLimit(rateLimitKey('gift-card-beneficiary', getClientIp(req)), 30))) {
+      return reply.status(429).send({ error: 'Trop de demandes. Réessayez dans une minute.' });
+    }
+    const card = await service.findByCodeOrShortCodeWithPack(code);
+    if (!card) return reply.status(404).send({ error: 'Carte cadeau introuvable' });
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: card.restaurantId },
+      select: { name: true, slug: true },
+    });
+    const validation = await service.validateCode(code, card.restaurantId);
+    return reply.send({
+      displayCode: card.shortCode ?? code,
+      amount: card.amount.toNumber(),
+      remainingAmount: card.remainingAmount.toNumber(),
+      expiresAt: card.expiresAt,
+      status: card.status,
+      usable: validation.valid,
+      restaurantName: restaurant.name,
+      restaurantSlug: restaurant.slug,
+      packName: (card.packSnapshot as { name?: string } | null)?.name ?? card.pack?.name ?? null,
+    });
+  });
+
+  app.post('/public/gift-cards/checkouts/:id/status', async (req, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const { accessToken } = z.object({ accessToken: z.string().min(32).max(128) }).parse(req.body);
+    const checkout = await db.giftCardCheckout.findUnique({ where: { id } });
+    if (!checkout || checkout.accessTokenHash !== giftCardHash(accessToken))
+      return reply.status(404).send({ error: 'Commande introuvable' });
+    if (!checkout.stripePaymentIntentId) return reply.status(202).send({ status: 'PREPARING' });
+    const pi = await retrievePaymentIntent(
+      checkout.stripePaymentIntentId,
+      checkout.stripeAccountId,
+    );
+    const result: Record<string, unknown> = {
+      status: pi.status,
+      paymentIntentId: pi.id,
+      stripeAccountId: checkout.stripeAccountId,
+    };
+    if (pi.status === 'succeeded') {
+      if (checkout.kind === 'PURCHASE') {
+        const card = await new GiftCardPaymentService(db).purchaseWithPayment({
+          restaurantId: checkout.restaurantId,
+          paymentIntentId: pi.id,
+          checkoutId: checkout.id,
+          accessToken,
+        });
+        const snapshot = checkout.payload as Record<string, unknown>;
+        result.card = {
+          id: card.id,
+          code: card.code,
+          shortCode: card.shortCode,
+          amount: card.amount.toNumber(),
+          remainingAmount: card.remainingAmount.toNumber(),
+          status: card.status,
+          packName: (snapshot.packSnapshot as { name?: string } | null)?.name ?? null,
+          preferredDate: card.preferredDate,
+          preferredTime: card.preferredTime,
+          preferredPartySize: card.preferredPartySize,
+          stripePaymentStatus: card.stripePaymentStatus,
+          pdfUrl: `${process.env.API_URL ?? ''}/public/gift-cards/${card.shortCode ?? card.code}/pdf`,
+        };
+      } else {
+        const contribution = await new GiftCardCrowdfundingService(db).contribute(
+          {
+            ...(checkout.payload as unknown as import('./gift-card.types').ContributeInput),
+            accessToken,
+          },
+          pi.id,
+        );
+        result.contribution = contribution
+          ? {
+              id: contribution.id,
+              amount: contribution.amount.toNumber(),
+              contributedAt: contribution.contributedAt,
+            }
+          : null;
+      }
+    } else if (pi.status !== 'canceled') result.clientSecret = pi.clientSecret;
+    return reply.send(result);
+  });
+
+  app.get(
+    '/restaurants/:id/gift-cards/stripe-connect',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (id !== req.restaurantId) return reply.status(403).send({ error: 'Accès refusé' });
+      const restaurant = await db.restaurant.findUniqueOrThrow({
+        where: { id },
+        select: { giftCardStripeAccountId: true },
+      });
+      if (!restaurant.giftCardStripeAccountId)
+        return reply.send({ connected: false, chargesEnabled: false, payoutsEnabled: false });
+      const account = await retrieveConnectedAccount(restaurant.giftCardStripeAccountId);
+      return reply.send({
+        connected: true,
+        chargesEnabled: account.chargesEnabled,
+        payoutsEnabled: account.payoutsEnabled,
+      });
+    },
+  );
+  app.post(
+    '/restaurants/:id/gift-cards/stripe-connect/onboarding',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (id !== req.restaurantId || req.siteRole !== 'OWNER')
+        return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
+      const restaurant = await db.restaurant.findUniqueOrThrow({
+        where: { id },
+        select: { giftCardStripeAccountId: true, managerEmail: true },
+      });
+      const accountId =
+        restaurant.giftCardStripeAccountId ??
+        (await createConnectedAccount(id, restaurant.managerEmail));
+      await db.restaurant.update({ where: { id }, data: { giftCardStripeAccountId: accountId } });
+      const link = await createConnectedAccountLink(accountId);
+      return reply.send({ url: link.url });
+    },
+  );
 
   // ─── Admin routes ─────────────────────────────────────────────────
 
@@ -456,13 +597,16 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(recommendation);
   });
 
-  app.post('/public/gift-cards/apply', async (req, reply) => {
+  app.post('/public/gift-cards/apply', { preHandler: requireOrg() }, async (req, reply) => {
     const body = ApplyGiftCardSchema.parse(req.body);
+    if (body.restaurantId !== req.restaurantId)
+      return reply.status(403).send({ error: 'Accès refusé' });
     const result = await service.applyToReservation({
       code: body.code,
       restaurantId: body.restaurantId,
       reservationId: body.reservationId,
       reservationAmount: body.reservationAmount,
+      actor: `dashboard:${req.userId ?? 'unknown'}`,
     });
 
     return reply.send(result);
@@ -511,72 +655,17 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
     const body = PaymentIntentSchema.parse(req.body);
 
-    // Déterminer le montant (pack ou libre)
-    let amount: number;
-    if (body.packId) {
-      const pack = await db.giftCardPack.findFirst({
-        where: { id: body.packId, restaurantId: body.restaurantId, isActive: true },
-        select: { amount: true },
-      });
-      if (!pack) {
-        return reply.status(404).send({ error: 'Pack cadeau introuvable' });
-      }
-      amount = pack.amount.toNumber();
-    } else if (body.amount) {
-      amount = body.amount;
-    } else {
-      return reply.status(400).send({ error: 'Le montant ou le pack est requis' });
-    }
-
-    // Vérifier le montant minimum
-    const restaurant = await db.restaurant.findUnique({
-      where: { id: body.restaurantId },
-      select: { giftCardMinimumAmount: true, giftCardEnabled: true },
-    });
-    if (!restaurant?.giftCardEnabled) {
-      return reply.status(403).send({ error: 'Cartes cadeaux non disponibles pour ce restaurant' });
-    }
-    const minAmount = restaurant?.giftCardMinimumAmount ?? 10;
-    if (amount < minAmount) {
-      return reply.status(400).send({ error: `Le montant minimum est de ${minAmount}€` });
-    }
-
     try {
-      const idempotencyKey = `gift-card-${body.restaurantId}-${randomUUID()}`;
-      const intent = await createPaymentIntent({
-        amount: Math.round(amount * 100), // centimes
-        currency: 'eur',
-        metadata: {
-          restaurantId: body.restaurantId,
-          packId: body.packId ?? '',
-          amount: String(amount),
-          occasion: body.occasion ?? '',
-          senderName: body.senderName ?? '',
-          senderEmail: body.senderEmail ?? '',
-          senderPhone: body.senderPhone ?? '',
-          recipientName: body.recipientName ?? '',
-          recipientEmail: body.recipientEmail ?? '',
-          recipientPhone: body.recipientPhone ?? '',
-          message: body.message ?? '',
-          templateId: body.templateId ?? '',
-          customImageUrl: body.customImageUrl ?? '',
-          preferredDate: body.preferredDate ? body.preferredDate.toISOString() : '',
-          preferredTime: body.preferredTime ?? '',
-          preferredPartySize: body.preferredPartySize ? String(body.preferredPartySize) : '',
-        },
-        idempotencyKey,
-      });
-
-      return reply.send({
-        paymentIntentId: intent.id,
-        clientSecret: intent.clientSecret,
-      });
-    } catch (err: unknown) {
-      logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[gift-card-routes] Failed to create payment intent',
-      );
-      return reply.status(500).send({ error: 'Impossible de créer le paiement' });
+      return reply.send(await new GiftCardCheckoutService(db).purchase(body));
+    } catch (err) {
+      return reply
+        .status(
+          err instanceof Error &&
+            err.message === 'Cartes cadeaux non disponibles pour ce restaurant'
+            ? 403
+            : 400,
+        )
+        .send({ error: err instanceof Error ? err.message : 'Impossible de préparer le paiement' });
     }
   });
 
@@ -589,6 +678,8 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       const card = await paymentService.purchaseWithPayment({
         restaurantId: body.restaurantId,
         paymentIntentId: body.paymentIntentId,
+        checkoutId: body.checkoutId,
+        accessToken: body.accessToken,
         amount: body.amount,
         packId: body.packId,
         occasion: body.occasion,
@@ -613,10 +704,11 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(201).send({
         id: card.id,
         code: card.code,
+        shortCode: card.shortCode,
         amount: card.amount.toNumber(),
         remainingAmount: card.remainingAmount.toNumber(),
         status: card.status,
-        packName: pack?.name ?? null,
+        packName: (card.packSnapshot as { name?: string } | null)?.name ?? pack?.name ?? null,
         preferredDate: card.preferredDate,
         preferredTime: card.preferredTime,
         preferredPartySize: card.preferredPartySize,
@@ -722,43 +814,12 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     const code = (req.params as { code: string }).code;
     const body = CrowdfundingPaymentIntentSchema.parse(req.body);
 
-    // Vérifier que la cagnotte existe et est active
-    const card = await db.giftCard.findUnique({ where: { code } });
-    if (!card || card.type !== 'CROWDFUNDED') {
-      return reply.status(404).send({ error: 'Cagnotte introuvable' });
-    }
-    if (card.status === 'CLOSED' || card.status === 'CANCELLED') {
-      return reply.status(400).send({ error: "Cette cagnotte n'est plus active" });
-    }
-    if (card.crowdfundedUntil && new Date() > card.crowdfundedUntil) {
-      return reply.status(400).send({ error: 'La date butoir de cette cagnotte est dépassée' });
-    }
-
     try {
-      const intent = await createPaymentIntent({
-        amount: Math.round(body.amount * 100),
-        currency: 'eur',
-        metadata: {
-          type: 'crowdfunding_contribution',
-          giftCardCode: code,
-          amount: String(body.amount),
-          contributorName: body.contributorName,
-          contributorEmail: body.contributorEmail ?? '',
-          isPublicName: String(body.isPublicName),
-          message: body.message ?? '',
-        },
+      return reply.send(await new GiftCardCheckoutService(db).contribution({ code, ...body }));
+    } catch (err) {
+      return reply.status(400).send({
+        error: err instanceof Error ? err.message : 'Impossible de préparer la contribution',
       });
-
-      return reply.send({
-        paymentIntentId: intent.id,
-        clientSecret: intent.clientSecret,
-      });
-    } catch (err: unknown) {
-      logger.error(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[gift-card-routes] Crowdfunding payment intent failed',
-      );
-      return reply.status(500).send({ error: 'Impossible de créer le paiement' });
     }
   });
 
@@ -775,12 +836,14 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           contributorName: body.contributorName,
           contributorEmail: body.contributorEmail,
           amount: body.amount,
+          accessToken: body.accessToken,
           isPublicName: body.isPublicName,
           message: body.message,
         },
         body.paymentIntentId,
       );
 
+      if (!contribution) return reply.status(202).send({ status: 'REFUND_PENDING' });
       return reply.status(201).send({
         id: contribution.id,
         amount: contribution.amount.toNumber(),
@@ -820,7 +883,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     const service = new GiftCardCrowdfundingService(db);
 
     try {
-      const card = await service.closeCrowdfunding(giftCardId);
+      const card = await service.closeCrowdfunding(giftCardId, req.restaurantId!);
       return reply.send(serializeGiftCard(card));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -869,18 +932,64 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       if (event.type === 'payment_intent.succeeded') {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
-        await paymentService.handleStripeWebhook(pi.id, pi.metadata ?? {});
+        if (pi.metadata?.type === 'crowdfunding_contribution') {
+          let details: import('./gift-card.types').ContributeInput;
+          if (pi.metadata.checkoutId) {
+            const checkout = await new GiftCardCheckoutService(db).findForPayment(
+              pi.metadata,
+              pi.id,
+            );
+            if (!checkout) throw new Error('Commande de contribution introuvable');
+            details = checkout.payload as unknown as import('./gift-card.types').ContributeInput;
+          } else {
+            details = {
+              code: pi.metadata.giftCardCode,
+              amount: Number(pi.metadata.amount),
+              contributorName: pi.metadata.contributorName ?? '',
+              contributorEmail: pi.metadata.contributorEmail,
+              message: pi.metadata.message,
+              isPublicName: pi.metadata.isPublicName === 'true',
+            };
+          }
+          await new GiftCardCrowdfundingService(db).contribute(details, pi.id, {
+            stripeAccountId: event.account,
+            checkoutId: pi.metadata.checkoutId,
+          });
+        } else if (pi.metadata?.checkoutId || pi.metadata?.restaurantId) {
+          await paymentService.handleStripeWebhook(pi.id, pi.metadata ?? {}, event.account);
+        }
       } else if (event.type === 'payment_intent.payment_failed') {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
         await paymentService.handlePaymentFailed(pi.id, pi.metadata ?? {});
-      } else if (event.type === 'charge.refunded') {
-        const charge = event.data.object as { payment_intent: string | null; status: string };
-        if (charge.payment_intent) {
-          const paymentService = new GiftCardPaymentService(db);
-          await paymentService.handleRefundUpdated(charge.payment_intent, charge.status);
+      } else if (
+        [
+          'charge.refunded',
+          'refund.created',
+          'refund.updated',
+          'refund.failed',
+          'charge.dispute.created',
+          'charge.dispute.closed',
+        ].includes(event.type)
+      ) {
+        const charge = event.data.object as {
+          payment_intent?: string | { id: string } | null;
+          status: string;
+          charge?: string;
+        };
+        let paymentIntentId =
+          typeof charge.payment_intent === 'string'
+            ? charge.payment_intent
+            : charge.payment_intent?.id;
+        if (!paymentIntentId && charge.charge) {
+          const { retrieveChargePaymentIntent } = await import('./stripe.service');
+          paymentIntentId = await retrieveChargePaymentIntent(charge.charge, event.account);
         }
-      } else if (await handleBillingWebhook(event)) {
+        if (paymentIntentId) {
+          const paymentService = new GiftCardPaymentService(db);
+          await paymentService.handleRefundUpdated(paymentIntentId, charge.status, event.account);
+        }
+      } else if (!event.account && (await handleBillingWebhook(event))) {
         logger.info(
           { eventType: event.type },
           '[stripe-webhook] Subscription billing state updated',

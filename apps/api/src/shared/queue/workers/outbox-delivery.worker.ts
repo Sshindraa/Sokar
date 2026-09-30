@@ -1,3 +1,4 @@
+import { processGiftCardDelivery } from '../../../modules/gift-cards/gift-card-delivery.service';
 import { Worker, type Job } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
@@ -17,6 +18,14 @@ export async function processOutboxDeliveryJob(job: Job<OutboxDeliveryJobData>):
   const event = await db.outboxEvent.findUnique({ where: { id: job.data.outboxEventId } });
   if (!event) {
     log.warn({ outboxEventId: job.data.outboxEventId }, '[outbox] event not found');
+    return;
+  }
+
+  if (event.topic === 'gift-card-delivery') {
+    const payload = event.payload as { deliveryId?: unknown };
+    if (typeof payload.deliveryId !== 'string' || !payload.deliveryId)
+      throw new Error('INVALID_GIFT_CARD_DELIVERY_PAYLOAD');
+    await processGiftCardDelivery(db, payload.deliveryId);
     return;
   }
 

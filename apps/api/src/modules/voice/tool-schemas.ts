@@ -157,7 +157,7 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
   {
     name: 'purchaseGiftCard',
     description:
-      "Crée une carte cadeau. À appeler uniquement après avoir confirmé : montant (obligatoire), nom de l'expéditeur, téléphone de l'expéditeur (SMS), nom du destinataire. Le code cadeau est envoyé par SMS à l'expéditeur — ne jamais le dicter.",
+      'Envoie un lien d’achat sécurisé par SMS. Confirmer le montant et le téléphone de l’expéditeur avant cet appel. Aucun solde cadeau n’est créé par téléphone : la carte est activée après paiement en ligne. Ne jamais dicter de code cadeau.',
     schema: PurchaseGiftCardSchema,
   },
   {

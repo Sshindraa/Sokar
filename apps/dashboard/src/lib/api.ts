@@ -88,7 +88,7 @@ export function useApi() {
           (typeof data.error === 'string' && data.error.trim() ? data.error : null) ||
           (typeof data.detail === 'string' && data.detail.trim() ? data.detail : null) ||
           `Erreur ${res.status}`;
-        throw new Error(errorMsg);
+        throw Object.assign(new Error(errorMsg), { status: res.status });
       }
 
       return data as T;
