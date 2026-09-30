@@ -23,7 +23,7 @@ export async function retryGiftCardDelivery(
         'Cet envoi ne peut pas être relancé. Vérifiez d’abord son résultat auprès du fournisseur.',
       );
     const changed = await tx.giftCardDelivery.updateMany({
-      where: { id: row.id, status: row.status },
+      where: { id: row.id, restaurantId, status: row.status },
       data: { status: 'PENDING', providerMessageId: null, lastErrorCode: null, startedAt: null },
     });
     if (!changed.count)
@@ -80,11 +80,14 @@ export async function resendGiftCardRecipient(
           : 'recipient_email'
         : 'recipient_whatsapp';
     const key = `gift-card-delivery:${card.id}:${kind}:card:${input.idempotencyKey}`;
-    const previous = await tx.giftCardDelivery.findUnique({ where: { idempotencyKey: key } });
+    const previous = await tx.giftCardDelivery.findUnique({
+      where: { idempotencyKey: key, restaurantId: input.restaurantId },
+    });
     if (previous) return { id: previous.id, status: previous.status };
     const blocked = await tx.giftCardDelivery.findFirst({
       where: {
         giftCardId: card.id,
+        restaurantId: input.restaurantId,
         kind,
         status: { in: ['PENDING', 'IN_PROGRESS', 'UNKNOWN', 'FAILED'] },
       },
@@ -141,7 +144,7 @@ export async function resolveGiftCardDelivery(
     if (row.status !== 'UNKNOWN')
       throw new GiftCardOperationError('Seul un résultat incertain peut être résolu manuellement.');
     const changed = await tx.giftCardDelivery.updateMany({
-      where: { id: row.id, status: 'UNKNOWN' },
+      where: { id: row.id, restaurantId: input.restaurantId, status: 'UNKNOWN' },
       data: {
         status,
         lastErrorCode:

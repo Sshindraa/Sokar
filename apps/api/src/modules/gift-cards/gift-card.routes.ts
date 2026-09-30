@@ -287,6 +287,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   app.post('/public/gift-cards/checkouts/:id/status', async (req, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const { accessToken } = z.object({ accessToken: z.string().min(32).max(128) }).parse(req.body);
+    // tenant-scoping: global — Public checkout status: unique ID plus access-token hash required before any response or fulfillment.
     const checkout = await db.giftCardCheckout.findUnique({ where: { id } });
     if (!checkout || checkout.accessTokenHash !== giftCardHash(accessToken))
       return reply.status(404).send({ error: 'Commande introuvable' });
@@ -350,7 +351,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       if (id !== req.restaurantId) return reply.status(403).send({ error: 'Accès refusé' });
       const restaurant = await db.restaurant.findUniqueOrThrow({
-        where: { id },
+        where: { id: req.restaurantId },
         select: { giftCardStripeAccountId: true },
       });
       if (!restaurant.giftCardStripeAccountId)
@@ -371,7 +372,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       if (id !== req.restaurantId || req.siteRole !== 'OWNER')
         return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
       const restaurant = await db.restaurant.findUniqueOrThrow({
-        where: { id },
+        where: { id: req.restaurantId },
         select: { giftCardStripeAccountId: true, managerEmail: true },
       });
       const accountId =

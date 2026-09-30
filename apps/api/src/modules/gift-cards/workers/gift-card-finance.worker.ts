@@ -32,6 +32,7 @@ export async function reconcileGiftCardFinance(prisma = db) {
       });
     }
   }
+  // tenant-scoping: global — Privileged recovery scheduler scans all restaurants; each provider operation and update uses persisted account/tenant.
   const checkouts = await prisma.giftCardCheckout.findMany({
     where: { status: 'OPEN' },
     orderBy: { updatedAt: 'asc' },
@@ -45,7 +46,7 @@ export async function reconcileGiftCardFinance(prisma = db) {
       const pi = await retrievePaymentIntent(paymentIntentId, checkout.stripeAccountId);
       if (pi.status === 'canceled') {
         await prisma.giftCardCheckout.update({
-          where: { id: checkout.id },
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
           data: { status: 'CANCELLED' },
         });
       } else if (pi.status === 'succeeded') {
@@ -67,14 +68,14 @@ export async function reconcileGiftCardFinance(prisma = db) {
       failures++;
       if (error instanceof Error && error.message === 'CHECKOUT_RECOVERY_EXPIRED') {
         await prisma.giftCardCheckout.update({
-          where: { id: checkout.id },
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
           data: { status: 'RECOVERY_REQUIRED' },
         });
       }
       logger.error({ checkoutId: checkout.id }, 'Gift card checkout reconciliation failed');
     } finally {
       await prisma.giftCardCheckout.update({
-        where: { id: checkout.id },
+        where: { id: checkout.id, restaurantId: checkout.restaurantId },
         data: { updatedAt: new Date() },
       });
     }

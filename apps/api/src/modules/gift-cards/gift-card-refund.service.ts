@@ -17,7 +17,9 @@ export class GiftCardRefundService {
       if (!card) throw new Error('Carte cadeau introuvable');
       if (card.status === 'CANCELLED') return card;
       if (card.status === 'REFUND_PENDING' || card.status === 'REFUND_FAILED') return card;
-      const entries = await tx.giftCardPaymentEntry.findMany({ where: { giftCardId } });
+      const entries = await tx.giftCardPaymentEntry.findMany({
+        where: { giftCardId, restaurantId },
+      });
       const payments = card.contributions.length
         ? card.contributions
             .filter((c) => c.stripePaymentIntentId)
@@ -57,7 +59,7 @@ export class GiftCardRefundService {
         });
       }
       const updated = await tx.giftCard.update({
-        where: { id: card.id },
+        where: { id: card.id, restaurantId: card.restaurantId },
         data: {
           status: refundCount ? 'REFUND_PENDING' : 'CANCELLED',
           ...(refundCount ? {} : { remainingAmount: 0 }),
@@ -81,7 +83,7 @@ export class GiftCardRefundService {
       },
     });
     for (const request of requests) await this.process(request.id);
-    return this.prisma.giftCard.findUniqueOrThrow({ where: { id: giftCardId } });
+    return this.prisma.giftCard.findUniqueOrThrow({ where: { id: giftCardId, restaurantId } });
   }
 
   async refundRejectedContribution(input: {
@@ -134,6 +136,7 @@ export class GiftCardRefundService {
       });
       if (request.reason !== 'CANCELLATION') {
         if (refund.status === 'succeeded') {
+          // tenant-scoping: global — Privileged refund worker resolves card from its persisted request, not a caller-supplied tenant.
           const refundedCard = await tx.giftCard.findUnique({ where: { id: request.giftCardId } });
           if (refundedCard)
             await enqueueGiftCardDelivery(tx, {
@@ -144,6 +147,7 @@ export class GiftCardRefundService {
             });
         }
         if (['succeeded', 'failed', 'canceled'].includes(refund.status))
+          // tenant-scoping: global — Privileged refund worker updates only the unique payment from its persisted provider-verified refund request.
           await tx.giftCardCheckout.updateMany({
             where: { stripePaymentIntentId: request.paymentIntentId },
             data: { status: refund.status === 'succeeded' ? 'REFUNDED' : 'REFUND_FAILED' },
@@ -154,11 +158,13 @@ export class GiftCardRefundService {
         where: { giftCardId: request.giftCardId, reason: 'CANCELLATION' },
       });
       if (all.some((r) => ['failed', 'canceled'].includes(r.status))) {
+        // tenant-scoping: global — Privileged refund worker freezes only the card named in its persisted refund request.
         await tx.giftCard.update({
           where: { id: request.giftCardId },
           data: { status: 'REFUND_FAILED' },
         });
       } else if (all.length && all.every((r) => r.status === 'succeeded')) {
+        // tenant-scoping: global — Privileged refund worker completes cancellation only for its persisted request card under a card lock.
         const card = await tx.giftCard.update({
           where: { id: request.giftCardId },
           data: {
@@ -198,6 +204,7 @@ export class GiftCardRefundService {
     const totalRefunded = pi.refundedAmount ?? 0;
     await this.prisma.$transaction(async (tx) => {
       await lockGiftCardPayment(tx, paymentIntentId);
+      // tenant-scoping: global — Signed Stripe event bootstrap by unique payment; stored connected account must match provider account.
       let entry = await tx.giftCardPaymentEntry.findUnique({ where: { paymentIntentId } });
       if (entry && entry.stripeAccountId !== (stripeAccountId ?? null))
         throw new Error('Compte marchand incorrect');
@@ -208,6 +215,7 @@ export class GiftCardRefundService {
               where: {
                 id: pi.metadata.checkoutId,
                 stripeAccountId,
+                restaurantId: pi.metadata.restaurantId,
                 status: { in: ['OPEN', 'PAYMENT_REVIEW'] },
               },
               data: {
@@ -217,6 +225,7 @@ export class GiftCardRefundService {
             });
           return;
         }
+        // tenant-scoping: global — Legacy platform payment verified by Stripe identifies the card.
         const card = await tx.giftCard.findFirst({
           where: { stripePaymentIntentId: paymentIntentId },
         });
@@ -232,6 +241,7 @@ export class GiftCardRefundService {
             giftCardId: card?.id ?? contribution!.giftCardId,
             restaurantId:
               card?.restaurantId ??
+              // tenant-scoping: global — Legacy reconciliation derives tenant from the contribution already bound to the provider-verified payment.
               (await tx.giftCard.findUniqueOrThrow({ where: { id: contribution!.giftCardId } }))
                 .restaurantId,
             contributionId: contribution?.id,
@@ -242,10 +252,12 @@ export class GiftCardRefundService {
         });
       }
       await lockGiftCard(tx, entry.giftCardId);
-      const card = await tx.giftCard.findUniqueOrThrow({ where: { id: entry.giftCardId } });
+      const card = await tx.giftCard.findUniqueOrThrow({
+        where: { id: entry.giftCardId, restaurantId: entry.restaurantId },
+      });
       const delta = Math.max(0, totalRefunded - entry.refundedAmountCents);
       await tx.giftCardPaymentEntry.update({
-        where: { paymentIntentId },
+        where: { paymentIntentId, restaurantId: entry.restaurantId },
         data: {
           refundedAmountCents: Math.max(totalRefunded, entry.refundedAmountCents),
           pendingRefund: pi.pendingRefund ?? false,
@@ -253,14 +265,14 @@ export class GiftCardRefundService {
       });
       if (['REFUND_PENDING', 'REFUND_FAILED', 'CANCELLED'].includes(card.status)) return;
       const pending = await tx.giftCardPaymentEntry.findMany({
-        where: { giftCardId: card.id, pendingRefund: true },
+        where: { giftCardId: card.id, restaurantId: card.restaurantId, pendingRefund: true },
       });
       const remainingAmount = Prisma.Decimal.max(
         0,
         card.remainingAmount.minus(new Prisma.Decimal(delta).div(100)),
       );
       await tx.giftCard.update({
-        where: { id: card.id },
+        where: { id: card.id, restaurantId: card.restaurantId },
         data: {
           remainingAmount,
           status: pi.disputed

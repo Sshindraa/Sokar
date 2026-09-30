@@ -64,6 +64,7 @@ export class GiftCardPaymentService {
     input: PurchaseWithPaymentInput,
     webhook?: { stripeAccountId?: string },
   ): Promise<GiftCard> {
+    // tenant-scoping: global — Unique checkout bootstrap; access token or authenticated Stripe account is checked before fulfillment.
     const checkout = await this.prisma.giftCardCheckout.findUnique({
       where: input.checkoutId
         ? { id: input.checkoutId }
@@ -197,15 +198,19 @@ export class GiftCardPaymentService {
     const { card, created } = await this.prisma.$transaction(async (tx) => {
       await lockGiftCardPayment(tx, input.paymentIntentId);
       if (checkout) {
-        const current = await tx.giftCardCheckout.findUniqueOrThrow({ where: { id: checkout.id } });
+        const current = await tx.giftCardCheckout.findUniqueOrThrow({
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
+        });
         if (!['OPEN', 'FULFILLED'].includes(current.status))
           throw new GiftCardPaymentError('Cette commande nécessite une vérification du paiement.');
       }
+      // tenant-scoping: global — Global payment ledger collision check; reject any conflicting kind or restaurant.
       const entry = await tx.giftCardPaymentEntry.findUnique({
         where: { paymentIntentId: input.paymentIntentId },
       });
       if (entry && (entry.kind !== 'PURCHASE' || entry.restaurantId !== restaurantId))
         throw new GiftCardPaymentConflictError();
+      // tenant-scoping: global — Global payment uniqueness: reject a card owned by another restaurant before returning it.
       const existing = await tx.giftCard.findFirst({
         where: { stripePaymentIntentId: input.paymentIntentId },
       });
@@ -214,7 +219,7 @@ export class GiftCardPaymentService {
           throw new GiftCardPaymentConflictError();
         if (checkout)
           await tx.giftCardCheckout.update({
-            where: { id: checkout.id },
+            where: { id: checkout.id, restaurantId: checkout.restaurantId },
             data: { status: 'FULFILLED' },
           });
         return { card: existing, created: false };
@@ -268,7 +273,7 @@ export class GiftCardPaymentService {
       });
       if (checkout)
         await tx.giftCardCheckout.update({
-          where: { id: checkout.id },
+          where: { id: checkout.id, restaurantId: checkout.restaurantId },
           data: { status: 'FULFILLED' },
         });
       for (const kind of [
@@ -450,7 +455,7 @@ export class GiftCardPaymentService {
       }
 
       await this.prisma.giftCard.update({
-        where: { id: existing.id },
+        where: { id: existing.id, restaurantId: existing.restaurantId },
         data: { stripePaymentStatus: 'failed' },
       });
 

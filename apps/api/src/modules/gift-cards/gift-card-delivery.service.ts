@@ -43,7 +43,9 @@ export async function enqueueGiftCardDelivery(
 ) {
   const key = `gift-card-delivery:${input.giftCardId}:${input.kind}:${input.referenceId ?? 'card'}:${input.generation ?? 'initial'}`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-  const existing = await tx.giftCardDelivery.findUnique({ where: { idempotencyKey: key } });
+  const existing = await tx.giftCardDelivery.findUnique({
+    where: { idempotencyKey: key, restaurantId: input.restaurantId },
+  });
   if (existing) return existing;
   const delivery = await tx.giftCardDelivery.create({
     data: {
@@ -72,6 +74,7 @@ export async function enqueueGiftCardDelivery(
 }
 
 export async function processGiftCardDelivery(prisma: PrismaClient, deliveryId: string) {
+  // tenant-scoping: global — Internal outbox ID bootstrap; card lookup and every later write use the persisted restaurant.
   const delivery = await prisma.giftCardDelivery.findUnique({ where: { id: deliveryId } });
   if (!delivery || !['PENDING', 'FAILED'].includes(delivery.status)) return;
   const card = await prisma.giftCard.findFirst({
@@ -85,7 +88,11 @@ export async function processGiftCardDelivery(prisma: PrismaClient, deliveryId: 
     }));
   const skip = async () => {
     await prisma.giftCardDelivery.updateMany({
-      where: { id: delivery.id, status: { in: ['PENDING', 'FAILED'] } },
+      where: {
+        id: delivery.id,
+        restaurantId: delivery.restaurantId,
+        status: { in: ['PENDING', 'FAILED'] },
+      },
       data: { status: 'SKIPPED', lastErrorCode: 'NO_CONTACT_OR_UNAVAILABLE' },
     });
   };
@@ -270,7 +277,11 @@ export async function processGiftCardDelivery(prisma: PrismaClient, deliveryId: 
     return;
   }
   const claimed = await prisma.giftCardDelivery.updateMany({
-    where: { id: delivery.id, status: { in: ['PENDING', 'FAILED'] } },
+    where: {
+      id: delivery.id,
+      restaurantId: delivery.restaurantId,
+      status: { in: ['PENDING', 'FAILED'] },
+    },
     data: { status: 'IN_PROGRESS', startedAt: new Date(), attempts: { increment: 1 } },
   });
   if (!claimed.count) return;
@@ -285,7 +296,7 @@ export async function processGiftCardDelivery(prisma: PrismaClient, deliveryId: 
     );
     providerMessageId = result.providerMessageId;
     await prisma.giftCardDelivery.update({
-      where: { id: delivery.id },
+      where: { id: delivery.id, restaurantId: delivery.restaurantId },
       data: {
         status:
           result.outcome === 'success'
@@ -305,7 +316,7 @@ export async function processGiftCardDelivery(prisma: PrismaClient, deliveryId: 
   } catch (error) {
     const outcome = classifyNotificationError(error);
     await prisma.giftCardDelivery.update({
-      where: { id: delivery.id },
+      where: { id: delivery.id, restaurantId: delivery.restaurantId },
       data: {
         status: outcome === 'failure_certain' ? 'FAILED' : 'UNKNOWN',
         providerMessageId: providerMessageId ?? getNotificationErrorProviderMessageId(error),
@@ -333,7 +344,7 @@ export async function reconcileGiftCardDelivery(
       : await lookupTelnyxMessage(delivery.providerMessageId);
   if (outcome !== 'unknown')
     await prisma.giftCardDelivery.updateMany({
-      where: { id: delivery.id, status: 'UNKNOWN' },
+      where: { id: delivery.id, restaurantId: delivery.restaurantId, status: 'UNKNOWN' },
       data: {
         status: outcome === 'success' ? 'SENT' : 'FAILED',
         lastErrorCode: outcome === 'success' ? null : 'PROVIDER_REJECTED',
@@ -345,12 +356,14 @@ export async function reconcileGiftCardDelivery(
 
 export async function recoverGiftCardDeliveries(prisma: PrismaClient) {
   // A worker can die after sending but before recording acceptance. Never resend this state.
+  // tenant-scoping: global — Privileged recovery scheduler marks interrupted attempts UNKNOWN across restaurants; sends nothing.
   await prisma.giftCardDelivery.updateMany({
     where: { status: 'IN_PROGRESS', startedAt: { lt: new Date(Date.now() - 15 * 60 * 1000) } },
     data: { status: 'UNKNOWN', lastErrorCode: 'WORKER_INTERRUPTED' },
   });
 
   const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+  // tenant-scoping: global — Privileged recovery scheduler selects stalled outbox records across restaurants; requeue is scoped per persisted row.
   const rows = await prisma.giftCardDelivery.findMany({
     where: { status: 'PENDING', updatedAt: { lt: cutoff } },
     orderBy: { updatedAt: 'asc' },
@@ -359,7 +372,12 @@ export async function recoverGiftCardDeliveries(prisma: PrismaClient) {
   for (const row of rows)
     await prisma.$transaction(async (tx) => {
       const changed = await tx.giftCardDelivery.updateMany({
-        where: { id: row.id, status: 'PENDING', updatedAt: { lt: cutoff } },
+        where: {
+          id: row.id,
+          restaurantId: row.restaurantId,
+          status: 'PENDING',
+          updatedAt: { lt: cutoff },
+        },
         data: { updatedAt: new Date() },
       });
       if (!changed.count) return;

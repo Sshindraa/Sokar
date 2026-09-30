@@ -74,6 +74,7 @@ export class GiftCardCheckoutService {
   }
 
   async contribution(input: ContributeInput & { idempotencyKey?: string; accessToken?: string }) {
+    // tenant-scoping: global — Public contribution: the unique card code identifies the restaurant; no contact data is returned.
     const card = await this.prisma.giftCard.findUnique({ where: { code: input.code } });
     if (
       !card ||
@@ -184,7 +185,7 @@ export class GiftCardCheckoutService {
         .toNumber(),
     });
     await this.prisma.giftCardCheckout.update({
-      where: { id: checkout.id },
+      where: { id: checkout.id, restaurantId: checkout.restaurantId },
       data: { stripePaymentIntentId: intent.id },
     });
     return { paymentIntentId: intent.id, clientSecret: intent.clientSecret };
@@ -207,7 +208,7 @@ export class GiftCardCheckoutService {
   ): Promise<GiftCardCheckout | null> {
     if (!metadata.checkoutId) return null;
     const checkout = await this.prisma.giftCardCheckout.findUnique({
-      where: { id: metadata.checkoutId },
+      where: { id: metadata.checkoutId, restaurantId: metadata.restaurantId },
     });
     // A webhook can arrive before the optional PI reference update; the metadata is signed by Stripe.
     if (

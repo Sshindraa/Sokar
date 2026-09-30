@@ -96,7 +96,11 @@ export class GiftCardOperationsService {
         const snapshot = booking.giftCardRedemptionSnap as { giftCardId?: string } | null;
         if (snapshot?.giftCardId && snapshot.giftCardId !== card.id)
           throw new GiftCardOperationError('Une autre carte est associée à cette réservation.');
-        if (await tx.giftCardRedemption.findFirst({ where: { reservationId: booking.id } })) {
+        if (
+          await tx.giftCardRedemption.findFirst({
+            where: { reservationId: booking.id, restaurantId: input.restaurantId },
+          })
+        ) {
           throw new GiftCardOperationError(
             'Un débit a déjà été enregistré pour cette réservation.',
           );
@@ -121,7 +125,7 @@ export class GiftCardOperationsService {
         },
       });
       await tx.giftCard.update({
-        where: { id: card.id },
+        where: { id: card.id, restaurantId: input.restaurantId },
         data: {
           remainingAmount: balanceAfter,
           status: balanceAfter.gt(0) ? 'ACTIVE' : 'REDEEMED',
@@ -129,7 +133,7 @@ export class GiftCardOperationsService {
       });
       if (input.reservationId)
         await tx.reservation.update({
-          where: { id: input.reservationId },
+          where: { id: input.reservationId, restaurantId: input.restaurantId },
           data: {
             giftCardComplementAmount: complementAmount,
             giftCardRedemptionSnap: {
@@ -267,11 +271,11 @@ export class GiftCardOperationsService {
     if (!card) throw new GiftCardOperationError('Carte cadeau introuvable.', 404);
     const [redemptions, payments, refunds, deliveries, associatedReservations] = await Promise.all([
       this.prisma.giftCardRedemption.findMany({
-        where: { giftCardId },
+        where: { giftCardId, restaurantId },
         orderBy: { redeemedAt: 'desc' },
       }),
       this.prisma.giftCardPaymentEntry.findMany({
-        where: { giftCardId },
+        where: { giftCardId, restaurantId },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.giftCardRefundRequest.findMany({

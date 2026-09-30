@@ -1110,3 +1110,7 @@ Suite `perturb` (27 variantes × 5 tirages, 135 requêtes) : fausse acceptation 
 
 ## 2026-09-30 — Intégration des cartes cadeaux dans Sokar
 Autorisation explicite de l’utilisateur : publication du travail cartes cadeaux sur une branche dédiée issue de main, sans toucher à la correction voix active dans le dossier principal. Stripe Connect restaurant, association sans débit à la réservation, encaissement réel en salle, registre financier et remboursements idempotents, suivi des notifications et reprise contrôlée. Trois migrations additives ; aucune migration distante effectuée à ce stade. Validation sur main : API 3288 tests, Connect 115, dashboard cartes cadeaux 7, PostgreSQL réel 21 ; types API/Connect/dashboard et format conformes. Publication via pnpm pr:submit avec fusion conditionnée par CI.
+
+
+## 2026-09-30 — Scoping tenant des cartes cadeaux avant intégration
+Filtres restaurant explicites ajoutés aux débits, associations, commandes et transitions de livraison. Accès transversaux des workers et résolution initiale par code, jeton de commande ou paiement Stripe documentés au point d’appel ; aucune hausse de baseline ni contournement du garde-fou. Vérification : types API et 203 tests cartes cadeaux, dont 21 PostgreSQL réel.

@@ -1472,7 +1472,7 @@ describe('gift-card routes', () => {
       expect(body.status).toBe('ACTIVE');
       expect(db.giftCard.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'gc-crowd-1' },
+          where: { id: 'gc-crowd-1', restaurantId: RESTAURANT_ID },
           data: expect.objectContaining({
             status: 'ACTIVE',
             sokarCommissionAmount: d(4),

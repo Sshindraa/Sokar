@@ -183,7 +183,9 @@ export class GiftCardService {
     if (!validation.valid) throw new GiftCardError(`Carte cadeau invalide : ${validation.reason}`);
     return this.prisma.$transaction(async (tx) => {
       await lockGiftCard(tx, validation.giftCard.id);
-      const card = await tx.giftCard.findUniqueOrThrow({ where: { id: validation.giftCard.id } });
+      const card = await tx.giftCard.findUniqueOrThrow({
+        where: { id: validation.giftCard.id, restaurantId: input.restaurantId },
+      });
       if (
         card.status !== 'ACTIVE' ||
         card.remainingAmount.lte(0) ||
@@ -213,7 +215,7 @@ export class GiftCardService {
         complementAmount: 0,
       };
       await tx.reservation.update({
-        where: { id: reservation.id },
+        where: { id: reservation.id, restaurantId: input.restaurantId },
         data: {
           giftCardRedemptionSnap: result as unknown as Prisma.InputJsonValue,
         },
@@ -270,11 +272,17 @@ export class GiftCardService {
         if (associated?.giftCardId && associated.giftCardId !== giftCard.id)
           throw new GiftCardError('Une autre carte est déjà associée.');
         const prior = await tx.giftCardRedemption.findFirst({
-          where: { giftCardId: giftCard.id, reservationId: input.reservationId },
+          where: {
+            giftCardId: giftCard.id,
+            reservationId: input.reservationId,
+            restaurantId: input.restaurantId,
+          },
         });
         if (prior) {
           const snap = (
-            await tx.reservation.findUniqueOrThrow({ where: { id: input.reservationId } })
+            await tx.reservation.findUniqueOrThrow({
+              where: { id: input.reservationId, restaurantId: input.restaurantId },
+            })
           ).giftCardRedemptionSnap as unknown as GiftCardApplicationResult & {
             requestedAmount?: number;
           };
@@ -318,20 +326,21 @@ export class GiftCardService {
         await tx.giftCardRedemption.create({
           data: {
             giftCardId: giftCard.id,
+            restaurantId: input.restaurantId,
             reservationId: input.reservationId,
             amount: appliedAmount,
           },
         });
 
         const updated = await tx.giftCard.update({
-          where: { id: giftCard.id },
+          where: { id: giftCard.id, restaurantId: input.restaurantId },
           data: {
             remainingAmount,
             status: newStatus,
           },
         });
         await tx.reservation.update({
-          where: { id: input.reservationId },
+          where: { id: input.reservationId, restaurantId: input.restaurantId },
           data: {
             giftCardComplementAmount: complementAmount,
             giftCardRedemptionSnap: {
