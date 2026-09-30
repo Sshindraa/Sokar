@@ -136,6 +136,16 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     expect(props?.restaurantName).toBeDefined();
   });
 
+  it('read-tool descriptions keep natural requests on the exact requested time', () => {
+    const searchTool = TOOL_LIST.find((tool) => tool.name === 'search_restaurants');
+    const availabilityTool = TOOL_LIST.find((tool) => tool.name === 'check_availability');
+
+    expect(searchTool?.description).toContain('recherche unique qui commence à 19 h');
+    expect(searchTool?.description).toContain('mentionnez uniquement celui-ci');
+    expect(availabilityTool?.description).toContain('ne multipliez pas les appels');
+    expect(availabilityTool?.description).toContain('alternatives réellement retournées');
+  });
+
   it('uses the two-hour default for read checks but keeps holds and quotes explicit', () => {
     const naturalReadRequest = {
       restaurantId: '550e8400-e29b-41d4-a716-446655440000',
