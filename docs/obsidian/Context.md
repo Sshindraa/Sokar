@@ -11,7 +11,7 @@
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 
 - [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
-- [ ] Vérification de compréhension (PR phase 2) : après déploiement, l'activer pour Chez Sokar seulement (`VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`), refaire un appel d'hésitation, lire `understanding` dans `[voice-turn] structured_turn`, et traiter le nom épelé + mot parasite.
+- [ ] Vérification de compréhension (PR phase 2) : après déploiement, l'activer pour Chez Sokar seulement (`VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`), refaire un appel d'hésitation, lire `understanding` dans `[voice-turn] structured_turn`.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.

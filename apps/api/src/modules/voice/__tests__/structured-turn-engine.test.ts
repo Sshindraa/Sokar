@@ -338,6 +338,78 @@ describe('tour structuré (canary)', () => {
     });
   });
 
+  describe('nom épelé suivi d’un mot que l’appelant n’a pas épelé', () => {
+    const named = (customerName: string) => ({
+      date: TOMORROW,
+      time: '19:00',
+      partySize: 4,
+      customerName,
+    });
+    const secondPassContext = (mgr: CallSessionManager) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+    const askingName = () => {
+      const fx = fixture();
+      const state = createStructuredTurnState();
+      state.draft = { ...named(''), customerName: '' };
+      state.lastAwaiting = 'customerName';
+      fx.session.structuredTurn = state;
+      return fx;
+    };
+
+    it('se tait, retient le bon nom et laisse le modèle relire les lettres épelées', async () => {
+      const { session, mgr, outputs } = askingName();
+      outputs.push(
+        turn({
+          draft: named('HOUET DIMANCHE'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Je répète : HOUET DIMANCHE, c’est bien ça ?',
+        }),
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'h o u e t dimanche', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain('customerName = « HOUET »');
+      expect(spoken().join(' ')).not.toContain('DIMANCHE');
+      expect(spoken().join(' ')).toContain('H, O, U, E, T');
+      expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
+    });
+
+    it('ne change rien quand le nom relu est exactement ce qui a été épelé', async () => {
+      const { session, mgr, outputs } = askingName();
+      outputs.push(
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'h o u e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken().join(' ')).toContain('H, O, U, E, T');
+    });
+
+    it('ne se déclenche pas hors d’une épellation attendue', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ draft: named('Jean Dupont'), awaiting: 'confirmation', say: 'Jean Dupont, ok ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'jean dupont', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('créneau exclu par les disponibilités lues (appel 1b3f85e9)', () => {
     const conflicting = { date: TOMORROW, time: '15:30', partySize: 5, customerName: '' };
     const day = (slots: string[]) => ({

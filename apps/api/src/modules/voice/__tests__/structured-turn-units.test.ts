@@ -369,6 +369,42 @@ describe('reconcileSpelledName', () => {
     );
   });
 
+  it('drops the words glued after the spelling, whatever they are', () => {
+    // La garde ne connaît aucun mot : seule la structure compte (lettres épelées + reste séparé).
+    for (const glued of ['HOUET DIMANCHE', 'HOUET oui', 'HOUET je souhaite', 'HOUET x']) {
+      expect(reconcileSpelledName(draft(glued), 'h o u e t bla', 'customerName').customerName).toBe(
+        'HOUET',
+      );
+    }
+    expect(
+      reconcileSpelledName(draft('Hoët Houet'), 'hoët h o u e t merci', 'customerNameConfirmation')
+        .customerName,
+    ).toBe('Hoët Houet');
+    expect(
+      reconcileSpelledName(draft('Houet Dimanche'), 'h o u e t dimanche', 'confirmation')
+        .customerName,
+    ).toBe('Houet');
+  });
+
+  it('keeps a longer name when it is not the spelling followed by separate words', () => {
+    // Complété sans séparation : le modèle a deviné la fin, ce n'est pas un mot collé.
+    expect(reconcileSpelledName(draft('DUPONT'), 'd u p o n', 'customerName').customerName).toBe(
+      'DUPONT',
+    );
+    // Reste AVANT l'épellation : pièces d'un nom assemblées sur plusieurs tours.
+    expect(reconcileSpelledName(draft('AK KIF'), 'k i f', 'customerName').customerName).toBe(
+      'AK KIF',
+    );
+    expect(
+      reconcileSpelledName(draft('Jean HOUET'), 'h o u e t', 'customerName').customerName,
+    ).toBe('Jean HOUET');
+    // Le nom est exactement l'épellation en plusieurs mots : rien de plus.
+    expect(
+      reconcileSpelledName(draft('DE LA FONTAINE'), 'd e l a f o n t a i n e', 'customerName')
+        .customerName,
+    ).toBe('DE LA FONTAINE');
+  });
+
   it('does nothing when no name was being asked for', () => {
     expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });

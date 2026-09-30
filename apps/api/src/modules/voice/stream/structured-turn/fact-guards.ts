@@ -208,6 +208,62 @@ function isSubsequence(needle: string, haystack: string): boolean {
 }
 
 /**
+ * Mot(s) collé(s) APRÈS l'épellation dans le nom du modèle (« HOUET » épelé, nom écrit « HOUET DIMANCHE » :
+ * un mot dit en plus, parasite ou erreur de reconnaissance, pris pour une partie du nom). Test structurel, sans
+ * aucun mot connu : les premiers mots du nom, mis bout à bout, ne font QUE les lettres épelées et il en reste
+ * d'autres derrière. Le modèle a lui-même séparé ce reste par un espace ; sans cette séparation (« DUPON »
+ * épelé, « DUPONT » écrit) ou quand le reste précède l'épellation (pièces assemblées sur plusieurs tours), le
+ * nom du modèle reste le sien. Renvoie le nom raccourci, ou null s'il n'y a rien à retirer.
+ */
+function dropUnspelledTail(name: string, spelled: string): string | null {
+  const words = name.trim().split(/\s+/u).filter(Boolean);
+  for (let count = 1; count < words.length; count++) {
+    if (stripToLetters(words.slice(0, count).join('')) === spelled) {
+      return words.slice(0, count).join(' ');
+    }
+  }
+  return null;
+}
+
+/**
+ * Nom lu dans le flux JSON du modèle, comme `parseStreamedDraft` : lisible avant `say`. Null tant que le
+ * brouillon n'est pas complet.
+ */
+export function parseStreamedCustomerName(streamed: string): string | null {
+  const match = /"draft"\s*:\s*(\{[^{}]*\})/.exec(streamed);
+  if (!match) return null;
+  try {
+    const name = (JSON.parse(match[1]) as Record<string, unknown>).customerName;
+    return typeof name === 'string' ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fait à donner au modèle quand le nom qu'il s'apprête à relire porte des mots qui n'ont pas été épelés : il
+ * se tait, le brouillon est déjà corrigé par `reconcileSpelledName`, et le second passage relit le bon nom
+ * (sinon l'appelant entendrait « HOUET DIMANCHE » alors que le brouillon dit HOUET). Null quand il n'y a rien à
+ * retirer. Même test structurel que `reconcileSpelledName`, aucun mot connu.
+ */
+export function unspelledNameFact(
+  proposedName: string,
+  transcript: string,
+  previousAwaiting: StructuredTurnOutput['awaiting'],
+): string | null {
+  if (!SPELLING_AWAITING.has(previousAwaiting)) return null;
+  const spelled = spelledLettersOf(transcript);
+  if (spelled.length < 3) return null;
+  const kept = dropUnspelledTail(proposedName, spelled);
+  if (kept === null) return null;
+  return (
+    `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») contient des mots que l'appelant n'a pas épelés. ` +
+    `Seules les lettres épelées forment le nom : customerName = « ${kept} ». ` +
+    `Relis uniquement ce nom, sans le mot en trop, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+  );
+}
+
+/**
  * Le nom du brouillon doit dire les lettres que l'appelant vient d'épeler. Le modèle lit
  * parfois les bonnes lettres à voix haute mais écrit un nom auquel il en manque (« hoët h o
  * u e t » → HOËT, « a 2 k i f » → AKIF) : le récapitulatif et la réservation lisent ce champ.
@@ -222,6 +278,10 @@ export function reconcileSpelledName(
 ): StructuredTurnDraft {
   if (!SPELLING_AWAITING.has(previousAwaiting)) return draft;
   const spelled = spelledLettersOf(transcript);
+  if (spelled.length >= 3) {
+    const trimmed = dropUnspelledTail(draft.customerName, spelled);
+    if (trimmed !== null) return { ...draft, customerName: trimmed };
+  }
   const named = stripToLetters(draft.customerName);
   if (spelled.length < 3 || named.length < 2 || named === spelled) return draft;
   const missing = spelled.length - named.length;

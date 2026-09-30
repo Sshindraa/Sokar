@@ -52,8 +52,10 @@ import {
   dayPartInTimezone,
   todayInTimezone,
   type StructuredTurnState,
+  parseStreamedCustomerName,
   parseStreamedDraft,
   outsideOpeningHoursFact,
+  unspelledNameFact,
   reconcileSpelledName,
   requestedSlotConflict,
 } from './fact-guards';
@@ -158,6 +160,8 @@ interface PassResult {
   slotConflict: boolean;
   /** Fait à donner au second passage quand l'heure visée est hors horaires (sinon lecture des créneaux). */
   hoursFact?: string;
+  /** Fait à donner au second passage quand le nom relu porte des mots non épelés : rien n'a été dit. */
+  nameFact?: string;
 }
 
 /**
@@ -473,6 +477,7 @@ export async function runStructuredTurn(
     let turnComplete: boolean | null = null;
     let slotConflict = false;
     let hoursFact: string | undefined;
+    let nameFact: string | undefined;
     let firstToken = true;
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
@@ -516,6 +521,17 @@ export async function runStructuredTurn(
           slotConflict = true;
           hoursFact = outsideHours ?? undefined;
         }
+        // Nom relu avec des mots que l'appelant n'a pas épelés : on se tait avant de le dire.
+        if (!slotConflict) {
+          const streamedName = parseStreamedCustomerName(extractor.raw);
+          const fact = streamedName
+            ? unspelledNameFact(streamedName, transcript, state.lastAwaiting)
+            : null;
+          if (fact) {
+            slotConflict = true;
+            nameFact = fact;
+          }
+        }
       }
       const mayContinue =
         (turnComplete === true || options.callerFinished === true) && !slotConflict;
@@ -547,7 +563,13 @@ export async function runStructuredTurn(
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
     }
-    return { output, spoken, slotConflict, ...(hoursFact ? { hoursFact } : {}) };
+    return {
+      output,
+      spoken,
+      slotConflict,
+      ...(hoursFact ? { hoursFact } : {}),
+      ...(nameFact ? { nameFact } : {}),
+    };
   };
 
   let speculationUsed = false;
@@ -696,7 +718,9 @@ export async function runStructuredTurn(
       actionDecision: first.slotConflict
         ? first.hoursFact
           ? 'outside_hours'
-          : 'slot_conflict'
+          : first.nameFact
+            ? 'unspelled_words'
+            : 'slot_conflict'
         : decision.allowed
           ? 'allowed'
           : decision.reason,
@@ -730,7 +754,7 @@ export async function runStructuredTurn(
     } else if (first.slotConflict) {
       // Le modèle visait une heure hors horaires ou un créneau que les disponibilités lues excluent :
       // rien n'a été dit ; le second passage reçoit le fait réel.
-      actionResult = first.hoursFact ?? (await runAvailability());
+      actionResult = first.hoursFact ?? first.nameFact ?? (await runAvailability());
     } else {
       switch (first.output.action) {
         case 'end_call':
