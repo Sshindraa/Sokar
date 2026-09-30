@@ -153,6 +153,9 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('sans ajouter « chez » devant le nom');
       expect(body.result.instructions).toContain('ne testez pas les horaires voisins');
       expect(body.result.instructions).toContain('ne l’invitez pas à réserver');
+      expect(body.result.instructions).toContain(
+        'reprenez exactement le texte lisible de l’outil comme réponse complète',
+      );
     });
 
     it('négocie la version demandée quand elle est supportée', async () => {
@@ -293,7 +296,7 @@ describe('MCP server', () => {
       );
       expect(searchRestaurants.description).not.toContain('120 minutes');
       expect(availability.description).not.toContain('120 minutes');
-      expect(availability.description).toContain('ne mentionnez aucune heure de fin');
+      expect(availability.description).toContain('sans ajouter de fin, de durée');
     });
   });
 

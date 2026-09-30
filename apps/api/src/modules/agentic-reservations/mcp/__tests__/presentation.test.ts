@@ -45,6 +45,38 @@ describe('MCP human-facing messages', () => {
     ).toBe('Une table est disponible le jeudi 1er octobre à 19 h pour 2 personnes.');
   });
 
+  it('prépare une réponse complète et naturelle pour la recherche nommée', () => {
+    expect(
+      formatMcpSuccessMessage(
+        'search_restaurants',
+        {
+          requestedRestaurant: { name: 'Chez Sokar', status: 'available' },
+          restaurants: [
+            {
+              name: 'Chez Sokar',
+              availableSlots: [
+                {
+                  startsAt: '2026-10-01T17:00:00.000Z',
+                  endsAt: '2026-10-01T18:30:00.000Z',
+                },
+              ],
+            },
+          ],
+          capacityLimits: [],
+        },
+        {
+          city: 'Lyon',
+          restaurantName: 'Chez Sokar',
+          partySize: 2,
+          slotStart: '2026-10-01T19:00:00',
+          timezone: 'Europe/Paris',
+        },
+      ),
+    ).toBe(
+      'Oui, une table est disponible pour 2 personnes au restaurant Chez Sokar le jeudi 1er octobre à 19 h.',
+    );
+  });
+
   it('distingue une fiche absente sans dire au client de fournir un identifiant', () => {
     expect(
       formatMcpSuccessMessage(

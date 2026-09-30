@@ -144,6 +144,10 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     expect(searchTool?.description).toContain('mentionnez uniquement celle-ci');
     expect(availabilityTool?.description).toContain('ne multipliez pas les appels');
     expect(availabilityTool?.description).toContain('alternatives réellement retournées');
+    expect(searchTool?.description).toContain('Réutilisez exactement le texte lisible du résultat');
+    expect(availabilityTool?.description).toContain(
+      'Réutilisez exactement le texte lisible du résultat',
+    );
     expect(searchTool?.description).not.toContain('120 minutes');
     expect(availabilityTool?.description).not.toContain('120 minutes');
 
