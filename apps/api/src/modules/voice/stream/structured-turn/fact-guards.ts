@@ -241,25 +241,27 @@ export function parseStreamedCustomerName(streamed: string): string | null {
 }
 
 /**
- * Fait à donner au modèle quand le nom qu'il s'apprête à relire porte des mots qui n'ont pas été épelés : il
- * se tait, le brouillon est déjà corrigé par `reconcileSpelledName`, et le second passage relit le bon nom
- * (sinon l'appelant entendrait « HOUET DIMANCHE » alors que le brouillon dit HOUET). Null quand il n'y a rien à
- * retirer. Même test structurel que `reconcileSpelledName`, aucun mot connu.
+ * Fait à donner au modèle quand le nom qu'il s'apprête à relire n'est pas celui que le garde-fou de
+ * l'épellation retiendrait (`reconcileSpelledName`) : lettres épelées absentes, mot non épelé collé derrière.
+ * Il se tait, le brouillon est déjà corrigé, et le second passage relit le bon nom : ce que l'appelant entend est
+ * ce que le brouillon contient, sans aucun exemple dans le prompt. Null quand le garde-fou ne change rien :
+ * même test structurel, aucun mot connu, les mêmes limites (un nom assemblé sur plusieurs tours n'est pas touché).
  */
-export function unspelledNameFact(
+export function spelledNameFact(
   proposedName: string,
   transcript: string,
   previousAwaiting: StructuredTurnOutput['awaiting'],
 ): string | null {
-  if (!SPELLING_AWAITING.has(previousAwaiting)) return null;
-  const spelled = spelledLettersOf(transcript);
-  if (spelled.length < 3) return null;
-  const kept = dropUnspelledTail(proposedName, spelled);
-  if (kept === null) return null;
+  const reconciled = reconcileSpelledName(
+    { date: '', time: '', partySize: 0, customerName: proposedName },
+    transcript,
+    previousAwaiting,
+  ).customerName;
+  if (stripToLetters(reconciled) === stripToLetters(proposedName)) return null;
   return (
-    `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») contient des mots que l'appelant n'a pas épelés. ` +
-    `Seules les lettres épelées forment le nom : customerName = « ${kept} ». ` +
-    `Relis uniquement ce nom, sans le mot en trop, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+    `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne correspond pas aux lettres que l'appelant vient d'épeler. ` +
+    `Les lettres épelées font foi : customerName = « ${reconciled} ». ` +
+    `Relis uniquement ce nom, lettre par lettre, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
   );
 }
 
