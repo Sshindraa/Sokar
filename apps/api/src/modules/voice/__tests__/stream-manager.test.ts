@@ -180,6 +180,8 @@ type VoiceConfigSnapshot = Pick<
   | 'CEREBRAS_BASE_URL'
   | 'CEREBRAS_API_KEY'
   | 'OPENROUTER_API_KEY'
+  | 'OPENROUTER_BASE_URL'
+  | 'OPENROUTER_FALLBACK_BASE_URL'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
@@ -190,6 +192,8 @@ function snapshotVoiceConfig(): VoiceConfigSnapshot {
     CEREBRAS_BASE_URL: voiceConfig.CEREBRAS_BASE_URL,
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL: voiceConfig.OPENROUTER_BASE_URL,
+    OPENROUTER_FALLBACK_BASE_URL: voiceConfig.OPENROUTER_FALLBACK_BASE_URL,
   };
 }
 
@@ -2360,6 +2364,33 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
         allow_fallbacks: true,
       });
       expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('utilise OPENROUTER_FALLBACK_BASE_URL pour le secours seul, sinon OPENROUTER_BASE_URL', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.OPENROUTER_API_KEY = OPENROUTER_TEST_KEY;
+      voiceConfig.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+      const fallbackUrl = async (fallbackBase: string | undefined) => {
+        voiceConfig.OPENROUTER_FALLBACK_BASE_URL = fallbackBase;
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce({ ok: false, status: 402, body: null })
+          .mockResolvedValueOnce({ ok: true, status: 200, body: sseBody('{"say":"ok"}') });
+        globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+        await CallSessionManager.getInstance().streamStructuredCompletion(
+          makeSession(),
+          [{ role: 'user', content: 'bonjour' }],
+          format,
+          { onDelta: () => undefined },
+        );
+        return (fetchMock.mock.calls[1] as [string, RequestInit])[0];
+      };
+
+      expect(await fallbackUrl('https://eu.openrouter.ai/api/v1')).toBe(
+        'https://eu.openrouter.ai/api/v1/chat/completions',
+      );
+      expect(await fallbackUrl(undefined)).toBe('https://openrouter.ai/api/v1/chat/completions');
     });
 
     it('garde l’erreur d’origine sans clé de secours', async () => {

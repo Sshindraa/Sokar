@@ -1759,7 +1759,9 @@ export class CallSessionManager {
     }
     const startedAt = Date.now();
     try {
-      const response = await fetch(`${voiceConfig.OPENROUTER_BASE_URL}/chat/completions`, {
+      // Adresse propre au secours vocal (routage UE possible sans toucher à Jev) ; sinon l'adresse commune.
+      const baseUrl = voiceConfig.OPENROUTER_FALLBACK_BASE_URL ?? voiceConfig.OPENROUTER_BASE_URL;
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         signal: withRequestTimeout(opts.signal),

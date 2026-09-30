@@ -204,7 +204,11 @@ C'est un filet d'urgence, pas un provider de production.
 
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
-OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut
+OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API decisions), juge d'évaluation, suivi de crédit
+# Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
+# Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
+# Mesure du 01/10 : voir docs/runbooks/provider-resilience.md (un seul hébergeur UE pour le modèle de repli).
+OPENROUTER_FALLBACK_BASE_URL=""
 VOICE_STRUCTURED_FALLBACK_MODEL="deepseek/deepseek-v4-flash-0731"  # défaut ; modèle de repli OpenRouter du tour structuré ET du chemin à outils (autres restaurants)
 # Hébergeurs du repli, dans l'ordre (vide = tri par latence historique, instable : pointes de 5 à 30 s le 29/09).
 VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="Cohere,Wafer,Baidu"

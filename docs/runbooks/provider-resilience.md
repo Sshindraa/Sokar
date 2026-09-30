@@ -67,6 +67,35 @@ clé dans l'environnement) et `openrouterUsed` (route effectivement empruntée).
 est vraie en production (secours du tour structuré et écoute des appels) ; la seconde reste
 fausse tant que Cerebras répond.
 
+## Région du secours OpenRouter (mondial / UE)
+
+`OPENROUTER_FALLBACK_BASE_URL` (vide = `OPENROUTER_BASE_URL`) donne au seul secours vocal sa propre adresse, pour le
+router en UE sans toucher aux autres usages d'OpenRouter. Aucune valeur par défaut n'a changé : tant qu'elle est
+vide, le comportement est identique à avant.
+
+Comparaison mesurée le 01/10/2026 avec `scripts/openrouter-region-test.mjs` (même requête que le secours : modèle
+`deepseek/deepseek-v4-flash-0731`, JSON Schema strict, flux, ordre `Cohere,Wafer,Baidu` ; données synthétiques,
+10 appels par adresse, alternés) :
+
+|                               | Mondial          | UE                                                         |
+| ----------------------------- | ---------------- | ---------------------------------------------------------- |
+| Appels réussis, JSON conforme | 10/10            | 10/10                                                      |
+| Hébergeur qui répond          | Cohere           | Inceptron (le seul proposé en UE pour ce modèle)           |
+| Premier fragment p50 / p95    | 293 / 1 027 ms   | 324 / 629 ms                                               |
+| Durée totale p50 / p95        | 2 315 / 4 792 ms | 1 572 / 2 472 ms                                           |
+| Jev (API decisions)           | 200              | **404** (« aucun hébergeur dans votre région de données ») |
+
+À savoir avant d'activer l'UE : (1) un seul hébergeur, donc pas de second recours si Inceptron tombe ; l'ordre
+d'hébergeurs configuré n'y joue aucun rôle ; (2) Jev, le juge d'évaluation et le suivi de crédit doivent rester
+sur `OPENROUTER_BASE_URL` (mondial) ; (3) l'échantillon est petit (10 appels, un seul moment) et ne couvre pas le
+chemin à outils ni la charge ; (4) le secours n'est pas le flux principal : la région du modèle principal et des
+autres fournisseurs reste à vérifier pour toute conclusion sur la résidence des données ; (5) si l'UE échoue, rien
+ne bascule sur le mondial : choisir cette politique (continuité ou résidence) avant d'activer.
+
+Rejouer : `scp apps/api/scripts/openrouter-region-test.mjs deploy@sokar:/tmp/ && ssh deploy@sokar 'node
+--env-file=/opt/sokar/apps/api/.env /tmp/openrouter-region-test.mjs --runs 10; rm /tmp/openrouter-region-test.mjs'`
+(le staging n'a pas de clé OpenRouter). Quelques centimes d'OpenRouter, aucun crédit Cerebras.
+
 ## Ajouter un appel fournisseur
 
 1. Utiliser `fetchWithTimeout` (ou `withTimeout` pour un SDK sans annulation) — jamais `fetch` nu.
