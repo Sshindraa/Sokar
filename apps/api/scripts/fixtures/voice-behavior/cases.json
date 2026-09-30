@@ -454,6 +454,16 @@
         "role": "assistant",
         "content": "Donc, jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET. C'est bon ?"
       }
+    ],
+    "bf3893ae": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Bien sûr. Pour quel jour vous voulez réserver ?"
+      }
     ]
   },
   "cases": [
@@ -545,6 +555,12 @@
         "date": "2026-09-30"
       },
       "awaiting": "time",
+      "valueSpans": {
+        "time": {
+          "text": "14 heures",
+          "value": "14:00"
+        }
+      },
       "checks": [
         {
           "kind": "field",
@@ -570,6 +586,12 @@
         "date": "2026-09-30"
       },
       "awaiting": "time",
+      "valueSpans": {
+        "time": {
+          "text": "20 heures",
+          "value": "20:00"
+        }
+      },
       "checks": [
         {
           "kind": "field",
@@ -629,6 +651,12 @@
         "time": "14:00"
       },
       "awaiting": "partySize",
+      "valueSpans": {
+        "time": {
+          "text": "16 heures 30",
+          "value": "16:30"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -649,6 +677,12 @@
         "time": "16:30"
       },
       "awaiting": "partySize",
+      "valueSpans": {
+        "partySize": {
+          "text": "6",
+          "value": 6
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -670,6 +704,12 @@
         "partySize": 6
       },
       "awaiting": "customerName",
+      "valueSpans": {
+        "customerName": {
+          "text": "h o u e t",
+          "value": "HOUET"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -691,6 +731,12 @@
         "partySize": 6
       },
       "awaiting": "customerName",
+      "valueSpans": {
+        "customerName": {
+          "text": "a 2 k i f",
+          "value": "AKKIF"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -1017,6 +1063,12 @@
       "id": "epele-sans-preambule",
       "source": "« a 2 k i f » sans préambule : le modèle perdait le double K (15 % de AKKIF avant la règle du chiffre doublant la lettre, 100 % après)",
       "transcript": "a 2 k i f",
+      "valueSpans": {
+        "customerName": {
+          "text": "a 2 k i f",
+          "value": "AKKIF"
+        }
+      },
       "checks": [
         {
           "kind": "say",
@@ -1044,6 +1096,12 @@
         "partySize": 5
       },
       "awaiting": "customerName",
+      "valueSpans": {
+        "customerName": {
+          "text": "hoët h o u e t",
+          "value": "HOUET"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -1065,6 +1123,12 @@
         "partySize": 5
       },
       "awaiting": "customerName",
+      "valueSpans": {
+        "customerName": {
+          "text": "hoët h o u e t",
+          "value": "HOUET"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -1087,6 +1151,12 @@
         "customerName": "HOËT"
       },
       "awaiting": "customerNameConfirmation",
+      "valueSpans": {
+        "customerName": {
+          "text": "h o u e t",
+          "value": "HOUET"
+        }
+      },
       "checks": [
         {
           "kind": "draft",
@@ -1139,6 +1209,39 @@
           "minRate": 0.8
         }
       ]
+    },
+    {
+      "id": "appel-bf3893ae-enonce-incoherent",
+      "behavior": "énoncé incohérent",
+      "source": "appel bf3893ae tour 2 (30/09) : transcription Deepgram « vous êtes 20 demain », l'appelant hésitait. Le modèle a retenu 20 h (interpretation=answer, confidence=high) et dit « c'est noté ». Vérité non établie : deux modèles audio se contredisent, écoute humaine à faire.",
+      "history": "bf3893ae",
+      "transcript": "vous êtes 20 demain",
+      "awaiting": "date",
+      "truthStatus": "unverified",
+      "split": "calibration",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draftUnchanged",
+              "fields": ["time", "partySize"]
+            },
+            {
+              "kind": "fieldIn",
+              "path": "interpretation",
+              "values": ["unclear"]
+            },
+            {
+              "kind": "fieldIn",
+              "path": "confidence",
+              "values": ["low"]
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
     }
   ],
   "profiles": {
@@ -1167,5 +1270,23 @@
         }
       }
     }
+  },
+  "spanPool": {
+    "time": [
+      {
+        "text": "18 heures",
+        "value": "18:00"
+      }
+    ],
+    "partySize": [
+      {
+        "text": "2",
+        "value": 2
+      },
+      {
+        "text": "4",
+        "value": 4
+      }
+    ]
   }
 }
