@@ -141,9 +141,37 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
     const availabilityTool = TOOL_LIST.find((tool) => tool.name === 'check_availability');
 
     expect(searchTool?.description).toContain('recherche unique qui commence à 19 h');
-    expect(searchTool?.description).toContain('mentionnez uniquement celui-ci');
+    expect(searchTool?.description).toContain('mentionnez uniquement celle-ci');
     expect(availabilityTool?.description).toContain('ne multipliez pas les appels');
     expect(availabilityTool?.description).toContain('alternatives réellement retournées');
+    expect(searchTool?.description).not.toContain('120 minutes');
+    expect(availabilityTool?.description).not.toContain('120 minutes');
+
+    const searchSchema = searchTool?.inputSchema as {
+      properties?: { slotEnd?: { description?: string } };
+    };
+    const endBoundaryDescription = (
+      searchTool?.outputSchema as {
+        properties?: {
+          restaurants?: {
+            items?: {
+              properties?: {
+                availableSlots?: {
+                  items?: { properties?: { endsAt?: { description?: string } } };
+                };
+              };
+            };
+          };
+        };
+      }
+    )?.properties?.restaurants?.items?.properties?.availableSlots?.items?.properties?.endsAt
+      ?.description;
+
+    expect(searchSchema.properties?.slotEnd?.description).toContain(
+      'Do not mention any implicit end time',
+    );
+    expect(endBoundaryDescription).toContain('Technical end boundary');
+    expect(endBoundaryDescription).toContain('do not show this value');
   });
 
   it('uses the two-hour default for read checks but keeps holds and quotes explicit', () => {

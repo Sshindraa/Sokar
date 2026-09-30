@@ -17,7 +17,7 @@
 - [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : PR #314, #324 et #325 fusionnées ; recherche, disponibilité, cycle idempotent, modification et annulation validés sur staging à Chez Sokar. Après le déploiement de #325, le retour ne montrait plus une plage de 30 min inventée, mais Claude a tutoyé et écrit « chez Chez Sokar » ; ChatGPT a fait apparaître des horaires voisins et annoncé 19 h 30 sans demande. Correctif additif en cours dans `codex/mcp-natural-language-output` : vouvoiement, nom propre sans double préposition, recherche à l’heure demandée uniquement et réponse brève. Retest staging requis. Aucun appel MCP de production. initialize/tools/list et protocolVersion restent non visibles dans les clients.
+- [ ] MCP : PR #314, #324, #325 et #326 fusionnées ; cycle de réservation idempotent et recherche naturelle validés à Chez Sokar sur staging. Le retest après #326 a supprimé le double « chez » et les horaires voisins, mais Claude tutoie et invite encore à réserver après une simple question ; ChatGPT présente 19 h–21 h alors que la demande porte seulement sur 19 h. Correctif additif en cours dans `codex/mcp-hide-internal-duration` : documenter la borne de recherche interne comme non destinée à l’utilisateur, sans changer le contrat de réponse. Retest staging requis. Aucun appel MCP de production. initialize/tools/list et protocolVersion restent non visibles dans les clients.
 
 ## Décisions récentes
 
