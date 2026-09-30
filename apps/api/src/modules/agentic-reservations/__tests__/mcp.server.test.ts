@@ -148,6 +148,10 @@ describe('MCP server', () => {
       expect(body.result.instructions).toContain('120 minutes');
       expect(body.result.instructions).toContain('Ne demandez jamais un identifiant');
       expect(body.result.instructions).toContain('Après une réussite');
+      expect(body.result.instructions).toContain('utilisez « vous », jamais « tu »');
+      expect(body.result.instructions).toContain('sans ajouter « chez » devant le nom');
+      expect(body.result.instructions).toContain('ne testez pas les horaires voisins');
+      expect(body.result.instructions).toContain('ne l’invitez pas à réserver');
     });
 
     it('négocie la version demandée quand elle est supportée', async () => {
@@ -276,7 +280,9 @@ describe('MCP server', () => {
         (tool: { name: string }) => tool.name === 'search_restaurants',
       );
       expect(searchRestaurants.description).toContain('restaurantName');
-      expect(searchRestaurants.description).toContain('« Vers 19 h » signifie commencer à 19 h');
+      expect(searchRestaurants.description).toContain(
+        '« Vers 19 h » signifie une recherche unique',
+      );
       expect(searchRestaurants.description).toContain('Ne demandez jamais de restaurantId');
       expect(searchRestaurants.inputSchema.required).not.toContain('slotEnd');
       expect(searchRestaurants.inputSchema.required).not.toContain('restaurantName');
