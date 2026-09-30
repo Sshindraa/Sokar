@@ -7,6 +7,7 @@
  * reste en base 14 jours (table voice_debug_turns, purge quotidienne).
  */
 import { redactPii } from './pii-redact';
+import { logger } from '../../../shared/logger/pino';
 import type { CallSession, DebugSpeechEntry, VoiceTurnDebugDialogue } from './types';
 
 export const VOICE_DEBUG_DIALOGUE_RETENTION_DAYS = 14;
@@ -17,6 +18,31 @@ export function isVoiceDebugDialogueEnabled(restaurantId: string): boolean {
     .map((value) => value.trim())
     .filter(Boolean);
   return restaurantIds.includes(restaurantId);
+}
+
+/**
+ * Texte brut d'un événement STT (avant/après le filtre d'écho, segments finals, partielle au moment
+ * d'une fin de tour forcée), pour comprendre pourquoi un mot a été perdu : les nombres de mots ne
+ * suffisent pas (appel de test du 30/09 20 h 01). Même périmètre que le dialogue par tour : seuls les
+ * restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS, téléphones et e-mails masqués. Ces lignes
+ * restent dans les journaux du serveur (rotation de 14 jours), sans envoi vers un service externe.
+ */
+export function logVoiceDebugText(
+  session: Pick<CallSession, 'restaurantId' | 'callControlId'>,
+  event: string,
+  fields: Record<string, string | number | boolean | undefined>,
+): void {
+  if (!isVoiceDebugDialogueEnabled(session.restaurantId)) return;
+  const safe = Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? redactPii(value) : value,
+    ]),
+  );
+  logger.info(
+    { callId: session.callControlId, voiceDebug: event, ...safe },
+    '[voice-debug] raw text',
+  );
 }
 
 function currentDialogue(

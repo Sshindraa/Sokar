@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../shared/logger/pino';
 import {
   appendDebugSpeechText,
   formatDebugSpeech,
   isVoiceDebugDialogueEnabled,
+  logVoiceDebugText,
   recordDebugAgentSpeech,
   recordDebugCallerText,
   recordDebugSpeechAct,
@@ -91,5 +93,47 @@ describe('debug-dialogue', () => {
     expect(formatDebugSpeech(s.currentTurn!.debugDialogue!.agentSpeech)).toBe(
       "C'est bon pour 20 h. C’est à quel nom ? [envoi coupé]",
     );
+  });
+});
+
+describe('logVoiceDebugText', () => {
+  afterEach(() => {
+    delete process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS;
+    vi.restoreAllMocks();
+  });
+  const target = (restaurantId: string) =>
+    ({ restaurantId, callControlId: 'cc-1' }) as Pick<
+      CallSession,
+      'restaurantId' | 'callControlId'
+    >;
+
+  it('écrit le texte brut pour un restaurant de test, téléphones et e-mails masqués', () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'resto-test';
+    const info = vi.spyOn(logger, 'info');
+    logVoiceDebugText(target('resto-test'), 'echo_prefix_stripped', {
+      before: 'bonjour vous appelle pour le 06 12 34 56 78 ou a@b.fr',
+      after: 'appelle pour',
+      stage: 'committed',
+    });
+    expect(info).toHaveBeenCalledTimes(1);
+    const fields = info.mock.calls[0][0] as Record<string, unknown>;
+    expect(fields).toMatchObject({
+      callId: 'cc-1',
+      voiceDebug: 'echo_prefix_stripped',
+      after: 'appelle pour',
+      stage: 'committed',
+    });
+    expect(String(fields.before)).toContain('bonjour vous appelle pour');
+    expect(String(fields.before)).toContain('[PHONE]');
+    expect(String(fields.before)).toContain('[EMAIL]');
+    expect(String(fields.before)).not.toContain('06 12');
+  });
+
+  it('n’écrit rien pour un restaurant client, ni quand la liste est vide', () => {
+    const info = vi.spyOn(logger, 'info');
+    logVoiceDebugText(target('resto-client'), 'final_segment', { text: 'bonjour' });
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'resto-test';
+    logVoiceDebugText(target('resto-client'), 'final_segment', { text: 'bonjour' });
+    expect(info).not.toHaveBeenCalled();
   });
 });

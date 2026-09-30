@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import { callerSilenceMs, trackCallerVoice } from './caller-voice-activity';
 import { checkFastBargeIn } from './fast-barge-in';
+import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
@@ -1804,6 +1805,11 @@ function requestDeepgramFinalize(
   }
   session.sttDeepgramFinalizeRequested = true;
   deepgramFinalizeReasons.set(session, 'stalled');
+  logVoiceDebugText(session, 'finalize_sent', {
+    trigger: fields.trigger,
+    partial: session.sttDeepgramPartials?.lastText,
+    callerSilenceMs: Math.round(Math.min(callerSilenceMs(session), 99_999)),
+  });
   logger.info(
     {
       callId: session.callControlId,
@@ -1908,6 +1914,11 @@ export function handleNormalizedSttMessage(
       );
       return;
     case 'final_segment': {
+      logVoiceDebugText(session, 'final_segment', {
+        text: event.transcript,
+        speechFinal: event.speechFinal,
+        fromFinalize: event.fromFinalize === true,
+      });
       const parts = (session.sttDeepgramFinalParts ??= []);
       if (event.transcript.trim()) {
         parts.push({

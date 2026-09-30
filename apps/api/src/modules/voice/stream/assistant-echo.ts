@@ -4,6 +4,7 @@ import {
   voiceEchoSuppressedTotal,
 } from '../../../shared/observability/metrics';
 import { callerSpokeClearlySince } from './caller-voice-activity';
+import { logVoiceDebugText } from './debug-dialogue';
 import { logger } from '../../../shared/logger/pino';
 
 export type EchoStage = 'partial' | 'committed';
@@ -133,6 +134,12 @@ export function filterAssistantEcho(
       strippedPrefix: true,
       nonEchoWordCount: remainder.length,
     };
+    logVoiceDebugText(session, 'echo_prefix_stripped', {
+      stage,
+      before: transcript,
+      after: result.transcript,
+      agentSpeech: session.recentAgentSpeechText,
+    });
     voiceEchoSuppressedTotal.inc({ stage });
     logger.info(
       {
@@ -159,6 +166,11 @@ export function filterAssistantEcho(
         overlap >= SPOKEN_OVER_MIN_OVERLAP_WORDS - 1 &&
         overlap / callerWords.length >= SPOKEN_OVER_MIN_OVERLAP_RATIO));
   if (overlapSuppresses) {
+    logVoiceDebugText(session, 'echo_suppressed', {
+      stage,
+      before: transcript,
+      agentSpeech: session.recentAgentSpeechText,
+    });
     voiceEchoSuppressedTotal.inc({ stage });
     logger.info(
       {
@@ -174,6 +186,11 @@ export function filterAssistantEcho(
 
   if (prefixWouldStrip || overlapWouldSuppress) {
     // Les anciennes règles auraient retiré ces mots : l'audio dit que l'appelant parlait.
+    logVoiceDebugText(session, 'echo_spared', {
+      stage,
+      kept: transcript,
+      agentSpeech: session.recentAgentSpeechText,
+    });
     voiceEchoSparedTotal.inc({ stage });
     logger.info(
       {
