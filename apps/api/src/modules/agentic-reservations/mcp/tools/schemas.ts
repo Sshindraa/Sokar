@@ -28,9 +28,17 @@ const McpTimezoneSchema = z
 
 export const SearchRestaurantsInputSchema = z.object({
   city: z.string().min(1).max(100),
+  restaurantName: z
+    .string()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Optional name supplied by the person. Include it when they name a restaurant.'),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
-  slotEnd: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema.optional().describe(
+    'Include only if the person supplied an end time or duration. Otherwise omit it. Do not mention any implicit end time or duration in the response.',
+  ),
   timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
   maxResults: z.number().int().min(1).max(20).default(5),
@@ -55,14 +63,23 @@ export const CheckAvailabilityInputSchema = z.object({
   restaurantId: z.string().uuid(),
   partySize: z.number().int().min(1).max(50),
   slotStart: McpDateTimeSchema,
-  slotEnd: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema.optional().describe(
+    'Include only if the person supplied an end time or duration. Otherwise omit it. Do not mention any implicit end time or duration in the response.',
+  ),
   timezone: McpTimezoneSchema.optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema>;
 
-// A quote leaves capacity free; a hold temporarily reserves it.
-export const CreateQuoteInputSchema = CheckAvailabilityInputSchema;
-export const CreateHoldInputSchema = CheckAvailabilityInputSchema;
+// Quotes and holds affect a requested time range, so they require an explicit end.
+const ExplicitReservationSlotInputSchema = z.object({
+  restaurantId: z.string().uuid(),
+  partySize: z.number().int().min(1).max(50),
+  slotStart: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
+});
+export const CreateQuoteInputSchema = ExplicitReservationSlotInputSchema;
+export const CreateHoldInputSchema = ExplicitReservationSlotInputSchema;
 
 // ─── create_reservation ──────────────────────────────────────────
 
@@ -187,7 +204,9 @@ const RestaurantSummaryOutputSchema = z
 const RestaurantAvailableSlotOutputSchema = z
   .object({
     startsAt: OutputDateTimeSchema,
-    endsAt: OutputDateTimeSchema,
+    endsAt: OutputDateTimeSchema.describe(
+      'Technical end boundary returned with availability results. Unless the person supplied an end time or duration, do not show this value or describe it as part of the reservation.',
+    ),
   })
   .strict();
 
@@ -197,9 +216,37 @@ const AvailableRestaurantSummaryOutputSchema = RestaurantSummaryOutputSchema.ext
 
 export const SearchRestaurantsOutputSchema = z
   .object({
+    searchOutcome: z
+      .enum(['available', 'capacity_exceeded', 'no_exact_slot_available'])
+      .describe(
+        'Whether the exact search found a slot, hit a party-size limit, or found no match for that exact request. no_exact_slot_available does not mean the restaurant does not exist; offer another time and never ask the person for a restaurant ID.',
+      ),
+    requestedRestaurant: z
+      .object({
+        id: OutputUuidSchema.optional().describe(
+          'Internal ID. Never show or ask the person for it.',
+        ),
+        name: z.string(),
+        status: z
+          .enum(['available', 'unavailable', 'capacity_exceeded', 'not_found'])
+          .describe(
+            'Authoritative result for a restaurantName supplied in the request. unavailable means the named restaurant was found but has no availability for this exact request; not_found means no matching MCP-visible restaurant was found in the requested city. Never infer this from the restaurants array and never ask for an ID.',
+          ),
+      })
+      .strict()
+      .optional(),
     restaurants: z.array(AvailableRestaurantSummaryOutputSchema),
     capacityLimits: z.array(RestaurantSummaryOutputSchema),
     nextCursor: z.string().optional(),
+  })
+  .strict();
+
+export const AnswerAvailabilityOutputSchema = z
+  .object({
+    message: z
+      .string()
+      .min(1)
+      .describe('A complete, concise sentence ready to show to the person.'),
   })
   .strict();
 

@@ -260,6 +260,24 @@ export const voiceTtsFirstAudioMs = new Histogram({
  * Permet de mesurer la fiabilité de chaque provider indépendamment.
  * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | cerebras | openrouter) × type borné.
  */
+export const voiceLlmFallbackTotal = new Counter({
+  name: 'sokar_voice_llm_fallback_total',
+  help: 'Voice LLM fallback attempts: path (structured|legacy), outcome (used|failed|no_key), reason',
+  labelNames: ['path', 'outcome', 'reason'] as const,
+  registers: [getRegistry()],
+});
+export const voiceLlmHedgeTotal = new Counter({
+  name: 'sokar_voice_llm_hedge_total',
+  help: 'Hedged structured-turn requests: outcome (primary_won|hedge_won|both_failed)',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+export const voiceNoiseSuppressionTotal = new Counter({
+  name: 'sokar_voice_noise_suppression_total',
+  help: 'Telnyx noise suppression starts: engine, outcome (started|rejected|error)',
+  labelNames: ['engine', 'outcome'] as const,
+  registers: [getRegistry()],
+});
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.
@@ -285,6 +303,37 @@ export const voiceSttChunkBytes = new Histogram({
   name: 'sokar_voice_stt_chunk_bytes',
   help: 'Taille des messages audio envoyés à Scribe Realtime (octets)',
   buckets: [160, 320, 640, 1600, 3200, 6400, 16000],
+  registers: [getRegistry()],
+});
+
+/** Fins de tour forcées retardées faute de silence réel chez l'appelant. */
+export const voiceSilenceGuardTotal = new Counter({
+  name: 'sokar_voice_silence_guard_total',
+  help: 'Forced end-of-turn requests held by the caller silence guard, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
+/** Coupure rapide de l'agent par le détecteur de voix : pause, puis coupure ou reprise. */
+export const voiceFastBargeInTotal = new Counter({
+  name: 'sokar_voice_fast_barge_in_total',
+  help: 'Fast barge-in by caller voice detection: paused, escalated (cut) or resumed (false alarm)',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
+/** Attente avant le premier son d'une réponse, par issue. */
+export const voiceFirstAudioHoldTotal = new Counter({
+  name: 'sokar_voice_first_audio_hold_total',
+  help: 'Replies whose first audio waited for caller silence, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceFirstAudioHoldMs = new Histogram({
+  name: 'sokar_voice_first_audio_hold_ms',
+  help: 'Milliseconds a prepared reply was held before its first audio (held replies only)',
+  buckets: [50, 100, 200, 300, 450, 600, 900, 1200],
   registers: [getRegistry()],
 });
 
@@ -469,6 +518,13 @@ export function recordVoiceChoiceAnswer(kind: VoiceQualityKind, outcome: VoiceCh
   voiceChoiceAnswerTotal.inc({ kind, outcome });
 }
 
+/** Crédit OpenRouter restant (repli vocal, Jev, juge), lu chaque heure. */
+export const openRouterCreditUsd = new Gauge({
+  name: 'sokar_openrouter_credit_usd',
+  help: 'Crédit OpenRouter restant en dollars',
+  registers: [getRegistry()],
+});
+
 /** État du quota ElevenLabs observé via l'endpoint subscription. */
 export const elevenLabsCharacterCount = new Gauge({
   name: 'sokar_elevenlabs_character_count',
@@ -508,6 +564,12 @@ export const voiceStructuredSpeculationTotal = new Counter({
   name: 'sokar_voice_structured_speculation_total',
   help: 'Structured-turn speculation outcomes: hit, none (never started) or miss by cause',
   labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+export const voiceStructuredSpeculationLaunchTotal = new Counter({
+  name: 'sokar_voice_structured_speculation_launch_total',
+  help: 'Structured-turn speculative requests: started, or capped by the per-turn launch limit',
+  labelNames: ['result'] as const,
   registers: [getRegistry()],
 });
 export const voiceSemanticAgreementTotal = new Counter({
@@ -753,6 +815,12 @@ export const voiceLlmSpokenFallbackTotal = new Counter({
   registers: [getRegistry()],
 });
 
+export const voiceEchoSparedTotal = new Counter({
+  name: 'sokar_voice_echo_spared_total',
+  help: 'Words the echo filter would have removed but kept because the caller was clearly speaking',
+  labelNames: ['stage'] as const,
+  registers: [getRegistry()],
+});
 export const voiceEchoSuppressedTotal = new Counter({
   name: 'sokar_voice_echo_suppressed_total',
   help: 'Assistant audio echo suppressed from STT by stage',
@@ -863,6 +931,7 @@ export function __resetMetrics(): void {
   voiceSttProviderAudioMessagesTotal.reset();
   voiceSttProviderChunkBytes.reset();
   elevenLabsCharacterCount.reset();
+  openRouterCreditUsd.reset();
   elevenLabsCharacterLimit.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
   voiceSemanticDurationMs.reset();

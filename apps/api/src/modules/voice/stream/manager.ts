@@ -27,6 +27,8 @@ import {
 } from './conversation-controller';
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
+import { splitHeardReply } from './interrupted-reply';
+import { clearFastBargeIn } from './fast-barge-in';
 import { recordDebugTool } from './debug-dialogue';
 import { cancelScheduledFiller } from './filler-scheduler';
 import {
@@ -44,6 +46,8 @@ import {
   estimateTokenCount,
 } from '../../usage/voice-usage.service';
 import {
+  voiceLlmFallbackTotal,
+  voiceLlmHedgeTotal,
   voiceProviderErrorsTotal,
   voiceActiveSessionsGauge,
   voiceCallsTotal,
@@ -51,6 +55,12 @@ import {
   type VoiceTransferMotive,
   type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+import {
+  alertLlmCircuitOpened,
+  alertLlmPrimaryUnavailable,
+  recordLlmBothProvidersFailed,
+  recordLlmHedgeFired,
+} from './llm-alerts';
 import { armSilenceRecovery, cancelNoInputRecovery } from './no-input-recovery';
 
 function recordVoiceTransfer(
@@ -78,6 +88,75 @@ function recordVoiceTransfer(
 // Fournisseur LLM unique : Cerebras. Le label de la métrique porte son nom.
 
 type LlmProvider = VoiceLlmProvider;
+/** Le fournisseur qui a réellement répondu : le principal, ou OpenRouter en repli. */
+type LlmProviderUsed = LlmProvider | 'openrouter';
+type StreamChunkRead = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>['read']>>;
+
+type FallbackReason =
+  | 'quota'
+  | 'rate_limited'
+  | 'server_error'
+  | 'client_error'
+  | 'circuit_open'
+  | 'first_chunk_timeout'
+  | 'hedge'
+  | 'timeout'
+  | 'network';
+
+interface StructuredStreamRequest {
+  responseFormat: StructuredResponseFormat;
+  maxTokens: number;
+  temperature: number;
+  signal?: AbortSignal;
+}
+
+/** Les alertes ne doivent jamais ralentir ni casser un tour : lancées sans attente. */
+function notify(alert: Promise<unknown>): void {
+  alert.catch(() => undefined);
+}
+
+/** Flux LLM ouvert, premier fragment déjà lu. */
+interface OpenedStream {
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  provider: LlmProviderUsed;
+  firstRead: StreamChunkRead;
+}
+
+/** Premier résultat non nul ; null quand toutes les promesses ont échoué ou renvoyé null. */
+function firstNonNull<T>(
+  promises: Array<Promise<T | null>>,
+): Promise<{ index: number; value: T } | null> {
+  return new Promise((resolve) => {
+    let pending = promises.length;
+    const settleEmpty = () => {
+      pending -= 1;
+      if (pending === 0) resolve(null);
+    };
+    promises.forEach((promise, index) => {
+      promise.then((value) => (value ? resolve({ index, value }) : settleEmpty()), settleEmpty);
+    });
+  });
+}
+
+/** Hébergeurs OpenRouter du repli : ordre configuré, avec repli sur les autres si tous échouent. */
+function fallbackProviderPreferences(): Record<string, unknown> {
+  const order = (voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return order.length
+    ? { require_parameters: true, order, allow_fallbacks: true }
+    : { require_parameters: true, sort: 'latency' };
+}
+
+/** Pourquoi le fournisseur principal n'a pas pu prendre le tour (catégories pour la métrique). */
+function classifyFallbackReason(input: { status?: number; error?: unknown }): FallbackReason {
+  if (input.status === 402) return 'quota';
+  if (input.status === 429) return 'rate_limited';
+  if (input.status !== undefined) return input.status >= 500 ? 'server_error' : 'client_error';
+  const name = input.error instanceof Error ? input.error.name : '';
+  return name === 'AbortError' || name === 'TimeoutError' ? 'timeout' : 'network';
+}
 
 function classifyLlmHttpStatus(status: number): string {
   if (status === 429) return '429';
@@ -444,6 +523,31 @@ function recordProviderSuccess(provider: LlmProvider): void {
   }
 }
 
+/**
+ * Un fournisseur qui répond toujours mais trop lentement remet son compteur à zéro dès les
+ * en-têtes reçus : le disjoncteur ne s'ouvrirait jamais. Quand le doublon lancé par le hedging
+ * gagne plusieurs tours de suite, le principal est donc considéré comme dégradé et ignoré le
+ * temps du cooldown ; un tour où il gagne remet le compte à zéro.
+ */
+const HEDGE_LOSSES_TO_OPEN_BREAKER = 3;
+let consecutiveHedgeWins = 0;
+
+function recordHedgeOutcome(provider: LlmProvider, hedgeWon: boolean): void {
+  if (!hedgeWon) {
+    consecutiveHedgeWins = 0;
+    return;
+  }
+  consecutiveHedgeWins += 1;
+  if (consecutiveHedgeWins < HEDGE_LOSSES_TO_OPEN_BREAKER) return;
+  consecutiveHedgeWins = 0;
+  circuitBreakers[provider] = { failures: CIRCUIT_BREAKER_THRESHOLD, openedAt: Date.now() };
+  logger.warn(
+    { provider },
+    `[circuit-breaker] ${provider} opened: the hedged request won ${HEDGE_LOSSES_TO_OPEN_BREAKER} turns in a row`,
+  );
+  notify(alertLlmCircuitOpened());
+}
+
 function recordProviderFailure(provider: LlmProvider): void {
   const state = circuitBreakers[provider];
   state.failures++;
@@ -455,6 +559,7 @@ function recordProviderFailure(provider: LlmProvider): void {
         { provider, failures: state.failures },
         `[circuit-breaker] ${provider} opened after ${state.failures} consecutive failures`,
       );
+      notify(alertLlmCircuitOpened());
     } else {
       logger.warn(
         { provider, failures: state.failures },
@@ -720,8 +825,14 @@ export class CallSessionManager {
   handleBargeIn(session: CallSession): void {
     if (session.state !== 'SPEAKING') return;
     cancelScheduledFiller(session);
+    clearFastBargeIn(session);
     session.responseGeneration++;
     session.ttsGeneration++;
+    // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
+    const snapshot = session.ttsContext?.interruptionSnapshot?.();
+    session.interruptedReply = snapshot?.text.trim()
+      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs)
+      : undefined;
     session.ttsContext?.cancel();
     session.ttsContext = null;
     this.sendTelnyxClear(session);
@@ -960,32 +1071,23 @@ export class CallSessionManager {
       temperature: 0.3,
       signal: options.signal,
     };
-    let response: Response;
-    let provider: string;
-    try {
-      ({ response, provider } = await this.fetchLlmStreaming(session, messages, request));
-      if (!response.ok || !response.body) {
-        await response.body?.cancel().catch(() => undefined);
-        throw new Error(`Structured LLM request failed (${response.status})`);
-      }
-    } catch (err) {
-      if (isSessionAbortError(err, options.signal)) throw err;
-      // Rien n'a encore été dit : un second fournisseur peut prendre le tour.
-      const fallback = await this.fetchStructuredFallback(session, messages, request, err);
-      if (!fallback) throw err;
-      response = fallback;
-      provider = 'openrouter';
-    }
-    // Les deux chemins ont vérifié le corps ci-dessus.
-    const reader = response.body!.getReader();
+    const hedgeMs = voiceConfig.VOICE_LLM_HEDGE_MS;
+    const opened =
+      hedgeMs > 0 && voiceConfig.OPENROUTER_API_KEY?.trim()
+        ? await this.openStructuredHedged(session, messages, request, hedgeMs)
+        : await this.openStructuredSequential(session, messages, request);
+    const { provider, firstRead } = opened;
+    const reader = opened.reader;
     const decoder = new TextDecoder();
+    let nextRead: StreamChunkRead | null = firstRead;
     let pending = '';
     let text = '';
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     try {
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = nextRead ?? (await reader.read());
+        nextRead = null;
         if (done) break;
         pending += decoder.decode(value, { stream: true });
         const lines = pending.split('\n');
@@ -1026,6 +1128,169 @@ export class CallSessionManager {
       inputTokens === undefined,
     );
     return text;
+  }
+
+  /**
+   * Ouvre le flux du tour structuré, sans doublon : le principal d'abord, puis OpenRouter s'il
+   * échoue ou si son premier fragment dépasse le délai maximal.
+   */
+  private async openStructuredSequential(
+    session: CallSession,
+    messages: ChatMessage[],
+    request: StructuredStreamRequest,
+  ): Promise<OpenedStream> {
+    const primaryProvider = getVoiceLlmProvider();
+    const { response, provider: firstProvider } = await this.fetchLlmStreaming(
+      session,
+      messages,
+      request,
+    );
+    let provider: LlmProviderUsed = firstProvider;
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Structured LLM request failed (${response.status})`);
+    }
+    let reader = response.body.getReader();
+    // Premier fragment trop lent : le modèle principal est abandonné pour ce tour (et compte comme
+    // un échec pour le disjoncteur), OpenRouter reprend avant que l'appelant n'attende 8 s.
+    let firstRead = await this.readFirstChunk(
+      reader,
+      provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
+    );
+    if (firstRead === 'timeout') {
+      recordProviderFailure(primaryProvider);
+      reader.cancel().catch(() => undefined);
+      const fallback = await this.fetchFallbackStreaming(
+        session,
+        messages,
+        request,
+        'first_chunk_timeout',
+        new Error('LLM first chunk timeout'),
+      );
+      if (!fallback?.body) throw new Error('Structured LLM first chunk timed out, no fallback');
+      provider = 'openrouter';
+      reader = fallback.body.getReader();
+      firstRead = await reader.read();
+    }
+    return { reader, provider, firstRead };
+  }
+
+  /**
+   * Ouvre le flux du tour structuré avec une requête de doublon (hedging) : si le principal n'a
+   * pas produit son premier fragment après `hedgeMs`, la même requête part chez le secours et le
+   * premier flux à répondre est gardé ; l'autre est annulé. Le doublon ne coûte que sur les tours
+   * lents, et l'appelant n'entend plus les pics de latence du principal.
+   */
+  private async openStructuredHedged(
+    session: CallSession,
+    messages: ChatMessage[],
+    request: StructuredStreamRequest,
+    hedgeMs: number,
+  ): Promise<OpenedStream> {
+    const primaryProvider = getVoiceLlmProvider();
+    const trace = { fellBack: false };
+    const controllerA = new AbortController();
+    const controllerB = new AbortController();
+    const signalOf = (controller: AbortController): AbortSignal =>
+      request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
+    const startedAt = Date.now();
+    let primaryError: unknown = null;
+
+    // A : le principal (avec son propre secours si l'échec est immédiat) et son délai maximal.
+    const attemptA = async (): Promise<OpenedStream | null> => {
+      const { response, provider } = await this.fetchLlmStreaming(
+        session,
+        messages,
+        { ...request, signal: signalOf(controllerA) },
+        trace,
+      );
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new Error(`Structured LLM request failed (${response.status})`);
+      }
+      const reader = response.body.getReader();
+      const firstRead = await this.readFirstChunk(
+        reader,
+        provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
+      );
+      if (firstRead === 'timeout') {
+        recordProviderFailure(primaryProvider);
+        reader.cancel().catch(() => undefined);
+        return null;
+      }
+      return { reader, provider, firstRead };
+    };
+    const primary = attemptA().catch((err: unknown) => {
+      primaryError = err;
+      return null;
+    });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const hedgeDeadline = new Promise<'hedge'>((resolve) => {
+      timer = setTimeout(() => resolve('hedge'), hedgeMs);
+    });
+    const early = await Promise.race([primary, hedgeDeadline]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    if (early && early !== 'hedge') {
+      // Le principal (ou son secours immédiat) a répondu à temps.
+      recordHedgeOutcome(primaryProvider, false);
+      return early;
+    }
+    // Échec net du principal : son secours a déjà été tenté, un doublon n'apporterait rien.
+    if (early === null && primaryError) throw primaryError;
+
+    // B : le doublon. Inutile si le principal s'est déjà rabattu sur le secours. Si le délai
+    // maximal du principal est tombé avant le délai de hedging, c'est un repli classique.
+    const isHedge = early === 'hedge';
+    const canHedge = !trace.fellBack;
+    if (isHedge && canHedge) notify(recordLlmHedgeFired());
+    const duplicate = canHedge
+      ? (async (): Promise<OpenedStream | null> => {
+          const response = await this.fetchFallbackStreaming(
+            session,
+            messages,
+            { ...request, signal: signalOf(controllerB) },
+            isHedge ? 'hedge' : 'first_chunk_timeout',
+            new Error(`LLM first chunk slower than ${hedgeMs} ms`),
+          );
+          if (!response?.body) return null;
+          const reader = response.body.getReader();
+          const firstRead = await reader.read();
+          return { reader, provider: 'openrouter' as const, firstRead };
+        })().catch(() => null)
+      : Promise.resolve(null);
+
+    const winner = await firstNonNull([primary, duplicate]);
+    if (!winner) {
+      if (isHedge) {
+        voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
+        notify(recordLlmBothProvidersFailed());
+      }
+      if (primaryError) throw primaryError;
+      throw new Error('Structured LLM first chunk timed out, no fallback');
+    }
+    const hedgeWon = winner.index === 1;
+    const loser = hedgeWon ? controllerA : controllerB;
+    loser.abort();
+    (hedgeWon ? primary : duplicate).then(
+      (late) => late?.reader.cancel().catch(() => undefined),
+      () => undefined,
+    );
+    if (canHedge && isHedge) {
+      recordHedgeOutcome(primaryProvider, hedgeWon);
+      voiceLlmHedgeTotal.inc({ outcome: hedgeWon ? 'hedge_won' : 'primary_won' });
+      logger.info(
+        {
+          callId: session.callControlId,
+          hedgeMs,
+          winner: winner.value.provider,
+          firstChunkMs: Date.now() - startedAt,
+        },
+        '[llm-hedge] hedged request raced the primary',
+      );
+    }
+    return winner.value;
   }
 
   async processUtterance(session: CallSession, transcript: string): Promise<string> {
@@ -1391,7 +1656,9 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM streaming — chemin unique, provider actif.
+   * Fetch LLM streaming : le provider actif d'abord ; s'il échoue avant le premier octet (quota,
+   * 429, 5xx, réseau, coupure), OpenRouter prend le tour, pour le tour structuré comme pour le
+   * chemin à outils des autres restaurants.
    */
   private async fetchLlmStreaming(
     session: CallSession,
@@ -1403,56 +1670,91 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
-  ): Promise<{ response: Response; provider: LlmProvider }> {
+    trace?: { fellBack: boolean },
+  ): Promise<{ response: Response; provider: LlmProviderUsed }> {
     const provider = getVoiceLlmProvider();
+    let primaryResponse: Response | null = null;
+    let primaryError: unknown = null;
+    let reason: FallbackReason = 'network';
+
     if (isCircuitBreakerOpen(provider)) {
       logger.warn({ provider }, '[circuit-breaker] provider LLM open, streaming ignoré');
-      throw new Error('LLM provider unavailable (circuit open)');
+      primaryError = new Error('LLM provider unavailable (circuit open)');
+      reason = 'circuit_open';
+    } else {
+      try {
+        const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
+        if (response.ok) {
+          recordProviderSuccess(provider);
+          return { response, provider };
+        }
+        recordProviderFailure(provider);
+        recordLlmHttpError(provider, response.status);
+        if (response.status === 402) notify(alertLlmPrimaryUnavailable('quota'));
+        else if (response.status === 401 || response.status === 403) {
+          notify(alertLlmPrimaryUnavailable('auth'));
+        }
+        primaryResponse = response;
+        primaryError = new Error(`LLM ${response.status}`);
+        reason = classifyFallbackReason({ status: response.status });
+      } catch (err) {
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException(provider, err, opts.signal);
+          throw err;
+        }
+        recordProviderFailure(provider);
+        recordLlmException(provider, err, opts.signal);
+        primaryError = err;
+        reason = classifyFallbackReason({ error: err });
+      }
     }
 
-    try {
-      const response = await this.fetchProviderStreaming(messages, opts, getVoiceLlmModel());
-      if (response.ok) {
-        recordProviderSuccess(provider);
-        return { response, provider };
-      }
-      recordProviderFailure(provider);
-      recordLlmHttpError(provider, response.status);
-      return { response, provider };
-    } catch (err) {
-      if (isSessionAbortError(err, opts.signal)) {
-        recordLlmException(provider, err, opts.signal);
-        throw err;
-      }
-      recordProviderFailure(provider);
-      recordLlmException(provider, err, opts.signal);
-      throw err;
+    // Rien n'a encore été dit : un second fournisseur peut prendre le tour.
+    if (trace) trace.fellBack = true;
+    const fallback = await this.fetchFallbackStreaming(
+      session,
+      messages,
+      opts,
+      reason,
+      primaryError,
+    );
+    if (fallback) {
+      await primaryResponse?.body?.cancel().catch(() => undefined);
+      return { response: fallback, provider: 'openrouter' };
     }
+    // Pas de secours : comportement historique (l'appelant lit le corps de l'erreur ou reçoit l'exception).
+    if (primaryResponse) return { response: primaryResponse, provider };
+    throw primaryError;
   }
 
   /**
-   * Secours du tour structuré : OpenRouter, routé vers l'hébergeur le plus
-   * rapide qui accepte le JSON Schema strict. Utilisé seulement quand le
-   * provider principal échoue avant le premier fragment (quota, 429, 5xx,
-   * réseau, circuit ouvert). Renvoie null sans clé ou si le secours échoue.
+   * Secours : OpenRouter, routé vers l'hébergeur le plus rapide qui accepte les paramètres
+   * demandés (JSON Schema strict pour le tour structuré, outils pour l'autre chemin). Utilisé
+   * seulement quand le provider principal échoue avant le premier fragment (quota, 429, 5xx,
+   * réseau, circuit ouvert, premier fragment trop lent). Renvoie null sans clé ou si le secours échoue.
    */
-  private async fetchStructuredFallback(
+  private async fetchFallbackStreaming(
     session: CallSession,
     messages: ChatMessage[],
     opts: {
-      responseFormat: StructuredResponseFormat;
+      tools?: ReturnType<typeof getRestaurantTools>;
+      responseFormat?: StructuredResponseFormat;
       maxTokens: number;
       temperature: number;
       signal?: AbortSignal;
     },
+    reason: FallbackReason,
     primaryError: unknown,
   ): Promise<Response | null> {
+    const path = opts.responseFormat ? 'structured' : 'legacy';
     const apiKey = voiceConfig.OPENROUTER_API_KEY?.trim();
-    const reason = primaryError instanceof Error ? primaryError.message : String(primaryError);
+    const detail = primaryError instanceof Error ? primaryError.message : String(primaryError);
     if (!apiKey) {
+      voiceLlmFallbackTotal.inc({ path, outcome: 'no_key', reason });
+      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.warn(
-        { callId: session.callControlId, reason },
-        '[structured-llm] Primary failed, no fallback key',
+        { callId: session.callControlId, path, reason, detail },
+        '[llm-fallback] Primary failed, no fallback key',
       );
       return null;
     }
@@ -1469,37 +1771,68 @@ export class CallSessionManager {
           temperature: opts.temperature,
           top_p: 0.8,
           reasoning: { enabled: false },
-          response_format: opts.responseFormat,
-          // Uniquement des hébergeurs qui respectent response_format, le plus rapide d'abord.
-          provider: { require_parameters: true, sort: 'latency' },
+          ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
+          ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+          // Uniquement des hébergeurs qui respectent les paramètres. Ordre imposé : le tri par latence
+          // historique a donné des pointes de 5 à 30 s (mesures du 29/09) ; vide = ce tri.
+          provider: fallbackProviderPreferences(),
           stream: true,
           stream_options: { include_usage: true },
         }),
       });
       if (!response.ok || !response.body) {
         await response.body?.cancel().catch(() => undefined);
+        voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
+        if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
         logger.error(
-          { callId: session.callControlId, reason, status: response.status },
-          '[structured-llm] Primary and fallback failed',
+          { callId: session.callControlId, path, reason, detail, status: response.status },
+          '[llm-fallback] Primary and fallback failed',
         );
         return null;
       }
+      // Un doublon de hedging n'est pas un repli : il est compté par sokar_voice_llm_hedge_total.
+      if (reason === 'hedge') return response;
+      voiceLlmFallbackTotal.inc({ path, outcome: 'used', reason });
       logger.warn(
-        { callId: session.callControlId, reason, fallbackMs: Date.now() - startedAt },
-        '[structured-llm] Primary failed, OpenRouter fallback used',
+        { callId: session.callControlId, path, reason, detail, fallbackMs: Date.now() - startedAt },
+        '[llm-fallback] Primary failed, OpenRouter fallback used',
       );
       return response;
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) throw err;
+      voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
+      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.error(
         {
           callId: session.callControlId,
+          path,
           reason,
+          detail,
           err: err instanceof Error ? err.name : String(err),
         },
-        '[structured-llm] Primary and fallback failed',
+        '[llm-fallback] Primary and fallback failed',
       );
       return null;
+    }
+  }
+
+  /**
+   * Premier fragment du flux, avec un délai maximal : un modèle principal lent (file d'attente,
+   * incident partiel) ne doit pas laisser l'appelant attendre le délai total de 8 s.
+   */
+  private async readFirstChunk(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    timeoutMs?: number,
+  ): Promise<StreamChunkRead | 'timeout'> {
+    if (!timeoutMs) return reader.read();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), timeoutMs);
+    });
+    try {
+      return await Promise.race([reader.read(), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -1631,7 +1964,7 @@ export class CallSessionManager {
       let reportedInputTokens: number | undefined;
       let reportedOutputTokens: number | undefined;
       let usageReported = false;
-      const usageProvider: LlmProvider = providerUsed;
+      const usageProvider: LlmProviderUsed = providerUsed;
       const phrasePromises: Promise<void>[] = [];
       const enqueuePhrase = (phrase: string) => {
         phrasesYielded = true;
@@ -1775,8 +2108,8 @@ export class CallSessionManager {
             throw streamErr;
           }
           // Le timeout a fire (pas la session) → retry sur l'autre provider
-          // Record failure for circuit breaker
-          recordProviderFailure(providerUsed);
+          // Record failure for circuit breaker (le repli OpenRouter n'a pas de disjoncteur ici)
+          if (providerUsed !== 'openrouter') recordProviderFailure(providerUsed);
 
           if (!phrasesYielded && !fullText.trim() && !hasToolCall) {
             // Aucun audio envoyé à l'utilisateur et aucun tool call commencé.

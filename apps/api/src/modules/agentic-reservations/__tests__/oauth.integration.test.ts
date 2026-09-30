@@ -277,7 +277,7 @@ describe('OAuth MCP integration flow', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.result).toBeDefined();
-    expect(body.result.tools).toHaveLength(11);
+    expect(body.result.tools).toHaveLength(12);
 
     // Verify tool annotations are present
     for (const tool of body.result.tools) {

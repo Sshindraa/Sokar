@@ -1,3 +1,6 @@
+import type { InterruptedReply } from './interrupted-reply';
+import type { CallerVoiceActivity } from './caller-voice-activity';
+import type { FastBargeInState } from './fast-barge-in';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
 import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
@@ -237,6 +240,11 @@ export interface ConversationState {
 /** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
 export interface ActiveTtsContext {
   cancel(): void;
+  /** Met la lecture en pause (l'appelant a pris la parole) ; `resume` la reprend là où elle en était. */
+  pause?(): void;
+  resume?(): void;
+  /** Texte poussé et audio joué, à lire avant `cancel` : de quoi estimer ce que l'appelant a entendu. */
+  interruptionSnapshot?(): { text: string; playedMs: number; totalMs: number | null };
 }
 
 /** Compteurs internes de consommation des providers d'un appel. */
@@ -477,6 +485,10 @@ export interface CallSession {
   sttConnectionAudioStartedAt?: number;
   /** Bytes successfully sent on the current provider socket, after conversion. */
   sttConnectionAudioBytesSent?: number;
+  /** Voix entendue sur l'audio de l'appelant : garde de silence des fins de tour forcées. */
+  callerVoice?: CallerVoiceActivity;
+  /** Coupure rapide de l'agent : voix détectée pendant qu'il parle, pause en attente de confirmation. */
+  fastBargeIn?: FastBargeInState;
   sttLastNonEmptyPartialAt?: number;
   sttLastSpeechStartedAt?: number;
   sttTurnStartedAt?: number;
@@ -610,8 +622,14 @@ export interface CallSession {
   recentAgentSpeechTurnId?: string;
   agentAudioActive?: boolean;
   agentAudioEndedAt?: number;
+  /** Intervalles récents où l'audio de l'agent est parti vers l'appelant (fenêtre anti-écho). */
+  agentAudioSpans?: { startedAt: number; endedAt?: number }[];
+  /** Répliques récentes de l'agent, avec l'instant où elles ont été demandées. */
+  agentSpeechLog?: { text: string; at: number }[];
   /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
+  /** Dernière réponse coupée par l'appelant, jusqu'au prochain tour traité. */
+  interruptedReply?: InterruptedReply;
   /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
   /** Tours précédents conservés jusqu'à la finalisation de l'appel. */

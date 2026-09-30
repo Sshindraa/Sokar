@@ -28,6 +28,9 @@ async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   if (command === 'build') {
     const file = await readJson<BehaviorCasesFile>(rest[0] ?? DEFAULT_CASES);
+    // VBE_ONLY=id1,id2 : rejoue quelques cas seulement (le jeu complet dépasse le débit Cerebras).
+    const only = process.env.VBE_ONLY?.split(',').filter(Boolean);
+    if (only?.length) file.cases = file.cases.filter((testCase) => only.includes(testCase.id));
     process.stdout.write(JSON.stringify({ requests: buildRequests(file) }));
     return;
   }
@@ -36,7 +39,11 @@ async function main(): Promise<void> {
     if (!responsesArg) throw new Error('Usage : score [cas.json] responses.json');
     const file = await readJson<BehaviorCasesFile>(casesArg);
     const responses = await readJson<BehaviorResponses>(responsesArg);
-    const results = scoreAll(file.cases, responses);
+    const only = process.env.VBE_ONLY?.split(',').filter(Boolean);
+    const cases = only?.length
+      ? file.cases.filter((testCase) => only.includes(testCase.id))
+      : file.cases;
+    const results = scoreAll(cases, responses);
     process.stdout.write(`Modèle : ${responses.model}\n\n${formatReport(results)}\n`);
     if (results.some((result) => !result.passed)) process.exitCode = 1;
     return;

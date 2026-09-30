@@ -9,7 +9,12 @@ import {
   getCartesiaPronunciationDictId,
   getCartesiaVoiceId,
 } from './cartesia-config';
-import { TTS_INITIAL_BUFFER_FRAMES, TTS_PACE_PAUSE_MS, TTS_UNDERFEED_PAUSE_MS } from './constants';
+import {
+  TTS_FRAME_DURATION_MS,
+  TTS_INITIAL_BUFFER_FRAMES,
+  TTS_PACE_PAUSE_MS,
+  TTS_UNDERFEED_PAUSE_MS,
+} from './constants';
 import {
   encodeTelnyxFromPcm16,
   padTelnyxFrame,
@@ -18,6 +23,11 @@ import {
 } from './telnyx-codec';
 import { logger } from '../../../shared/logger/pino';
 import { persistLatencyTrace } from './session-persistence';
+import { holdFirstAudioForCallerSilence } from './first-audio-hold';
+import {
+  voiceFirstAudioHoldMs,
+  voiceFirstAudioHoldTotal,
+} from '../../../shared/observability/metrics';
 import {
   markVoiceTurnAudioSent,
   markVoiceTurnTtsSynthesisFirstByte,
@@ -135,10 +145,16 @@ export class CartesiaContextTurn {
   private cancelled = false;
   private firstAudioOutput = false;
   private playbackStarted = false;
+  private holdDone = false;
+  private paused = false;
+  /** Appelé quand l'appelant reprend la parole avant le premier son : la réponse préparée est jetée. */
+  onHoldCancelled?: () => void;
   private sentFrames = 0;
   private playbackPromise: Promise<void> | null = null;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastTranscript = '';
+  private pushedText = '';
+  private outputDone = false;
   private resolveCompletion!: () => void;
   private rejectCompletion!: (error: Error) => void;
   private readonly completion = new Promise<void>((resolve, reject) => {
@@ -161,6 +177,15 @@ export class CartesiaContextTurn {
     this.connect();
   }
 
+  /** L'appelant a pris la parole : plus aucune trame n'est envoyée tant que la pause dure. */
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    this.paused = false;
+  }
+
   get hasAudioOutput(): boolean {
     return this.firstAudioOutput;
   }
@@ -168,6 +193,16 @@ export class CartesiaContextTurn {
   /** Trames de ce contexte envoyées à Telnyx. */
   get framesSent(): number {
     return this.sentFrames;
+  }
+
+  /** Texte poussé et audio joué ; la durée totale n'est connue qu'une fois la synthèse terminée. */
+  interruptionSnapshot(): { text: string; playedMs: number; totalMs: number | null } {
+    const queuedFrames = this.audioFrames.length + (this.remainder.length > 0 ? 1 : 0);
+    return {
+      text: this.pushedText,
+      playedMs: this.sentFrames * TTS_FRAME_DURATION_MS,
+      totalMs: this.outputDone ? (this.sentFrames + queuedFrames) * TTS_FRAME_DURATION_MS : null,
+    };
   }
 
   push(transcript: string): void {
@@ -178,6 +213,7 @@ export class CartesiaContextTurn {
       this.lastTranscript && !/\s$/.test(this.lastTranscript) && !/^[,.;:!?]/.test(transcript);
     const joinedTranscript = `${needsSpace ? ' ' : ''}${transcript}`;
     this.lastTranscript = joinedTranscript;
+    this.pushedText += joinedTranscript;
     this.sendOrQueue(joinedTranscript, true);
   }
 
@@ -295,6 +331,7 @@ export class CartesiaContextTurn {
     // de retarder le tour suivant.
     if (message.type === 'done' || message.done === true) {
       this.finishedOutput = true;
+      this.outputDone = true;
       this.completeAfterPlayback().catch((err: unknown) =>
         this.fail(err instanceof Error ? err : new Error(String(err))),
       );
@@ -326,6 +363,30 @@ export class CartesiaContextTurn {
         !this.finishedOutput &&
         this.audioFrames.length < TTS_INITIAL_BUFFER_FRAMES
       ) {
+        await wait(TTS_UNDERFEED_PAUSE_MS);
+        continue;
+      }
+      if (!this.holdDone) {
+        this.holdDone = true;
+        // La réponse est prête ; elle ne part qu'après un vrai silence de l'appelant.
+        const hold = await holdFirstAudioForCallerSilence(
+          this.session,
+          () => !this.cancelled && isActive(this.session, this.generation),
+        );
+        voiceFirstAudioHoldTotal.inc({ outcome: hold.outcome });
+        if (hold.heldMs > 0) voiceFirstAudioHoldMs.observe(hold.heldMs);
+        if (hold.outcome === 'cancelled_voice_resumed') {
+          recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'first_audio_hold', {
+            outcome: hold.outcome,
+            heldMs: hold.heldMs,
+          });
+          if (this.onHoldCancelled) this.onHoldCancelled();
+          else this.cancel();
+          return;
+        }
+        if (hold.outcome === 'aborted') return;
+      }
+      if (this.paused) {
         await wait(TTS_UNDERFEED_PAUSE_MS);
         continue;
       }

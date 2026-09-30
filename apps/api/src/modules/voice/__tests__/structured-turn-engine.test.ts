@@ -23,7 +23,13 @@ vi.mock('../stream/tts-handler', () => ({
   isSessionActiveForTts: vi.fn().mockReturnValue(true),
   cleanTextForTts: (text: string) => text,
 }));
-const contextTurn = {
+const contextTurn: {
+  push: ReturnType<typeof vi.fn>;
+  finish: ReturnType<typeof vi.fn>;
+  cancel: ReturnType<typeof vi.fn>;
+  hasAudioOutput: boolean;
+  onHoldCancelled?: () => void;
+} = {
   push: vi.fn(),
   finish: vi.fn().mockResolvedValue(undefined),
   cancel: vi.fn(),
@@ -79,6 +85,7 @@ function fixture() {
   } as unknown as CallSession;
   const outputs: StructuredTurnOutput[] = [];
   const mgr = {
+    handleBargeIn: vi.fn(),
     transition: vi.fn((s: CallSession, state: CallSession['state']) => {
       s.state = state;
       return true;
@@ -264,6 +271,71 @@ describe('tour structuré (canary)', () => {
       slots: ['19:00', '19:30', '20:00'],
     });
     expect(spoken()).toContain('À quel nom ?');
+  });
+
+  describe('heure hors horaires du jour (profil ouvert le midi seulement)', () => {
+    const LUNCH_ONLY = {
+      tue: { open: '12:00', close: '14:30' },
+      wed: { open: '12:00', close: '14:30' },
+      sat: { open: '12:00', close: '23:00' },
+    };
+    // Prochain mardi à partir de demain : jour ouvert 12 h–14 h 30 dans ce profil.
+    const NEXT_TUESDAY = (() => {
+      const date = new Date(`${TOMORROW}T00:00:00.000Z`);
+      while (date.getUTCDay() !== 2) date.setUTCDate(date.getUTCDate() + 1);
+      return date.toISOString().slice(0, 10);
+    })();
+    const draftAt = (time: string) => ({
+      date: NEXT_TUESDAY,
+      time,
+      partySize: 0,
+      customerName: '',
+    });
+    const secondPassContext = (mgr: CallSessionManager) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+
+    it('ne laisse pas accepter « mardi à 20 heures » : silence, fait réel donné au second passage', async () => {
+      const { session, mgr, outputs } = fixture();
+      (session as { openingHours?: unknown }).openingHours = LUNCH_ONLY;
+      outputs.push(
+        turn({
+          draft: draftAt('20:00'),
+          awaiting: 'partySize',
+          say: 'Mardi soir, ça tombe bien. Vous serez combien ?',
+        }),
+        turn({
+          draft: draftAt(''),
+          awaiting: 'time',
+          say: 'Le mardi, nous fermons à 14 h 30. Quelle heure vous conviendrait ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'mardi à 20 heures', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain('en dehors des horaires du mardi (12:00–14:30)');
+      expect(spoken().join(' ')).not.toContain('tombe bien');
+      expect(spoken().join(' ')).toContain('14 h 30');
+    });
+
+    it("laisse parler normalement quand l'heure est dans le service", async () => {
+      const { session, mgr, outputs } = fixture();
+      (session as { openingHours?: unknown }).openingHours = LUNCH_ONLY;
+      outputs.push(
+        turn({
+          draft: draftAt('13:00'),
+          awaiting: 'partySize',
+          say: 'Mardi à 13 heures. Vous serez combien ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'mardi à 13 heures', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(spoken()).toContain('Vous serez combien ?');
+    });
   });
 
   describe('créneau exclu par les disponibilités lues (appel 1b3f85e9)', () => {
@@ -456,6 +528,107 @@ describe('tour structuré (canary)', () => {
     expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
     expect(session.structuredTurn?.reservationCreated).toBe(true);
     expect(session.conversation.confirmedReservationKey).not.toBeNull();
+  });
+
+  describe('récapitulatif coupé par l’appelant', () => {
+    const RECAP = 'Donc, demain à 20 h, pour 4 personnes, au nom de Akkif. C’est bon ?';
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };
+    function recapFixture(unheard: string) {
+      const context = fixture();
+      context.session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft,
+        availability: { date: draft.date, partySize: 4, slots: ['20:00'] },
+        lastAwaiting: 'confirmation',
+        recapKey: bookingKey(draft),
+      };
+      context.session.interruptedReply = {
+        said: RECAP,
+        heard: RECAP.slice(0, RECAP.length - unheard.length).trim(),
+        unheard,
+      };
+      return context;
+    }
+
+    it('ne réserve pas sur un oui dit avant d’avoir entendu tout le contenu, et donne la suite', async () => {
+      const { session, mgr, outputs } = recapFixture(
+        'pour 4 personnes, au nom de Akkif. C’est bon ?',
+      );
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({
+          draft,
+          awaiting: 'confirmation',
+          say: 'Pour 4 personnes, au nom de Akkif. C’est bon ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'oui', mgr);
+
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+      const secondPass = vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{
+        content: string;
+      }>;
+      expect(secondPass[0].content).toContain('entendu tout le récapitulatif');
+      expect(secondPass[0].content).toContain('pour 4 personnes, au nom de Akkif');
+      expect(session.interruptedReply).toBeUndefined();
+    });
+
+    it('accepte le oui suivant : un seul refus par récapitulatif', async () => {
+      const { session, mgr, outputs } = recapFixture(
+        'pour 4 personnes, au nom de Akkif. C’est bon ?',
+      );
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({
+          draft,
+          awaiting: 'confirmation',
+          say: 'Pour 4 personnes, au nom de Akkif. C’est bon ?',
+        }),
+      );
+      await processTranscriptStreaming(session, 'oui', mgr);
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+
+      // L'appelant répond encore par-dessus la relecture : son accord vaut.
+      session.interruptedReply = {
+        said: RECAP,
+        heard: 'Pour 4',
+        unheard: 'personnes, au nom de Akkif. C’est bon ?',
+      };
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({ draft, say: 'C’est réservé. Bonne soirée !' }),
+      );
+      await processTranscriptStreaming(session, 'oui', mgr);
+      expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it('réserve quand seule la question finale n’a pas été entendue', async () => {
+      const { session, mgr, outputs } = recapFixture('C’est bon ?');
+      outputs.push(
+        turn({ interpretation: 'affirmation', draft, action: 'create_reservation' }),
+        turn({ draft, say: 'C’est réservé. Bonne soirée !' }),
+      );
+
+      await processTranscriptStreaming(session, 'oui', mgr);
+
+      expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('jette la réponse préparée comme un barge-in quand l’appelant reprend avant le premier son', async () => {
+    vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'true');
+    const { session, mgr, outputs } = fixture();
+    outputs.push(turn({ say: 'Bonjour. Pour quel jour ?', awaiting: 'date' }));
+    contextTurn.onHoldCancelled = undefined;
+
+    await processTranscriptStreaming(session, 'oui bonjour', mgr);
+
+    const onHoldCancelled = contextTurn.onHoldCancelled as (() => void) | undefined;
+    expect(onHoldCancelled).toBeTypeOf('function');
+    onHoldCancelled?.();
+    expect(session.sttAfterBargeIn).toBe(true);
+    expect(mgr.handleBargeIn).toHaveBeenCalledWith(session);
   });
 
   it('refuse une date passée proposée par le modèle', async () => {

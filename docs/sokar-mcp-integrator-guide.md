@@ -156,7 +156,8 @@ Réponse:
   "result": {
     "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
-    "serverInfo": { "name": "sokar-mcp", "version": "2.1.0" }
+    "serverInfo": { "name": "sokar-mcp", "version": "2.3.0" },
+    "instructions": "Consignes conversationnelles fournies par Sokar…"
   }
 }
 ```
@@ -178,6 +179,7 @@ Réponse: `result.tools` contient les outils publics. Chaque outil expose son
 `inputSchema`, son `outputSchema` et ses annotations:
 
 - `search_restaurants`
+- `answer_availability`
 - `get_restaurant_details`
 - `check_availability`
 - `create_quote`
@@ -188,6 +190,48 @@ Réponse: `result.tools` contient les outils publics. Chaque outil expose son
 - `modify_reservation`
 - `cancel_reservation`
 - `get_reservation_status`
+
+## Expérience conversationnelle
+
+Les champs MCP (`restaurantId`, `holdToken`, `idempotencyKey`, dates ISO, etc.) sont
+des détails entre l’assistant et le serveur. La personne formule son besoin en
+langage courant; l’assistant extrait les informations fournies, demande seulement
+ce qui manque et remplit lui-même ces champs. Il ne faut jamais demander à la
+personne un identifiant de restaurant ou de réservation, un jeton, une clé
+d’idempotence, du JSON ou un format de date/téléphone technique.
+
+Après confirmation et consentement, l’assistant appelle les outils nécessaires,
+en gardant leurs identifiants et résultats techniques internes. Il répond ensuite
+brièvement dans la langue de la personne, par exemple : « C’est confirmé pour deux
+personnes chez Chez Sokar, jeudi 1er octobre à 19 h. » Il ne montre ni UUID, ni
+`reused`, ni réponse JSON. En cas d’indisponibilité, il propose uniquement les
+créneaux alternatifs retournés.
+
+Quand la personne nomme un restaurant, l’assistant passe ce nom dans
+`restaurantName`. `requestedRestaurant.status` distingue le restaurant trouvé
+mais indisponible (`unavailable`) d’une fiche MCP introuvable dans cette ville
+(`not_found`). Un tableau `restaurants` vide ne prouve pas que le restaurant
+n’existe pas. L’assistant ne demande jamais un identifiant.
+
+« Vers 19 h » est interprété comme un début à 19 h, sans décalage ni élargissement
+du créneau. Si la personne n’a donné ni fin ni durée, l’assistant omet
+`slotEnd`; le serveur complète alors 120 minutes par défaut.
+
+Le serveur transmet ces règles dans `initialize.instructions` et dans les
+descriptions des outils. Ce sont des consignes au modèle, pas une contrainte
+d’affichage imposée par MCP : le client conserve la main sur sa réponse. Une
+intégration qui exige une formulation garantie doit aussi appliquer ses propres
+instructions système et vérifier le rendu dans son client.
+
+Avec les versions MCP qui prennent en charge `structuredContent` (`2025-06-18`
+et suivantes), le champ texte `content` d’un résultat d’outil est une phrase
+courte destinée à la conversation; les informations machine, dont les UUID,
+restent dans `structuredContent` pour les appels suivants. Le modèle doit
+utiliser cette phrase comme base de réponse et ne pas afficher le JSON structuré
+à la personne. Les erreurs suivent la même règle : `content` décrit simplement
+le problème, tandis que le code de diagnostic reste dans les métadonnées. Pour
+les clients `2025-03-26`, Sokar conserve le texte JSON historique afin de ne pas
+casser les intégrations qui n’exploitent pas `structuredContent`.
 
 ## Format tools/call
 
@@ -260,6 +304,23 @@ Erreurs HTTP auth:
 
 ## Outils
 
+### answer_availability
+
+Recherche un horaire demandé pour une question simple en langage courant et ne renvoie qu’un
+champ `message`, prêt à être affiché à la personne. La réponse ne contient pas les données
+structurées de recherche, les identifiants internes ni la borne de fin utilisée pour vérifier la
+disponibilité.
+
+Utilisez cet outil pour une question comme « Vous auriez une table pour deux demain vers 19 h au
+restaurant Chez Sokar à Lyon ? ». Utilisez `search_restaurants` si la personne demande une
+comparaison détaillée ou si le parcours doit réutiliser des données structurées pour une réservation.
+
+Certains clients MCP gardent en cache la liste des outils. Après un déploiement qui ajoute un outil,
+actualisez la liste du connecteur puis ouvrez une nouvelle conversation. Dans Claude, ouvrez
+**Settings → Customize → Connectors → Sokar Staging → More options → Refresh tools list**. Sans
+cette actualisation, Claude peut continuer à appeler `search_restaurants` et ne pas proposer
+`answer_availability`.
+
 ### search_restaurants
 
 Recherche les restaurants opt-in exposés MCP.
@@ -269,6 +330,7 @@ Arguments:
 ```json
 {
   "city": "Lyon",
+  "restaurantName": "Chez Sokar",
   "partySize": 2,
   "slotStart": "2026-06-23T17:00:00.000Z",
   "slotEnd": "2026-06-23T19:00:00.000Z",
@@ -282,7 +344,9 @@ Contraintes:
 
 - `city`: string, 1 à 100 caractères
 - `partySize`: entier, 1 à 50
-- `slotStart`, `slotEnd`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `restaurantName`: optionnel; nom fourni par la personne. Lorsqu’elle nomme un restaurant, transmettez-le pour rechercher cette fiche précise.
+- `slotStart`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `slotEnd`: optionnel; même format que `slotStart`. S’il est omis, Sokar applique une durée de 120 minutes.
 - `timezone`: optionnel pour les valeurs locales (fuseau IANA, par ex. `Europe/Paris`) ; Europe/Paris est utilisé par défaut
 - `cuisineType`: optionnel, maximum 10 valeurs
 - `maxResults`: optionnel, entier 1 à 20, défaut 5
@@ -291,6 +355,12 @@ Réponse:
 
 ```json
 {
+  "searchOutcome": "available",
+  "requestedRestaurant": {
+    "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
+    "name": "Chez Sokar",
+    "status": "available"
+  },
   "restaurants": [
     {
       "id": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
@@ -315,6 +385,16 @@ Réponse:
 Chaque résultat disponible reprend le créneau exact demandé. `capacityLimits`
 identifie séparément les restaurants opt-in dont la capacité en ligne est trop
 basse ; ces entrées ne sont pas présentées comme disponibles.
+
+`searchOutcome` vaut `available`, `capacity_exceeded` ou
+`no_exact_slot_available`. Une recherche exacte vide ne prouve pas qu’un
+restaurant nommé n’existe pas : elle ne trouve pas de correspondance pour la
+ville, le groupe et le créneau fournis.
+
+Quand `restaurantName` est fourni, `requestedRestaurant.status` vaut
+`available`, `unavailable`, `capacity_exceeded` ou `not_found`. Cette valeur
+distingue un restaurant connu mais sans place à l’heure exacte d’une fiche
+introuvable dans la ville; l’ID reste réservé aux appels MCP internes.
 
 ### get_restaurant_details
 

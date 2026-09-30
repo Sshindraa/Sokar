@@ -428,6 +428,26 @@ cleanup_previous_next_builds() {
     NEXT_PREVIOUS_DIR_CONNECT=""
 }
 
+# Supprime les vieux dossiers `.next-deploy-*` : `cleanup_previous_next_builds` ne connaît que
+# la release précédente, donc quand `.next` n'était pas un lien symbolique (staging) chaque
+# déploiement laissait ~750 Mo par application (46 Go et 90 % du disque le 2026-09-30).
+# Garde les $1 plus récents (défaut 2) et la cible active de `.next`. Les noms portent
+# l'horodatage UTC : le tri par nom est le tri par date.
+prune_stale_next_builds() {
+    local keep="${1:-2}" app app_dir active build count
+    for app in dashboard connect; do
+        app_dir="$SOKAR_ROOT/apps/$app"
+        active="$(readlink "$app_dir/.next" 2>/dev/null || true)"
+        count=0
+        while IFS= read -r build; do
+            count=$((count + 1))
+            if [ "$count" -le "$keep" ]; then continue; fi
+            if [ "${build##*/}" = "$active" ]; then continue; fi
+            rm -rf "$build"
+        done < <(ls -1d "$app_dir"/.next-deploy-* 2>/dev/null | sort -r)
+    done
+}
+
 # Trap ERR — remet les services en ligne après un échec de déploiement.
 # Utilise RESTORE_ON_FAIL (snapshot pré-build) et les variables PM2_*.
 recover_services() {

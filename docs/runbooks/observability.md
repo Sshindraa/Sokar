@@ -127,5 +127,20 @@ miroir et ne notifie personne sans Alertmanager :
   Le worker `elevenlabs-subscription` les envoie via `dispatchAlert()` et Redis mémorise chaque
   seuil par période de facturation ; il réarme le seuil si la consommation repasse en dessous.
 
+## Alertes du modèle vocal (Cerebras, repli OpenRouter)
+
+`/health` reste à 200 quand Cerebras refuse (le 29/09, quota 402 : agent muet, API « saine »),
+ni le watchdog ni Healthchecks.io ne le voient. Le flux vocal appelle `dispatchAlert()` avec un
+cooldown Redis ; aucune charge utile ne contient de donnée d'appel :
+
+- `voice_llm_quota` / `voice_llm_auth` (critique, 1 h) : Cerebras répond 402 / 401-403.
+- `voice_llm_all_providers_down` (critique, 30 min) : au moins 3 tours en 10 minutes où le
+  principal et le repli ont échoué.
+- `voice_llm_primary_slow` (avertissement, 1 h) : au moins 10 doublons de hedging en 15 minutes.
+- `voice_llm_circuit_open` (avertissement, 30 min) : le disjoncteur du principal vient de s'ouvrir.
+- `openrouter_credit_low` (avertissement sous 2 $) et `openrouter_credit_critical` (critique
+  sous 0,5 $) : le worker `openrouter-credit` lit `GET /credits` chaque heure (à la minute 15),
+  publie `sokar_openrouter_credit_usd` et réarme les seuils après une recharge.
+
 La clé partagée staging/production et les consignes de banc sont documentées dans
 `docs/runbooks/environment.md`.

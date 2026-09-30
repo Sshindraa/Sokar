@@ -21,6 +21,8 @@
 
 ## Décisions récentes
 
+2026-09-30 — [MCP, UX] Pour une question simple de disponibilité, utiliser `answer_availability`, dont la sortie est limitée à `{ message }`; répondre uniquement avec le résultat utile, sans commentaire automatique sur l’absence de réservation. Si la personne demande explicitement si une réservation a été créée, répondre clairement. Après tout déploiement ou changement des consignes MCP, actualiser la liste d’outils dans ChatGPT et Claude : les deux peuvent conserver les définitions précédentes en cache. Les clients génèrent encore le texte final.
+
 2026-09-29 — [MCP, UX] **Prompts et resources différés** — Les parcours ChatGPT/Claude déjà observés utilisent directement recherche, disponibilité et réservations ; aucune demande produit ne justifie une surface `prompts`/`resources` supplémentaire. Réévaluer lorsqu’un parcours récurrent nécessite un workflow guidé ou un contenu restaurant statique dans le client.
 
 2026-09-29 — [MCP, contrats] **Retries sûrs et résultats validés à l'exécution** — Une modification répétée avec les mêmes valeurs devient un no-op (`changed: false`) ; une annulation déjà réussie renvoie `cancelled: true` sans rejouer les effets. Les erreurs exposent aussi un code/message stable dans `_meta["com.sokar/error"]`, en conservant le texte existant. Sokar vérifie les sorties après redaction contre les schémas publiés. `create_quote` est conservé sans changement de contrat comme référence informative temporaire ; son `quoteId` ne réserve pas la capacité et ne peut pas finaliser une réservation. `create_hold` reste l'action qui garde un créneau.

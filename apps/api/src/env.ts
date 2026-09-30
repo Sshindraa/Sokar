@@ -77,6 +77,10 @@ const PROD_HOST_ALLOWLIST = [
 ];
 
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
+/** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
+const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
+/** Délai avant de lancer la requête de doublon chez le secours (tour structuré) ; 0 = désactivé. */
+const DEFAULT_VOICE_LLM_HEDGE_MS = 700;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
 
@@ -97,6 +101,38 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
 }, z.number().positive());
 
+const voiceLlmHedgeSchema = z.preprocess((value) => {
+  if (value === undefined || value === '') return DEFAULT_VOICE_LLM_HEDGE_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 4000
+    ? parsed
+    : DEFAULT_VOICE_LLM_HEDGE_MS;
+}, z.number().min(0));
+
+/** Moteurs de suppression de bruit Telnyx ; toute autre valeur équivaut à « off ». */
+export const NOISE_SUPPRESSION_ENGINES = [
+  'Krisp',
+  'DeepFilterNet',
+  'AiCoustics',
+  'Denoiser',
+] as const;
+
+const voiceNoiseSuppressionEngineSchema = z.preprocess(
+  (value) => {
+    const engine = typeof value === 'string' ? value.trim() : '';
+    return (NOISE_SUPPRESSION_ENGINES as readonly string[]).includes(engine) ? engine : 'off';
+  },
+  z.enum(['off', ...NOISE_SUPPRESSION_ENGINES]),
+);
+
+const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
+  if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 500 && parsed <= 8000
+    ? parsed
+    : DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
+}, z.number().positive());
+
 /**
  * Une variable d'environnement vide n'est pas absente : `pm2` transmet à ses
  * process l'environnement du shell qui l'a lancé, donc un secret de workflow
@@ -114,7 +150,19 @@ export const optionalUrlSchema = z.preprocess((value) => {
   return trimmed === '' ? undefined : trimmed;
 }, z.string().url().optional());
 
+/** Hôtes Deepgram autorisés : la clé API leur est envoyée, jamais à une valeur libre. */
+export const DEEPGRAM_API_HOSTS = ['api.deepgram.com', 'api.eu.deepgram.com'] as const;
+
+const deepgramApiHostSchema = z.preprocess((value) => {
+  const host = typeof value === 'string' ? value.trim().replace(/^["']|["']$/g, '') : '';
+  return (DEEPGRAM_API_HOSTS as readonly string[]).includes(host) ? host : 'api.deepgram.com';
+}, z.enum(DEEPGRAM_API_HOSTS));
+
 export const VoiceDeepgramConfigSchema = z.object({
+  // Endpoint EU : 7 ms de latence réseau depuis le VPS contre 110 ms vers les États-Unis ; la
+  // transcription revient ~165 ms plus tôt à chaque résultat, avec des textes identiques (rejeu du
+  // 29/09 : 11/11). Toute autre valeur retombe sur api.deepgram.com.
+  DEEPGRAM_API_HOST: deepgramApiHostSchema,
   // 200 ms : −110 ms en médiane sur le rejeu des appels réels du 27/09 (958 → 849 ms) ;
   // les phrases coupées sont rattrapées par l'attente des tours inachevés.
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
@@ -135,6 +183,10 @@ export const VoiceConfigSchema = z
   .object({
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
+    VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
+    VOICE_LLM_HEDGE_MS: voiceLlmHedgeSchema,
+    VOICE_NOISE_SUPPRESSION_ENGINE: voiceNoiseSuppressionEngineSchema,
+    VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS: z.string().optional(),
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
@@ -154,7 +206,9 @@ export const VoiceConfigSchema = z
     /** Secours du tour structuré (JSON Schema strict) si le provider principal échoue. */
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-    VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('qwen/qwen3.8-27b'),
+    VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('deepseek/deepseek-v4-flash-0731'),
+    // Hébergeurs OpenRouter du repli, dans l'ordre (vide = tri par latence historique, instable).
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: z.string().default('Cohere,Wafer,Baidu'),
   })
   .merge(VoiceDeepgramConfigSchema);
 

@@ -182,6 +182,12 @@ CEREBRAS_API_KEY="csk-..."
 CEREBRAS_BASE_URL="https://api.cerebras.ai/v1"
 VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
+# Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
+VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
+# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
+# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
+# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
+VOICE_LLM_HEDGE_MS="700"
 ```
 
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
@@ -199,7 +205,9 @@ C'est un filet d'urgence, pas un provider de production.
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut
-VOICE_STRUCTURED_FALLBACK_MODEL="qwen/qwen3.8-27b"        # défaut
+VOICE_STRUCTURED_FALLBACK_MODEL="deepseek/deepseek-v4-flash-0731"  # défaut ; modèle de repli OpenRouter du tour structuré ET du chemin à outils (autres restaurants)
+# Hébergeurs du repli, dans l'ordre (vide = tri par latence historique, instable : pointes de 5 à 30 s le 29/09).
+VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="Cohere,Wafer,Baidu"
 ```
 
 Latence du tour structuré (mesures du 27 septembre, appel 25650799 et rejeu des
@@ -210,12 +218,45 @@ appels enregistrés) :
 # la requête finale est identique (rien n'est dit ni exécuté avant).
 VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
 VOICE_STRUCTURED_SPECULATION_MS="250"
+# Spéculation à la pause : la requête part dès que l'appelant a été silencieux ce délai (détecteur de
+# voix sur l'audio entrant), pas 250 ms après la dernière partielle, et pas pendant qu'il parle ;
+# ainsi la réponse est prête pendant l'attente avant le premier son (VOICE_FIRST_AUDIO_SILENCE_MS).
+# 0 : ancien déclenchement (VOICE_STRUCTURED_SPECULATION_MS). Plafond de requêtes spéculatives
+# par tour (~3 k tokens chacune ; la clé Cerebras est limitée à 150 k tokens/minute).
+# Métriques : sokar_voice_structured_speculation_total{outcome=hit|miss_*|none},
+# sokar_voice_structured_speculation_launch_total{result=started|capped}.
+VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
+VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
 # structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
+# Garde de silence : une fin de tour forcée (partielle figée, jugement du modèle) attend que
+# l'audio de l'appelant soit silencieux depuis ce délai, au lieu de tomber pendant qu'il parle
+# (appel 5cebe456 : 11 fins de tour forcées sur 17 tombaient pendant la parole). 0 désactive.
+# Le report cumulé est plafonné (bruit, écho) : au-delà, le comportement d'avant reprend.
+# Métrique : sokar_voice_silence_guard_total{outcome=held|released_after_silence|released_at_cap}.
+VOICE_STT_SILENCE_GUARD_MS="350"
+VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
+# Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
+# que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
+# elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
+# Contexte Cartesia seulement (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
+# qu'un bruit continu bloque une réponse. Métriques : sokar_voice_first_audio_hold_total{outcome},
+# sokar_voice_first_audio_hold_ms ; télémétrie de tour : événement first_audio_hold.
+VOICE_FIRST_AUDIO_SILENCE_MS="600"
+VOICE_FIRST_AUDIO_HOLD_CAP_MS="1200"
+# Coupure rapide de l'agent : quand la voix de l'appelant (audio entrant) dépasse le niveau RMS
+# indiqué pendant cette durée alors que l'agent parle, la lecture est mise EN PAUSE tout de suite
+# (~0,14 s), au lieu d'attendre la première transcription partielle (0,7 à 1,3 s). Comme l'écho de
+# l'agent peut déclencher la détection, on confirme : transcription = barge-in habituel ; sinon, après
+# CONFIRM_MS, appelant encore en train de parler = coupure, silence = la lecture reprend. 0 désactive.
+# Contexte Cartesia seulement. Métrique : sokar_voice_fast_barge_in_total{outcome=paused|escalated|resumed}.
+VOICE_FAST_BARGE_IN_MS="80"
+VOICE_FAST_BARGE_IN_MIN_RMS="800"
+VOICE_FAST_BARGE_IN_CONFIRM_MS="500"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
 # le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
@@ -268,6 +309,20 @@ démarrage par Zod :
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 VOICE_DEEPGRAM_UTTERANCE_END_MS="1000"
 VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
+# Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
+# ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
+DEEPGRAM_API_HOST="api.deepgram.com"
+# Parcours vocal moderne par défaut : tour structuré, Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés
+# Deepgram et écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false
+# (seules les listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion ramène un restaurant à l'ancien
+# chemin (outils, Scribe) mais n'annule pas ses listes explicites. Le hedging suit le tour structuré.
+VOICE_V2_DEFAULT="false"
+VOICE_V2_DISABLED_RESTAURANT_IDS=""
+# Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
+# ou Krisp | DeepFilterNet | AiCoustics | Denoiser ; uniquement pour les restaurants listés.
+# Facturée par direction et par minute (une seule direction utilisée). Un échec n'arrête pas l'appel.
+VOICE_NOISE_SUPPRESSION_ENGINE="off"
+VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS=""
 VOICE_DEEPGRAM_MODEL="nova-3"
 # Optional; Flux is used only when this CSV contains the restaurant ID.
 VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""
@@ -558,6 +613,15 @@ Chaque réplique de l'agent est comptée par ses propres trames envoyées à Tel
 entier, « [envoi coupé] », ou omise si aucune trame n'est partie. Avec le contexte Cartesia, la
 réponse forme une seule réplique (l'audio ne se rattache pas phrase par phrase). Envoyé ne veut
 pas dire entendu : un barge-in peut encore vider l'audio en attente côté Telnyx.
+
+Pour ces mêmes restaurants de test, les événements STT écrivent aussi leur **texte brut** dans
+les journaux du serveur (`[voice-debug] raw text`, champ `voiceDebug`) : ce que le filtre d'écho a
+reçu et rendu (`echo_prefix_stripped`, `echo_suppressed`, `echo_spared`, avec la parole récente de
+l'agent), chaque segment final Deepgram (`final_segment`) et la partielle au moment d'une fin de
+tour forcée (`finalize_sent`, avec le silence mesuré). Mêmes garde-fous que le dialogue par tour :
+téléphones et e-mails masqués, rien pour un restaurant client, jamais envoyé à un service externe ;
+les journaux tournent chaque jour et sont supprimés après 14 jours (logrotate). Autorisé par le
+propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à comprendre un mot perdu.
 
 `SOKAR_VOICE_READ_TOKEN` (secret, `openssl rand -hex 32`) protège la lecture interne, en
 `Authorization: Bearer <jeton>` ; sans lui, les routes répondent 503. Lecture seule :

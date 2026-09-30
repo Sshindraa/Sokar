@@ -10,7 +10,10 @@ import {
   bookingKey,
   createStructuredTurnState,
   parseStreamedDraft,
+  outsideOpeningHoursFact,
+  reconcileSpelledName,
   requestedSlotConflict,
+  spelledLettersOf,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 
@@ -204,5 +207,78 @@ describe('créneau demandé et disponibilités lues', () => {
     // Tant que l'objet n'est pas fermé, rien n'est lisible.
     expect(parseStreamedDraft('{"turnComplete":true,"draft":{"date":"2026-09-30","ti')).toBeNull();
     expect(parseStreamedDraft('')).toBeNull();
+  });
+});
+
+describe('outsideOpeningHoursFact', () => {
+  const hours = {
+    tue: { open: '12:00', close: '14:30' },
+    sat: { open: '12:00', close: '23:00' },
+    fri: { open: '18:00', close: '02:00' },
+  };
+  // 2026-10-06 est un mardi, 2026-10-10 un samedi, 2026-10-09 un vendredi, 2026-10-05 un lundi.
+  it('donne le fait quand l’heure sort du service d’un jour ouvert', () => {
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '20:00' })).toContain(
+      'en dehors des horaires du mardi (12:00–14:30)',
+    );
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '11:00' })).not.toBeNull();
+  });
+
+  it('reste muet quand tout est compatible ou inconnu', () => {
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '12:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-10', time: '21:00' })).toBeNull();
+    // Jour fermé : le calendrier donné au modèle le dit déjà.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-05', time: '20:00' })).toBeNull();
+    // Service de nuit (fermeture après minuit) : non tranché ici.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-09', time: '23:30' })).toBeNull();
+    expect(outsideOpeningHoursFact(null, { date: '2026-10-06', time: '20:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '', time: '20:00' })).toBeNull();
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '' })).toBeNull();
+  });
+});
+
+describe('reconcileSpelledName', () => {
+  const draft = (customerName: string) => ({ date: '', time: '', partySize: 0, customerName });
+
+  it('reads letters and doubles like a caller spells them', () => {
+    expect(spelledLettersOf('hoët h o u e t')).toBe('HOUET');
+    expect(spelledLettersOf('au nom de a 2 k i f')).toBe('AKKIF');
+    expect(spelledLettersOf('4 1 non 5 5')).toBe('');
+    expect(spelledLettersOf('oui')).toBe('');
+  });
+
+  it('restores letters the model dropped from the name it wrote', () => {
+    expect(reconcileSpelledName(draft('Hoët'), 'hoët h o u e t', 'customerName').customerName).toBe(
+      'Houet',
+    );
+    expect(reconcileSpelledName(draft('HOËT'), 'non h o u e t', 'confirmation').customerName).toBe(
+      'HOUET',
+    );
+    expect(
+      reconcileSpelledName(draft('AKIF'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+  });
+
+  it('leaves a name that already matches, or a false start followed by the right spelling', () => {
+    expect(reconcileSpelledName(draft('HOUET'), 'h o u e t', 'customerName').customerName).toBe(
+      'HOUET',
+    );
+    expect(
+      reconcileSpelledName(draft('AKKIF'), 'a k f a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+  });
+
+  it('never shortens or replaces a name built over several turns', () => {
+    expect(reconcileSpelledName(draft('HOUET'), 'u e t', 'customerName').customerName).toBe(
+      'HOUET',
+    );
+    expect(reconcileSpelledName(draft('Durand'), 'h o u e t', 'customerName').customerName).toBe(
+      'Durand',
+    );
+  });
+
+  it('does nothing when no name was being asked for', () => {
+    expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });
 });

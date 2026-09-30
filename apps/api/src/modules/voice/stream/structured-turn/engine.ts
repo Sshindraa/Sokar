@@ -4,6 +4,7 @@
  * les faits proposés, exécute les actions autorisées et rend leur résultat au
  * modèle pour la formulation. Aucune règle lexicale n'interprète l'appelant.
  */
+import { logVoiceDebugText } from '../debug-dialogue';
 import type { CallSession, DebugSpeechEntry } from '../types';
 import { observeSemanticSignalsShadow } from '../turn-plan-shadow';
 import type { CallSessionManager } from '../manager';
@@ -11,7 +12,7 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { parseRestaurantIdList } from '../feature-flags';
+import { isVoiceV2Default, parseRestaurantIdList } from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -26,6 +27,7 @@ import {
 import {
   appendDebugSpeechText,
   recordDebugAgentSpeech,
+  rememberRecentAgentSpeech,
   recordDebugTool,
   settleDebugSpeech,
 } from '../debug-dialogue';
@@ -47,8 +49,11 @@ import {
   todayInTimezone,
   type StructuredTurnState,
   parseStreamedDraft,
+  outsideOpeningHoursFact,
+  reconcileSpelledName,
   requestedSlotConflict,
 } from './fact-guards';
+import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages } from './prompt';
 import {
   cancelSpeculation,
@@ -64,7 +69,8 @@ export function isStructuredTurnEnabled(
 ): boolean {
   return Boolean(
     restaurantId &&
-    parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId),
+    (parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId) ||
+      isVoiceV2Default(restaurantId, env)),
   );
 }
 
@@ -146,6 +152,8 @@ interface PassResult {
   spoken: boolean;
   /** Le brouillon annoncé par le modèle vise un créneau que les disponibilités lues excluent : rien n'a été dit. */
   slotConflict: boolean;
+  /** Fait à donner au second passage quand l'heure visée est hors horaires (sinon lecture des créneaux). */
+  hoursFact?: string;
 }
 
 /**
@@ -386,7 +394,18 @@ export async function runStructuredTurn(
   // phrase suivante n'étant synthétisée qu'après la fin de la précédente).
   // Le socket s'ouvre pendant la génération ; repli HTTP sans audio envoyé.
   const contextTts = isCartesiaContextV2Enabled() ? createCartesiaContextTurn(session, true) : null;
-  if (contextTts) session.ttsContext = contextTts;
+  if (contextTts) {
+    session.ttsContext = contextTts;
+    // L'appelant reprend la parole avant le premier son : la réponse préparée est jetée comme
+    // un barge-in, avant qu'il en ait entendu un mot.
+    contextTts.onHoldCancelled = () => {
+      if (!isLive()) return;
+      session.sttAfterBargeIn = true;
+      session.abortController?.abort();
+      session.abortController = null;
+      mgr.handleBargeIn(session);
+    };
+  }
   const spokenPhrases: string[] = [];
   let contextDebugEntry: DebugSpeechEntry | null = null;
   const flushSpeech = async () => {
@@ -429,8 +448,11 @@ export async function runStructuredTurn(
     if (contextTts) {
       // Une réplique du relevé par réponse, mesurée par les trames du contexte
       // (appel 25650799 : relevé vide côté agent sans cela).
-      if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, phrase);
-      else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
+      if (contextDebugEntry) {
+        appendDebugSpeechText(contextDebugEntry, phrase);
+        // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
+        rememberRecentAgentSpeech(session, phrase);
+      } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
       contextTts.push(cleanTextForTts(phrase, effectiveVoiceLanguage(session)));
       return;
     }
@@ -443,6 +465,7 @@ export async function runStructuredTurn(
     let action: string | null = null;
     let turnComplete: boolean | null = null;
     let slotConflict = false;
+    let hoursFact: string | undefined;
     let firstToken = true;
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
@@ -474,12 +497,17 @@ export async function runStructuredTurn(
           (streamedDraft.date !== before.date ||
             streamedDraft.time !== before.time ||
             streamedDraft.partySize !== before.partySize);
+        const outsideHours =
+          streamedDraft && changed
+            ? outsideOpeningHoursFact(session.openingHours, streamedDraft)
+            : null;
         if (
           streamedDraft &&
           changed &&
-          requestedSlotConflict(state.dayAvailability, streamedDraft)
+          (outsideHours || requestedSlotConflict(state.dayAvailability, streamedDraft))
         ) {
           slotConflict = true;
+          hoursFact = outsideHours ?? undefined;
         }
       }
       const mayContinue =
@@ -512,7 +540,7 @@ export async function runStructuredTurn(
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
     }
-    return { output, spoken, slotConflict };
+    return { output, spoken, slotConflict, ...(hoursFact ? { hoursFact } : {}) };
   };
 
   let speculationUsed = false;
@@ -625,7 +653,7 @@ export async function runStructuredTurn(
       return;
     }
     const applied = applyProposedDraft(state.draft, first.output, { today });
-    state.draft = applied.draft;
+    state.draft = reconcileSpelledName(applied.draft, transcript, state.lastAwaiting);
     // Créneaux lus d'avance et couvrant le brouillon : ce sont des faits vérifiés,
     // la réservation reste soumise aux mêmes garde-fous.
     const prefetched = prefetchedSlots(state);
@@ -636,8 +664,18 @@ export async function runStructuredTurn(
         slots: prefetched,
       };
     }
+    // La réponse coupée n'a d'effet que sur ce tour : elle est consommée ici.
+    const cutReply = session.interruptedReply;
+    session.interruptedReply = undefined;
+    const bookingId = isBookingComplete(state.draft) ? bookingKey(state.draft) : null;
+    const recapCut =
+      cutReply !== undefined &&
+      replyContentNotFullyHeard(cutReply) &&
+      bookingId !== null &&
+      state.recapCutBlockedKey !== bookingId;
     const decision = authorizeStructuredAction(state, first.output, state.draft, {
       maxPartySize: voiceMaxPartySize(session),
+      recapHeard: !recapCut,
     });
     recordVoiceTurnEvent(session, 'structured_turn', {
       pass: 1,
@@ -648,11 +686,22 @@ export async function runStructuredTurn(
       changedFields: applied.changed.join(',') || null,
       rejectedFields: applied.rejected.join(',') || null,
       actionDecision: first.slotConflict
-        ? 'slot_conflict'
+        ? first.hoursFact
+          ? 'outside_hours'
+          : 'slot_conflict'
         : decision.allowed
           ? 'allowed'
           : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
+      speculated: speculationUsed,
+    });
+    // Texte reçu et sortie brute du modèle, pour comprendre une erreur de compréhension (appel de test
+    // du 30/09 : « vous êtes 20 demain » enregistré comme 20 h). Restaurants de test uniquement.
+    logVoiceDebugText(session, 'structured_output', {
+      transcript,
+      say: first.output.say,
+      draft: JSON.stringify(first.output.draft),
+      changedFields: applied.changed.join(',') || undefined,
       speculated: speculationUsed,
     });
 
@@ -662,11 +711,16 @@ export async function runStructuredTurn(
       // Créneau non vérifié (appel 1b3f85e9) : un refus générique laissait l'appelant sans explication ni
       // alternative. La vérification réelle donne les créneaux libres et dit si l'heure demandée l'est.
       actionResult = await runAvailability();
+    } else if (!decision.allowed && decision.reason === 'recap_not_heard' && cutReply) {
+      // Un seul refus par récapitulatif : si l'appelant répond encore par-dessus, son accord vaut.
+      state.recapCutBlockedKey = bookingId;
+      actionResult = `La réservation n'est PAS encore faite : l'appelant a répondu avant d'avoir entendu tout le récapitulatif (il n'a pas entendu : « ${cutReply.unheard} »). Donne-lui brièvement la partie manquante, sans recopier ce qu'il a déjà entendu, et redemande son accord (awaiting=confirmation).`;
     } else if (!decision.allowed) {
       actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
     } else if (first.slotConflict) {
-      // Le modèle visait un créneau que les disponibilités lues excluent : rien n'a été dit.
-      actionResult = await runAvailability();
+      // Le modèle visait une heure hors horaires ou un créneau que les disponibilités lues excluent :
+      // rien n'a été dit ; le second passage reçoit le fait réel.
+      actionResult = first.hoursFact ?? (await runAvailability());
     } else {
       switch (first.output.action) {
         case 'end_call':
@@ -721,7 +775,7 @@ export async function runStructuredTurn(
       const second = await runPass(actionResult);
       if (!isLive()) return;
       const reapplied = applyProposedDraft(state.draft, second.output, { today });
-      state.draft = reapplied.draft;
+      state.draft = reconcileSpelledName(reapplied.draft, transcript, state.lastAwaiting);
       recordVoiceTurnEvent(session, 'structured_turn', {
         pass: 2,
         interpretation: second.output.interpretation,

@@ -4,6 +4,7 @@
  * format valide, sont plausibles, et qu'une action à effet réel repose sur
  * des faits vérifiés (disponibilité réelle, récapitulatif accepté).
  */
+import { normalizeOpeningHours } from '@sokar/shared';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
 
 export type DraftField = keyof StructuredTurnDraft;
@@ -24,6 +25,8 @@ export interface StructuredTurnState {
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+  /** Récapitulatif dont le « oui » a déjà été refusé une fois parce qu'il avait été coupé. */
+  recapCutBlockedKey: string | null;
 }
 
 export interface DayAvailability {
@@ -43,6 +46,7 @@ export function createStructuredTurnState(): StructuredTurnState {
     dayAvailability: null,
     reservationCreated: false,
     pendingFragment: null,
+    recapCutBlockedKey: null,
   };
 }
 
@@ -149,6 +153,82 @@ export function applyProposedDraft(
   return { draft, rejected, changed };
 }
 
+const SPELLING_AWAITING: ReadonlySet<StructuredTurnOutput['awaiting']> = new Set([
+  'customerName',
+  'customerNameConfirmation',
+  'confirmation',
+]);
+
+const stripToLetters = (text: string): string =>
+  text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}]/gu, '')
+    .toUpperCase();
+
+/**
+ * Dernière suite de lettres épelées d'une phrase : des jetons d'une lettre, un chiffre
+ * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Vide sans trois lettres.
+ */
+export function spelledLettersOf(transcript: string): string {
+  const tokens = transcript
+    .toLowerCase()
+    .split(/[\s,.;:!?-]+/u)
+    .filter(Boolean);
+  let run = '';
+  let last = '';
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const next = tokens[index + 1];
+    if (/^\p{L}$/u.test(token)) {
+      run += token;
+    } else if (/^[2-9]$/.test(token) && next && /^\p{L}$/u.test(next)) {
+      run += next.repeat(Number(token));
+      index++;
+    } else {
+      if (run.length >= 3) last = run;
+      run = '';
+    }
+  }
+  if (run.length >= 3) last = run;
+  return stripToLetters(last);
+}
+
+/** `needle` est une suite de lettres prise dans `haystack`, dans l'ordre. */
+function isSubsequence(needle: string, haystack: string): boolean {
+  let position = 0;
+  for (const letter of haystack) if (letter === needle[position]) position++;
+  return position === needle.length;
+}
+
+/**
+ * Le nom du brouillon doit dire les lettres que l'appelant vient d'épeler. Le modèle lit
+ * parfois les bonnes lettres à voix haute mais écrit un nom auquel il en manque (« hoët h o
+ * u e t » → HOËT, « a 2 k i f » → AKIF) : le récapitulatif et la réservation lisent ce champ.
+ * On ne corrige que ce cas précis, un nom auquel il manque une ou deux des lettres épelées.
+ * Un nom plus long que l'épellation (morceaux répartis sur plusieurs tours) ou qui en est la
+ * fin (faux départ suivi de la bonne épellation) reste celui du modèle.
+ */
+export function reconcileSpelledName(
+  draft: StructuredTurnDraft,
+  transcript: string,
+  previousAwaiting: StructuredTurnOutput['awaiting'],
+): StructuredTurnDraft {
+  if (!SPELLING_AWAITING.has(previousAwaiting)) return draft;
+  const spelled = spelledLettersOf(transcript);
+  const named = stripToLetters(draft.customerName);
+  if (spelled.length < 3 || named.length < 2 || named === spelled) return draft;
+  const missing = spelled.length - named.length;
+  if (missing < 1 || missing > 2) return draft;
+  if (spelled.endsWith(named) || !isSubsequence(named, spelled)) return draft;
+  const original = draft.customerName.trim();
+  const upper = original === original.toLocaleUpperCase('fr-FR');
+  const customerName = upper
+    ? spelled
+    : spelled.charAt(0) + spelled.slice(1).toLocaleLowerCase('fr-FR');
+  return { ...draft, customerName };
+}
+
 export function isBookingComplete(draft: StructuredTurnDraft): boolean {
   return Boolean(draft.date && draft.time && draft.partySize > 0 && draft.customerName.trim());
 }
@@ -208,6 +288,35 @@ export function requestedSlotConflict(
   return Array.isArray(slots) && !slots.includes(draft.time);
 }
 
+/**
+ * L'heure du brouillon tombe hors du service du jour ouvert de sa date (« mardi à 20 heures »
+ * pour un restaurant ouvert 12 h–14 h 30 ce jour-là) : le modèle, sans raisonnement, répondait
+ * « ça tombe bien » 5 fois sur 6 sur ce profil. Sans nombre de personnes ni lecture de créneaux, seul
+ * le code peut le savoir à ce stade. Renvoie le fait à donner au modèle, ou null quand tout est
+ * compatible ou inconnu (horaires absents, jour fermé traité par le calendrier, service de nuit).
+ */
+export function outsideOpeningHoursFact(
+  openingHours: unknown,
+  draft: { date: string; time: string },
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || !/^\d{2}:\d{2}$/.test(draft.time)) return null;
+  const days = normalizeOpeningHours(openingHours);
+  if (!days.length) return null;
+  const [year, month, day] = draft.date.split('-').map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
+  if (!slot || slot.close <= slot.open) return null;
+  if (draft.time >= slot.open && draft.time <= slot.close) return null;
+  const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
+    utc,
+  );
+  return (
+    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${slot.open}–${slot.close}). ` +
+    "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
+    'et laisse-le choisir une heure dans ces horaires.'
+  );
+}
+
 export type ActionDecision = { allowed: true } | { allowed: false; reason: string };
 
 /**
@@ -219,7 +328,7 @@ export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number },
+  context: { maxPartySize: number; recapHeard?: boolean },
 ): ActionDecision {
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
   if (sideEffect && output.confidence === 'low') {
@@ -248,6 +357,8 @@ export function authorizeStructuredAction(
       if (output.interpretation !== 'affirmation') {
         return { allowed: false, reason: 'recap_not_accepted' };
       }
+      // Coupé avant la fin de son contenu : le « oui » ne porte que sur ce qui a été entendu.
+      if (context.recapHeard === false) return { allowed: false, reason: 'recap_not_heard' };
       return { allowed: true };
     }
   }

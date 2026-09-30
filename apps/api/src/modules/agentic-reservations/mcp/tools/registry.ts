@@ -30,6 +30,7 @@ import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.ser
 import { redactPiiInString, redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
 import { getToolOutputSchema } from './tool-definitions';
+import { formatMcpSuccessMessage } from '../presentation';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
 import {
   checkAvailabilityDuration,
@@ -54,7 +55,11 @@ import {
   type GetReservationStatusInput,
   type SearchRestaurantsInput,
 } from './schemas';
-import { DEFAULT_MCP_TIMEZONE, parseMcpDateRange } from './date-time';
+import {
+  DEFAULT_MCP_SEARCH_DURATION_MINUTES,
+  DEFAULT_MCP_TIMEZONE,
+  parseMcpDateRange,
+} from './date-time';
 
 export type ToolContext = {
   clientId: string;
@@ -241,6 +246,7 @@ export class McpToolRegistry {
       const range = parseMcpDateRange({
         start: input.slotStart,
         end: input.slotEnd,
+        defaultDurationMinutes: DEFAULT_MCP_SEARCH_DURATION_MINUTES,
         timezone: input.timezone,
         defaultTimezone: DEFAULT_MCP_TIMEZONE,
       });
@@ -255,10 +261,12 @@ export class McpToolRegistry {
         priceRange: number | null;
         maxOnlinePartySize: number;
       }> = [];
+      const namedRestaurantMatches = new Map<string, string>();
       let scanCursor = cursorId;
       for (let page = 0; page < 10 && exposedResults.length <= input.maxResults; page++) {
         const batch = await this.availabilityService.searchAvailableRestaurantsPage({
           city: input.city,
+          ...(input.restaurantName ? { restaurantName: input.restaurantName } : {}),
           partySize: input.partySize,
           slotStart,
           slotEnd,
@@ -266,9 +274,20 @@ export class McpToolRegistry {
           maxResults: input.maxResults + 1,
           cursor: scanCursor,
         });
+        for (const match of batch.restaurantMatches ?? []) {
+          if (namedRestaurantMatches.size > 0) break;
+          const exposure = await this.getMcpExposure(match.restaurantId, ctx);
+          if (exposure.ok) {
+            namedRestaurantMatches.set(match.restaurantId, match.name);
+            break;
+          }
+        }
         for (const result of batch.results) {
           const exposure = await this.getMcpExposure(result.restaurantId, ctx);
           if (!exposure.ok) continue;
+          if (input.restaurantName && !namedRestaurantMatches.has(result.restaurantId)) {
+            namedRestaurantMatches.set(result.restaurantId, result.name);
+          }
           const violation = this.validateExposureConstraints(exposure.settings, {
             partySize: input.partySize,
             startsAt: slotStart,
@@ -296,6 +315,7 @@ export class McpToolRegistry {
         exposedResults.length === 0
           ? await this.availabilityService.findCapacityLimits({
               city: input.city,
+              ...(input.restaurantName ? { restaurantName: input.restaurantName } : {}),
               partySize: input.partySize,
               cuisineType: input.cuisineType,
               maxResults: input.maxResults,
@@ -304,7 +324,12 @@ export class McpToolRegistry {
       const exposedCapacityLimits: CapacityLimitHint[] = [];
       for (const hint of capacityLimits) {
         const exposure = await this.getMcpExposure(hint.restaurantId, ctx);
-        if (exposure.ok) exposedCapacityLimits.push(hint);
+        if (exposure.ok) {
+          exposedCapacityLimits.push(hint);
+          if (input.restaurantName && !namedRestaurantMatches.has(hint.restaurantId)) {
+            namedRestaurantMatches.set(hint.restaurantId, hint.name);
+          }
+        }
       }
 
       // Pagination cursor: si on a exactement maxResults résultats,
@@ -317,8 +342,41 @@ export class McpToolRegistry {
               : scanCursor!,
           ).toString('base64url')
         : undefined;
+      const namedMatches = [...namedRestaurantMatches.entries()];
+      const namedRestaurantMatch =
+        namedMatches.find(([id]) =>
+          exposedResults.some((restaurant) => restaurant.restaurantId === id),
+        ) ??
+        namedMatches.find(([id]) =>
+          exposedCapacityLimits.some((restaurant) => restaurant.restaurantId === id),
+        ) ??
+        namedMatches[0];
+      const requestedRestaurant = input.restaurantName
+        ? {
+            ...(namedRestaurantMatch ? { id: namedRestaurantMatch[0] } : {}),
+            name: namedRestaurantMatch?.[1] ?? input.restaurantName,
+            status: !namedRestaurantMatch
+              ? ('not_found' as const)
+              : exposedResults.some(
+                    (restaurant) => restaurant.restaurantId === namedRestaurantMatch[0],
+                  )
+                ? ('available' as const)
+                : exposedCapacityLimits.some(
+                      (restaurant) => restaurant.restaurantId === namedRestaurantMatch[0],
+                    )
+                  ? ('capacity_exceeded' as const)
+                  : ('unavailable' as const),
+          }
+        : undefined;
 
       return ok({
+        searchOutcome:
+          exposedResults.length > 0
+            ? 'available'
+            : exposedCapacityLimits.length > 0
+              ? 'capacity_exceeded'
+              : 'no_exact_slot_available',
+        ...(requestedRestaurant ? { requestedRestaurant } : {}),
         restaurants: exposedResults.slice(0, input.maxResults).map((r) => ({
           id: r.restaurantId,
           name: r.name,
@@ -410,6 +468,7 @@ export class McpToolRegistry {
       const range = parseMcpDateRange({
         start: input.slotStart,
         end: input.slotEnd,
+        defaultDurationMinutes: DEFAULT_MCP_SEARCH_DURATION_MINUTES,
         timezone: input.timezone,
         defaultTimezone: exposure.settings.timezone,
       });
@@ -1040,6 +1099,15 @@ export async function executeTool(
 ): Promise<ToolResult> {
   let result: ToolResult;
   switch (toolName) {
+    case 'answer_availability': {
+      const searchResult = await registry.searchRestaurants(rawInput, ctx);
+      result = searchResult.ok
+        ? ok({
+            message: formatMcpSuccessMessage('search_restaurants', searchResult.data, rawInput),
+          })
+        : searchResult;
+      break;
+    }
     case 'search_restaurants':
       result = await registry.searchRestaurants(rawInput, ctx);
       break;

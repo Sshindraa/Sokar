@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant.",
+  "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant. Les cas « midi-* » mesurent le modèle seul sur un second profil (Bouchon Lyonnais) ; l'heure hors service (« mardi à 20 heures ») est traitée par le code (outsideOpeningHoursFact), pas mesurée ici.",
   "today": "2026-09-29",
   "histories": {
     "opening": [
@@ -287,6 +287,172 @@
       {
         "role": "assistant",
         "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      }
+    ],
+    "recapAsked": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      }
+    ],
+    "toNameRead": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "hoët h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, H, O, Ë, T. C'est bien ça ?"
+      }
+    ],
+    "toRecapHouet": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "houet h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "oui"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET. C'est bon ?"
       }
     ]
   },
@@ -715,6 +881,291 @@
           "minRate": 0.8
         }
       ]
+    },
+    {
+      "id": "midi-jour-ferme",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "lundi soir",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "time",
+          "minRate": 0.75
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "partySize",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "midi-dimanche-ferme",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "dimanche midi",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "notEquals": "time",
+          "minRate": 0.75
+        }
+      ]
+    },
+    {
+      "id": "midi-samedi-soir-ouvert",
+      "behavior": "horaires d'un autre profil",
+      "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi (témoin : le samedi soir est ouvert, ne pas refuser à tort)",
+      "profile": "midi",
+      "history": "opening",
+      "transcript": "samedi à 20 heures",
+      "awaiting": "date",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "recap-fragment-apres-silence",
+      "behavior": "pas de récapitulatif redit",
+      "source": "appel 1b3f85e9 tour 14 : « donc » puis silence, l'agent a relu tout le récapitulatif (« Je vous ai lu le récapitulatif : … ») — cause réelle : refus « slot_not_verified » puis relecture (corrigé par #307) ; reste ~20 % de relectures des détails, jugées bénignes",
+      "history": "recapAsked",
+      "transcript": "donc",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "callerFinished": true,
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "notEquals": "create_reservation",
+          "minRate": 0.95
+        },
+        {
+          "kind": "noRepeatOf",
+          "text": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?",
+          "minRate": 0.9
+        },
+        {
+          "kind": "sayWords",
+          "maxMean": 10
+        },
+        {
+          "kind": "say",
+          "pattern": "au nom de|à 16 h 30|six personnes|pour 6",
+          "expect": false,
+          "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "recap-fragment-attente",
+      "behavior": "pas de récapitulatif redit",
+      "source": "appel 1b3f85e9 tour 14 : « donc » juste après le récapitulatif : la phrase est inachevée",
+      "history": "recapAsked",
+      "transcript": "donc",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.8
+        }
+      ]
+    },
+    {
+      "behavior": "extraction",
+      "history": "toName",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "samples": 20,
+      "id": "epele-sans-preambule",
+      "source": "« a 2 k i f » sans préambule : le modèle perdait le double K (15 % de AKKIF avant la règle du chiffre doublant la lettre, 100 % après)",
+      "transcript": "a 2 k i f",
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "\\bS\\b",
+          "expect": false,
+          "minRate": 0.9
+        },
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "AKKIF",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epele-apres-mot-entendu",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tour 15 (30/09) : « hoët h o u e t » enregistré HOËT",
+      "history": "toName",
+      "transcript": "hoët h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epele-apres-mot-entendu-intro",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tours 14-15 recollés",
+      "history": "toName",
+      "transcript": "c'est au nom de hoët h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-epellation-complete",
+      "behavior": "extraction",
+      "source": "appel 5cebe456 tour 16 : l'appelant re-épelle après une lecture fausse",
+      "history": "toNameRead",
+      "transcript": "non h o u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOËT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epellation-en-cours-pas-fini",
+      "behavior": "fin de tour",
+      "source": "appel 5cebe456 tour 16 : « h o u e » jugé fini, le t arrive 0,6 s après",
+      "history": "toNameRead",
+      "transcript": "non h o u e",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOËT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.7
+        }
+      ]
+    },
+    {
+      "id": "exclamation-apres-recap-pas-de-relecture",
+      "behavior": "répétition",
+      "source": "appel 5cebe456 tours 18-19 : « waouh » puis une phrase hors sujet relisent deux fois le récapitulatif",
+      "history": "toRecapHouet",
+      "transcript": "waouh",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUET"
+      },
+      "awaiting": "confirmation",
+      "samples": 20,
+      "checks": [
+        {
+          "kind": "noRepeatOf",
+          "text": "jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET",
+          "minRate": 0.8
+        }
+      ]
     }
-  ]
+  ],
+  "profiles": {
+    "midi": {
+      "name": "Chez Sokar — Bouchon Lyonnais",
+      "openingHours": {
+        "tue": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "wed": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "thu": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "fri": {
+          "open": "12:00",
+          "close": "14:30"
+        },
+        "sat": {
+          "open": "12:00",
+          "close": "23:00"
+        }
+      }
+    }
+  }
 }

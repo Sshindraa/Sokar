@@ -22,6 +22,7 @@ import {
   CancelReservationInputSchema,
   GetReservationStatusInputSchema,
   SearchRestaurantsOutputSchema,
+  AnswerAvailabilityOutputSchema,
   GetRestaurantDetailsOutputSchema,
   CheckAvailabilityOutputSchema,
   CreateQuoteOutputSchema,
@@ -53,10 +54,20 @@ type ToolDefinition = {
 
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
-    name: 'search_restaurants',
-    title: 'Search Restaurants',
+    name: 'answer_availability',
+    title: 'Répondre à une question de disponibilité',
     description:
-      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Each match includes its public address, cuisine, price range, online party-size limit, and the exact available slot. If restaurants is empty, check capacityLimits before saying that a named restaurant does not exist: each entry gives the public restaurant details and authoritative maxOnlinePartySize for online bookings. Never infer a maximum by trying several party sizes.',
+      'À utiliser pour répondre à une question simple en langage courant sur la disponibilité d’un restaurant, sans réservation ni comparaison détaillée. Cherchez une seule fois l’horaire demandé; « vers 19 h » signifie un début à 19 h. Retournez la phrase du résultat telle quelle comme réponse complète, sans ajouter de commentaire sur l’absence de réservation ni de détail opérationnel. Cet outil ne fournit aucun horaire de fin, donnée structurée ni identifiant de restaurant. Pour un parcours de réservation ou une comparaison détaillée, utilisez search_restaurants.',
+    schema: SearchRestaurantsInputSchema,
+    output: AnswerAvailabilityOutputSchema,
+    requiredScope: 'mcp:read',
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'search_restaurants',
+    title: 'Rechercher un restaurant',
+    description:
+      'Pour une question simple de disponibilité sans réservation, utilisez answer_availability. Utilisez cette recherche détaillée pour une comparaison ou un parcours qui a besoin des informations structurées. Si la personne nomme un restaurant, transmettez son nom dans restaurantName afin de rechercher cette fiche précise. Utilisez requestedRestaurant.status : unavailable signifie que le restaurant existe mais n’a pas de disponibilité à cette heure; not_found signifie qu’aucune fiche MCP visible ne correspond dans cette ville. Ne déduisez jamais l’existence du restaurant de la seule liste restaurants. Ne demandez jamais de restaurantId ou d’UUID. « Vers 19 h » signifie une recherche unique qui commence à 19 h; ne testez pas les horaires voisins (18 h 30 ou 19 h 30) et ne décalez pas l’heure sans demande explicite. Si l’heure demandée est disponible, mentionnez uniquement celle-ci. Envoyez slotEnd uniquement si la personne a donné une heure de fin ou une durée; sinon omettez-le. Réutilisez exactement le texte lisible du résultat comme réponse complète, sans ajouter de fin, de durée ni de proposition de réservation. Gardez les identifiants retournés pour les appels d’outils, sans les montrer.',
     schema: SearchRestaurantsInputSchema,
     output: SearchRestaurantsOutputSchema,
     requiredScope: 'mcp:read',
@@ -64,9 +75,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_restaurant_details',
-    title: 'Get Restaurant Details',
+    title: 'Consulter un restaurant',
     description:
-      'Get details of a specific restaurant by ID, including name, address, cuisine, price range, opening hours, and maxOnlinePartySize.',
+      'Consultez les détails publics du restaurant choisi à partir de son identifiant interne obtenu par la recherche. Ne demandez jamais cet identifiant à la personne et ne le citez pas dans votre réponse.',
     schema: GetRestaurantDetailsInputSchema,
     output: GetRestaurantDetailsOutputSchema,
     requiredScope: 'mcp:read',
@@ -74,9 +85,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'check_availability',
-    title: 'Check Availability',
+    title: 'Vérifier les disponibilités',
     description:
-      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Successful availability results include a decision and recommendedAction: create_hold when an available slot and mcp:reserve scope are present, request_reserve_scope when the slot is available but the scope is missing, choose_alternative_slot when alternatives exist, or choose_another_slot otherwise. If party size exceeds the online capacity, the existing POLICY_VIOLATION error message includes the exact maxPartySize; reduce the requested party size. Internal hold and reservation identifiers are never returned.',
+      'Vérifiez une seule fois l’heure demandée par la personne dans l’heure locale du restaurant; ne multipliez pas les appels sur des horaires voisins sans demande explicite. Si aucune durée ou heure de fin n’a été donnée, omettez slotEnd. Réutilisez exactement le texte lisible du résultat comme réponse complète, sans ajouter de fin, de durée ni de proposition de réservation. Utilisez l’identifiant obtenu par la recherche et gardez-le interne. S’il n’y a pas de disponibilité, présentez uniquement les alternatives réellement retournées. Si la capacité en ligne est dépassée, expliquez simplement la limite et demandez si la personne souhaite un autre nombre de convives.',
     schema: CheckAvailabilityInputSchema,
     output: CheckAvailabilityOutputSchema,
     requiredScope: 'mcp:read',
@@ -84,9 +95,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'create_quote',
-    title: 'Quote Reservation',
+    title: 'Préparer une estimation',
     description:
-      'Create a short-lived informational quote record. It does not hold capacity and its quoteId cannot be used to book; availability may change. Recheck availability or create a hold to keep the slot.',
+      'Créez une estimation temporaire à titre informatif. Elle ne bloque pas le créneau et son identifiant ne permet pas de réserver. Ne montrez pas cet identifiant à la personne.',
     schema: CreateQuoteInputSchema,
     output: CreateQuoteOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -94,9 +105,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'create_hold',
-    title: 'Hold Reservation Slot',
+    title: 'Garder un créneau temporairement',
     description:
-      'Temporarily reserve a slot while the customer confirms. Pass the returned holdToken to create_reservation before it expires.',
+      'Gardez temporairement le créneau disponible pendant la confirmation. Réutilisez le holdToken uniquement dans l’appel interne à create_reservation; ne le montrez jamais à la personne.',
     schema: CreateHoldInputSchema,
     output: CreateHoldOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -104,9 +115,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'create_reservation',
-    title: 'Create Reservation',
+    title: 'Créer une réservation',
     description:
-      'Create a reservation at a restaurant. startsAt and endsAt accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Requires explicit user consent for data processing. Returns reservation confirmation with ID.',
+      'Créez la réservation après confirmation claire du récapitulatif et consentement explicite au traitement des données. Demandez le nom et le numéro habituel seulement s’ils manquent; convertissez en interne date, heure et téléphone aux formats requis. Générez et réutilisez vous-même une idempotencyKey stable en cas de nouvel essai. Ne demandez ni ne montrez jamais restaurantId, holdToken, idempotencyKey ou reservationId. Après succès, répondez avec une confirmation naturelle et concise, sans exposer reused ni les champs techniques.',
     schema: CreateReservationInputSchema,
     output: CreateReservationOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -114,9 +125,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'join_waiting_list',
-    title: 'Join Waiting List',
+    title: 'Rejoindre la liste d’attente',
     description:
-      'Join the waiting list for a full slot when the restaurant has enabled it. Requires customer consent.',
+      'Si le créneau est complet et que la liste d’attente est activée, proposez cette option. N’inscrivez la personne qu’après son accord et le consentement requis. Gardez les identifiants et jetons d’action internes.',
     schema: JoinWaitingListInputSchema,
     output: JoinWaitingListOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -124,8 +135,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'cancel_waiting_list',
-    title: 'Leave Waiting List',
-    description: 'Cancel a waiting list entry with the action token returned when joining.',
+    title: 'Quitter la liste d’attente',
+    description:
+      'Retirez la personne de la liste en utilisant en interne le jeton d’action déjà reçu. Ne lui demandez pas de recopier ce jeton.',
     schema: CancelWaitingListInputSchema,
     output: CancelWaitingListOutputSchema,
     requiredScope: 'mcp:cancel',
@@ -133,9 +145,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'modify_reservation',
-    title: 'Modify Reservation',
+    title: 'Modifier une réservation',
     description:
-      'Change a reservation time, party size, or customer name after verifying the original phone number. Availability is rechecked atomically. Repeating the same modification is safe and returns changed=false after the first successful change.',
+      'Modifiez uniquement les éléments explicitement demandés, après vérification de la réservation avec le numéro de téléphone d’origine. Utilisez en interne l’identifiant obtenu; ne le demandez pas à la personne. La disponibilité est vérifiée de nouveau avant la modification. Confirmez le résultat en langage courant sans exposer les champs techniques.',
     schema: ModifyReservationInputSchema,
     output: ModifyReservationOutputSchema,
     requiredScope: 'mcp:reserve',
@@ -143,9 +155,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'cancel_reservation',
-    title: 'Cancel Reservation',
+    title: 'Annuler une réservation',
     description:
-      'Cancel an existing reservation by ID. Public OAuth clients must supply the original E.164 customerPhone. Repeating a successful cancellation returns cancelled=true without repeating the cancellation transition or its side effects.',
+      'Annulez uniquement à la demande explicite de la personne, après vérification avec le numéro de téléphone d’origine. Utilisez en interne l’identifiant de réservation; ne le demandez ni ne le montrez. Confirmez simplement lorsque l’annulation a réussi.',
     schema: CancelReservationInputSchema,
     output: CancelReservationOutputSchema,
     requiredScope: 'mcp:cancel',
@@ -153,9 +165,9 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'get_reservation_status',
-    title: 'Get Reservation Status',
+    title: 'Consulter une réservation',
     description:
-      'Get the status of an existing reservation by ID, including party size, date, and current state. Public OAuth clients must supply the original E.164 customerPhone.',
+      'Consultez l’état d’une réservation après vérification avec le numéro de téléphone d’origine. L’identifiant est interne : ne le demandez pas à la personne et ne le citez pas dans la réponse. Résumez le restaurant, la date, l’heure locale, le nombre de personnes et l’état utile en langage courant.',
     schema: GetReservationStatusInputSchema,
     output: GetReservationStatusOutputSchema,
     requiredScope: 'mcp:read',
