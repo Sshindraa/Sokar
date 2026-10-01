@@ -1193,3 +1193,11 @@ Décisions de l'utilisateur : cas choisis d'après des défauts réels, difficul
 - `power.ts` : tirages requis pour voir une baisse (50 % au départ → 75 tirages par bras), couverture par famille (`coverage`). `paired.ts` : comparaison A/B cas par cas puis par famille. La comparaison à un score stocké (`compare`) est supprimée : la référence se rejoue dans la même session, requêtes alternées (`voice-behavior-replay.mjs` avec `VBE_ARM_B`, `scripts/ops/voice-behavior-ab.sh`, refuse sans `VBE_MAX_REQUESTS`).
 - Rejeu : relève les jetons comptés par le fournisseur (`usage`) par bras, hébergeur OpenRouter fixable (`VBE_PROVIDER_ORDER`, sans repli). Testé contre un faux serveur local, aucun appel payant.
 - Cerebras : la documentation ne donne ni solde ni plafond de dépense par clé ou par projet (facturation agrégée à l'organisation) : une deuxième clé du même compte ne protège pas les appels réels.
+
+## 2026-10-02 — Voix : une épellation sans ambiguïté l'emporte sur le nom du modèle, même à longueur égale
+
+Constat (banc sur la vraie base, 12 tirages) : « au nom de a 2 k i f » → le modèle écrit AAKIF dans 5 tirages sur 12 (le « 2 » lu comme un second A) ; le garde-fou ne traitait que les lettres manquantes (AKIF, A2KIF), pas une substitution de même longueur : 25 % brut, 58 % après garde-fou sur Cerebras (33 % sur DeepInfra).
+
+Correctif (`fact-guards.ts`, `resolveSubstitution`) : à nombre de lettres égal, le nom tiré de l'épellation remplace celui du modèle quand l'épellation se lit sans ambiguïté : une seule suite de lettres épelées dans la phrase, aucun nom déjà retenu avant ce tour (nom assemblé sur plusieurs tours), au plus 2 lettres de différence. Test structurel, aucun mot connu ; le fait `spelledNameFact` fait relire le bon nom au second passage.
+
+Rejoué sur les sorties déjà enregistrées (aucune requête) : `extrait-nom-epele-double-k` après garde-fou 58 % → 100 % (Cerebras), 33 % → 100 % (DeepInfra). Les autres cas d'épellation n'ont pas de sortie enregistrée sur la vraie base : leur non-régression repose sur les tests unitaires du garde-fou (1 364 tests voix).

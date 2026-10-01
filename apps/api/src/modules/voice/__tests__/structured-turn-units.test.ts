@@ -523,6 +523,39 @@ describe('reconcileSpelledName', () => {
     expect(fact('Hoët', 'h o u e t', 'date')).toBeNull();
   });
 
+  it('a clear spelling wins over the model name even at equal length (a digit read as a letter)', () => {
+    // « a 2 k i f » : le modèle lit parfois le « 2 » comme un second A (même longueur, une lettre fausse).
+    expect(
+      reconcileSpelledName(draft('AAKIF'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+    expect(
+      reconcileSpelledName(draft('Aakif'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('Akkif');
+    // Toutes les lectures enregistrées d'un même énoncé aboutissent aux mêmes lettres.
+    for (const read of ['A2KIF', 'AKIF', 'AAKIF', 'AKKIF', 'Akkif']) {
+      const fixed = reconcileSpelledName(draft(read), 'au nom de a 2 k i f', 'customerName');
+      expect(fixed.customerName.toUpperCase()).toBe('AKKIF');
+    }
+    expect(spelledNameFact('AAKIF', 'a 2 k i f', 'customerName')).toContain(
+      'customerName = « AKKIF »',
+    );
+  });
+
+  it('keeps the model name when the spelling is ambiguous or the names are too different', () => {
+    // Deux épellations dans la phrase : laquelle est la bonne n'est pas une question de code.
+    expect(
+      reconcileSpelledName(draft('HOUET'), 'h o u e t non h a u e t', 'customerName').customerName,
+    ).toBe('HOUET');
+    // Même longueur mais un autre nom : le modèle sait peut-être ce qu'il fait.
+    expect(reconcileSpelledName(draft('MARTI'), 'h o u e t', 'customerName').customerName).toBe(
+      'MARTI',
+    );
+    // Un nom déjà connu avant ce tour (assemblé sur plusieurs tours) n'est pas remplacé à longueur égale.
+    expect(
+      reconcileSpelledName(draft('AAKIF'), 'a 2 k i f', 'customerName', 'DURAND').customerName,
+    ).toBe('AAKIF');
+  });
+
   it('does nothing when no name was being asked for', () => {
     expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });

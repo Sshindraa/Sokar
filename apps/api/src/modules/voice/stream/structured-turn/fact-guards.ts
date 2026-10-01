@@ -173,16 +173,17 @@ const stripToLetters = (text: string): string =>
     .toUpperCase();
 
 /**
- * Dernière suite de lettres épelées d'une phrase : des jetons d'une lettre, un chiffre
- * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Vide sans trois lettres.
+ * Suites de lettres épelées d'une phrase (trois lettres au moins chacune) : des jetons d'une lettre, un chiffre
+ * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Un mot, ou un chiffre sans lettre derrière,
+ * coupe la suite.
  */
-export function spelledLettersOf(transcript: string): string {
+function spelledRuns(transcript: string): string[] {
   const tokens = transcript
     .toLowerCase()
     .split(/[\s,.;:!?-]+/u)
     .filter(Boolean);
+  const runs: string[] = [];
   let run = '';
-  let last = '';
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     const next = tokens[index + 1];
@@ -192,12 +193,17 @@ export function spelledLettersOf(transcript: string): string {
       run += next.repeat(Number(token));
       index++;
     } else {
-      if (run.length >= 3) last = run;
+      if (run.length >= 3) runs.push(run);
       run = '';
     }
   }
-  if (run.length >= 3) last = run;
-  return stripToLetters(last);
+  if (run.length >= 3) runs.push(run);
+  return runs.map(stripToLetters);
+}
+
+/** Dernière suite de lettres épelées d'une phrase ; vide sans trois lettres (voir `spelledRuns`). */
+export function spelledLettersOf(transcript: string): string {
+  return spelledRuns(transcript).at(-1) ?? '';
 }
 
 /** `needle` est une suite de lettres prise dans `haystack`, dans l'ordre. */
@@ -356,12 +362,44 @@ export function spelledNameFact(
 }
 
 /**
+ * Plus de différences que cela entre le nom du modèle et les lettres épelées : ce n'est plus une lettre mal lue
+ * (un chiffre pris pour une lettre, deux lettres proches) mais un autre nom, que le code ne tranche pas.
+ */
+const MAX_SUBSTITUTIONS = 2;
+
+/**
+ * Même nombre de lettres que l'épellation, mais pas les mêmes : le modèle a lu un chiffre ou une lettre de travers
+ * (« a 2 k i f » → AAKIF). Quand l'épellation se lit sans ambiguïté, le nom que le code en tire l'emporte. Sans
+ * ambiguïté veut dire : une seule suite de lettres épelées dans la phrase, aucun nom déjà retenu avant ce tour
+ * (sinon c'est un nom assemblé sur plusieurs tours), et au plus MAX_SUBSTITUTIONS lettres de différence. Test
+ * structurel : aucun mot connu.
+ */
+function resolveSubstitution(
+  draft: StructuredTurnDraft,
+  spelled: string,
+  named: string,
+  transcript: string,
+  previousName?: string,
+): StructuredTurnDraft {
+  if (previousName?.trim() || spelledRuns(transcript).length !== 1) return draft;
+  if (editDistance(named, spelled) > MAX_SUBSTITUTIONS) return draft;
+  const original = draft.customerName.trim();
+  const upper = original === original.toLocaleUpperCase('fr-FR');
+  const customerName = upper
+    ? spelled
+    : spelled.charAt(0) + spelled.slice(1).toLocaleLowerCase('fr-FR');
+  return { ...draft, customerName };
+}
+
+/**
  * Le nom du brouillon doit dire les lettres que l'appelant vient d'épeler. Le modèle lit
  * parfois les bonnes lettres à voix haute mais écrit un nom auquel il en manque (« hoët h o
  * u e t » → HOËT, « a 2 k i f » → AKIF) : le récapitulatif et la réservation lisent ce champ.
  * On ne corrige que ce cas précis, un nom auquel il manque une ou deux des lettres épelées.
  * Un nom plus long que l'épellation (morceaux répartis sur plusieurs tours) ou qui en est la
- * fin (faux départ suivi de la bonne épellation) reste celui du modèle.
+ * fin (faux départ suivi de la bonne épellation) reste celui du modèle. À nombre de lettres égal mais avec une
+ * ou deux lettres de travers (un chiffre lu comme une lettre), une épellation sans ambiguïté l'emporte
+ * (`resolveSubstitution`).
  */
 export function reconcileSpelledName(
   draft: StructuredTurnDraft,
@@ -383,6 +421,7 @@ export function reconcileSpelledName(
   const named = stripToLetters(draft.customerName);
   if (spelled.length < 3 || named.length < 2 || named === spelled) return draft;
   const missing = spelled.length - named.length;
+  if (missing === 0) return resolveSubstitution(draft, spelled, named, transcript, previousName);
   if (missing < 1 || missing > 2) return draft;
   if (spelled.endsWith(named) || !isSubsequence(named, spelled)) return draft;
   const original = draft.customerName.trim();
