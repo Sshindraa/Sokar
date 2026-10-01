@@ -13,7 +13,7 @@
 - [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
 - [ ] Compréhension + épellation déployées et actives pour Chez Sokar (01/10) : valider sur un appel réel (épeler un nom neuf), lire `understanding` et `spelled_name_mismatch` dans les journaux.
 - [ ] Banc voix : `pas-de-repetition-mot-pour-mot` est à 20-55 % (seuil 80 %) avant et après l'étape 3 (l'agent reformule mais repose la même question) ; faire utiliser au banc la vraie base `prompts.ts` (prompt minimal aujourd'hui) ; mesurer le mode à outils, non couvert.
-- [ ] Routage UE du secours vocal prêt mais NON activé (`OPENROUTER_FALLBACK_BASE_URL`) : décider de la politique (un seul hébergeur UE, bascule vers le mondial ou non) et vérifier la région de Cerebras, Deepgram, Cartesia, Telnyx avant de parler de résidence des données.
+- [ ] Routage UE du secours (`OPENROUTER_FALLBACK_BASE_URL`, non activé) : latence et qualité mesurées le 01/10 (Journal) ; aucun candidat n'est un remplaçant évident, DeepSeek (1 hébergeur UE) reste le meilleur. Décider : bascule UE seule, UE puis mondial, ou rester mondial ; vérifier la région de Cerebras, Deepgram, Cartesia, Telnyx.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.

@@ -92,6 +92,23 @@ chemin à outils ni la charge ; (4) le secours n'est pas le flux principal : la 
 autres fournisseurs reste à vérifier pour toute conclusion sur la résidence des données ; (5) si l'UE échoue, rien
 ne bascule sur le mondial : choisir cette politique (continuité ou résidence) avant d'activer.
 
+Qualité des candidats en UE (même jour, bench de comportements : 15 cas clés × 12 tirages, 1 passage, prompt
+actuel, sortie brute ; `VBE_PROVIDER=openrouter`, voir `testing.md`). Ce prompt est réglé pour qwen/Cerebras :
+
+|                                                  | Cerebras (réf.) | gemini-2.5-flash-lite | mistral-small-2603 | deepseek-v4-flash (secours actuel) |
+| ------------------------------------------------ | --------------- | --------------------- | ------------------ | ---------------------------------- |
+| Moyenne des contrôles, brut                      | 71,4 %          | 63,6 %                | 68,0 %             | **82,5 %**                         |
+| Après garde-fous du code                         | 93,4 %          | 74,1 %                | 89,0 %             | 93,4 %                             |
+| Contrôles sous seuil, brut / garde-fous (sur 19) | 5 / 1           | 7 / 5                 | 6 / 2              | 5 / 3                              |
+| Jour fermé : ne demande pas l'heure (2 cas)      | 92 à 100 %      | **0 %**               | **0 %**            | 100 %                              |
+| N'annonce pas « c'est possible » avant le nombre | 100 %           | **8 %**               | 100 %              | 67 %                               |
+| Latence totale p50 en UE (mesure ci-dessus)      | —               | 653 ms                | 1 074 ms           | 1 572 ms                           |
+
+Lecture : le plus rapide (Gemini) est le moins fiable sur ces cas ; Mistral demande l'heure un jour fermé comme
+Gemini ; DeepSeek reste le meilleur des candidats malgré une latence plus haute et un hébergeur unique. Aucun
+n'est un remplaçant évident. Limites : un passage de 12 tirages par cas, bench sans la vérification de
+compréhension, prompt non réglé pour ces modèles.
+
 Rejouer : `scp apps/api/scripts/openrouter-region-test.mjs deploy@sokar:/tmp/ && ssh deploy@sokar 'node
 --env-file=/opt/sokar/apps/api/.env /tmp/openrouter-region-test.mjs --runs 10; rm /tmp/openrouter-region-test.mjs'`
 (le staging n'a pas de clé OpenRouter). Quelques centimes d'OpenRouter, aucun crédit Cerebras.
