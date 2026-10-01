@@ -202,44 +202,134 @@ describe('tour structuré (canary)', () => {
     expect(spoken()).toEqual(['20 h est libre.', 'À quel nom ?']);
   });
 
-  it('annonce un jour fermé par une phrase fixe, sans second appel au modèle (appels a8012c5c, 0d49230d)', async () => {
-    const { session, mgr, outputs } = fixture();
-    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+  describe('jour fermé ou complet : le modèle formule le fait, le garde retient ce qui le contredit', () => {
+    const closedDay = () => ({
       restaurantId: RESTAURANT_ID,
       date: '2026-09-27',
       partySize: 7,
-      slots: [],
-      allSlots: [],
+      slots: [] as string[],
+      allSlots: [] as Array<{ time: string; available: boolean }>,
     });
-    const draft = { date: TOMORROW, time: '14:00', partySize: 7, customerName: '' };
-    outputs.push(turn({ draft, action: 'check_availability' }));
-
-    await processTranscriptStreaming(session, 'non 7 pardon', mgr);
-
-    expect(spoken().join(' ')).toMatch(
-      /^Nous sommes fermés \S+ \d+ \S+\. Voulez-vous venir un autre jour \?$/,
-    );
-    expect(session.history.at(-1)?.content).toContain('fermés');
-    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
-    expect(session.structuredTurn?.lastAwaiting).toBe('date');
-  });
-
-  it('dit « complet » plutôt que « pas compris » quand le jour ouvert est plein', async () => {
-    const { session, mgr, outputs } = fixture();
-    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
-      restaurantId: RESTAURANT_ID,
+    const fullDay = () => ({
+      ...closedDay(),
       date: '2026-09-26',
-      partySize: 7,
-      slots: [],
       allSlots: [{ time: '20:00', available: false }],
     });
-    const draft = { date: TOMORROW, time: '20:00', partySize: 7, customerName: '' };
-    outputs.push(turn({ draft, action: 'check_availability' }), turn({ draft, say: '' }));
+    const asked = { date: TOMORROW, time: '14:00', partySize: 7, customerName: '' };
+    const contextOfPass = (mgr: CallSessionManager, index: number) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[index]?.[1] as Array<{
+          content: string;
+        }>
+      )[0].content;
 
-    await processTranscriptStreaming(session, 'on sera sept', mgr);
+    it('dit la formulation du modèle pour un jour fermé (appels a8012c5c, 0d49230d)', async () => {
+      const { session, mgr, outputs } = fixture();
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(closedDay());
+      outputs.push(
+        turn({ draft: asked, action: 'check_availability' }),
+        turn({
+          draft: asked,
+          awaiting: 'date',
+          say: 'Le restaurant est fermé ce jour-là. Un autre jour vous conviendrait ?',
+        }),
+      );
 
-    expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
-    expect(spoken().join(' ')).not.toContain('pas bien saisi');
+      await processTranscriptStreaming(session, 'non 7 pardon', mgr);
+
+      expect(spoken().join(' ')).toBe(
+        'Le restaurant est fermé ce jour-là. Un autre jour vous conviendrait ?',
+      );
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(session.structuredTurn?.lastAwaiting).toBe('date');
+    });
+
+    it('retient une réponse qui promet de réserver malgré « fermé », relance une fois avec un rappel', async () => {
+      const { session, mgr, outputs } = fixture();
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(closedDay());
+      outputs.push(
+        turn({ draft: asked, action: 'check_availability' }),
+        turn({ draft: asked, awaiting: 'confirmation', say: 'Très bien, je vous réserve cela.' }),
+        turn({
+          draft: asked,
+          awaiting: 'date',
+          say: 'Nous sommes fermés ce jour-là, un autre jour ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'non 7 pardon', mgr);
+
+      expect(spoken().join(' ')).toBe('Nous sommes fermés ce jour-là, un autre jour ?');
+      expect(spoken().join(' ')).not.toContain('réserve');
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(3);
+      expect(contextOfPass(mgr, 2)).toContain('contredisait ce fait');
+    });
+
+    it('retient aussi une action demandée à la place du fait', async () => {
+      const { session, mgr, outputs } = fixture();
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(closedDay());
+      outputs.push(
+        turn({ draft: asked, action: 'check_availability' }),
+        turn({ draft: asked, action: 'create_reservation', awaiting: 'date', say: 'Je réserve.' }),
+        turn({ draft: asked, awaiting: 'date', say: 'Nous sommes fermés ce jour-là.' }),
+      );
+
+      await processTranscriptStreaming(session, 'non 7 pardon', mgr);
+
+      expect(spoken().join(' ')).toBe('Nous sommes fermés ce jour-là.');
+      expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    });
+
+    it('dernier recours : deux réponses qui contredisent le fait, le texte fixe est dit', async () => {
+      const { session, mgr, outputs } = fixture();
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(closedDay());
+      outputs.push(
+        turn({ draft: asked, action: 'check_availability' }),
+        turn({ draft: asked, awaiting: 'confirmation', say: 'Je vous réserve cela.' }),
+        turn({ draft: asked, awaiting: 'time', say: 'À quelle heure ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'non 7 pardon', mgr);
+
+      expect(spoken().join(' ')).toMatch(
+        /^Nous sommes fermés \S+ \d+ \S+\. Voulez-vous venir un autre jour \?$/,
+      );
+      expect(spoken().join(' ')).not.toContain('réserve');
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(3);
+      expect(session.structuredTurn?.lastAwaiting).toBe('date');
+    });
+
+    it('jour complet : une réponse vide est relancée, puis le modèle formule', async () => {
+      const { session, mgr, outputs } = fixture();
+      const draft = { ...asked, time: '20:00' };
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(fullDay());
+      outputs.push(
+        turn({ draft, action: 'check_availability' }),
+        turn({ draft, say: '' }),
+        turn({ draft, awaiting: 'open', say: 'Nous sommes complets ce jour-là. Un autre jour ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'on sera sept', mgr);
+
+      expect(spoken().join(' ')).toBe('Nous sommes complets ce jour-là. Un autre jour ?');
+      expect(spoken().join(' ')).not.toContain('pas bien saisi');
+    });
+
+    it('jour complet : dernier recours si le modèle ne formule rien', async () => {
+      const { session, mgr, outputs } = fixture();
+      const draft = { ...asked, time: '20:00' };
+      vi.mocked(mgr.getAvailability).mockResolvedValueOnce(fullDay());
+      outputs.push(
+        turn({ draft, action: 'check_availability' }),
+        turn({ draft, say: '' }),
+        turn({ draft, say: '' }),
+      );
+
+      await processTranscriptStreaming(session, 'on sera sept', mgr);
+
+      expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
+      expect(spoken().join(' ')).not.toContain('pas bien saisi');
+    });
   });
 
   it('répond en un seul passage avec les créneaux du jour lus d’avance', async () => {

@@ -154,6 +154,8 @@ interface PassResult {
   hoursFact?: string;
   /** Fait à donner au second passage quand le nom relu porte des mots non épelés : rien n'a été dit. */
   nameFact?: string;
+  /** Sous garde de fait : la réponse contredit le fait ou ne dit rien ; rien n'a été dit. */
+  contradiction?: boolean;
 }
 
 /**
@@ -180,6 +182,20 @@ const INCOMPLETE_TURN_MAX_DEFERRALS = 5;
 
 /** Dite si la relance après un silence ne produit toujours aucune phrase. */
 export const CALLER_FINISHED_FALLBACK = 'Oui, je vous écoute ?';
+
+/**
+ * Jour fermé ou complet : le modèle formule le fait, mais il ne doit pas le contredire (appel 0d49230d : il
+ * disait « FERMÉ » puis promettait de réserver). Le garde juge la STRUCTURE de sa réponse (`awaiting` et
+ * `action` précèdent `say` dans le flux, la parole est retenue avant la première phrase), jamais ses mots.
+ * Une réponse qui contredit le fait ou ne dit rien est relancée une fois avec ce rappel ; deux échecs de
+ * suite : le texte fixe de `lastResort` est dit, comme avant. Ce texte n'est plus qu'un dernier recours.
+ */
+interface FactGuard {
+  allowedAwaiting: readonly StructuredTurnOutput['awaiting'][];
+  lastResort: { say: string; awaiting: StructuredTurnOutput['awaiting'] };
+}
+const FACT_GUARD_RETRY =
+  "Ta réponse précédente contredisait ce fait ou ne disait rien. Le fait prime : n'accepte, ne confirme et ne promets rien qu'il exclut, dis-le à l'appelant avec tes mots, action none.";
 
 const incompleteTurnTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -462,12 +478,13 @@ export async function runStructuredTurn(
     ttsPromises.push(speakTtsStreamed(session, phrase).catch(() => undefined));
   };
 
-  const runPass = async (actionResult?: string): Promise<PassResult> => {
+  const runPass = async (actionResult?: string, guard?: FactGuard): Promise<PassResult> => {
     const extractor = new SayStreamExtractor();
     const splitter = new PhraseSplitter();
     let action: string | null = null;
     let turnComplete: boolean | null = null;
     let slotConflict = false;
+    let contradiction = false;
     let hoursFact: string | undefined;
     let nameFact: string | undefined;
     let firstToken = true;
@@ -489,6 +506,17 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      if (guard && !contradiction) {
+        const streamedAwaiting = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1];
+        if (
+          (streamedAwaiting &&
+            !guard.allowedAwaiting.includes(
+              streamedAwaiting as StructuredTurnOutput['awaiting'],
+            )) ||
+          (action !== null && action !== 'none')
+        )
+          contradiction = true;
+      }
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
       if (!actionResult && !slotConflict && action === 'none') {
@@ -531,7 +559,9 @@ export async function runStructuredTurn(
         }
       }
       const mayContinue =
-        (turnComplete === true || options.callerFinished === true) && !slotConflict;
+        (turnComplete === true || options.callerFinished === true) &&
+        !slotConflict &&
+        !contradiction;
       if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
     };
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
@@ -552,10 +582,15 @@ export async function runStructuredTurn(
     });
     const output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
+    const contradicts =
+      contradiction ||
+      (guard !== undefined &&
+        (output.action !== 'none' || !guard.allowedAwaiting.includes(output.awaiting)));
     const spoken =
       output.action === 'none' &&
       (output.turnComplete || !!options.callerFinished) &&
-      !slotConflict;
+      !slotConflict &&
+      !contradicts;
     if (spoken) {
       const rest = splitter.flush();
       if (rest) speakPhrase(rest);
@@ -564,6 +599,7 @@ export async function runStructuredTurn(
       output,
       spoken,
       slotConflict,
+      contradiction: contradicts,
       ...(hoursFact ? { hoursFact } : {}),
       ...(nameFact ? { nameFact } : {}),
     };
@@ -572,11 +608,8 @@ export async function runStructuredTurn(
   let speculationUsed = false;
   // Phrase dite si le second passage ne formule rien après l'action.
   let actionFallbackSay: string | null = null;
-  // Jour fermé ou complet : un fait simple, dit tel quel sans second passage
-  // (appel 0d49230d : le modèle contredisait « FERMÉ » et promettait de réserver).
-  const fixed: { reply: { say: string; awaiting: StructuredTurnOutput['awaiting'] } | null } = {
-    reply: null,
-  };
+  // Jour fermé ou complet : le modèle formule le fait sous garde (voir FactGuard).
+  const factGuard: { current: FactGuard | null } = { current: null };
 
   const runAvailability = async (): Promise<string> => {
     const { date, time, partySize } = state.draft;
@@ -602,15 +635,21 @@ export async function runStructuredTurn(
       const day = spokenDay(date);
       if (result.allSlots.length === 0) {
         // Aucun créneau généré : le restaurant n'ouvre pas ce jour-là.
-        fixed.reply = {
-          say: `Nous sommes fermés ${day}. Voulez-vous venir un autre jour ?`,
-          awaiting: 'date',
+        factGuard.current = {
+          allowedAwaiting: ['date', 'open'],
+          lastResort: {
+            say: `Nous sommes fermés ${day}. Voulez-vous venir un autre jour ?`,
+            awaiting: 'date',
+          },
         };
         return `Le restaurant est FERMÉ le ${date} (${day}) : aucun service ce jour-là. Dis-le clairement et propose un autre jour d'ouverture.`;
       }
-      fixed.reply = {
-        say: `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`,
-        awaiting: 'open',
+      factGuard.current = {
+        allowedAwaiting: ['open', 'date', 'humanFallback'],
+        lastResort: {
+          say: `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`,
+          awaiting: 'open',
+        },
       };
       return `Complet le ${date} pour ${partySize} personne(s) : aucun créneau libre. Propose une autre date, le gérant ou un message.`;
     } catch (err) {
@@ -794,52 +833,58 @@ export async function runStructuredTurn(
       }
     }
 
-    const fixedReply = fixed.reply;
-    if (fixedReply) {
-      speakPhrase(fixedReply.say);
-      final = {
-        ...first.output,
-        action: 'none',
-        say: fixedReply.say,
-        awaiting: fixedReply.awaiting,
-      };
-      actionResult = null;
-    }
-
     if (actionResult) {
       if (!isLive()) return;
-      const second = await runPass(actionResult);
+      const guard = factGuard.current ?? undefined;
+      let second = await runPass(actionResult, guard);
+      const failed = (pass: PassResult) => pass.contradiction === true || !pass.output.say.trim();
+      if (guard && failed(second)) {
+        // Une seule relance, avec le rappel ; rien n'a été dit pendant la première réponse.
+        if (!isLive()) return;
+        second = await runPass(`${actionResult}\n${FACT_GUARD_RETRY}`, guard);
+      }
       if (!isLive()) return;
-      const reapplied = applyProposedDraft(state.draft, second.output, { today });
-      state.draft = reconcileSpelledName(
-        reapplied.draft,
-        transcript,
-        state.lastAwaiting,
-        state.draft.customerName,
-      );
-      recordVoiceTurnEvent(session, 'structured_turn', {
-        pass: 2,
-        interpretation: second.output.interpretation,
-        action: second.output.action,
-        awaiting: second.output.awaiting,
-        confidence: second.output.confidence,
-        ...(second.output.understanding ? { understanding: second.output.understanding } : {}),
-        changedFields: reapplied.changed.join(',') || null,
-        rejectedFields: reapplied.rejected.join(',') || null,
-      });
-      final = second.output;
-      if (second.output.action === 'end_call' && second.output.confidence !== 'low') {
-        if (second.output.say.trim()) {
-          await endCall(second.output.say.trim());
-          return;
+      if (guard && failed(second)) {
+        // Dernier recours : le texte fixe, sans appliquer ce que le modèle a proposé.
+        speakPhrase(guard.lastResort.say);
+        final = {
+          ...first.output,
+          action: 'none',
+          say: guard.lastResort.say,
+          awaiting: guard.lastResort.awaiting,
+        };
+      } else {
+        const reapplied = applyProposedDraft(state.draft, second.output, { today });
+        state.draft = reconcileSpelledName(
+          reapplied.draft,
+          transcript,
+          state.lastAwaiting,
+          state.draft.customerName,
+        );
+        recordVoiceTurnEvent(session, 'structured_turn', {
+          pass: 2,
+          interpretation: second.output.interpretation,
+          action: second.output.action,
+          awaiting: second.output.awaiting,
+          confidence: second.output.confidence,
+          ...(second.output.understanding ? { understanding: second.output.understanding } : {}),
+          changedFields: reapplied.changed.join(',') || null,
+          rejectedFields: reapplied.rejected.join(',') || null,
+        });
+        final = second.output;
+        if (second.output.action === 'end_call' && second.output.confidence !== 'low') {
+          if (second.output.say.trim()) {
+            await endCall(second.output.say.trim());
+            return;
+          }
+        } else if (!second.spoken && second.output.say.trim()) {
+          // Une seconde action n'est jamais exécutée : la phrase reste dite.
+          speakPhrase(second.output.say.trim());
+        } else if (!second.output.say.trim() && actionFallbackSay) {
+          // Phrase vide après l'action : dire le résultat plutôt que « je n'ai pas compris ».
+          speakPhrase(actionFallbackSay);
+          final = { ...second.output, say: actionFallbackSay, awaiting: 'open' };
         }
-      } else if (!second.spoken && second.output.say.trim()) {
-        // Une seconde action n'est jamais exécutée : la phrase reste dite.
-        speakPhrase(second.output.say.trim());
-      } else if (!second.output.say.trim() && actionFallbackSay) {
-        // Phrase vide après l'action : dire le résultat plutôt que « je n'ai pas compris ».
-        speakPhrase(actionFallbackSay);
-        final = { ...second.output, say: actionFallbackSay, awaiting: 'open' };
       }
     }
 
