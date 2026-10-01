@@ -464,6 +464,156 @@
         "role": "assistant",
         "content": "Bien sûr. Pour quel jour vous voulez réserver ?"
       }
+    ],
+    "toNameReadHout": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est au nom de wet h o u t"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, H, O, U, T. C'est bien ça ?"
+      }
+    ],
+    "toNameReadBenani": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "au nom de benani b e n a n i"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, B, E, N, A, N, I. C'est bien ça ?"
+      }
+    ],
+    "toNameReadAkki": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "a 2 k i"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc, A, K, K, I. C'est bien ça ?"
+      }
     ]
   },
   "cases": [
@@ -1163,6 +1313,98 @@
           "field": "customerName",
           "equals": "HOUET",
           "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "epelle-fin-apres-relecture",
+      "behavior": "épellation après relecture",
+      "source": "appel 6a70dff9 tour 10 : « H-O-U-T » relu, l'appelant reprend la fin « e t » (le E avait été perdu)",
+      "history": "toNameReadHout",
+      "transcript": "e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "epelle-fin-apres-relecture-2",
+      "behavior": "épellation après relecture",
+      "source": "témoin : une lettre doublée perdue au milieu, l'appelant reprend depuis cette lettre",
+      "history": "toNameReadBenani",
+      "transcript": "n n a n i",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "BENANI"
+      },
+      "awaiting": "customerNameConfirmation",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "BENNANI",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "epelle-milieu-apres-relecture",
+      "behavior": "épellation après relecture",
+      "source": "appel 6a70dff9 tour 10, variante : l'appelant reprend depuis la dernière lettre juste",
+      "history": "toNameReadHout",
+      "transcript": "u e t",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUT"
+      },
+      "awaiting": "customerNameConfirmation",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "HOUET",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "epelle-suite-apres-relecture",
+      "behavior": "épellation après relecture",
+      "source": "témoin : les lettres qui manquaient à la fin s'ajoutent à la suite",
+      "history": "toNameReadAkki",
+      "transcript": "f",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "AKKI"
+      },
+      "awaiting": "customerNameConfirmation",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "AKKIF",
+          "minRate": 0.85
         }
       ]
     },
