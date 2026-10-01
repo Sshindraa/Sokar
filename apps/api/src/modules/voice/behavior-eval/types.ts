@@ -80,6 +80,8 @@ export interface BehaviorCase {
   dayPart?: string;
   /** Le tour vient d'être relancé après un silence de l'appelant sur un fragment inachevé. */
   callerFinished?: boolean;
+  /** Relance sans énoncé de l'appelant (parole non comprise, silence, silence après l'accueil). */
+  recovery?: 'unheard' | 'silence' | 'opening';
   /** Profil restaurant de `profiles` ; absent : Chez Sokar, ouvert tous les jours 12 h–22 h. */
   profile?: string;
   samples?: number;

@@ -56,7 +56,7 @@ import {
   requestedSlotConflict,
 } from './fact-guards';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
-import { buildStructuredTurnMessages } from './prompt';
+import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import {
   cancelSpeculation,
   isStructuredSpeculationEnabled,
@@ -307,7 +307,11 @@ function passRequest(
   transcript: string,
   history: CallSession['history'],
   today: string,
-  extra: { actionResult?: string; callerFinished?: boolean } = {},
+  extra: {
+    actionResult?: string;
+    callerFinished?: boolean;
+    recovery?: StructuredRecoveryKind;
+  } = {},
 ) {
   const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
   const messages = buildStructuredTurnMessages({
@@ -324,7 +328,7 @@ function passRequest(
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
   // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
   const format = responseFormat(extra.actionResult ? AFTER_ACTION_ACTIONS : undefined, {
-    turnCompleteOnly: extra.callerFinished === true,
+    turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
     ...(understanding ? { understanding } : {}),
   });
   return { messages, format };
@@ -351,6 +355,34 @@ export function speculateStructuredTurn(
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
   startSpeculation(session, mgr, messages, format, onVerdict);
+}
+
+/**
+ * Relance formulée par le modèle (voir StructuredRecoveryKind) quand l'appelant n'a pas été entendu ou ne dit
+ * rien. Rend la phrase, ou null : modèle indisponible, réponse invalide, vide, ou qui demande une action. Le
+ * code ne juge que la structure ; l'appelant garde alors sa phrase de secours.
+ */
+export async function generateRecoveryReply(
+  session: CallSession,
+  mgr: Partial<Pick<CallSessionManager, 'streamStructuredCompletion'>>,
+  kind: StructuredRecoveryKind,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (!isStructuredTurnEnabled(session.restaurantId)) return null;
+  if (typeof mgr.streamStructuredCompletion !== 'function') return null;
+  const state = session.structuredTurn ?? createStructuredTurnState();
+  const today = todayInTimezone(session.timezone || 'Europe/Paris');
+  const { messages, format } = passRequest(session, state, '', [...session.history], today, {
+    recovery: kind,
+  });
+  const text = await mgr.streamStructuredCompletion(session, messages, format, {
+    ...(signal ? { signal } : {}),
+    onDelta: () => undefined,
+  });
+  const output = parseStructuredTurnOutput(text);
+  if (!output || output.action !== 'none' || !output.say.trim()) return null;
+  // Comme pour un tour : la voix surjoue les points d'exclamation.
+  return output.say.trim().replace(/\s*!/g, '.');
 }
 
 export async function runStructuredTurn(
