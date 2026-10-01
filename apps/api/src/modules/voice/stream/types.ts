@@ -602,6 +602,8 @@ export interface CallSession {
     words?: SttWord[];
     languageCode?: string;
     timing?: { speechEndAt?: number; sttFinalAt?: number };
+    /** Instant où ce segment a été retenu (épellation) : sert à borner l'attente. */
+    createdAt?: number;
   } | null;
 
   // Gestion audio

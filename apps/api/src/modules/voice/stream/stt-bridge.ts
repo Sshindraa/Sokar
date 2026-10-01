@@ -984,13 +984,60 @@ function dispatchUtteranceEnd(
   resetSttTurnDiagnostics(session);
 }
 
+/** Pendant une collecte de nom, un segment retenu attend tant que l'appelant parle (silence réel exigé). */
+const SPELLING_VOICE_QUIET_MS = 400;
+/** Une partielle récente annonce le texte du segment suivant : on l'attend pour le recoller. */
+const SPELLING_PARTIAL_RECENT_MS = 1_000;
+/** Attente maximale d'un segment retenu, quoi qu'on entende (bruit pris pour de la voix, ligne ouverte). */
+const SPELLING_MAX_HOLD_MS = 3_000;
+const SPELLING_RECHECK_MS = 100;
+
+/**
+ * Appel 8e7b1db1 : « Houët, H-O-U-E-T » arrivait en deux segments (« …wet h » puis « o u e t »). La
+ * reconnaissance met environ 1 s à produire le texte des lettres : la pause fixe de 600 ms expirait
+ * pendant que l'appelant épelait encore, le premier segment partait seul (jugé douteux, donc jeté,
+ * avec son « h ») et le suivant ne portait plus que « o u e t ». Ici l'audio entrant tranche : tant
+ * que de la voix est reçue, ou qu'un texte suivant est annoncé, le segment retenu attend.
+ */
+function spellingContinuationExpected(
+  session: CallSession,
+  pending: NonNullable<CallSession['pendingSttEndOfTurn']>,
+  now: number,
+): boolean {
+  const createdAt = pending.createdAt ?? now;
+  if (now - createdAt >= SPELLING_MAX_HOLD_MS) return false;
+  if (callerSilenceMs(session, now) < SPELLING_VOICE_QUIET_MS) return true;
+  const partialAt = session.sttLastNonEmptyPartialAt;
+  return (
+    partialAt !== undefined && partialAt > createdAt && now - partialAt < SPELLING_PARTIAL_RECENT_MS
+  );
+}
+
+/**
+ * Le profil d'épellation est actif : collecte du nom, ou ré-épellation. Une réponse qui n'est pas de
+ * l'épellation (« c'est ça ») n'a aucune raison d'attendre encore des lettres (appel 8ae1e63e :
+ * 600 ms d'attente sur la confirmation, le tour le plus lent).
+ */
+function isSpellingTurn(session: CallSession, transcript: string): boolean {
+  const confirmingSpelling = session.structuredTurn?.lastAwaiting === 'customerNameConfirmation';
+  return (
+    (isNameCollectionBlocking(session) ||
+      session.conversation.pendingQuestion === 'customerName') &&
+    !(confirmingSpelling && !looksLikeSpelledLetters(transcript))
+  );
+}
+
 function schedulePendingSttEndOfTurn(
   session: CallSession,
   delayMs = STT_SPELLING_EOT_GRACE_MS,
 ): void {
   if (session.sttEndOfTurnTimer) clearTimeout(session.sttEndOfTurnTimer);
-  session.sttEndOfTurnTimer = setTimeout(() => {
+  const release = (): void => {
     const pending = session.pendingSttEndOfTurn;
+    if (pending && spellingContinuationExpected(session, pending, Date.now())) {
+      session.sttEndOfTurnTimer = setTimeout(release, SPELLING_RECHECK_MS);
+      return;
+    }
     session.pendingSttEndOfTurn = null;
     session.sttEndOfTurnTimer = null;
     if (pending)
@@ -1001,7 +1048,8 @@ function schedulePendingSttEndOfTurn(
         pending.languageCode,
         withFinalTrigger(pending.timing, 'spelling_hold'),
       );
-  }, delayMs);
+  };
+  session.sttEndOfTurnTimer = setTimeout(release, delayMs);
 }
 
 function flushPendingSttEndOfTurn(session: CallSession): void {
@@ -1437,7 +1485,9 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   }
 
   if (!session.turnTranscript.trim() && !semanticHold) {
-    flushPendingSttEndOfTurn(session);
+    // La suite d'une épellation se recolle au segment retenu ; tout autre début de parole le clôt.
+    if (!(session.pendingSttEndOfTurn && isSpellingTurn(session, cleanTranscript)))
+      flushPendingSttEndOfTurn(session);
     session.turnPartials = [];
     session.onSttEvent?.({ type: 'UtteranceStart' });
   } else if (session.state === 'PROCESSING' && cleanTranscript !== session.turnTranscript) {
@@ -1533,20 +1583,18 @@ function dispatchCommittedTranscript(
   if (allowBargeIn)
     handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
 
-  // Relecture de l'orthographe : le profil d'épellation reste actif pour une ré-épellation, mais
-  // une réponse qui n'est pas de l'épellation (« c'est ça ») n'a aucune raison d'attendre encore
-  // des lettres (appel 8ae1e63e : 600 ms d'attente sur la confirmation, le tour le plus lent).
-  const confirmingSpelling = session.structuredTurn?.lastAwaiting === 'customerNameConfirmation';
-  const spellingProfileActive =
-    (isNameCollectionBlocking(session) ||
-      session.conversation.pendingQuestion === 'customerName') &&
-    !(confirmingSpelling && !looksLikeSpelledLetters(cleanTranscript));
-  if (spellingProfileActive) {
+  if (isSpellingTurn(session, cleanTranscript)) {
+    const held = session.pendingSttEndOfTurn;
+    const mergedWords = [...(held?.words ?? []), ...(words ?? [])];
+    // Lettres recollées telles quelles : pas de dédoublonnage de recouvrement (« l » + « l e »).
     session.pendingSttEndOfTurn = {
-      transcript: cleanTranscript,
-      ...(words ? { words } : {}),
-      ...(languageCode ? { languageCode } : {}),
-      ...(timing ? { timing } : {}),
+      transcript: held ? `${held.transcript} ${cleanTranscript}` : cleanTranscript,
+      ...(mergedWords.length ? { words: mergedWords } : {}),
+      ...((languageCode ?? held?.languageCode)
+        ? { languageCode: (languageCode ?? held?.languageCode) as string }
+        : {}),
+      ...(held?.timing || timing ? { timing: mergeSttTiming(held?.timing, timing) } : {}),
+      createdAt: Date.now(),
     };
     const spellingDelay =
       session.sttAdapter?.id === 'deepgram'
