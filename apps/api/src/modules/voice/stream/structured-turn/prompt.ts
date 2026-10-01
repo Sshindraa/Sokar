@@ -134,6 +134,26 @@ function describeDayAvailability(day: DayAvailability) {
   return { date: day.date, closed: false, freeSlotsByPartySize };
 }
 
+/**
+ * Relance sans énoncé de l'appelant : le modèle formule la relance à partir d'un fait, sans phrase codée.
+ * unheard : une parole a été détectée sans aucun mot reconnu ; silence : rien depuis sa dernière question ;
+ * opening : rien depuis l'accueil.
+ */
+export type StructuredRecoveryKind = 'unheard' | 'silence' | 'opening';
+
+const RECOVERY_INSTRUCTIONS: Record<StructuredRecoveryKind, string> = {
+  unheard:
+    "RELANCE : l'appelant a parlé mais aucun mot n'a pu être reconnu ; il n'y a aucune phrase à interpréter. Redemande-lui ta dernière question en t'excusant brièvement de ne pas avoir entendu.",
+  silence:
+    "RELANCE : l'appelant n'a rien dit depuis ta dernière question ; il n'y a aucune phrase à interpréter. Assure-toi brièvement qu'il est toujours là, puis repose ta dernière question.",
+  opening:
+    "RELANCE : l'appelant n'a encore rien dit depuis ton accueil ; il n'y a aucune phrase à interpréter. Invite-le, en une courte phrase, à dire ce dont il a besoin.",
+};
+const RECOVERY_CONSTRAINTS =
+  "turnComplete=true, action none, draft inchangé (tu n'as rien appris), awaiting = ce que ta phrase attend. « say » n'est JAMAIS vide.";
+/** Dernier message du dialogue pour une relance : ce que l'appelant n'a pas dit, sans texte à lire. */
+const RECOVERY_USER_MARKER = '(aucune parole reconnue)';
+
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
   history: ChatMessage[];
@@ -148,6 +168,8 @@ export function buildStructuredTurnMessages(input: {
   dayPart?: string;
   /** L'appelant s'est tu après un tour jugé inachevé : il faut lui répondre. */
   callerFinished?: boolean;
+  /** Relance sans énoncé : l'appelant n'a pas été entendu ou ne dit rien. */
+  recovery?: StructuredRecoveryKind;
   /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
   understanding?: boolean;
 }): ChatMessage[] {
@@ -175,6 +197,7 @@ export function buildStructuredTurnMessages(input: {
     input.actionResult
       ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
       : '',
+    input.recovery ? `${RECOVERY_INSTRUCTIONS[input.recovery]}\n${RECOVERY_CONSTRAINTS}` : '',
     input.callerFinished
       ? "L'appelant s'est tu : son tour est terminé. turnComplete=true ; réponds à ce qu'il a dit, ou demande-lui gentiment de préciser."
       : '',
@@ -194,6 +217,6 @@ export function buildStructuredTurnMessages(input: {
   return [
     { role: 'system', content: system },
     ...dialogue.map((message) => ({ role: message.role, content: message.content })),
-    { role: 'user', content: input.transcript },
+    { role: 'user', content: input.recovery ? RECOVERY_USER_MARKER : input.transcript },
   ];
 }

@@ -77,6 +77,7 @@ export function buildRequest(
     today: file.today,
     ...(testCase.dayPart ? { dayPart: testCase.dayPart } : {}),
     ...(testCase.callerFinished ? { callerFinished: true } : {}),
+    ...(testCase.recovery ? { recovery: testCase.recovery } : {}),
     ...(testCase.actionResult ? { actionResult: testCase.actionResult } : {}),
     ...(options.understanding ? { understanding: true } : {}),
   });
@@ -93,7 +94,7 @@ export function buildRequest(
           testCase.actionResult ? (AFTER_ACTION_ACTIONS as never) : undefined,
           // Comme en appel : la relance après un silence impose turnComplete=true.
           {
-            turnCompleteOnly: testCase.callerFinished === true,
+            turnCompleteOnly: testCase.callerFinished === true || testCase.recovery !== undefined,
             ...(options.understanding ? { understanding: true } : {}),
           },
         ),

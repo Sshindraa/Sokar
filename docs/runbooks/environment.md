@@ -304,6 +304,11 @@ sont activés pour le restaurant.
 VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS=""
 # Silence après une question de l'agent avant « Vous êtes toujours là ? » (3000–20000).
 VOICE_NO_INPUT_TIMEOUT_MS="7000"
+# La relance est formulée par le modèle à partir d'un fait (parole non comprise, silence, silence après
+# l'accueil), sans phrase codée ; la phrase « Pardon, je n'ai pas bien entendu… » ne sert plus que de dernier
+# recours (modèle indisponible, réponse vide ou qui demande une action). "false" ou "0" la rétablit seule.
+# Journal : [voice] No-input recovery, source=model|fixed.
+VOICE_RECOVERY_BY_MODEL="true"
 ```
 
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont

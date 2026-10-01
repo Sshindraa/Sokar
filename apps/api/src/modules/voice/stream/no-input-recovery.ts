@@ -18,6 +18,7 @@
 import type { CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { speakTtsStreamed } from './tts-handler';
+import { generateRecoveryReply } from './structured-turn/engine';
 import { parseRestaurantIdList } from './feature-flags';
 import { logger } from '../../../shared/logger/pino';
 
@@ -29,10 +30,20 @@ export const UNHEARD_GRACE_MS = 700;
 export const UNHEARD_MAX_SPEECH_AGE_MS = 5_000;
 export const MAX_RECOVERIES_PER_CALL = 2;
 
-type Manager = Pick<CallSessionManager, 'transition'>;
+type Manager = Pick<CallSessionManager, 'transition'> &
+  Partial<Pick<CallSessionManager, 'streamStructuredCompletion'>>;
+
+/** Interrupteur : `VOICE_RECOVERY_BY_MODEL=false` (ou 0) rétablit les phrases codées, sans appel au modèle. */
+export function recoveryByModelEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.VOICE_RECOVERY_BY_MODEL?.trim().toLowerCase();
+  return value !== 'false' && value !== '0';
+}
 
 interface RecoveryState {
   count: number;
+  /** Formulation en cours : l'appelant qui reprend la parole l'interrompt. */
+  generation: number;
+  abort?: AbortController;
   unheardTimer?: ReturnType<typeof setTimeout>;
   silenceTimer?: ReturnType<typeof setTimeout>;
 }
@@ -42,7 +53,7 @@ const states = new WeakMap<CallSession, RecoveryState>();
 function stateOf(session: CallSession): RecoveryState {
   let state = states.get(session);
   if (!state) {
-    state = { count: 0 };
+    state = { count: 0, generation: 0 };
     states.set(session, state);
   }
   return state;
@@ -109,17 +120,49 @@ async function speakRecovery(
   if (!canRecover(session)) return;
   const question = recoveryQuestion(session);
   if (!question) return;
-  const phrase = recoveryPhrase(kind, question);
   const state = stateOf(session);
+  // Le modèle formule la relance pendant que l'appelant peut encore parler ; sa phrase codée n'est plus
+  // que le dernier recours (modèle indisponible, réponse vide ou invalide).
+  let phrase: string | null = null;
+  if (recoveryByModelEnabled()) {
+    const generation = ++state.generation;
+    const controller = new AbortController();
+    state.abort = controller;
+    try {
+      phrase = await generateRecoveryReply(
+        session,
+        mgr,
+        kind === 'silence' && !session.history.some((message) => message.role === 'user')
+          ? 'opening'
+          : kind,
+        controller.signal,
+      );
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.name : String(err), callId: session.callControlId },
+        '[voice] No-input recovery by the model failed, fixed phrase',
+      );
+    }
+    if (state.abort === controller) state.abort = undefined;
+    // L'appelant a repris la parole, ou la ligne n'est plus libre : rien à dire, relance non consommée.
+    if (controller.signal.aborted || state.generation !== generation || !canRecover(session))
+      return;
+  }
+  const spoken = phrase ?? recoveryPhrase(kind, question);
   state.count++;
   logger.info(
-    { callId: session.callControlId, kind, recovery: state.count },
+    {
+      callId: session.callControlId,
+      kind,
+      recovery: state.count,
+      source: phrase ? 'model' : 'fixed',
+    },
     '[voice] No-input recovery',
   );
   if (!mgr.transition(session, 'SPEAKING')) return;
-  session.history.push({ role: 'assistant', content: phrase });
+  session.history.push({ role: 'assistant', content: spoken });
   try {
-    await speakTtsStreamed(session, phrase);
+    await speakTtsStreamed(session, spoken);
   } finally {
     if (!session.ended && session.state === 'SPEAKING') mgr.transition(session, 'LISTENING');
   }
@@ -171,6 +214,10 @@ function clearSilenceTimer(state: RecoveryState): void {
 export function cancelNoInputRecovery(session: CallSession): void {
   const state = states.get(session);
   if (!state) return;
+  // Une relance en cours de formulation n'a plus lieu d'être.
+  state.generation++;
+  state.abort?.abort();
+  state.abort = undefined;
   if (state.unheardTimer) clearTimeout(state.unheardTimer);
   state.unheardTimer = undefined;
   clearSilenceTimer(state);

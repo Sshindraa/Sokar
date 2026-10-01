@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../stream/tts-handler', () => ({ speakTtsStreamed: vi.fn(async () => undefined) }));
+// Par défaut le modèle ne formule rien : la phrase de secours est dite (comportement historique).
+vi.mock('../stream/structured-turn/engine', () => ({
+  generateRecoveryReply: vi.fn(async () => null),
+}));
 
 import { speakTtsStreamed } from '../stream/tts-handler';
+import { generateRecoveryReply } from '../stream/structured-turn/engine';
 import {
   armSilenceRecovery,
   cancelNoInputRecovery,
@@ -47,6 +52,8 @@ describe('no-input recovery', () => {
     vi.useFakeTimers();
     vi.stubEnv('VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS', RESTAURANT);
     vi.mocked(speakTtsStreamed).mockClear();
+    vi.mocked(generateRecoveryReply).mockReset();
+    vi.mocked(generateRecoveryReply).mockResolvedValue(null);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -151,5 +158,113 @@ describe('no-input recovery', () => {
     }
     await vi.advanceTimersByTimeAsync(noInputTimeoutMs() + UNHEARD_GRACE_MS);
     expect(speakTtsStreamed).not.toHaveBeenCalled();
+  });
+
+  describe('relance formulée par le modèle', () => {
+    it('dit la phrase du modèle à la place de la phrase codée, avec le type de relance', async () => {
+      vi.mocked(generateRecoveryReply).mockResolvedValue('Désolé, vous disiez ?');
+      const session = makeSession();
+
+      scheduleUnheardRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS);
+
+      expect(generateRecoveryReply).toHaveBeenCalledWith(
+        session,
+        expect.anything(),
+        'unheard',
+        expect.any(AbortSignal),
+      );
+      expect(speakTtsStreamed).toHaveBeenCalledTimes(1);
+      expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Désolé, vous disiez ?');
+      expect(session.history.at(-1)).toEqual({
+        role: 'assistant',
+        content: 'Désolé, vous disiez ?',
+      });
+      expect(session.state).toBe('LISTENING');
+    });
+
+    it('passe le type « silence » puis « opening » selon le moment', async () => {
+      vi.mocked(generateRecoveryReply).mockResolvedValue('Vous êtes là ?');
+      const silent = makeSession();
+      armSilenceRecovery(silent, makeManager());
+      await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+      expect(vi.mocked(generateRecoveryReply).mock.calls[0][2]).toBe('silence');
+
+      const greeted = makeSession({ history: [] });
+      armSilenceRecovery(greeted, makeManager());
+      await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+      expect(vi.mocked(generateRecoveryReply).mock.calls[1][2]).toBe('opening');
+    });
+
+    it('retombe sur la phrase de secours quand le modèle ne formule rien ou échoue', async () => {
+      const session = makeSession();
+      scheduleUnheardRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS);
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        session,
+        "Pardon, je n'ai pas bien entendu. Vous serez combien ?",
+      );
+
+      vi.mocked(generateRecoveryReply).mockRejectedValue(new Error('modèle indisponible'));
+      const failing = makeSession();
+      scheduleUnheardRecovery(failing, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS);
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        failing,
+        "Pardon, je n'ai pas bien entendu. Vous serez combien ?",
+      );
+    });
+
+    it("ne dit rien si l'appelant reprend la parole pendant que le modèle formule, sans consommer la relance", async () => {
+      let release: (value: string) => void = () => undefined;
+      vi.mocked(generateRecoveryReply).mockImplementation(
+        () => new Promise<string>((resolve) => (release = resolve)),
+      );
+      const session = makeSession();
+      const mgr = makeManager();
+
+      armSilenceRecovery(session, mgr);
+      await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+      expect(generateRecoveryReply).toHaveBeenCalledTimes(1);
+      cancelNoInputRecovery(session);
+      release('Vous êtes toujours là ?');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+
+      // La relance n'a pas été consommée : on peut encore en dire le maximum.
+      vi.mocked(generateRecoveryReply).mockResolvedValue('Vous êtes là ?');
+      for (let i = 0; i < MAX_RECOVERIES_PER_CALL + 1; i++) {
+        armSilenceRecovery(session, mgr);
+        await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+      }
+      expect(speakTtsStreamed).toHaveBeenCalledTimes(MAX_RECOVERIES_PER_CALL);
+    });
+
+    it("ne dit rien si l'agent s'est remis à parler pendant la formulation", async () => {
+      let release: (value: string) => void = () => undefined;
+      vi.mocked(generateRecoveryReply).mockImplementation(
+        () => new Promise<string>((resolve) => (release = resolve)),
+      );
+      const session = makeSession();
+      armSilenceRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(noInputTimeoutMs());
+      session.state = 'SPEAKING';
+      release('Vous êtes toujours là ?');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+    });
+
+    it("garde la phrase codée quand l'interrupteur est coupé, sans appeler le modèle", async () => {
+      vi.stubEnv('VOICE_RECOVERY_BY_MODEL', 'false');
+      vi.mocked(generateRecoveryReply).mockResolvedValue('Désolé, vous disiez ?');
+      const session = makeSession();
+      scheduleUnheardRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS);
+      expect(generateRecoveryReply).not.toHaveBeenCalled();
+      expect(speakTtsStreamed).toHaveBeenCalledWith(
+        session,
+        "Pardon, je n'ai pas bien entendu. Vous serez combien ?",
+      );
+    });
   });
 });

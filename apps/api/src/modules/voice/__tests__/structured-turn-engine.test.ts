@@ -7,6 +7,7 @@ import {
   CALLER_FINISHED_FALLBACK,
   incompleteTurnSilenceMs,
   speculateStructuredTurn,
+  generateRecoveryReply,
 } from '../stream/structured-turn/engine';
 import {
   bookingKey,
@@ -431,6 +432,62 @@ describe('tour structuré (canary)', () => {
       await processTranscriptStreaming(session, 'jean dupont', mgr);
 
       expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('relance formulée par le modèle (generateRecoveryReply)', () => {
+    const asking = () => {
+      const fx = fixture();
+      fx.session.history = [
+        { role: 'user', content: 'demain' },
+        { role: 'assistant', content: 'Vers quelle heure vous aimeriez venir ?' },
+      ];
+      return fx;
+    };
+    const requestOf = (mgr: CallSessionManager) =>
+      vi.mocked(mgr.streamStructuredCompletion).mock.calls[0]?.[1] as Array<{
+        role: string;
+        content: string;
+      }>;
+
+    it('rend la phrase du modèle, après une requête sans énoncé et avec le type de relance', async () => {
+      const { session, mgr, outputs } = asking();
+      outputs.push(turn({ awaiting: 'time', say: 'Désolé, vous disiez ? Vers quelle heure ?' }));
+
+      const reply = await generateRecoveryReply(session, mgr, 'unheard');
+
+      expect(reply).toBe('Désolé, vous disiez ? Vers quelle heure ?');
+      const messages = requestOf(mgr);
+      expect(messages[0].content).toContain('RELANCE :');
+      expect(messages[0].content).toContain('aucun mot n’a pu être reconnu'.replace('’', "'"));
+      expect(messages.at(-1)).toEqual({ role: 'user', content: '(aucune parole reconnue)' });
+      // L'historique réel n'est ni complété ni modifié par la relance.
+      expect(session.history).toHaveLength(2);
+    });
+
+    it('adoucit les points d’exclamation, comme pour un tour', async () => {
+      const { session, mgr, outputs } = asking();
+      outputs.push(turn({ say: 'Vous êtes toujours là !' }));
+      expect(await generateRecoveryReply(session, mgr, 'silence')).toBe('Vous êtes toujours là.');
+    });
+
+    it.each([
+      ['une action demandée', turn({ action: 'check_availability', say: 'Je vérifie.' })],
+      ['une phrase vide', turn({ say: '   ' })],
+    ])('rend null pour %s : l’appelant garde sa phrase de secours', async (_label, output) => {
+      const { session, mgr, outputs } = asking();
+      outputs.push(output);
+      expect(await generateRecoveryReply(session, mgr, 'silence')).toBeNull();
+    });
+
+    it('rend null sans appeler le modèle hors du tour structuré ou sans accès au modèle', async () => {
+      const { session, mgr } = asking();
+      expect(await generateRecoveryReply(session, {}, 'silence')).toBeNull();
+      (session as { restaurantId: string }).restaurantId = 'restaurant-hors-structure';
+      vi.stubEnv('VOICE_V2_DEFAULT', 'false');
+      expect(await generateRecoveryReply(session, mgr, 'silence')).toBeNull();
+      expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
+      vi.unstubAllEnvs();
     });
   });
 

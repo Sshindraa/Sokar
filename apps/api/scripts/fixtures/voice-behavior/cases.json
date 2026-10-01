@@ -1307,6 +1307,127 @@
           "minRate": 0.9
         }
       ]
+    },
+    {
+      "id": "relance-parole-non-comprise",
+      "behavior": "relance sans énoncé",
+      "source": "appel c5d6b07d : « euh… trois », parole détectée sans aucun mot reconnu ; le moteur dit aujourd'hui une phrase codée",
+      "profile": "midi",
+      "history": "toHeure",
+      "transcript": "",
+      "recovery": "unheard",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "time",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relance-silence",
+      "behavior": "relance sans énoncé",
+      "source": "appel cdc95509 : l'appelant se tait après la question du nom ; le moteur dit aujourd'hui une phrase codée",
+      "profile": "midi",
+      "history": "toName",
+      "transcript": "",
+      "recovery": "silence",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerName",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relance-apres-accueil",
+      "behavior": "relance sans énoncé",
+      "source": "appel 126f433a : après l'accueil, l'appelant ne dit rien d'intelligible",
+      "profile": "midi",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "",
+      "recovery": "opening",
+      "awaiting": "open",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "open",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
     }
   ],
   "profiles": {
