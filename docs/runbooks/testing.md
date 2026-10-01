@@ -482,6 +482,9 @@ scripts/ops/voice-behavior-eval.sh        # compose ici, rejoue sur le VPS (la c
 - Consomme du quota Cerebras : une seule clé sert aux appels et aux rejeux, donc le crédit des appels réels. Plafond
   de 150 requêtes (`VBE_MAX_REQUESTS`) ; vérifier le solde avant de lancer.
 - Hors CI (pas de clé) ; la logique de notation est testée (`behavior-eval.test.ts`).
+- Juger un autre modèle (un secours) : `VBE_PROVIDER=openrouter VBE_MODEL=<modèle> VBE_BASE_URL=https://eu.openrouter.ai/api/v1`
+  (+ `VBE_REASONING_OFF=1` pour un modèle à raisonnement optionnel comme DeepSeek ; les autres refusent ce paramètre).
+  Crédit OpenRouter, pas Cerebras ; mêmes garde-fous (arrêt à 401/402/403) ; la sortie dit quel hébergeur a servi.
 
 ### Suite « dégradation » et découpage calibration / contrôle
 
