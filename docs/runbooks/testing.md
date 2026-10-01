@@ -548,3 +548,11 @@ VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/perturb.json scripts/op
 - Comptes de jetons : le rejeu relève `usage` (entrée/sortie) par bras auprès du fournisseur ; ce sont ces chiffres,
   pas une hypothèse, qui chiffrent le rejeu suivant. `VBE_PROVIDER_ORDER=DeepInfra` fixe l'hébergeur OpenRouter
   (sans repli : une quantification d'un bout à l'autre) et `VBE_REASONING_OFF=1` coupe le raisonnement.
+- **Vraie base de prompt, toujours.** Chaque requête passe par `buildSystemPrompt(…, structuredTurn: true)` avec la
+  fiche d'un restaurant : le profil par défaut du fichier (`defaultProfile`) est Chez Sokar tel qu'en base de
+  production (nom, horaires réels, fuseau, taille de groupe, `systemPromptExtra`, genre de la voix). Il n'existe plus
+  de consigne « minimale » : un cas sans profil de restaurant ne se construit pas (test). Un profil de démonstration
+  (`midi`) reste possible pour mesurer un autre restaurant.
+- Calage entre fournisseurs : `voice-behavior-eval.ts calibrate production.json autre.json` (deux rejeux séparés,
+  mêmes cas) ; avec 12 tirages par cas il ne voit que les écarts de 30 points ou plus et ne dit jamais « équivalent ».
+  `build --case-draws N` fixe N tirages par cas (sonde, calage).

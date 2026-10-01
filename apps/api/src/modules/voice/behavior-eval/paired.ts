@@ -5,6 +5,7 @@ import {
   type BehaviorAbResponses,
   type BehaviorCase,
   type BehaviorFamily,
+  type BehaviorResponses,
   type BehaviorMeasures,
 } from './types';
 
@@ -208,5 +209,82 @@ export function formatAbReport(report: AbReport): string {
         `(${points(entry.delta)} points)${invalid}`,
     );
   }
+  return lines.join('\n');
+}
+
+export interface ProviderGap {
+  id: string;
+  family: BehaviorFamily;
+  measures: BehaviorMeasures;
+  production: ArmCount;
+  other: ArmCount;
+  /** Autre fournisseur moins production, en part de tirages réussis. */
+  delta: number;
+  /** Écart d'au moins GROSS_GAP : seul ce que 12 tirages par cas peuvent voir. */
+  gross: boolean;
+}
+
+/** Avec ~12 tirages par cas, un écart sous 30 points est du bruit : seul un écart grossier est un signal. */
+export const GROSS_GAP = 0.3;
+
+/**
+ * Calage entre deux fournisseurs (production et un autre, deux rejeux séparés) sur les mêmes cas : ce n'est pas un
+ * test de régression mais la question « peut-on explorer sur l'autre ? ». Verdict honnête : « pas d'écart grossier »,
+ * jamais « équivalent ».
+ */
+export function compareProviders(
+  cases: BehaviorCase[],
+  production: BehaviorResponses,
+  other: BehaviorResponses,
+): ProviderGap[] {
+  const gaps: ProviderGap[] = [];
+  for (const testCase of cases) {
+    const a = production.responses[testCase.id];
+    const b = other.responses[testCase.id];
+    if (!a?.length || !b?.length) continue;
+    const productionCount = countArm(testCase, a);
+    const otherCount = countArm(testCase, b);
+    const delta = rateOf(otherCount) - rateOf(productionCount);
+    gaps.push({
+      id: testCase.id,
+      family: testCase.family,
+      measures: testCase.measures,
+      production: productionCount,
+      other: otherCount,
+      delta,
+      gross: Math.abs(delta) >= GROSS_GAP,
+    });
+  }
+  return gaps;
+}
+
+export function formatProviderGaps(
+  gaps: ProviderGap[],
+  production: BehaviorResponses,
+  other: BehaviorResponses,
+): string {
+  const lines = [
+    `Calage : production ${production.model} contre ${other.model} (deux rejeux séparés, mêmes cas)`,
+    '',
+  ];
+  for (const gap of gaps) {
+    lines.push(
+      `  ${gap.gross ? '⚠' : ' '} ${gap.id} [${gap.family}, ${gap.measures === 'engine' ? 'moteur' : 'modèle'}] : ` +
+        `${gap.production.successes}/${gap.production.draws} → ${gap.other.successes}/${gap.other.draws} ` +
+        `(${points(gap.delta)} points)`,
+    );
+  }
+  const gross = gaps.filter((gap) => gap.gross).length;
+  lines.push(
+    '',
+    gross
+      ? `${gross} cas sur ${gaps.length} avec un écart d'au moins ${GROSS_GAP * 100} points : l'autre fournisseur ne reproduit pas la production sur ces cas.`
+      : `Aucun écart grossier (≥ ${GROSS_GAP * 100} points) sur ${gaps.length} cas. Cela ne dit pas « équivalent » : 12 tirages par cas ne voient pas moins.`,
+  );
+  const usage = (name: string, responses: BehaviorResponses) =>
+    responses.usage
+      ? `${name} : ${responses.usage.promptTokens} tokens en entrée, ${responses.usage.completionTokens} en sortie (${responses.usage.requests} requêtes)`
+      : `${name} : jetons non relevés`;
+  lines.push(usage('Production', production), usage('Autre', other));
   return lines.join('\n');
 }

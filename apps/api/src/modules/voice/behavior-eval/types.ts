@@ -95,6 +95,12 @@ export type PerturbationKind = 'ablation' | 'substitution' | 'noise';
 /** Restaurant du jeu : nom et horaires réels d'une fiche, pour ne pas tout mesurer sur un seul profil. */
 export interface BehaviorProfile {
   name: string;
+  /** Fuseau de la fiche (défaut : Europe/Paris, comme `buildSystemPrompt`). */
+  timezone?: string;
+  /** Taille de groupe réservable automatiquement (fiche d'exposition) ; absent : celle par défaut. */
+  maxPartySize?: number;
+  /** Consigne propre au restaurant (`AgentPersonality.systemPromptExtra`), telle qu'en base. */
+  systemPromptExtra?: string;
   /** Genre de la voix de production, quand le profil le fixe (voir `agentVoiceGender`). */
   voiceGender?: 'masculine' | 'feminine';
   openingHours: Record<string, { open: string; close: string } | null>;
@@ -133,7 +139,7 @@ export interface BehaviorCase {
   callerFinished?: boolean;
   /** Relance sans énoncé de l'appelant (parole non comprise, silence, silence après l'accueil). */
   recovery?: 'unheard' | 'silence' | 'opening';
-  /** Profil restaurant de `profiles` ; absent : Chez Sokar, ouvert tous les jours 12 h–22 h. */
+  /** Profil restaurant de `profiles` ; absent : `defaultProfile` du fichier. */
   profile?: string;
   samples?: number;
   /** Sous-chaînes annotées de `transcript` : d'où partent les variantes dégradées. */
@@ -150,8 +156,10 @@ export interface BehaviorCase {
 export interface BehaviorCasesFile {
   version: number;
   today: string;
+  /** Profil des cas qui n'en nomment pas : Chez Sokar, relevé en base de production. */
+  defaultProfile: string;
   histories?: Record<string, BehaviorMessage[]>;
-  profiles?: Record<string, BehaviorProfile>;
+  profiles: Record<string, BehaviorProfile>;
   /** Spans annotés supplémentaires (valeurs simples, sans phrase), donneurs des variantes de substitution. */
   spanPool?: Partial<Record<SpanField, ValueSpan[]>>;
   cases: BehaviorCase[];

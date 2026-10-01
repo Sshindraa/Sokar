@@ -2,6 +2,7 @@
   "version": 1,
   "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant. Les cas « midi-* » mesurent le modèle seul sur un second profil (Bouchon Lyonnais) ; l'heure hors service (« mardi à 20 heures ») est traitée par le code (outsideOpeningHoursFact), pas mesurée ici.",
   "today": "2026-09-29",
+  "defaultProfile": "chez-sokar",
   "histories": {
     "opening": [
       {
@@ -1905,6 +1906,37 @@
     }
   ],
   "profiles": {
+    "chez-sokar": {
+      "name": "Chez Sokar",
+      "timezone": "Europe/Paris",
+      "maxPartySize": 7,
+      "voiceGender": "masculine",
+      "systemPromptExtra": "Tu es Callyx, l'assistant vocal de Chez Sokar. Tu es chaleureux, direct, et tu parles comme un habitué du quartier. Tu prends les réservations pour le midi et le soir. Les grands groupes (8+) sont transférés au gérant. Tu confirmes toujours la date, l'heure et le nombre de personnes avant de créer la réservation.",
+      "openingHours": {
+        "mon": null,
+        "tue": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "wed": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "thu": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "fri": {
+          "open": "12:00",
+          "close": "23:00"
+        },
+        "sat": {
+          "open": "12:00",
+          "close": "23:00"
+        },
+        "sun": null
+      }
+    },
     "midi": {
       "name": "Chez Sokar — Bouchon Lyonnais",
       "openingHours": {

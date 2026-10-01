@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { compareArms, formatAbReport } from '../behavior-eval/paired';
+import { buildRequest, buildRequests, profileOf } from '../behavior-eval/build';
+import {
+  compareArms,
+  compareProviders,
+  formatAbReport,
+  formatProviderGaps,
+} from '../behavior-eval/paired';
+import { buildSystemPrompt } from '../prompts';
 import {
   allocateDraws,
   detectableDrop,
@@ -230,5 +237,103 @@ describe('comparaison A/B : un seul rejeu, jamais de référence stockée', () =
   it('est déterministe : deux analyses du même rejeu donnent les mêmes intervalles', () => {
     const ab = run(flat(0.7), flat(0.6));
     expect(compareArms(cases, ab)).toEqual(compareArms(cases, ab));
+  });
+});
+
+describe('la vraie base de prompt : aucun cas sans buildSystemPrompt', () => {
+  const requests = buildRequests(file);
+
+  /** La base attendue, composée ici de façon indépendante, comme en appel (telnyx.pipeline.ts). */
+  const expectedBase = (testCase: BehaviorCase): string => {
+    const profile = file.profiles[testCase.profile ?? file.defaultProfile];
+    return buildSystemPrompt(
+      {
+        name: profile.name,
+        openingHours: profile.openingHours as never,
+        timezone: profile.timezone ?? 'Europe/Paris',
+        ...(profile.maxPartySize ? { maxPartySize: profile.maxPartySize } : {}),
+        structuredTurn: true,
+        ...(profile.voiceGender ? { voiceGender: profile.voiceGender } : {}),
+        ...(profile.systemPromptExtra
+          ? { personality: { systemPromptExtra: profile.systemPromptExtra } }
+          : {}),
+      },
+      new Date(`${file.today}T12:00:00Z`),
+    );
+  };
+
+  it('le message système de CHAQUE cas contient la base de production en entier, en mode structuré', () => {
+    expect(requests).toHaveLength(file.cases.length);
+    for (const testCase of file.cases) {
+      const request = requests.find((entry) => entry.id === testCase.id)!;
+      const system = request.messages[0].content;
+      expect(system, testCase.id).toContain(expectedBase(testCase));
+      expect(system, testCase.id).toContain('COMPORTEMENT :');
+      expect(system, testCase.id).toContain('HORAIRES');
+      expect(system, testCase.id).not.toContain('RÈGLES DU MODE À OUTILS');
+    }
+  });
+
+  it('le profil par défaut est celui de Chez Sokar en base : sa consigne propre et ses vrais horaires', () => {
+    const profile = file.profiles[file.defaultProfile];
+    expect(profile.name).toBe('Chez Sokar');
+    expect(profile.systemPromptExtra?.length).toBeGreaterThan(0);
+    expect(profile.openingHours.mon).toBeNull();
+    expect(profile.openingHours.sun).toBeNull();
+    const withoutProfile = file.cases.find((testCase) => !testCase.profile)!;
+    const system = requests.find((entry) => entry.id === withoutProfile.id)!.messages[0].content;
+    expect(system).toContain(profile.systemPromptExtra!);
+    expect(system).toContain('Chez Sokar');
+  });
+
+  it('refuse de construire un cas sans profil de restaurant, ou avec un profil incomplet', () => {
+    const [testCase] = file.cases;
+    const withoutDefault = { ...file, defaultProfile: '' } as BehaviorCasesFile;
+    expect(() => buildRequest({ ...testCase, profile: undefined }, withoutDefault)).toThrow(
+      /buildSystemPrompt/,
+    );
+    expect(() => buildRequest({ ...testCase, profile: 'inconnu' }, file)).toThrow(/introuvable/);
+    const incomplete = {
+      ...file,
+      profiles: { ...file.profiles, vide: { name: '' } },
+    } as unknown as BehaviorCasesFile;
+    expect(() => profileOf({ ...testCase, profile: 'vide' }, incomplete)).toThrow(/incomplet/);
+    const noProfiles = { ...file, profiles: {} } as BehaviorCasesFile;
+    expect(() => buildRequest(testCase, noProfiles)).toThrow(/introuvable/);
+  });
+});
+
+describe('calage entre deux fournisseurs', () => {
+  const cases = [timeCase('a'), timeCase('b')];
+  const responses = (good: Record<string, number>, draws = 12) => ({
+    model: 'test',
+    responses: Object.fromEntries(
+      cases.map((testCase) => [
+        testCase.id,
+        Array.from({ length: draws }, (_, index) =>
+          output(index < Math.round(good[testCase.id] * draws) ? '19:00' : '20:00'),
+        ),
+      ]),
+    ),
+  });
+
+  it('signale un écart grossier (30 points ou plus) et rien en dessous', () => {
+    const production = responses({ a: 1, b: 0.9 });
+    const other = responses({ a: 0.5, b: 0.8 });
+    const gaps = compareProviders(cases, production, other);
+    expect(gaps.map((gap) => gap.gross)).toEqual([true, false]);
+    const report = formatProviderGaps(gaps, production, other);
+    expect(report).toContain('1 cas sur 2');
+  });
+
+  it('sans écart grossier, ne dit jamais « équivalent »', () => {
+    const production = responses({ a: 1, b: 1 });
+    const report = formatProviderGaps(
+      compareProviders(cases, production, production),
+      production,
+      production,
+    );
+    expect(report).toContain('Aucun écart grossier');
+    expect(report).toContain('Cela ne dit pas « équivalent »');
   });
 });
