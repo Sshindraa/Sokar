@@ -950,6 +950,66 @@
       ]
     },
     {
+      "id": "conge-mot-mal-compris",
+      "behavior": "prise de congé (mot mal compris)",
+      "source": "appel 6a70dff9 tour 15 : « Bisous » transcrit « dix-nous » après « Bonne soirée »",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "transcript": "dix-nous",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "end_call",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "none",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "conge-mot-mal-compris-2",
+      "behavior": "prise de congé (mot mal compris)",
+      "source": "témoin : un autre mot sans sens après l'au revoir",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "transcript": "ba zou nous",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "end_call",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "none",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
       "id": "nouvelle-demande-apres-resa",
       "behavior": "prise de congé (témoin)",
       "source": "témoin : une nouvelle demande ne termine pas l'appel",
