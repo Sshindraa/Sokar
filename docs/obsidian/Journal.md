@@ -1201,3 +1201,11 @@ Décisions de l'utilisateur : cas choisis d'après des défauts réels, difficul
 - Taille réelle d'une requête : 16 175 caractères en moyenne (15 289 à 17 219), soit 4 368 tokens en entrée chez DeepInfra et 4 789 chez Cerebras ; sortie 158 et 138 tokens (mesurés sur 96 requêtes chacun ; l'estimation à partir des caractères, 95–130, était fausse). Un bras de 536 tirages : environ 2,3 M tokens (DeepInfra), 2,6 M (Cerebras).
 - Sonde A (6 requêtes, DeepInfra) : sortie structurée stricte valide 6/6. Calage B (8 cas × 12, Cerebras contre DeepInfra) : aucun écart grossier (plus grand écart : 25 points, sur un cas à 42 %/17 %) ; 12 tirages ne voient pas moins.
 - Constat sur la vraie base (Cerebras) : `attend-annonce-intention` tient 42 % (seuil 85 %) et `extrait-nom-epele-double-k` 25 % brut (58 % après garde-fous, seuil 90 %), des deux côtés du calage. Le banc sur la consigne minimale était donc trop optimiste sur ces comportements. Cause non établie.
+
+## 2026-10-02 — Voix : une épellation sans ambiguïté l'emporte sur le nom du modèle, même à longueur égale
+
+Constat (banc sur la vraie base, 12 tirages) : « au nom de a 2 k i f » → le modèle écrit AAKIF dans 5 tirages sur 12 (le « 2 » lu comme un second A) ; le garde-fou ne traitait que les lettres manquantes (AKIF, A2KIF), pas une substitution de même longueur : 25 % brut, 58 % après garde-fou sur Cerebras (33 % sur DeepInfra).
+
+Correctif (`fact-guards.ts`, `resolveSubstitution`) : à nombre de lettres égal, le nom tiré de l'épellation remplace celui du modèle quand l'épellation se lit sans ambiguïté : une seule suite de lettres épelées dans la phrase, aucun nom déjà retenu avant ce tour (nom assemblé sur plusieurs tours), au plus 2 lettres de différence. Test structurel, aucun mot connu ; le fait `spelledNameFact` fait relire le bon nom au second passage.
+
+Rejoué sur les sorties déjà enregistrées (aucune requête) : `extrait-nom-epele-double-k` après garde-fou 58 % → 100 % (Cerebras), 33 % → 100 % (DeepInfra). Les autres cas d'épellation n'ont pas de sortie enregistrée sur la vraie base : leur non-régression repose sur les tests unitaires du garde-fou (1 364 tests voix).
