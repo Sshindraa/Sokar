@@ -96,6 +96,11 @@ function variant(
   return {
     id: `${base.id}~${kind}~${field}`,
     behavior: `dégradation : ${kind}`,
+    family: base.family,
+    // Les variantes générées rapportent le brut ET l'après garde-fous côte à côte : elles mesurent le modèle.
+    measures: 'model',
+    origin: 'variant',
+    variantOf: base.id,
     source: `variante « ${kind} » de ${base.id} (générée)`,
     history: base.history,
     transcript,

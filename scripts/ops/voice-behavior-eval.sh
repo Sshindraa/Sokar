@@ -3,7 +3,7 @@
 # Compose les requêtes ici, les rejoue sur le VPS (la clé y reste), note ici. ~2 minutes, quelques centimes.
 #   scripts/ops/voice-behavior-eval.sh [hôte-ssh]      (défaut : sokar)
 #   VBE_SUITE=default|perturb|all   suite rejouée (défaut : default ; perturb = variantes dégradées générées, informatives)
-#   VBE_JSON_OUT=fichier.json       écrit aussi les résultats et indicateurs (chemin absolu, hors du dépôt ; à comparer avec `compare`)
+#   VBE_JSON_OUT=fichier.json       écrit aussi les résultats et indicateurs (chemin absolu, hors du dépôt). Pour juger une modification : rejeu A/B, voir voice-behavior-ab.sh
 # Une seule clé Cerebras (CEREBRAS_API_KEY) : le rejeu consomme le crédit des appels réels. Seul garde-fou :
 # plafond de 150 requêtes (VBE_MAX_REQUESTS), ~3,4 k tokens chacune ; vérifier le solde avant de lancer.
 set -euo pipefail

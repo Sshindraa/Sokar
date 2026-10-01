@@ -536,6 +536,9 @@
     {
       "id": "attend-annonce-intention",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 tour 4 : « je voudrais bien venir » coupé par l'agent",
       "history": "toHeure",
       "transcript": "je voudrais bien venir",
@@ -556,6 +559,10 @@
     {
       "id": "attend-annonce-intention-2",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
       "source": "variante de b686b241 tour 4",
       "history": "toHeure",
       "transcript": "j'aimerais bien",
@@ -575,6 +582,9 @@
     {
       "id": "attend-correction-annoncee",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 9 : « demain à 14 heures non » coupé",
       "history": "toHeure",
       "transcript": "demain à 14 heures non",
@@ -595,6 +605,10 @@
     {
       "id": "attend-correction-explicite",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-correction-annoncee",
       "source": "variante de 8ae1e63e tour 9",
       "history": "toHeure",
       "transcript": "vers 20 heures enfin non",
@@ -614,6 +628,9 @@
     {
       "id": "repond-reponse-complete",
       "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : ne pas attendre une réponse complète",
       "history": "toHeure",
       "transcript": "à 14 heures s'il vous plaît",
@@ -645,6 +662,9 @@
     {
       "id": "repond-refus-avec-valeur",
       "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : un refus suivi de sa valeur est complet",
       "history": "toHeure",
       "transcript": "non je préfère plutôt le soir vers 20 heures",
@@ -676,6 +696,9 @@
     {
       "id": "extrait-correction-heure",
       "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 10 : « plutôt à 16 heures 30 » remplace 14 h",
       "history": [
         {
@@ -733,8 +756,68 @@
       ]
     },
     {
+      "id": "extrait-correction-heure-2",
+      "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "history": [
+        {
+          "role": "user",
+          "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "vous êtes ouvert demain"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+        },
+        {
+          "role": "user",
+          "content": "oui demain"
+        },
+        {
+          "role": "assistant",
+          "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "demain à 14 heures non"
+        },
+        {
+          "role": "assistant",
+          "content": "Bien, 14 heures demain. Vous serez combien ?"
+        }
+      ],
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:00"
+      },
+      "awaiting": "partySize",
+      "variantOf": "extrait-correction-heure",
+      "source": "variante de extrait-correction-heure : une autre heure de remplacement",
+      "transcript": "finalement 19 heures 45",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "time",
+          "equals": "19:45",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
       "id": "extrait-taille-groupe",
       "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 11",
       "history": "toHeure+",
       "transcript": "6 s'il vous plaît",
@@ -759,8 +842,35 @@
       ]
     },
     {
+      "id": "extrait-taille-groupe-2",
+      "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "history": "toHeure+",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "variantOf": "extrait-taille-groupe",
+      "source": "variante de extrait-taille-groupe : un autre nombre",
+      "transcript": "4 s'il vous plaît",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "partySize",
+          "equals": 4,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "extrait-nom-epele",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 13 : épellation lettre par lettre",
       "history": "toName",
       "transcript": "h o u e t",
@@ -788,6 +898,9 @@
     {
       "id": "extrait-nom-epele-double-k",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 : « a 2 k i f » = deux K",
       "history": "toName",
       "transcript": "au nom de a 2 k i f",
@@ -815,6 +928,9 @@
     {
       "id": "conge-salut",
       "behavior": "prise de congé",
+      "family": "conge",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 16 : « salut » après « Bonne soirée »",
       "history": "done",
       "transcript": "salut",
@@ -845,6 +961,9 @@
     {
       "id": "conge-merci",
       "behavior": "prise de congé",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : un remerciement termine l'appel",
       "history": "done",
       "transcript": "merci beaucoup",
@@ -868,6 +987,9 @@
     {
       "id": "conge-mot-mal-compris",
       "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 6a70dff9 tour 15 : « Bisous » transcrit « dix-nous » après « Bonne soirée »",
       "history": "done",
       "draft": {
@@ -895,8 +1017,45 @@
       ]
     },
     {
+      "id": "conge-mot-mal-compris-3",
+      "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "variant",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "variantOf": "conge-mot-mal-compris",
+      "source": "variante de conge-mot-mal-compris : un troisième mot sans sens après l'au revoir",
+      "transcript": "or voir",
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "none",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
       "id": "conge-mot-mal-compris-2",
       "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "conge-mot-mal-compris",
       "source": "témoin : un autre mot sans sens après l'au revoir",
       "history": "done",
       "draft": {
@@ -924,7 +1083,11 @@
       ]
     },
     {
+      "id": "conge-phrase-longue-mal-transcrite",
       "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
       "history": "done",
       "draft": {
         "date": "2026-09-30",
@@ -942,12 +1105,15 @@
           "minRate": 0.9
         }
       ],
-      "id": "conge-phrase-longue-mal-transcrite",
       "source": "témoin inventé : une vraie demande après l'au revoir, mal transcrite, trop longue pour être un au revoir",
       "transcript": "a tendez j'ai ou blié de vous dire que nous serons un de plus pour le même soir"
     },
     {
+      "id": "conge-phrase-longue-sans-sens",
       "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
       "history": "done",
       "draft": {
         "date": "2026-09-30",
@@ -965,12 +1131,15 @@
           "minRate": 0.9
         }
       ],
-      "id": "conge-phrase-longue-sans-sens",
       "source": "témoin inventé : une longue phrase sans sens après l'au revoir ; mesuré à travers le moteur (il refuse tout congé que le modèle dit ne pas comprendre)",
       "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup"
     },
     {
+      "id": "conge-phrase-longue-relance",
       "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
       "history": "done",
       "draft": {
         "date": "2026-09-30",
@@ -995,7 +1164,6 @@
           "minRate": 0.9
         }
       ],
-      "id": "conge-phrase-longue-relance",
       "source": "second passage après le refus d'un congé sur une longue phrase sans sens : le schéma n'autorise que « none », le modèle doit redemander",
       "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup",
       "actionResult": "Action end_call non exécutée (doubtful_understanding). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.",
@@ -1004,6 +1172,9 @@
     {
       "id": "conge-question-courte-apres-autre-chose",
       "behavior": "prise de congé (question en attente)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
       "source": "témoin inventé : après « Autre chose pour vous ? », une vraie question courte mal transcrite ; le moteur ne doit pas raccrocher (mesuré à travers le moteur)",
       "history": "done-autre-chose",
       "transcript": "ses ou le parking",
@@ -1027,6 +1198,9 @@
     {
       "id": "conge-non-merci-apres-autre-chose",
       "behavior": "prise de congé (question en attente, témoin)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
       "source": "témoin : après « Autre chose pour vous ? », un refus clair doit toujours raccrocher (mesuré à travers le moteur)",
       "history": "done-autre-chose",
       "transcript": "non merci c'est tout",
@@ -1050,6 +1224,9 @@
     {
       "id": "nouvelle-demande-apres-resa",
       "behavior": "prise de congé (témoin)",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : une nouvelle demande ne termine pas l'appel",
       "history": "done",
       "transcript": "ah attendez j'ai une autre réservation à faire",
@@ -1073,6 +1250,9 @@
     {
       "id": "date-dans-question",
       "behavior": "redemande à vide",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241/8ae1e63e tour 2 : « vous êtes ouvert demain » avant toute date",
       "history": "opening",
       "transcript": "vous êtes ouvert demain",
@@ -1090,6 +1270,9 @@
     {
       "id": "recap-court",
       "behavior": "récapitulatif",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 14 : récapitulatif de 10 s puis 5 s",
       "history": "toRecap",
       "transcript": "c'est ça",
@@ -1116,6 +1299,9 @@
     {
       "id": "au-revoir-selon-heure",
       "behavior": "politesse",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 : « Bonne soirée » à 15 h 09",
       "history": "done-dernier",
       "transcript": "oui c'est tout",
@@ -1141,6 +1327,9 @@
     {
       "id": "pas-de-dispo-sans-effectif",
       "behavior": "disponibilité",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
       "source": "#288 : ne pas annoncer un horaire libre avant le nombre de personnes",
       "history": "toHeure",
       "transcript": "est-ce que c'est possible de venir à 18 heures",
@@ -1160,6 +1349,9 @@
     {
       "id": "pas-de-repetition-mot-pour-mot",
       "behavior": "répétition",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "#293 : ne pas recopier sa dernière question",
       "history": "toHeure",
       "transcript": "et vous avez une terrasse",
@@ -1179,6 +1371,10 @@
     {
       "id": "midi-jour-ferme",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
       "profile": "midi",
       "history": "opening",
@@ -1203,6 +1399,10 @@
     {
       "id": "midi-dimanche-ferme",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
       "profile": "midi",
       "history": "opening",
@@ -1221,6 +1421,10 @@
     {
       "id": "midi-samedi-soir-ouvert",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi (témoin : le samedi soir est ouvert, ne pas refuser à tort)",
       "profile": "midi",
       "history": "opening",
@@ -1239,6 +1443,9 @@
     {
       "id": "recap-fragment-apres-silence",
       "behavior": "pas de récapitulatif redit",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 1b3f85e9 tour 14 : « donc » puis silence, l'agent a relu tout le récapitulatif (« Je vous ai lu le récapitulatif : … ») — cause réelle : refus « slot_not_verified » puis relecture (corrigé par #307) ; reste ~20 % de relectures des détails, jugées bénignes",
       "history": "recapAsked",
       "transcript": "donc",
@@ -1278,6 +1485,9 @@
     {
       "id": "recap-fragment-attente",
       "behavior": "pas de récapitulatif redit",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 1b3f85e9 tour 14 : « donc » juste après le récapitulatif : la phrase est inachevée",
       "history": "recapAsked",
       "transcript": "donc",
@@ -1299,7 +1509,12 @@
       ]
     },
     {
+      "id": "epele-sans-preambule",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "extrait-nom-epele-double-k",
       "history": "toName",
       "draft": {
         "date": "2026-09-30",
@@ -1308,7 +1523,6 @@
       },
       "awaiting": "customerName",
       "samples": 20,
-      "id": "epele-sans-preambule",
       "source": "« a 2 k i f » sans préambule : le modèle perdait le double K (15 % de AKKIF avant la règle du chiffre doublant la lettre, 100 % après)",
       "transcript": "a 2 k i f",
       "valueSpans": {
@@ -1335,6 +1549,9 @@
     {
       "id": "epele-apres-mot-entendu",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 5cebe456 tour 15 (30/09) : « hoët h o u e t » enregistré HOËT",
       "history": "toName",
       "transcript": "hoët h o u e t",
@@ -1362,6 +1579,10 @@
     {
       "id": "epele-apres-mot-entendu-intro",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "epele-apres-mot-entendu",
       "source": "appel 5cebe456 tours 14-15 recollés",
       "history": "toName",
       "transcript": "c'est au nom de hoët h o u e t",
@@ -1389,6 +1610,9 @@
     {
       "id": "correction-epellation-complete",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 5cebe456 tour 16 : l'appelant re-épelle après une lecture fausse",
       "history": "toNameRead",
       "transcript": "non h o u e t",
@@ -1417,6 +1641,9 @@
     {
       "id": "epellation-en-cours-pas-fini",
       "behavior": "fin de tour",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 5cebe456 tour 16 : « h o u e » jugé fini, le t arrive 0,6 s après",
       "history": "toNameRead",
       "transcript": "non h o u e",
@@ -1439,6 +1666,9 @@
     {
       "id": "exclamation-apres-recap-pas-de-relecture",
       "behavior": "répétition",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 5cebe456 tours 18-19 : « waouh » puis une phrase hors sujet relisent deux fois le récapitulatif",
       "history": "toRecapHouet",
       "transcript": "waouh",
@@ -1461,6 +1691,9 @@
     {
       "id": "appel-bf3893ae-enonce-incoherent",
       "behavior": "énoncé incohérent",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel bf3893ae tour 2 (30/09) : transcription Deepgram « vous êtes 20 demain », l'appelant hésitait. Le modèle a retenu 20 h (interpretation=answer, confidence=high) et dit « c'est noté ». Vérité non établie : deux modèles audio se contredisent, écoute humaine à faire.",
       "history": "bf3893ae",
       "transcript": "vous êtes 20 demain",
@@ -1499,6 +1732,9 @@
     {
       "id": "relance-parole-non-comprise",
       "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
       "source": "appel c5d6b07d : « euh… trois », parole détectée sans aucun mot reconnu ; le moteur dit aujourd'hui une phrase codée",
       "profile": "midi",
       "history": "toHeure",
@@ -1538,6 +1774,9 @@
     {
       "id": "relance-silence",
       "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
       "source": "appel cdc95509 : l'appelant se tait après la question du nom ; le moteur dit aujourd'hui une phrase codée",
       "profile": "midi",
       "history": "toName",
@@ -1577,8 +1816,55 @@
       ]
     },
     {
+      "id": "relance-silence-apres-heure",
+      "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "variant",
+      "profile": "midi",
+      "history": "toHeure+",
+      "recovery": "silence",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "samples": 8,
+      "variantOf": "relance-silence",
+      "source": "variante de relance-silence : l'appelant se tait après la question du nombre de personnes",
+      "transcript": "",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "relance-apres-accueil",
       "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 126f433a : après l'accueil, l'appelant ne dit rien d'intelligible",
       "profile": "midi",
       "history": [
