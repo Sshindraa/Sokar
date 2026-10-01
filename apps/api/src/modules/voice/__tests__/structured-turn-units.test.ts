@@ -191,6 +191,64 @@ describe('applyProposedDraft', () => {
   });
 });
 
+describe('authorizeStructuredAction : congé après la réservation', () => {
+  const draft = { date: '2026-09-27', time: '20:00', partySize: 2, customerName: 'Houet' };
+  const created = () => ({ ...createStructuredTurnState(), reservationCreated: true });
+  const decide = (
+    state: ReturnType<typeof createStructuredTurnState>,
+    extra: Partial<ReturnType<typeof output>>,
+    transcriptWords?: number,
+  ) =>
+    authorizeStructuredAction(state, output({ action: 'end_call', ...extra }), draft, {
+      maxPartySize: 7,
+      ...(transcriptWords !== undefined ? { transcriptWords } : {}),
+    });
+
+  it('un énoncé court que le modèle ne comprend pas est un au revoir mal transcrit : on raccroche', () => {
+    expect(decide(created(), { understanding: 'doubtful' }, 2)).toEqual({ allowed: true });
+    expect(decide(created(), { understanding: 'doubtful' }, 6)).toEqual({ allowed: true });
+  });
+
+  it('un énoncé long jugé douteux n’est pas un au revoir : refusé', () => {
+    expect(decide(created(), { understanding: 'doubtful' }, 7)).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+    // Nombre de mots inconnu : prudence, refusé.
+    expect(decide(created(), { understanding: 'doubtful' })).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+  });
+
+  it('sans réservation créée, un doute reste un doute : rien ne se ferme', () => {
+    expect(decide(createStructuredTurnState(), { understanding: 'doubtful' }, 2)).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+  });
+
+  it('l’exception ne vaut que pour le congé, pas pour une autre action', () => {
+    for (const action of ['check_availability', 'take_message', 'transfer'] as const) {
+      expect(decide(created(), { action, understanding: 'doubtful' }, 2)).toEqual({
+        allowed: false,
+        reason: 'doubtful_understanding',
+      });
+    }
+  });
+
+  it('sans vérification de compréhension : un congé long que le modèle dit ne pas avoir compris est refusé', () => {
+    expect(decide(created(), { interpretation: 'unclear' }, 12)).toEqual({
+      allowed: false,
+      reason: 'long_unclear_farewell',
+    });
+    expect(decide(created(), { interpretation: 'unclear' }, 2)).toEqual({ allowed: true });
+    expect(decide(created(), { interpretation: 'end_call', understanding: 'clear' }, 12)).toEqual({
+      allowed: true,
+    });
+  });
+});
+
 describe('authorizeStructuredAction', () => {
   const draft = { date: '2026-09-27', time: '20:00', partySize: 4, customerName: 'Akkif' };
   const verifiedState = () => ({

@@ -91,7 +91,11 @@ export function buildRequest(
         name: STRUCTURED_TURN_SCHEMA_NAME,
         strict: true,
         schema: buildStructuredTurnJsonSchema(
-          testCase.actionResult ? (AFTER_ACTION_ACTIONS as never) : undefined,
+          testCase.actions
+            ? (testCase.actions as never)
+            : testCase.actionResult
+              ? (AFTER_ACTION_ACTIONS as never)
+              : undefined,
           // Comme en appel : la relance après un silence impose turnComplete=true.
           {
             turnCompleteOnly: testCase.callerFinished === true || testCase.recovery !== undefined,

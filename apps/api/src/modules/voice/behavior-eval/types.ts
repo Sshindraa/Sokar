@@ -77,6 +77,8 @@ export interface BehaviorCase {
   reservationCreated?: boolean;
   /** Résultat d'action déjà exécutée : la réponse ne peut plus qu'être dite ou terminer l'appel. */
   actionResult?: string;
+  /** Actions que le schéma autorise (par défaut : toutes, ou « none » et « end_call » après un résultat d'action). */
+  actions?: string[];
   dayPart?: string;
   /** Le tour vient d'être relancé après un silence de l'appelant sur un fragment inachevé. */
   callerFinished?: boolean;

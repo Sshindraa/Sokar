@@ -435,6 +435,103 @@ describe('tour structuré (canary)', () => {
     });
   });
 
+  describe('congé après la réservation : court et douteux on raccroche, long et douteux non', () => {
+    const LONG = 'vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse'; // 15 mots
+    const goodbye = (extra: Partial<StructuredTurnOutput> = {}) =>
+      turn({
+        interpretation: 'end_call',
+        action: 'end_call',
+        awaiting: 'none',
+        say: 'Avec plaisir, bonne soirée.',
+        ...extra,
+      });
+    const hungUp = async (
+      transcript: string,
+      first: StructuredTurnOutput,
+      options: { reservationCreated?: boolean; second?: StructuredTurnOutput } = {},
+    ) => {
+      vi.useFakeTimers();
+      const fx = fixture();
+      const state = createStructuredTurnState();
+      state.reservationCreated = options.reservationCreated ?? true;
+      fx.session.structuredTurn = state;
+      fx.outputs.push(first);
+      if (options.second) fx.outputs.push(options.second);
+      const pending = processTranscriptStreaming(fx.session, transcript, fx.mgr);
+      await vi.advanceTimersByTimeAsync(16_000);
+      await pending;
+      vi.useRealTimers();
+      return fx;
+    };
+
+    it('raccroche sur un énoncé court que le modèle n’a pas compris (« Bisous » transcrit autrement)', async () => {
+      const { mgr } = await hungUp(
+        'dix nous',
+        goodbye({ understanding: 'doubtful', interpretation: 'unclear' }),
+      );
+      expect(mgr.cleanup).toHaveBeenCalled();
+      expect(spoken()).toEqual(['Avec plaisir, bonne soirée.']);
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    it('ne raccroche pas sur une longue phrase jugée douteuse : le modèle redemande avec un fait', async () => {
+      const { mgr, outputs } = await hungUp(
+        LONG,
+        goodbye({ understanding: 'doubtful', interpretation: 'unclear' }),
+        {
+          second: turn({
+            awaiting: 'open',
+            say: 'Je n’ai pas bien compris, pouvez-vous répéter ?',
+          }),
+        },
+      );
+
+      expect(outputs).toHaveLength(0);
+      expect(mgr.cleanup).not.toHaveBeenCalled();
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      const context = (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+      expect(context).toContain('non exécutée');
+      expect(context).toContain('ne prends pas congé');
+      // Le second passage ne peut plus choisir de raccrocher : le schéma n'autorise que « none ».
+      const secondFormat = vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[2] as {
+        json_schema: { schema: { properties: { action: { enum: string[] } } } };
+      };
+      expect(secondFormat.json_schema.schema.properties.action.enum).toEqual(['none']);
+      expect(spoken().join(' ')).toBe('Je n’ai pas bien compris, pouvez-vous répéter ?');
+      expect(spoken().join(' ')).not.toContain('bonne soirée');
+    });
+
+    it('même critère sans vérification de compréhension (interprétation « unclear »)', async () => {
+      const { mgr } = await hungUp(LONG, goodbye({ interpretation: 'unclear' }), {
+        second: turn({ awaiting: 'open', say: 'Pardon, pouvez-vous répéter ?' }),
+      });
+      expect(mgr.cleanup).not.toHaveBeenCalled();
+      expect(spoken().join(' ')).toBe('Pardon, pouvez-vous répéter ?');
+    });
+
+    it('sans réservation créée, un court au revoir douteux ne ferme rien', async () => {
+      const { mgr } = await hungUp(
+        'dix nous',
+        goodbye({ understanding: 'doubtful', interpretation: 'unclear' }),
+        {
+          reservationCreated: false,
+          second: turn({ awaiting: 'open', say: 'Pardon, vous voulez quoi ?' }),
+        },
+      );
+      expect(mgr.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('raccroche sur un long au revoir que le modèle a bien compris', async () => {
+      const { mgr } = await hungUp(
+        'merci beaucoup pour tout au revoir et bonne soirée à vous aussi',
+        goodbye({ understanding: 'clear' }),
+      );
+      expect(mgr.cleanup).toHaveBeenCalled();
+    });
+  });
+
   describe('relance formulée par le modèle (generateRecoveryReply)', () => {
     const asking = () => {
       const fx = fixture();

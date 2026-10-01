@@ -860,6 +860,96 @@
       ]
     },
     {
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "notEquals": "end_call",
+          "minRate": 0.8
+        }
+      ],
+      "id": "conge-phrase-longue-mal-transcrite",
+      "source": "témoin inventé : une vraie demande après l'au revoir, mal transcrite, trop longue pour être un au revoir",
+      "transcript": "a tendez j'ai ou blié de vous dire que nous serons un de plus pour le même soir"
+    },
+    {
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "field",
+              "path": "action",
+              "notEquals": "end_call"
+            },
+            {
+              "kind": "field",
+              "path": "understanding",
+              "equals": "doubtful"
+            }
+          ],
+          "minRate": 0.9
+        }
+      ],
+      "id": "conge-phrase-longue-sans-sens",
+      "source": "témoin inventé : une longue phrase sans sens après l'au revoir ; le moteur refuse tout congé que le modèle dit ne pas comprendre, la protection repose donc sur la déclaration de doute",
+      "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup"
+    },
+    {
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.9
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.9
+        }
+      ],
+      "id": "conge-phrase-longue-relance",
+      "source": "second passage après le refus d'un congé sur une longue phrase sans sens : le schéma n'autorise que « none », le modèle doit redemander",
+      "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup",
+      "actionResult": "Action end_call non exécutée (doubtful_understanding). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.",
+      "actions": ["none"]
+    },
+    {
       "id": "nouvelle-demande-apres-resa",
       "behavior": "prise de congé (témoin)",
       "source": "témoin : une nouvelle demande ne termine pas l'appel",
