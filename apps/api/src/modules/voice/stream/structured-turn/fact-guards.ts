@@ -240,6 +240,83 @@ export function parseStreamedCustomerName(streamed: string): string | null {
   }
 }
 
+/** Distance d'édition (insertion, suppression, substitution) entre deux courtes suites de lettres. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= a.length; row++) {
+    const current = [row];
+    for (let column = 1; column <= b.length; column++) {
+      current[column] = Math.min(
+        previous[column] + 1,
+        current[column - 1] + 1,
+        previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+/**
+ * Lettres d'une phrase faite UNIQUEMENT de lettres épelées (jetons d'une lettre, un chiffre suivi d'une
+ * lettre doublant cette lettre). Vide dès qu'un mot s'en mêle : « non e t » et « et » ne sont pas épelés.
+ */
+function onlySpelledLetters(transcript: string): string {
+  const tokens = transcript
+    .toLowerCase()
+    .split(/[\s,.;:!?-]+/u)
+    .filter(Boolean);
+  let letters = '';
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const next = tokens[index + 1];
+    if (/^\p{L}$/u.test(token)) {
+      letters += token;
+    } else if (/^[2-9]$/.test(token) && next && /^\p{L}$/u.test(next)) {
+      letters += next.repeat(Number(token));
+      index++;
+    } else {
+      return '';
+    }
+  }
+  return stripToLetters(letters);
+}
+
+/**
+ * Après la relecture d'un nom, l'appelant ne donne que quelques lettres : celles qui manquaient, ou la fin du
+ * nom qu'il reprend (« HOUT » relu, « e t » : le E avait été perdu). Où ces lettres tombent est un alignement de
+ * chaînes, pas une question de sens : on cherche à partir de quelle lettre du nom relu elles le remplacent, au
+ * plus petit nombre de différences ; à égalité, on garde le plus possible du nom relu. Suivre une lettre
+ * tout au bout de la relecture est le cas particulier « elles s'ajoutent ». Autant de lettres que le nom
+ * relu, ou plus : c'est une nouvelle épellation complète. Aucun mot connu ; la relecture de
+ * confirmation qui suit protège d'un mauvais alignement. Null quand la phrase n'est pas faite que de lettres.
+ */
+export function respelledNameTail(previousName: string, transcript: string): string | null {
+  const previous = stripToLetters(previousName);
+  const spoken = onlySpelledLetters(transcript);
+  if (previous.length < 2 || spoken.length < 1) return null;
+  // Au moins autant de lettres que le nom relu : une épellation complète, pas la reprise d'une fin.
+  if (spoken.length >= previous.length) return spoken;
+  let start = previous.length;
+  let distance = spoken.length;
+  for (let from = previous.length - 1; from >= 0; from--) {
+    const candidate = editDistance(previous.slice(from), spoken);
+    if (candidate < distance) {
+      start = from;
+      distance = candidate;
+    }
+  }
+  return previous.slice(0, start) + spoken;
+}
+
+/** Les lettres `letters` écrites comme le nom `like` : majuscules partout, ou initiale seule. */
+function styledLike(letters: string, like: string): string {
+  const original = like.trim();
+  return original === original.toLocaleUpperCase('fr-FR')
+    ? letters
+    : letters.charAt(0) + letters.slice(1).toLocaleLowerCase('fr-FR');
+}
+
 /**
  * Fait à donner au modèle quand le nom qu'il s'apprête à relire n'est pas celui que le garde-fou de
  * l'épellation retiendrait (`reconcileSpelledName`) : lettres épelées absentes, mot non épelé collé derrière.
@@ -251,13 +328,26 @@ export function spelledNameFact(
   proposedName: string,
   transcript: string,
   previousAwaiting: StructuredTurnOutput['awaiting'],
+  previousName?: string,
 ): string | null {
   const reconciled = reconcileSpelledName(
     { date: '', time: '', partySize: 0, customerName: proposedName },
     transcript,
     previousAwaiting,
+    previousName,
   ).customerName;
   if (stripToLetters(reconciled) === stripToLetters(proposedName)) return null;
+  if (previousAwaiting === 'customerNameConfirmation' && previousName?.trim()) {
+    const tail = respelledNameTail(previousName, transcript);
+    if (tail !== null && stripToLetters(reconciled) === tail) {
+      return (
+        `Les lettres que l'appelant vient de donner reprennent la fin du nom que tu viens de relire (« ${previousName.trim()} ») ; ` +
+        `le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne les place pas bien. ` +
+        `Aligné sur ta relecture, le nom est : customerName = « ${reconciled} ». ` +
+        `Relis uniquement ce nom, lettre par lettre, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+      );
+    }
+  }
   return (
     `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne correspond pas aux lettres que l'appelant vient d'épeler. ` +
     `Les lettres épelées font foi : customerName = « ${reconciled} ». ` +
@@ -277,8 +367,14 @@ export function reconcileSpelledName(
   draft: StructuredTurnDraft,
   transcript: string,
   previousAwaiting: StructuredTurnOutput['awaiting'],
+  /** Nom du brouillon avant ce tour : celui que l'agent vient de relire. */
+  previousName?: string,
 ): StructuredTurnDraft {
   if (!SPELLING_AWAITING.has(previousAwaiting)) return draft;
+  if (previousAwaiting === 'customerNameConfirmation' && previousName?.trim()) {
+    const tail = respelledNameTail(previousName, transcript);
+    if (tail !== null) return { ...draft, customerName: styledLike(tail, previousName) };
+  }
   const spelled = spelledLettersOf(transcript);
   if (spelled.length >= 3) {
     const trimmed = dropUnspelledTail(draft.customerName, spelled);

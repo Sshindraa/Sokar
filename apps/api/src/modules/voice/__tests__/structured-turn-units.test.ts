@@ -430,3 +430,61 @@ describe('reconcileSpelledName', () => {
     expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });
 });
+
+describe('reprise de la fin du nom après la relecture (épellation partielle)', () => {
+  const draft = (customerName: string) => ({ date: '', time: '', partySize: 0, customerName });
+  const merged = (previous: string, said: string, proposed = previous) =>
+    reconcileSpelledName(draft(proposed), said, 'customerNameConfirmation', previous).customerName;
+
+  // Quelques lettres après la relecture : l'alignement est une opération de chaîne (distance d'édition),
+  // pas de sens ; la relecture de confirmation qui suit protège d'une erreur d'alignement.
+  it.each([
+    ['HOUT', 'e t', 'HOUET'],
+    ['HOUT', 'u e t', 'HOUET'],
+    ['BENANI', 'n n a n i', 'BENNANI'],
+    ['AKKI', 'f', 'AKKIF'],
+    ['AKKI', 'i f', 'AKKIF'],
+    ['DUPON', 'n t', 'DUPONT'],
+  ])('« %s » relu, l’appelant dit « %s » : le nom devient %s', (previous, said, expected) => {
+    // Le modèle recolle à la suite (ou ne change rien) : le garde-fou remet l'alignement.
+    expect(merged(previous, said, previous + said.replace(/ /g, ''))).toBe(expected);
+    expect(merged(previous, said)).toBe(expected);
+  });
+
+  it('ne change rien quand les lettres répètent la fin déjà relue', () => {
+    expect(merged('HOUET', 'e t', 'HOUETET')).toBe('HOUET');
+    expect(merged('AKKIF', 'f', 'AKKIFF')).toBe('AKKIF');
+  });
+
+  it('remplace le nom quand l’appelant reprend toute l’épellation, ou donne un autre nom', () => {
+    expect(merged('HOUT', 'h o u e t')).toBe('HOUET');
+    expect(merged('HOUT', 'm a r t i n')).toBe('MARTIN');
+  });
+
+  it('garde la casse du nom relu', () => {
+    expect(merged('Hout', 'e t', 'Houtet')).toBe('Houet');
+    expect(merged('HOUT', 'e t', 'HOUTET')).toBe('HOUET');
+  });
+
+  it('ne s’applique que sur des lettres seules, juste après la relecture d’un nom', () => {
+    // Un mot avec les lettres (« non e t ») : la phrase reste au modèle.
+    expect(merged('HOUT', 'non e t', 'HOUTET')).toBe('HOUTET');
+    // « et » est un mot, pas deux lettres épelées.
+    expect(merged('HOUT', 'et', 'HOUTET')).toBe('HOUTET');
+    // Pas après la relecture : on collecte encore le nom.
+    expect(reconcileSpelledName(draft('HOUTET'), 'e t', 'customerName', 'HOUT').customerName).toBe(
+      'HOUTET',
+    );
+    // Sans nom relu connu.
+    expect(
+      reconcileSpelledName(draft('HOUTET'), 'e t', 'customerNameConfirmation').customerName,
+    ).toBe('HOUTET');
+  });
+
+  it('donne au modèle le fait à relire quand son nom n’est pas celui de l’alignement', () => {
+    const fact = spelledNameFact('HOUTE', 'e t', 'customerNameConfirmation', 'HOUT');
+    expect(fact).toContain('HOUET');
+    expect(fact).toContain('HOUTE');
+    expect(spelledNameFact('HOUET', 'e t', 'customerNameConfirmation', 'HOUT')).toBeNull();
+  });
+});

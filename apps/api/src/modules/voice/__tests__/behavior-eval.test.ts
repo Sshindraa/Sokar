@@ -28,6 +28,21 @@ const baseCase = (checks: BehaviorCase['checks']): BehaviorCase => ({
 
 const say = (text: string, extra: Record<string, unknown> = {}) => ({ say: text, ...extra });
 
+describe('scoreCase : garde-fou de l’épellation après la relecture', () => {
+  it('passe le nom relu au garde-fou, comme le moteur : brut faux, rattrapé après garde-fou', () => {
+    const testCase: BehaviorCase = {
+      ...baseCase([{ kind: 'draft', field: 'customerName', equals: 'HOUET', minRate: 0.85 }]),
+      transcript: 'e t',
+      draft: { customerName: 'HOUT' },
+      awaiting: 'customerNameConfirmation',
+    };
+    const samples = [{ say: 'ok', draft: { customerName: 'HOUTET' } }];
+    const [check] = scoreCase(testCase, samples).checks;
+    expect(check.rate).toBe(0);
+    expect(check.guardedRate).toBe(1);
+  });
+});
+
 describe('scoreCase', () => {
   it('mesure la part des tirages qui tiennent un champ, en ignorant les réponses invalides', () => {
     const result = scoreCase(
