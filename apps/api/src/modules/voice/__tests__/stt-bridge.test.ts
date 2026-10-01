@@ -1678,3 +1678,105 @@ describe('texte validé en double d’un tour déjà traité', () => {
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
 });
+
+describe('collecte d’un nom : la pause d’épellation suit la voix de l’appelant', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Trame PCMU de 40 ms : niveau nul, ou signal carré d'amplitude donnée. */
+  function frame(amplitude: number): string {
+    const pcm = Buffer.alloc(320);
+    for (let index = 0; index < 160; index++)
+      pcm.writeInt16LE(index % 2 ? amplitude : -amplitude, index * 2);
+    return encodeTelnyxFromPcm16('PCMU', pcm).toString('base64');
+  }
+  /** L'appelant parle (ou se tait) pendant `ms`, trame par trame, l'horloge avançant avec l'audio. */
+  async function caller(session: CallSession, ms: number, amplitude: number): Promise<void> {
+    for (let elapsed = 0; elapsed < ms; elapsed += 40) {
+      sendAudioToStt(session, frame(amplitude));
+      await vi.advanceTimersByTimeAsync(40);
+    }
+  }
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls.map(([event]) => event).filter((event) => event.type === 'UtteranceEnd');
+  function collectingName(): { session: CallSession; onEvent: ReturnType<typeof vi.fn> } {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    session.conversation.nameCollection.state = 'collecting';
+    return { session, onEvent };
+  }
+  const commit = (session: CallSession, text: string) =>
+    handleSttMessage(session, { message_type: 'committed_transcript_with_timestamps', text });
+
+  it('retient le segment tant que l’appelant parle encore, puis le rend quand il se tait', async () => {
+    const { session, onEvent } = collectingName();
+    await caller(session, 400, 3_000);
+    commit(session, 'au nom de wet h');
+
+    await caller(session, 1_200, 3_000);
+    expect(ends(onEvent)).toHaveLength(0);
+
+    await caller(session, 1_200, 0);
+    expect(ends(onEvent)).toHaveLength(1);
+    expect(ends(onEvent)[0].transcript).toBe('au nom de wet h');
+  });
+
+  it('recolle le segment suivant d’une épellation coupée en deux : un seul tour', async () => {
+    const { session, onEvent } = collectingName();
+    await caller(session, 400, 3_000);
+    commit(session, 'au nom de wet h');
+
+    await caller(session, 800, 3_000);
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'o u e t' });
+    await caller(session, 400, 3_000);
+    expect(ends(onEvent)).toHaveLength(0);
+    commit(session, 'o u e t');
+    await caller(session, 1_500, 0);
+
+    expect(ends(onEvent)).toHaveLength(1);
+    expect(ends(onEvent)[0].transcript).toBe('au nom de wet h o u e t');
+  });
+
+  it('ne fusionne pas deux lettres doublées de part et d’autre du découpage', async () => {
+    const { session, onEvent } = collectingName();
+    await caller(session, 400, 3_000);
+    commit(session, 'b a l');
+
+    await caller(session, 400, 3_000);
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'l e' });
+    commit(session, 'l e');
+    await caller(session, 1_500, 0);
+
+    expect(ends(onEvent)[0].transcript).toBe('b a l l e');
+  });
+
+  it('ne retient jamais plus de 3 s, même si le bruit ressemble à de la voix', async () => {
+    const { session, onEvent } = collectingName();
+    await caller(session, 400, 3_000);
+    commit(session, 'a k');
+
+    await caller(session, 3_400, 3_000);
+
+    expect(ends(onEvent)).toHaveLength(1);
+  });
+
+  it('garde la courte grâce habituelle quand l’appelant se tait déjà', async () => {
+    const { session, onEvent } = collectingName();
+    await caller(session, 400, 3_000);
+    await caller(session, 800, 0);
+    commit(session, 'a k');
+
+    await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + STT_SPELLING_EOT_GRACE_MS);
+
+    expect(ends(onEvent)).toHaveLength(1);
+  });
+});
