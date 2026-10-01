@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, formatOpeningHours } from '../prompts';
+import { agentVoiceGender, buildSystemPrompt, formatOpeningHours } from '../prompts';
 import {
   buildStructuredTurnMessages,
   describeCalendar,
@@ -426,5 +426,40 @@ describe('buildSystemPrompt : base commune et section propre au mode à outils',
     expect(system.content).toContain(
       'Tu ne peux ni annuler une réservation, ni signaler un retard, ni vendre une carte cadeau',
     );
+  });
+});
+
+describe('genre de la voix', () => {
+  const ctx = { name: 'Chez Michel', openingHours: {} };
+  const now = new Date('2026-10-01T12:00:00Z');
+
+  it('dit au modèle le genre de sa voix, sans lui imposer de mots, quand il est connu', () => {
+    const masculine = buildSystemPrompt({ ...ctx, voiceGender: 'masculine' }, now);
+    expect(masculine).toContain('Ta voix est masculine');
+    expect(masculine).toContain('s’accordent à ce genre'.replace('’', "'"));
+    expect(buildSystemPrompt({ ...ctx, voiceGender: 'feminine' }, now)).toContain(
+      'Ta voix est féminine',
+    );
+  });
+
+  it('ne dit rien du genre quand il est inconnu : le prompt reste celui d’avant', () => {
+    expect(buildSystemPrompt(ctx, now)).not.toContain('Ta voix est');
+    expect(buildSystemPrompt({ ...ctx, structuredTurn: true }, now)).not.toContain('Ta voix est');
+  });
+
+  it('vaut aussi pour le tour structuré (base commune)', () => {
+    expect(
+      buildSystemPrompt({ ...ctx, structuredTurn: true, voiceGender: 'masculine' }, now),
+    ).toContain('Ta voix est masculine');
+  });
+
+  it('vient du réglage de la voix par défaut, et jamais d’une voix propre au restaurant (genre inconnu)', () => {
+    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'masculine' })).toBe('masculine');
+    expect(agentVoiceGender({}, { CARTESIA_VOICE_GENDER: 'Feminine ' })).toBe('feminine');
+    expect(
+      agentVoiceGender({ voiceIdCa: 'voix-du-restaurant' }, { CARTESIA_VOICE_GENDER: 'masculine' }),
+    ).toBeUndefined();
+    expect(agentVoiceGender(null, {})).toBeUndefined();
+    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'autre' })).toBeUndefined();
   });
 });

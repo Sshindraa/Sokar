@@ -448,12 +448,17 @@ describe('tour structuré (canary)', () => {
     const hungUp = async (
       transcript: string,
       first: StructuredTurnOutput,
-      options: { reservationCreated?: boolean; second?: StructuredTurnOutput } = {},
+      options: {
+        reservationCreated?: boolean;
+        lastAwaiting?: StructuredTurnOutput['awaiting'];
+        second?: StructuredTurnOutput;
+      } = {},
     ) => {
       vi.useFakeTimers();
       const fx = fixture();
       const state = createStructuredTurnState();
       state.reservationCreated = options.reservationCreated ?? true;
+      state.lastAwaiting = options.lastAwaiting ?? 'none';
       fx.session.structuredTurn = state;
       fx.outputs.push(first);
       if (options.second) fx.outputs.push(options.second);
@@ -521,6 +526,19 @@ describe('tour structuré (canary)', () => {
         },
       );
       expect(mgr.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('après « Autre chose ? », un court énoncé douteux ne ferme rien : c’est peut-être une vraie question', async () => {
+      const { mgr } = await hungUp(
+        'ses ou le parking',
+        goodbye({ understanding: 'doubtful', interpretation: 'unclear' }),
+        {
+          lastAwaiting: 'open',
+          second: turn({ awaiting: 'open', say: 'Pardon, vous demandiez quoi ?' }),
+        },
+      );
+      expect(mgr.cleanup).not.toHaveBeenCalled();
+      expect(spoken().join(' ')).toBe('Pardon, vous demandiez quoi ?');
     });
 
     it('raccroche sur un long au revoir que le modèle a bien compris', async () => {

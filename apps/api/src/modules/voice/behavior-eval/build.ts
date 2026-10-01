@@ -66,6 +66,7 @@ export function buildRequest(
             timezone: 'Europe/Paris',
             // Le banc mesure le tour structuré : même consigne de base qu'en appel.
             structuredTurn: true,
+            ...(profile.voiceGender ? { voiceGender: profile.voiceGender } : {}),
           },
           new Date(`${file.today}T12:00:00Z`),
         )

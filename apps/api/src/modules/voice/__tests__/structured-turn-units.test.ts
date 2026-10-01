@@ -209,6 +209,31 @@ describe('authorizeStructuredAction : congé après la réservation', () => {
     expect(decide(created(), { understanding: 'doubtful' }, 6)).toEqual({ allowed: true });
   });
 
+  it('un mot mal transcrit donne une confiance faible : le congé court passe quand même', () => {
+    // Mesuré à travers le moteur : sans cela « dix nous » ne raccrochait jamais (0 % sur 12 tirages).
+    expect(decide(created(), { understanding: 'doubtful', confidence: 'low' }, 2)).toEqual({
+      allowed: true,
+    });
+    expect(decide(created(), { confidence: 'low', interpretation: 'unclear' }, 2)).toEqual({
+      allowed: true,
+    });
+  });
+
+  it('la confiance faible refuse toujours un congé long, ou après une question, ou sans réservation', () => {
+    expect(decide(created(), { confidence: 'low' }, 9)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+    expect(decide({ ...created(), lastAwaiting: 'open' }, { confidence: 'low' }, 2)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+    expect(decide(createStructuredTurnState(), { confidence: 'low' }, 2)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+  });
+
   it('un énoncé long jugé douteux n’est pas un au revoir : refusé', () => {
     expect(decide(created(), { understanding: 'doubtful' }, 7)).toEqual({
       allowed: false,
@@ -218,6 +243,20 @@ describe('authorizeStructuredAction : congé après la réservation', () => {
     expect(decide(created(), { understanding: 'doubtful' })).toEqual({
       allowed: false,
       reason: 'doubtful_understanding',
+    });
+  });
+
+  it('après une question ouverte de l’agent (« Autre chose ? »), un court énoncé douteux est peut-être une vraie question : refusé', () => {
+    for (const lastAwaiting of ['open', 'date', 'confirmation', 'customerName'] as const) {
+      const state = { ...created(), lastAwaiting };
+      expect(decide(state, { understanding: 'doubtful' }, 2)).toEqual({
+        allowed: false,
+        reason: 'doubtful_understanding',
+      });
+    }
+    // Un congé que le modèle a compris reste autorisé après une question ouverte.
+    expect(decide({ ...created(), lastAwaiting: 'open' }, { understanding: 'clear' }, 2)).toEqual({
+      allowed: true,
     });
   });
 

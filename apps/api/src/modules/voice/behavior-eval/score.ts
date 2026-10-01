@@ -1,4 +1,9 @@
-import { reconcileSpelledName } from '../stream/structured-turn/fact-guards';
+import {
+  authorizeStructuredAction,
+  createStructuredTurnState,
+  reconcileSpelledName,
+  wordCount,
+} from '../stream/structured-turn/fact-guards';
 import type { StructuredTurnDraft } from '../stream/structured-turn/schema';
 import type {
   BehaviorCase,
@@ -132,6 +137,20 @@ export function holds(
       return new RegExp(predicate.pattern, 'iu').test(sayOf(output)) === predicate.expect;
     case 'noRepeatOf':
       return !normalize(lastSentence(sayOf(output))).includes(normalize(predicate.text));
+    case 'hangsUp': {
+      const state = {
+        ...createStructuredTurnState(),
+        reservationCreated: testCase.reservationCreated === true,
+        lastAwaiting: (testCase.awaiting ?? 'none') as never,
+      };
+      const decision = authorizeStructuredAction(
+        state,
+        output as never,
+        inputDraft(testCase) as never,
+        { maxPartySize: 99, transcriptWords: wordCount(testCase.transcript) },
+      );
+      return (output.action === 'end_call' && decision.allowed) === predicate.expect;
+    }
   }
 }
 
@@ -146,6 +165,10 @@ function describe(predicate: SamplePredicate): string {
     }
     case 'fieldIn':
       return `${predicate.path} ∈ ${JSON.stringify(predicate.values)}`;
+    case 'hangsUp':
+      return predicate.expect
+        ? 'raccroche (à travers le moteur)'
+        : 'ne raccroche pas (à travers le moteur)';
     case 'draft':
       return `draft.${predicate.field} = ${JSON.stringify(predicate.equals)}`;
     case 'draftUnchanged':

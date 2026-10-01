@@ -30,7 +30,13 @@ export type SamplePredicate =
   /** La phrase dite contient (expect=true) ou évite (expect=false) un motif. */
   | { kind: 'say'; pattern: string; expect: boolean }
   /** La dernière phrase dite ne recopie pas la question donnée. */
-  | { kind: 'noRepeatOf'; text: string };
+  | { kind: 'noRepeatOf'; text: string }
+  /**
+   * L'appel raccroche-t-il ? Mesuré À TRAVERS le moteur : la réponse du modèle passe par la décision
+   * d'autorisation (`authorizeStructuredAction`, avec l'état du cas) ; `end_call` seul ne suffit pas, le
+   * moteur peut le refuser (doute, énoncé long, question en attente).
+   */
+  | { kind: 'hangsUp'; expect: boolean };
 
 export type BehaviorCheck =
   /** Part des tirages où le contrôle est tenu, au moins `minRate`. */
@@ -60,6 +66,8 @@ export type PerturbationKind = 'ablation' | 'substitution' | 'noise';
 /** Restaurant du jeu : nom et horaires réels d'une fiche, pour ne pas tout mesurer sur un seul profil. */
 export interface BehaviorProfile {
   name: string;
+  /** Genre de la voix de production, quand le profil le fixe (voir `agentVoiceGender`). */
+  voiceGender?: 'masculine' | 'feminine';
   openingHours: Record<string, { open: string; close: string } | null>;
 }
 

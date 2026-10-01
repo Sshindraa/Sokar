@@ -147,7 +147,7 @@ const RECOVERY_INSTRUCTIONS: Record<StructuredRecoveryKind, string> = {
   silence:
     "RELANCE : l'appelant n'a rien dit depuis ta dernière question ; il n'y a aucune phrase à interpréter. Assure-toi brièvement qu'il est toujours là, puis repose ta dernière question.",
   opening:
-    "RELANCE : l'appelant n'a encore rien dit depuis ton accueil ; il n'y a aucune phrase à interpréter. Invite-le, en une courte phrase, à dire ce dont il a besoin.",
+    "RELANCE : l'appelant n'a encore rien dit depuis ton accueil ; il n'y a aucune phrase à interpréter. Tu ne sais pas pourquoi il se tait : ne dis jamais que tu l'entends ou que tu l'entends mal (pas de « je vous entends »), et ne parle ni de la ligne ni de l'audio. Invite-le simplement, en une courte phrase, à dire ce dont il a besoin.",
 };
 const RECOVERY_CONSTRAINTS =
   "turnComplete=true, action none, draft inchangé (tu n'as rien appris), awaiting = ce que ta phrase attend. « say » n'est JAMAIS vide.";
