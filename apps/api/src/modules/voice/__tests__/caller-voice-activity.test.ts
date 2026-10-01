@@ -4,6 +4,7 @@ import {
   callerSilenceMs,
   callerSpokeClearlySince,
   chunkRms,
+  noCallerVoiceSince,
   trackCallerVoice,
 } from '../stream/caller-voice-activity';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
@@ -87,5 +88,38 @@ describe('parole claire (preuve audio contre l’écho)', () => {
     trackCallerVoice(s, frame(0), 5_300);
     for (let index = 0; index < 10; index++) trackCallerVoice(s, frame(3_000), 6_000 + index * 10);
     expect(callerSpokeClearlySince(s, 6_000)).toBe(false);
+  });
+});
+
+describe('absence de voix pour une transcription (noCallerVoiceSince)', () => {
+  it('ne juge pas tant que l’audio n’est pas suivi : seul un silence constaté disqualifie', () => {
+    expect(noCallerVoiceSince(session(), 0)).toBe(false);
+  });
+
+  it('ne juge pas sur quelques millisecondes d’audio : ce n’est pas un silence constaté', () => {
+    const s = session();
+    for (let index = 0; index < 5; index++) trackCallerVoice(s, frame(0), 1_000 + index * 10);
+    expect(noCallerVoiceSince(s, 0)).toBe(false);
+  });
+
+  it('constate l’absence de voix quand l’audio suivi n’en contient pas', () => {
+    const s = session();
+    for (let index = 0; index < 50; index++) trackCallerVoice(s, frame(40), 1_000 + index * 20);
+    expect(noCallerVoiceSince(s, 0)).toBe(true);
+  });
+
+  it('constate la voix quand elle date de l’énoncé en cours', () => {
+    const s = session();
+    trackCallerVoice(s, frame(3_000), 5_000);
+    trackCallerVoice(s, frame(3_000), 5_020);
+    expect(noCallerVoiceSince(s, 4_000)).toBe(false);
+  });
+
+  it('ne compte pas une voix antérieure à l’énoncé en cours', () => {
+    const s = session();
+    trackCallerVoice(s, frame(3_000), 1_000);
+    trackCallerVoice(s, frame(3_000), 1_020);
+    for (let index = 0; index < 60; index++) trackCallerVoice(s, frame(0), 1_040 + index * 10);
+    expect(noCallerVoiceSince(s, 5_000)).toBe(true);
   });
 });

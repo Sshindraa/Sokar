@@ -34,6 +34,7 @@ import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
+import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
 import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
 
 vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
@@ -1476,5 +1477,114 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'semantic_hold' }),
     );
+  });
+});
+
+describe('transcription sans voix dans l’audio entrant', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** 20 ms d'audio PCMU : niveau nul, ou signal carré d'amplitude donnée. */
+  function frame(amplitude: number): string {
+    const pcm = Buffer.alloc(160 * 2);
+    for (let index = 0; index < 160; index++)
+      pcm.writeInt16LE(index % 2 ? amplitude : -amplitude, index * 2);
+    return encodeTelnyxFromPcm16('PCMU', pcm).toString('base64');
+  }
+  function hear(session: CallSession, amplitude: number, frames: number): void {
+    for (let index = 0; index < frames; index++) sendAudioToStt(session, frame(amplitude));
+  }
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls.map(([event]) => event).filter((event) => event.type === 'UtteranceEnd');
+
+  it.each(['true', 'false'])(
+    'ne laisse pas un texte sans voix interrompre l’agent (routage V2 : %s)',
+    (v2) => {
+      vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', v2);
+      const session = makeSession();
+      session.state = 'SPEAKING';
+      const handleBargeIn = vi
+        .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+        .mockImplementation(() => undefined);
+      hear(session, 0, 50);
+
+      handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+      expect(handleBargeIn).not.toHaveBeenCalled();
+      expect(session.turnTranscript).toBe('');
+    },
+  );
+
+  it.each(['true', 'false'])(
+    'laisse interrompre quand l’audio montre une voix (routage V2 : %s)',
+    (v2) => {
+      vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', v2);
+      const session = makeSession();
+      session.state = 'SPEAKING';
+      const handleBargeIn = vi
+        .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+        .mockImplementation(() => undefined);
+      hear(session, 3_000, 10);
+
+      handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+      expect(handleBargeIn).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['true', 'false'])(
+    'n’ouvre aucun tour pour un texte validé sans voix (routage V2 : %s)',
+    async (v2) => {
+      vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', v2);
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      hear(session, 0, 50);
+
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'bonjour',
+      });
+      await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+
+      expect(ends(onEvent)).toHaveLength(0);
+    },
+  );
+
+  it('ouvre le tour quand l’audio montre une voix', async () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    hear(session, 3_000, 10);
+
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'bonjour',
+    });
+    await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+
+    expect(ends(onEvent)).toHaveLength(1);
+  });
+
+  it('garde l’ancien comportement quand la garde est coupée', () => {
+    vi.stubEnv('VOICE_REQUIRE_CALLER_VOICE', 'false');
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    hear(session, 0, 50);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
   });
 });

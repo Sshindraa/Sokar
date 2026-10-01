@@ -29,8 +29,13 @@ const FLOOR_CEILING = 800;
 const CLEAR_VOICE_RMS = 800;
 const CLEAR_VOICE_MS = 160;
 
+/** Moins d'audio suivi que cela : trop peu pour constater un silence. */
+const MIN_JUDGED_AUDIO_MS = 500;
+
 export interface CallerVoiceActivity {
   noiseFloor: number;
+  /** Durée d'audio de l'appelant suivie depuis le début de l'appel, en ms. */
+  trackedMs?: number;
   voiceRun: number;
   lastVoiceAt?: number;
   /** Durée continue de parole claire en cours, en ms. */
@@ -60,6 +65,7 @@ export function trackCallerVoice(
   const state = (session.callerVoice ??= { noiseFloor: 0, voiceRun: 0 });
   const rms = chunkRms(decodeTelnyxToPcm16(session.codec, telnyxAudio));
   const chunkMs = telnyxAudio.length / telnyxBytesPerMs(session.codec);
+  state.trackedMs = (state.trackedMs ?? 0) + chunkMs;
   if (rms > CLEAR_VOICE_RMS) {
     state.clearRunMs = (state.clearRunMs ?? 0) + chunkMs;
     if (state.clearRunMs >= CLEAR_VOICE_MS) state.lastClearVoiceAt = now;
@@ -93,4 +99,16 @@ export function callerSilenceMs(session: CallSession, now = Date.now()): number 
 export function callerSpokeClearlySince(session: CallSession, sinceMs: number): boolean {
   const lastClearVoiceAt = session.callerVoice?.lastClearVoiceAt;
   return lastClearVoiceAt !== undefined && lastClearVoiceAt >= sinceMs;
+}
+
+/**
+ * L'audio entrant suivi ne contient aucune voix depuis cet instant. Sert à écarter une transcription
+ * que rien n'a produit (appel 30172d22 : piste appelant muette, et pourtant « bon » puis « bonjour »
+ * coupaient l'agent à chaque réponse). Sans assez d'audio suivi on ne juge pas : seul un silence
+ * constaté disqualifie, jamais l'absence d'information.
+ */
+export function noCallerVoiceSince(session: CallSession, sinceMs: number): boolean {
+  const state = session.callerVoice;
+  if (!state || (state.trackedMs ?? 0) < MIN_JUDGED_AUDIO_MS) return false;
+  return state.lastVoiceAt === undefined || state.lastVoiceAt < sinceMs;
 }

@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { callerSilenceMs, trackCallerVoice } from './caller-voice-activity';
+import { callerSilenceMs, noCallerVoiceSince, trackCallerVoice } from './caller-voice-activity';
 import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
@@ -23,6 +23,7 @@ import {
   voiceSilenceGuardTotal,
   voiceSttProviderAudioMessagesTotal,
   voiceSttProviderChunkBytes,
+  voiceNoCallerVoiceTranscriptTotal,
 } from '../../../shared/observability/metrics';
 import {
   getSttChunkMs,
@@ -1309,6 +1310,46 @@ function dispatchTimestampedCommittedTranscript(
   dispatchCommittedTranscript(session, transcript, words, languageCode, timing);
 }
 
+/** La reconnaissance livre ses mots après le son qui les a produits : marge avant le début d'énoncé. */
+const VOICE_EVIDENCE_MARGIN_MS = 1_500;
+/** Sans début d'énoncé connu (texte validé sans partielle), on cherche de la voix sur cette durée. */
+const VOICE_EVIDENCE_LOOKBACK_MS = 4_000;
+
+/** Garde « pas de voix, pas de tour » : actif par défaut, `VOICE_REQUIRE_CALLER_VOICE=false` le coupe. */
+export function callerVoiceGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.VOICE_REQUIRE_CALLER_VOICE?.trim().toLowerCase();
+  return value !== 'false' && value !== '0';
+}
+
+/**
+ * Une transcription que l'audio entrant ne confirme pas (aucune voix depuis le début de l'énoncé) est un
+ * fantôme de la reconnaissance : bruit, ou écho de l'agent. Elle n'interrompt rien et n'ouvre aucun tour.
+ */
+function isTranscriptWithoutCallerVoice(
+  session: CallSession,
+  stage: 'partial' | 'committed',
+  now = Date.now(),
+): boolean {
+  if (!callerVoiceGateEnabled()) return false;
+  const turnStartedAt = session.sttTurnStartedAt ?? session.sttLastSpeechStartedAt;
+  const since =
+    turnStartedAt !== undefined
+      ? turnStartedAt - VOICE_EVIDENCE_MARGIN_MS
+      : now - VOICE_EVIDENCE_LOOKBACK_MS;
+  if (!noCallerVoiceSince(session, since)) return false;
+  voiceNoCallerVoiceTranscriptTotal.inc({ stage });
+  logger.info(
+    {
+      callId: session.callControlId,
+      stage,
+      agentSpeaking: session.state === 'SPEAKING',
+      callerSilenceMs: Math.round(Math.min(callerSilenceMs(session, now), 99_999)),
+    },
+    '[stt] Transcript ignored: no caller voice in the incoming audio',
+  );
+  return true;
+}
+
 function handleBargeInFromTranscript(
   session: CallSession,
   mgr: CallSessionManager,
@@ -1344,6 +1385,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   let cleanTranscript = transcript.trim();
   let allowBargeIn = true;
   if (!cleanTranscript) return;
+  if (isTranscriptWithoutCallerVoice(session, 'partial')) return;
 
   if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
     const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
@@ -1431,6 +1473,10 @@ function dispatchCommittedTranscript(
   let allowBargeIn = true;
   session.turnTranscript = '';
   if (!cleanTranscript) return;
+  if (isTranscriptWithoutCallerVoice(session, 'committed')) {
+    resetSttTurnDiagnostics(session);
+    return;
+  }
 
   if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
     const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
