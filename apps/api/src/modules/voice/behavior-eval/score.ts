@@ -88,6 +88,8 @@ function outputDraft(
     complete,
     testCase.transcript,
     (testCase.awaiting ?? 'open') as never,
+    // Le moteur passe le nom du brouillon avant le tour : celui que l'agent vient de relire.
+    testCase.draft?.customerName,
   ) as unknown as Record<string, unknown>;
 }
 

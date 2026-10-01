@@ -434,6 +434,107 @@ describe('tour structuré (canary)', () => {
     });
   });
 
+  describe('quelques lettres après la relecture du nom (appel 6a70dff9)', () => {
+    const named = (customerName: string) => ({
+      date: TOMORROW,
+      time: '19:00',
+      partySize: 4,
+      customerName,
+    });
+    const secondPassContext = (mgr: CallSessionManager) =>
+      (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>
+      )[0].content;
+    /** L'agent vient de relire « H, O, U, T » (le E de « houet » avait été perdu). */
+    const afterReadBack = () => {
+      const fx = fixture();
+      const state = createStructuredTurnState();
+      state.draft = named('HOUT');
+      state.lastAwaiting = 'customerNameConfirmation';
+      fx.session.structuredTurn = state;
+      return fx;
+    };
+
+    it('se tait quand le modèle recolle à la suite, aligne les lettres et relit le bon nom', async () => {
+      const { session, mgr, outputs } = afterReadBack();
+      outputs.push(
+        turn({
+          draft: named('HOUTET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, T, E, T. C’est bien ça ?',
+        }),
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(secondPassContext(mgr)).toContain('customerName = « HOUET »');
+      expect(spoken().join(' ')).not.toContain('T, E, T');
+      expect(spoken().join(' ')).toContain('H, O, U, E, T');
+      expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
+    });
+
+    it('aligne aussi quand le modèle doute et ne change rien : le nom lu est le bon', async () => {
+      const { session, mgr, outputs } = afterReadBack();
+      outputs.push(
+        turn({
+          draft: named('HOUT'),
+          awaiting: 'customerNameConfirmation',
+          interpretation: 'unclear',
+          understanding: 'doubtful',
+          say: 'Pardon, pouvez-vous épeler le nom ?',
+        }),
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken().join(' ')).not.toContain('pouvez-vous épeler');
+      expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
+    });
+
+    it('ne se déclenche pas quand le modèle a déjà le bon nom', async () => {
+      const { session, mgr, outputs } = afterReadBack();
+      outputs.push(
+        turn({
+          draft: named('HOUET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+      expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
+    });
+
+    it('laisse le modèle quand la phrase n’est pas faite que de lettres', async () => {
+      const { session, mgr, outputs } = afterReadBack();
+      outputs.push(
+        turn({
+          draft: named('HOUTET'),
+          awaiting: 'customerNameConfirmation',
+          say: 'Donc H, O, U, T, E, T. C’est bien ça ?',
+        }),
+      );
+
+      await processTranscriptStreaming(session, 'non e t', mgr);
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('créneau exclu par les disponibilités lues (appel 1b3f85e9)', () => {
     const conflicting = { date: TOMORROW, time: '15:30', partySize: 5, customerName: '' };
     const day = (slots: string[]) => ({

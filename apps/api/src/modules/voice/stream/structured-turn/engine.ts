@@ -517,7 +517,12 @@ export async function runStructuredTurn(
         if (!slotConflict) {
           const streamedName = parseStreamedCustomerName(extractor.raw);
           const fact = streamedName
-            ? spelledNameFact(streamedName, transcript, state.lastAwaiting)
+            ? spelledNameFact(
+                streamedName,
+                transcript,
+                state.lastAwaiting,
+                state.draft.customerName,
+              )
             : null;
           if (fact) {
             slotConflict = true;
@@ -674,7 +679,12 @@ export async function runStructuredTurn(
       return;
     }
     const applied = applyProposedDraft(state.draft, first.output, { today });
-    state.draft = reconcileSpelledName(applied.draft, transcript, state.lastAwaiting);
+    state.draft = reconcileSpelledName(
+      applied.draft,
+      transcript,
+      state.lastAwaiting,
+      state.draft.customerName,
+    );
     // Créneaux lus d'avance et couvrant le brouillon : ce sont des faits vérifiés,
     // la réservation reste soumise aux mêmes garde-fous.
     const prefetched = prefetchedSlots(state);
@@ -801,7 +811,12 @@ export async function runStructuredTurn(
       const second = await runPass(actionResult);
       if (!isLive()) return;
       const reapplied = applyProposedDraft(state.draft, second.output, { today });
-      state.draft = reconcileSpelledName(reapplied.draft, transcript, state.lastAwaiting);
+      state.draft = reconcileSpelledName(
+        reapplied.draft,
+        transcript,
+        state.lastAwaiting,
+        state.draft.customerName,
+      );
       recordVoiceTurnEvent(session, 'structured_turn', {
         pass: 2,
         interpretation: second.output.interpretation,
