@@ -261,6 +261,13 @@ VOICE_FIRST_AUDIO_HOLD_CAP_MS="1200"
 VOICE_FAST_BARGE_IN_MS="80"
 VOICE_FAST_BARGE_IN_MIN_RMS="800"
 VOICE_FAST_BARGE_IN_CONFIRM_MS="500"
+# Pas de voix, pas de tour : une transcription (partielle ou validée) n'interrompt l'agent et n'ouvre un
+# tour que si l'audio entrant contient de la voix depuis le début de l'énoncé (détecteur RMS de
+# caller-voice-activity, marge 1,5 s pour le retard de la reconnaissance). Écarte les textes fantômes
+# (bruit, écho de l'agent : appel 30172d22, piste appelant muette, « bon » puis « bonjour » coupaient
+# l'agent à chaque réponse). Ne juge qu'après 500 ms d'audio suivi. "false" ou "0" rétablit l'ancien
+# comportement. Métrique : sokar_voice_no_caller_voice_transcript_total{stage=partial|committed}.
+VOICE_REQUIRE_CALLER_VOICE="true"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
 # le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
 # envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le

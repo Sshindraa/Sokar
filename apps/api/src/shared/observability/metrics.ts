@@ -827,6 +827,12 @@ export const voiceEchoSuppressedTotal = new Counter({
   labelNames: ['stage'] as const,
   registers: [getRegistry()],
 });
+export const voiceNoCallerVoiceTranscriptTotal = new Counter({
+  name: 'sokar_voice_no_caller_voice_transcript_total',
+  help: 'STT transcripts ignored because the incoming audio held no caller voice, by stage',
+  labelNames: ['stage'] as const,
+  registers: [getRegistry()],
+});
 
 export const voiceTurnPlanShadowByRestaurantTotal = new Counter({
   name: 'sokar_voice_turn_plan_shadow_by_restaurant_total',
@@ -957,6 +963,7 @@ export function __resetMetrics(): void {
   voiceFillerEventsTotal.reset();
   voiceLlmSpokenFallbackTotal.reset();
   voiceEchoSuppressedTotal.reset();
+  voiceNoCallerVoiceTranscriptTotal.reset();
   voiceTurnPlanShadowByRestaurantTotal.reset();
   voiceTransfersTotal.reset();
   voiceCallsTotal.reset();
