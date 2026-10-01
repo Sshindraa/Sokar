@@ -939,6 +939,7 @@ function dispatchUtteranceEnd(
     timing?.speechEndAt ??
     (session.sttAdapter?.id === 'deepgram' ? undefined : session.sttLastNonEmptyPartialAt);
   const turnDispatchedAt = Date.now();
+  if (speechEndAt !== undefined) session.sttConsumedSpeechEndAt = speechEndAt;
   const firstPartialAt =
     timing?.firstPartialAt ??
     (session.sttFirstPartialAt !== undefined
@@ -1363,6 +1364,15 @@ function dispatchTimestampedCommittedTranscript(
 const VOICE_EVIDENCE_MARGIN_MS = 1_500;
 /** Sans début d'énoncé connu (texte validé sans partielle), on cherche de la voix sur cette durée. */
 const VOICE_EVIDENCE_LOOKBACK_MS = 4_000;
+/**
+ * La voix d'un tour déjà envoyé à l'agent ne prouve pas le texte suivant. Appel 6a70dff9 : « pour
+ * quatre » traité, puis un « 4 » fantôme 1,3 s après la fin de la voix passait grâce à la marge
+ * ci-dessus et coupait la réponse. Il faut de la voix arrivée au-delà de la fin des mots du tour
+ * traité, à cette tolérance près (souffle, traîne de la dernière syllabe). Mesuré sur 12 appels
+ * enregistrés : la voix d'un vrai tour suivant dépasse cette fin d'au moins 348 ms (médiane 6 s),
+ * celle du « 4 » fantôme de −103 ms.
+ */
+const VOICE_CONSUMED_TOLERANCE_MS = 150;
 
 /** Garde « pas de voix, pas de tour » : actif par défaut, `VOICE_REQUIRE_CALLER_VOICE=false` le coupe. */
 export function callerVoiceGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -1381,10 +1391,16 @@ function isTranscriptWithoutCallerVoice(
 ): boolean {
   if (!callerVoiceGateEnabled()) return false;
   const turnStartedAt = session.sttTurnStartedAt ?? session.sttLastSpeechStartedAt;
-  const since =
+  const consumedUntil =
+    session.sttConsumedSpeechEndAt !== undefined
+      ? session.sttConsumedSpeechEndAt + VOICE_CONSUMED_TOLERANCE_MS
+      : Number.NEGATIVE_INFINITY;
+  const since = Math.max(
+    consumedUntil,
     turnStartedAt !== undefined
       ? turnStartedAt - VOICE_EVIDENCE_MARGIN_MS
-      : now - VOICE_EVIDENCE_LOOKBACK_MS;
+      : now - VOICE_EVIDENCE_LOOKBACK_MS,
+  );
   if (!noCallerVoiceSince(session, since)) return false;
   voiceNoCallerVoiceTranscriptTotal.inc({ stage });
   logger.info(
