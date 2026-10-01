@@ -39,6 +39,16 @@ export function recoveryByModelEnabled(env: NodeJS.ProcessEnv = process.env): bo
   return value !== 'false' && value !== '0';
 }
 
+/**
+ * Délai maximum d'attente de la phrase du modèle avant de dire la phrase codée (ms, 500 à 5000, défaut 2000).
+ * Le modèle répond en 0,3 à 0,5 s le plus souvent ; un pic de Cerebras monte à 3 s (le hedge à 700 ms et la
+ * bascule à 2,5 s de première réponse existent déjà, mais aucune borne ne couvrait la relance entière).
+ */
+export function recoveryMaxWaitMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_RECOVERY_MAX_WAIT_MS ?? 2_000);
+  return Number.isFinite(parsed) && parsed >= 500 && parsed <= 5_000 ? parsed : 2_000;
+}
+
 interface RecoveryState {
   count: number;
   /** Formulation en cours : l'appelant qui reprend la parole l'interrompt. */
@@ -122,30 +132,48 @@ async function speakRecovery(
   if (!question) return;
   const state = stateOf(session);
   // Le modèle formule la relance pendant que l'appelant peut encore parler ; sa phrase codée n'est plus
-  // que le dernier recours (modèle indisponible, réponse vide ou invalide).
+  // que le dernier recours (modèle indisponible, réponse vide ou invalide, délai maximum dépassé).
   let phrase: string | null = null;
+  let timedOut = false;
   if (recoveryByModelEnabled()) {
     const generation = ++state.generation;
     const controller = new AbortController();
     state.abort = controller;
+    // Trop long : la phrase codée, tout de suite, et la requête est abandonnée.
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, recoveryMaxWaitMs());
+    deadline.unref?.();
     try {
-      phrase = await generateRecoveryReply(
-        session,
-        mgr,
-        kind === 'silence' && !session.history.some((message) => message.role === 'user')
-          ? 'opening'
-          : kind,
-        controller.signal,
-      );
+      phrase = await Promise.race([
+        generateRecoveryReply(
+          session,
+          mgr,
+          kind === 'silence' && !session.history.some((message) => message.role === 'user')
+            ? 'opening'
+            : kind,
+          controller.signal,
+        ),
+        new Promise<null>((resolve) =>
+          controller.signal.addEventListener('abort', () => resolve(null), { once: true }),
+        ),
+      ]);
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.name : String(err), callId: session.callControlId },
         '[voice] No-input recovery by the model failed, fixed phrase',
       );
     }
+    clearTimeout(deadline);
     if (state.abort === controller) state.abort = undefined;
     // L'appelant a repris la parole, ou la ligne n'est plus libre : rien à dire, relance non consommée.
-    if (controller.signal.aborted || state.generation !== generation || !canRecover(session))
+    // (Un abandon pour délai dépassé n'est pas une reprise de parole : la phrase codée est dite.)
+    if (
+      (controller.signal.aborted && !timedOut) ||
+      state.generation !== generation ||
+      !canRecover(session)
+    )
       return;
   }
   const spoken = phrase ?? recoveryPhrase(kind, question);
@@ -155,7 +183,7 @@ async function speakRecovery(
       callId: session.callControlId,
       kind,
       recovery: state.count,
-      source: phrase ? 'model' : 'fixed',
+      source: phrase ? 'model' : timedOut ? 'fixed_timeout' : 'fixed',
     },
     '[voice] No-input recovery',
   );

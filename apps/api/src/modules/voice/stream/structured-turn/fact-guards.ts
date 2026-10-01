@@ -491,7 +491,8 @@ export type ActionDecision = { allowed: true } | { allowed: false; reason: strin
 /**
  * Au-delà de ce nombre de mots, ce que le modèle n'a pas compris n'est pas un au revoir. Un au revoir mal
  * transcrit est court (« dix nous » pour « bisous ») ; une longue phrase sans sens peut être une vraie demande.
- * Critère de longueur seulement, aucun mot connu.
+ * Critère de longueur seulement, aucun mot connu. RÉSERVE : le seuil repose sur UN seul appel réel (6a70dff9,
+ * deux mots) et sur des phrases inventées ; il n'a pas été étalonné sur des au revoir transcrits de travers.
  */
 export const FAREWELL_MAX_WORDS = 6;
 
@@ -508,9 +509,12 @@ export function authorizeStructuredAction(
 ): ActionDecision {
   // Une fois la réservation créée, rien n'est en jeu : un énoncé COURT que le modèle ne comprend pas est un au
   // revoir mal transcrit (appel 6a70dff9 : « Bisous » transcrit « dix-nous »). Un long reste un doute.
+  // Et seulement si la phrase précédente de l'agent n'attendait rien : après une question (« Autre chose ? »),
+  // un court énoncé mal compris est peut-être une vraie question, pas un au revoir.
   const shortFarewell =
     output.action === 'end_call' &&
     state.reservationCreated &&
+    state.lastAwaiting === 'none' &&
     context.transcriptWords !== undefined &&
     context.transcriptWords <= FAREWELL_MAX_WORDS;
   // Compréhension douteuse : aucune action, pas même une vérification de disponibilité sur une valeur devinée.
@@ -527,7 +531,8 @@ export function authorizeStructuredAction(
     return { allowed: false, reason: 'long_unclear_farewell' };
   }
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
-  if (sideEffect && output.confidence === 'low') {
+  // Un mot mal transcrit donne une confiance faible : le congé court (conditions ci-dessus) passe aussi ce garde.
+  if (sideEffect && output.confidence === 'low' && !shortFarewell) {
     return { allowed: false, reason: 'low_confidence' };
   }
   switch (output.action) {

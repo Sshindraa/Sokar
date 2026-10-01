@@ -4,7 +4,7 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
-import { buildSystemPrompt, type OpeningHours } from './prompts';
+import { buildSystemPrompt, type OpeningHours, agentVoiceGender } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import {
   isVoiceDeepgramKeytermsEnabled,
@@ -190,6 +190,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           customerGreeting,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
           structuredTurn: isVoiceStructuredTurnEnabled(ctx.id),
+          voiceGender: agentVoiceGender(ctx.personality),
         });
 
         // Créer un enregistrement Call minimal dès l'init

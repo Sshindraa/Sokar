@@ -14,6 +14,7 @@ import {
   lastAgentQuestion,
   MAX_RECOVERIES_PER_CALL,
   noInputTimeoutMs,
+  recoveryMaxWaitMs,
   OPENING_RECOVERY_QUESTION,
   recoveryQuestion,
   scheduleUnheardRecovery,
@@ -252,6 +253,46 @@ describe('no-input recovery', () => {
       release('Vous êtes toujours là ?');
       await vi.advanceTimersByTimeAsync(0);
       expect(speakTtsStreamed).not.toHaveBeenCalled();
+    });
+
+    it('dit la phrase codée sans attendre plus que le délai maximum, et abandonne la requête', async () => {
+      let seenSignal: AbortSignal | undefined;
+      vi.mocked(generateRecoveryReply).mockImplementation((_session, _mgr, _kind, signal) => {
+        seenSignal = signal;
+        return new Promise<string | null>(() => undefined);
+      });
+      const session = makeSession();
+      scheduleUnheardRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS + recoveryMaxWaitMs() - 1);
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(speakTtsStreamed).toHaveBeenCalledWith(
+        session,
+        "Pardon, je n'ai pas bien entendu. Vous serez combien ?",
+      );
+      expect(seenSignal?.aborted).toBe(true);
+    });
+
+    it('une phrase du modèle arrivée avant le délai maximum est dite', async () => {
+      vi.mocked(generateRecoveryReply).mockImplementation(
+        () =>
+          new Promise<string>((resolve) =>
+            setTimeout(() => resolve('Désolé, vous disiez ?'), recoveryMaxWaitMs() - 100),
+          ),
+      );
+      const session = makeSession();
+      scheduleUnheardRecovery(session, makeManager());
+      await vi.advanceTimersByTimeAsync(UNHEARD_GRACE_MS + recoveryMaxWaitMs());
+      expect(speakTtsStreamed).toHaveBeenCalledTimes(1);
+      expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Désolé, vous disiez ?');
+    });
+
+    it('le délai maximum se règle et reste borné', () => {
+      expect(recoveryMaxWaitMs({})).toBe(2_000);
+      expect(recoveryMaxWaitMs({ VOICE_RECOVERY_MAX_WAIT_MS: '1200' })).toBe(1_200);
+      expect(recoveryMaxWaitMs({ VOICE_RECOVERY_MAX_WAIT_MS: '10' })).toBe(2_000);
+      expect(recoveryMaxWaitMs({ VOICE_RECOVERY_MAX_WAIT_MS: 'x' })).toBe(2_000);
     });
 
     it("garde la phrase codée quand l'interrupteur est coupé, sans appeler le modèle", async () => {

@@ -40,6 +40,20 @@ export function formatOpeningHours(hours: unknown): string {
   }).join('\n');
 }
 
+/**
+ * Genre de la voix de l'agent. La voix par défaut est un réglage (`CARTESIA_VOICE_GENDER`, son genre est dans les
+ * métadonnées Cartesia de `CARTESIA_VOICE_ID`) ; une voix propre au restaurant (`voiceIdCa`) a un genre inconnu ici :
+ * rien n'est dit, le prompt reste neutre.
+ */
+export function agentVoiceGender(
+  personality: { voiceIdCa?: string | null } | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): 'masculine' | 'feminine' | undefined {
+  if (personality?.voiceIdCa) return undefined;
+  const value = env.CARTESIA_VOICE_GENDER?.trim().toLowerCase();
+  return value === 'masculine' || value === 'feminine' ? value : undefined;
+}
+
 export interface SystemPromptContext {
   name: string;
   openingHours: OpeningHours;
@@ -47,6 +61,8 @@ export interface SystemPromptContext {
   customerGreeting?: string;
   timezone?: string;
   personality?: { fillerStyle?: string; systemPromptExtra?: string | null } | null;
+  /** Genre de la voix de l'agent, quand il est connu : le modèle accorde alors ce qui le qualifie. */
+  voiceGender?: 'masculine' | 'feminine';
   giftCardMinimumAmount?: number | null;
   /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
   maxPartySize?: number;
@@ -74,6 +90,10 @@ function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
     timeZone: timezone,
   }).format(now);
 
+  const voiceGenderLine = ctx.voiceGender
+    ? `- Ta voix est ${ctx.voiceGender === 'masculine' ? 'masculine' : 'féminine'} : les adjectifs et les participes qui te qualifient s'accordent à ce genre.\n`
+    : '';
+
   return `Tu es l'assistant vocal chaleureux de ${ctx.name}. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.${vipGreeting}
 
 DATE COURANTE : nous sommes le ${currentDate}, fuseau ${timezone}. Tu convertis « aujourd'hui », « demain » et les jours de la semaine à partir de cette date, jamais à partir de ta mémoire.
@@ -85,7 +105,7 @@ COMPORTEMENT :
 - Tu ne répètes pas ce que l'appelant vient de dire : tu le reprends seulement au récapitulatif, ou si tu as un doute.
 - Tu désignes un jour proche par son nom relatif (aujourd'hui, demain, le jour de la semaine) ; la date complète seulement au récapitulatif.
 - Ton posé : pas de point d'exclamation.
-- Tu ne reposes jamais une question mot pour mot : si l'appelant n'a pas répondu, reformule-la ou explique pourquoi tu la poses.
+${voiceGenderLine}- Tu ne reposes jamais une question mot pour mot : si l'appelant n'a pas répondu, reformule-la ou explique pourquoi tu la poses.
 - Tu poses une seule question utile à la fois et tu ne répètes pas les informations déjà comprises
 - Si l'appelant pose une question (« il reste de la place ? », « vous fermez à quelle heure ? », « vous acceptez les groupes ? »), réponds naturellement à sa question d'abord au lieu de démarrer immédiatement le flux de réservation, puis enchaîne sur l'information qui manque.
 - Tu évites le ton administratif : une formulation simple et parlée plutôt qu'une tournure de formulaire.

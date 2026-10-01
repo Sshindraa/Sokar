@@ -464,6 +464,72 @@
         "role": "assistant",
         "content": "Bien sûr. Pour quel jour vous voulez réserver ?"
       }
+    ],
+    "done-autre-chose": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      },
+      {
+        "role": "user",
+        "content": "oui oui"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est réservé. Vous recevrez un SMS de confirmation. Autre chose pour vous ?"
+      }
     ]
   },
   "cases": [
@@ -816,9 +882,8 @@
       "samples": 12,
       "checks": [
         {
-          "kind": "field",
-          "path": "action",
-          "equals": "end_call",
+          "kind": "hangsUp",
+          "expect": true,
           "minRate": 0.85
         },
         {
@@ -846,9 +911,8 @@
       "samples": 12,
       "checks": [
         {
-          "kind": "field",
-          "path": "action",
-          "equals": "end_call",
+          "kind": "hangsUp",
+          "expect": true,
           "minRate": 0.85
         },
         {
@@ -873,10 +937,9 @@
       "samples": 12,
       "checks": [
         {
-          "kind": "field",
-          "path": "action",
-          "notEquals": "end_call",
-          "minRate": 0.8
+          "kind": "hangsUp",
+          "expect": false,
+          "minRate": 0.9
         }
       ],
       "id": "conge-phrase-longue-mal-transcrite",
@@ -897,24 +960,13 @@
       "samples": 12,
       "checks": [
         {
-          "kind": "anyOf",
-          "of": [
-            {
-              "kind": "field",
-              "path": "action",
-              "notEquals": "end_call"
-            },
-            {
-              "kind": "field",
-              "path": "understanding",
-              "equals": "doubtful"
-            }
-          ],
+          "kind": "hangsUp",
+          "expect": false,
           "minRate": 0.9
         }
       ],
       "id": "conge-phrase-longue-sans-sens",
-      "source": "témoin inventé : une longue phrase sans sens après l'au revoir ; le moteur refuse tout congé que le modèle dit ne pas comprendre, la protection repose donc sur la déclaration de doute",
+      "source": "témoin inventé : une longue phrase sans sens après l'au revoir ; mesuré à travers le moteur (il refuse tout congé que le modèle dit ne pas comprendre)",
       "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup"
     },
     {
@@ -948,6 +1000,52 @@
       "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup",
       "actionResult": "Action end_call non exécutée (doubtful_understanding). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.",
       "actions": ["none"]
+    },
+    {
+      "id": "conge-question-courte-apres-autre-chose",
+      "behavior": "prise de congé (question en attente)",
+      "source": "témoin inventé : après « Autre chose pour vous ? », une vraie question courte mal transcrite ; le moteur ne doit pas raccrocher (mesuré à travers le moteur)",
+      "history": "done-autre-chose",
+      "transcript": "ses ou le parking",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "open",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "conge-non-merci-apres-autre-chose",
+      "behavior": "prise de congé (question en attente, témoin)",
+      "source": "témoin : après « Autre chose pour vous ? », un refus clair doit toujours raccrocher (mesuré à travers le moteur)",
+      "history": "done-autre-chose",
+      "transcript": "non merci c'est tout",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "open",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": true,
+          "minRate": 0.9
+        }
+      ]
     },
     {
       "id": "nouvelle-demande-apres-resa",
@@ -1544,7 +1642,8 @@
           "open": "12:00",
           "close": "23:00"
         }
-      }
+      },
+      "voiceGender": "masculine"
     }
   },
   "spanPool": {
