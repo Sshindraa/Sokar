@@ -309,6 +309,14 @@ VOICE_NO_INPUT_TIMEOUT_MS="7000"
 # recours (modèle indisponible, réponse vide ou qui demande une action). "false" ou "0" la rétablit seule.
 # Journal : [voice] No-input recovery, source=model|fixed.
 VOICE_RECOVERY_BY_MODEL="true"
+# Attente maximale de la phrase du modèle avant la phrase codée, abandon de la requête (500–5000, défaut 2000).
+# Mesuré : médiane 430 ms, un pic à 2,98 s sur 10 relances ; le hedge à 700 ms et la bascule à 2,5 s de première
+# réponse existaient déjà, mais aucune borne ne couvrait la relance entière. Journal : source=fixed_timeout.
+VOICE_RECOVERY_MAX_WAIT_MS="2000"
+# Genre de la voix par défaut (masculine | feminine), à lire dans les métadonnées Cartesia de CARTESIA_VOICE_ID.
+# Le prompt dit alors au modèle « Ta voix est … » pour qu'il accorde ce qui le qualifie (« Désolé » ou « Désolée »).
+# Vide : rien n'est dit. Ignoré pour un restaurant qui a sa propre voix (genre inconnu).
+CARTESIA_VOICE_GENDER=""
 ```
 
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
