@@ -500,14 +500,12 @@ qu'elle porte ; `spanPool` : spans supplémentaires servant de donneurs) avec un
 | bruit        | un mot du corpus des cas est inséré à côté       | la valeur annotée reste extraite                                                  |
 
 ```bash
-VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/avant.json scripts/ops/voice-behavior-eval.sh
-# après un changement : même commande vers apres.json, puis
-cd apps/api && npx tsx scripts/voice-behavior-eval.ts compare /…/avant.json /…/apres.json
+VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/perturb.json scripts/ops/voice-behavior-eval.sh
 ```
 
 - `VBE_UNDERSTANDING=1` compose les requêtes avec la vérification de compréhension (drapeau de production
   `VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`) ; sans, comportement historique. Pour juger ce drapeau : même suite
-  sans puis avec, puis `compare`.
+  sans puis avec, en rejeu A/B (voir plus bas), jamais contre un score stocké.
 - `VBE_SUITE=default|perturb|all`. `perturb` = 27 variantes × 5 tirages = 135 requêtes (plafond 150).
 - Indicateurs par découpage : **fausse acceptation** (part des tirages d'ablation où une valeur absente de la phrase
   entre dans le brouillon ; le pire cas, à faire baisser), **fidélité** (substitution), **robustesse au bruit**.
@@ -523,3 +521,30 @@ cd apps/api && npx tsx scripts/voice-behavior-eval.ts compare /…/avant.json /�
   annotée dans `cases.json`.
 - Un cas dont la vérité terrain n'est pas établie (ex. `appel-bf3893ae-enonce-incoherent`) porte
   `truthStatus: "unverified"` jusqu'à une écoute humaine de l'enregistrement.
+
+### Fiabilité : familles, dimensionnement et rejeu A/B
+
+« Fiable » veut dire **voir une baisse de 20 points par famille de comportements**, pas passer des seuils.
+
+- Chaque cas déclare : `family` (attente, epellation, extraction, conge, relance, repetition, horaires),
+  `measures` (`model` : la sortie brute du modèle ; `engine` : la décision après les garde-fous du code, seuil et
+  écart lus après garde-fous, le brut est noté à côté) et `origin` (`real` : défaut observé sur un appel ;
+  `variant` : variante d'un défaut réel documenté, `variantOf`, sans donnée personnelle ; `control` : témoin
+  inventé pour une hypothèse, il ne compte pas dans les défauts exigés). Un cas dont un contrôle passe par le moteur
+  (`hangsUp`) déclare `engine` (test).
+- Les cas se choisissent d'après des défauts réels. La difficulté (`difficulty`) est notée à l'ajout, **jamais
+  utilisée pour choisir ni écarter** un cas : filtrer sur un score fait régresser vers la moyenne et fabrique des
+  progrès.
+- Dimensionnement : au moins 4 défauts (réels ou variantes de défauts réels, vérité établie) par famille, et
+  `FAMILY_DRAWS` tirages par bras (75, d'après la formule de `power.ts` : test unilatéral à 5 %, puissance 80 %,
+  pire taux de départ 50 %). `build --family-draws auto` répartit ces tirages entre les cas de la famille ;
+  `coverage --family-draws auto` dit, par famille, si c'est dimensionné.
+- **Pas de référence stockée.** Une modification se juge par un rejeu A/B : requêtes de la référence (arbre sans la
+  modification) et du candidat tirées dans la même session, une de chaque bras à tour de rôle
+  (`scripts/ops/voice-behavior-ab.sh ref.json cand.json`, refuse de partir sans `VBE_MAX_REQUESTS` explicite :
+  un rejeu se chiffre et s'approuve avant). Les deux bras ont les mêmes cas ; l'écart se calcule cas par cas puis par
+  famille (intervalle à 90 % par rééchantillonnage des cas puis des tirages) ; une famille sous-dimensionnée ou dont
+  la référence est sous 20 % est rapportée « non concluant », pas « tenue ».
+- Comptes de jetons : le rejeu relève `usage` (entrée/sortie) par bras auprès du fournisseur ; ce sont ces chiffres,
+  pas une hypothèse, qui chiffrent le rejeu suivant. `VBE_PROVIDER_ORDER=DeepInfra` fixe l'hébergeur OpenRouter
+  (sans repli : une quantification d'un bout à l'autre) et `VBE_REASONING_OFF=1` coupe le raisonnement.

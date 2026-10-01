@@ -11,11 +11,17 @@
  * sollicité, mais le secours en dépend.
  *
  *   node voice-behavior-replay.mjs requests.json [/opt/sokar/apps/api/.env] > responses.json
+ *   VBE_ARM_B=candidat.json node voice-behavior-replay.mjs reference.json … > ab.json    (rejeu A/B)
+ *
+ * Rejeu A/B : les deux jeux de requêtes (mêmes cas, mêmes tirages) sont tirés dans la MÊME session, une
+ * requête de chaque bras à tour de rôle. Rien n'est jamais comparé à un score stocké.
  *
  * Variables (toutes facultatives ; sans elles, Cerebras comme avant) :
  *   VBE_PROVIDER=cerebras|openrouter   fournisseur
  *   VBE_MODEL=…                        modèle (défaut : VOICE_LLM_MODEL, ou le modèle de repli pour openrouter)
  *   VBE_BASE_URL=…                     adresse (OpenRouter UE : https://eu.openrouter.ai/api/v1)
+ *   VBE_ARM_B=fichier.json             requêtes du bras candidat (même cas et mêmes tirages que le fichier de référence)
+ *   VBE_PROVIDER_ORDER=DeepInfra,…     openrouter : hébergeurs autorisés, sans repli (même quantification d'un bout à l'autre)
  *   VBE_REASONING_OFF=1                openrouter : envoie reasoning:{enabled:false} (modèles à raisonnement
  *                                      optionnel comme DeepSeek ; les autres le refusent avec require_parameters)
  */
@@ -33,6 +39,23 @@ const env = Object.fromEntries(
     ]),
 );
 const { requests } = JSON.parse(readFileSync(requestsFile, 'utf8'));
+const armBFile = process.env.VBE_ARM_B;
+const requestsB = armBFile ? JSON.parse(readFileSync(armBFile, 'utf8')).requests : null;
+if (requestsB) {
+  const same =
+    requestsB.length === requests.length &&
+    requests.every(
+      (request, index) =>
+        requestsB[index].id === request.id && requestsB[index].samples === request.samples,
+    );
+  if (!same) {
+    process.stderr.write(
+      'REFUS : les deux bras doivent avoir les mêmes cas et les mêmes tirages.\n',
+    );
+    process.exit(1);
+  }
+}
+const providerOrder = (process.env.VBE_PROVIDER_ORDER || '').split(',').filter(Boolean);
 const provider = process.env.VBE_PROVIDER || 'cerebras';
 if (provider !== 'cerebras' && provider !== 'openrouter') {
   process.stderr.write(
@@ -42,7 +65,8 @@ if (provider !== 'cerebras' && provider !== 'openrouter') {
 }
 const keyName = provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'CEREBRAS_API_KEY';
 const apiKey = env[keyName];
-const jobCount = requests.reduce((total, request) => total + request.samples, 0);
+const armCount = requestsB ? 2 : 1;
+const jobCount = armCount * requests.reduce((total, request) => total + request.samples, 0);
 const maxRequests = Number(process.env.VBE_MAX_REQUESTS) || 150;
 if (!apiKey) {
   process.stderr.write(`REFUS : ${keyName} absente du .env.\n`);
@@ -55,8 +79,18 @@ if (jobCount > maxRequests) {
   );
   process.exit(1);
 }
+// ~3,3 caractères par token (mesuré : 11 260 caractères ≈ 3,4 k tokens). Les vrais comptes du fournisseur
+// sont relevés plus bas (champ usage) : ils remplacent cette estimation dès le premier rejeu.
+const promptChars = (list) =>
+  list.reduce(
+    (total, request) => total + request.samples * JSON.stringify(request.messages).length,
+    0,
+  );
+const estimatedPromptTokens = Math.round(
+  (promptChars(requests) + (requestsB ? promptChars(requestsB) : 0)) / 3.3,
+);
 process.stderr.write(
-  `Rejeu : ${jobCount} requêtes, ~${Math.round((jobCount * 3.4) / 100) / 10} M de tokens en entrée.\n`,
+  `Rejeu : ${jobCount} requêtes${requestsB ? ' (A/B alternés)' : ''}, ~${(estimatedPromptTokens / 1e6).toFixed(2)} M de tokens en entrée (estimation).\n`,
 );
 const model =
   process.env.VBE_MODEL ||
@@ -69,8 +103,18 @@ const baseUrl =
     ? env.OPENROUTER_FALLBACK_BASE_URL || env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
     : env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1');
 process.stderr.write(`Fournisseur : ${provider} | modèle : ${model} | adresse : ${baseUrl}\n`);
-/** Hébergeurs OpenRouter qui ont répondu (pour savoir qui a servi les tirages). */
-const served = {};
+/** Hébergeurs OpenRouter qui ont répondu (pour savoir qui a servi les tirages), par bras. */
+const served = { reference: {}, candidate: {} };
+/** Jetons comptés par le fournisseur, par bras (les 402 et les réponses vides n'y comptent pas). */
+const usage = {
+  reference: { requests: 0, promptTokens: 0, completionTokens: 0 },
+  candidate: { requests: 0, promptTokens: 0, completionTokens: 0 },
+};
+if (provider === 'openrouter' && process.env.VBE_REASONING_OFF !== '1') {
+  process.stderr.write(
+    'ATTENTION : OpenRouter sans VBE_REASONING_OFF=1 : un modèle à raisonnement peut produire bien plus de jetons de sortie.\n',
+  );
+}
 const CONCURRENCY = 6;
 
 const MAX_ATTEMPTS = 6;
@@ -86,7 +130,7 @@ const FATAL_STATUSES = new Set([401, 402, 403]);
 const MAX_EMPTY_RATE = 0.25;
 
 /** Cerebras limite les tokens par minute : un 429 se rattrape en attendant, il n'est pas un verdict. */
-async function sample(request) {
+async function sample(request, arm = 'reference') {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -101,7 +145,10 @@ async function sample(request) {
           ...(provider === 'openrouter'
             ? {
                 ...(process.env.VBE_REASONING_OFF === '1' ? { reasoning: { enabled: false } } : {}),
-                provider: { require_parameters: true },
+                provider: {
+                  require_parameters: true,
+                  ...(providerOrder.length ? { order: providerOrder, allow_fallbacks: false } : {}),
+                },
               }
             : { reasoning_effort: 'none' }),
         }),
@@ -117,7 +164,12 @@ async function sample(request) {
         continue;
       }
       const body = await response.json();
-      if (body.provider) served[body.provider] = (served[body.provider] ?? 0) + 1;
+      if (body.provider) served[arm][body.provider] = (served[arm][body.provider] ?? 0) + 1;
+      if (body.usage) {
+        usage[arm].requests += 1;
+        usage[arm].promptTokens += body.usage.prompt_tokens ?? 0;
+        usage[arm].completionTokens += body.usage.completion_tokens ?? 0;
+      }
       return JSON.parse(body.choices[0].message.content);
     } catch {
       return null;
@@ -136,15 +188,27 @@ if (fatal) {
   process.stderr.write(`ARRÊT : ${fatal}. Aucune requête du jeu n'a été envoyée.\n`);
   process.exit(2);
 }
+// Le test préalable n'est pas une requête du jeu : il ne compte pas dans les jetons du bras.
+usage.reference = { requests: 0, promptTokens: 0, completionTokens: 0 };
 
-const jobs = requests.flatMap((request) => Array.from({ length: request.samples }, () => request));
+// Bras alternés tirage par tirage : le candidat ne passe jamais « après » la référence dans la session.
+const jobs = requests.flatMap((request, index) =>
+  Array.from({ length: request.samples }, () =>
+    requestsB
+      ? [
+          { request, arm: 'reference' },
+          { request: requestsB[index], arm: 'candidate' },
+        ]
+      : [{ request, arm: 'reference' }],
+  ).flat(),
+);
 const results = new Array(jobs.length);
 let cursor = 0;
 await Promise.all(
   Array.from({ length: CONCURRENCY }, async () => {
     while (!fatal && cursor < jobs.length) {
       const index = cursor++;
-      results[index] = await sample(jobs[index]);
+      results[index] = await sample(jobs[index].request, jobs[index].arm);
     }
   }),
 );
@@ -161,6 +225,42 @@ if (empty / jobs.length > MAX_EMPTY_RATE) {
   );
   process.exit(3);
 }
-const responses = {};
-jobs.forEach((job, index) => (responses[job.id] ??= []).push(results[index]));
-process.stdout.write(JSON.stringify({ model, provider, baseUrl, served, responses }));
+const collect = (arm) => {
+  const responses = {};
+  jobs.forEach((job, index) => {
+    if (job.arm === arm) (responses[job.request.id] ??= []).push(results[index]);
+  });
+  return responses;
+};
+const report = (arm) =>
+  `${arm} : ${usage[arm].requests} requêtes comptées, ${usage[arm].promptTokens} tokens en entrée, ${usage[arm].completionTokens} en sortie`;
+process.stderr.write(
+  `Jetons comptés par le fournisseur — ${report('reference')}${requestsB ? ` | ${report('candidate')}` : ''}\n`,
+);
+if (requestsB) {
+  process.stdout.write(
+    JSON.stringify({
+      runId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      startedAt: new Date().toISOString(),
+      model,
+      provider,
+      baseUrl,
+      served,
+      arms: {
+        reference: { model, usage: usage.reference, responses: collect('reference') },
+        candidate: { model, usage: usage.candidate, responses: collect('candidate') },
+      },
+    }),
+  );
+} else {
+  process.stdout.write(
+    JSON.stringify({
+      model,
+      provider,
+      baseUrl,
+      served: served.reference,
+      usage: usage.reference,
+      responses: collect('reference'),
+    }),
+  );
+}
