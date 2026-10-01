@@ -1220,3 +1220,11 @@ Appel 3ba7c66f (01:43, avant le déploiement de #370), deux défauts d'assemblag
 
 Limites : la perte d'un tour interrompu quand une autre fin de tour arrive 22 ms plus tard (le moteur n'écarte que le texte du nouveau tour) reste possible pour un texte qui n'est pas de l'épellation ; le modèle a répondu `awaiting: none` en demandant le nom (doute sur « non non ») : comportement du modèle, non traité ici.
 
+## 2026-10-02 — Voix : attente à tort, ancrage et candidat (DeepInfra, aucun changement en production)
+
+Cas `attend-annonce-intention` (« je voudrais bien venir »), 36 tirages par bras, `qwen/qwen3.8-27b` sur DeepInfra, bras alternés dans la même session.
+
+- **Ancrage :** base minimale 21/36 (58 %) → vraie base 6/36 (17 %), −42 points [−58 ; −25]. La base du prompt vocal fait baisser l'attente ; elle ne tient pas toute seule à 85 % non plus.
+- **Candidat** (consigne turnComplete + « en cas de doute, false : attendre à tort fait relancer par le système, répondre à tort coupe la parole »), famille attente, 12 cas × 12 tirages : lignée b686b241 79 % → 81 % (+2, [−4 ; +10]), gain sous 15 points et borne basse sous zéro : **refusé** selon la règle fixée avant. Témoins 100 % → 100 % (12/12 chacun). Le cas réel b686b241 reste à 2/12 → 3/12 ; ses trois variantes sont déjà à 12/12 des deux côtés (elles ne discriminent pas). Par ailleurs `attend-correction-annoncee` passe de 3/12 à 11/12 (+67, autre lignée, borne basse à 0) et `epellation-en-cours-pas-fini` reste à 0/12 → 1/12.
+- **Découpe de la base (candidat refusé), 25 règles :** règles 0–12 seules 3/36, 13–24 seules 10/36 ; 0–6 seules 17/36 (47 %), 7–12 seules 0/36 ; 7–9 seules 4/36, 10–12 seules 8/36. Pas de règle unique coupable : l'effet est diffus dans les règles 7 à 24 (celles qui poussent à répondre et avancer : une seule question utile, réponds d'abord à sa question, n'avance qu'avec l'information manquante). Hypothèse, non prouvée ; bruit de ±14 points à 36 tirages.
+- Coût réel : 576 requêtes, environ 2,2 M tokens en entrée, 79 k en sortie sur DeepInfra.
