@@ -36,6 +36,7 @@ import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
 import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
+import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts';
 
 vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../stream/structured-turn/engine')>()),
@@ -1584,6 +1585,95 @@ describe('transcription sans voix dans l’audio entrant', () => {
     hear(session, 0, 50);
 
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('texte validé en double d’un tour déjà traité', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const dialogueContext = (session: CallSession) =>
+    `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls.map(([event]) => event).filter((event) => event.type === 'UtteranceEnd');
+
+  /** L'agent répond à « bonjour » (déjà traité) : c'est lui qui parle quand le texte revient. */
+  function speakingAfterTurn(transcript = 'bonjour'): CallSession {
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    session.lastProcessedTranscript = transcript;
+    session.lastProcessedAt = Date.now();
+    session.lastProcessedDialogueContext = dialogueContext(session);
+    return session;
+  }
+  const spyBargeIn = () =>
+    vi.spyOn(CallSessionManager.getInstance(), 'handleBargeIn').mockImplementation(() => undefined);
+
+  it.each(['true', 'false'])(
+    'ne coupe pas la réponse pour le même texte revenu (routage V2 : %s)',
+    async (v2) => {
+      vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', v2);
+      const session = speakingAfterTurn();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      const handleBargeIn = spyBargeIn();
+
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'Bonjour.',
+      });
+      await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+
+      expect(handleBargeIn).not.toHaveBeenCalled();
+      expect(ends(onEvent)).toHaveLength(0);
+    },
+  );
+
+  it('ne coupe pas la réponse pour une partielle identique au tour déjà traité', () => {
+    const session = speakingAfterTurn();
+    const handleBargeIn = spyBargeIn();
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+    expect(handleBargeIn).not.toHaveBeenCalled();
+    expect(session.turnTranscript).toBe('');
+  });
+
+  it('coupe pour un texte différent du tour traité', () => {
+    const session = speakingAfterTurn();
+    const handleBargeIn = spyBargeIn();
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'plutôt pour demain' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+
+  it('coupe pour le même texte une fois la fenêtre de doublon passée', async () => {
+    const session = speakingAfterTurn();
+    const handleBargeIn = spyBargeIn();
+    await vi.advanceTimersByTimeAsync(TRANSCRIPT_DEDUPE_WINDOW_MS + 100);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+
+  it('coupe pour le même texte à une autre étape du dialogue', () => {
+    const session = speakingAfterTurn('oui');
+    session.lastProcessedDialogueContext = 'customerName|À quel nom ?';
+    const handleBargeIn = spyBargeIn();
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });

@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { callerSilenceMs, noCallerVoiceSince, trackCallerVoice } from './caller-voice-activity';
+import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
@@ -1393,6 +1394,8 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
     cleanTranscript = echo.transcript;
     allowBargeIn = hasBargeInWordThreshold(echo);
   }
+  // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
+  if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
 
   if (
     resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
@@ -1484,6 +1487,18 @@ function dispatchCommittedTranscript(
     cleanTranscript = echo.transcript;
     allowBargeIn = hasBargeInWordThreshold(echo);
     if (!allowBargeIn && session.state === 'SPEAKING') return;
+  }
+  if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) {
+    logger.info(
+      {
+        callId: session.callControlId,
+        agentSpeaking: session.state === 'SPEAKING',
+        ...describeTranscript(cleanTranscript),
+      },
+      '[stt] Ignoring a repeat of the turn just processed',
+    );
+    resetSttTurnDiagnostics(session);
+    return;
   }
 
   if (
