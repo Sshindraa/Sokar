@@ -265,7 +265,9 @@ VOICE_FAST_BARGE_IN_CONFIRM_MS="500"
 # tour que si l'audio entrant contient de la voix depuis le début de l'énoncé (détecteur RMS de
 # caller-voice-activity, marge 1,5 s pour le retard de la reconnaissance). Écarte les textes fantômes
 # (bruit, écho de l'agent : appel 30172d22, piste appelant muette, « bon » puis « bonjour » coupaient
-# l'agent à chaque réponse). Ne juge qu'après 500 ms d'audio suivi. "false" ou "0" rétablit l'ancien
+# l'agent à chaque réponse). Ne juge qu'après 500 ms d'audio suivi. La voix d'un tour déjà envoyé à
+# l'agent ne compte pas : il faut de la voix arrivée au-delà de la fin de ses mots (+150 ms ; appel
+# 6a70dff9, « 4 » fantôme 1,3 s après « pour quatre »). "false" ou "0" rétablit l'ancien
 # comportement. Métrique : sokar_voice_no_caller_voice_transcript_total{stage=partial|committed}.
 VOICE_REQUIRE_CALLER_VOICE="true"
 # Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que

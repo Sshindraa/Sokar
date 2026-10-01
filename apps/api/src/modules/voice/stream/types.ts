@@ -491,6 +491,8 @@ export interface CallSession {
   fastBargeIn?: FastBargeInState;
   sttLastNonEmptyPartialAt?: number;
   sttLastSpeechStartedAt?: number;
+  /** Fin des mots du dernier tour envoyé à l'agent : la voix qui précède déjà été prise en compte. */
+  sttConsumedSpeechEndAt?: number;
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;

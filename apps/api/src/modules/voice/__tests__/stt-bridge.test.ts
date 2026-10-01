@@ -1780,3 +1780,81 @@ describe('collecte d’un nom : la pause d’épellation suit la voix de l’app
     expect(ends(onEvent)).toHaveLength(1);
   });
 });
+
+describe('voix déjà prise en compte par le tour précédent', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Trame PCMU de 40 ms : niveau nul, ou signal carré d'amplitude donnée. */
+  function frame(amplitude: number): string {
+    const pcm = Buffer.alloc(320);
+    for (let index = 0; index < 160; index++)
+      pcm.writeInt16LE(index % 2 ? amplitude : -amplitude, index * 2);
+    return encodeTelnyxFromPcm16('PCMU', pcm).toString('base64');
+  }
+  async function caller(session: CallSession, ms: number, amplitude: number): Promise<void> {
+    for (let elapsed = 0; elapsed < ms; elapsed += 40) {
+      sendAudioToStt(session, frame(amplitude));
+      await vi.advanceTimersByTimeAsync(40);
+    }
+  }
+  const spyBargeIn = () =>
+    vi.spyOn(CallSessionManager.getInstance(), 'handleBargeIn').mockImplementation(() => undefined);
+
+  /**
+   * Appel 6a70dff9 : « pour quatre » est traité, l'agent répond, puis un « 4 » arrive 1,3 s après la
+   * fin de la voix de l'appelant (écho de l'agent qui dit « 4 personnes ») et coupe la réponse. La
+   * voix reçue pour « pour quatre » ne peut pas servir de preuve pour ce nouveau texte.
+   */
+  async function afterTreatedTurn(): Promise<CallSession> {
+    const session = makeSession();
+    await caller(session, 400, 3_000);
+    // Fin des mots du tour traité : l'instant où l'appelant se tait.
+    session.sttConsumedSpeechEndAt = Date.now();
+    session.state = 'SPEAKING';
+    return session;
+  }
+
+  it('ne prend pas la voix déjà traitée pour la preuve d’un nouveau texte', async () => {
+    const session = await afterTreatedTurn();
+    const handleBargeIn = spyBargeIn();
+    await caller(session, 1_300, 0);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
+
+    expect(handleBargeIn).not.toHaveBeenCalled();
+    expect(session.turnTranscript).toBe('');
+  });
+
+  it('accepte le texte quand de la voix nouvelle est arrivée après le tour traité', async () => {
+    const session = await afterTreatedTurn();
+    const handleBargeIn = spyBargeIn();
+    await caller(session, 600, 0);
+    await caller(session, 400, 3_000);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+
+  it('accepte la voix qui dépasse à peine la fin des mots (souffle, traîne de la dernière syllabe)', async () => {
+    const session = await afterTreatedTurn();
+    session.sttConsumedSpeechEndAt = Date.now() - 100;
+    const handleBargeIn = spyBargeIn();
+    await caller(session, 400, 0);
+    session.sttConsumedSpeechEndAt = Date.now() - 800;
+    await caller(session, 80, 3_000);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+});
