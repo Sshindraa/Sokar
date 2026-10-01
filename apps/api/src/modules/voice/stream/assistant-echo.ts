@@ -26,10 +26,6 @@ function tokens(value: string): string[] {
     .filter(Boolean);
 }
 
-function isExplicitInterruption(words: string[]): boolean {
-  return words.length === 1 && ['non', 'stop', 'attends', 'attendez', 'wait'].includes(words[0]);
-}
-
 function longestPrefixInAgent(caller: string[], agent: string[]): number {
   let longest = 0;
   for (let start = 0; start < agent.length; start++) {
@@ -116,7 +112,6 @@ export function filterAssistantEcho(
     nonEchoWordCount: callerWords.length,
   };
   if (!callerWords.length || !agentWords.length || !isInEchoWindow(session, now)) return unchanged;
-  if (isExplicitInterruption(callerWords)) return unchanged;
 
   const speakingClearly = callerIsClearlySpeaking(session, now);
   const prefixLength = longestPrefixInAgent(callerWords, agentWords);
