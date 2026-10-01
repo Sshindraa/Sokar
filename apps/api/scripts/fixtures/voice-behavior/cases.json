@@ -1911,7 +1911,6 @@
       "timezone": "Europe/Paris",
       "maxPartySize": 7,
       "voiceGender": "masculine",
-      "systemPromptExtra": "Tu es Callyx, l'assistant vocal de Chez Sokar. Tu es chaleureux, direct, et tu parles comme un habitué du quartier. Tu prends les réservations pour le midi et le soir. Les grands groupes (8+) sont transférés au gérant. Tu confirmes toujours la date, l'heure et le nombre de personnes avant de créer la réservation.",
       "openingHours": {
         "mon": null,
         "tue": {

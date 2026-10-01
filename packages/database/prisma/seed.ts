@@ -93,6 +93,11 @@ async function main() {
     },
   });
 
+  // Consigne propre du restaurant : des faits seulement. L'identité, le ton et les règles de conversation
+  // viennent de la base du prompt vocal (voice/prompts.ts), jamais de ce réglage.
+  const RESTAURANT_FACTS =
+    'Le restaurant sert le midi et le soir. Les groupes de 8 personnes ou plus sont pris en charge par le gérant.';
+
   await prisma.agentPersonality.upsert({
     where: { restaurantId: restaurant.id },
     update: {
@@ -102,10 +107,7 @@ async function main() {
       fillerStyle: 'WARM',
       microphoneThreshold: -42,
       targetLatencyMs: 140,
-      systemPromptExtra:
-        "Tu es Callyx, l'assistant vocal de Chez Sokar. Tu es chaleureux, direct, et tu parles comme un habitué du quartier. " +
-        'Tu prends les réservations pour le midi et le soir. Les grands groupes (8+) sont transférés au gérant. ' +
-        "Tu confirmes toujours la date, l'heure et le nombre de personnes avant de créer la réservation.",
+      systemPromptExtra: RESTAURANT_FACTS,
     },
     create: {
       restaurantId: restaurant.id,
@@ -115,10 +117,7 @@ async function main() {
       fillerStyle: 'WARM',
       microphoneThreshold: -42,
       targetLatencyMs: 140,
-      systemPromptExtra:
-        "Tu es Callyx, l'assistant vocal de Chez Sokar. Tu es chaleureux, direct, et tu parles comme un habitué du quartier. " +
-        'Tu prends les réservations pour le midi et le soir. Les grands groupes (8+) sont transférés au gérant. ' +
-        "Tu confirmes toujours la date, l'heure et le nombre de personnes avant de créer la réservation.",
+      systemPromptExtra: RESTAURANT_FACTS,
     },
   });
 
