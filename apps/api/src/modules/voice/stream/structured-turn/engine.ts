@@ -54,6 +54,7 @@ import {
   spelledNameFact,
   reconcileSpelledName,
   requestedSlotConflict,
+  wordCount,
 } from './fact-guards';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
@@ -311,6 +312,8 @@ function passRequest(
     actionResult?: string;
     callerFinished?: boolean;
     recovery?: StructuredRecoveryKind;
+    /** Actions que le schéma autorise : le moteur peut en retirer (un congé refusé ne se rejoue pas). */
+    actions?: readonly StructuredTurnAction[];
   } = {},
 ) {
   const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
@@ -327,10 +330,13 @@ function passRequest(
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
   // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
-  const format = responseFormat(extra.actionResult ? AFTER_ACTION_ACTIONS : undefined, {
-    turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
-    ...(understanding ? { understanding } : {}),
-  });
+  const format = responseFormat(
+    extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined),
+    {
+      turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
+      ...(understanding ? { understanding } : {}),
+    },
+  );
   return { messages, format };
 }
 
@@ -494,7 +500,10 @@ export async function runStructuredTurn(
     ttsPromises.push(speakTtsStreamed(session, phrase).catch(() => undefined));
   };
 
-  const runPass = async (actionResult?: string): Promise<PassResult> => {
+  const runPass = async (
+    actionResult?: string,
+    onlyActions?: readonly StructuredTurnAction[],
+  ): Promise<PassResult> => {
     const extractor = new SayStreamExtractor();
     const splitter = new PhraseSplitter();
     let action: string | null = null;
@@ -506,6 +515,7 @@ export async function runStructuredTurn(
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
+      ...(onlyActions ? { actions: onlyActions } : {}),
     });
     const onDelta = (delta: string) => {
       if (!isLive()) return;
@@ -604,6 +614,8 @@ export async function runStructuredTurn(
   let speculationUsed = false;
   // Phrase dite si le second passage ne formule rien après l'action.
   let actionFallbackSay: string | null = null;
+  // Un congé refusé : le second passage est limité à l'action « none ».
+  let noHangUp = false;
   // Jour fermé ou complet : un fait simple, dit tel quel sans second passage
   // (appel 0d49230d : le modèle contredisait « FERMÉ » et promettait de réserver).
   const fixed: { reply: { say: string; awaiting: StructuredTurnOutput['awaiting'] } | null } = {
@@ -739,6 +751,7 @@ export async function runStructuredTurn(
     const decision = authorizeStructuredAction(state, first.output, state.draft, {
       maxPartySize: voiceMaxPartySize(session),
       recapHeard: !recapCut,
+      transcriptWords: wordCount(transcript),
     });
     recordVoiceTurnEvent(session, 'structured_turn', {
       pass: 1,
@@ -784,7 +797,13 @@ export async function runStructuredTurn(
       state.recapCutBlockedKey = bookingId;
       actionResult = `La réservation n'est PAS encore faite : l'appelant a répondu avant d'avoir entendu tout le récapitulatif (il n'a pas entendu : « ${cutReply.unheard} »). Donne-lui brièvement la partie manquante, sans recopier ce qu'il a déjà entendu, et redemande son accord (awaiting=confirmation).`;
     } else if (!decision.allowed) {
-      actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
+      if (first.output.action === 'end_call') {
+        // Congé refusé (énoncé long que le modèle n'a pas compris) : le second passage ne peut plus raccrocher.
+        noHangUp = true;
+        actionResult = `Action end_call non exécutée (${decision.reason}). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.`;
+      } else {
+        actionResult = `Action ${first.output.action} non exécutée (${decision.reason}). Poursuis la conversation sans l'annoncer comme faite.`;
+      }
     } else if (first.slotConflict) {
       // Le modèle visait une heure hors horaires ou un créneau que les disponibilités lues excluent :
       // rien n'a été dit ; le second passage reçoit le fait réel.
@@ -840,7 +859,7 @@ export async function runStructuredTurn(
 
     if (actionResult) {
       if (!isLive()) return;
-      const second = await runPass(actionResult);
+      const second = await runPass(actionResult, noHangUp ? ['none'] : undefined);
       if (!isLive()) return;
       const reapplied = applyProposedDraft(state.draft, second.output, { today });
       state.draft = reconcileSpelledName(
@@ -860,7 +879,7 @@ export async function runStructuredTurn(
         rejectedFields: reapplied.rejected.join(',') || null,
       });
       final = second.output;
-      if (second.output.action === 'end_call' && second.output.confidence !== 'low') {
+      if (!noHangUp && second.output.action === 'end_call' && second.output.confidence !== 'low') {
         if (second.output.say.trim()) {
           await endCall(second.output.say.trim());
           return;

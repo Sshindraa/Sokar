@@ -488,15 +488,43 @@ export type ActionDecision = { allowed: true } | { allowed: false; reason: strin
  * lu au tour précédent, accepté par l'appelant selon le modèle, sur un créneau
  * vérifié. Aucune action à effet ne part sur un plan peu sûr.
  */
+/**
+ * Au-delà de ce nombre de mots, ce que le modèle n'a pas compris n'est pas un au revoir. Un au revoir mal
+ * transcrit est court (« dix nous » pour « bisous ») ; une longue phrase sans sens peut être une vraie demande.
+ * Critère de longueur seulement, aucun mot connu.
+ */
+export const FAREWELL_MAX_WORDS = 6;
+
+/** Nombre de mots d'une phrase transcrite. */
+export function wordCount(text: string): number {
+  return text.split(/\s+/u).filter(Boolean).length;
+}
+
 export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number; recapHeard?: boolean },
+  context: { maxPartySize: number; recapHeard?: boolean; transcriptWords?: number },
 ): ActionDecision {
+  // Une fois la réservation créée, rien n'est en jeu : un énoncé COURT que le modèle ne comprend pas est un au
+  // revoir mal transcrit (appel 6a70dff9 : « Bisous » transcrit « dix-nous »). Un long reste un doute.
+  const shortFarewell =
+    output.action === 'end_call' &&
+    state.reservationCreated &&
+    context.transcriptWords !== undefined &&
+    context.transcriptWords <= FAREWELL_MAX_WORDS;
   // Compréhension douteuse : aucune action, pas même une vérification de disponibilité sur une valeur devinée.
-  if (output.understanding === 'doubtful' && output.action !== 'none') {
+  if (output.understanding === 'doubtful' && output.action !== 'none' && !shortFarewell) {
     return { allowed: false, reason: 'doubtful_understanding' };
+  }
+  // Sans vérification de compréhension : un congé que le modèle dit lui-même ne pas avoir compris ne ferme
+  // l'appel que s'il est court.
+  if (
+    output.action === 'end_call' &&
+    output.interpretation === 'unclear' &&
+    (context.transcriptWords ?? Number.POSITIVE_INFINITY) > FAREWELL_MAX_WORDS
+  ) {
+    return { allowed: false, reason: 'long_unclear_farewell' };
   }
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
   if (sideEffect && output.confidence === 'low') {
