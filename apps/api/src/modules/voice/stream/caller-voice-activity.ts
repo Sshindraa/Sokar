@@ -109,9 +109,7 @@ export function callerSpokeClearlySince(session: CallSession, sinceMs: number): 
 export function callerVoiceMarginMs(session: CallSession, sinceMs: number): number | undefined {
   const state = session.callerVoice;
   if (!state || (state.trackedMs ?? 0) < MIN_JUDGED_AUDIO_MS) return undefined;
-  return state.lastVoiceAt === undefined
-    ? Number.NEGATIVE_INFINITY
-    : state.lastVoiceAt - sinceMs;
+  return state.lastVoiceAt === undefined ? Number.NEGATIVE_INFINITY : state.lastVoiceAt - sinceMs;
 }
 
 /**

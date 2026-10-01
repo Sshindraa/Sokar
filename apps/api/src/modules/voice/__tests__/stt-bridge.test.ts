@@ -1896,7 +1896,10 @@ describe('journal de la garde « pas de voix, pas de tour »', () => {
 
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
 
-    const [fields] = gateLogs(info, '[stt] Transcript ignored: no caller voice in the incoming audio');
+    const [fields] = gateLogs(
+      info,
+      '[stt] Transcript ignored: no caller voice in the incoming audio',
+    );
     expect(fields).toMatchObject({ stage: 'partial', agentSpeaking: false });
     expect(Number(fields.marginMs)).toBeLessThan(0);
     expect(Number(fields.callerSilenceMs)).toBeGreaterThanOrEqual(1_200);
