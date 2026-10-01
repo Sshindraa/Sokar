@@ -36,6 +36,7 @@ import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
 import { VoiceDeepgramConfigSchema, voiceConfig } from '../../../env';
+import { logger } from '../../../shared/logger/pino';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts';
 
 vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
@@ -1856,5 +1857,80 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('journal de la garde « pas de voix, pas de tour »', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function frame(amplitude: number): string {
+    const pcm = Buffer.alloc(320);
+    for (let index = 0; index < 160; index++)
+      pcm.writeInt16LE(index % 2 ? amplitude : -amplitude, index * 2);
+    return encodeTelnyxFromPcm16('PCMU', pcm).toString('base64');
+  }
+  async function caller(session: CallSession, ms: number, amplitude: number): Promise<void> {
+    for (let elapsed = 0; elapsed < ms; elapsed += 40) {
+      sendAudioToStt(session, frame(amplitude));
+      await vi.advanceTimersByTimeAsync(40);
+    }
+  }
+  type GateFields = Record<string, number | boolean | string | null>;
+  const gateLogs = (info: { mock: { calls: unknown[][] } }, message: string): GateFields[] =>
+    info.mock.calls.filter((call) => call[1] === message).map((call) => call[0] as GateFields);
+
+  it('journalise les valeurs du rejet : marge, silence, âge du début de tour et du tour traité', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const session = makeSession();
+    await caller(session, 400, 3_000);
+    session.sttConsumedSpeechEndAt = Date.now();
+    await caller(session, 1_300, 0);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
+
+    const [fields] = gateLogs(info, '[stt] Transcript ignored: no caller voice in the incoming audio');
+    expect(fields).toMatchObject({ stage: 'partial', agentSpeaking: false });
+    expect(Number(fields.marginMs)).toBeLessThan(0);
+    expect(Number(fields.callerSilenceMs)).toBeGreaterThanOrEqual(1_200);
+    expect(Number(fields.consumedAgeMs)).toBeGreaterThanOrEqual(1_200);
+    expect(JSON.stringify(fields)).not.toContain('quatre');
+  });
+
+  it('journalise une preuve de voix mince quand l’agent parle, pour repérer les quasi-fantômes', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    vi.spyOn(CallSessionManager.getInstance(), 'handleBargeIn').mockImplementation(() => undefined);
+    await caller(session, 800, 0);
+    await caller(session, 80, 3_000);
+    // Voix finie 1,3 s plus tôt : à peine dans la marge de 1,5 s laissée à la reconnaissance.
+    await caller(session, 1_320, 0);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
+
+    const [fields] = gateLogs(info, '[stt] Caller voice evidence is thin');
+    expect(fields).toMatchObject({ stage: 'partial', agentSpeaking: true });
+    expect(Number(fields.marginMs)).toBeGreaterThanOrEqual(0);
+    expect(Number(fields.marginMs)).toBeLessThan(400);
+  });
+
+  it('reste silencieux quand la voix est franche', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    vi.spyOn(CallSessionManager.getInstance(), 'handleBargeIn').mockImplementation(() => undefined);
+    await caller(session, 1_000, 3_000);
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
+
+    expect(gateLogs(info, '[stt] Caller voice evidence is thin')).toHaveLength(0);
   });
 });

@@ -102,13 +102,25 @@ export function callerSpokeClearlySince(session: CallSession, sinceMs: number): 
 }
 
 /**
+ * Avance (positive) ou retard (négatif) de la dernière voix reçue sur l'instant donné, en ms ; moins
+ * l'infini si aucune voix n'a jamais été reçue ; `undefined` tant qu'il n'y a pas assez d'audio suivi
+ * pour constater un silence. Sert à journaliser la décision de la garde avec ses valeurs.
+ */
+export function callerVoiceMarginMs(session: CallSession, sinceMs: number): number | undefined {
+  const state = session.callerVoice;
+  if (!state || (state.trackedMs ?? 0) < MIN_JUDGED_AUDIO_MS) return undefined;
+  return state.lastVoiceAt === undefined
+    ? Number.NEGATIVE_INFINITY
+    : state.lastVoiceAt - sinceMs;
+}
+
+/**
  * L'audio entrant suivi ne contient aucune voix depuis cet instant. Sert à écarter une transcription
  * que rien n'a produit (appel 30172d22 : piste appelant muette, et pourtant « bon » puis « bonjour »
  * coupaient l'agent à chaque réponse). Sans assez d'audio suivi on ne juge pas : seul un silence
  * constaté disqualifie, jamais l'absence d'information.
  */
 export function noCallerVoiceSince(session: CallSession, sinceMs: number): boolean {
-  const state = session.callerVoice;
-  if (!state || (state.trackedMs ?? 0) < MIN_JUDGED_AUDIO_MS) return false;
-  return state.lastVoiceAt === undefined || state.lastVoiceAt < sinceMs;
+  const margin = callerVoiceMarginMs(session, sinceMs);
+  return margin !== undefined && margin < 0;
 }

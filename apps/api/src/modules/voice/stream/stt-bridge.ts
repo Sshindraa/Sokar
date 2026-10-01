@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { callerSilenceMs, noCallerVoiceSince, trackCallerVoice } from './caller-voice-activity';
+import { callerSilenceMs, callerVoiceMarginMs, trackCallerVoice } from './caller-voice-activity';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
@@ -1373,6 +1373,8 @@ const VOICE_EVIDENCE_LOOKBACK_MS = 4_000;
  * celle du « 4 » fantôme de −103 ms.
  */
 const VOICE_CONSUMED_TOLERANCE_MS = 150;
+/** En dessous de cette marge, la voix qui justifie un texte est mince : on le journalise. */
+const VOICE_EVIDENCE_THIN_MS = 400;
 
 /** Garde « pas de voix, pas de tour » : actif par défaut, `VOICE_REQUIRE_CALLER_VOICE=false` le coupe. */
 export function callerVoiceGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -1401,18 +1403,30 @@ function isTranscriptWithoutCallerVoice(
       ? turnStartedAt - VOICE_EVIDENCE_MARGIN_MS
       : now - VOICE_EVIDENCE_LOOKBACK_MS,
   );
-  if (!noCallerVoiceSince(session, since)) return false;
-  voiceNoCallerVoiceTranscriptTotal.inc({ stage });
-  logger.info(
-    {
-      callId: session.callControlId,
-      stage,
-      agentSpeaking: session.state === 'SPEAKING',
-      callerSilenceMs: Math.round(Math.min(callerSilenceMs(session, now), 99_999)),
-    },
-    '[stt] Transcript ignored: no caller voice in the incoming audio',
-  );
-  return true;
+  const margin = callerVoiceMarginMs(session, since);
+  if (margin === undefined) return false;
+  const fields = {
+    callId: session.callControlId,
+    stage,
+    agentSpeaking: session.state === 'SPEAKING',
+    // null : aucune voix reçue depuis le début de l'appel. Aucun texte, que des durées.
+    marginMs: Number.isFinite(margin) ? Math.round(margin) : null,
+    callerSilenceMs: Math.round(Math.min(callerSilenceMs(session, now), 99_999)),
+    turnStartAgeMs: turnStartedAt !== undefined ? Math.round(now - turnStartedAt) : null,
+    consumedAgeMs:
+      session.sttConsumedSpeechEndAt !== undefined
+        ? Math.round(now - session.sttConsumedSpeechEndAt)
+        : null,
+  };
+  if (margin < 0) {
+    voiceNoCallerVoiceTranscriptTotal.inc({ stage });
+    logger.info(fields, '[stt] Transcript ignored: no caller voice in the incoming audio');
+    return true;
+  }
+  // Preuve de voix mince : à un cheveu du rejet, là où un quasi-fantôme couperait l'agent.
+  if (margin < VOICE_EVIDENCE_THIN_MS && (stage === 'committed' || fields.agentSpeaking))
+    logger.info(fields, '[stt] Caller voice evidence is thin');
+  return false;
 }
 
 function handleBargeInFromTranscript(

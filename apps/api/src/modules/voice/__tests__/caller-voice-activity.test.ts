@@ -3,6 +3,7 @@ import type { CallSession } from '../stream/types';
 import {
   callerSilenceMs,
   callerSpokeClearlySince,
+  callerVoiceMarginMs,
   chunkRms,
   noCallerVoiceSince,
   trackCallerVoice,
@@ -121,5 +122,29 @@ describe('absence de voix pour une transcription (noCallerVoiceSince)', () => {
     trackCallerVoice(s, frame(3_000), 1_020);
     for (let index = 0; index < 60; index++) trackCallerVoice(s, frame(0), 1_040 + index * 10);
     expect(noCallerVoiceSince(s, 5_000)).toBe(true);
+  });
+});
+
+describe('marge de la voix sur l’instant de référence (callerVoiceMarginMs)', () => {
+  it('ne juge pas sans assez d’audio suivi', () => {
+    expect(callerVoiceMarginMs(session(), 0)).toBeUndefined();
+    const s = session();
+    for (let index = 0; index < 5; index++) trackCallerVoice(s, frame(3_000), 1_000 + index * 10);
+    expect(callerVoiceMarginMs(s, 0)).toBeUndefined();
+  });
+
+  it('rend moins l’infini quand aucune voix n’a jamais été reçue', () => {
+    const s = session();
+    for (let index = 0; index < 60; index++) trackCallerVoice(s, frame(0), 1_000 + index * 10);
+    expect(callerVoiceMarginMs(s, 0)).toBe(Number.NEGATIVE_INFINITY);
+  });
+
+  it('rend l’avance (positive) ou le retard (négatif) de la dernière voix sur l’instant donné', () => {
+    const s = session();
+    trackCallerVoice(s, frame(3_000), 5_000);
+    trackCallerVoice(s, frame(3_000), 5_020);
+    for (let index = 0; index < 60; index++) trackCallerVoice(s, frame(0), 5_040 + index * 10);
+    expect(callerVoiceMarginMs(s, 4_000)).toBe(1_020);
+    expect(callerVoiceMarginMs(s, 5_500)).toBe(-480);
   });
 });
