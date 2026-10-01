@@ -23,6 +23,7 @@ export interface ArmCount {
 export interface CaseDelta {
   id: string;
   family: BehaviorFamily;
+  origin: BehaviorCase['origin'];
   measures: BehaviorMeasures;
   reference: ArmCount;
   candidate: ArmCount;
@@ -34,6 +35,8 @@ export type FamilyVerdict = 'baisse' | 'hausse' | 'non concluant';
 
 export interface FamilyDelta {
   family: BehaviorFamily;
+  /** `temoins` : les cas témoins de la famille, jugés à part (ils ne doivent pas baisser). */
+  group: 'defauts' | 'temoins';
   cases: number;
   drawsPerArm: number;
   referenceRate: number;
@@ -105,6 +108,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     deltas.push({
       id: testCase.id,
       family: testCase.family,
+      origin: testCase.origin,
       measures: testCase.measures,
       reference: referenceCount,
       candidate: candidateCount,
@@ -114,8 +118,13 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
 
   const random = prng(AB_SEED);
   const families: FamilyDelta[] = [];
-  for (const family of BEHAVIOR_FAMILIES) {
-    const own = deltas.filter((entry) => entry.family === family);
+  for (const [family, group] of BEHAVIOR_FAMILIES.flatMap((name) => [
+    [name, 'defauts'] as const,
+    [name, 'temoins'] as const,
+  ])) {
+    const own = deltas.filter(
+      (entry) => entry.family === family && (entry.origin === 'control') === (group === 'temoins'),
+    );
     if (!own.length) continue;
     const mean = (values: number[]) =>
       values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -148,6 +157,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     ).length;
     families.push({
       family,
+      group,
       cases: own.length,
       drawsPerArm: draws,
       referenceRate,
@@ -158,7 +168,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
       verdict: high < 0 ? 'baisse' : low > 0 ? 'hausse' : 'non concluant',
       // Sous 20 % au départ, une baisse de 20 points n'existe pas : le banc ne peut rien dire.
       sized:
-        defects >= MIN_DEFECTS_PER_FAMILY &&
+        (group === 'temoins' || defects >= MIN_DEFECTS_PER_FAMILY) &&
         referenceRate >= TARGET_DROP &&
         detectable <= TARGET_DROP + 1e-9,
       detectable,
@@ -192,7 +202,7 @@ export function formatAbReport(report: AbReport): string {
             : `NON CONCLUANT : sous-dimensionnée (on ne verrait que ≥ ${Math.round(family.detectable * 100)} points)`
         : family.verdict.toUpperCase();
     lines.push(
-      `  ${family.family} : ${(family.referenceRate * 100).toFixed(0)} % → ${(family.candidateRate * 100).toFixed(0)} % ` +
+      `  ${family.family}${family.group === 'temoins' ? ' (témoins)' : ''} : ${(family.referenceRate * 100).toFixed(0)} % → ${(family.candidateRate * 100).toFixed(0)} % ` +
         `(${points(family.delta)} points, [${points(family.low)} ; ${points(family.high)}]), ` +
         `${family.cases} cas, ${family.drawsPerArm} tirages par bras : ${verdict}`,
     );

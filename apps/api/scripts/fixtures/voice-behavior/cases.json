@@ -581,6 +581,55 @@
       ]
     },
     {
+      "id": "attend-annonce-intention-3",
+      "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
+      "source": "variante de b686b241 tour 4 : une phrase qui introduit le nombre de personnes sans le donner",
+      "history": "toHeure+",
+      "transcript": "alors on sera",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "attend-annonce-intention-4",
+      "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
+      "source": "variante de b686b241 tour 4 : une phrase qui introduit le nom sans le donner",
+      "history": "toName",
+      "transcript": "alors c'est au nom de",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
       "id": "attend-correction-annoncee",
       "behavior": "attente",
       "family": "attente",
@@ -691,6 +740,60 @@
           "field": "time",
           "equals": "20:00",
           "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "repond-nombre-seul",
+      "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un nombre seul est une réponse complète",
+      "history": "toHeure+",
+      "transcript": "trois",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        },
+        {
+          "kind": "draft",
+          "field": "partySize",
+          "equals": 3,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "repond-oui-confirmation",
+      "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un « oui » à la question de confirmation est complet",
+      "history": "recapAsked",
+      "transcript": "oui",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
         }
       ]
     },

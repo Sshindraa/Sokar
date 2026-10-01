@@ -234,6 +234,38 @@ describe('comparaison A/B : un seul rejeu, jamais de référence stockée', () =
     expect(formatAbReport(report)).toContain('référence sous 20 %');
   });
 
+  it('juge les témoins d’une famille à part : une baisse des témoins ne se noie pas dans les défauts', () => {
+    const mixed = [
+      ...cases,
+      ...['t1', 't2'].map((id) => ({ ...timeCase(id), origin: 'control' as const })),
+    ];
+    const armOf = (rates: Record<string, number>) => ({
+      model: 'test',
+      responses: Object.fromEntries(
+        mixed.map((testCase) => [
+          testCase.id,
+          Array.from({ length: 18 }, (_, index) =>
+            output(index < Math.round((rates[testCase.id] ?? 1) * 18) ? '19:00' : '20:00'),
+          ),
+        ]),
+      ),
+    });
+    const ab = {
+      runId: 'run-2',
+      startedAt: 'x',
+      model: 'test',
+      provider: 'cerebras',
+      served: {},
+      arms: { reference: armOf({}), candidate: armOf({ t1: 0.3, t2: 0.3 }) },
+    } as BehaviorAbResponses;
+    const report = compareArms(mixed, ab);
+    const defects = report.families.find((entry) => entry.group === 'defauts')!;
+    const controls = report.families.find((entry) => entry.group === 'temoins')!;
+    expect(defects.delta).toBe(0);
+    expect(controls.verdict).toBe('baisse');
+    expect(formatAbReport(report)).toContain('(témoins)');
+  });
+
   it('est déterministe : deux analyses du même rejeu donnent les mêmes intervalles', () => {
     const ab = run(flat(0.7), flat(0.6));
     expect(compareArms(cases, ab)).toEqual(compareArms(cases, ab));
