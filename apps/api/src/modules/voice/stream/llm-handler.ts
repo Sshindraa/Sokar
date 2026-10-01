@@ -90,6 +90,11 @@ import {
 import type { TurnPlanContext } from './turn-plan';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
+  dialogueContextOf,
+  isRepeatOfLastProcessedTurn,
+  normalizeTranscriptForDedupe,
+} from './transcript-dedupe';
+import {
   effectiveVoiceLanguage,
   hasReliableLanguageEvidence,
   isFrenchLanguageLockEvidence,
@@ -292,13 +297,7 @@ function buildReservationConfirmationResponse(session: CallSession, customerName
   return `C'est réservé au nom de ${customerName}, ${formattedDate} à ${formatReservationTimeForSpeech(time)}, pour ${partySize} personne${partySize > 1 ? 's' : ''}. Je vous envoie un SMS de confirmation.`;
 }
 
-export function normalizeTranscriptForDedupe(transcript: string): string {
-  return transcript
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { normalizeTranscriptForDedupe };
 
 export function shouldSkipDuplicateTranscript(session: CallSession, transcript: string): boolean {
   const normalized = normalizeTranscriptForDedupe(transcript);
@@ -308,7 +307,7 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
   // (« oui » pour valider le nom, puis « oui » pour valider le récapitulatif).
   // Le contexte métier distingue ces tours tout en filtrant les doublons STT
   // qui répètent exactement le même événement.
-  const dialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
+  const dialogueContext = dialogueContextOf(session);
   const previous = recentTranscripts.get(session);
   const now = Date.now();
   if (
@@ -650,14 +649,8 @@ export function handleSttEvent(
       if (interruptedTranscript) {
         event.transcript = `${interruptedTranscript} ${event.transcript}`;
       }
-      const dialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
       const sameRecentTranscript =
-        !interruptedTranscript &&
-        normalizeTranscriptForDedupe(session.lastProcessedTranscript ?? '') ===
-          normalizeTranscriptForDedupe(event.transcript) &&
-        session.lastProcessedDialogueContext === dialogueContext &&
-        session.lastProcessedAt !== undefined &&
-        Date.now() - session.lastProcessedAt < TRANSCRIPT_DEDUPE_WINDOW_MS;
+        !interruptedTranscript && isRepeatOfLastProcessedTurn(session, event.transcript);
       if (sameRecentTranscript) {
         logger.debug(
           { callId: session.callControlId, ...describeTranscript(event.transcript) },
@@ -1027,7 +1020,7 @@ export async function processTranscriptStreaming(
   }
   session.lastProcessedTranscript = transcript;
   session.lastProcessedAt = Date.now();
-  session.lastProcessedDialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
+  session.lastProcessedDialogueContext = dialogueContextOf(session);
 
   const responseGeneration = ++session.responseGeneration;
   const dialogueV2Enabled = resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled;
