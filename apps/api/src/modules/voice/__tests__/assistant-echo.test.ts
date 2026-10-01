@@ -53,6 +53,24 @@ describe('assistant echo suppression', () => {
   });
 });
 
+describe('un énoncé d’un seul mot n’est jamais filtré, quel que soit le mot', () => {
+  // Aucune liste de mots : un mot isolé ne forme ni préfixe ni recouvrement de deux mots ou plus,
+  // donc l'agent qui dit « personnes » juste avant ne peut pas faire disparaître l'appelant.
+  it.each(['non', 'stop', 'personnes', 'plaisir', 'combien', 'xylophone', 'oui'])(
+    'garde « %s » pendant que l’agent parle',
+    (word) => {
+      for (const stage of ['partial', 'committed'] as const) {
+        expect(filterAssistantEcho(makeSession(), word, stage)).toEqual({
+          transcript: word,
+          suppressed: false,
+          strippedPrefix: false,
+          nonEchoWordCount: 1,
+        });
+      }
+    },
+  );
+});
+
 describe("écho aligné sur le moment où l'appelant a été entendu (appel 1b3f85e9)", () => {
   const T0 = 1_000_000;
   const speech = (text: string, at = T0) => {
