@@ -60,7 +60,7 @@ import {
   requestedSlotConflict,
   sizesWithoutTable,
   timeGivenWithoutPartySize,
-  endsWithQuestion,
+  QuestionOnlyGuard,
   wordCount,
 } from './fact-guards';
 import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
@@ -571,20 +571,15 @@ export async function runStructuredTurn(
       readbackName !== null ? held.push(phrase) : speakPhrase(phrase);
     // L'appelant vient de donner l'heure, le nombre vaut encore 0 : seule la question est dite (voir
     // `timeGivenWithoutPartySize`). Les phrases qui la précèdent sont retenues ; sans question, elles sont dites.
-    const deferred: string[] = [];
-    let dropped = 0;
-    let questionSpoken = false;
+    const questionOnly = new QuestionOnlyGuard((text) =>
+      logVoiceDebugText(session, 'phrase_dropped', {
+        text,
+        reason: 'time_given_without_party_size',
+      }),
+    );
     const emit = (phrase: string) => {
-      if (!actionResult && timeGivenWithoutPartySize(extractor.raw, state.draft)) {
-        if (!endsWithQuestion(phrase)) {
-          deferred.push(phrase);
-          return;
-        }
-        dropped += deferred.length;
-        deferred.length = 0;
-        questionSpoken = true;
-      }
-      route(phrase);
+      const active = !actionResult && timeGivenWithoutPartySize(extractor.raw, state.draft);
+      questionOnly.push(phrase, active).forEach(route);
     };
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
@@ -721,8 +716,7 @@ export async function runStructuredTurn(
     if (wouldSpeak) {
       const rest = splitter.flush();
       if (rest) emit(rest);
-      if (questionSpoken) dropped += deferred.splice(0).length;
-      else deferred.splice(0).forEach(route);
+      questionOnly.finish().forEach(route);
       if (readbackName !== null) {
         if (sayReadsLetters(output.say, readbackName)) {
           held.forEach(speakPhrase);
@@ -742,7 +736,8 @@ export async function runStructuredTurn(
     }
     const spoken = wouldSpeak && !slotConflict;
     // Ce qui est gardé dans l'historique est ce qui a été dit, pas la phrase que le modèle avait écrite.
-    if (dropped > 0 && spoken) finalOutput = { ...finalOutput, say: spokenPhrases.join(' ') };
+    if (questionOnly.dropped > 0 && spoken)
+      finalOutput = { ...finalOutput, say: spokenPhrases.join(' ') };
     return {
       output: finalOutput,
       spoken,

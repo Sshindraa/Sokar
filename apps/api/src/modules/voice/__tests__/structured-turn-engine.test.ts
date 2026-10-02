@@ -18,6 +18,7 @@ import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
 import { __resetMetrics } from '../../../shared/observability/metrics';
+import { logger } from '../../../shared/logger/pino';
 
 vi.mock('../stream/tts-handler', () => ({
   speakTtsStreamed: vi.fn().mockResolvedValue(undefined),
@@ -321,6 +322,38 @@ describe('tour structuré (canary)', () => {
 
       expect(spoken()).toEqual(['Vous êtes combien ?']);
       expect(session.history.at(-1)).toEqual({ role: 'assistant', content: 'Vous êtes combien ?' });
+    });
+
+    it('journalise chaque phrase retirée, avec son texte, pour le restaurant de test', async () => {
+      vi.stubEnv('VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS', RESTAURANT_ID);
+      const { session, mgr } = asked({
+        say: 'C’est possible. Samedi à 20 heures. Pour combien de personnes ?',
+      });
+
+      await processTranscriptStreaming(session, 'pour 20 heures', mgr);
+
+      const dropped = vi
+        .mocked(logger.info)
+        .mock.calls.map(([fields]) => fields as Record<string, unknown>)
+        .filter((fields) => fields.voiceDebug === 'phrase_dropped');
+      expect(dropped.map((fields) => fields.text)).toEqual([
+        'C’est possible.',
+        'Samedi à 20 heures.',
+      ]);
+      expect(dropped.every((fields) => fields.reason === 'time_given_without_party_size')).toBe(
+        true,
+      );
+    });
+
+    it('ne journalise rien hors restaurant de test (le texte reste privé)', async () => {
+      const { session, mgr } = asked({ say: 'Ça marche. Pour combien de personnes ?' });
+      await processTranscriptStreaming(session, 'pour 20 heures', mgr);
+      const dropped = vi
+        .mocked(logger.info)
+        .mock.calls.filter(
+          ([fields]) => (fields as { voiceDebug?: string }).voiceDebug === 'phrase_dropped',
+        );
+      expect(dropped).toHaveLength(0);
     });
 
     it('retient plusieurs phrases déclaratives avant la question', async () => {
