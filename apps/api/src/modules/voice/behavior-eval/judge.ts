@@ -6,6 +6,11 @@ import type {
   BehaviorResponses,
 } from './types';
 import type { BehaviorRequest } from './build';
+import {
+  buildTurnEndJudgeMessages,
+  TURN_END_JUDGE_FORMAT,
+  TURN_END_JUDGE_INSTRUCTIONS,
+} from '../stream/structured-turn/turn-end-judge';
 import type { AbReport } from './paired';
 
 /**
@@ -17,19 +22,8 @@ import type { AbReport } from './paired';
  * réservation, aucun exemple, aucun mot-clé, et pas même les principes du prompt actuel (phrase qui annonce,
  * phrase qui nie sa valeur) : on mesure si la séparation seule suffit.
  */
-export const JUDGE_INSTRUCTIONS =
-  "Tu juges un seul point. Un agent téléphonique vient de poser une question et l'appelant répond. " +
-  "La transcription vient d'une reconnaissance vocale au téléphone : elle peut s'arrêter en plein milieu d'une phrase ou d'une pensée. " +
-  "Dis si l'appelant a terminé ce qu'il avait à dire pour le moment (complete=true), ou si tu attends encore la suite (complete=false).";
-
-export const JUDGE_SCHEMA_NAME = 'turn_end_judge';
-
-const JUDGE_SCHEMA = {
-  type: 'object',
-  properties: { complete: { type: 'boolean' } },
-  required: ['complete'],
-  additionalProperties: false,
-};
+/** La consigne de production : le banc mesure exactement ce qui part en appel. */
+export const JUDGE_INSTRUCTIONS = TURN_END_JUDGE_INSTRUCTIONS;
 
 /** Tirages par cas du plan chiffré : 16 par défaut (gain de 15 points), 24 par témoin (95 % à une erreur près). */
 export const JUDGE_DRAWS = { defect: 16, control: 24 };
@@ -66,17 +60,8 @@ export function buildJudgeRequest(
     id: testCase.id,
     // Le plan chiffré fixe les tirages (pas ceux du fichier, écrits pour le tour complet).
     samples: samples ?? (testCase.origin === 'control' ? JUDGE_DRAWS.control : JUDGE_DRAWS.defect),
-    messages: [
-      { role: 'system', content: JUDGE_INSTRUCTIONS },
-      {
-        role: 'user',
-        content: `Dernière question de l'agent : ${lastQuestion ?? '(aucune)'}\nCe que l'appelant a dit : ${testCase.transcript}`,
-      },
-    ] as never,
-    format: {
-      type: 'json_schema',
-      json_schema: { name: JUDGE_SCHEMA_NAME, strict: true, schema: JUDGE_SCHEMA },
-    },
+    messages: buildTurnEndJudgeMessages(lastQuestion, testCase.transcript) as never,
+    format: TURN_END_JUDGE_FORMAT,
   };
 }
 

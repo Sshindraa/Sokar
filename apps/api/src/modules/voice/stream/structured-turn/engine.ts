@@ -12,7 +12,11 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { isVoiceStructuredTurnEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
+import {
+  isVoiceStructuredTurnEnabled,
+  isVoiceTurnJudgeEnabled,
+  isVoiceUnderstandingCheckEnabled,
+} from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -57,6 +61,7 @@ import {
   wordCount,
 } from './fact-guards';
 import { lettersOnly, readbackFact, sayReadsLetters } from './name-readback';
+import { startTurnEndJudge } from './turn-end-judge';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import {
@@ -156,6 +161,8 @@ interface PassResult {
   hoursFact?: string;
   /** Fait à donner au second passage quand le nom relu porte des mots non épelés : rien n'a été dit. */
   nameFact?: string;
+  /** Verdict du juge de fin de tour pour ce passage (absent : juge non actif sur ce passage). */
+  judge?: 'complete' | 'incomplete' | 'unavailable';
 }
 
 /**
@@ -361,7 +368,33 @@ export function speculateStructuredTurn(
   if (!transcript) return;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
-  startSpeculation(session, mgr, messages, format, onVerdict);
+  if (!onVerdict || !isVoiceTurnJudgeEnabled(session.restaurantId)) {
+    startSpeculation(session, mgr, messages, format, onVerdict);
+    return;
+  }
+  // Juge de fin de tour séparé (turn-end-judge.ts), en parallèle du passage anticipé : son verdict ferme le tour.
+  // Sans verdict du juge (délai dépassé, erreur), le `turnComplete` du modèle ferme le tour comme avant.
+  let judged: boolean | null | undefined;
+  let modelVerdict: boolean | undefined;
+  let decide: ((complete: boolean) => void) | undefined = onVerdict;
+  const settle = () => {
+    if (!decide || judged === undefined) return;
+    const verdict = judged ?? modelVerdict;
+    if (verdict === undefined) return;
+    const send = decide;
+    decide = undefined;
+    send(verdict);
+  };
+  startTurnEndJudge(session, mgr, transcript)
+    .then((verdict) => {
+      judged = verdict;
+      settle();
+    })
+    .catch(() => undefined);
+  startSpeculation(session, mgr, messages, format, (verdict) => {
+    modelVerdict = verdict;
+    settle();
+  });
 }
 
 /**
@@ -504,7 +537,11 @@ export async function runStructuredTurn(
   const runPass = async (
     actionResult?: string,
     onlyActions?: readonly StructuredTurnAction[],
+    forceFinished = false,
+    useJudge = false,
   ): Promise<PassResult> => {
+    // Appelant jugé arrivé au bout de sa phrase (silence ou verdict du juge) : on répond, on ne retient plus.
+    const finished = options.callerFinished === true || forceFinished;
     const extractor = new SayStreamExtractor();
     const splitter = new PhraseSplitter();
     let action: string | null = null;
@@ -521,16 +558,39 @@ export async function runStructuredTurn(
       readbackName !== null ? held.push(phrase) : speakPhrase(phrase);
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
-      ...(options.callerFinished ? { callerFinished: true } : {}),
+      ...(finished ? { callerFinished: true } : {}),
       ...(onlyActions ? { actions: onlyActions } : {}),
     });
+    // Juge de fin de tour séparé (turn-end-judge.ts) : son verdict remplace `turnComplete` du modèle pour décider de
+    // parler. Tant qu'il n'a pas répondu, la phrase est retenue ; sans verdict (délai, erreur), `turnComplete` du modèle.
+    const judging = useJudge && !finished && isVoiceTurnJudgeEnabled(session.restaurantId);
+    let judged = (judging ? undefined : null) as boolean | null | undefined;
+    let unsaid = '';
+    const mayContinue = () => {
+      const complete =
+        finished ||
+        (judged === undefined ? false : judged === null ? turnComplete === true : judged);
+      return complete && !slotConflict;
+    };
+    const drainSaid = () => {
+      if (!unsaid || action !== 'none' || !mayContinue() || !isLive()) return;
+      const chunk = unsaid;
+      unsaid = '';
+      splitter.push(chunk).forEach(emit);
+    };
+    const judgeSettled: Promise<void> = judging
+      ? startTurnEndJudge(session, mgr, transcript).then((verdict) => {
+          judged = verdict;
+          drainSaid();
+        })
+      : Promise.resolve();
     const onDelta = (delta: string) => {
       if (!isLive()) return;
       if (firstToken) {
         firstToken = false;
         markVoiceTurnLlmFirstToken(session, turnId);
       }
-      const said = extractor.push(delta);
+      unsaid += extractor.push(delta);
       // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
       // connus quand la phrase commence.
       if (turnComplete === null) {
@@ -595,15 +655,13 @@ export async function runStructuredTurn(
           }
         }
       }
-      const mayContinue =
-        (turnComplete === true || options.callerFinished === true) && !slotConflict;
-      if (said && action === 'none' && mayContinue) splitter.push(said).forEach(emit);
+      drainSaid();
     };
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
     // si elle est identique ; sinon (ou en cas d'échec) appel normal.
     let text: string | null = null;
     const speculative =
-      !actionResult && !options.callerFinished
+      !actionResult && !finished
         ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
         : null;
     if (speculative) {
@@ -615,13 +673,20 @@ export async function runStructuredTurn(
       telemetryTurnId: turnId,
       onDelta,
     });
-    const output = parseStructuredTurnOutput(text);
+    let output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
+    // Le juge a une échéance propre : on l'attend ici (il tourne depuis le début du passage, souvent déjà rendu).
+    await judgeSettled;
+    drainSaid();
+    const modelComplete = output.turnComplete;
+    if (typeof judged === 'boolean') output = { ...output, turnComplete: judged };
+    if (judged === true && !modelComplete && spokenPhrases.length === 0 && !slotConflict) {
+      // Le modèle jugeait l'appelant inachevé (say vide, par consigne) mais le juge dit qu'il a fini : réponse à refaire.
+      return runPass(actionResult, onlyActions, true);
+    }
     let finalOutput = output;
     const wouldSpeak =
-      output.action === 'none' &&
-      (output.turnComplete || !!options.callerFinished) &&
-      !slotConflict;
+      output.action === 'none' && (output.turnComplete || finished) && !slotConflict;
     if (wouldSpeak) {
       const rest = splitter.flush();
       if (rest) emit(rest);
@@ -649,6 +714,16 @@ export async function runStructuredTurn(
       slotConflict,
       ...(hoursFact ? { hoursFact } : {}),
       ...(nameFact ? { nameFact } : {}),
+      ...(judging
+        ? {
+            judge:
+              typeof judged !== 'boolean'
+                ? ('unavailable' as const)
+                : judged
+                  ? ('complete' as const)
+                  : ('incomplete' as const),
+          }
+        : {}),
     };
   };
 
@@ -744,7 +819,7 @@ export async function runStructuredTurn(
   };
 
   try {
-    const first = await runPass();
+    const first = await runPass(undefined, undefined, false, true);
     // Une spéculation non reprise (requête différente, relance) ne sert plus.
     cancelSpeculation(session);
     if (!isLive()) return;
@@ -758,6 +833,7 @@ export async function runStructuredTurn(
         turnComplete: false,
         interpretation: first.output.interpretation,
         confidence: first.output.confidence,
+        ...(first.judge ? { judge: first.judge } : {}),
       });
       mgr.transition(session, 'LISTENING');
       armIncompleteTurnTimer(session, mgr, transcript, startedAt);
@@ -814,6 +890,7 @@ export async function runStructuredTurn(
           : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
       speculated: speculationUsed,
+      ...(first.judge ? { judge: first.judge } : {}),
     });
     // Texte reçu et sortie brute du modèle, pour comprendre une erreur de compréhension (appel de test
     // du 30/09 : « vous êtes 20 demain » enregistré comme 20 h). Restaurants de test uniquement.

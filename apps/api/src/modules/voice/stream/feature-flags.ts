@@ -53,6 +53,21 @@ export function isVoiceUnderstandingCheckEnabled(
   );
 }
 
+/**
+ * Juge de fin de tour séparé (voir `structured-turn/turn-end-judge.ts`) : une requête minimale, en parallèle du
+ * passage anticipé, dit si l'appelant a fini ; son verdict remplace `turnComplete` pour fermer le tour et pour
+ * décider de répondre. Seulement pour les restaurants listés (`VOICE_TURN_JUDGE_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoiceTurnJudgeEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_TURN_JUDGE_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,
