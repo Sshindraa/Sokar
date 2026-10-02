@@ -1,7 +1,7 @@
 import { normalizeOpeningHours } from '@sokar/shared';
-import { nameLettersData } from './name-readback';
+import { nameLetterSequence, nameLettersData } from './name-readback';
 import type { ChatMessage } from '../types';
-import type { DayAvailability, StructuredTurnState } from './fact-guards';
+import { spelledLettersOf, type DayAvailability, type StructuredTurnState } from './fact-guards';
 
 /**
  * Consignes du tour structuré, ajoutées au prompt du restaurant. Elles
@@ -33,7 +33,7 @@ Une formule de politesse se rapporte au moment où tu parles (MOMENT DE LA JOURN
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
 La disponibilité dépend du nombre de personnes : tant que draft.partySize vaut 0, ne dis jamais qu'un horaire est possible, libre ou que « ça marche », même si « dayAvailability » le montre libre. Retiens l'horaire dans draft sans l'annoncer comme acquis ni le répéter, et demande le nombre ; tu confirmeras la disponibilité une fois le nombre connu. Dès que la date, l'heure et le nombre sont connus, lis dans « freeSlotsByPartySize » la ligne qui contient ce nombre (« 9-12 » contient 10) : si l'heure demandée n'y figure pas, dis clairement qu'elle n'est pas disponible pour ce nombre et propose les horaires libres les plus proches de cette ligne ; ne demande pas le nom et ne dis pas « c'est noté » pour cet horaire.
 Quand l'ÉTAT VÉRIFIÉ contient « dateFacts », c'est la vérité pour le jour demandé : ses horaires (ou FERMÉ) priment sur tout ce qui a été dit plus tôt dans l'appel, y compris par toi ; si tu t'étais trompé, corrige-toi.
-L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. Dans une épellation, « deux » ou « double » suivi d'une lettre, ou un chiffre suivi d'une lettre, double cette lettre, même sans autre mot autour ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom, c'est un faux départ : ne garde que la DERNIÈRE épellation complète, jamais un mélange des deux. Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Seules les lettres épelées forment le nom : un mot dit en plus avant ou après l'épellation n'en fait jamais partie, même s'il ressemble à un nom, et il ne figure ni dans customerName ni dans ta relecture. Quand tu relis le nom (awaiting=customerNameConfirmation), tu écris ses lettres une à une, isolées et dans l'ordre, une lettre doublée s'écrivant deux fois de suite : « nameLetters » de l'ÉTAT VÉRIFIÉ donne les lettres du nom retenu AVANT ce tour (« count » : nombre de fois que la lettre s'écrit de suite) ; si le nom change à ce tour, ce sont les lettres du nouveau nom. Tu ne dis jamais le nom comme un mot et tu ne décris jamais sa graphie (doubles, accents) : la voix lit mal une lettre suivie d'un nombre ou d'un mot. Fais confirmer cette relecture. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
+L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. Dans une épellation, « deux » ou « double » suivi d'une lettre, ou un chiffre suivi d'une lettre, double cette lettre, même sans autre mot autour ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom, c'est un faux départ : ne garde que la DERNIÈRE épellation complète, jamais un mélange des deux. Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Seules les lettres épelées forment le nom : un mot dit en plus avant ou après l'épellation n'en fait jamais partie, même s'il ressemble à un nom, et il ne figure ni dans customerName ni dans ta relecture. Quand tu relis le nom (awaiting=customerNameConfirmation), tu écris ses lettres une à une, isolées et dans l'ordre, une lettre doublée s'écrivant deux fois de suite : « nameLetters » de l'ÉTAT VÉRIFIÉ donne les lettres du nom retenu AVANT ce tour (« count » : nombre de fois que la lettre s'écrit de suite) ; « spelledName » et « spelledLetters », quand ils sont présents, donnent les lettres que l'appelant vient d'épeler à ce tour, déjà déchiffrées par le code (le mot entier, puis lettre par lettre avec le même « count ») : elles sont exactes, ne les redéchiffre pas, et c'est leur suite (assemblée avec les morceaux des tours précédents si l'épellation s'étale) qui forme le nouveau nom ; si le nom change à ce tour, ce sont les lettres du nouveau nom. Tu ne dis jamais le nom comme un mot et tu ne décris jamais sa graphie (doubles, accents) : la voix lit mal une lettre suivie d'un nombre ou d'un mot. Fais confirmer cette relecture. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
 
 /**
  * Vérification de compréhension (drapeau par restaurant). Consignes de principe, sans formulation à imiter :
@@ -155,6 +155,11 @@ const RECOVERY_CONSTRAINTS =
 /** Dernier message du dialogue pour une relance : ce que l'appelant n'a pas dit, sans texte à lire. */
 const RECOVERY_USER_MARKER = '(aucune parole reconnue)';
 
+const NAME_AWAITING: ReadonlySet<StructuredTurnState['lastAwaiting']> = new Set([
+  'customerName',
+  'customerNameConfirmation',
+]);
+
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
   history: ChatMessage[];
@@ -175,12 +180,19 @@ export function buildStructuredTurnMessages(input: {
   understanding?: boolean;
 }): ChatMessage[] {
   const nameLetters = nameLettersData(input.state.draft.customerName);
+  // Le nom est attendu : les lettres épelées dans les mots de l'appelant sont déchiffrées par le code (« a 2 s a 2 m »
+  // = A, S ×2, A, M ×2) pour que le modèle n'ait plus à le faire (appel 8043662c : lettre doublée perdue au premier passage).
+  const spelledName = NAME_AWAITING.has(input.state.lastAwaiting)
+    ? nameLetterSequence(spelledLettersOf(input.transcript))
+    : '';
+  const spelledLetters = nameLettersData(spelledName);
   const verified = {
     draft: input.state.draft,
     availability: input.state.availability,
     reservationCreated: input.state.reservationCreated,
     lastAwaiting: input.state.lastAwaiting,
     ...(nameLetters.length ? { nameLetters } : {}),
+    ...(spelledLetters.length ? { spelledName, spelledLetters } : {}),
     ...(input.state.draft.date
       ? { dateFacts: describeDate(input.state.draft.date, input.openingHours) }
       : {}),
