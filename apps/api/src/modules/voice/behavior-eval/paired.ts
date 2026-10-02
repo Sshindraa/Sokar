@@ -23,6 +23,9 @@ export interface ArmCount {
 export interface CaseDelta {
   id: string;
   family: BehaviorFamily;
+  origin: BehaviorCase['origin'];
+  /** Cas réel dont celui-ci est une variante (sa lignée de défaut) ; absent pour un cas réel ou un témoin. */
+  variantOf?: string;
   measures: BehaviorMeasures;
   reference: ArmCount;
   candidate: ArmCount;
@@ -34,6 +37,8 @@ export type FamilyVerdict = 'baisse' | 'hausse' | 'non concluant';
 
 export interface FamilyDelta {
   family: BehaviorFamily;
+  /** `temoins` : les cas témoins de la famille, jugés à part (ils ne doivent pas baisser). */
+  group: 'defauts' | 'temoins';
   cases: number;
   drawsPerArm: number;
   referenceRate: number;
@@ -48,15 +53,30 @@ export interface FamilyDelta {
   detectable: number;
 }
 
+/** Un défaut réel et ses variantes : l'écart se lit sur la lignée, pas sur la famille entière. */
+export interface LineageDelta {
+  root: string;
+  cases: number;
+  drawsPerArm: number;
+  referenceRate: number;
+  candidateRate: number;
+  delta: number;
+  low: number;
+  high: number;
+}
+
 export interface AbReport {
   runId: string;
   model: string;
   provider: string;
   cases: CaseDelta[];
   families: FamilyDelta[];
+  lineages: LineageDelta[];
 }
 
 const RESAMPLES = 2000;
+/** Un témoin (réponse courte et complète) doit rester à ce niveau dans le bras candidat. */
+export const CONTROL_FLOOR = 0.95;
 export const AB_SEED = 20261002;
 
 function prng(seed: number): () => number {
@@ -67,6 +87,31 @@ function prng(seed: number): () => number {
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Intervalle à 90 % de l'écart moyen entre cas : on rééchantillonne les cas, puis les tirages de chaque cas. */
+function bootstrapInterval(own: CaseDelta[], random: () => number): { low: number; high: number } {
+  const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const samples: number[] = [];
+  for (let round = 0; round < RESAMPLES; round++) {
+    const picked = own.map(() => own[Math.floor(random() * own.length)]);
+    samples.push(
+      mean(
+        picked.map(
+          (entry) =>
+            binomial(random, entry.candidate.draws, rateOf(entry.candidate)) /
+              entry.candidate.draws -
+            binomial(random, entry.reference.draws, rateOf(entry.reference)) /
+              entry.reference.draws,
+        ),
+      ),
+    );
+  }
+  samples.sort((a, b) => a - b);
+  return {
+    low: samples[Math.floor(0.05 * (RESAMPLES - 1))],
+    high: samples[Math.ceil(0.95 * (RESAMPLES - 1))],
   };
 }
 
@@ -105,6 +150,8 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     deltas.push({
       id: testCase.id,
       family: testCase.family,
+      origin: testCase.origin,
+      ...(testCase.variantOf ? { variantOf: testCase.variantOf } : {}),
       measures: testCase.measures,
       reference: referenceCount,
       candidate: candidateCount,
@@ -114,8 +161,13 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
 
   const random = prng(AB_SEED);
   const families: FamilyDelta[] = [];
-  for (const family of BEHAVIOR_FAMILIES) {
-    const own = deltas.filter((entry) => entry.family === family);
+  for (const [family, group] of BEHAVIOR_FAMILIES.flatMap((name) => [
+    [name, 'defauts'] as const,
+    [name, 'temoins'] as const,
+  ])) {
+    const own = deltas.filter(
+      (entry) => entry.family === family && (entry.origin === 'control') === (group === 'temoins'),
+    );
     if (!own.length) continue;
     const mean = (values: number[]) =>
       values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -123,24 +175,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     const candidateRate = mean(own.map((entry) => rateOf(entry.candidate)));
     const draws = own.reduce((sum, entry) => sum + entry.reference.draws, 0);
 
-    const samples: number[] = [];
-    for (let round = 0; round < RESAMPLES; round++) {
-      const picked = own.map(() => own[Math.floor(random() * own.length)]);
-      samples.push(
-        mean(
-          picked.map(
-            (entry) =>
-              binomial(random, entry.candidate.draws, rateOf(entry.candidate)) /
-                entry.candidate.draws -
-              binomial(random, entry.reference.draws, rateOf(entry.reference)) /
-                entry.reference.draws,
-          ),
-        ),
-      );
-    }
-    samples.sort((a, b) => a - b);
-    const low = samples[Math.floor(0.05 * (RESAMPLES - 1))];
-    const high = samples[Math.ceil(0.95 * (RESAMPLES - 1))];
+    const { low, high } = bootstrapInterval(own, random);
     const detectable = detectableDrop(Math.min(0.95, Math.max(0.05, referenceRate)), draws);
     // Défauts réellement rejoués dans cette famille (pas ceux du fichier) : un rejeu restreint ne conclut pas.
     const defects = cases.filter(
@@ -148,6 +183,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     ).length;
     families.push({
       family,
+      group,
       cases: own.length,
       drawsPerArm: draws,
       referenceRate,
@@ -158,10 +194,35 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
       verdict: high < 0 ? 'baisse' : low > 0 ? 'hausse' : 'non concluant',
       // Sous 20 % au départ, une baisse de 20 points n'existe pas : le banc ne peut rien dire.
       sized:
-        defects >= MIN_DEFECTS_PER_FAMILY &&
+        (group === 'temoins' || defects >= MIN_DEFECTS_PER_FAMILY) &&
         referenceRate >= TARGET_DROP &&
         detectable <= TARGET_DROP + 1e-9,
       detectable,
+    });
+  }
+  const lineages: LineageDelta[] = [];
+  const roots = new Set(
+    deltas
+      .filter((entry) => entry.origin !== 'control')
+      .map((entry) => entry.variantOf ?? entry.id),
+  );
+  for (const root of roots) {
+    const own = deltas.filter(
+      (entry) => entry.origin !== 'control' && (entry.variantOf ?? entry.id) === root,
+    );
+    if (own.length < 2) continue;
+    const mean = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    const referenceRate = mean(own.map((entry) => rateOf(entry.reference)));
+    const candidateRate = mean(own.map((entry) => rateOf(entry.candidate)));
+    lineages.push({
+      root,
+      cases: own.length,
+      drawsPerArm: own.reduce((sum, entry) => sum + entry.reference.draws, 0),
+      referenceRate,
+      candidateRate,
+      delta: candidateRate - referenceRate,
+      ...bootstrapInterval(own, random),
     });
   }
   return {
@@ -170,6 +231,7 @@ export function compareArms(cases: BehaviorCase[], ab: BehaviorAbResponses): AbR
     provider: ab.provider,
     cases: deltas,
     families,
+    lineages,
   };
 }
 
@@ -192,10 +254,20 @@ export function formatAbReport(report: AbReport): string {
             : `NON CONCLUANT : sous-dimensionnée (on ne verrait que ≥ ${Math.round(family.detectable * 100)} points)`
         : family.verdict.toUpperCase();
     lines.push(
-      `  ${family.family} : ${(family.referenceRate * 100).toFixed(0)} % → ${(family.candidateRate * 100).toFixed(0)} % ` +
+      `  ${family.family}${family.group === 'temoins' ? ' (témoins)' : ''} : ${(family.referenceRate * 100).toFixed(0)} % → ${(family.candidateRate * 100).toFixed(0)} % ` +
         `(${points(family.delta)} points, [${points(family.low)} ; ${points(family.high)}]), ` +
         `${family.cases} cas, ${family.drawsPerArm} tirages par bras : ${verdict}`,
     );
+  }
+  if (report.lineages.length) {
+    lines.push('', 'Par lignée de défaut (cas réel et ses variantes, intervalle à 90 %) :');
+    for (const lineage of report.lineages) {
+      lines.push(
+        `  ${lineage.root} : ${(lineage.referenceRate * 100).toFixed(0)} % → ${(lineage.candidateRate * 100).toFixed(0)} % ` +
+          `(${points(lineage.delta)} points, [${points(lineage.low)} ; ${points(lineage.high)}]), ` +
+          `${lineage.cases} cas, ${lineage.drawsPerArm} tirages par bras`,
+      );
+    }
   }
   lines.push('', 'Par cas (mêmes cas dans les deux bras) :');
   for (const entry of report.cases) {
@@ -206,7 +278,10 @@ export function formatAbReport(report: AbReport): string {
     lines.push(
       `  ${entry.id} [${entry.family}, ${entry.measures === 'engine' ? 'moteur' : 'modèle'}] : ` +
         `${entry.reference.successes}/${entry.reference.draws} → ${entry.candidate.successes}/${entry.candidate.draws} ` +
-        `(${points(entry.delta)} points)${invalid}`,
+        `(${points(entry.delta)} points)${invalid}` +
+        (entry.origin === 'control' && rateOf(entry.candidate) < CONTROL_FLOOR
+          ? ' ⚠ témoin sous 95 % dans le candidat'
+          : ''),
     );
   }
   return lines.join('\n');

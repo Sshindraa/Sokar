@@ -234,6 +234,74 @@ describe('comparaison A/B : un seul rejeu, jamais de référence stockée', () =
     expect(formatAbReport(report)).toContain('référence sous 20 %');
   });
 
+  it('juge les témoins d’une famille à part : une baisse des témoins ne se noie pas dans les défauts', () => {
+    const mixed = [
+      ...cases,
+      ...['t1', 't2'].map((id) => ({ ...timeCase(id), origin: 'control' as const })),
+    ];
+    const armOf = (rates: Record<string, number>) => ({
+      model: 'test',
+      responses: Object.fromEntries(
+        mixed.map((testCase) => [
+          testCase.id,
+          Array.from({ length: 18 }, (_, index) =>
+            output(index < Math.round((rates[testCase.id] ?? 1) * 18) ? '19:00' : '20:00'),
+          ),
+        ]),
+      ),
+    });
+    const ab = {
+      runId: 'run-2',
+      startedAt: 'x',
+      model: 'test',
+      provider: 'cerebras',
+      served: {},
+      arms: { reference: armOf({}), candidate: armOf({ t1: 0.3, t2: 0.3 }) },
+    } as BehaviorAbResponses;
+    const report = compareArms(mixed, ab);
+    const defects = report.families.find((entry) => entry.group === 'defauts')!;
+    const controls = report.families.find((entry) => entry.group === 'temoins')!;
+    expect(defects.delta).toBe(0);
+    expect(controls.verdict).toBe('baisse');
+    expect(formatAbReport(report)).toContain('(témoins)');
+  });
+
+  it('lit l’écart sur la lignée d’un défaut réel, et signale un témoin sous 95 % dans le candidat', () => {
+    const lineage = [
+      { ...timeCase('r'), origin: 'real' as const },
+      { ...timeCase('v1'), origin: 'variant' as const, variantOf: 'r' },
+      { ...timeCase('v2'), origin: 'variant' as const, variantOf: 'r' },
+      { ...timeCase('t'), origin: 'control' as const },
+    ];
+    const armOf = (rates: Record<string, number>) => ({
+      model: 'test',
+      responses: Object.fromEntries(
+        lineage.map((testCase) => [
+          testCase.id,
+          Array.from({ length: 12 }, (_, index) =>
+            output(index < Math.round((rates[testCase.id] ?? 1) * 12) ? '19:00' : '20:00'),
+          ),
+        ]),
+      ),
+    });
+    const ab = {
+      runId: 'run-3',
+      startedAt: 'x',
+      model: 'test',
+      provider: 'cerebras',
+      served: {},
+      arms: {
+        reference: armOf({ r: 0.2, v1: 0.2, v2: 0.2 }),
+        candidate: armOf({ r: 0.8, v1: 0.8, v2: 0.8, t: 0.9 }),
+      },
+    } as BehaviorAbResponses;
+    const report = compareArms(lineage, ab);
+    expect(report.lineages).toHaveLength(1);
+    expect(report.lineages[0].root).toBe('r');
+    expect(report.lineages[0].low).toBeGreaterThan(0);
+    expect(formatAbReport(report)).toContain('témoin sous 95 %');
+  });
+
   it('est déterministe : deux analyses du même rejeu donnent les mêmes intervalles', () => {
     const ab = run(flat(0.7), flat(0.6));
     expect(compareArms(cases, ab)).toEqual(compareArms(cases, ab));
