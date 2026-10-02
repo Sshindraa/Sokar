@@ -519,6 +519,53 @@ export function endsWithQuestion(phrase: string): boolean {
 }
 
 /**
+ * Garde-fou « seule la question est dite » (voir `timeGivenWithoutPartySize`), phrase par phrase, dans l'ordre du
+ * flux. Tant qu'il est actif, une phrase qui ne se termine pas par un point d'interrogation est retenue ; quand la
+ * question arrive, les phrases retenues sont retirées (`onDrop` les reçoit, pour le journal de débogage). Sans
+ * question à la fin, elles sont dites telles quelles : jamais de silence.
+ */
+export class QuestionOnlyGuard {
+  private deferred: string[] = [];
+  private questionSpoken = false;
+  private droppedCount = 0;
+
+  constructor(private readonly onDrop: (phrase: string) => void = () => undefined) {}
+
+  /** Phrases à dire maintenant pour cette phrase du flux. */
+  push(phrase: string, active: boolean): string[] {
+    if (!active) return [phrase];
+    if (!endsWithQuestion(phrase)) {
+      this.deferred.push(phrase);
+      return [];
+    }
+    this.drop();
+    this.questionSpoken = true;
+    return [phrase];
+  }
+
+  /** Phrases à dire en fin de flux : celles retenues sans question derrière, sinon aucune (retirées). */
+  finish(): string[] {
+    if (this.questionSpoken) {
+      this.drop();
+      return [];
+    }
+    return this.deferred.splice(0);
+  }
+
+  /** Nombre de phrases retirées : l'historique garde ce qui a été dit, pas ce que le modèle avait écrit. */
+  get dropped(): number {
+    return this.droppedCount;
+  }
+
+  private drop(): void {
+    for (const phrase of this.deferred.splice(0)) {
+      this.droppedCount++;
+      this.onDrop(phrase);
+    }
+  }
+}
+
+/**
  * Vrai quand les créneaux du jour, déjà lus pour ce nombre de personnes, ne contiennent pas
  * l'heure du brouillon : le modèle ne doit pas annoncer ce créneau comme libre (appel 1b3f85e9 :
  * « Pour 5, 15 h 30 est libre » alors que 15 h à 18 h était complet). Faux quand on ne sait pas
