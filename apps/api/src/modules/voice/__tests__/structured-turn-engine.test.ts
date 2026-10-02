@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { processTranscriptStreaming } from '../stream/llm-handler';
@@ -16,6 +18,7 @@ import {
 } from '../stream/structured-turn/fact-guards';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
+import { partySizeCorrectionFact } from '../stream/structured-turn/fact-guards';
 import { speakTtsStreamed } from '../stream/tts-handler';
 import { __resetMetrics } from '../../../shared/observability/metrics';
 import { logger } from '../../../shared/logger/pino';
@@ -299,6 +302,108 @@ describe('tour structuré (canary)', () => {
     await processTranscriptStreaming(session, 'on sera sept', mgr);
 
     expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
+  });
+
+  describe('réponse douteuse qui porte un nombre alors que la taille du groupe est connue (appel 90834d63)', () => {
+    const known = { date: TOMORROW, time: '14:30', partySize: 4, customerName: '' };
+    // Ordre des clés du schéma réel : `understanding` précède le brouillon et `say`.
+    const doubtful = (say: string, awaiting: StructuredTurnOutput['awaiting'] = 'customerName') =>
+      ({
+        turnComplete: true,
+        reading: 'un non 5',
+        understanding: 'doubtful',
+        interpretation: 'unclear',
+        draft: known,
+        awaiting,
+        action: 'none',
+        message: '',
+        confidence: 'low',
+        say,
+      }) as StructuredTurnOutput;
+    const NAME_QUESTION = 'Pardon, je n’ai pas bien saisi. Sous quel nom je note la réservation ?';
+    const setup = (
+      draft = known,
+      lastAwaiting: StructuredTurnOutput['awaiting'] = 'customerName',
+    ) => {
+      const fx = fixture();
+      fx.session.structuredTurn = { ...createStructuredTurnState(), draft, lastAwaiting };
+      return fx;
+    };
+
+    it('ne passe pas à la question suivante : le second passage reçoit le nombre à redemander', async () => {
+      const { session, mgr, outputs } = setup();
+      outputs.push(
+        doubtful(NAME_QUESTION),
+        doubtful('Vous avez dit cinq personnes ?', 'partySize'),
+      );
+
+      await processTranscriptStreaming(session, 'un non 5', mgr);
+
+      expect(spoken()).toEqual(['Vous avez dit cinq personnes ?']);
+      const secondContext = (
+        vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[1] as Array<{
+          content: string;
+        }>
+      )[0].content;
+      expect(secondContext).toContain('un non 5');
+      expect(secondContext).toContain('4 personnes');
+      expect(session.structuredTurn?.draft.partySize).toBe(4);
+    });
+
+    it('le cas du banc « second passage » porte exactement le fait produit par le moteur', () => {
+      const cases = JSON.parse(
+        readFileSync(
+          path.join(__dirname, '../../../../scripts/fixtures/voice-behavior/cases.json'),
+          'utf8',
+        ),
+      ) as { cases: Array<{ id: string; actionResult?: string }> };
+      const second = cases.cases.find((c) => c.id === 'correction-nombre-douteuse-second-passage');
+      const streamed = JSON.stringify({
+        understanding: 'doubtful',
+        draft: known,
+        awaiting: 'customerName',
+      });
+      expect(second?.actionResult).toBe(partySizeCorrectionFact(streamed, 'un non 5', known));
+    });
+
+    it.each([
+      ['aucun nombre dans l’énoncé', 'euh pardon', known, 'customerName', 'customerName'],
+      ['le nombre est celui déjà noté', 'oui 4', known, 'customerName', 'customerName'],
+      [
+        'taille du groupe inconnue',
+        'un non 5',
+        { ...known, partySize: 0 },
+        'customerName',
+        'customerName',
+      ],
+      ['on attendait le nombre', 'un non 5', known, 'partySize', 'partySize'],
+    ] as const)(
+      'ne change rien : %s',
+      async (_label, transcript, draft, lastAwaiting, awaiting) => {
+        const { session, mgr, outputs } = setup(draft, lastAwaiting);
+        outputs.push({ ...doubtful(NAME_QUESTION, awaiting), draft });
+
+        await processTranscriptStreaming(session, transcript, mgr);
+
+        expect(spoken().join(' ')).toBe(NAME_QUESTION);
+        expect(vi.mocked(mgr.streamStructuredCompletion)).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('ne change rien quand le modèle a compris (understanding=clear)', async () => {
+      const { session, mgr, outputs } = setup();
+      outputs.push({
+        ...doubtful('C’est noté. Sous quel nom ?'),
+        understanding: 'clear',
+        interpretation: 'answer',
+        confidence: 'high',
+      });
+
+      await processTranscriptStreaming(session, 'ah non 5', mgr);
+
+      expect(spoken().join(' ')).toBe('C’est noté. Sous quel nom ?');
+      expect(vi.mocked(mgr.streamStructuredCompletion)).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('heure donnée sans nombre de personnes : seule la question est dite (appel 03b19223)', () => {
