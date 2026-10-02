@@ -80,7 +80,7 @@ async function sendUtterance(callControlId: string, transcript: string) {
 
   const data = (await res.json()) as { ok: boolean; response: string; error?: string };
   if (data.ok) {
-    console.log(`Callyx : ${data.response}`);
+    console.log(`Agent : ${data.response}`);
   } else {
     console.error('Error:', data.error);
   }

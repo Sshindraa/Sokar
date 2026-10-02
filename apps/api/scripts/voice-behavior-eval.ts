@@ -5,6 +5,7 @@
  *   tsx scripts/voice-behavior-eval.ts score [--suite …] [--json] [cas.json] responses.json
  *   tsx scripts/voice-behavior-eval.ts coverage [--family-draws N|auto] [cas.json]
  *   tsx scripts/voice-behavior-eval.ts ab [cas.json] ab-responses.json
+ *   tsx scripts/voice-behavior-eval.ts calibrate [cas.json] production.json autre.json
  *
  * `build` compose les vraies requêtes du prompt courant ; le rejeu contre le modèle
  * est fait par voice-behavior-replay.mjs (sur le serveur, où sont les clés) ; `score`
@@ -31,7 +32,12 @@ import {
   familyCoverage,
   formatCoverage,
 } from '../src/modules/voice/behavior-eval/power';
-import { compareArms, formatAbReport } from '../src/modules/voice/behavior-eval/paired';
+import {
+  compareArms,
+  compareProviders,
+  formatAbReport,
+  formatProviderGaps,
+} from '../src/modules/voice/behavior-eval/paired';
 import {
   formatReport,
   formatSummary,
@@ -68,11 +74,13 @@ function parseArgs(args: string[]): {
   suite: BehaviorSuite;
   json: boolean;
   familyDraws?: number;
+  caseDraws?: number;
 } {
   const positional: string[] = [];
   let suite: BehaviorSuite = 'default';
   let json = false;
   let familyDraws: number | undefined;
+  let caseDraws: number | undefined;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--json') json = true;
@@ -82,6 +90,10 @@ function parseArgs(args: string[]): {
       familyDraws = value === 'auto' ? FAMILY_DRAWS : Number(value);
       if (!Number.isInteger(familyDraws) || familyDraws < 1)
         throw new Error('--family-draws attend un entier positif ou « auto »');
+    } else if (arg === '--case-draws') {
+      caseDraws = Number(args[++index]);
+      if (!Number.isInteger(caseDraws) || caseDraws < 1)
+        throw new Error('--case-draws attend un entier positif');
     } else if (arg === '--suite') {
       const value = args[++index] as BehaviorSuite;
       if (!SUITES.includes(value))
@@ -89,7 +101,7 @@ function parseArgs(args: string[]): {
       suite = value;
     } else positional.push(arg);
   }
-  return { positional, suite, json, familyDraws };
+  return { positional, suite, json, familyDraws, caseDraws };
 }
 
 function selectedCases(file: BehaviorCasesFile, suite: BehaviorSuite) {
@@ -108,7 +120,7 @@ function withFamilyDraws(cases: BehaviorCase[], familyDraws?: number): BehaviorC
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, suite, json, familyDraws } = parseArgs(rest);
+  const { positional, suite, json, familyDraws, caseDraws } = parseArgs(rest);
   if (command === 'coverage') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
     const cases = withFamilyDraws(selectedCases(file, 'default'), familyDraws);
@@ -116,6 +128,20 @@ async function main(): Promise<void> {
     process.stdout.write(
       `${formatCoverage(familyCoverage(cases))}\n\n${total} tirages par bras.\n`,
     );
+    return;
+  }
+  if (command === 'calibrate') {
+    const [casesArg, productionArg, otherArg] =
+      positional.length > 2 ? positional : [DEFAULT_CASES, positional[0], positional[1]];
+    if (!productionArg || !otherArg)
+      throw new Error('Usage : calibrate [cas.json] production.json autre.json');
+    const file = await readJson<BehaviorCasesFile>(casesArg);
+    const [production, other] = await Promise.all([
+      readJson<BehaviorResponses>(productionArg),
+      readJson<BehaviorResponses>(otherArg),
+    ]);
+    const gaps = compareProviders(selectedCases(file, 'default'), production, other);
+    process.stdout.write(`${formatProviderGaps(gaps, production, other)}\n`);
     return;
   }
   if (command === 'ab') {
@@ -129,7 +155,10 @@ async function main(): Promise<void> {
   }
   if (command === 'build') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
-    file.cases = withFamilyDraws(selectedCases(file, suite), familyDraws);
+    // `--case-draws N` : N tirages pour chaque cas retenu (sonde, calage) ; sinon la répartition par famille.
+    file.cases = caseDraws
+      ? selectedCases(file, suite).map((testCase) => ({ ...testCase, samples: caseDraws }))
+      : withFamilyDraws(selectedCases(file, suite), familyDraws);
     // VBE_UNDERSTANDING=1 : requêtes avec la vérification de compréhension (drapeau de production).
     const understanding = process.env.VBE_UNDERSTANDING === '1';
     process.stdout.write(JSON.stringify({ requests: buildRequests(file, { understanding }) }));
@@ -156,7 +185,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'Usage : build [--suite …] [--family-draws N|auto] [cas.json] | score [--suite …] [--json] [cas.json] responses.json | coverage [--family-draws N|auto] [cas.json] | ab [cas.json] ab-responses.json',
+    'Usage : build [--suite …] [--family-draws N|auto] [--case-draws N] [cas.json] | score [--suite …] [--json] [cas.json] responses.json | coverage [--family-draws N|auto] [cas.json] | ab [cas.json] ab-responses.json | calibrate [cas.json] production.json autre.json',
   );
 }
 
