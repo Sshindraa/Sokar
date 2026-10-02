@@ -47,6 +47,7 @@
     "dotenv": "^16.4.7",
     "fastify": "^5.3.0",
     "ioredis": "^5.6.0",
+    "mpg123-decoder": "1.0.3",
     "pdfkit": "^0.19.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

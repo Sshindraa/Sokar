@@ -165,6 +165,25 @@ const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
  * bloqué la promotion staging → production. Une valeur vide doit se lire
  * « non configuré », pas « invalide ».
  */
+/**
+ * Rapport automatique de chaque appel de test : il se construit à partir de l'enregistrement et de
+ * transcriptions après coup (Deepgram). Sans l'un ou l'autre, l'activer ne produirait que des erreurs.
+ */
+export function callReportConfigProblem(data: {
+  CALL_REPORT_ENABLED?: string;
+  CALL_RECORDING_ENABLED?: string;
+  DEEPGRAM_API_KEY?: string;
+}): string | null {
+  if (data.CALL_REPORT_ENABLED !== 'true') return null;
+  if (data.CALL_RECORDING_ENABLED !== 'true') {
+    return 'CALL_RECORDING_ENABLED=true is required when CALL_REPORT_ENABLED=true (the report is built from the recording)';
+  }
+  if (!data.DEEPGRAM_API_KEY) {
+    return 'DEEPGRAM_API_KEY is required when CALL_REPORT_ENABLED=true (after-the-fact transcriptions)';
+  }
+  return null;
+}
+
 export const optionalUrlSchema = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
   // Le trim évite qu'un espace invisible dans un secret GitHub produise une
@@ -323,6 +342,10 @@ const EnvSchema = z
     RGPD_ANONYMIZATION_ENABLED: z.enum(['true', 'false']).default('false'),
     // Liste CSV des seuls restaurants de test autorisés à lancer un enregistrement.
     CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
+    // Rapport automatique de chaque appel de test (docs/runbooks/call-reports.md) : opt-in, désactivé par défaut.
+    CALL_REPORT_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Dossier des journaux de l'API lus par le worker pour le rapport (défaut /var/log/sokar).
+    CALL_REPORT_LOG_DIR: z.string().optional(),
     CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),
     CALL_RECORDINGS_REGION: z.string().default('eu-west-3'),
     CALL_RECORDINGS_ENDPOINT: optionalUrlSchema,
@@ -455,6 +478,10 @@ const EnvSchema = z
     DISTRIBUTION_ENABLED: z.enum(['true', 'false']).default('false'),
   })
   .merge(VoiceConfigSchema)
+  .refine((data) => callReportConfigProblem(data) === null, {
+    message: 'CALL_REPORT_ENABLED requires CALL_RECORDING_ENABLED=true and DEEPGRAM_API_KEY',
+    path: ['CALL_REPORT_ENABLED'],
+  })
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {
     message: 'CALL_RECORDINGS_BUCKET is required when CALL_RECORDING_ENABLED=true',
     path: ['CALL_RECORDINGS_BUCKET'],

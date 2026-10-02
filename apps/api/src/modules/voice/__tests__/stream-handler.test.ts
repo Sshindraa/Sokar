@@ -256,6 +256,31 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     ws.close();
   });
 
+  it("événement `start` : journalise le lien callControlId ↔ callLegId pour le rapport d'appel", async () => {
+    const { logger } = await import('../../../shared/logger/pino');
+    const session = makeMockSession();
+    mockMgr.get.mockReturnValue(session);
+
+    const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-ws-1',
+        from: '+33****0001',
+        to: '+33****0000',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(100);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { callId: 'cc-ws-1', callLegId: session.callLegId },
+      '[voice-report] call linked',
+    );
+    ws.close();
+  });
+
   it('événement `start` sans session : no-op (pas de crash)', async () => {
     mockMgr.get.mockReturnValue(undefined);
 

@@ -15,6 +15,11 @@ CALL_RECORDING_TEST_RESTAURANT_IDS et expirent après 30 jours au plus.
 Usage :
   python3 scripts/ops/voice_call_audio.py latest --restaurant <id>
   python3 scripts/ops/voice_call_audio.py <début-de-l-id-d-appel>
+  python3 scripts/ops/voice_call_audio.py report <début-de-l-id-d-appel> [--json]
+  python3 scripts/ops/voice_call_audio.py report --day AAAA-MM-JJ [--restaurant <id>]
+La commande `report` affiche le rapport automatique stocké à côté de l'enregistrement (voir
+docs/runbooks/call-reports.md), ou le résumé d'une journée. Les autres commandes mesurent
+l'enregistrement en local.
 Options : --host deploy@sokar  --out <dossier>  --no-fetch (réanalyse)
           --listen : fait écouter les deux pistes par un modèle audio (OpenRouter,
           clé lue sur le VPS, ~1 centime par appel) : ce qui a été réellement dit,
@@ -106,6 +111,38 @@ Réponds en JSON strict :
   process.stdout.write(JSON.stringify(out), () => process.exit(0));
 })();
 """
+
+
+# Rapport automatique d'un appel : lu dans le stockage privé, sur le VPS (code compilé déjà déployé).
+REMOTE_REPORT = r"""
+const { readStoredReport } = require('./dist/modules/voice/call-report/report-store.js');
+(async () => {
+  const [selector, format] = process.argv.slice(1);
+  const text = await readStoredReport(selector, format);
+  if (text === null) { process.stderr.write('Aucun rapport pour cet appel\n'); process.exit(2); }
+  process.stdout.write(text, () => process.exit(0));
+})().catch((err) => { process.stderr.write(String(err && err.message) + '\n'); process.exit(1); });
+"""
+
+REMOTE_DAILY = r"""
+const { loadDailySummary } = require('./dist/modules/voice/call-report/report-store.js');
+(async () => {
+  const [day, restaurantId] = process.argv.slice(1);
+  const text = await loadDailySummary(day, restaurantId === '-' ? undefined : restaurantId);
+  process.stdout.write(text, () => process.exit(0));
+})().catch((err) => { process.stderr.write(String(err && err.message) + '\n'); process.exit(1); });
+"""
+
+
+def stored_report(host: str, selector: str, as_json: bool) -> str:
+    """Rapport automatique d'un appel (Markdown, ou JSON avec --json)."""
+    out = run_remote(host, REMOTE_REPORT, [selector, "json" if as_json else "markdown"], node=True)
+    return out.decode()
+
+
+def daily_summary(host: str, day: str, restaurant: str | None) -> str:
+    """Résumé d'une journée (jour local de Paris) : appels, silences, divergences, abandons."""
+    return run_remote(host, REMOTE_DAILY, [day, restaurant or "-"], node=True).decode()
 
 
 def listen(host: str, folder: Path, model: str) -> dict:
@@ -315,7 +352,10 @@ def report(folder: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("call", help="début de l'id d'appel, ou « latest »")
+    parser.add_argument("call", help="début de l'id d'appel, « latest », ou « report »")
+    parser.add_argument("report_target", nargs="?", help="avec « report » : début de l'id d'appel")
+    parser.add_argument("--day", help="avec « report » : résumé de la journée AAAA-MM-JJ (heure de Paris)")
+    parser.add_argument("--json", action="store_true", help="avec « report » : le JSON plutôt que le Markdown")
     parser.add_argument("--restaurant", help="restaurant (obligatoire avec latest)")
     parser.add_argument("--host", default=os.environ.get("SOKAR_SSH_HOST", "deploy@sokar"))
     parser.add_argument("--out", type=Path,
@@ -324,6 +364,14 @@ def main() -> None:
     parser.add_argument("--listen", action="store_true", help="écoute par un modèle audio (~1 centime)")
     parser.add_argument("--listen-model", default="google/gemini-3.8-flash")
     args = parser.parse_args()
+    if args.call == "report":
+        if args.day:
+            sys.stdout.write(daily_summary(args.host, args.day, args.restaurant))
+        elif args.report_target:
+            sys.stdout.write(stored_report(args.host, args.report_target, args.json))
+        else:
+            raise SystemExit("« report » demande un début d'id d'appel, ou --day AAAA-MM-JJ.")
+        return
     if args.no_fetch:
         folder = args.out / args.call[:8]
     else:

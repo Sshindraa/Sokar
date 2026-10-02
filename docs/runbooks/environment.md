@@ -672,6 +672,14 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
 réseau de l'environnement et y poser la même valeur en variable d'environnement.
 
+`CALL_REPORT_ENABLED` (défaut `false`) construit après chaque appel d'un restaurant de
+`CALL_RECORDING_TEST_RESTAURANT_IDS` un rapport (JSON + Markdown) stocké à côté de l'enregistrement :
+transcriptions après coup Deepgram (Nova-3 et Whisper, environ 1 centime par appel), journaux de l'API
+lus dans `CALL_REPORT_LOG_DIR` (défaut `/var/log/sokar`, rotation 14 jours). Exige
+`CALL_RECORDING_ENABLED=true` et `DEEPGRAM_API_KEY` (le démarrage le vérifie) ; sans
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` le rapport est réduit. Aucun effet sur l'appel. Voir
+[`call-reports.md`](call-reports.md).
+
 Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
 user_explicit|user_tentative|correction}` ; les anciens `slots` restent lus comme `set` affirmé.
 Sous autorité, `set` remplit seulement un champ vide. `replace` corrige un fait d'origine

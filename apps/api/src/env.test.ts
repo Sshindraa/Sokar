@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  callReportConfigProblem,
   hasSttProviderKey,
   isLiveStripeSecretKey,
   openRouterFallbackBaseUrlSchema,
@@ -81,5 +82,37 @@ describe('clé du fournisseur de reconnaissance vocale en production', () => {
   it('avec Scribe, la clé ElevenLabs reste exigée', () => {
     expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', ELEVENLABS_API_KEY: key })).toBe(true);
     expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', DEEPGRAM_API_KEY: key })).toBe(false);
+  });
+});
+
+describe('CALL_REPORT_ENABLED environment guard', () => {
+  it('accepts the default (off) without any other setting', () => {
+    expect(callReportConfigProblem({ CALL_REPORT_ENABLED: 'false' })).toBeNull();
+  });
+
+  it('needs recordings enabled, since the report is built from the recording', () => {
+    expect(
+      callReportConfigProblem({
+        CALL_REPORT_ENABLED: 'true',
+        CALL_RECORDING_ENABLED: 'false',
+        DEEPGRAM_API_KEY: 'k'.repeat(24),
+      }),
+    ).toMatch(/CALL_RECORDING_ENABLED/);
+  });
+
+  it('needs the Deepgram key, for the after-the-fact transcriptions', () => {
+    expect(
+      callReportConfigProblem({ CALL_REPORT_ENABLED: 'true', CALL_RECORDING_ENABLED: 'true' }),
+    ).toMatch(/DEEPGRAM_API_KEY/);
+  });
+
+  it('is valid once recordings and the Deepgram key are set', () => {
+    expect(
+      callReportConfigProblem({
+        CALL_REPORT_ENABLED: 'true',
+        CALL_RECORDING_ENABLED: 'true',
+        DEEPGRAM_API_KEY: 'k'.repeat(24),
+      }),
+    ).toBeNull();
   });
 });
