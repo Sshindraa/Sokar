@@ -2058,12 +2058,12 @@
       ]
     },
     {
-      "id": "relecture-transcription-fausse",
+      "id": "relecture-doubles-lettres",
       "behavior": "relecture du nom",
       "family": "epellation",
       "measures": "engine",
       "origin": "real",
-      "source": "appel 8043662c : nom dit « A, deux S, A, M », transcrit « a deux s a deux m » (erreur de reconnaissance) : la relecture doit laisser l'appelant entendre l'erreur",
+      "source": "appel 8043662c : nom ASSAMM épelé « a deux s a deux m » (transcription juste) : la relecture doit être celle du code, lettre par lettre ; le modèle écrivait le nom avec une lettre en moins (ASSAM)",
       "history": "toName",
       "transcript": "au nom de a 2 s a 2 m",
       "draft": {
@@ -2093,13 +2093,13 @@
       ]
     },
     {
-      "id": "relecture-transcription-fausse-2",
+      "id": "relecture-doubles-lettres-2",
       "behavior": "relecture du nom",
       "family": "epellation",
       "measures": "engine",
       "origin": "variant",
-      "variantOf": "relecture-transcription-fausse",
-      "source": "variante de 8043662c : un autre nom dont une lettre double est mal transcrite",
+      "variantOf": "relecture-doubles-lettres",
+      "source": "variante de 8043662c : un autre nom épelé avec une lettre double (MASSON)",
       "history": "toName",
       "transcript": "m a 2 s o n",
       "draft": {
