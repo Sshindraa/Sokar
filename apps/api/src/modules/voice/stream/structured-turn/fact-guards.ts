@@ -540,7 +540,7 @@ export function partySizeCorrectionFact(
   return (
     `Énoncé douteux : l'appelant a dit « ${transcript.trim()} », qui contient le nombre ${numbers[0]}, alors que ` +
     `${known.partySize} personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ` +
-    `ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question), brouillon inchangé.`
+    `ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.`
   );
 }
 

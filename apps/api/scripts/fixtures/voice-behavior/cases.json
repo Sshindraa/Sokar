@@ -2521,14 +2521,20 @@
         "partySize": 4
       },
       "awaiting": "customerName",
-      "actionResult": "Énoncé douteux : l'appelant a dit « un non 5 », qui contient le nombre 5, alors que 4 personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question), brouillon inchangé.",
+      "actionResult": "Énoncé douteux : l'appelant a dit « un non 5 », qui contient le nombre 5, alors que 4 personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.",
       "actions": ["none"],
       "samples": 12,
       "checks": [
         {
           "kind": "say",
-          "pattern": "\\b5\\b|cinq|personnes",
+          "pattern": "\\b5\\b|cinq|personnes|combien",
           "expect": true,
+          "minRate": 0.9
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
           "minRate": 0.9
         }
       ]
