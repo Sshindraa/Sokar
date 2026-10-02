@@ -26,7 +26,11 @@ import { buildRequests } from '../src/modules/voice/behavior-eval/build';
 import {
   buildJudgeRequests,
   isJudgeCase,
+  expectsComplete,
+  isJudgeOutput,
   judgeAsTurn,
+  judgeInstructionsVerdict,
+  JUDGE_INSTRUCTIONS_CANDIDATE,
   judgeSamples,
   judgeVerdict,
   turnCompleteOnly,
@@ -87,6 +91,7 @@ function parseArgs(args: string[]): {
   caseDraws?: number;
   judge: boolean;
   judgeDraws: boolean;
+  judgeInstructions?: 'candidate';
 } {
   const positional: string[] = [];
   let suite: BehaviorSuite = 'default';
@@ -95,12 +100,17 @@ function parseArgs(args: string[]): {
   let caseDraws: number | undefined;
   let judge = false;
   let judgeDraws = false;
+  let judgeInstructions: 'candidate' | undefined;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--json') json = true;
     else if (arg === '--judge') judge = true;
     else if (arg === '--judge-draws') judgeDraws = true;
-    else if (arg === '--family-draws') {
+    else if (arg === '--judge-instructions') {
+      if (args[++index] !== 'candidate')
+        throw new Error('--judge-instructions attend « candidate »');
+      judgeInstructions = 'candidate';
+    } else if (arg === '--family-draws') {
       // `auto` : de quoi voir une baisse de 20 points au pire taux de départ (voir power.ts).
       const value = args[++index];
       familyDraws = value === 'auto' ? FAMILY_DRAWS : Number(value);
@@ -117,7 +127,7 @@ function parseArgs(args: string[]): {
       suite = value;
     } else positional.push(arg);
   }
-  return { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws };
+  return { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws, judgeInstructions };
 }
 
 function selectedCases(file: BehaviorCasesFile, suite: BehaviorSuite) {
@@ -136,7 +146,8 @@ function withFamilyDraws(cases: BehaviorCase[], familyDraws?: number): BehaviorC
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws } = parseArgs(rest);
+  const { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws, judgeInstructions } =
+    parseArgs(rest);
   if (command === 'coverage') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
     const cases = withFamilyDraws(selectedCases(file, 'default'), familyDraws);
@@ -170,6 +181,16 @@ async function main(): Promise<void> {
       // A/B du juge : la référence est le `turnComplete` du tour complet, le candidat le juge ; seul ce contrôle compte.
       const cases = selectedCases(file, 'default').filter(isJudgeCase).map(turnCompleteOnly);
       const candidate = judgeAsTurn(ab.arms.candidate);
+      if (isJudgeOutput(ab.arms.reference)) {
+        // Deux consignes du juge face à face : la référence est la consigne actuelle, le candidat la nouvelle.
+        const reference = judgeAsTurn(ab.arms.reference);
+        const report = compareArms(cases, { ...ab, arms: { reference, candidate } });
+        const witnesses = new Set(cases.filter(expectsComplete).map((entry) => entry.id));
+        process.stdout.write(
+          `${formatAbReport(report)}\n\n${judgeInstructionsVerdict(report, witnesses, 'juge-debut-abandonne-question')}\n`,
+        );
+        return;
+      }
       const report = compareArms(cases, { ...ab, arms: { ...ab.arms, candidate } });
       process.stdout.write(`${formatAbReport(report)}\n\n${judgeVerdict(report, ab)}\n`);
       return;
@@ -182,7 +203,15 @@ async function main(): Promise<void> {
     if (judge) {
       // Prototype : requêtes minimales du juge de fin de tour, mêmes cas (famille « attente » et ses témoins).
       file.cases = selectedCases(file, 'default').filter(isJudgeCase);
-      process.stdout.write(JSON.stringify({ requests: buildJudgeRequests(file, caseDraws) }));
+      process.stdout.write(
+        JSON.stringify({
+          requests: buildJudgeRequests(
+            file,
+            caseDraws,
+            judgeInstructions === 'candidate' ? JUDGE_INSTRUCTIONS_CANDIDATE : undefined,
+          ),
+        }),
+      );
       return;
     }
     if (judgeDraws) {

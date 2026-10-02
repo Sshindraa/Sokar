@@ -62,9 +62,10 @@ export function lastAgentQuestion(history: ChatMessage[]): string | undefined {
 export function buildTurnEndJudgeMessages(
   lastQuestion: string | undefined,
   transcript: string,
+  instructions: string = TURN_END_JUDGE_INSTRUCTIONS,
 ): ChatMessage[] {
   return [
-    { role: 'system', content: TURN_END_JUDGE_INSTRUCTIONS },
+    { role: 'system', content: instructions },
     {
       role: 'user',
       content: `Dernière question de l'agent : ${lastQuestion ?? '(aucune)'}\nCe que l'appelant a dit : ${transcript}`,

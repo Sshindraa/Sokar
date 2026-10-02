@@ -1891,6 +1891,247 @@
       ]
     },
     {
+      "id": "juge-debut-abandonne-question",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 03b19223 17:58:13 : l'appelant a dit « Bonjour, euh je voulais savoir si vous êtes ouvert dimanche soir ? », transcrit en deux morceaux déformés ; le juge a dit « inachevé » (2,98 s de silence), la demande est complète à la fin",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "bonjour je voudrais faire vous êtes ouvert dimanche soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-2",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un début repris, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "euh je voulais je voudrais savoir si vous avez de la place samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-3",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un début abandonné, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "bonjour alors je pensais enfin est-ce que vous êtes ouverts demain midi",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-4",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un mot coupé, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "oui allô je voudrais réser euh vous faites des menus enfants",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-nombre",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une réponse courte et complète à la question du nombre",
+      "history": "toHeure+",
+      "transcript": "deux",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-heure",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une réponse courte et complète à la question de l'heure",
+      "history": "toHeure",
+      "transcript": "vers vingt heures",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-merci",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un mot de politesse après la réservation",
+      "history": "done",
+      "transcript": "merci au revoir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète à l'ordre des mots déformé par la transcription",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "il reste de la place demain soir hein vous avez",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite-2",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète à la grammaire déformée par la transcription",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "vous ferme à quelle heure samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite-3",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète en fin d'une phrase bien transcrite",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "dimanche midi vous êtes ouvert ou pas",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-demande-complete",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une demande complète en une seule phrase",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "est-ce que ça serait possible d'avoir une table pour six personnes samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "exclamation-apres-recap-pas-de-relecture",
       "behavior": "répétition",
       "family": "repetition",

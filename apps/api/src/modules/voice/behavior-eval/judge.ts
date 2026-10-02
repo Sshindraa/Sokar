@@ -25,6 +25,16 @@ import type { AbReport } from './paired';
 /** La consigne de production : le banc mesure exactement ce qui part en appel. */
 export const JUDGE_INSTRUCTIONS = TURN_END_JUDGE_INSTRUCTIONS;
 
+/**
+ * Consigne candidate (non expédiée tant qu'elle n'est pas mesurée) : un principe, sans exemple. C'est la FIN de ce
+ * que dit l'appelant qui compte ; une demande ou une question complète à la fin rend le tour complet, même si un
+ * début de phrase a été abandonné ou repris (appel 03b19223 : « inachevé » sur une question complète précédée d'un
+ * début abandonné, 2,98 s de silence).
+ */
+export const JUDGE_INSTRUCTIONS_CANDIDATE =
+  JUDGE_INSTRUCTIONS +
+  " C'est la fin de ce que dit l'appelant qui compte : une demande ou une question complète à la fin rend le tour complet, même si un début de phrase a été abandonné ou repris.";
+
 /** Tirages par cas du plan chiffré : 16 par défaut (gain de 15 points), 24 par témoin (95 % à une erreur près). */
 export const JUDGE_DRAWS = { defect: 16, control: 24 };
 
@@ -48,10 +58,18 @@ export function turnCompleteOnly(testCase: BehaviorCase): BehaviorCase {
   };
 }
 
+/** Le contrôle attend `complete=true` : un témoin du juge, quelle que soit l'origine du cas. */
+export function expectsComplete(testCase: BehaviorCase): boolean {
+  return testCase.checks.some(
+    (check) => check.kind === 'field' && check.path === 'turnComplete' && check.equals === true,
+  );
+}
+
 export function buildJudgeRequest(
   testCase: BehaviorCase,
   file: BehaviorCasesFile,
   samples?: number,
+  instructions?: string,
 ): BehaviorRequest {
   const lastQuestion = historyOf(testCase, file)
     .filter((message) => message.role === 'assistant')
@@ -59,16 +77,20 @@ export function buildJudgeRequest(
   return {
     id: testCase.id,
     // Le plan chiffré fixe les tirages (pas ceux du fichier, écrits pour le tour complet).
-    samples: samples ?? (testCase.origin === 'control' ? JUDGE_DRAWS.control : JUDGE_DRAWS.defect),
-    messages: buildTurnEndJudgeMessages(lastQuestion, testCase.transcript) as never,
+    samples: samples ?? judgeSamples(testCase),
+    messages: buildTurnEndJudgeMessages(lastQuestion, testCase.transcript, instructions) as never,
     format: TURN_END_JUDGE_FORMAT,
   };
 }
 
-export function buildJudgeRequests(file: BehaviorCasesFile, samples?: number): BehaviorRequest[] {
+export function buildJudgeRequests(
+  file: BehaviorCasesFile,
+  samples?: number,
+  instructions?: string,
+): BehaviorRequest[] {
   return file.cases
     .filter(isJudgeCase)
-    .map((testCase) => buildJudgeRequest(testCase, file, samples));
+    .map((testCase) => buildJudgeRequest(testCase, file, samples, instructions));
 }
 
 /** Sortie du juge sous la forme du tour structuré, pour passer les mêmes contrôles (`turnComplete`). */
@@ -88,7 +110,16 @@ export function judgeAsTurn(responses: BehaviorResponses): BehaviorResponses {
 
 /** Tirages d'un cas du plan chiffré (mêmes pour les deux bras de l'A/B). */
 export function judgeSamples(testCase: BehaviorCase): number {
-  return testCase.origin === 'control' ? JUDGE_DRAWS.control : JUDGE_DRAWS.defect;
+  return testCase.origin === 'control' || expectsComplete(testCase)
+    ? JUDGE_DRAWS.control
+    : JUDGE_DRAWS.defect;
+}
+
+/** Les sorties sont celles du juge (`{ complete }`), pas du tour complet. */
+export function isJudgeOutput(responses: BehaviorResponses): boolean {
+  return Object.values(responses.responses)
+    .flat()
+    .some((sample) => sample !== null && typeof sample.complete === 'boolean');
 }
 
 /** Gain exigé sur les défauts (points) et plancher de chaque témoin dans le bras candidat. */
@@ -127,5 +158,47 @@ export function judgeVerdict(report: AbReport, ab: BehaviorAbResponses): string 
   lines.push(
     `  Durée par requête sur ${ab.provider} (informatif, pas celle de la production) : tour complet médiane ${median(flat('reference')) ?? '?'} ms, juge médiane ${median(flat('candidate')) ?? '?'} ms`,
   );
+  return lines.join('\n');
+}
+
+/** Plancher du témoin, et baisse tolérée (points) sur la lignée b686b241 entre deux consignes du juge. */
+export const JUDGE_LINEAGE_TOLERANCE = 0.05;
+/** La lignée « je voudrais bien venir » (appel b686b241) : le juge ne doit pas la lâcher. */
+export const JUDGE_PROTECTED_LINEAGE = 'attend-annonce-intention';
+
+/**
+ * Règles d'acceptation d'une nouvelle consigne du juge, comparée à l'ancienne (deux bras du juge, même session) :
+ * chaque cas qui attend « complet » reste à 95 % ou plus dans le bras candidat, et la lignée b686b241 ne baisse pas
+ * (écart de plus de 5 points = baisse). Le gain sur le cas réel du faux « inachevé » est rapporté.
+ */
+export function judgeInstructionsVerdict(
+  report: AbReport,
+  witnessIds: ReadonlySet<string>,
+  realCaseId: string,
+): string {
+  const lines = ["Règles d'acceptation de la consigne candidate du juge :"];
+  for (const entry of report.cases.filter((c) => witnessIds.has(c.id))) {
+    const rate = entry.candidate.draws ? entry.candidate.successes / entry.candidate.draws : 0;
+    lines.push(
+      `  ${rate >= JUDGE_CONTROL_FLOOR ? '✓' : '✗'} ${entry.id} ≥ 95 % : ${(rate * 100).toFixed(0)} % (${entry.candidate.successes}/${entry.candidate.draws}, consigne actuelle ${entry.reference.successes}/${entry.reference.draws})`,
+    );
+  }
+  const protectedLineage = report.lineages.find((l) => l.root === JUDGE_PROTECTED_LINEAGE);
+  if (protectedLineage) {
+    lines.push(
+      `  ${protectedLineage.delta >= -JUDGE_LINEAGE_TOLERANCE ? '✓' : '✗'} lignée b686b241 (${JUDGE_PROTECTED_LINEAGE}) ne baisse pas : ${(protectedLineage.referenceRate * 100).toFixed(0)} % → ${(protectedLineage.candidateRate * 100).toFixed(0)} % (${protectedLineage.delta >= 0 ? '+' : '−'}${Math.abs(protectedLineage.delta * 100).toFixed(0)} points, tolérance ${JUDGE_LINEAGE_TOLERANCE * 100} ; intervalle à 90 % [${(protectedLineage.low * 100).toFixed(0)} ; ${(protectedLineage.high * 100).toFixed(0)}])`,
+    );
+  }
+  const real = report.cases.find((c) => c.id === realCaseId);
+  if (real) {
+    lines.push(
+      `  Cas réel 03b19223 (${realCaseId}) : ${real.reference.successes}/${real.reference.draws} → ${real.candidate.successes}/${real.candidate.draws}`,
+    );
+  }
+  for (const lineage of report.lineages.filter((l) => l.root !== JUDGE_PROTECTED_LINEAGE)) {
+    lines.push(
+      `  (informatif) lignée ${lineage.root} : ${(lineage.referenceRate * 100).toFixed(0)} % → ${(lineage.candidateRate * 100).toFixed(0)} %`,
+    );
+  }
   return lines.join('\n');
 }
