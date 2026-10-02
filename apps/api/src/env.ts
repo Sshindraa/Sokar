@@ -89,6 +89,20 @@ export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('fals
  * Production mode is deliberately the only environment where they are
  * accepted; staging runs with NODE_ENV=production but uses sk_test_* keys.
  */
+/**
+ * La clé du fournisseur de reconnaissance vocale choisi est définie (≥20 caractères). Seule la clé du fournisseur
+ * en service est exigée : avec Deepgram, aucune clé ElevenLabs.
+ */
+export function hasSttProviderKey(data: {
+  VOICE_STT_PROVIDER: 'scribe' | 'deepgram';
+  DEEPGRAM_API_KEY?: string;
+  ELEVENLABS_API_KEY?: string;
+}): boolean {
+  const key =
+    data.VOICE_STT_PROVIDER === 'deepgram' ? data.DEEPGRAM_API_KEY : data.ELEVENLABS_API_KEY;
+  return !!key && key.length >= 20;
+}
+
 export function isLiveStripeSecretKey(value: string | undefined): boolean {
   return value?.trim().startsWith('sk_live_') ?? false;
 }
@@ -531,12 +545,14 @@ const EnvSchema = z
       if (data.NODE_ENV !== 'production') return true;
       const voiceDisabled = process.env.VOICE_DISABLED === 'true';
       if (voiceDisabled) return true;
-      return !!data.ELEVENLABS_API_KEY && data.ELEVENLABS_API_KEY.length >= 20;
+      // La clé exigée est celle du fournisseur de reconnaissance réellement choisi : plus de clé ElevenLabs en
+      // production avec Deepgram (il n'y a plus de secours Scribe).
+      return hasSttProviderKey(data);
     },
     {
       message:
-        'En production, ELEVENLABS_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
-      path: ['ELEVENLABS_API_KEY'],
+        'En production, la clé du fournisseur de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY avec VOICE_STT_PROVIDER=deepgram, ELEVENLABS_API_KEY avec VOICE_STT_PROVIDER=scribe. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['VOICE_STT_PROVIDER'],
     },
   )
   .refine(

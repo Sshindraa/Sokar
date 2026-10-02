@@ -1,7 +1,7 @@
 /**
  * Health checks for Sokar API.
  *
- * Six independent checks: db, redis, queues, telnyx, ElevenLabs STT, cartesia.
+ * Five independent checks: db, redis, queues, telnyx, cartesia.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
  * block another. Core dependencies have a slightly longer timeout to avoid
@@ -27,10 +27,9 @@
  *
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
- *    - ElevenLabs STT: `GET /v1/user` — validate the API key without a transcription
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
  *
- * 6. **Soft-fail for voice providers**: if Telnyx/ElevenLabs/Cartesia are
+ * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
  *    down but DB/Redis/queues are ok, the API can still answer
  *    non-voice requests (read dashboard, list reservations, etc.).
  *    So voice provider failure is a warning, not a 503.
@@ -153,28 +152,6 @@ async function checkTelnyx(): Promise<CheckResult> {
   );
 }
 
-async function checkElevenLabsStt(): Promise<CheckResult> {
-  // The user endpoint validates the ElevenLabs key without consuming STT audio.
-  return withTimeout(
-    'elevenlabs_stt',
-    (async () => {
-      if (!process.env.ELEVENLABS_API_KEY) {
-        throw new Error('ELEVENLABS_API_KEY not configured');
-      }
-      const res = await fetch('https://api.elevenlabs.io/v1/user', {
-        method: 'GET',
-        headers: {
-          'xi-api-key': process.env.ELEVENLABS_API_KEY,
-        },
-      });
-      if (!res.ok) {
-        throw new Error(`ElevenLabs STT API ${res.status}: ${res.statusText}`);
-      }
-    })(),
-    VOICE_TIMEOUT_MS,
-  );
-}
-
 async function checkCartesia(): Promise<CheckResult> {
   // Direct GET to /voices — list available voices, no TTS generation.
   return withTimeout(
@@ -201,16 +178,15 @@ async function checkCartesia(): Promise<CheckResult> {
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
-const VOICE_CHECKS = ['telnyx', 'elevenlabs_stt', 'cartesia'] as const;
+const VOICE_CHECKS = ['telnyx', 'cartesia'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, elevenlabs_stt, cartesia] = await Promise.all([
+  const [db, redis, queues, telnyx, cartesia] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
-    checkElevenLabsStt(),
     checkCartesia(),
   ]);
 
@@ -219,7 +195,6 @@ export async function checkHealth(): Promise<HealthReport> {
     redis,
     queues,
     telnyx,
-    elevenlabs_stt,
     cartesia,
   };
 

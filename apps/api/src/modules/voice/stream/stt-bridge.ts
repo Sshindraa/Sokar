@@ -143,7 +143,7 @@ function ensureSttAvailabilityDeadline(session: CallSession): void {
     triggerSttUnavailable(
       session,
       'connection',
-      'ElevenLabs Scribe did not become available before the connection deadline',
+      'Speech-to-text did not become available before the connection deadline',
     );
   }, STT_UNAVAILABLE_DEADLINE_MS);
 }
@@ -154,7 +154,6 @@ function handleSttConnectionFailure(
   createSocket: SttWebSocketFactory,
 ): void {
   if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
-  if (fallbackToScribeAtOpening(session, createSocket)) return;
   if (!session.ended && session.sttProviderOpenedOnce) {
     flushDeepgramFinalPartsForSafety(session);
   }
@@ -183,45 +182,6 @@ function handleSttConnectionFailure(
       // The connection attempt records its own failure and schedules the next retry.
     });
   }, delay);
-}
-
-/** Deepgram may fall back only before its first successful socket open. */
-function fallbackToScribeAtOpening(
-  session: CallSession,
-  createSocket: SttWebSocketFactory,
-): boolean {
-  const adapter = session.sttAdapter;
-  if (
-    adapter?.id !== 'deepgram' ||
-    session.sttProviderOpenedOnce ||
-    session.sttOpeningFallbackAttempted ||
-    session.ended
-  ) {
-    return false;
-  }
-
-  session.sttOpeningFallbackAttempted = true;
-  session.sttAdapter = createScribeSttAdapter({ model: configuredModel(session) });
-  session.sttModel = session.sttAdapter.model;
-  session.sttConnectionAudioStartedAt = undefined;
-  session.sttConnectionAudioBytesSent = 0;
-  session.sttDeepgramFinalParts = [];
-  session.sttDeepgramPendingInterim = false;
-  session.sttDeepgramFinalizeRequested = false;
-  session.sttDeepgramPartials = undefined;
-  clearDeepgramStallTimer(session);
-  session.sttConsecutiveFailures = 0;
-  logger.warn(
-    { callId: session.callControlId, failedProvider: 'deepgram_stt' },
-    '[stt] Initial Deepgram connection failed; falling back to Scribe',
-  );
-  connectStt(session, undefined, createSocket).catch(() => {
-    logger.warn(
-      { callId: session.callControlId, provider: 'elevenlabs_stt' },
-      '[stt] Opening fallback connection failed',
-    );
-  });
-  return true;
 }
 
 /** A failed forced-French handshake restores the old auto-detect socket when possible. */
@@ -647,6 +607,11 @@ function createSttAdapter(session: CallSession, provider: SttProviderId): SttPro
   return provider === 'deepgram'
     ? createDeepgramSttAdapter({ model: resolveVoiceFeatureSnapshot(session).deepgramModel })
     : createScribeSttAdapter({ model: configuredModel(session) });
+}
+
+/** Fournisseur de reconnaissance de la session (« deepgram », « scribe »), pour les journaux. */
+export function sttProviderId(session: CallSession): SttProviderAdapter['id'] {
+  return sttAdapterForSession(session).id;
 }
 
 function sttAdapterForSession(session: CallSession): SttProviderAdapter {
@@ -2238,9 +2203,6 @@ export function connectStt(
       ? (process.env.DEEPGRAM_API_KEY ?? '')
       : (process.env.ELEVENLABS_API_KEY ?? '');
   if (!apiKey) {
-    if (fallbackToScribeAtOpening(session, createSocket)) {
-      return Promise.resolve();
-    }
     if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
       return Promise.resolve();
     }
@@ -2411,10 +2373,6 @@ export function connectStt(
       if (statusCode === 401 || statusCode === 403) {
         voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'auth' });
         if (!opened) reject(error);
-        if (fallbackToScribeAtOpening(session, createSocket)) {
-          ws.terminate();
-          return;
-        }
         if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
           ws.terminate();
           return;

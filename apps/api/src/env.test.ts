@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasSttProviderKey,
   isLiveStripeSecretKey,
   openRouterFallbackBaseUrlSchema,
   resolveSemanticModel,
@@ -61,5 +62,24 @@ describe('Span-01 model resolution', () => {
     expect(() => resolveSemanticModel('respan', 'typesafe/jev-1.13-20260917')).toThrow(
       /n'est pas un modèle Respan/,
     );
+  });
+});
+
+describe('clé du fournisseur de reconnaissance vocale en production', () => {
+  const key = 'k'.repeat(24);
+
+  it('avec Deepgram, seule la clé Deepgram est exigée : aucune clé ElevenLabs', () => {
+    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', DEEPGRAM_API_KEY: key })).toBe(true);
+    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', ELEVENLABS_API_KEY: key })).toBe(
+      false,
+    );
+    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', DEEPGRAM_API_KEY: 'court' })).toBe(
+      false,
+    );
+  });
+
+  it('avec Scribe, la clé ElevenLabs reste exigée', () => {
+    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', ELEVENLABS_API_KEY: key })).toBe(true);
+    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', DEEPGRAM_API_KEY: key })).toBe(false);
   });
 });

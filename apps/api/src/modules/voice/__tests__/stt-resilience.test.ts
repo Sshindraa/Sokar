@@ -135,46 +135,36 @@ describe('résilience STT', () => {
     expect(finishCall).not.toHaveBeenCalled();
   });
 
-  it('bascule de Deepgram vers Scribe uniquement sur échec du handshake initial', async () => {
+  it('ne bascule jamais vers un autre fournisseur : un 401 Deepgram à l’ouverture suit le chemin « reconnaissance indisponible »', async () => {
     vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
     vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
     vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
     const session = makeSession();
     session.codec = 'PCMA';
+    const onEvent = vi.fn();
     const sockets: ReturnType<typeof makeConnectingSocket>[] = [];
     const createSocket = vi.fn((_url: string, _options: { headers: Record<string, string> }) => {
       const next = makeConnectingSocket();
       sockets.push(next);
       return next.socket;
     });
-    const attempt = connectStt(session, vi.fn(), createSocket);
+    const attempt = connectStt(session, onEvent, createSocket);
 
     expect(new URL(vi.mocked(createSocket).mock.calls[0][0]).host).toBe('api.deepgram.com');
-    expect(vi.mocked(createSocket).mock.calls[0][1].headers).toHaveProperty('Authorization');
-    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
-    expect(session.audioBuffer).toEqual([Buffer.from([0xd5])]);
     sockets[0].handlers.get('unexpected-response')?.(
       {} as never,
       { statusCode: 401, resume: vi.fn() } as never,
     );
 
     await expect(attempt).rejects.toThrow('HTTP 401');
-    expect(createSocket).toHaveBeenCalledTimes(2);
-    expect(new URL(vi.mocked(createSocket).mock.calls[1][0]).host).toBe('api.elevenlabs.io');
-    expect(session.sttAdapter?.id).toBe('scribe');
-    expect(session.sttOpeningFallbackAttempted).toBe(true);
-    expect(session.voiceFeatureSnapshot?.sttProvider).toBe('deepgram');
-
-    Object.defineProperty(sockets[1].socket, 'readyState', { value: WebSocket.OPEN });
-    sockets[1].handlers.get('open')?.();
-    expect(session.audioBuffer).toHaveLength(0);
-    const scribeAudio = JSON.parse(
-      String(vi.mocked(sockets[1].socket.send).mock.calls[0]?.[0]),
-    ) as {
-      audio_base_64: string;
-    };
-    expect(Buffer.from(scribeAudio.audio_base_64, 'base64')).toEqual(Buffer.from([0x08, 0x00]));
+    // Une seule socket, jamais celle d'un autre fournisseur ; l'appel suit le chemin existant.
+    expect(createSocket).toHaveBeenCalledTimes(1);
+    expect(session.sttAdapter?.id).toBe('deepgram');
+    expect(session.sttTerminalFailure).toBe(true);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'Unavailable', reason: 'auth' }),
+    );
     closeStt(session);
   });
 
@@ -231,7 +221,7 @@ describe('résilience STT', () => {
     closeStt(session);
   });
 
-  it('ne rebascule pas vers Scribe après une première ouverture Deepgram réussie', async () => {
+  it('ne ré-ouvre pas une autre socket que celle de Deepgram après une première ouverture réussie', async () => {
     vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
     vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
@@ -246,7 +236,6 @@ describe('résilience STT', () => {
 
     expect(session.sttProviderOpenedOnce).toBe(true);
     expect(session.sttAdapter?.id).toBe('deepgram');
-    expect(session.sttOpeningFallbackAttempted).toBeFalsy();
     expect(createSocket).toHaveBeenCalledOnce();
     closeStt(session);
   });

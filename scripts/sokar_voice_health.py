@@ -83,16 +83,17 @@ def check_telnyx(env):
     return "DEGRADED", f"Telnyx HTTP {code}: {body[:80]}"
 
 
-def check_elevenlabs_stt(env):
+def check_deepgram_stt(env):
+    # GET /v1/projects valide la clé Deepgram sans consommer d'audio.
     code, body = http_check(
-        "https://api.elevenlabs.io/v1/user",
-        {"xi-api-key": env.get('ELEVENLABS_API_KEY', '')},
+        "https://api.deepgram.com/v1/projects",
+        {"Authorization": "Token " + env.get('DEEPGRAM_API_KEY', '')},
     )
     if code == 200:
-        return "OK", f"ElevenLabs STT auth valid (HTTP {code})"
+        return "OK", f"Deepgram STT auth valid (HTTP {code})"
     if code in (401, 403):
-        return "FAIL", f"ElevenLabs STT auth rejected: HTTP {code}"
-    return "DEGRADED", f"ElevenLabs STT HTTP {code}: {body[:80]}"
+        return "FAIL", f"Deepgram STT auth rejected: HTTP {code}"
+    return "DEGRADED", f"Deepgram STT HTTP {code}: {body[:80]}"
 
 
 def check_cartesia(env):
@@ -267,7 +268,7 @@ def main():
     env = _load_env()
     checks = [
         ("Telnyx", check_telnyx(env)),
-        ("ElevenLabs STT", check_elevenlabs_stt(env)),
+        ("Deepgram STT", check_deepgram_stt(env)),
         ("Cartesia", check_cartesia(env)),
         ("Cartesia quota", check_cartesia_quota(env)),
     ]
