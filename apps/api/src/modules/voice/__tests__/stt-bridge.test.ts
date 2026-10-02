@@ -32,6 +32,7 @@ import {
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
+import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
@@ -1078,6 +1079,79 @@ describe('Deepgram final dispatch', () => {
       vi.advanceTimersByTime(700);
       expect(ws.send).not.toHaveBeenCalled();
       vi.useRealTimers();
+    });
+
+    describe('pendant une épellation (appel 8043662c)', () => {
+      // Les pauses entre deux groupes de lettres durent souvent plus d'une seconde : une fin de tour forcée à 350 ms
+      // de silence coupe l'épellation (« …assam un » jugé fini, le « a » suivant perdu).
+      function spellingSession(partial: string, silentMs: number) {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'customerName';
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: partial });
+        speaking(session, Date.now() - silentMs);
+        return { session, ws };
+      }
+      afterEach(() => vi.useRealTimers());
+
+      it('retient la fin de tour jugée par le modèle jusqu’à une vraie pause (1,2 s), pas 428 ms', () => {
+        const text = "c'est en nom de de assam un";
+        const { session, ws } = spellingSession(text, 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(false);
+        vi.advanceTimersByTime(300);
+        expect(ws.send).not.toHaveBeenCalled();
+        // La pause dépasse 1,2 s : l'épellation est bien finie.
+        vi.advanceTimersByTime(500);
+        expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      });
+
+      it('retient aussi la partielle figée d’une réponse courte (« a 2 »), et reprend quand l’appelant continue', () => {
+        const { session, ws } = spellingSession('a 2', 100);
+        vi.advanceTimersByTime(500);
+        expect(ws.send).not.toHaveBeenCalled();
+        // L'appelant continue : la partielle change, le report est abandonné.
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: 'a 2 s a 2 m' });
+        vi.advanceTimersByTime(1_000);
+        expect(ws.send).not.toHaveBeenCalled();
+      });
+
+      it('ne change rien hors d’une épellation : la garde normale de 350 ms', () => {
+        vi.useFakeTimers();
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'time';
+        const text = 'plutôt midi 30';
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: text });
+        speaking(session, Date.now() - 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(true);
+        expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      });
+
+      it('une réponse qui n’est pas de l’épellation (« oui c’est ça ») après la relecture garde la garde normale', () => {
+        vi.useFakeTimers();
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'customerName';
+        session.structuredTurn = {
+          ...createStructuredTurnState(),
+          lastAwaiting: 'customerNameConfirmation',
+        };
+        const text = "oui c'est ça";
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: text });
+        speaking(session, Date.now() - 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(true);
+      });
     });
 
     it('ne change rien quand la garde est désactivée ou sans voix mesurée', () => {
