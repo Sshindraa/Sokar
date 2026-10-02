@@ -254,6 +254,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           deepgramKeyterms,
           managerPhone: ctx.managerPhone,
           onlineReservationsActive: ctx.onlineReservationsActive === true,
+          smsConfirmEnabled: ctx.smsConfirmEnabled,
           timezone: ctx.timezone,
           openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
           // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.

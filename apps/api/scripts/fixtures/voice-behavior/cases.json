@@ -579,7 +579,7 @@
       },
       {
         "role": "assistant",
-        "content": "Je note A, deux S, A, deux M. C'est bien ça ?"
+        "content": "Je note A, S, S, A, M, M. C'est bien ça ?"
       }
     ]
   },
@@ -2185,6 +2185,33 @@
           "kind": "readsBack",
           "expect": true,
           "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "sms-desactive-pas-de-promesse",
+      "behavior": "compte rendu de création",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 8043662c : « Un SMS de confirmation vous sera envoyé » dit à la fin alors que le compte rendu affirmait l'envoi sans regarder le réglage du restaurant ; ici le réglage est désactivé. Le contrôle écarte toute mention du SMS (une mention négative correcte est aussi comptée : il mesure surtout l'absence de promesse, un motif qui ne sert qu'à interdire cette dérive)",
+      "history": "toRecapHouet",
+      "transcript": "oui s'il vous plaît",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUET"
+      },
+      "awaiting": "confirmation",
+      "reservationCreated": true,
+      "actionResult": "Réservation confirmée pour HOUET, le 2026-10-01 à 18:30, pour 5 personne(s). Le SMS de confirmation est désactivé pour ce restaurant : aucun SMS n'est envoyé au client.",
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "sms",
+          "expect": false,
+          "minRate": 0.8
         }
       ]
     }

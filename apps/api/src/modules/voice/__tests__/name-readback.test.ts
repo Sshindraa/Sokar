@@ -1,77 +1,85 @@
 import { describe, expect, it } from 'vitest';
 import {
-  fillReadbackMarker,
-  hasReadbackMarker,
-  nameReadback,
+  lettersOnly,
+  nameLetterSequence,
+  nameLettersData,
   readbackFact,
-  READBACK_MARKER,
-  sayCarriesReadback,
+  readbackInstruction,
+  sayReadsLetters,
 } from '../stream/structured-turn/name-readback';
 
-describe('nameReadback : les lettres du nom, lues une à une', () => {
-  it('lit les lettres en majuscules séparées par des virgules, une lettre doublée dite « deux X »', () => {
-    expect(nameReadback('ASSAM')).toBe('A, deux S, A, M');
-    expect(nameReadback('Assamm')).toBe('A, deux S, A, deux M');
-    expect(nameReadback('AKKIF')).toBe('A, deux K, I, F');
-    expect(nameReadback('Houet')).toBe('H, O, U, E, T');
-    expect(nameReadback('Massonn')).toBe('M, A, deux S, O, deux N');
+describe('nameLettersData : les lettres du nom en données', () => {
+  it('donne chaque lettre et le nombre de fois qu’elle s’écrit de suite', () => {
+    expect(nameLettersData('ASSAMM')).toEqual([
+      { letter: 'A', count: 1 },
+      { letter: 'S', count: 2 },
+      { letter: 'A', count: 1 },
+      { letter: 'M', count: 2 },
+    ]);
+    expect(nameLettersData('Houet').map((entry) => entry.count)).toEqual([1, 1, 1, 1, 1]);
+    expect(nameLettersData('AAAB')).toEqual([
+      { letter: 'A', count: 3 },
+      { letter: 'B', count: 1 },
+    ]);
   });
 
-  it('dit « trois » pour trois lettres de suite, et répète au-delà', () => {
-    expect(nameReadback('AAAB')).toBe('trois A, B');
-    expect(nameReadback('ABBBBC')).toBe('A, B, B, B, B, C');
-  });
-
-  it('ignore accents, majuscules et ponctuation ; sépare les mots d’un nom composé par un point', () => {
-    expect(nameReadback('Hoët')).toBe('H, O, E, T');
-    expect(nameReadback('de la Fontaine')).toBe('D, E. L, A. F, O, N, T, A, I, N, E');
-    expect(nameReadback('Jean-Pierre')).toBe('J, E, A, N. P, I, E, deux R, E');
-    expect(nameReadback("D'Alembert")).toBe('D. A, L, E, M, B, E, R, T');
-  });
-
-  it('ne lit rien quand le nom n’a aucune lettre', () => {
-    expect(nameReadback('')).toBeNull();
-    expect(nameReadback('  42 ')).toBeNull();
-  });
-
-  it('ne produit jamais une lettre seule en minuscule ni en toutes lettres : la voix lirait « secondes », « mètres »', () => {
-    for (const name of ['ASSAM', 'Massonn', 'Smith', 'Lemmet', 'Dupont']) {
-      const readback = nameReadback(name)!;
-      expect(readback).toBe(readback.replace(/\b[a-z]\b/g, (letter) => letter.toUpperCase()));
-      // Les seuls mots entiers sont les comptes de répétition.
-      expect(readback.replace(/\b(deux|trois)\b/g, '').match(/\b[A-Za-zÀ-ÿ]{2,}\b/)).toBeNull();
-    }
+  it('ignore accents, majuscules, espaces et ponctuation ; tous les mots d’un nom composé', () => {
+    expect(nameLetterSequence('Hoët')).toBe('HOET');
+    expect(nameLetterSequence('de la Fontaine')).toBe('DELAFONTAINE');
+    expect(nameLetterSequence("D'Alembert")).toBe('DALEMBERT');
+    expect(nameLetterSequence('Jean-Pierre')).toBe('JEANPIERRE');
+    expect(nameLettersData('  42 ')).toEqual([]);
   });
 });
 
-describe('marqueur de relecture', () => {
-  it('remplace le marqueur par les lettres, quelle que soit sa casse ou ses espaces', () => {
-    for (const marker of [READBACK_MARKER, '[[nom]]', '[[ NOM ]]']) {
-      expect(fillReadbackMarker(`Je note ${marker}. C'est bien ça ?`, 'ASSAM')).toBe(
-        "Je note A, deux S, A, M. C'est bien ça ?",
-      );
-    }
+describe('sayReadsLetters : chaque lettre isolée, dans l’ordre', () => {
+  it('accepte les lettres isolées, séparées par des virgules, espaces ou points, quelle que soit la casse', () => {
+    expect(sayReadsLetters("Je note A, S, S, A, M, M. C'est bien ça ?", 'ASSAMM')).toBe(true);
+    expect(sayReadsLetters('Donc a s s a m m, c’est bien ça ?', 'Assamm')).toBe(true);
+    expect(sayReadsLetters('H. O. U. E. T. Je me trompe ?', 'HOUET')).toBe(true);
+    expect(
+      sayReadsLetters('Alors D, E. L, A. F, O, N, T, A, I, N, E, c’est ça ?', 'de la Fontaine'),
+    ).toBe(true);
+    // Un accent sur une lettre du nom ne change pas la lettre.
+    expect(sayReadsLetters('H, O, E, T ?', 'Hoët')).toBe(true);
   });
 
-  it('retire le marqueur quand le nom n’a aucune lettre', () => {
-    expect(fillReadbackMarker(`Je note ${READBACK_MARKER}. Merci.`, '')).toBe('Je note . Merci.');
+  it('refuse le nom dit comme un mot, sa graphie décrite, ou une lettre doublée écrite une seule fois', () => {
+    expect(sayReadsLetters("Donc Assamm, avec deux s et deux m. C'est bien ça ?", 'ASSAMM')).toBe(
+      false,
+    );
+    expect(sayReadsLetters("Donc A, deux S, A, deux M. C'est bien ça ?", 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters("Donc A, S, A, M. C'est bien ça ?", 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters("Donc Assamm. C'est bien ça ?", 'ASSAMM')).toBe(false);
   });
 
-  it('reconnaît le marqueur, ou déjà les lettres exactes du nom', () => {
-    expect(hasReadbackMarker(`Donc ${READBACK_MARKER} ?`)).toBe(true);
-    expect(sayCarriesReadback(`Donc ${READBACK_MARKER}. C'est bien ça ?`, 'ASSAM')).toBe(true);
-    expect(sayCarriesReadback("Donc A, deux S, A, M. C'est bien ça ?", 'ASSAM')).toBe(true);
-    expect(sayCarriesReadback("Donc Assam, avec deux s. C'est bien ça ?", 'ASSAM')).toBe(false);
-    // Les lettres d'un autre nom, ou en minuscules, ne comptent pas.
-    expect(sayCarriesReadback("Donc A, deux S, A, deux M. C'est bien ça ?", 'ASSAM')).toBe(false);
-    expect(sayCarriesReadback("Donc a, deux s, a, m. C'est bien ça ?", 'ASSAM')).toBe(false);
+  it('refuse des lettres dans le désordre, manquantes, en trop ou séparées par un mot', () => {
+    expect(sayReadsLetters('A, S, A, S, M, M ?', 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters('A, S, S, A, M ?', 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters('A, S, S, et A, M, M ?', 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters('A-S-S-A-M-M ?', 'ASSAMM')).toBe(false);
+    expect(sayReadsLetters("Donc A, S, S, A, M, M. C'est bien ça ?", '')).toBe(false);
   });
 
-  it('le fait du second passage nomme le marqueur et le nom retenu, sans exemple de phrase', () => {
-    const fact = readbackFact('Assamm');
-    expect(fact).toContain(READBACK_MARKER);
-    expect(fact).toContain('« Assamm »');
-    expect(fact).toContain('awaiting=customerNameConfirmation');
-    expect(fact).not.toContain('deux S');
+  it('accepte la suite de lettres même entourée d’autres mots, et même précédée d’une autre lettre isolée', () => {
+    expect(
+      sayReadsLetters("Je vous relis, c'est A, S, S, A, M, M, c'est bien ça ?", 'ASSAMM'),
+    ).toBe(true);
+    expect(sayReadsLetters('à A, S, S, A, M, M ?', 'ASSAMM')).toBe(true);
+  });
+});
+
+describe('consigne et fait de relecture', () => {
+  it('lettersOnly : les lettres seules, séparées par des virgules', () => {
+    expect(lettersOnly('Assamm')).toBe('A, S, S, A, M, M');
+    expect(lettersOnly('42')).toBeNull();
+  });
+
+  it('la consigne donne les lettres en données et la forme à respecter, sans exemple de phrase', () => {
+    const instruction = readbackInstruction('Assamm');
+    expect(instruction).toContain('"letter":"S","count":2');
+    expect(instruction).toContain('awaiting=customerNameConfirmation');
+    expect(instruction).not.toContain('A, S, S');
+    expect(readbackFact('Assamm')).toContain('« Assamm »');
   });
 });

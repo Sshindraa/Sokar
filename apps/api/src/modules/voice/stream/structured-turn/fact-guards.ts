@@ -5,7 +5,7 @@
  * des faits vérifiés (disponibilité réelle, récapitulatif accepté).
  */
 import { normalizeOpeningHours } from '@sokar/shared';
-import { READBACK_MARKER } from './name-readback';
+import { readbackInstruction } from './name-readback';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
 
 export type DraftField = keyof StructuredTurnDraft;
@@ -351,14 +351,14 @@ export function spelledNameFact(
         `Les lettres que l'appelant vient de donner reprennent la fin du nom que tu viens de relire (« ${previousName.trim()} ») ; ` +
         `le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne les place pas bien. ` +
         `Aligné sur ta relecture, le nom est : customerName = « ${reconciled} ». ` +
-        `Relis uniquement ce nom en écrivant le marqueur ${READBACK_MARKER} à la place des lettres (le code les lit une à une), et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+        readbackInstruction(reconciled)
       );
     }
   }
   return (
     `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne correspond pas aux lettres que l'appelant vient d'épeler. ` +
     `Les lettres épelées font foi : customerName = « ${reconciled} ». ` +
-    `Relis uniquement ce nom en écrivant le marqueur ${READBACK_MARKER} à la place des lettres (le code les lit une à une), et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+    readbackInstruction(reconciled)
   );
 }
 

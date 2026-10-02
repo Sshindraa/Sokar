@@ -38,9 +38,9 @@ export type SamplePredicate =
    */
   | { kind: 'hangsUp'; expect: boolean }
   /**
-   * La phrase porte la relecture du nom construite par le code : le marqueur (remplacé ensuite par les lettres du
-   * brouillon), ou déjà les lettres exactes de `draft.customerName`. Mesure si le modèle laisse le code relire le
-   * nom ; sans quoi le moteur se tait et redemande (un second appel au modèle, donc du délai).
+   * La phrase lit les lettres du nom du brouillon, isolées et dans l'ordre (contrôle structurel : jetons d'une seule
+   * lettre). Mesure si le modèle relit le nom comme le moteur l'exige ; sinon le moteur se tait et redemande avec les
+   * lettres en données (un second appel au modèle, donc du délai).
    */
   | { kind: 'readsBack'; expect: boolean };
 

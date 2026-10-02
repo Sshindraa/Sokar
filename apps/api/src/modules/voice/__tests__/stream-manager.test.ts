@@ -429,6 +429,39 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toContain('Réservation confirmée pour Jean');
   });
 
+  describe('createReservation : le compte rendu reflète le réglage du SMS de confirmation du restaurant', () => {
+    async function created(smsConfirmEnabled: boolean | undefined) {
+      vi.mocked(ReservationService.create).mockResolvedValue({
+        id: 'res-sms',
+      } as unknown as Awaited<ReturnType<typeof ReservationService.create>>);
+      const mgr = CallSessionManager.getInstance();
+      const session = makeSession();
+      if (smsConfirmEnabled !== undefined) session.smsConfirmEnabled = smsConfirmEnabled;
+      authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
+      return mgr.createReservationFromConversation(session);
+    }
+
+    it('SMS désactivé pour ce restaurant : le compte rendu le dit et n’annonce aucun envoi', async () => {
+      const reply = await created(false);
+      expect(reply).toContain('Réservation confirmée pour Jean');
+      expect(reply).toContain('désactivé pour ce restaurant');
+      expect(reply).not.toContain('va être envoyé');
+    });
+
+    it('SMS activé : le compte rendu dit qu’il est activé et va être envoyé', async () => {
+      const reply = await created(true);
+      expect(reply).toContain('activé pour ce restaurant');
+      expect(reply).toContain('va être envoyé');
+      expect(reply).not.toContain('désactivé');
+    });
+
+    it('réglage inconnu (contexte en cache d’avant ce champ) : rien n’est dit du SMS', async () => {
+      const reply = await created(undefined);
+      expect(reply).toContain('Réservation confirmée pour Jean');
+      expect(reply).not.toContain('SMS');
+    });
+  });
+
   it('createReservation : convertit l’heure dans le fuseau du restaurant, pas du serveur', async () => {
     vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-tz' } as unknown as Awaited<
       ReturnType<typeof ReservationService.create>

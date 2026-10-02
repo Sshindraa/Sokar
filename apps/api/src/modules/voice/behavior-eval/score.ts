@@ -4,7 +4,7 @@ import {
   reconcileSpelledName,
   wordCount,
 } from '../stream/structured-turn/fact-guards';
-import { sayCarriesReadback } from '../stream/structured-turn/name-readback';
+import { sayReadsLetters } from '../stream/structured-turn/name-readback';
 import type { StructuredTurnDraft } from '../stream/structured-turn/schema';
 import type {
   BehaviorCase,
@@ -139,9 +139,12 @@ export function holds(
     case 'noRepeatOf':
       return !normalize(lastSentence(sayOf(output))).includes(normalize(predicate.text));
     case 'readsBack': {
-      const draft = output.draft as { customerName?: unknown } | undefined;
-      const name = typeof draft?.customerName === 'string' ? draft.customerName : '';
-      return (name !== '' && sayCarriesReadback(sayOf(output), name)) === predicate.expect;
+      // Cas `engine` : le nom est celui du brouillon après le garde-fou d'épellation, comme le moteur le vérifie.
+      const name = outputDraft(output, testCase, guarded)?.customerName;
+      return (
+        (typeof name === 'string' && name !== '' && sayReadsLetters(sayOf(output), name)) ===
+        predicate.expect
+      );
     }
     case 'hangsUp': {
       const state = {
@@ -173,7 +176,7 @@ function describe(predicate: SamplePredicate): string {
       return `${predicate.path} ∈ ${JSON.stringify(predicate.values)}`;
     case 'readsBack':
       return predicate.expect
-        ? 'la phrase laisse le code relire le nom (marqueur ou lettres exactes)'
+        ? 'la phrase lit les lettres du nom, isolées et dans l’ordre'
         : 'la phrase ne relit pas le nom';
     case 'hangsUp':
       return predicate.expect

@@ -404,6 +404,20 @@ function managerRecoveryOffer(
   return reply;
 }
 
+/**
+ * Ce que le compte rendu de création dit du SMS de confirmation : le réglage du restaurant (`smsConfirmEnabled`),
+ * jamais une affirmation d'envoi. Réglage inconnu (contexte en cache d'avant ce champ) : le compte rendu n'en dit rien.
+ */
+export function confirmationSmsStatement(enabled: boolean | undefined): string {
+  if (enabled === true) {
+    return ' Le SMS de confirmation est activé pour ce restaurant : il va être envoyé au client.';
+  }
+  if (enabled === false) {
+    return " Le SMS de confirmation est désactivé pour ce restaurant : aucun SMS n'est envoyé au client.";
+  }
+  return '';
+}
+
 function terminalToolReply(
   executionControl: VoiceToolExecutionControl | undefined,
   reply: string,
@@ -612,6 +626,8 @@ export class CallSessionManager {
     deepgramKeyterms?: string[];
     managerPhone?: string | null;
     onlineReservationsActive?: boolean;
+    /** `Restaurant.smsConfirmEnabled` : le SMS de confirmation de réservation est actif pour ce restaurant. */
+    smsConfirmEnabled?: boolean;
     timezone?: string;
     openingHours?: CallSession['openingHours'];
     /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
@@ -651,6 +667,9 @@ export class CallSessionManager {
       ...(opts.deepgramKeyterms ? { deepgramKeyterms: opts.deepgramKeyterms } : {}),
       managerPhone: opts.managerPhone ?? null,
       onlineReservationsActive: opts.onlineReservationsActive ?? false,
+      ...(opts.smsConfirmEnabled === undefined
+        ? {}
+        : { smsConfirmEnabled: opts.smsConfirmEnabled }),
       timezone: opts.timezone ?? 'Europe/Paris',
       giftCardMinimumAmount,
       systemPrompt: opts.systemPrompt,
@@ -2483,7 +2502,7 @@ export class CallSessionManager {
 
             return terminalToolReply(
               executionControl,
-              `Réservation confirmée pour ${reservationCustomerName}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`,
+              `Réservation confirmée pour ${reservationCustomerName}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s).${confirmationSmsStatement(session.smsConfirmEnabled)}`,
             );
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);

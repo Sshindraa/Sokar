@@ -1,88 +1,100 @@
 /**
- * Relecture du nom lettre par lettre, construite par le code et jamais par le modèle.
+ * Relecture du nom lettre par lettre : le code calcule les lettres, le modèle formule autour, le code vérifie la
+ * structure avant de parler.
  *
- * Appel 8043662c : le nom dit « A, deux S, A, M » a été transcrit « a deux s a deux m » (erreur de reconnaissance
- * que le code ne peut pas voir) ; le modèle a relu « Assamm, avec deux s et deux m », que la voix lit « deux
- * secondes et deux mètres » : l'appelant n'a pas entendu l'erreur et a confirmé. La relecture est la seule
- * protection contre une erreur de reconnaissance : elle doit être celle des lettres du brouillon, dans une forme
- * que la voix lit comme des lettres (majuscules séparées par des virgules, une lettre doublée dite « deux X »),
- * vérifiée en synthèse réelle.
+ * Appel 8043662c : le modèle a relu « Assamm, avec deux s et deux m », que la voix lit « deux secondes et deux
+ * mètres ». La relecture est la seule protection contre une erreur de reconnaissance : elle doit être celle des
+ * lettres du brouillon, chacune isolée et dans l'ordre. Une lettre isolée est lue comme une lettre par la voix
+ * (vérifié en synthèse réelle, HTTP et WebSocket, sur des noms à lettres doublées) ; une lettre suivie d'un nombre
+ * ou d'un mot (« deux s », « s et m ») ne l'est pas.
  *
- * Le modèle écrit seulement le marqueur à l'endroit où il relit le nom ; le code le remplace. Aucun mot, aucune
- * phrase : la forme des lettres est construite à partir des lettres.
+ * Aucune phrase, aucun mot : les lettres sont des données (lettre, nombre de répétitions de suite) et le contrôle
+ * est structurel (jetons d'une seule lettre, dans l'ordre).
  */
 
-export const READBACK_MARKER = '[[NOM]]';
+export interface NameLetter {
+  letter: string;
+  /** Nombre de fois que la lettre s'écrit de suite (2 pour un « SS »). */
+  count: number;
+}
 
-const MARKER_PATTERN = /\[\[\s*nom\s*\]\]/giu;
-const MARKER_TEST = /\[\[\s*nom\s*\]\]/iu;
-
-/** Nombre de fois qu'une lettre se répète de suite, dit en mot jusqu'à trois ; au-delà, la lettre est répétée. */
-const COUNT_WORDS: Record<number, string> = { 2: 'deux', 3: 'trois' };
-
-const stripToUppercaseLetters = (word: string): string =>
-  word
+const stripToLetters = (text: string): string =>
+  text
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .replace(/[^\p{L}]/gu, '')
     .toLocaleUpperCase('fr-FR');
 
-function readWord(letters: string): string {
-  const parts: string[] = [];
-  for (let index = 0; index < letters.length; ) {
-    let end = index + 1;
-    while (end < letters.length && letters[end] === letters[index]) end++;
-    const count = end - index;
-    const word = COUNT_WORDS[count];
-    if (word) parts.push(`${word} ${letters[index]}`);
-    else parts.push(...Array.from({ length: count }, () => letters[index]));
-    index = end;
+/** Les lettres du nom, une par une (tous les mots, sans accent, en majuscules). */
+export function nameLetterSequence(name: string): string {
+  return stripToLetters(name);
+}
+
+/** Les lettres du nom en données : chaque lettre et le nombre de fois qu'elle s'écrit de suite. */
+export function nameLettersData(name: string): NameLetter[] {
+  const letters = nameLetterSequence(name);
+  const runs: NameLetter[] = [];
+  for (const letter of letters) {
+    const last = runs.at(-1);
+    if (last && last.letter === letter) last.count += 1;
+    else runs.push({ letter, count: 1 });
   }
-  return parts.join(', ');
+  return runs;
 }
 
-/**
- * Les lettres du nom, lues une à une : « A, deux S, A, M ». Les mots d'un nom composé sont séparés par un point
- * (« D, E. L, A. F, O, N, T, A, I, N, E »). Null quand le nom n'a aucune lettre.
- */
-export function nameReadback(name: string): string | null {
-  const words = name
-    .trim()
-    .split(/[\s'’-]+/u)
-    .map(stripToUppercaseLetters)
-    .filter(Boolean);
-  if (!words.length) return null;
-  return words.map(readWord).join('. ');
-}
+const SEPARATORS = /[\s,.;:!?…()«»"“”]+/u;
 
-/** La phrase du modèle porte la relecture : le marqueur (remplacé ensuite), ou déjà les lettres exactes. */
-export function sayCarriesReadback(say: string, name: string): boolean {
-  if (MARKER_TEST.test(say)) return true;
-  const readback = nameReadback(name);
-  return readback !== null && say.includes(readback);
-}
-
-/** Remplace le marqueur par la relecture du nom ; sans lettres à lire, le marqueur est simplement retiré. */
-export function fillReadbackMarker(say: string, name: string): string {
-  const readback = nameReadback(name);
+/** Les jetons de la phrase qui sont une seule lettre, ou null pour tout autre jeton, dans l'ordre. */
+function isolatedLetterTokens(say: string): Array<string | null> {
   return say
-    .replace(MARKER_PATTERN, readback ?? '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-}
-
-export function hasReadbackMarker(text: string): boolean {
-  return MARKER_TEST.test(text);
+    .split(SEPARATORS)
+    .filter(Boolean)
+    .map((token) => (/^\p{L}$/u.test(token) ? stripToLetters(token) : null));
 }
 
 /**
- * Fait donné au second passage quand la phrase du modèle ne porte pas le marqueur : il se tait, le code lit le nom.
- * Aucun exemple de phrase : seulement ce que le modèle doit écrire à la place des lettres.
+ * Chaque lettre du nom apparaît isolée et dans l'ordre dans la phrase : une suite de jetons d'une seule lettre,
+ * consécutifs, qui épelle exactement le nom. Faux pour « Assamm, avec deux s et deux m » (aucune lettre isolée),
+ * pour « A, deux S, A, M » (une lettre doublée écrite une seule fois) et pour un nom lu comme un mot.
  */
-export function readbackFact(name: string): string {
+export function sayReadsLetters(say: string, name: string): boolean {
+  const expected = nameLetterSequence(name);
+  if (!expected) return false;
+  const tokens = isolatedLetterTokens(say);
+  for (let start = 0; start + expected.length <= tokens.length; start++) {
+    let matches = true;
+    for (let offset = 0; offset < expected.length; offset++) {
+      if (tokens[start + offset] !== expected[offset]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
+/** Les lettres seules, séparées par des virgules : dernier recours quand la phrase du modèle ne les porte pas. */
+export function lettersOnly(name: string): string | null {
+  const letters = nameLetterSequence(name);
+  return letters ? [...letters].join(', ') : null;
+}
+
+/**
+ * La consigne de relecture, donnée au second passage et par `spelledNameFact` : les lettres du nom retenu en
+ * données, et la forme à respecter. Aucun exemple de phrase.
+ */
+export function readbackInstruction(name: string): string {
   return (
-    `Le nom retenu est « ${name.trim()} ». Tu ne relis jamais les lettres toi-même, et tu ne décris jamais leur graphie : ` +
-    `à l'endroit où tu relis le nom, écris le marqueur ${READBACK_MARKER} ; le code le remplace par les lettres, lues une à une. ` +
-    `Relis ainsi uniquement ce nom, puis demande si c'est bien ça (awaiting=customerNameConfirmation).`
+    `Les lettres du nom retenu, en données (« count » : nombre de fois que la lettre s'écrit de suite) : ` +
+    `${JSON.stringify(nameLettersData(name))}. ` +
+    `Relis uniquement ce nom en écrivant ses lettres une à une, isolées et dans l'ordre, chaque lettre autant de fois ` +
+    `que son « count » ; ne dis jamais le nom comme un mot, ne décris jamais sa graphie ; puis demande si c'est ` +
+    `bien ça (awaiting=customerNameConfirmation).`
   );
+}
+
+/** Fait du second passage quand la phrase du modèle ne porte pas les lettres du nom retenu : il s'est tu. */
+export function readbackFact(name: string): string {
+  return `Le nom retenu est « ${name.trim()} ». ${readbackInstruction(name)}`;
 }
