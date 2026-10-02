@@ -11,7 +11,7 @@
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 
 - [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
-- [ ] Compréhension + épellation déployées et actives pour Chez Sokar (01/10) : valider sur un appel réel (épeler un nom neuf), lire `understanding` et `spelled_name_mismatch` dans les journaux.
+- [ ] Compréhension + épellation déployées et actives pour Chez Sokar (01/10) : valider sur un appel réel (épeler un nom neuf), lire `understanding` et `spelled_name_mismatch` dans les journaux. Relecture du nom : mesurer sur un appel réel le délai des tours de relecture (phrase retenue + second passage) face aux autres tours ; tester en synthèse « A, deux S, A, M » avec virgules.
 - [ ] Banc voix : `pas-de-repetition-mot-pour-mot` est à 20-55 % (seuil 80 %) avant et après l'étape 3 (l'agent reformule mais repose la même question) ; faire utiliser au banc la vraie base `prompts.ts` (prompt minimal aujourd'hui) ; mesurer le mode à outils, non couvert.
 - [ ] Routage UE du secours (`OPENROUTER_FALLBACK_BASE_URL`, non activé) : latence et qualité mesurées le 01/10 (Journal) ; aucun candidat n'est un remplaçant évident, DeepSeek (1 hébergeur UE) reste le meilleur. Décider : bascule UE seule, UE puis mondial, ou rester mondial ; vérifier la région de Cerebras, Deepgram, Cartesia, Telnyx.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
