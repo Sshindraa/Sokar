@@ -72,6 +72,7 @@ function fixture() {
       target.state = 'IDLE';
     }),
     processUtteranceStreaming: vi.fn(),
+    getTableRanges: vi.fn(async () => [{ capacity: 12, minCapacity: 1 }]),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
     handoffToManager: vi.fn(),

@@ -112,6 +112,7 @@ function fixture() {
         return json;
       },
     ),
+    getTableRanges: vi.fn(async () => [{ capacity: 12, minCapacity: 1 }]),
     getAvailability: vi.fn(async (_s: CallSession, date: string, partySize: number) => ({
       restaurantId: RESTAURANT_ID,
       date,
@@ -241,6 +242,62 @@ describe('tour structuré (canary)', () => {
 
     expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
     expect(spoken().join(' ')).not.toContain('pas bien saisi');
+  });
+
+  it('ne dit pas « complet ce jour-là » quand aucune table n’accueille ce nombre : groupe, sans autre jour (appel 03b19223)', async () => {
+    const { session, mgr, outputs } = fixture();
+    vi.mocked(mgr.getTableRanges).mockResolvedValue([
+      { capacity: 2, minCapacity: 1 },
+      { capacity: 4, minCapacity: 1 },
+      { capacity: 6, minCapacity: 2 },
+    ]);
+    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+      restaurantId: RESTAURANT_ID,
+      date: TOMORROW,
+      partySize: 7,
+      slots: [],
+      allSlots: [{ time: '20:00', available: false }],
+    });
+    const draft = { date: TOMORROW, time: '20:00', partySize: 7, customerName: '' };
+    outputs.push(
+      turn({ draft, action: 'check_availability' }),
+      turn({
+        draft,
+        awaiting: 'humanFallback',
+        say: 'Aucune de nos tables n’accueille 7 personnes. Je peux vous passer le gérant ou prendre un message ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'on sera sept', mgr);
+
+    // Pas la phrase fixe du jour complet : le second passage reçoit le fait « aucune table ».
+    expect(spoken().join(' ')).not.toMatch(/^Je n'ai plus de table/);
+    expect(spoken().join(' ')).toContain('gérant');
+    const secondContext = (
+      vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[1] as Array<{ content: string }>
+    )[0].content;
+    expect(secondContext).toContain(
+      'aucune table qui accueille 7 personnes, quel que soit le jour',
+    );
+    expect(secondContext).toContain('Ne propose ni autre jour');
+  });
+
+  it('garde la phrase du jour complet quand une table accueille ce nombre', async () => {
+    const { session, mgr, outputs } = fixture();
+    vi.mocked(mgr.getTableRanges).mockResolvedValue([{ capacity: 8, minCapacity: 1 }]);
+    vi.mocked(mgr.getAvailability).mockResolvedValueOnce({
+      restaurantId: RESTAURANT_ID,
+      date: TOMORROW,
+      partySize: 7,
+      slots: [],
+      allSlots: [{ time: '20:00', available: false }],
+    });
+    const draft = { date: TOMORROW, time: '20:00', partySize: 7, customerName: '' };
+    outputs.push(turn({ draft, action: 'check_availability' }), turn({ draft, say: '' }));
+
+    await processTranscriptStreaming(session, 'on sera sept', mgr);
+
+    expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
   });
 
   it('répond en un seul passage avec les créneaux du jour lus d’avance', async () => {
@@ -875,6 +932,31 @@ describe('tour structuré (canary)', () => {
 
     expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
     expect(session.structuredTurn?.recapKey).toBe(bookingKey(draft));
+  });
+
+  it('envoie le nom à la voix en casse de nom propre, et les lettres relues telles quelles (appel 935ff343)', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '21:00', partySize: 3, customerName: 'HOUET' };
+    session.structuredTurn = {
+      ...createStructuredTurnState(),
+      draft,
+      availability: { date: draft.date, partySize: 3, slots: ['21:00'] },
+      lastAwaiting: 'customerNameConfirmation',
+    };
+    outputs.push(
+      turn({
+        interpretation: 'affirmation',
+        draft,
+        awaiting: 'confirmation',
+        say: 'Je récapitule : une table pour 3 à 21 heures, au nom de HOUET. Je peux réserver ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'c’est parfait', mgr);
+
+    const voice = spoken().join(' ');
+    expect(voice).toContain('au nom de Houet');
+    expect(voice).not.toContain('HOUET');
   });
 
   it('crée la réservation après un oui au récapitulatif', async () => {

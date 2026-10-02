@@ -82,6 +82,20 @@ export class CapacityAwareAvailabilityService {
   }
 
   /**
+   * Plages d'accueil (min et max de couverts) des tables actives, celles que `getAvailability` retient : un
+   * groupe qu'aucune plage n'accueille n'a de créneau AUCUN jour, ce qui n'est pas « complet ce jour-là ».
+   * Les combinaisons de tables ne comptent pas : la disponibilité ne les utilise pas.
+   */
+  async tableRanges(
+    restaurantId: string,
+  ): Promise<Array<{ capacity: number; minCapacity: number }>> {
+    return this.prisma.table.findMany({
+      where: { isActive: true, floorPlan: { restaurantId, isActive: true } },
+      select: { capacity: true, minCapacity: true },
+    });
+  }
+
+  /**
    * Retourne les créneaux disponibles pour (restaurantId, date, partySize).
    * Un créneau est disponible si au moins une table active peut accueillir le
    * groupe sur la durée du service.

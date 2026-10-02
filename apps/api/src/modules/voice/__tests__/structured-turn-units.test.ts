@@ -16,6 +16,7 @@ import {
   outsideOpeningHoursFact,
   reconcileSpelledName,
   requestedSlotConflict,
+  sizesWithoutTable,
   spelledLettersOf,
   spelledNameFact,
   todayInTimezone,
@@ -616,5 +617,46 @@ describe('reprise de la fin du nom après la relecture (épellation partielle)',
     expect(fact).toContain('HOUET');
     expect(fact).toContain('HOUTE');
     expect(spelledNameFact('HOUET', 'e t', 'customerNameConfirmation', 'HOUT')).toBeNull();
+  });
+});
+
+describe('aucune table pour ce nombre, distinct de « complet ce jour-là » (appel 03b19223)', () => {
+  const ranges = [
+    { capacity: 2, minCapacity: 1 },
+    { capacity: 4, minCapacity: 1 },
+    { capacity: 6, minCapacity: 2 },
+  ];
+
+  it('liste les tailles qu’aucune table n’accueille, avec le critère de la disponibilité', () => {
+    expect(sizesWithoutTable(ranges, 10)).toEqual([7, 8, 9, 10]);
+    // Une table qui n’accueille qu’à partir de 4 laisse un trou en dessous.
+    expect(sizesWithoutTable([{ capacity: 6, minCapacity: 4 }], 7)).toEqual([1, 2, 3, 7]);
+    // Aucune table connue : rien n’est affirmé.
+    expect(sizesWithoutTable([], 10)).toEqual([]);
+  });
+
+  it('le dit au modèle par une ligne « aucune table », et « aucun » reste pour le jour complet', () => {
+    const state = createStructuredTurnState();
+    state.draft = { date: '2026-10-03', time: '20:00', partySize: 7, customerName: '' };
+    state.dayAvailability = {
+      date: '2026-10-03',
+      closed: false,
+      slotsBySize: { 1: ['20:00'], 2: [], 3: [], 4: ['20:00'], 5: [], 6: [], 7: [], 8: [] },
+      noTableSizes: [7, 8],
+    };
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'on sera sept',
+      state,
+    });
+    const verified = JSON.parse(String(system.content).split('ÉTAT VÉRIFIÉ : ')[1].split('\n')[0]);
+    expect(verified.dayAvailability.freeSlotsByPartySize).toEqual({
+      '1': '20:00',
+      '2-3': 'aucun',
+      '4': '20:00',
+      '5-6': 'aucun',
+      '7-8': 'aucune table',
+    });
   });
 });

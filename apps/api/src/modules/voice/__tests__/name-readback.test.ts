@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   lettersOnly,
+  nameForSpeech,
   nameLetterSequence,
   nameLettersData,
   readbackFact,
@@ -81,5 +82,29 @@ describe('consigne et fait de relecture', () => {
     expect(instruction).toContain('awaiting=customerNameConfirmation');
     expect(instruction).not.toContain('A, S, S');
     expect(readbackFact('Assamm')).toContain('« Assamm »');
+  });
+});
+
+describe('nameForSpeech : le nom envoyé à la voix en casse de nom propre', () => {
+  it('met le nom en casse de nom propre quand la phrase l’écrit en majuscules (appel 935ff343 : « H… Huey »)', () => {
+    expect(nameForSpeech('Une table pour 3 demain à 21 heures, au nom de HOUET.', 'HOUET')).toBe(
+      'Une table pour 3 demain à 21 heures, au nom de Houet.',
+    );
+    expect(nameForSpeech('Au nom de ÉLODIE DUPONT ?', 'Élodie Dupont')).toBe(
+      'Au nom de Élodie Dupont ?',
+    );
+    expect(nameForSpeech('Au nom de D’ALEMBERT ?', "D'ALEMBERT")).toBe('Au nom de D’Alembert ?');
+    expect(nameForSpeech('Au nom de JEAN-PIERRE ?', 'JEAN-PIERRE')).toBe('Au nom de Jean-Pierre ?');
+  });
+
+  it('ne touche ni les lettres lues une à une, ni les mots qui ne sont pas le nom, ni un nom déjà en casse normale', () => {
+    expect(nameForSpeech("Je répète le nom : H, O, U, E, T. C'est bien ça ?", 'HOUET')).toBe(
+      "Je répète le nom : H, O, U, E, T. C'est bien ça ?",
+    );
+    expect(nameForSpeech('Un SMS est envoyé au nom de Houet.', 'HOUET')).toBe(
+      'Un SMS est envoyé au nom de Houet.',
+    );
+    expect(nameForSpeech('Au nom de Houet.', 'HOUET')).toBe('Au nom de Houet.');
+    expect(nameForSpeech('Au nom de HOUET.', '')).toBe('Au nom de HOUET.');
   });
 });

@@ -98,3 +98,25 @@ export function readbackInstruction(name: string): string {
 export function readbackFact(name: string): string {
   return `Le nom retenu est « ${name.trim()} ». ${readbackInstruction(name)}`;
 }
+
+/**
+ * Le nom tel que la voix doit le recevoir. Un nom écrit en majuscules (l'orthographe retenue d'une épellation) est
+ * lu par Cartesia comme un sigle (« H… Huey », appel 935ff343). Dans le texte destiné à la voix, chaque mot du nom
+ * écrit tout en majuscules passe en casse de nom propre, pour être prononcé comme un mot. Transformation de format
+ * seulement : aucun mot connu, rien n'est ajouté à la phrase. Les lettres lues une à une (un caractère par jeton) et
+ * les autres sigles de la phrase ne sont pas touchés.
+ */
+export function nameForSpeech(phrase: string, name: string): string {
+  const parts = new Set(
+    name
+      .split(/[^\p{L}]+/u)
+      .map((word) => stripToLetters(word))
+      .filter((word) => word.length >= 2),
+  );
+  if (!parts.size) return phrase;
+  return phrase.replace(/\p{L}{2,}/gu, (token) => {
+    const upper = token.toLocaleUpperCase('fr-FR');
+    if (token !== upper || !parts.has(stripToLetters(token))) return token;
+    return token.charAt(0) + token.slice(1).toLocaleLowerCase('fr-FR');
+  });
+}

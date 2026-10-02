@@ -879,6 +879,13 @@ export class CallSessionManager {
     return ReservationService.availability(session.restaurantId, date, partySize);
   }
 
+  /** Plages d'accueil des tables du restaurant : distingue « complet ce jour » de « aucune table pour ce nombre ». */
+  async getTableRanges(
+    session: CallSession,
+  ): Promise<Array<{ capacity: number; minCapacity: number }>> {
+    return ReservationService.tableRanges(session.restaurantId);
+  }
+
   /**
    * Finalise une réservation après la confirmation explicite du nom. Le
    * résultat de disponibilité doit correspondre exactement aux créneaux

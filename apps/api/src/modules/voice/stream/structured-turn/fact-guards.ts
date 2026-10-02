@@ -36,6 +36,28 @@ export interface DayAvailability {
   closed: boolean;
   /** Créneaux libres par taille de groupe, de 1 au maximum vocal. */
   slotsBySize: Record<number, string[]>;
+  /**
+   * Tailles de groupe qu'AUCUNE table du restaurant n'accueille, quel que soit le jour (appel 03b19223 :
+   * 7 personnes pour des tables de 6 au plus, annoncé « complet samedi »). Vide : inconnu ou toutes accueillies.
+   */
+  noTableSizes?: number[];
+}
+
+/**
+ * Tailles (de 1 à `maxSize`) qu'aucune plage d'accueil ne couvre. Même critère que la disponibilité : une table
+ * accueille N si `minCapacity <= N <= capacity`. Sans table connue, rien n'est affirmé (liste vide).
+ */
+export function sizesWithoutTable(
+  ranges: ReadonlyArray<{ capacity: number; minCapacity: number }>,
+  maxSize: number,
+): number[] {
+  if (!ranges.length) return [];
+  const sizes: number[] = [];
+  for (let size = 1; size <= maxSize; size++) {
+    if (!ranges.some((range) => range.minCapacity <= size && size <= range.capacity))
+      sizes.push(size);
+  }
+  return sizes;
 }
 
 export function createStructuredTurnState(): StructuredTurnState {

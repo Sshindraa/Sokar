@@ -119,6 +119,7 @@ function fixture() {
         return json;
       },
     ),
+    getTableRanges: vi.fn(async () => [{ capacity: 12, minCapacity: 1 }]),
     getAvailability: vi.fn(async (_s: CallSession, date: string, partySize: number) => ({
       restaurantId: RESTAURANT_ID,
       date,
