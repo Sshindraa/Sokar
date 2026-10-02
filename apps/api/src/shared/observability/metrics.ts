@@ -572,6 +572,18 @@ export const voiceStructuredSpeculationLaunchTotal = new Counter({
   labelNames: ['result'] as const,
   registers: [getRegistry()],
 });
+export const voiceTurnJudgeTotal = new Counter({
+  name: 'sokar_voice_turn_judge_total',
+  help: 'Turn-end judge verdicts: complete, incomplete, or unavailable (timeout, error, invalid) which falls back to turnComplete',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+export const voiceTurnJudgeDurationMs = new Histogram({
+  name: 'sokar_voice_turn_judge_duration_ms',
+  help: 'Duration of the separate turn-end judge request (ms), judged or not',
+  buckets: [50, 100, 200, 300, 500, 800, 1500],
+  registers: [getRegistry()],
+});
 export const voiceSemanticAgreementTotal = new Counter({
   name: 'sokar_voice_semantic_agreement_total',
   help: 'Agreement between Span-01 signals and TurnPlan',

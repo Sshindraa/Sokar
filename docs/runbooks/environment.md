@@ -288,6 +288,14 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # vérification de disponibilité) et le modèle redemande. Aucune liste de phrases : le jugement est celui du
 # modèle, dans le contexte. Change le schéma et le prompt de ces restaurants : activer d'abord Chez Sokar.
 VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS=""
+# Juge de fin de tour séparé (restaurants listés, vide = aucun) : une requête minimale (dernière question de
+# l'agent, parole de l'appelant, sortie {complete}) tourne en parallèle du passage anticipé ; son verdict
+# remplace `turnComplete` pour fermer le tour (clôture sémantique) et pour décider de répondre. Délai dépassé
+# ou erreur : `turnComplete` du modèle, comme sans le juge. Métriques : sokar_voice_turn_judge_total{outcome},
+# sokar_voice_turn_judge_duration_ms. Banc A/B : voir Journal du 2026-10-02. Activer d'abord Chez Sokar.
+VOICE_TURN_JUDGE_RESTAURANT_IDS=""
+# Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
+VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).

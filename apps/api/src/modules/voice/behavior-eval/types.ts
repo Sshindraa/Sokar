@@ -183,6 +183,8 @@ export interface BehaviorResponses {
   usage?: ReplayUsage;
   /** Sorties JSON du modèle par cas ; null quand la réponse est invalide. */
   responses: Record<string, (Record<string, unknown> | null)[]>;
+  /** Durée de chaque réponse valide (ms) par cas, quand le rejeu l'a mesurée. */
+  latencyMs?: Record<string, number[]>;
 }
 
 export interface CheckResult {
