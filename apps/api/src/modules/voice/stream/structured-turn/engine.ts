@@ -59,6 +59,8 @@ import {
   reconcileSpelledName,
   requestedSlotConflict,
   sizesWithoutTable,
+  timeGivenWithoutPartySize,
+  endsWithQuestion,
   wordCount,
 } from './fact-guards';
 import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
@@ -565,8 +567,25 @@ export async function runStructuredTurn(
     // Tant qu'elle n'est pas complète on la retient : sinon rien n'a été dit et le second passage reçoit les lettres.
     let readbackName: string | null = null;
     const held: string[] = [];
-    const emit = (phrase: string) =>
+    const route = (phrase: string) =>
       readbackName !== null ? held.push(phrase) : speakPhrase(phrase);
+    // L'appelant vient de donner l'heure, le nombre vaut encore 0 : seule la question est dite (voir
+    // `timeGivenWithoutPartySize`). Les phrases qui la précèdent sont retenues ; sans question, elles sont dites.
+    const deferred: string[] = [];
+    let dropped = 0;
+    let questionSpoken = false;
+    const emit = (phrase: string) => {
+      if (!actionResult && timeGivenWithoutPartySize(extractor.raw, state.draft)) {
+        if (!endsWithQuestion(phrase)) {
+          deferred.push(phrase);
+          return;
+        }
+        dropped += deferred.length;
+        deferred.length = 0;
+        questionSpoken = true;
+      }
+      route(phrase);
+    };
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
       ...(finished ? { callerFinished: true } : {}),
@@ -702,6 +721,8 @@ export async function runStructuredTurn(
     if (wouldSpeak) {
       const rest = splitter.flush();
       if (rest) emit(rest);
+      if (questionSpoken) dropped += deferred.splice(0).length;
+      else deferred.splice(0).forEach(route);
       if (readbackName !== null) {
         if (sayReadsLetters(output.say, readbackName)) {
           held.forEach(speakPhrase);
@@ -720,6 +741,8 @@ export async function runStructuredTurn(
       }
     }
     const spoken = wouldSpeak && !slotConflict;
+    // Ce qui est gardé dans l'historique est ce qui a été dit, pas la phrase que le modèle avait écrite.
+    if (dropped > 0 && spoken) finalOutput = { ...finalOutput, say: spokenPhrases.join(' ') };
     return {
       output: finalOutput,
       spoken,
