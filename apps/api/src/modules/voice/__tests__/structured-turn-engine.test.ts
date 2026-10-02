@@ -1252,3 +1252,138 @@ describe('tour structuré (canary)', () => {
     expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
   });
 });
+
+describe('relecture du nom construite par le code (appel 8043662c)', () => {
+  const named = (customerName: string) => ({
+    date: TOMORROW,
+    time: '12:30',
+    partySize: 5,
+    customerName,
+  });
+  const askingName = () => {
+    const fx = fixture();
+    const state = createStructuredTurnState();
+    state.draft = named('');
+    state.lastAwaiting = 'customerName';
+    fx.session.structuredTurn = state;
+    return fx;
+  };
+  const secondPassContext = (mgr: CallSessionManager) =>
+    (vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>)[0]
+      .content;
+
+  it('remplace le marqueur par les lettres du brouillon : « A, deux S, A, deux M », jamais le nom ni sa graphie', async () => {
+    const { session, mgr, outputs } = askingName();
+    outputs.push(
+      turn({
+        draft: named('ASSAMM'),
+        awaiting: 'customerNameConfirmation',
+        say: "Je note [[NOM]]. C'est bien ça ?",
+      }),
+    );
+
+    // « a deux s a deux m » : transcription fausse d'un nom dit « A, deux S, A, M ».
+    await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
+
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    expect(spoken().join(' ')).toContain('A, deux S, A, deux M');
+    expect(spoken().join(' ')).not.toContain('[[NOM]]');
+    expect(session.history.at(-1)?.content).toContain('A, deux S, A, deux M');
+    expect(session.structuredTurn?.lastAwaiting).toBe('customerNameConfirmation');
+  });
+
+  it('se tait quand le modèle relit le nom lui-même, puis redemande avec le marqueur', async () => {
+    const { session, mgr, outputs } = askingName();
+    outputs.push(
+      turn({
+        draft: named('ASSAMM'),
+        awaiting: 'customerNameConfirmation',
+        say: "Donc Assamm, avec deux s et deux m. C'est bien ça ?",
+      }),
+      turn({
+        draft: named('ASSAMM'),
+        awaiting: 'customerNameConfirmation',
+        say: "Donc [[NOM]]. C'est bien ça ?",
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
+
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    expect(secondPassContext(mgr)).toContain('[[NOM]]');
+    expect(secondPassContext(mgr)).toContain('« ASSAMM »');
+    const said = spoken().join(' ');
+    expect(said).not.toContain('avec deux s');
+    expect(said).toContain('A, deux S, A, deux M');
+  });
+
+  it('dit les lettres elles-mêmes quand le second passage n’écrit toujours pas le marqueur', async () => {
+    const { session, mgr, outputs } = askingName();
+    const wrong = turn({
+      draft: named('ASSAMM'),
+      awaiting: 'customerNameConfirmation',
+      say: "Donc Assamm, avec deux s et deux m. C'est bien ça ?",
+    });
+    outputs.push(wrong, wrong);
+
+    await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
+
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    const said = spoken().join(' ');
+    expect(said).toContain('A, deux S, A, deux M');
+    expect(said).not.toContain('Assamm');
+    expect(session.structuredTurn?.lastAwaiting).toBe('customerNameConfirmation');
+    expect(session.structuredTurn?.draft.customerName).toBe('ASSAMM');
+  });
+
+  it('accepte une phrase qui porte déjà les lettres exactes du brouillon', async () => {
+    const { session, mgr, outputs } = askingName();
+    outputs.push(
+      turn({
+        draft: named('HOUET'),
+        awaiting: 'customerNameConfirmation',
+        say: "Donc H, O, U, E, T. C'est bien ça ?",
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'h o u e t', mgr);
+
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    expect(spoken().join(' ')).toContain('H, O, U, E, T');
+  });
+
+  it('ne lit jamais un marqueur égaré hors d’une relecture : il devient les lettres du nom connu', async () => {
+    const { session, mgr, outputs } = fixture();
+    const state = createStructuredTurnState();
+    state.draft = named('HOUET');
+    state.lastAwaiting = 'confirmation';
+    session.structuredTurn = state;
+    outputs.push(
+      turn({
+        draft: named('HOUET'),
+        awaiting: 'confirmation',
+        say: 'Je réserve pour [[NOM]], on est bon ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'oui', mgr);
+
+    expect(spoken().join(' ')).not.toContain('[[NOM]]');
+  });
+
+  it('ne retient rien du nom avant la relecture : seules les lettres lues sont dans la phrase', async () => {
+    const { session, mgr, outputs } = askingName();
+    outputs.push(
+      turn({
+        draft: named('AKKIF'),
+        awaiting: 'customerNameConfirmation',
+        say: "[[NOM]]. C'est bien ça ?",
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'a 2 k i f', mgr);
+
+    expect(spoken().join(' ')).toContain('A, deux K, I, F');
+    expect(spoken().join(' ')).not.toContain('Akkif');
+  });
+});

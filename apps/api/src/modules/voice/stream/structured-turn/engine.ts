@@ -56,6 +56,13 @@ import {
   requestedSlotConflict,
   wordCount,
 } from './fact-guards';
+import {
+  fillReadbackMarker,
+  hasReadbackMarker,
+  nameReadback,
+  readbackFact,
+  sayCarriesReadback,
+} from './name-readback';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import {
@@ -512,6 +519,19 @@ export async function runStructuredTurn(
     let hoursFact: string | undefined;
     let nameFact: string | undefined;
     let firstToken = true;
+    // Relecture du nom : les lettres sont celles du brouillon, lues par le code (voir name-readback.ts). Tant que la
+    // phrase n'est pas complète on la retient : si elle ne porte pas le marqueur, rien n'a été dit.
+    let readbackName: string | null = null;
+    let streamedName = '';
+    const held: string[] = [];
+    const speakResolved = (phrase: string) =>
+      speakPhrase(
+        hasReadbackMarker(phrase)
+          ? fillReadbackMarker(phrase, readbackName ?? (streamedName || state.draft.customerName))
+          : phrase,
+      );
+    const emit = (phrase: string) =>
+      readbackName !== null ? held.push(phrase) : speakResolved(phrase);
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
       ...(options.callerFinished ? { callerFinished: true } : {}),
@@ -572,9 +592,26 @@ export async function runStructuredTurn(
           }
         }
       }
+      // Le nom est connu avant `say` : si la phrase relit le nom, on la retient jusqu'à savoir qu'elle porte le marqueur.
+      if (readbackName === null && !slotConflict && action === 'none') {
+        const awaitingNow = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1];
+        if (awaitingNow === 'customerNameConfirmation') {
+          const proposed = parseStreamedCustomerName(extractor.raw);
+          if (proposed?.trim()) {
+            streamedName = proposed;
+            const expected = reconcileSpelledName(
+              { ...state.draft, customerName: proposed },
+              transcript,
+              state.lastAwaiting,
+              state.draft.customerName,
+            ).customerName;
+            if (nameReadback(expected) !== null) readbackName = expected;
+          }
+        }
+      }
       const mayContinue =
         (turnComplete === true || options.callerFinished === true) && !slotConflict;
-      if (said && action === 'none' && mayContinue) splitter.push(said).forEach(speakPhrase);
+      if (said && action === 'none' && mayContinue) splitter.push(said).forEach(emit);
     };
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
     // si elle est identique ; sinon (ou en cas d'échec) appel normal.
@@ -594,16 +631,43 @@ export async function runStructuredTurn(
     });
     const output = parseStructuredTurnOutput(text);
     if (!output) throw new Error('Invalid structured turn output');
-    const spoken =
+    let finalOutput = output;
+    const wouldSpeak =
       output.action === 'none' &&
       (output.turnComplete || !!options.callerFinished) &&
       !slotConflict;
-    if (spoken) {
+    if (wouldSpeak) {
       const rest = splitter.flush();
-      if (rest) speakPhrase(rest);
+      if (rest) emit(rest);
+      if (readbackName !== null) {
+        if (sayCarriesReadback(output.say, readbackName)) {
+          held.forEach(speakResolved);
+        } else if (!actionResult) {
+          // Le modèle a relu le nom à sa façon : rien n'est dit, le second passage reçoit la consigne du marqueur.
+          slotConflict = true;
+          nameFact = readbackFact(readbackName);
+        } else {
+          // Toujours pas de marqueur au second passage : le code dit lui-même les lettres, seule protection contre
+          // une erreur de reconnaissance.
+          const letters = nameReadback(readbackName) ?? '';
+          const said = `${letters}. C'est bien ça ?`;
+          speakPhrase(said);
+          finalOutput = { ...output, say: said, awaiting: 'customerNameConfirmation' };
+        }
+      }
     }
+    if (hasReadbackMarker(finalOutput.say)) {
+      finalOutput = {
+        ...finalOutput,
+        say: fillReadbackMarker(
+          finalOutput.say,
+          readbackName ?? (streamedName || state.draft.customerName),
+        ),
+      };
+    }
+    const spoken = wouldSpeak && !slotConflict;
     return {
-      output,
+      output: finalOutput,
       spoken,
       slotConflict,
       ...(hoursFact ? { hoursFact } : {}),
