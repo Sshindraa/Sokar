@@ -115,7 +115,10 @@ if (provider === 'openrouter' && process.env.VBE_REASONING_OFF !== '1') {
     'ATTENTION : OpenRouter sans VBE_REASONING_OFF=1 : un modèle à raisonnement peut produire bien plus de jetons de sortie.\n',
   );
 }
-const CONCURRENCY = 6;
+// VBE_CONCURRENCY=1 : mesure de durée sans charge concurrente (requêtes l'une après l'autre).
+const CONCURRENCY = Number(process.env.VBE_CONCURRENCY) || 6;
+/** Durée de chaque réponse valide (ms), dans l'ordre des tâches ; sortie en `latencyMs` par cas. */
+const latency = new Map();
 
 const MAX_ATTEMPTS = 6;
 
@@ -133,6 +136,7 @@ const MAX_EMPTY_RATE = 0.25;
 async function sample(request, arm = 'reference') {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
+      const startedAt = performance.now();
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -170,7 +174,12 @@ async function sample(request, arm = 'reference') {
         usage[arm].promptTokens += body.usage.prompt_tokens ?? 0;
         usage[arm].completionTokens += body.usage.completion_tokens ?? 0;
       }
-      return JSON.parse(body.choices[0].message.content);
+      const parsed = JSON.parse(body.choices[0].message.content);
+      latency.set(request, [
+        ...(latency.get(request) ?? []),
+        Math.round(performance.now() - startedAt),
+      ]);
+      return parsed;
     } catch {
       return null;
     }
@@ -232,6 +241,8 @@ const collect = (arm) => {
   });
   return responses;
 };
+const latencyOf = (list) =>
+  Object.fromEntries(list.map((request) => [request.id, latency.get(request) ?? []]));
 const report = (arm) =>
   `${arm} : ${usage[arm].requests} requêtes comptées, ${usage[arm].promptTokens} tokens en entrée, ${usage[arm].completionTokens} en sortie`;
 process.stderr.write(
@@ -247,8 +258,18 @@ if (requestsB) {
       baseUrl,
       served,
       arms: {
-        reference: { model, usage: usage.reference, responses: collect('reference') },
-        candidate: { model, usage: usage.candidate, responses: collect('candidate') },
+        reference: {
+          model,
+          usage: usage.reference,
+          responses: collect('reference'),
+          latencyMs: latencyOf(requests),
+        },
+        candidate: {
+          model,
+          usage: usage.candidate,
+          responses: collect('candidate'),
+          latencyMs: latencyOf(requestsB),
+        },
       },
     }),
   );
@@ -261,6 +282,7 @@ if (requestsB) {
       served: served.reference,
       usage: usage.reference,
       responses: collect('reference'),
+      latencyMs: latencyOf(requests),
     }),
   );
 }

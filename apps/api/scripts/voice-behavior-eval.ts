@@ -3,6 +3,8 @@
  *
  *   [VBE_UNDERSTANDING=1] tsx scripts/voice-behavior-eval.ts build [--suite default|perturb|all] [cas.json]   > requests.json
  *   tsx scripts/voice-behavior-eval.ts score [--suite …] [--json] [cas.json] responses.json
+ *   VBE_ONLY=… tsx scripts/voice-behavior-eval.ts build --judge [--case-draws N] [cas.json]   (prototype : juge de fin de tour séparé, voir behavior-eval/judge.ts)
+ *   tsx scripts/voice-behavior-eval.ts score --judge [cas.json] responses.json   (cas `turnComplete` seulement, noté sur ce seul contrôle)
  *   tsx scripts/voice-behavior-eval.ts coverage [--family-draws N|auto] [cas.json]
  *   tsx scripts/voice-behavior-eval.ts ab [cas.json] ab-responses.json
  *   tsx scripts/voice-behavior-eval.ts calibrate [cas.json] production.json autre.json
@@ -21,6 +23,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { buildRequests } from '../src/modules/voice/behavior-eval/build';
+import {
+  buildJudgeRequests,
+  isJudgeCase,
+  judgeAsTurn,
+  turnCompleteOnly,
+} from '../src/modules/voice/behavior-eval/judge';
 import {
   casesForSuite,
   PERTURB_SEED,
@@ -75,15 +83,18 @@ function parseArgs(args: string[]): {
   json: boolean;
   familyDraws?: number;
   caseDraws?: number;
+  judge: boolean;
 } {
   const positional: string[] = [];
   let suite: BehaviorSuite = 'default';
   let json = false;
   let familyDraws: number | undefined;
   let caseDraws: number | undefined;
+  let judge = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--json') json = true;
+    else if (arg === '--judge') judge = true;
     else if (arg === '--family-draws') {
       // `auto` : de quoi voir une baisse de 20 points au pire taux de départ (voir power.ts).
       const value = args[++index];
@@ -101,7 +112,7 @@ function parseArgs(args: string[]): {
       suite = value;
     } else positional.push(arg);
   }
-  return { positional, suite, json, familyDraws, caseDraws };
+  return { positional, suite, json, familyDraws, caseDraws, judge };
 }
 
 function selectedCases(file: BehaviorCasesFile, suite: BehaviorSuite) {
@@ -120,7 +131,7 @@ function withFamilyDraws(cases: BehaviorCase[], familyDraws?: number): BehaviorC
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, suite, json, familyDraws, caseDraws } = parseArgs(rest);
+  const { positional, suite, json, familyDraws, caseDraws, judge } = parseArgs(rest);
   if (command === 'coverage') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
     const cases = withFamilyDraws(selectedCases(file, 'default'), familyDraws);
@@ -155,6 +166,12 @@ async function main(): Promise<void> {
   }
   if (command === 'build') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
+    if (judge) {
+      // Prototype : requêtes minimales du juge de fin de tour, mêmes cas (famille « attente » et ses témoins).
+      file.cases = selectedCases(file, 'default').filter(isJudgeCase);
+      process.stdout.write(JSON.stringify({ requests: buildJudgeRequests(file, caseDraws) }));
+      return;
+    }
     // `--case-draws N` : N tirages pour chaque cas retenu (sonde, calage) ; sinon la répartition par famille.
     file.cases = caseDraws
       ? selectedCases(file, suite).map((testCase) => ({ ...testCase, samples: caseDraws }))
@@ -170,8 +187,14 @@ async function main(): Promise<void> {
     if (!responsesArg)
       throw new Error('Usage : score [--suite …] [--json] [cas.json] responses.json');
     const file = await readJson<BehaviorCasesFile>(casesArg);
-    const responses = await readJson<BehaviorResponses>(responsesArg);
-    const results = scoreAll(selectedCases(file, suite), responses);
+    const raw = await readJson<BehaviorResponses>(responsesArg);
+    // `--judge` : sorties `{ complete }` du juge, notées sur le seul contrôle `turnComplete` de chaque cas.
+    const responses = judge ? judgeAsTurn(raw) : raw;
+    const scored = selectedCases(file, suite);
+    const results = scoreAll(
+      judge ? scored.filter(isJudgeCase).map(turnCompleteOnly) : scored,
+      responses,
+    );
     const summary = summarize(results);
     if (json) {
       const run: RunFile = { model: responses.model, suite, seed: PERTURB_SEED, results, summary };
