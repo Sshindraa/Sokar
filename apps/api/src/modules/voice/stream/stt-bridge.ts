@@ -1776,6 +1776,16 @@ export function deepgramSilenceGuardMs(env: NodeJS.ProcessEnv = process.env): nu
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_000 ? parsed : 350;
 }
 
+/**
+ * Silence réel exigé avant une fin de tour forcée PENDANT UNE ÉPELLATION. Les pauses entre deux groupes de
+ * lettres durent souvent plus d'une seconde (appel 8043662c : « …assam un » jugé fini à 428 ms de silence, le « a »
+ * suivant perdu ; appel 3ba7c66f : « a 2 » finalisé par la partielle figée à 360 ms). 0 : la garde normale.
+ */
+export function deepgramSpellingSilenceGuardMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STT_SPELLING_SILENCE_GUARD_MS ?? 1_200);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 3_000 ? parsed : 1_200;
+}
+
 /** Report maximal cumulé de la garde : au-delà, le comportement d'avant reprend (bruit, écho). */
 export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS ?? 1_500);
@@ -1897,14 +1907,22 @@ function requestDeepgramFinalize(
   ) {
     return false;
   }
-  // Garde de silence : une fin de tour forcée ne tombe pas pendant que l'appelant parle encore.
-  const guardMs = deepgramSilenceGuardMs();
+  // Garde de silence : une fin de tour forcée ne tombe pas pendant que l'appelant parle encore. Pendant une
+  // épellation, la pause entre deux groupes de lettres peut dépasser une seconde : la garde est plus longue.
+  const baseGuardMs = deepgramSilenceGuardMs();
+  const spelling =
+    baseGuardMs > 0 &&
+    isSpellingTurn(session, fields.expectedText ?? session.sttDeepgramPartials?.lastText ?? '');
+  const guardMs = spelling ? Math.max(baseGuardMs, deepgramSpellingSilenceGuardMs()) : baseGuardMs;
+  const maxDeferMs = spelling
+    ? Math.max(deepgramSilenceGuardMaxDeferMs(), guardMs + 600)
+    : deepgramSilenceGuardMaxDeferMs();
   if (guardMs > 0) {
     const now = Date.now();
     const silentMs = callerSilenceMs(session, now);
     const heldSince = fields.heldSince ?? now;
     if (silentMs < guardMs) {
-      if (now - heldSince < deepgramSilenceGuardMaxDeferMs()) {
+      if (now - heldSince < maxDeferMs) {
         voiceSilenceGuardTotal.inc({ outcome: 'held' });
         const previous = silenceGuardTimers.get(session);
         if (previous) clearTimeout(previous);

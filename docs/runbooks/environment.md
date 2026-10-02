@@ -244,6 +244,10 @@ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # Métrique : sokar_voice_silence_guard_total{outcome=held|released_after_silence|released_at_cap}.
 VOICE_STT_SILENCE_GUARD_MS="350"
 VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
+# Pendant une épellation (nom attendu), la garde est plus longue : les pauses entre deux groupes de lettres
+# durent souvent plus d'une seconde (appel 8043662c : « …assam un » jugé fini à 428 ms de silence, le « a »
+# suivant perdu). Défaut 1200 ms ; 0 : la garde normale. Le report maximal est alors d'au moins ce délai + 600 ms.
+VOICE_STT_SPELLING_SILENCE_GUARD_MS="1200"
 # Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
 # que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
 # elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
