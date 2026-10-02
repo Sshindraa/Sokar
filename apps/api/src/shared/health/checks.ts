@@ -1,7 +1,7 @@
 /**
  * Health checks for Sokar API.
  *
- * Five independent checks: db, redis, queues, telnyx, cartesia.
+ * Six independent checks: db, redis, queues, telnyx, Deepgram STT, cartesia.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
  * block another. Core dependencies have a slightly longer timeout to avoid
@@ -27,9 +27,10 @@
  *
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
+ *    - Deepgram STT: `GET /v1/projects` — validate the API key without a transcription
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
  *
- * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
+ * 6. **Soft-fail for voice providers**: if Telnyx/Deepgram/Cartesia are
  *    down but DB/Redis/queues are ok, the API can still answer
  *    non-voice requests (read dashboard, list reservations, etc.).
  *    So voice provider failure is a warning, not a 503.
@@ -39,6 +40,7 @@ import { db } from '../db/client';
 import { redisCache } from '../redis/client';
 import { queues } from '../queue/queues';
 import telnyx from '../telnyx/client';
+import { voiceConfig } from '../../env';
 
 export type CheckStatus = 'ok' | 'error';
 
@@ -152,6 +154,27 @@ async function checkTelnyx(): Promise<CheckResult> {
   );
 }
 
+async function checkDeepgramStt(): Promise<CheckResult> {
+  // The projects endpoint validates the key without consuming STT audio. The host comes from the allowlist of
+  // `DEEPGRAM_API_HOST` (the key is never sent to a free-form value).
+  return withTimeout(
+    'deepgram_stt',
+    (async () => {
+      if (!process.env.DEEPGRAM_API_KEY) {
+        throw new Error('DEEPGRAM_API_KEY not configured');
+      }
+      const res = await fetch(`https://${voiceConfig.DEEPGRAM_API_HOST}/v1/projects`, {
+        method: 'GET',
+        headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Deepgram STT API ${res.status}: ${res.statusText}`);
+      }
+    })(),
+    VOICE_TIMEOUT_MS,
+  );
+}
+
 async function checkCartesia(): Promise<CheckResult> {
   // Direct GET to /voices — list available voices, no TTS generation.
   return withTimeout(
@@ -178,15 +201,16 @@ async function checkCartesia(): Promise<CheckResult> {
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
-const VOICE_CHECKS = ['telnyx', 'cartesia'] as const;
+const VOICE_CHECKS = ['telnyx', 'deepgram_stt', 'cartesia'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, cartesia] = await Promise.all([
+  const [db, redis, queues, telnyx, deepgram_stt, cartesia] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
+    checkDeepgramStt(),
     checkCartesia(),
   ]);
 
@@ -195,6 +219,7 @@ export async function checkHealth(): Promise<HealthReport> {
     redis,
     queues,
     telnyx,
+    deepgram_stt,
     cartesia,
   };
 

@@ -1254,3 +1254,11 @@ Cause : la garde de silence des fins de tour forcées (jugement du modèle, part
 
 ElevenLabs, vérifié (prod, avec la clé du serveur) : la reconnaissance en continu fonctionne aujourd'hui (session ouverte, un énoncé de synthèse transcrit sans erreur) et le contrôle de santé `elevenlabs_stt` est vert ; il ne teste pas la reconnaissance, seulement la clé. Scribe sert de secours uniquement à l'ouverture (`fallbackToScribeAtOpening`, une fois par appel, si la première connexion Deepgram ne s'ouvre pas). Tous les restaurants passent par Deepgram (`VOICE_V2_DEFAULT`). Le message « Free Tier access has been disabled » n'a pas été reproduit sur ce chemin.
 
+## 2026-10-02 — Voix : worker ElevenLabs supprimé, contrôle de santé Deepgram ajouté
+
+Suite de la décision « on ne travaille plus avec ElevenLabs » (suivi de #375). **Supprimés** : le worker `elevenlabs-subscription` (et son test), sa file BullMQ `elevenlabs-subscription`, son planificateur horaire, les métriques `sokar_elevenlabs_character_count` / `_limit`, les trois alertes Prometheus `ElevenLabsCharacterUsage80/95/100Percent` (le test des règles refuse une métrique inexistante), le panneau Grafana « Utilisation du quota ElevenLabs », et les sections correspondantes de `environment.md` et `observability.md`. **Gardés** : l'adaptateur Scribe (fournisseur choisissable `VOICE_STT_PROVIDER=scribe`, bancs), les alertes `ElevenLabsSttTerminalError` / `ElevenLabsSttAffectedCalls` (erreurs du flux STT, label `elevenlabs_stt`, qui ne s'incrémentent plus qu'avec Scribe).
+
+**Ajouté** : contrôle `deepgram_stt` dans `/health` (champ de réponse ajouté, additif) : `GET https://<DEEPGRAM_API_HOST>/v1/projects` avec la clé, sans audio (hôte pris dans la liste autorisée, la clé n'est jamais envoyée à une valeur libre) ; une erreur met `/health` en `degraded` (200), comme Telnyx et Cartesia. Vérifié : 200 avec la clé de production. En staging (voix désactivée, pas de clé Deepgram) le contrôle sera en erreur, et `/health` y est déjà `degraded` pour Telnyx : les workflows de déploiement n'exigent que le code 200.
+
+À faire après le déploiement (hors dépôt) : la file `elevenlabs-subscription` n'a plus de worker ; ses clés Redis (`bull:elevenlabs-subscription:*`, base des files) et son planificateur répétable restent. Nettoyage ponctuel à lancer une fois l'API déployée.
+
