@@ -55,6 +55,7 @@ import {
   parseStreamedCustomerName,
   parseStreamedDraft,
   outsideOpeningHoursFact,
+  partySizeCorrectionFact,
   spelledNameFact,
   reconcileSpelledName,
   requestedSlotConflict,
@@ -164,6 +165,8 @@ interface PassResult {
   hoursFact?: string;
   /** Fait à donner au second passage quand le nom relu porte des mots non épelés : rien n'a été dit. */
   nameFact?: string;
+  /** Fait à donner au second passage quand une réponse douteuse porte un nombre qui corrige peut-être la taille du groupe. */
+  correctionFact?: string;
   /** Verdict du juge de fin de tour pour ce passage (absent : juge non actif sur ce passage). */
   judge?: 'complete' | 'incomplete' | 'unavailable';
 }
@@ -562,6 +565,7 @@ export async function runStructuredTurn(
     let slotConflict = false;
     let hoursFact: string | undefined;
     let nameFact: string | undefined;
+    let correctionFact: string | undefined;
     let firstToken = true;
     // Relecture du nom : la phrase doit porter les lettres du nom, isolées et dans l'ordre (voir name-readback.ts).
     // Tant qu'elle n'est pas complète on la retient : sinon rien n'a été dit et le second passage reçoit les lettres.
@@ -646,6 +650,15 @@ export async function runStructuredTurn(
         ) {
           slotConflict = true;
           hoursFact = outsideHours ?? undefined;
+        }
+        // Réponse douteuse qui porte un nombre alors que la taille du groupe est connue : on se tait, le second passage
+        // reçoit le nombre à redemander (voir `partySizeCorrectionFact`).
+        if (!slotConflict) {
+          const fact = partySizeCorrectionFact(extractor.raw, transcript, state.draft);
+          if (fact) {
+            slotConflict = true;
+            correctionFact = fact;
+          }
         }
         // Nom relu différent des lettres épelées (lettre absente, mot collé) : on se tait avant de le dire.
         if (!slotConflict) {
@@ -744,6 +757,7 @@ export async function runStructuredTurn(
       slotConflict,
       ...(hoursFact ? { hoursFact } : {}),
       ...(nameFact ? { nameFact } : {}),
+      ...(correctionFact ? { correctionFact } : {}),
       ...(judging
         ? {
             judge:
@@ -919,7 +933,9 @@ export async function runStructuredTurn(
           ? 'outside_hours'
           : first.nameFact
             ? 'spelled_name_mismatch'
-            : 'slot_conflict'
+            : first.correctionFact
+              ? 'party_size_correction'
+              : 'slot_conflict'
         : decision.allowed
           ? 'allowed'
           : decision.reason,
@@ -960,7 +976,8 @@ export async function runStructuredTurn(
     } else if (first.slotConflict) {
       // Le modèle visait une heure hors horaires ou un créneau que les disponibilités lues excluent :
       // rien n'a été dit ; le second passage reçoit le fait réel.
-      actionResult = first.hoursFact ?? first.nameFact ?? (await runAvailability());
+      actionResult =
+        first.hoursFact ?? first.nameFact ?? first.correctionFact ?? (await runAvailability());
     } else {
       switch (first.output.action) {
         case 'end_call':

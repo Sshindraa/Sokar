@@ -2473,6 +2473,73 @@
       ]
     },
     {
+      "id": "correction-nombre-douteuse-second-passage",
+      "behavior": "second passage : nombre à redemander",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "appel 90834d63 : le second passage du garde-fou (partySizeCorrectionFact) reçoit le fait ; mesure si la phrase redemande le nombre. Le fait est celui que produit le moteur (test d'égalité).",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "on serait bienvenu à 14 heures 30"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "4"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 5",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:30",
+        "partySize": 4
+      },
+      "awaiting": "customerName",
+      "actionResult": "Énoncé douteux : l'appelant a dit « un non 5 », qui contient le nombre 5, alors que 4 personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.",
+      "actions": ["none"],
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "\\b5\\b|cinq|personnes|combien",
+          "expect": true,
+          "minRate": 0.9
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
       "id": "relance-parole-non-comprise",
       "behavior": "relance sans énoncé",
       "family": "relance",

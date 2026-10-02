@@ -513,6 +513,37 @@ export function timeGivenWithoutPartySize(streamed: string, before: { time: stri
   return /"interpretation"\s*:\s*"answer"/.test(streamed);
 }
 
+/**
+ * Appel 90834d63 : « Quatre. Ah non, cinq. » arrive « 4 » puis « un non 5 ». Le modèle attendait le nom, jugeait
+ * l'énoncé douteux et redemandait le NOM : la correction du nombre de personnes était perdue, la réservation partait
+ * pour 4. Le prompt seul ne l'évite pas (mesure au banc : 25 à 60 % de reprise du nombre).
+ *
+ * Critère de structure, aucun mot : le modèle déclare le tour douteux (`understanding`), le brouillon streamé garde la
+ * taille de groupe déjà notée, on n'attendait pas ce nombre, et l'énoncé porte un nombre (chiffres) différent de cette
+ * taille. Rend le fait à donner au second passage, ou null.
+ */
+export function partySizeCorrectionFact(
+  streamed: string,
+  transcript: string,
+  known: { partySize: number },
+): string | null {
+  if (known.partySize <= 0) return null;
+  if (!/"understanding"\s*:\s*"doubtful"/.test(streamed)) return null;
+  const awaiting = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(streamed)?.[1];
+  if (!awaiting || awaiting === 'partySize') return null;
+  const draft = parseStreamedDraft(streamed);
+  if (!draft || draft.partySize !== known.partySize) return null;
+  const numbers = (transcript.match(/\d+/g) ?? [])
+    .map(Number)
+    .filter((value) => value >= 1 && value <= 99 && value !== known.partySize);
+  if (!numbers.length) return null;
+  return (
+    `Énoncé douteux : l'appelant a dit « ${transcript.trim()} », qui contient le nombre ${numbers[0]}, alors que ` +
+    `${known.partySize} personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ` +
+    `ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.`
+  );
+}
+
 /** La phrase se termine par un point d'interrogation (guillemets ou parenthèse fermante tolérés). */
 export function endsWithQuestion(phrase: string): boolean {
   return /\?[\s"»”')]*$/u.test(phrase);
