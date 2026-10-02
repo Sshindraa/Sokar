@@ -19,10 +19,10 @@
 #      Évalue : taux 5xx global, 5xx Connect, latence p95 Connect, backlog
 #      connect-analytics et SLO. Les SLO passent par dispatchAlert().
 #
-#   3. Workers ElevenLabs et flux STT
-#      — elevenlabs-subscription.worker.ts et stream/stt-alerts.ts
-#      Consommation à 80/95/100 %, erreurs terminales et rafale d'appels
-#      touchés ; le cooldown est stocké dans Redis.
+#   3. Flux STT
+#      — stream/stt-alerts.ts
+#      Erreurs terminales et rafale d'appels touchés ; le cooldown est
+#      stocké dans Redis.
 #
 #   4. Watchdog VPS (cron toutes les 5 min)
 #      — scripts/ops/sokar-watchdog.sh (/usr/local/sbin/sokar-watchdog)
@@ -224,33 +224,3 @@ groups:
         annotations:
           summary: 'Plus de cinq appels touchés par une indisponibilité STT'
           description: 'Plus de cinq appels distincts ont épuisé leurs tentatives de connexion Scribe en 10 minutes. Vérifier la connectivité, le statut du fournisseur et les logs API.'
-
-      - alert: ElevenLabsCharacterUsage80Percent
-        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.80
-        for: 0s
-        labels:
-          severity: warning
-          team: sokar
-        annotations:
-          summary: 'Compte ElevenLabs à {{ $value | humanizePercentage }}'
-          description: 'Le compte ElevenLabs a consommé au moins 80 % de sa limite de caractères. Vérifier le solde et arrêter les benchmarks.'
-
-      - alert: ElevenLabsCharacterUsage95Percent
-        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.95
-        for: 0s
-        labels:
-          severity: critical
-          team: sokar
-        annotations:
-          summary: 'Compte ElevenLabs presque épuisé ({{ $value | humanizePercentage }})'
-          description: 'Le compte ElevenLabs a consommé au moins 95 % de sa limite de caractères. Traiter le quota avant toute nouvelle campagne de benchmarks.'
-
-      - alert: ElevenLabsCharacterUsage100Percent
-        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 1
-        for: 0s
-        labels:
-          severity: critical
-          team: sokar
-        annotations:
-          summary: 'Limite de caractères ElevenLabs atteinte'
-          description: 'Le compte ElevenLabs a atteint ou dépassé sa limite de caractères.'

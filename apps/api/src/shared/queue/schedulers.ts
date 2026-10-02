@@ -219,16 +219,6 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
-  // Solde ElevenLabs : une lecture de subscription par heure, sans stocker ni
-  // journaliser la clé et sans envoyer de transcription.
-  await register('elevenlabs-subscription/hourly', () =>
-    queues.elevenlabsSubscription.upsertJobScheduler(
-      'elevenlabs-subscription-hourly',
-      { pattern: '0 * * * *', tz: 'Europe/Paris' },
-      { name: 'refresh-subscription' },
-    ),
-  );
-
   // Crédit OpenRouter (repli vocal, Jev, juge) : une lecture par heure, alerte sous 2 $ puis 0,5 $.
   await register('openrouter-credit/hourly', () =>
     queues.openrouterCredit.upsertJobScheduler(

@@ -1,7 +1,7 @@
 /**
  * Tests for the health check module.
  *
- * Strategy: each check (db, redis, queues, telnyx, cartesia) is
+ * Strategy: each check (db, redis, queues, telnyx, deepgram_stt, cartesia) is
  * mocked at the module boundary so we can drive success/failure/timeout
  * scenarios deterministically. We don't hit real providers in unit tests.
  */
@@ -48,6 +48,7 @@ vi.mock('../../../src/shared/telnyx/client', () => ({
 const originalFetch = globalThis.fetch;
 const originalEnv = {
   TELNYX_API_KEY: process.env.TELNYX_API_KEY,
+  DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
   CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
 };
 
@@ -55,6 +56,7 @@ beforeAll(() => {
   // Make sure the voice provider env vars are set for all tests except
   // the "env not configured" suite (which unsets them explicitly).
   process.env.TELNYX_API_KEY = process.env.TELNYX_API_KEY ?? 'test-telnyx-key';
+  process.env.DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY ?? 'test-deepgram-key';
   process.env.CARTESIA_API_KEY = process.env.CARTESIA_API_KEY ?? 'test-cartesia-key';
 });
 
@@ -87,7 +89,7 @@ beforeEach(() => {
   }
   mockTelnyxBalance.retrieve.mockResolvedValue({ balance: '100.00' });
 
-  // Default fetch mock: 200 OK for Cartesia.
+  // Default fetch mock: 200 OK for Deepgram and Cartesia.
   globalThis.fetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -99,16 +101,17 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   // Defensive: if a test unset env vars, restore them now.
   process.env.TELNYX_API_KEY = originalEnv.TELNYX_API_KEY;
+  process.env.DEEPGRAM_API_KEY = originalEnv.DEEPGRAM_API_KEY;
   process.env.CARTESIA_API_KEY = originalEnv.CARTESIA_API_KEY;
 });
 
 describe('checkHealth — happy path', () => {
-  it('returns ok when all 5 checks pass', async () => {
+  it('returns ok when all 6 checks pass', async () => {
     const result = await checkHealth();
     expect(result.status).toBe('ok');
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(Object.keys(result.checks)).toEqual(
-      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'cartesia']),
+      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'deepgram_stt', 'cartesia']),
     );
     for (const name of Object.keys(result.checks)) {
       expect(result.checks[name].status).toBe('ok');
@@ -159,6 +162,27 @@ describe('checkHealth — voice provider failure (degraded, core ok)', () => {
     expect(result.checks.queues.status).toBe('ok');
   });
 
+  it('validates the Deepgram key without a transcription, and returns degraded when it is refused', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: unknown) => {
+      if (typeof url === 'string' && url.includes('deepgram')) {
+        return { ok: false, status: 401, statusText: 'Unauthorized' } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK' } as Response;
+    });
+    globalThis.fetch = fetchMock;
+    const result = await checkHealth();
+    expect(result.status).toBe('degraded');
+    expect(result.checks.deepgram_stt.status).toBe('error');
+    expect(result.checks.deepgram_stt.error).toMatch(/401/);
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('deepgram'));
+    expect(String(call?.[0])).toMatch(/^https:\/\/api(\.eu)?\.deepgram\.com\/v1\/projects$/);
+    expect((call?.[1] as { headers: Record<string, string> }).headers.Authorization).toBe(
+      `Token ${process.env.DEEPGRAM_API_KEY}`,
+    );
+    // Les autres vérifications ne sont pas touchées.
+    expect(result.checks.cartesia.status).toBe('ok');
+  });
+
   it('returns degraded when cartesia returns non-ok', async () => {
     globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
       if (typeof url === 'string' && url.includes('cartesia')) {
@@ -201,11 +225,14 @@ describe('checkHealth — timeout', () => {
 describe('checkHealth — env not configured', () => {
   it('reports error for voice provider when env var is missing', async () => {
     delete process.env.TELNYX_API_KEY;
+    delete process.env.DEEPGRAM_API_KEY;
     delete process.env.CARTESIA_API_KEY;
 
     const result = await checkHealth();
     expect(result.checks.telnyx.status).toBe('error');
     expect(result.checks.telnyx.error).toMatch(/TELNYX_API_KEY/);
+    expect(result.checks.deepgram_stt.status).toBe('error');
+    expect(result.checks.deepgram_stt.error).toMatch(/DEEPGRAM_API_KEY/);
     expect(result.checks.cartesia.status).toBe('error');
     expect(result.checks.cartesia.error).toMatch(/CARTESIA_API_KEY/);
   });
@@ -213,7 +240,7 @@ describe('checkHealth — env not configured', () => {
 
 describe('checkHealth — parallelism', () => {
   it('runs checks in parallel (not sequential)', async () => {
-    // Make every check take 200ms. If sequential, total would be ~1000ms.
+    // Make every check take 200ms. If sequential, total would be ~1200ms.
     // If parallel, total should be ~200ms.
     //
     // The no-misused-promises lint trips on arrow functions that return

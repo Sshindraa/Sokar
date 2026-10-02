@@ -709,23 +709,11 @@ La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullab
 passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
 et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
-### ElevenLabs : clé et quota (historique, état du 24/09/2026)
+### Clés des bancs
 
-ElevenLabs ne sert plus à la reconnaissance en production (voir plus haut). Le worker de suivi de solde ci-dessous
-lit encore `ELEVENLABS_API_KEY` : sans cette clé il échoue chaque heure.
-
-La production et le staging partageaient une seule clé ElevenLabs sur un
-compte gratuit. Le solde communiqué est de 6 172 caractères sur 10 000, avec une
-réinitialisation le 25/10/2026. Cette configuration est temporaire : la cible est un
-compte payant avec une clé distincte par environnement.
-
-L'API et le worker utilisent **ELEVENLABS_API_KEY**, conservée uniquement dans le
-gestionnaire de secrets de chaque environnement. Le worker interroge
-GET https://api.elevenlabs.io/v1/user/subscription une fois par heure et publie
-**sokar_elevenlabs_character_count** et **sokar_elevenlabs_character_limit**. Le worker
-envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAlert()`.
-Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
-dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
+ElevenLabs ne sert plus à la reconnaissance en production (voir plus haut) et le worker de suivi de solde
+ElevenLabs est supprimé (le 02/10/2026) : la clé `ELEVENLABS_API_KEY` n'est plus lue que par le fournisseur
+`scribe` et les bancs.
 
 Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
 

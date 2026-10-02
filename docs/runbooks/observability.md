@@ -107,12 +107,12 @@ horodatages sont approximatifs ; la chronologie mesurée fait foi.
   SMS critique. Les appels STT utilisent ce dispatcher avec un cooldown Redis ; les règles
   Prometheus ne notifient personne car aucun Alertmanager n'est configuré.
 
-## Quota ElevenLabs pour le STT
+## Alertes du flux de reconnaissance vocale (STT)
 
-Le worker BullMQ `elevenlabs-subscription` lit `GET /v1/user/subscription` une fois par heure
-et publie `sokar_elevenlabs_character_count` et `sokar_elevenlabs_character_limit`. Il ne
-transcrit aucun audio et ne journalise jamais la clé. Les dernières jauges restent visibles
-jusqu'au prochain relevé réussi ; les erreurs réseau ou HTTP suivent les retries BullMQ.
+Le contrôle `deepgram_stt` de `/health` valide la clé Deepgram (`GET /v1/projects`, sans audio) ; une
+erreur le met en `degraded` sans le passer en 503. Le suivi du quota ElevenLabs (worker `elevenlabs-subscription`,
+métriques `sokar_elevenlabs_*`, alertes d'usage) est supprimé : ElevenLabs ne sert plus à la reconnaissance en
+production.
 
 Le groupe Prometheus `sokar-voice-providers` évalue les règles toutes les 15 secondes. Il sert de
 miroir et ne notifie personne sans Alertmanager :
@@ -122,10 +122,6 @@ miroir et ne notifie personne sans Alertmanager :
   une fois par heure globalement.
 - `ElevenLabsSttAffectedCalls` : plus de cinq appels distincts touchés en 10 minutes ; le flux
   STT envoie un avertissement au franchissement, avec cooldown Redis de 10 minutes.
-- `ElevenLabsCharacterUsage80Percent`, `ElevenLabsCharacterUsage95Percent` et
-  `ElevenLabsCharacterUsage100Percent` : avertissement à 80 %, critique à 95 % et à 100 %.
-  Le worker `elevenlabs-subscription` les envoie via `dispatchAlert()` et Redis mémorise chaque
-  seuil par période de facturation ; il réarme le seuil si la consommation repasse en dessous.
 
 ## Alertes du modèle vocal (Cerebras, repli OpenRouter)
 
