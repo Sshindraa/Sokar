@@ -129,6 +129,7 @@ describe('buildSystemPrompt', () => {
       ).split('ÉTAT VÉRIFIÉ : ')[1];
 
     const verified = JSON.parse(stateOf('au nom de a 2 s a 2 m', 'customerName').split('\n')[0]);
+    expect(verified.spelledName).toBe('ASSAMM');
     expect(verified.spelledLetters).toEqual([
       { letter: 'A', count: 1 },
       { letter: 'S', count: 2 },
@@ -139,8 +140,8 @@ describe('buildSystemPrompt', () => {
       JSON.parse(stateOf('m a 2 s o n', 'customerNameConfirmation').split('\n')[0]).spelledLetters,
     ).toHaveLength(5);
     // Pas d'épellation dans la parole, ou un autre message attendu : rien n'est ajouté.
-    expect(stateOf('oui c’est ça', 'customerNameConfirmation')).not.toContain('spelledLetters');
-    expect(stateOf('a 2 s a 2 m', 'open')).not.toContain('spelledLetters');
+    expect(stateOf('oui c’est ça', 'customerNameConfirmation')).not.toContain('spelled');
+    expect(stateOf('a 2 s a 2 m', 'open')).not.toContain('spelled');
   });
 
   it('donne au modèle des principes de conversation, pas des phrases (appel b686b241)', () => {
