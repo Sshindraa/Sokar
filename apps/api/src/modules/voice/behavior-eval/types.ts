@@ -36,7 +36,13 @@ export type SamplePredicate =
    * d'autorisation (`authorizeStructuredAction`, avec l'état du cas) ; `end_call` seul ne suffit pas, le
    * moteur peut le refuser (doute, énoncé long, question en attente).
    */
-  | { kind: 'hangsUp'; expect: boolean };
+  | { kind: 'hangsUp'; expect: boolean }
+  /**
+   * La phrase porte la relecture du nom construite par le code : le marqueur (remplacé ensuite par les lettres du
+   * brouillon), ou déjà les lettres exactes de `draft.customerName`. Mesure si le modèle laisse le code relire le
+   * nom ; sans quoi le moteur se tait et redemande (un second appel au modèle, donc du délai).
+   */
+  | { kind: 'readsBack'; expect: boolean };
 
 export type BehaviorCheck =
   /** Part des tirages où le contrôle est tenu, au moins `minRate`. */

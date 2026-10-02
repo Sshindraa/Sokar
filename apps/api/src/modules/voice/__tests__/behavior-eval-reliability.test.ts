@@ -405,3 +405,37 @@ describe('calage entre deux fournisseurs', () => {
     expect(report).toContain('Cela ne dit pas « équivalent »');
   });
 });
+
+describe('contrôle readsBack : la phrase laisse le code relire le nom', () => {
+  const readsBack = (expect_: boolean): BehaviorCase => ({
+    id: 'relecture',
+    behavior: 'relecture du nom',
+    family: 'epellation',
+    measures: 'model',
+    origin: 'real',
+    source: 'test',
+    history: [],
+    transcript: 'a 2 s a 2 m',
+    checks: [{ kind: 'readsBack', expect: expect_, minRate: 0.5 }],
+  });
+  const output = (say: string, customerName = 'ASSAMM') => ({
+    say,
+    draft: { date: '', time: '', partySize: 0, customerName },
+  });
+
+  it('vrai avec le marqueur ou les lettres exactes du brouillon, faux avec le nom ou sa graphie', () => {
+    const testCase = readsBack(true);
+    expect(drawSucceeds(testCase, output("Je note [[NOM]]. C'est bien ça ?"))).toBe(true);
+    expect(drawSucceeds(testCase, output("Je note A, deux S, A, deux M. C'est bien ça ?"))).toBe(
+      true,
+    );
+    expect(
+      drawSucceeds(testCase, output("Donc Assamm, avec deux s et deux m. C'est bien ça ?")),
+    ).toBe(false);
+    expect(
+      drawSucceeds(testCase, output("Je note A, double S, A, double M. C'est bien ça ?")),
+    ).toBe(false);
+    // Sans nom dans le brouillon, il n'y a rien à relire.
+    expect(drawSucceeds(testCase, output("Je note [[NOM]]. C'est bien ça ?", ''))).toBe(false);
+  });
+});

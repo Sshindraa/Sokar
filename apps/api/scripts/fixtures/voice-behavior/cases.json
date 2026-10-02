@@ -531,6 +531,56 @@
         "role": "assistant",
         "content": "C'est réservé. Vous recevrez un SMS de confirmation. Autre chose pour vous ?"
       }
+    ],
+    "toNameRead-assamm": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "au nom de a 2 s a 2 m"
+      },
+      {
+        "role": "assistant",
+        "content": "Je note A, deux S, A, deux M. C'est bien ça ?"
+      }
     ]
   },
   "cases": [
@@ -2004,6 +2054,137 @@
           "pattern": "\\S",
           "expect": true,
           "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relecture-transcription-fausse",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
+      "source": "appel 8043662c : nom dit « A, deux S, A, M », transcrit « a deux s a deux m » (erreur de reconnaissance) : la relecture doit laisser l'appelant entendre l'erreur",
+      "history": "toName",
+      "transcript": "au nom de a 2 s a 2 m",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAMM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerNameConfirmation",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "relecture-transcription-fausse-2",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "relecture-transcription-fausse",
+      "source": "variante de 8043662c : un autre nom dont une lettre double est mal transcrite",
+      "history": "toName",
+      "transcript": "m a 2 s o n",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "MASSON",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerNameConfirmation",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "correction-un-seul-m",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : après la relecture « A, deux S, A, deux M », l'appelant corrige « un seul M » : le nom doit changer",
+      "history": "toNameRead-assamm",
+      "transcript": "non un seul m",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5,
+        "customerName": "ASSAMM"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "correction-un-seul-m-2",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une autre façon de corriger une lettre en trop après la relecture",
+      "history": "toNameRead-assamm",
+      "transcript": "c'est pas deux m c'est un seul m à la fin",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5,
+        "customerName": "ASSAMM"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
         }
       ]
     }
