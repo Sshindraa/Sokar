@@ -27,6 +27,8 @@ import {
   buildJudgeRequests,
   isJudgeCase,
   judgeAsTurn,
+  judgeSamples,
+  judgeVerdict,
   turnCompleteOnly,
 } from '../src/modules/voice/behavior-eval/judge';
 import {
@@ -84,6 +86,7 @@ function parseArgs(args: string[]): {
   familyDraws?: number;
   caseDraws?: number;
   judge: boolean;
+  judgeDraws: boolean;
 } {
   const positional: string[] = [];
   let suite: BehaviorSuite = 'default';
@@ -91,10 +94,12 @@ function parseArgs(args: string[]): {
   let familyDraws: number | undefined;
   let caseDraws: number | undefined;
   let judge = false;
+  let judgeDraws = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--json') json = true;
     else if (arg === '--judge') judge = true;
+    else if (arg === '--judge-draws') judgeDraws = true;
     else if (arg === '--family-draws') {
       // `auto` : de quoi voir une baisse de 20 points au pire taux de départ (voir power.ts).
       const value = args[++index];
@@ -112,7 +117,7 @@ function parseArgs(args: string[]): {
       suite = value;
     } else positional.push(arg);
   }
-  return { positional, suite, json, familyDraws, caseDraws, judge };
+  return { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws };
 }
 
 function selectedCases(file: BehaviorCasesFile, suite: BehaviorSuite) {
@@ -131,7 +136,7 @@ function withFamilyDraws(cases: BehaviorCase[], familyDraws?: number): BehaviorC
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  const { positional, suite, json, familyDraws, caseDraws, judge } = parseArgs(rest);
+  const { positional, suite, json, familyDraws, caseDraws, judge, judgeDraws } = parseArgs(rest);
   if (command === 'coverage') {
     const file = await readJson<BehaviorCasesFile>(positional[0] ?? DEFAULT_CASES);
     const cases = withFamilyDraws(selectedCases(file, 'default'), familyDraws);
@@ -161,6 +166,14 @@ async function main(): Promise<void> {
     if (!responsesArg) throw new Error('Usage : ab [cas.json] ab-responses.json');
     const file = await readJson<BehaviorCasesFile>(casesArg);
     const ab = await readJson<BehaviorAbResponses>(responsesArg);
+    if (judge) {
+      // A/B du juge : la référence est le `turnComplete` du tour complet, le candidat le juge ; seul ce contrôle compte.
+      const cases = selectedCases(file, 'default').filter(isJudgeCase).map(turnCompleteOnly);
+      const candidate = judgeAsTurn(ab.arms.candidate);
+      const report = compareArms(cases, { ...ab, arms: { ...ab.arms, candidate } });
+      process.stdout.write(`${formatAbReport(report)}\n\n${judgeVerdict(report, ab)}\n`);
+      return;
+    }
     process.stdout.write(`${formatAbReport(compareArms(selectedCases(file, 'default'), ab))}\n`);
     return;
   }
@@ -170,6 +183,15 @@ async function main(): Promise<void> {
       // Prototype : requêtes minimales du juge de fin de tour, mêmes cas (famille « attente » et ses témoins).
       file.cases = selectedCases(file, 'default').filter(isJudgeCase);
       process.stdout.write(JSON.stringify({ requests: buildJudgeRequests(file, caseDraws) }));
+      return;
+    }
+    if (judgeDraws) {
+      // Bras de référence de l'A/B du juge : les requêtes COMPLÈTES des mêmes cas, aux mêmes tirages que le juge.
+      file.cases = selectedCases(file, 'default')
+        .filter(isJudgeCase)
+        .map((testCase) => ({ ...testCase, samples: judgeSamples(testCase) }));
+      const understanding = process.env.VBE_UNDERSTANDING === '1';
+      process.stdout.write(JSON.stringify({ requests: buildRequests(file, { understanding }) }));
       return;
     }
     // `--case-draws N` : N tirages pour chaque cas retenu (sonde, calage) ; sinon la répartition par famille.

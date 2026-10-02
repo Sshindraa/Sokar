@@ -1,5 +1,12 @@
-import type { BehaviorCase, BehaviorCasesFile, BehaviorMessage, BehaviorResponses } from './types';
+import type {
+  BehaviorAbResponses,
+  BehaviorCase,
+  BehaviorCasesFile,
+  BehaviorMessage,
+  BehaviorResponses,
+} from './types';
 import type { BehaviorRequest } from './build';
+import type { AbReport } from './paired';
 
 /**
  * Prototype de banc : le jugement de fin de tour séparé du modèle de dialogue (aucun usage en production).
@@ -92,4 +99,48 @@ export function judgeAsTurn(responses: BehaviorResponses): BehaviorResponses {
       ]),
     ),
   };
+}
+
+/** Tirages d'un cas du plan chiffré (mêmes pour les deux bras de l'A/B). */
+export function judgeSamples(testCase: BehaviorCase): number {
+  return testCase.origin === 'control' ? JUDGE_DRAWS.control : JUDGE_DRAWS.defect;
+}
+
+/** Gain exigé sur les défauts (points) et plancher de chaque témoin dans le bras candidat. */
+export const JUDGE_MIN_GAIN = 0.15;
+export const JUDGE_CONTROL_FLOOR = 0.95;
+
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+};
+
+/**
+ * Règles d'acceptation du juge (fixées avant le rejeu) : borne basse de l'intervalle à 90 % du gain sur les défauts
+ * au-dessus de zéro, gain d'au moins 15 points, chaque témoin à 95 % ou plus. Durées mesurées par le rejeu en plus.
+ */
+export function judgeVerdict(report: AbReport, ab: BehaviorAbResponses): string {
+  const defects = report.families.find((family) => family.group === 'defauts');
+  const controls = report.cases.filter((entry) => entry.origin === 'control');
+  const lines = ["Règles d'acceptation du juge :"];
+  if (defects) {
+    const gain = defects.delta;
+    lines.push(
+      `  ${defects.low > 0 ? '✓' : '✗'} borne basse du gain sur les défauts > 0 : ${(defects.low * 100).toFixed(1)} points`,
+      `  ${gain >= JUDGE_MIN_GAIN ? '✓' : '✗'} gain ≥ 15 points : ${(gain * 100).toFixed(1)} points (${(defects.referenceRate * 100).toFixed(0)} % → ${(defects.candidateRate * 100).toFixed(0)} %)`,
+    );
+  }
+  for (const entry of controls) {
+    const rate = entry.candidate.draws ? entry.candidate.successes / entry.candidate.draws : 0;
+    lines.push(
+      `  ${rate >= JUDGE_CONTROL_FLOOR ? '✓' : '✗'} témoin ${entry.id} ≥ 95 % : ${(rate * 100).toFixed(0)} % (${entry.candidate.successes}/${entry.candidate.draws}, référence ${entry.reference.successes}/${entry.reference.draws})`,
+    );
+  }
+  const flat = (arm: 'reference' | 'candidate') =>
+    Object.values(ab.arms[arm].latencyMs ?? {}).flat();
+  lines.push(
+    `  Durée par requête sur ${ab.provider} (informatif, pas celle de la production) : tour complet médiane ${median(flat('reference')) ?? '?'} ms, juge médiane ${median(flat('candidate')) ?? '?'} ms`,
+  );
+  return lines.join('\n');
 }
