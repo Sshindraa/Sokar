@@ -270,6 +270,13 @@ function handleTelnyxMessage(
         };
       }
 
+      // Les journaux portent le callControlId, la base le callSid : cette ligne les relie pour le rapport
+      // automatique de l'appel (call-report). Journal seul, sans effet sur l'appel.
+      logger.info(
+        { callId: session.callControlId, callLegId: session.callLegId },
+        '[voice-report] call linked',
+      );
+
       resolveVoiceFeatureSnapshot(session);
 
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)

@@ -144,6 +144,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
     };
     call = {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
