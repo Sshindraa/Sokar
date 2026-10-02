@@ -1858,3 +1858,105 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
 });
+
+describe('assemblage des segments autour d’une épellation (appel 3ba7c66f)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', 'true');
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function deepgramSession() {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    session.conversation.nameCollection.state = 'collecting';
+    return { session, onEvent };
+  }
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'UtteranceEnd')
+      .map((event) => ({ transcript: event.transcript, trigger: event.finalTrigger }));
+  const segment = (
+    session: CallSession,
+    transcript: string,
+    speechFinal: boolean,
+    extra: { fromFinalize?: boolean } = {},
+  ) =>
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript,
+      speechFinal,
+      ...extra,
+    });
+
+  it('un segment inachevé avant l’épellation part avec elle, et ne se recolle pas au tour suivant', async () => {
+    const { session, onEvent } = deepgramSession();
+    // « ce serait bien au nom de » : final non terminal, puis UtteranceEnd (le texte est retenu comme inachevé).
+    segment(session, 'ce serait bien au nom de', false);
+    handleNormalizedSttMessage(session, { type: 'utterance_end' });
+    expect(session.sttSemanticHold?.transcript).toContain('au nom de');
+
+    // L'épellation arrive dans un autre segment : le segment retenu fait partie du même tour.
+    segment(session, 'de assam a 2 s a m', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent)).toEqual([
+      { transcript: 'ce serait bien au nom de assam a 2 s a m', trigger: 'spelling_hold' },
+    ]);
+    expect(session.sttSemanticHold).toBeNull();
+
+    // Le tour suivant ne porte que ce que l'appelant vient de dire.
+    session.conversation.nameCollection.state = 'idle';
+    segment(session, 'non non', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent).map((entry) => entry.transcript)).toEqual([
+      'ce serait bien au nom de assam a 2 s a m',
+      'non non',
+    ]);
+  });
+
+  it('une lettre qui interrompt l’agent se recolle à l’épellation retenue, même si le dialogue n’attend plus le nom', async () => {
+    const { session, onEvent } = deepgramSession();
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    segment(session, 'a 2 s', true, { fromFinalize: true });
+    expect(session.pendingSttEndOfTurn?.transcript).toBe('a 2 s');
+
+    // Entre-temps le modèle a répondu sans attendre le nom (doute) : la collecte n'est plus active.
+    session.conversation.nameCollection.state = 'idle';
+    session.state = 'SPEAKING';
+    segment(session, 'a', true);
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+    // Ni la lettre seule ni l'épellation retenue ne partent dans le désordre.
+    expect(ends(onEvent)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent)).toEqual([{ transcript: 'a 2 s a', trigger: 'spelling_hold' }]);
+  });
+
+  it('une lettre isolée sans épellation retenue reste un tour à part', async () => {
+    const { session, onEvent } = deepgramSession();
+    session.conversation.nameCollection.state = 'idle';
+    segment(session, 'a', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent).map((entry) => entry.transcript)).toEqual(['a']);
+  });
+});

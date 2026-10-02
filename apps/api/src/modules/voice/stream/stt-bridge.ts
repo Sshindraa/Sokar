@@ -1028,6 +1028,26 @@ function isSpellingTurn(session: CallSession, transcript: string): boolean {
   );
 }
 
+/**
+ * Un segment d'épellation est retenu et le nouveau texte est lui aussi fait de lettres : c'est la suite de la même
+ * épellation, que le dialogue attende encore le nom ou non. Appel 3ba7c66f : le modèle avait répondu sans attendre
+ * le nom (doute), `isSpellingTurn` était faux, et le « a » qui interrompait l'agent partait seul AVANT le segment
+ * retenu (« a 2 s »), puis était écarté par lui. Structurel : aucune liste de mots.
+ */
+function continuesHeldSpelling(session: CallSession, transcript: string): boolean {
+  const held = session.pendingSttEndOfTurn;
+  return (
+    Boolean(held) &&
+    looksLikeSpelledLetters(held!.transcript) &&
+    looksLikeSpelledLetters(transcript)
+  );
+}
+
+/** Le texte se recolle à l'épellation en cours : profil d'épellation actif, ou suite de lettres d'un segment retenu. */
+function spellingContinues(session: CallSession, transcript: string): boolean {
+  return isSpellingTurn(session, transcript) || continuesHeldSpelling(session, transcript);
+}
+
 function schedulePendingSttEndOfTurn(
   session: CallSession,
   delayMs = STT_SPELLING_EOT_GRACE_MS,
@@ -1502,7 +1522,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
 
   if (!session.turnTranscript.trim() && !semanticHold) {
     // La suite d'une épellation se recolle au segment retenu ; tout autre début de parole le clôt.
-    if (!(session.pendingSttEndOfTurn && isSpellingTurn(session, cleanTranscript)))
+    if (!(session.pendingSttEndOfTurn && spellingContinues(session, cleanTranscript)))
       flushPendingSttEndOfTurn(session);
     session.turnPartials = [];
     session.onSttEvent?.({ type: 'UtteranceStart' });
@@ -1599,17 +1619,28 @@ function dispatchCommittedTranscript(
   if (allowBargeIn)
     handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
 
-  if (isSpellingTurn(session, cleanTranscript)) {
+  if (spellingContinues(session, cleanTranscript)) {
     const held = session.pendingSttEndOfTurn;
-    const mergedWords = [...(held?.words ?? []), ...(words ?? [])];
+    // Un segment inachevé retenu avant l'épellation (« ce serait bien au nom de ») fait partie du même tour : sans
+    // cela il restait dans le tampon et se recollait au tour suivant (appel 3ba7c66f : « … non non »).
+    const previous = clearSemanticHold(session);
+    const joinPrevious = (next: string): string =>
+      previous
+        ? isVoiceDialogueIncompleteTranscript(previous.transcript)
+          ? mergeIncompleteDialogueTranscript(previous.transcript, next)
+          : mergeSttTranscripts(previous.transcript, next)
+        : next;
+    const mergedWords = [...(previous?.words ?? []), ...(held?.words ?? []), ...(words ?? [])];
+    const mergedLanguage = languageCode ?? held?.languageCode ?? previous?.languageCode;
+    const mergedTiming = mergeSttTiming(mergeSttTiming(previous?.timing, held?.timing), timing);
     // Lettres recollées telles quelles : pas de dédoublonnage de recouvrement (« l » + « l e »).
     session.pendingSttEndOfTurn = {
-      transcript: held ? `${held.transcript} ${cleanTranscript}` : cleanTranscript,
+      transcript: held
+        ? `${joinPrevious(held.transcript)} ${cleanTranscript}`
+        : joinPrevious(cleanTranscript),
       ...(mergedWords.length ? { words: mergedWords } : {}),
-      ...((languageCode ?? held?.languageCode)
-        ? { languageCode: (languageCode ?? held?.languageCode) as string }
-        : {}),
-      ...(held?.timing || timing ? { timing: mergeSttTiming(held?.timing, timing) } : {}),
+      ...(mergedLanguage ? { languageCode: mergedLanguage } : {}),
+      ...(mergedTiming ? { timing: mergedTiming } : {}),
       createdAt: Date.now(),
     };
     const spellingDelay =
