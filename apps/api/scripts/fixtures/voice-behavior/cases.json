@@ -1501,6 +1501,52 @@
       ]
     },
     {
+      "id": "pas-d-accord-horaire-sans-effectif",
+      "behavior": "disponibilité",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 03b19223 : l'appelant répond « pour 20 heures » à la question de l'heure, nombre de personnes inconnu ; l'agent a dit « Samedi à 20 heures, ça marche. Vous êtes combien ? » malgré l'interdiction nommée (deuxième fois)",
+      "history": [
+        {
+          "role": "user",
+          "content": "bonjour je voudrais faire vous êtes ouvert dimanche soir"
+        },
+        {
+          "role": "assistant",
+          "content": "Non, on est fermé le dimanche. On rouvre samedi soir jusqu'à 23 heures, ou mardi midi. Vous voulez réserver pour l'un de ces jours ?"
+        },
+        {
+          "role": "user",
+          "content": "oui bah pour samedi s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Samedi, c'est noté. À quelle heure vous aimeriez venir ?"
+        }
+      ],
+      "transcript": "pour 20 heures",
+      "draft": {
+        "date": "2026-10-03"
+      },
+      "awaiting": "time",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "c'est possible|c'est libre|ça marche|disponible|c'est noté",
+          "expect": false,
+          "minRate": 0.8
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
       "id": "pas-de-repetition-mot-pour-mot",
       "behavior": "répétition",
       "family": "repetition",

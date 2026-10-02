@@ -958,6 +958,13 @@ export class ReservationService {
     };
   }
 
+  /** Plages d'accueil des tables actives (voir `CapacityAwareAvailabilityService.tableRanges`). */
+  static async tableRanges(
+    restaurantId: string,
+  ): Promise<Array<{ capacity: number; minCapacity: number }>> {
+    return availability.tableRanges(restaurantId);
+  }
+
   private static async checkSlotAvailability(
     restaurant: Restaurant & { exposureSettings?: { capacitySpecials: unknown } | null },
     startTime: Date,

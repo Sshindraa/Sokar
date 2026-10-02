@@ -58,9 +58,10 @@ import {
   spelledNameFact,
   reconcileSpelledName,
   requestedSlotConflict,
+  sizesWithoutTable,
   wordCount,
 } from './fact-guards';
-import { lettersOnly, readbackFact, sayReadsLetters } from './name-readback';
+import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
 import { startTurnEndJudge } from './turn-end-judge';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
@@ -262,8 +263,12 @@ function prefetchDayAvailability(
   if (inFlight?.date === date) return inFlight.promise;
   const maxSize = Math.min(voiceMaxPartySize(session), MAX_PREFETCH_PARTY_SIZE);
   const sizes = Array.from({ length: maxSize }, (_, index) => index + 1);
-  const promise = Promise.all(sizes.map((size) => mgr.getAvailability(session, date, size)))
-    .then((results) => {
+  const promise = Promise.all([
+    Promise.all(sizes.map((size) => mgr.getAvailability(session, date, size))),
+    // Plages des tables : inconnues (liste vide) si la lecture échoue, la disponibilité garde alors son comportement.
+    Promise.resolve(mgr.getTableRanges(session)).catch(() => []),
+  ])
+    .then(([results, ranges]) => {
       if (state.draft.date !== date) return;
       // Jour fermé : pas de raccourci, la vérification garde sa phrase fixe
       // « Nous sommes fermés… » (sinon le modèle répondait « c'est noté »).
@@ -279,6 +284,7 @@ function prefetchDayAvailability(
         slotsBySize: Object.fromEntries(
           results.map((result, index) => [sizes[index], result.slots]),
         ),
+        noTableSizes: sizesWithoutTable(ranges, maxSize),
       };
     })
     .catch((err: unknown) => {
@@ -508,6 +514,11 @@ export async function runStructuredTurn(
   mgr.transition(session, 'PROCESSING');
   recordVoiceTurnEvent(session, 'llm_started', { mode: 'structured' });
 
+  // Nom que le modèle propose à ce tour (lu dans le flux avant `say`) : la voix doit aussi le recevoir en casse de nom propre.
+  let proposedName = '';
+  const voiced = (phrase: string) =>
+    nameForSpeech(nameForSpeech(phrase, state.draft.customerName), proposedName);
+
   const speakPhrase = (phrase: string) => {
     if (!isLive()) return;
     if (!firstPhraseSpoken) {
@@ -528,10 +539,10 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(cleanTextForTts(phrase, effectiveVoiceLanguage(session)));
+      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)));
       return;
     }
-    ttsPromises.push(speakTtsStreamed(session, phrase).catch(() => undefined));
+    ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
   };
 
   const runPass = async (
@@ -625,6 +636,7 @@ export async function runStructuredTurn(
         // Nom relu différent des lettres épelées (lettre absente, mot collé) : on se tait avant de le dire.
         if (!slotConflict) {
           const streamedName = parseStreamedCustomerName(extractor.raw);
+          if (streamedName) proposedName = streamedName;
           const fact = streamedName
             ? spelledNameFact(
                 streamedName,
@@ -767,6 +779,11 @@ export async function runStructuredTurn(
           awaiting: 'date',
         };
         return `Le restaurant est FERMÉ le ${date} (${day}) : aucun service ce jour-là. Dis-le clairement et propose un autre jour d'ouverture.`;
+      }
+      // Aucune table du restaurant n'accueille ce nombre (quel que soit le jour) : ce n'est pas « complet ce jour-là ».
+      const ranges = await Promise.resolve(mgr.getTableRanges(session)).catch(() => []);
+      if (sizesWithoutTable(ranges, partySize).includes(partySize)) {
+        return `Le restaurant n'a aucune table qui accueille ${partySize} personnes, quel que soit le jour : un autre jour n'y changerait rien. Ne propose ni autre jour ni autre horaire. Traite ce nombre comme un groupe : propose le gérant ou de laisser un message (awaiting=humanFallback).`;
       }
       fixed.reply = {
         say: `Je n'ai plus de table ${day} pour ${partySize} personnes. Voulez-vous essayer un autre jour, ou que je prenne un message ?`,
