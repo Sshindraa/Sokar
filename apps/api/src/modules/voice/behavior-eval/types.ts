@@ -136,6 +136,11 @@ export interface BehaviorCase {
   draft?: Partial<{ date: string; time: string; partySize: number; customerName: string }>;
   awaiting?: string;
   reservationCreated?: boolean;
+  /**
+   * Créneaux du jour du brouillon déjà lus (comme le préchargement d'un appel réel) : les tailles de 1 à `upToSize`
+   * ont ces `slots`, les suivantes (jusqu'à `maxSize`) aucun ; `noTableSizes` marque celles qu'aucune table n'accueille.
+   */
+  dayAvailability?: { slots: string[]; upToSize: number; maxSize: number; noTableSizes?: number[] };
   /** Résultat d'action déjà exécutée : la réponse ne peut plus qu'être dite ou terminer l'appel. */
   actionResult?: string;
   /** Actions que le schéma autorise (par défaut : toutes, ou « none » et « end_call » après un résultat d'action). */

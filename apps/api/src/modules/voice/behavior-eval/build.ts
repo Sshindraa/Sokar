@@ -62,6 +62,20 @@ export function buildRequest(
   state.draft = { date: '', time: '', partySize: 0, customerName: '', ...testCase.draft };
   state.lastAwaiting = (testCase.awaiting ?? 'open') as typeof state.lastAwaiting;
   state.reservationCreated = testCase.reservationCreated === true;
+  if (testCase.dayAvailability && state.draft.date) {
+    const { slots, upToSize, maxSize, noTableSizes } = testCase.dayAvailability;
+    state.dayAvailability = {
+      date: state.draft.date,
+      closed: false,
+      slotsBySize: Object.fromEntries(
+        Array.from({ length: maxSize }, (_, index) => [
+          index + 1,
+          index + 1 <= upToSize ? slots : [],
+        ]),
+      ),
+      ...(noTableSizes ? { noTableSizes } : {}),
+    };
+  }
   const profile = profileOf(testCase, file);
   const messages = buildStructuredTurnMessages({
     // Toujours la vraie base : le même constructeur qu'en appel (telnyx.pipeline.ts), mode structuré, avec la

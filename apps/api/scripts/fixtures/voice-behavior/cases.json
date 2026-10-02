@@ -1506,7 +1506,7 @@
       "family": "horaires",
       "measures": "model",
       "origin": "real",
-      "source": "appel 03b19223 : l'appelant répond « pour 20 heures » à la question de l'heure, nombre de personnes inconnu ; l'agent a dit « Samedi à 20 heures, ça marche. Vous êtes combien ? » malgré l'interdiction nommée (deuxième fois)",
+      "source": "appel 03b19223 : l'appelant répond « pour 20 heures » à la question de l'heure, nombre de personnes inconnu ; l'agent a dit « Samedi à 20 heures, ça marche. Vous êtes combien ? » malgré l'interdiction nommée (deuxième fois) ; l'état contient les créneaux du samedi déjà lus (préchargement)",
       "history": [
         {
           "role": "user",
@@ -1539,12 +1539,39 @@
           "minRate": 0.8
         },
         {
-          "kind": "field",
-          "path": "awaiting",
-          "equals": "partySize",
-          "minRate": 0.85
+          "kind": "draftUnchanged",
+          "fields": ["partySize"],
+          "minRate": 0.95
         }
-      ]
+      ],
+      "dayAvailability": {
+        "slots": [
+          "12:00",
+          "12:30",
+          "13:00",
+          "13:30",
+          "14:00",
+          "14:30",
+          "15:00",
+          "15:30",
+          "16:00",
+          "16:30",
+          "17:00",
+          "17:30",
+          "18:00",
+          "18:30",
+          "19:00",
+          "19:30",
+          "20:00",
+          "20:30",
+          "21:00",
+          "21:30",
+          "22:00"
+        ],
+        "upToSize": 6,
+        "maxSize": 12,
+        "noTableSizes": [7, 8, 9, 10, 11, 12]
+      }
     },
     {
       "id": "pas-de-repetition-mot-pour-mot",

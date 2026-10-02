@@ -300,6 +300,94 @@ describe('tour structuré (canary)', () => {
     expect(spoken().join(' ')).toMatch(/^Je n'ai plus de table \S+ \d+ \S+ pour 7 personnes\./);
   });
 
+  describe('heure donnée sans nombre de personnes : seule la question est dite (appel 03b19223)', () => {
+    const dated = { date: TOMORROW, time: '', partySize: 0, customerName: '' };
+    const timed = { ...dated, time: '20:00' };
+    const asked = (overrides: Partial<StructuredTurnOutput>) => {
+      const fx = fixture();
+      fx.session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: dated,
+        lastAwaiting: 'time',
+      };
+      fx.outputs.push(turn({ draft: timed, awaiting: 'partySize', ...overrides }));
+      return fx;
+    };
+
+    it('retient la phrase qui accepte ou répète l’heure et garde la question, dans l’historique aussi', async () => {
+      const { session, mgr } = asked({ say: 'Samedi à 20 heures, ça marche. Vous êtes combien ?' });
+
+      await processTranscriptStreaming(session, 'pour 20 heures', mgr);
+
+      expect(spoken()).toEqual(['Vous êtes combien ?']);
+      expect(session.history.at(-1)).toEqual({ role: 'assistant', content: 'Vous êtes combien ?' });
+    });
+
+    it('retient plusieurs phrases déclaratives avant la question', async () => {
+      const { session, mgr } = asked({
+        say: 'C’est possible. Samedi à 20 heures. Pour combien de personnes ?',
+      });
+      await processTranscriptStreaming(session, 'pour 20 heures', mgr);
+      expect(spoken()).toEqual(['Pour combien de personnes ?']);
+    });
+
+    it('dit la phrase telle quelle quand elle ne contient aucune question (jamais de silence)', async () => {
+      const { session, mgr } = asked({ say: 'Très bien, 20 heures.' });
+      await processTranscriptStreaming(session, 'pour 20 heures', mgr);
+      expect(spoken()).toEqual(['Très bien, 20 heures.']);
+    });
+
+    it('ne touche pas la réponse à une question de l’appelant', async () => {
+      const { session, mgr } = asked({
+        interpretation: 'question',
+        say: 'Oui, nous ouvrons à midi. Vous serez combien ?',
+      });
+      await processTranscriptStreaming(session, 'vous ouvrez à quelle heure', mgr);
+      expect(spoken()).toEqual(['Oui, nous ouvrons à midi.', 'Vous serez combien ?']);
+    });
+
+    it('ne touche pas un tour où l’heure ne change pas, ni celui où le nombre est connu', async () => {
+      const unchanged = fixture();
+      unchanged.session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: timed,
+        lastAwaiting: 'partySize',
+      };
+      unchanged.outputs.push(
+        turn({
+          draft: timed,
+          awaiting: 'partySize',
+          say: 'Je n’ai pas compris. Vous êtes combien ?',
+        }),
+      );
+      await processTranscriptStreaming(unchanged.session, 'euh', unchanged.mgr);
+      expect(spoken()).toEqual(['Je n’ai pas compris.', 'Vous êtes combien ?']);
+
+      vi.mocked(speakTtsStreamed).mockClear();
+      const known = fixture();
+      known.session.structuredTurn = {
+        ...createStructuredTurnState(),
+        draft: dated,
+        lastAwaiting: 'time',
+      };
+      const withParty = { ...timed, partySize: 4 };
+      known.outputs.push(
+        turn({
+          draft: withParty,
+          awaiting: 'customerName',
+          say: 'Pour quatre à 20 heures. À quel nom ?',
+        }),
+      );
+      known.session.structuredTurn.availability = {
+        date: TOMORROW,
+        partySize: 4,
+        slots: ['20:00'],
+      };
+      await processTranscriptStreaming(known.session, 'pour 20 heures, on sera quatre', known.mgr);
+      expect(spoken()).toEqual(['Pour quatre à 20 heures.', 'À quel nom ?']);
+    });
+  });
+
   it('répond en un seul passage avec les créneaux du jour lus d’avance', async () => {
     const { session, mgr, outputs } = fixture();
     const dated = { date: TOMORROW, time: '', partySize: 0, customerName: '' };

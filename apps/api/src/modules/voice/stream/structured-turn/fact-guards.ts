@@ -499,6 +499,26 @@ export function parseStreamedDraft(
 }
 
 /**
+ * L'appelant vient de donner l'heure et le nombre de personnes vaut encore 0 (lu dans le flux du modèle, avant
+ * `say`) : la disponibilité dépend du nombre, donc la phrase ne doit rien accepter ni répéter de l'heure ; elle se
+ * réduit à sa question. Critère de forme, sans mot : brouillon avec date et heure, heure changée à ce tour, nombre à
+ * 0, interprétation « answer ». Appels 03b19223 (« Samedi à 20 heures, ça marche. Vous êtes combien ? ») et c5d6b07d.
+ */
+export function timeGivenWithoutPartySize(streamed: string, before: { time: string }): boolean {
+  const draft = parseStreamedDraft(streamed);
+  if (!draft || draft.partySize !== 0 || !draft.date || !/^\d{2}:\d{2}$/.test(draft.time)) {
+    return false;
+  }
+  if (draft.time === before.time) return false;
+  return /"interpretation"\s*:\s*"answer"/.test(streamed);
+}
+
+/** La phrase se termine par un point d'interrogation (guillemets ou parenthèse fermante tolérés). */
+export function endsWithQuestion(phrase: string): boolean {
+  return /\?[\s"»”')]*$/u.test(phrase);
+}
+
+/**
  * Vrai quand les créneaux du jour, déjà lus pour ce nombre de personnes, ne contiennent pas
  * l'heure du brouillon : le modèle ne doit pas annoncer ce créneau comme libre (appel 1b3f85e9 :
  * « Pour 5, 15 h 30 est libre » alors que 15 h à 18 h était complet). Faux quand on ne sait pas
