@@ -1329,3 +1329,20 @@ Faux « inachevé » du juge (appel 03b19223, 17:58:13, 2,98 s de silence) : « 
 - **Consigne candidate du juge** (`JUDGE_INSTRUCTIONS_CANDIDATE`, bench seulement, la consigne de production est inchangée tant qu'elle n'est pas mesurée) : un principe, sans exemple : c'est la fin de ce que dit l'appelant qui compte ; une demande ou une question complète à la fin rend le tour complet, même si un début a été abandonné ou repris.
 - **Outillage** : `build --judge [--judge-instructions candidate]`, `ab --judge` accepte deux bras du juge (consigne actuelle contre candidate) et applique les règles : chaque cas qui attend « complet » à 95 % ou plus dans le bras candidat ; la lignée b686b241 (`attend-annonce-intention` et ses 3 variantes) ne baisse pas de plus de 5 points ; le cas réel est rapporté.
 - **Chiffrage du rejeu** (non lancé) : 23 cas (12 existants + 11 nouveaux), 488 requêtes par bras, 976 au total, environ 190 k tokens en entrée estimés (160 k attendus d'après le rapport estimation/réel des rejeux précédents), 8 k en sortie, DeepInfra, quelques minutes.
+
+## 2026-10-02 — Voix : consigne candidate du juge rejouée, refusée (production inchangée)
+
+Rejeu A/B réel (`qwen/qwen3.8-27b`, OpenRouter, DeepInfra pour les 976 requêtes, raisonnement coupé, aucun 402 ; la clé Cerebras des appels n'est pas touchée). 23 cas, 488 requêtes par bras, bras alternés dans la même session. Coût réel : 69 056 tokens en entrée (consigne actuelle) + 89 552 (candidate), 6,5 k en sortie, soit 159 k contre 160 k attendus.
+
+**Verdict : la candidate est refusée.** Ses règles d'acceptation ne passent pas.
+- **Cas réel 03b19223** (`juge-debut-abandonne-question`) : 0/24 → 11/24 (46 %, seuil 95 %). Le gain est réel mais très insuffisant ; sa lignée passe de 50 % à 61 % ([0 ; +29]).
+- **Variante 4** (« oui allô je voudrais réser euh vous faites des menus enfants ») : 0/24 dans les deux bras ; la candidate n'y change rien.
+- **`juge-question-mal-transcrite`** (« il reste de la place demain soir hein vous avez ») : 0/24 dans les deux bras, donc un défaut déjà présent dans la consigne actuelle, pas une régression. Le cas est discutable : la phrase se termine sur « vous avez », qui est un fragment ; à relire avant d'en faire un témoin à 95 %.
+- Les 9 autres témoins « complet » sont à 100 % dans les deux bras ; la lignée b686b241 reste à 100 % (pas de régression de ce côté).
+- Informatif : la lignée `attend-correction-annoncee` baisse de 91 % à 72 % (−19 points, [−47 ; 0], 7/16 contre 13/16 sur « demain à 14 heures non »), un effet possible de la phrase ajoutée.
+
+La consigne de production du juge reste inchangée (Chez Sokar, activé).
+
+**Incident d'outillage, sans conséquence sur les chiffres :** `scripts/ops/voice-behavior-ab.sh` notait le rejeu sans `--judge`, donc les réponses `{complete}` étaient jugées avec les contrôles du tour complet (tout à 0 %). Le rejeu brut était sain ; il a été renoté localement avec `ab --judge`, sans nouvelle requête. Le script accepte maintenant `VBE_AB_JUDGE=1`.
+
+**Pistes, non lancées :** une seule phrase ajoutée n'a pas suffi sur le modèle de 27 B ; avant de reformuler, relire les trois cas en échec (le tour de l'appel 03b19223 se termine après un début abandonné, « je voudrais faire », qui semble biaiser le juge vers « inachevé »).
