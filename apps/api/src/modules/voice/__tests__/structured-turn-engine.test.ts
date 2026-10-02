@@ -1282,7 +1282,7 @@ describe('relecture du nom construite par le code (appel 8043662c)', () => {
       }),
     );
 
-    // « a deux s a deux m » : transcription fausse d'un nom dit « A, deux S, A, M ».
+    // « a deux s a deux m » : le nom ASSAMM, épelé avec deux lettres doubles.
     await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
 
     expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
