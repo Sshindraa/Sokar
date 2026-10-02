@@ -2198,6 +2198,281 @@
       ]
     },
     {
+      "id": "correction-nombre-douteuse",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 90834d63 (02/10), tour 6 : l'appelant dit « Quatre. Ah non, cinq. » ; transcription « 4 » puis « un non 5 » (l'écoute audio donne la vérité). Le modèle a répondu « je n'ai pas bien saisi » en reposant la question du nom : le 5 est perdu, réservation créée pour 4 (aucun garde-fou ne l'a vu, le récapitulatif disait 4 et l'appelant a confirmé).",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "on serait bienvenu à 14 heures 30"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "4"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 5",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:30",
+        "partySize": 4
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 5
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b5\\b|cinq|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-2",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : même correction transcrite proprement, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "plutôt à 13 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "2"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "ah non 3",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "13:00",
+        "partySize": 2
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 3
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b3\\b|trois|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-3",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : transcription déformée comme la réelle, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "à 14 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "5"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 6",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:00",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 6
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b6\\b|six|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-4",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : correction avec un mot de plus, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "plutôt à 13 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "3"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "euh non 4 plutôt",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "13:00",
+        "partySize": 3
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 4
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b4\\b|quatre|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
       "id": "relance-parole-non-comprise",
       "behavior": "relance sans énoncé",
       "family": "relance",
