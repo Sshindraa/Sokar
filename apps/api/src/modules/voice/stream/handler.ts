@@ -25,7 +25,7 @@ import '@fastify/websocket';
 import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
-import { sendAudioToStt, closeStt, connectStt } from './stt-bridge';
+import { sendAudioToStt, closeStt, connectStt, sttProviderId } from './stt-bridge';
 import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { decodeTelnyxToPcm16, telnyxCodecProfile } from './telnyx-codec';
 import { L16EndianProbe, WidebandProbe } from './wideband';
@@ -279,14 +279,16 @@ function handleTelnyxMessage(
       session.onSttEvent = (event: SttEvent) => handleSttEvent(event, session, mgr);
       connectStt(session)
         .then(() => {
-          writeDebugLog(`[stream] ElevenLabs ready for ${start.call_control_id}`);
-          logger.info({ callId: start.call_control_id }, '[stream] ElevenLabs ready');
+          const provider = sttProviderId(session);
+          writeDebugLog(`[stream] STT (${provider}) ready for ${start.call_control_id}`);
+          logger.info({ callId: start.call_control_id, provider }, '[stream] STT ready');
         })
         .catch((err) => {
-          writeDebugLog(`[stream] ElevenLabs failed to connect`, err);
+          const provider = sttProviderId(session);
+          writeDebugLog(`[stream] STT (${provider}) failed to connect`, err);
           logger.error(
-            { err, callId: start.call_control_id },
-            `[stream] ElevenLabs failed to connect: ${(err as Error).message}`,
+            { err, callId: start.call_control_id, provider },
+            `[stream] STT failed to connect: ${(err as Error).message}`,
           );
           captureException(err as Error, {
             tags: { service: 'handler', action: 'elevenlabs-ready' },

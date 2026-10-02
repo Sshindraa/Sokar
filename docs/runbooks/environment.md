@@ -37,7 +37,7 @@
 | `.env.local` (root)          | `DATABASE_URL`, `REDIS_URL`, `POSTGRES_PASSWORD`                  |
 | `packages/database/.env`     | `DATABASE_URL` for Prisma CLI (`db:push`, `db:seed`, `db:studio`) |
 | `apps/connect/.env`          | Connect dev vars (`SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`)   |
-| `apps/api/.env` (prod)       | All API vars (Telnyx, ElevenLabs, Cartesia, DB, Redis, etc.)      |
+| `apps/api/.env` (prod)       | All API vars (Telnyx, Deepgram, Cartesia, DB, Redis, etc.)        |
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 
@@ -672,15 +672,18 @@ de réservation et la disponibilité. La provenance est stockée dans
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
-## Voice STT (ElevenLabs Scribe)
+## Voice STT (Deepgram)
 
-Deepgram Nova-3 est disponible en canary uniquement : `VOICE_STT_PROVIDER` vaut `scribe`
-par défaut, et `VOICE_STT_PROVIDER=deepgram` ne l'active que pour les identifiants présents
-dans `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV). La liste est résolue au début du Media Stream
-et reste figée pendant l'appel. Une erreur avant la première ouverture Deepgram bascule une
-seule fois vers Scribe ; aucune bascule provider n'a lieu au milieu d'un appel. La clé
-`DEEPGRAM_API_KEY` doit être présente dans l'environnement de l'API pour les restaurants
-canary. Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
+Deepgram Nova-3 est le fournisseur de reconnaissance en production : `VOICE_STT_PROVIDER=deepgram`,
+avec `VOICE_V2_DEFAULT=true` tous les restaurants y passent ; sans `VOICE_V2_DEFAULT`, seuls les
+identifiants de `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV) l'utilisent. Le fournisseur est résolu au début
+du Media Stream et reste figé pendant l'appel. **Il n'y a plus de secours vers ElevenLabs Scribe** : si
+Deepgram ne s'ouvre pas (clé refusée, clé absente, réseau), l'appel suit le chemin « reconnaissance
+indisponible » existant (reconnexions à 500 ms, 1 s puis 2 s, échéance de 15 s, puis le message vocal et le
+transfert ; un refus d'authentification est terminal tout de suite). La clé `DEEPGRAM_API_KEY` est
+obligatoire en production avec `VOICE_STT_PROVIDER=deepgram` ; `ELEVENLABS_API_KEY` n'est exigée que si
+`VOICE_STT_PROVIDER=scribe` (option conservée pour les bancs et les essais, plus utilisée en production).
+Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
 
 Le codec Telnyx reste PCMA par défaut. `VOICE_TELNYX_CODEC=L16` conserve le
 comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
@@ -702,9 +705,12 @@ La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullab
 passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
 et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
-### Clé et quota (état temporaire au 24/09/2026)
+### ElevenLabs : clé et quota (historique, état du 24/09/2026)
 
-La production et le staging partagent actuellement une seule clé ElevenLabs sur un
+ElevenLabs ne sert plus à la reconnaissance en production (voir plus haut). Le worker de suivi de solde ci-dessous
+lit encore `ELEVENLABS_API_KEY` : sans cette clé il échoue chaque heure.
+
+La production et le staging partageaient une seule clé ElevenLabs sur un
 compte gratuit. Le solde communiqué est de 6 172 caractères sur 10 000, avec une
 réinitialisation le 25/10/2026. Cette configuration est temporaire : la cible est un
 compte payant avec une clé distincte par environnement.

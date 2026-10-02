@@ -45,6 +45,7 @@ vi.mock('../stream/stt-bridge', () => ({
   sendAudioToStt: vi.fn(),
   closeStt: vi.fn(),
   connectStt: vi.fn().mockResolvedValue(undefined),
+  sttProviderId: vi.fn(() => 'deepgram'),
 }));
 
 vi.mock('../stream/fillers-cache', () => ({

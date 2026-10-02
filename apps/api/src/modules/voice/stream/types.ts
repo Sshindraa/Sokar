@@ -475,12 +475,11 @@ export interface CallSession {
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */
   sttModel?: string;
-  /** Fournisseur STT réellement ouvert, après un éventuel fallback de handshake. */
+  /** Fournisseur STT réellement ouvert. */
   sttProviderUsed?: string;
   /** Adaptateur de transport STT actif, figé après le handshake initial. */
   sttAdapter?: import('./stt-provider-adapter').SttProviderAdapter;
   sttProviderOpenedOnce?: boolean;
-  sttOpeningFallbackAttempted?: boolean;
   sttKeepAliveTimer?: ReturnType<typeof setInterval> | null;
   sttConnectionAudioStartedAt?: number;
   /** Bytes successfully sent on the current provider socket, after conversion. */
