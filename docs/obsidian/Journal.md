@@ -1357,3 +1357,14 @@ La consigne de production du juge reste inchangée (Chez Sokar, activé).
 - **Le contrôle a été changé après lecture des réponses** : `awaiting` ne dit pas ce que la phrase demande (il reste sur le nom même quand le modèle redemande le nombre), mon premier contrôle sortait donc 0/12 à tort. Le contrôle final : le brouillon prend le nouveau nombre OU la phrase contient ce nombre (annoté dans le cas) ou « personnes ». Renoté sur les mêmes réponses, sans nouvelle requête : 25 %, 100 %, 50 %, 100 % (seuil 90 %).
 
 **À faire** : un principe dans le prompt (après une réponse douteuse qui porte une valeur déjà recueillie, reprendre ce champ avant d'avancer), à mesurer brut sur le banc ; sinon un garde-fou du moteur. Rien changé en production.
+
+## 2026-10-03 — Voix : principe « redemander ce qui est douteux » mesuré, insuffisant (rien changé en production)
+
+Suite de la correction du nombre de personnes perdue (appel 90834d63). Modification essayée au banc, **non fusionnée** : dans la consigne de compréhension, « elle redemande naturellement ce qui manque » devient « ce qui est douteux », avec un principe (si l'énoncé douteux semble corriger ou préciser une valeur déjà dans l'ÉTAT VÉRIFIÉ, on redemande cette valeur avant la question sur ce qui manque ; passer à la suite laisserait l'ancienne valeur à l'insu de l'appelant). Principe seul, sans phrase à dire ; tests voix 1 435/1 435.
+
+Rejeu A/B (`qwen/qwen3.8-27b`, OpenRouter/DeepInfra, vérification de compréhension active, 120 requêtes, 541 k tokens en entrée réels contre 540 k annoncés ; clé Cerebras non touchée) :
+- cas réel « un non 5 » : 1/12 → 4/12 ; variante « un non 6 » : 4/12 → 7/12 (le nombre est repris, brouillon ou phrase) ; transcriptions propres : 12/12 → 12/12 ; `appel-bf3893ae-enonce-incoherent` : 12/12 → 12/12 (pas de régression).
+- Lignée : 60 % → 73 % (+13 points, [0 ; +29]) ; famille non concluante (sous-dimensionnée). Critère fixé avant la mesure : les deux cas déformés doivent monter nettement vers 90 % ; non atteint, **principe non retenu**.
+- Lecture des échecs du candidat : le modèle reste dans le cadre « j'attends le nom » (`reading` = « un non 5 », jamais « correction du nombre ») et redemande le nom. Le prompt déplace de 25 à 30 points, il ne change pas ce cadre.
+
+Diff conservé hors du dépôt (scratchpad de la session) ; prochaine étape à décider : un principe plus fort (un nombre dans l'énoncé alors qu'on attend un autre champ n'est pas un nom), ou un garde-fou du moteur indépendant de la lecture du modèle.
