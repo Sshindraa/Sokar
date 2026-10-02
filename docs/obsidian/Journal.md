@@ -1268,3 +1268,9 @@ Corrections de l'utilisateur sur l'appel 8043662c, sans phrase ni liste de mots.
 
 **Plus tard, au banc (à mesurer avant de garder, rien n'est implémenté)** : (a) un principe contre les questions qui orientent la réponse (« pour ce soir-là ? » alors qu'aucune heure n'était donnée) ; (b) un champ « valeurs déjà annoncées » dans l'ÉTAT VÉRIFIÉ contre les répétitions.
 
+
+## 2026-10-02 — Voix : les lettres épelées du tour en données dans l'ÉTAT VÉRIFIÉ du premier passage
+
+Suite de #378 (validée). Quand l'agent attendait un nom (`lastAwaiting` = `customerName` ou `customerNameConfirmation`), `buildStructuredTurnMessages` calcule `spelledLettersOf(transcript)` et met le résultat dans l'ÉTAT VÉRIFIÉ en `spelledLetters` (même forme que `nameLetters` : lettre et `count` de répétitions de suite ; « a 2 s a 2 m » → A, S×2, A, M×2). Le modèle n'a plus à déchiffrer le chiffre devant la lettre au premier passage. Rien n'est ajouté sans épellation (trois lettres au moins) ni pour un autre message attendu. Le prompt dit seulement la nature de la donnée (exacte, ne pas la redéchiffrer, assembler avec les morceaux des tours précédents), sans phrase ni exemple. Test : `prompts.test.ts`. Suite voix 1398/1398, `tsc` propre.
+
+**À mesurer** (non fait : le banc consomme la clé Cerebras partagée, plan chiffré demandé avant) : relecture correcte dès le premier passage sur `relecture-doubles-lettres` (29 % avant) et sa variante MASSON (96 % avant). **À mesurer sur un prochain appel réel** : délai des tours de relecture (phrase retenue jusqu'à la fin, plus le second passage éventuel) comparé aux autres tours. **Plus tard** : synthèse réelle de « A, deux S, A, M » avec virgules (le test précédent portait sur « avec deux s et deux m » sans virgules).

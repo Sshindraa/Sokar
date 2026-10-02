@@ -112,6 +112,37 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain('« 9-12 » contient 10');
   });
 
+  it('met en données les lettres épelées du tour quand un nom est attendu (appel 8043662c)', () => {
+    const stateAwaiting = (awaiting: 'customerName' | 'customerNameConfirmation' | 'open') => {
+      const state = createStructuredTurnState();
+      state.lastAwaiting = awaiting;
+      return state;
+    };
+    const stateOf = (transcript: string, awaiting: Parameters<typeof stateAwaiting>[0]) =>
+      (
+        buildStructuredTurnMessages({
+          systemPrompt: 'Prompt',
+          history: [],
+          transcript,
+          state: stateAwaiting(awaiting),
+        })[0].content as string
+      ).split('ÉTAT VÉRIFIÉ : ')[1];
+
+    const verified = JSON.parse(stateOf('au nom de a 2 s a 2 m', 'customerName').split('\n')[0]);
+    expect(verified.spelledLetters).toEqual([
+      { letter: 'A', count: 1 },
+      { letter: 'S', count: 2 },
+      { letter: 'A', count: 1 },
+      { letter: 'M', count: 2 },
+    ]);
+    expect(
+      JSON.parse(stateOf('m a 2 s o n', 'customerNameConfirmation').split('\n')[0]).spelledLetters,
+    ).toHaveLength(5);
+    // Pas d'épellation dans la parole, ou un autre message attendu : rien n'est ajouté.
+    expect(stateOf('oui c’est ça', 'customerNameConfirmation')).not.toContain('spelledLetters');
+    expect(stateOf('a 2 s a 2 m', 'open')).not.toContain('spelledLetters');
+  });
+
   it('donne au modèle des principes de conversation, pas des phrases (appel b686b241)', () => {
     const [system] = buildStructuredTurnMessages({
       systemPrompt: 'Prompt',
