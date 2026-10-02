@@ -1253,7 +1253,7 @@ describe('tour structuré (canary)', () => {
   });
 });
 
-describe('relecture du nom construite par le code (appel 8043662c)', () => {
+describe('relecture du nom : les lettres isolées, vérifiées par le code (appel 8043662c)', () => {
   const named = (customerName: string) => ({
     date: TOMORROW,
     time: '12:30',
@@ -1268,31 +1268,31 @@ describe('relecture du nom construite par le code (appel 8043662c)', () => {
     fx.session.structuredTurn = state;
     return fx;
   };
-  const secondPassContext = (mgr: CallSessionManager) =>
-    (vi.mocked(mgr.streamStructuredCompletion).mock.calls[1]?.[1] as Array<{ content: string }>)[0]
-      .content;
+  const contextOf = (mgr: CallSessionManager, pass: number) =>
+    (
+      vi.mocked(mgr.streamStructuredCompletion).mock.calls[pass]?.[1] as Array<{ content: string }>
+    )[0].content;
 
-  it('remplace le marqueur par les lettres du brouillon : « A, deux S, A, deux M », jamais le nom ni sa graphie', async () => {
+  it('dit la relecture du modèle quand elle porte chaque lettre isolée et dans l’ordre', async () => {
     const { session, mgr, outputs } = askingName();
     outputs.push(
       turn({
         draft: named('ASSAMM'),
         awaiting: 'customerNameConfirmation',
-        say: "Je note [[NOM]]. C'est bien ça ?",
+        say: "Je note A, S, S, A, M, M. C'est bien ça ?",
       }),
     );
 
-    // « a deux s a deux m » : le nom ASSAMM, épelé avec deux lettres doubles.
+    // « a deux s a deux m » : le nom ASSAMM, épelé avec deux lettres doublées.
     await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
 
     expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
-    expect(spoken().join(' ')).toContain('A, deux S, A, deux M');
-    expect(spoken().join(' ')).not.toContain('[[NOM]]');
-    expect(session.history.at(-1)?.content).toContain('A, deux S, A, deux M');
+    expect(spoken().join(' ')).toContain('A, S, S, A, M, M');
+    expect(session.history.at(-1)?.content).toContain('A, S, S, A, M, M');
     expect(session.structuredTurn?.lastAwaiting).toBe('customerNameConfirmation');
   });
 
-  it('se tait quand le modèle relit le nom lui-même, puis redemande avec le marqueur', async () => {
+  it('se tait quand le modèle relit le nom comme un mot, puis redonne les lettres en données', async () => {
     const { session, mgr, outputs } = askingName();
     outputs.push(
       turn({
@@ -1303,21 +1303,43 @@ describe('relecture du nom construite par le code (appel 8043662c)', () => {
       turn({
         draft: named('ASSAMM'),
         awaiting: 'customerNameConfirmation',
-        say: "Donc [[NOM]]. C'est bien ça ?",
+        say: "Donc A, S, S, A, M, M. C'est bien ça ?",
       }),
     );
 
     await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
 
     expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
-    expect(secondPassContext(mgr)).toContain('[[NOM]]');
-    expect(secondPassContext(mgr)).toContain('« ASSAMM »');
+    const fact = contextOf(mgr, 1);
+    expect(fact).toContain('« ASSAMM »');
+    expect(fact).toContain('"letter":"S","count":2');
     const said = spoken().join(' ');
     expect(said).not.toContain('avec deux s');
-    expect(said).toContain('A, deux S, A, deux M');
+    expect(said).toContain('A, S, S, A, M, M');
   });
 
-  it('dit les lettres elles-mêmes quand le second passage n’écrit toujours pas le marqueur', async () => {
+  it('refuse aussi « A, deux S, A, deux M » : une lettre doublée doit s’écrire deux fois', async () => {
+    const { session, mgr, outputs } = askingName();
+    outputs.push(
+      turn({
+        draft: named('ASSAMM'),
+        awaiting: 'customerNameConfirmation',
+        say: "Donc A, deux S, A, deux M. C'est bien ça ?",
+      }),
+      turn({
+        draft: named('ASSAMM'),
+        awaiting: 'customerNameConfirmation',
+        say: "Donc A, S, S, A, M, M. C'est bien ça ?",
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
+
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    expect(spoken().join(' ')).not.toContain('deux S');
+  });
+
+  it('dit seulement les lettres quand le second passage ne les porte toujours pas', async () => {
     const { session, mgr, outputs } = askingName();
     const wrong = turn({
       draft: named('ASSAMM'),
@@ -1329,30 +1351,37 @@ describe('relecture du nom construite par le code (appel 8043662c)', () => {
     await processTranscriptStreaming(session, 'a 2 s a 2 m', mgr);
 
     expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
-    const said = spoken().join(' ');
-    expect(said).toContain('A, deux S, A, deux M');
-    expect(said).not.toContain('Assamm');
+    expect(spoken()).toEqual(['A, S, S, A, M, M']);
     expect(session.structuredTurn?.lastAwaiting).toBe('customerNameConfirmation');
     expect(session.structuredTurn?.draft.customerName).toBe('ASSAMM');
   });
 
-  it('accepte une phrase qui porte déjà les lettres exactes du brouillon', async () => {
-    const { session, mgr, outputs } = askingName();
+  it('met les lettres du nom déjà retenu dans l’ÉTAT VÉRIFIÉ du premier passage', async () => {
+    const { session, mgr, outputs } = fixture();
+    const state = createStructuredTurnState();
+    state.draft = named('ASSAMM');
+    state.lastAwaiting = 'customerNameConfirmation';
+    session.structuredTurn = state;
     outputs.push(
       turn({
-        draft: named('HOUET'),
+        draft: named('ASSAM'),
         awaiting: 'customerNameConfirmation',
-        say: "Donc H, O, U, E, T. C'est bien ça ?",
+        say: "Je corrige : A, S, S, A, M. C'est bien ça ?",
       }),
     );
 
-    await processTranscriptStreaming(session, 'h o u e t', mgr);
+    await processTranscriptStreaming(session, 'non un seul m', mgr);
 
+    expect(contextOf(mgr, 0)).toContain(
+      '"nameLetters":[{"letter":"A","count":1},{"letter":"S","count":2}',
+    );
+    // Le nom change à ce tour : la relecture porte les lettres du NOUVEAU nom.
     expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
-    expect(spoken().join(' ')).toContain('H, O, U, E, T');
+    expect(session.structuredTurn?.draft.customerName).toBe('ASSAM');
+    expect(spoken().join(' ')).toContain('A, S, S, A, M');
   });
 
-  it('ne lit jamais un marqueur égaré hors d’une relecture : il devient les lettres du nom connu', async () => {
+  it('ne retient pas une phrase qui ne relit pas le nom (aucune confirmation d’orthographe)', async () => {
     const { session, mgr, outputs } = fixture();
     const state = createStructuredTurnState();
     state.draft = named('HOUET');
@@ -1362,28 +1391,13 @@ describe('relecture du nom construite par le code (appel 8043662c)', () => {
       turn({
         draft: named('HOUET'),
         awaiting: 'confirmation',
-        say: 'Je réserve pour [[NOM]], on est bon ?',
+        say: 'Je réserve pour Houet, on est bon ?',
       }),
     );
 
     await processTranscriptStreaming(session, 'oui', mgr);
 
-    expect(spoken().join(' ')).not.toContain('[[NOM]]');
-  });
-
-  it('ne retient rien du nom avant la relecture : seules les lettres lues sont dans la phrase', async () => {
-    const { session, mgr, outputs } = askingName();
-    outputs.push(
-      turn({
-        draft: named('AKKIF'),
-        awaiting: 'customerNameConfirmation',
-        say: "[[NOM]]. C'est bien ça ?",
-      }),
-    );
-
-    await processTranscriptStreaming(session, 'a 2 k i f', mgr);
-
-    expect(spoken().join(' ')).toContain('A, deux K, I, F');
-    expect(spoken().join(' ')).not.toContain('Akkif');
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    expect(spoken().join(' ')).toContain('Houet');
   });
 });

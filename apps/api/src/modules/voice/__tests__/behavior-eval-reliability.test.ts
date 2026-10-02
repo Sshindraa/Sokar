@@ -406,8 +406,8 @@ describe('calage entre deux fournisseurs', () => {
   });
 });
 
-describe('contrôle readsBack : la phrase laisse le code relire le nom', () => {
-  const readsBack = (expect_: boolean): BehaviorCase => ({
+describe('contrôle readsBack : la phrase lit les lettres du nom, isolées et dans l’ordre', () => {
+  const readsBack = (expectation: boolean): BehaviorCase => ({
     id: 'relecture',
     behavior: 'relecture du nom',
     family: 'epellation',
@@ -416,26 +416,25 @@ describe('contrôle readsBack : la phrase laisse le code relire le nom', () => {
     source: 'test',
     history: [],
     transcript: 'a 2 s a 2 m',
-    checks: [{ kind: 'readsBack', expect: expect_, minRate: 0.5 }],
+    checks: [{ kind: 'readsBack', expect: expectation, minRate: 0.5 }],
   });
   const output = (say: string, customerName = 'ASSAMM') => ({
     say,
     draft: { date: '', time: '', partySize: 0, customerName },
   });
 
-  it('vrai avec le marqueur ou les lettres exactes du brouillon, faux avec le nom ou sa graphie', () => {
+  it('vrai avec chaque lettre isolée et dans l’ordre, faux avec le nom, sa graphie ou une double écrite une fois', () => {
     const testCase = readsBack(true);
-    expect(drawSucceeds(testCase, output("Je note [[NOM]]. C'est bien ça ?"))).toBe(true);
-    expect(drawSucceeds(testCase, output("Je note A, deux S, A, deux M. C'est bien ça ?"))).toBe(
-      true,
-    );
+    expect(drawSucceeds(testCase, output("Je note A, S, S, A, M, M. C'est bien ça ?"))).toBe(true);
     expect(
       drawSucceeds(testCase, output("Donc Assamm, avec deux s et deux m. C'est bien ça ?")),
     ).toBe(false);
-    expect(
-      drawSucceeds(testCase, output("Je note A, double S, A, double M. C'est bien ça ?")),
-    ).toBe(false);
+    expect(drawSucceeds(testCase, output("Je note A, deux S, A, deux M. C'est bien ça ?"))).toBe(
+      false,
+    );
     // Sans nom dans le brouillon, il n'y a rien à relire.
-    expect(drawSucceeds(testCase, output("Je note [[NOM]]. C'est bien ça ?", ''))).toBe(false);
+    expect(drawSucceeds(testCase, output("Je note A, S, S, A, M, M. C'est bien ça ?", ''))).toBe(
+      false,
+    );
   });
 });

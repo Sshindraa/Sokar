@@ -427,6 +427,8 @@ export interface CallSession {
   deepgramKeyterms?: string[];
   /** La page Connect publique du restaurant est actuellement publiée. */
   onlineReservationsActive?: boolean;
+  /** `Restaurant.smsConfirmEnabled` ; absent : inconnu (contexte en cache d'avant ce champ). */
+  smsConfirmEnabled?: boolean;
   timezone: string;
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
