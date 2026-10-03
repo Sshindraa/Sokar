@@ -506,8 +506,9 @@ jugements de modèle et ne constituent pas une vérité humaine.
 > supprimé. `VOICE_TURN_PLAN_SHADOW_ENABLED`, `VOICE_TURN_PLAN_AUTHORITY_ENABLED`,
 > `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` et `VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` n'ont
 > plus d'effet et les métriques `sokar_voice_turn_plan_*` ne sont plus alimentées par les appels.
-> Les paragraphes qui suivent décrivent l'ancien comportement et valent pour l'historique des
-> mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
+> Le flag n'est plus lu nulle part, et il n'est plus posé par le workflow staging ni par
+> `sync-runtime-flags.sh`. Les paragraphes qui suivent décrivent l'ancien comportement et valent
+> pour l'historique des mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
 > `SPECULATIVE_LLM_ENABLED` / `SPECULATIVE_LLM_RESTAURANT_IDS` (pré-réflexion du chemin à outils).
 
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
