@@ -1,8 +1,8 @@
 # Runbook — Rapport automatique de chaque appel
 
-> **Statut : code livré, désactivé par défaut (`CALL_REPORT_ENABLED=false`).** Créé le 3 octobre 2026.
-> Ne pas activer avant la lecture de la validation sur les appels 8043662c, 935ff343, 03b19223 et
-> 3ba7c66f (voir « Validation du 03/10/2026 »).
+> **Statut : ACTIF en production depuis le 3 octobre 2026** (`CALL_REPORT_ENABLED=true` sur
+> `sokar-workers`, restaurants de test uniquement). Défaut du code : `false`. Validation sur les appels
+> 8043662c, 935ff343, 03b19223 et 3ba7c66f : voir « Validation du 03/10/2026 ».
 
 Après chaque appel d'un restaurant de test, le worker produit le rapport que l'on faisait à la main :
 ce qui a été dit, ce que le système a compris, où il a hésité, où il s'est tu, où il s'est trompé. Les

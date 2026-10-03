@@ -23,7 +23,7 @@
 - [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : fusionner puis déployer le reset compatible avec l’audit, nettoyer le run existant du staging et rejouer les écritures après déploiement. Claude staging est reconnecté avec la portée multi-restaurants approuvée par l’utilisateur ; seuls les tests Chez Sokar sont autorisés pour ce run. Les clients n’exposent pas `initialize`/`tools/list` bruts.
-- [ ] Rapport automatique d'appel (03/10) : code livré, `CALL_REPORT_ENABLED=false` ; valider la validation sur les 4 appels (Journal 03/10, `docs/runbooks/call-reports.md`), puis activer sur le worker.
+- [ ] Rapport automatique d'appel : activé en prod le 03/10 (worker). Après un appel réel de test, lire `voice_call_audio.py report <id>` ; vérifier que la ligne `[voice-report] call linked` relie bien l'appel (statut `linked`, plus `matched_by_time`).
 
 ## Décisions récentes
 
