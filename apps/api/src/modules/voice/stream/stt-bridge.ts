@@ -46,7 +46,13 @@ import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 import { voiceConfig } from '../../../env';
 import { filterAssistantEcho, hasBargeInWordThreshold } from './assistant-echo';
+import {
+  describeInterruptionEvidence,
+  hasInterruptionEvidence,
+  isNoiseTurn,
+} from './barge-in-evidence';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
+import { resumeInterruptedGreeting } from './greeting-resume';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -1370,12 +1376,39 @@ function isTranscriptWithoutCallerVoice(
   return true;
 }
 
+/**
+ * Un mot seul, peu sûr et bref ne coupe pas l'agent (appel f2200632 : « rouge » à 0,28 a coupé
+ * l'accueil). Pendant l'accueil, l'exigence est plus forte.
+ */
+function lacksInterruptionEvidence(
+  session: CallSession,
+  transcript: string,
+  words: readonly SttWord[] | undefined,
+): boolean {
+  const evidence = describeInterruptionEvidence(transcript, words);
+  const greeting = session.greetingPlaying === true;
+  if (hasInterruptionEvidence(evidence, { greeting })) return false;
+  logger.info(
+    {
+      callId: session.callControlId,
+      greeting,
+      wordCount: evidence.wordCount,
+      minWordConfidence: evidence.minConfidence,
+      voiceMs: evidence.voiceMs,
+    },
+    '[barge-in] Refused: a single weak word is not enough to interrupt',
+  );
+  return true;
+}
+
 function handleBargeInFromTranscript(
   session: CallSession,
   mgr: CallSessionManager,
   transcript: string,
+  words?: readonly SttWord[],
 ): void {
   if (session.state !== 'SPEAKING' || !transcript.trim()) return;
+  if (lacksInterruptionEvidence(session, transcript, words)) return;
   const lowSignalReason = lowSignalTranscriptReason(transcript);
   if (lowSignalReason) {
     logger.debug(
@@ -1388,8 +1421,16 @@ function handleBargeInFromTranscript(
     );
     return;
   }
+  const evidence = describeInterruptionEvidence(transcript, words);
   logger.info(
-    { callId: session.callControlId, ...describeTranscript(transcript.trim()) },
+    {
+      callId: session.callControlId,
+      ...describeTranscript(transcript.trim()),
+      greeting: session.greetingPlaying === true,
+      wordCount: evidence.wordCount,
+      minWordConfidence: evidence.minConfidence,
+      voiceMs: evidence.voiceMs,
+    },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
   );
   session.sttAfterBargeIn = true;
@@ -1401,7 +1442,11 @@ function handleBargeInFromTranscript(
   mgr.handleBargeIn(session);
 }
 
-function emitPartialTranscript(session: CallSession, transcript: string): void {
+function emitPartialTranscript(
+  session: CallSession,
+  transcript: string,
+  words?: readonly SttWord[],
+): void {
   let cleanTranscript = transcript.trim();
   let allowBargeIn = true;
   if (!cleanTranscript) return;
@@ -1421,7 +1466,12 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     if (allowBargeIn)
-      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+      handleBargeInFromTranscript(
+        session,
+        CallSessionManager.getInstance(),
+        cleanTranscript,
+        words,
+      );
     const hold = session.sttSemanticHold;
     if (hold) {
       if (hold.timer) clearTimeout(hold.timer);
@@ -1445,7 +1495,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   }
 
   const mgr = CallSessionManager.getInstance();
-  if (allowBargeIn) handleBargeInFromTranscript(session, mgr, cleanTranscript);
+  if (allowBargeIn) handleBargeInFromTranscript(session, mgr, cleanTranscript, words);
 
   const semanticHold = session.sttSemanticHold;
   if (semanticHold?.timer) {
@@ -1513,7 +1563,12 @@ function dispatchCommittedTranscript(
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     if (allowBargeIn)
-      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+      handleBargeInFromTranscript(
+        session,
+        CallSessionManager.getInstance(),
+        cleanTranscript,
+        words,
+      );
     holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode, timing);
     return;
   }
@@ -1534,11 +1589,37 @@ function dispatchCommittedTranscript(
     return;
   }
 
+  // Un mot seul, peu sûr et bref est un bruit : pas de tour, l'agent continue d'écouter. Si ce bruit
+  // a coupé l'accueil (coupure sur l'audio seul), l'accueil reprend où il s'était arrêté.
+  if (isNoiseTurn(describeInterruptionEvidence(cleanTranscript, words))) {
+    logger.info(
+      {
+        callId: session.callControlId,
+        agentSpeaking: session.state === 'SPEAKING',
+        ...describeTranscript(cleanTranscript),
+      },
+      '[stt] Ignoring a single weak word: noise, not a turn',
+    );
+    resetSttTurnDiagnostics(session);
+    resumeInterruptedGreeting(session);
+    return;
+  }
+  // Pendant la parole de l'agent, un mot seul sans preuve ne l'a pas coupé : il n'ouvre pas de tour non plus.
+  if (
+    session.state === 'SPEAKING' &&
+    session.greetingPlaying &&
+    lacksInterruptionEvidence(session, cleanTranscript, words)
+  ) {
+    resetSttTurnDiagnostics(session);
+    return;
+  }
+
   // Le partial est normalement le premier signal de barge-in, mais Scribe
   // peut engager un transcript sans partial observable sur une connexion
   // courte. Le commit doit donc rester suffisant pour interrompre le TTS.
   if (allowBargeIn)
-    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript, words);
+  session.greetingInterrupted = false;
 
   if (spellingContinues(session, cleanTranscript)) {
     const held = session.pendingSttEndOfTurn;
@@ -1986,7 +2067,7 @@ export function handleNormalizedSttMessage(
           }
         }
       }
-      emitPartialTranscript(session, event.transcript);
+      emitPartialTranscript(session, event.transcript, event.words);
       return;
     case 'plain_commit':
       if (event.transcript.trim()) session.sttConsecutiveFailures = 0;

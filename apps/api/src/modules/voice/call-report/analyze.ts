@@ -6,7 +6,13 @@
 import { compareEars } from './ears';
 import type { Segment, TrackEnergy } from './energy';
 import { collectGuards } from './guards';
-import { buildLogTurns, type LogEvent, type LogSelection, type LogTurn } from './log-events';
+import {
+  buildLoggedInterruptions,
+  buildLogTurns,
+  type LogEvent,
+  type LogSelection,
+  type LogTurn,
+} from './log-events';
 import { redactPii } from '../stream/pii-redact';
 import { attributeSilenceCause, findSilences, type CauseInput } from './silences';
 import { findIdenticalRespellings } from './respelling';
@@ -469,7 +475,14 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
     ears,
     mouth,
     silences,
-    turnTaking: { unfinished, overlaps, interruptions, splitSpellings, identicalRespellings },
+    turnTaking: {
+      unfinished,
+      overlaps,
+      interruptions,
+      loggedInterruptions: buildLoggedInterruptions(input.logEvents),
+      splitSpellings,
+      identicalRespellings,
+    },
     guards,
     counters: { noCallerVoice },
     outcome,

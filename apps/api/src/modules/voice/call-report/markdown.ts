@@ -178,6 +178,30 @@ export function renderMarkdown(report: CallReport): string {
     );
   }
 
+  lines.push('', "**Interruptions vues par le serveur (même avant l'enregistrement)**", '');
+  const logged = report.turnTaking.loggedInterruptions ?? []; // absent des rapports d'avant sa création
+  if (logged.length === 0) lines.push('Aucune.');
+  for (const item of logged) {
+    const label = {
+      barge_in_detected: 'coupe l’agent',
+      barge_in_refused: 'refusée (mot seul peu sûr)',
+      noise_word_ignored: 'mot seul peu sûr ignoré : pas de tour',
+      greeting_resumed: 'accueil repris',
+    }[item.type];
+    const detail = [
+      item.wordCount !== undefined ? `${item.wordCount} mot(s)` : null,
+      typeof item.minWordConfidence === 'number'
+        ? `confiance ${item.minWordConfidence.toFixed(2)}`
+        : null,
+      typeof item.voiceMs === 'number' ? `${item.voiceMs} ms de voix` : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    lines.push(
+      `- ${item.offsetSec === null ? '?' : `+${item.offsetSec.toFixed(1)} s après le décroché`}${item.beforeFirstTurn ? ' (accueil)' : ''} : ${label}${detail ? ` (${detail})` : ''}`,
+    );
+  }
+
   lines.push('', '## Garde-fous', '');
   if (report.guards.length === 0) lines.push('Aucun déclenchement.');
   for (const guard of report.guards) {

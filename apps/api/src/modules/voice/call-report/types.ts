@@ -3,7 +3,7 @@ import type { EarDivergence } from './ears';
 import type { Guard } from './guards';
 import type { Attribution, SilenceOwner } from './silences';
 import type { Overlap, UnfinishedVerdict, InterruptionVerdict } from './turn-taking';
-import type { LogSelection } from './log-events';
+import type { LogSelection, LoggedInterruption } from './log-events';
 import type { Respelling } from './respelling';
 import type { SplitSpelling } from './spelling';
 
@@ -138,6 +138,8 @@ export interface CallReport {
     unfinished: UnfinishedVerdict[];
     overlaps: Overlap[];
     interruptions: InterruptionReport[];
+    /** Interruptions et refus vus par le serveur, même hors enregistrement (accueil compris). */
+    loggedInterruptions: LoggedInterruption[];
     splitSpellings: SplitSpelling[];
     /** Lettres relues, non validées, puis épelées de nouveau à l'identique : erreur d'oreille systématique probable. */
     identicalRespellings: Respelling[];

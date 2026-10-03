@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseLogLine, selectCallLog, buildLogTurns } from '../call-report/log-events';
+import {
+  parseLogLine,
+  selectCallLog,
+  buildLogTurns,
+  buildLoggedInterruptions,
+} from '../call-report/log-events';
 
 const T0 = Date.parse('2026-10-02T12:27:03.000Z');
 const at = (offsetMs: number) => new Date(T0 + offsetMs).toISOString();
@@ -142,5 +147,42 @@ describe('buildLogTurns', () => {
     const [turn] = buildLogTurns(events);
     expect(turn.firstAudioAtMs).toBe(T0 + 2_500);
     expect(turn.endOfSpeechToFirstAudioMs).toBe(900);
+  });
+});
+
+describe('buildLoggedInterruptions', () => {
+  it("garde l'interruption de l'accueil, avant tout tour, avec son décalage depuis le décroché", () => {
+    const events = [
+      pino(0, { callId: 'A', msg: '[stream] Start call' }),
+      pino(1_300, {
+        callId: 'A',
+        wordCount: 1,
+        minWordConfidence: 0.278,
+        voiceMs: 400,
+        msg: '[barge-in] User spoke while assistant was speaking. Interrupting.',
+      }),
+      turnEvent(1_301, 'A', 't1', 'started'),
+      pino(4_000, {
+        callId: 'A',
+        msg: '[barge-in] Refused: a single weak word is not enough to interrupt',
+      }),
+    ].map((line) => parseLogLine(line)!);
+    expect(buildLoggedInterruptions(events)).toEqual([
+      {
+        type: 'barge_in_detected',
+        atMs: expect.any(Number),
+        offsetSec: 1.3,
+        beforeFirstTurn: true,
+        wordCount: 1,
+        minWordConfidence: 0.278,
+        voiceMs: 400,
+      },
+      {
+        type: 'barge_in_refused',
+        atMs: expect.any(Number),
+        offsetSec: 4,
+        beforeFirstTurn: false,
+      },
+    ]);
   });
 });
