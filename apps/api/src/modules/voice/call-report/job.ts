@@ -16,6 +16,27 @@ export function isCallReportEnabled(env: NodeJS.ProcessEnv = process.env): boole
   return env.CALL_REPORT_ENABLED === 'true';
 }
 
+/**
+ * Plafond du nombre de rapports (`CALL_REPORT_MAX_REPORTS`) : chaque rapport coûte des transcriptions
+ * Deepgram, le plafond borne la dépense. Absent ou invalide : pas de plafond.
+ */
+export function reportLimit(env: NodeJS.ProcessEnv = process.env): number | null {
+  const parsed = Number(env.CALL_REPORT_MAX_REPORTS);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** Prend une place sous le plafond : le compteur ne dépasse jamais le plafond. */
+export async function reserveReportSlot(
+  counter: { incr(key: string): Promise<number>; decr(key: string): Promise<number> },
+  limit: number | null,
+  key = 'call-report:generated',
+): Promise<boolean> {
+  if (limit === null) return true;
+  if ((await counter.incr(key)) <= limit) return true;
+  await counter.decr(key);
+  return false;
+}
+
 export interface ReportCallRow {
   id: string;
   restaurantId: string;
@@ -35,6 +56,9 @@ export interface ReportJobDeps {
   loadTurns(call: ReportCallRow): Promise<ReportTurnRow[]>;
   readRecording(storageKey: string): Promise<Uint8Array>;
   readLogs(fromMs: number, toMs: number): Promise<string[]>;
+  /** Plafond du nombre de rapports : absent = illimité. */
+  reserveSlot?(): Promise<boolean>;
+  releaseSlot?(): Promise<void>;
   transcribe: Transcriber;
   store(storageKey: string, body: string, contentType: string): Promise<void>;
   log: {
@@ -63,6 +87,14 @@ export async function buildCallReportJob(
   }
   if (call.recordingStatus !== 'AVAILABLE' || !call.recordingStorageKey) {
     return { status: 'skipped', reason: 'recording_unavailable' };
+  }
+
+  if (deps.reserveSlot && !(await deps.reserveSlot())) {
+    deps.log.warn(
+      { callId: call.id, restaurantId: call.restaurantId },
+      '[call-report] limit reached (CALL_REPORT_MAX_REPORTS): no report built',
+    );
+    return { status: 'skipped', reason: 'limit_reached' };
   }
 
   try {
@@ -106,6 +138,12 @@ export async function buildCallReportJob(
     );
     return { status: 'stored' };
   } catch (err) {
+    // Un échec ne consomme pas le plafond.
+    try {
+      await deps.releaseSlot?.();
+    } catch {
+      // Le compteur n'est pas vital : on ne masque pas l'erreur d'origine.
+    }
     deps.log.warn(
       {
         callId: call.id,

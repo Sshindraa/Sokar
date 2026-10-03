@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildCallReportJob, isCallReportEnabled, type ReportJobDeps } from '../call-report/job';
+import {
+  buildCallReportJob,
+  isCallReportEnabled,
+  reportLimit,
+  reserveReportSlot,
+  type ReportJobDeps,
+} from '../call-report/job';
 import type { Transcriber } from '../call-report/deepgram-batch';
 import { stereoMp3 } from './fixtures/call-report-stereo';
 
@@ -144,5 +150,78 @@ describe('buildCallReportJob', () => {
     await buildCallReportJob('leg-1', d);
     const json = JSON.parse(String(vi.mocked(d.store).mock.calls[0][1]));
     expect(json.limits.join(' ')).toMatch(/dialogue/i);
+  });
+});
+
+describe('plafond du nombre de rapports', () => {
+  it("n'a pas de plafond par défaut", () => {
+    expect(reportLimit({})).toBeNull();
+    expect(reportLimit({ CALL_REPORT_MAX_REPORTS: '' })).toBeNull();
+    expect(reportLimit({ CALL_REPORT_MAX_REPORTS: 'abc' })).toBeNull();
+  });
+
+  it('lit un plafond entier positif', () => {
+    expect(reportLimit({ CALL_REPORT_MAX_REPORTS: '100' })).toBe(100);
+    expect(reportLimit({ CALL_REPORT_MAX_REPORTS: '0' })).toBeNull();
+  });
+
+  it('ne fait rien (ni transcription, ni lecture, ni écriture) quand le plafond est atteint', async () => {
+    const d = deps({ reserveSlot: vi.fn().mockResolvedValue(false), releaseSlot: vi.fn() });
+    const result = await buildCallReportJob('leg-1', d);
+    expect(result).toEqual({ status: 'skipped', reason: 'limit_reached' });
+    expect(d.readRecording).not.toHaveBeenCalled();
+    expect(d.store).not.toHaveBeenCalled();
+    expect(d.releaseSlot).not.toHaveBeenCalled();
+  });
+
+  it('garde la place prise quand le rapport est écrit', async () => {
+    const d = deps({ reserveSlot: vi.fn().mockResolvedValue(true), releaseSlot: vi.fn() });
+    expect((await buildCallReportJob('leg-1', d)).status).toBe('stored');
+    expect(d.releaseSlot).not.toHaveBeenCalled();
+  });
+
+  it('rend la place quand la génération échoue (un échec ne consomme pas le plafond)', async () => {
+    const d = deps({
+      reserveSlot: vi.fn().mockResolvedValue(true),
+      releaseSlot: vi.fn(),
+      transcribe: async () => {
+        throw new Error('down');
+      },
+    });
+    expect((await buildCallReportJob('leg-1', d)).status).toBe('failed');
+    expect(d.releaseSlot).toHaveBeenCalledTimes(1);
+  });
+
+  it("ne prend pas de place pour un appel qu'on ignore (restaurant hors liste, enregistrement absent)", async () => {
+    const d = deps({ isAllowed: () => false, reserveSlot: vi.fn().mockResolvedValue(true) });
+    await buildCallReportJob('leg-1', d);
+    expect(d.reserveSlot).not.toHaveBeenCalled();
+  });
+});
+
+describe('reserveReportSlot', () => {
+  function fakeRedis() {
+    let value = 0;
+    return {
+      incr: vi.fn(async () => ++value),
+      decr: vi.fn(async () => --value),
+      get value() {
+        return value;
+      },
+    };
+  }
+
+  it('accepte jusqu’au plafond puis refuse sans dépasser le compteur', async () => {
+    const redis = fakeRedis();
+    const results = [];
+    for (let i = 0; i < 4; i++) results.push(await reserveReportSlot(redis, 3));
+    expect(results).toEqual([true, true, true, false]);
+    expect(redis.value).toBe(3);
+  });
+
+  it('accepte toujours sans plafond, sans toucher au compteur', async () => {
+    const redis = fakeRedis();
+    expect(await reserveReportSlot(redis, null)).toBe(true);
+    expect(redis.incr).not.toHaveBeenCalled();
   });
 });

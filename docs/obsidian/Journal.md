@@ -1407,3 +1407,8 @@ Source : événements `voiceTurn` de tous les journaux disponibles (19/09 → 03
 - **Mesure sur les 4 appels de validation.** Détecté sur 3ba7c66f (« a 2 s a m » relu par « A, double A, S, A, M », puis épelé de nouveau à l'identique ; il passe en tête de la synthèse). **Pas détecté sur 8043662c** : les deux épellations diffèrent d'une lettre (« a 2 s 2 m » puis « a 2 s a 2 m »), donc la règle d'identité stricte ne s'applique pas. Une tolérance d'une lettre le rattraperait, au prix de faux positifs sur des épellations corrigées pour de bon : à décider sur de vrais rapports, pas avant.
 - **Note pour une phase suivante (non implémentée).** Pendant l'appel, dans ce même cas (relecture refusée puis nouvelle épellation identique à la suite refusée), l'agent ne relit pas une deuxième fois à l'identique. Le code lui donne en données les lettres doublées (count > 1), les plus ambiguës à l'oral, et le modèle pose une question ciblée sur elles. À mesurer au banc avant de garder (voir la note « aucune phrase codée en dur » : principes, pas de phrase à dire).
 - Faux positifs du rapport : volontairement non traités, à reprendre après une semaine de vrais rapports, en commençant par ceux qui reviennent.
+
+## 2026-10-03 — Voix : rapport d'appel limité aux 100 prochains appels
+
+- Décision de l'utilisateur : borner le coût Deepgram des rapports. `CALL_REPORT_MAX_REPORTS=100` (compteur Redis `call-report:generated`, base des files) ; au-delà, le job ne fait rien et journalise `limit reached`. Un rapport en échec rend sa place. Les rapports ne coûtent rien côté Cerebras (aucun appel au modèle de dialogue) : seule dépense, Deepgram (~1,5 centime par appel).
+- Retrait du plafond : supprimer la variable et recharger `sokar-workers --update-env`.

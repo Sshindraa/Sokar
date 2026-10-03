@@ -37,7 +37,14 @@ dialogue par tour n'existe pas et le rapport est réduit : il le dit). Le démar
 ```text
 CALL_REPORT_ENABLED=true          # défaut false
 CALL_REPORT_LOG_DIR=/var/log/sokar  # défaut ; dossier des journaux de l'API, lu par le worker
+CALL_REPORT_MAX_REPORTS=100       # plafond du nombre de rapports ; absent = illimité
 ```
+
+**Plafond.** `CALL_REPORT_MAX_REPORTS` borne la dépense Deepgram : le compteur est la clé Redis
+`call-report:generated` (base des files), incrémentée avant chaque rapport ; au-delà du plafond le job
+ne fait rien et journalise `[call-report] limit reached`. Un rapport en échec rend sa place. Pour
+repartir de zéro : `redis-cli DEL call-report:generated` ; pour relever le plafond : changer la variable
+et recharger `sokar-workers --update-env`. Voir l'état : `redis-cli GET call-report:generated`.
 
 Recharger `sokar-workers` avec `--update-env`. Retrait : remettre `false`. Les rapports déjà écrits
 restent jusqu'à l'expiration de l'enregistrement.
