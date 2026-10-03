@@ -239,7 +239,6 @@ describe('buildSystemPrompt', () => {
 
     expect(prompt).toContain("Tu es l'assistant vocal chaleureux de Chez Michel.");
     expect(prompt).toContain("L'accueil a déjà été prononcé");
-    expect(prompt).toContain('appelle checkAvailability immédiatement dans le même tour');
     expect(prompt).toContain('Tu évites le ton administratif');
     expect(prompt).toContain('SITUATIONS (des principes');
     expect(prompt).toContain('Non, plutôt 21 h 15.');
@@ -248,13 +247,10 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('Au tout début de chaque appel');
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
-    // Ne doit pas contenir d'extra ni de CRM
-    expect(prompt).toContain("handoffToManager : transférer l'appel au gérant");
-    expect(prompt).toContain('purchaseGiftCard : vendre une carte cadeau');
-    expect(prompt).toContain('recommendGiftCardAmount : conseiller un montant de carte cadeau');
-    expect(
-      prompt.trim().endsWith('recommendGiftCardAmount : conseiller un montant de carte cadeau'),
-    ).toBe(true);
+    // Aucun outil n'est décrit dans la base : le tour structuré décrit lui-même ses actions.
+    expect(prompt).not.toContain('OUTILS DISPONIBLES');
+    expect(prompt).not.toContain('checkAvailability');
+    expect(prompt.trim().endsWith('Dimanche : fermé')).toBe(true);
   });
 
   it('devrait inclure customerExtra quand fourni dans le contexte', () => {
@@ -327,7 +323,7 @@ describe('buildSystemPrompt', () => {
 });
 describe('phrases à dire : des principes, pas des formules', () => {
   const hours = { tue: { open: '12:00', close: '22:00' } };
-  const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn: true });
+  const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours });
   const [system] = buildStructuredTurnMessages({
     systemPrompt: base,
     history: [],
@@ -382,31 +378,12 @@ describe('phrases à dire : des principes, pas des formules', () => {
   });
 });
 
-describe('buildSystemPrompt : base commune et section propre au mode à outils', () => {
+describe('buildSystemPrompt : base sans outil', () => {
   const hours = { tue: { open: '12:00', close: '22:00' } };
   const base = { name: 'Chez Test', openingHours: hours, giftCardMinimumAmount: 25 };
-  const tools = buildSystemPrompt(base);
-  const structured = buildSystemPrompt({ ...base, structuredTurn: true });
+  const prompt = buildSystemPrompt(base);
 
-  it('garde le mode à outils complet, section outils séparée de la base', () => {
-    expect(buildSystemPrompt({ ...base, structuredTurn: false })).toBe(tools);
-    for (const kept of [
-      'RÈGLES DU MODE À OUTILS',
-      'OUTILS DISPONIBLES',
-      'appelle checkAvailability immédiatement',
-      'handoffToManager',
-      'purchaseGiftCard',
-      'reportDelay',
-      'le montant minimum est 25€',
-      'Transfert :',
-    ]) {
-      expect(tools).toContain(kept);
-    }
-    // La base commune vient d'abord, la section outils ensuite.
-    expect(tools.indexOf('COMPORTEMENT :')).toBeLessThan(tools.indexOf('RÈGLES DU MODE À OUTILS'));
-  });
-
-  it('le tour structuré ne reçoit que la base commune, sans aucun outil', () => {
+  it('ne reçoit aucun outil : le tour structuré décrit lui-même ses actions', () => {
     for (const name of [
       'RÈGLES DU MODE À OUTILS',
       'OUTILS DISPONIBLES',
@@ -420,36 +397,29 @@ describe('buildSystemPrompt : base commune et section propre au mode à outils',
       'recommendGiftCardAmount',
       'lien de paiement',
     ]) {
-      expect(structured).not.toContain(name);
+      expect(prompt).not.toContain(name);
     }
     for (const common of ['DATE COURANTE', 'COMPORTEMENT :', 'HORAIRES', 'Mardi : 12:00–22:00']) {
-      expect(structured).toContain(common);
+      expect(prompt).toContain(common);
     }
-    expect(structured.length).toBeLessThan(tools.length - 1500);
   });
 
-  it('supprime la contradiction « Parfait » dans les deux modes', () => {
-    expect(tools).not.toContain('« Parfait, donc… »');
-    expect(structured).not.toContain('« Parfait, donc… »');
+  it('ne contient pas la contradiction « Parfait, donc… »', () => {
+    expect(prompt).not.toContain('« Parfait, donc… »');
   });
 
-  it('la personnalisation du restaurant reste en fin de prompt dans les deux modes', () => {
+  it('la personnalisation du restaurant reste en fin de prompt', () => {
     const custom = {
       ...base,
       customerExtra: 'EXTRA-CLIENT',
       personality: { systemPromptExtra: 'EXTRA-PERSO' },
     };
     expect(buildSystemPrompt(custom).trimEnd().endsWith('EXTRA-PERSO')).toBe(true);
-    expect(
-      buildSystemPrompt({ ...custom, structuredTurn: true })
-        .trimEnd()
-        .endsWith('EXTRA-PERSO'),
-    ).toBe(true);
   });
 
-  it("les consignes du tour structuré disent ce qu'il ne peut pas faire, sans « prioritaire sur la section OUTILS »", () => {
+  it("les consignes du tour structuré disent ce qu'il ne peut pas faire", () => {
     const [system] = buildStructuredTurnMessages({
-      systemPrompt: structured,
+      systemPrompt: prompt,
       history: [],
       transcript: 'bonjour',
       state: createStructuredTurnState(),
@@ -476,13 +446,13 @@ describe('genre de la voix', () => {
 
   it('ne dit rien du genre quand il est inconnu : le prompt reste celui d’avant', () => {
     expect(buildSystemPrompt(ctx, now)).not.toContain('Ta voix est');
-    expect(buildSystemPrompt({ ...ctx, structuredTurn: true }, now)).not.toContain('Ta voix est');
+    expect(buildSystemPrompt({ ...ctx }, now)).not.toContain('Ta voix est');
   });
 
   it('vaut aussi pour le tour structuré (base commune)', () => {
-    expect(
-      buildSystemPrompt({ ...ctx, structuredTurn: true, voiceGender: 'masculine' }, now),
-    ).toContain('Ta voix est masculine');
+    expect(buildSystemPrompt({ ...ctx, voiceGender: 'masculine' }, now)).toContain(
+      'Ta voix est masculine',
+    );
   });
 
   it('vient du réglage de la voix par défaut, et jamais d’une voix propre au restaurant (genre inconnu)', () => {

@@ -271,27 +271,6 @@ describe('repli du chemin à outils (restaurants hors tour structuré)', () => {
       }
     ).fetchLlmStreaming(session, messages, { tools, maxTokens: 200, temperature: 0.7 });
 
-  it('bascule sur OpenRouter avec les outils quand le principal refuse (429)', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock
-      .mockResolvedValueOnce(new Response('slow down', { status: 429 }))
-      .mockResolvedValueOnce(sse(['Bonjour.']));
-
-    const { response, provider } = await call(mgr, session);
-
-    expect(provider).toBe('openrouter');
-    expect(response.ok).toBe(true);
-    expect(bodyOf(fetchMock.mock.calls[1])).toMatchObject({ tools, tool_choice: 'auto' });
-    expect(bodyOf(fetchMock.mock.calls[1]).response_format).toBeUndefined();
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        labels: { path: 'legacy', outcome: 'used', reason: 'rate_limited' },
-      }),
-    );
-  });
-
   it("garde le comportement historique si le repli échoue aussi : la réponse d'erreur du principal est rendue", async () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();

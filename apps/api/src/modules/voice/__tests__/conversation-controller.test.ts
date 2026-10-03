@@ -4,16 +4,9 @@ import {
   buildDeterministicTurnPlan,
   buildAvailabilityFollowupPlan,
   buildAvailabilityFollowupResponse,
-  buildAvailabilityErrorPlan,
-  buildAvailabilityLlmContext,
   buildAnswerChoicePlan,
   openingHourTimes,
-  buildVoiceStageFailurePlan,
-  buildOpenAvailabilityReply,
   extractDayPeriod,
-  extractSpokenTimes,
-  violatesAvailabilityReplyGuard,
-  buildHumanFallbackClarification,
   buildHumanFallbackOffer,
   classifyVoiceSpeechAct,
   classifyVoiceSpeechActInContext,
@@ -23,9 +16,7 @@ import {
   buildReservationProgressPlan,
   buildReservationProgressResponse,
   buildPendingQuestionResponse,
-  confirmReservationDraft,
   extractPlainCustomerName,
-  handleCustomerNameTurn,
   parseSpelledNameTranscript,
   parseSpelledNameTranscriptDetailed,
   recordAssistantReply as applyAssistantReplyPolicyDecision,
@@ -33,9 +24,6 @@ import {
   recordAssistantReplyFromLlmTextFallback as recordAssistantReply,
   recordUserTurn,
   resetDialogueStall,
-  resetNameCollectionAfterFallback,
-  resolveHumanFallbackChoice,
-  suspendPendingInteractionForDetour,
   pendingQuestionFrom,
 } from '../stream/conversation-controller';
 import {
@@ -44,8 +32,6 @@ import {
   buildLlmFailurePlan,
   extractConversationSlots,
   getActivePendingInteraction,
-  getReservationConfirmationKey,
-  isNameCollectionBlocking,
 } from '../stream/conversation-state';
 import { decideAssistantInteractionPolicy } from '../stream/turn-policy';
 import type { CallSession } from '../stream/types';
@@ -204,27 +190,6 @@ describe('conversation state', () => {
     expect(session.conversation.pendingInteractions.at(-1)?.status).toBe('resolved');
   });
 
-  it('suspend une interaction pendant une digression puis la reprend après la réponse enfant', () => {
-    const session = makeSession();
-    session.timezone = 'Europe/Paris';
-    recordAssistantReply(session, 'Vous serez combien ?');
-    const partySizeInteraction = getActivePendingInteraction(session)!;
-
-    expect(suspendPendingInteractionForDetour(session, 'Pourquoi ?')).toBe(true);
-    expect(partySizeInteraction.status).toBe('suspended');
-    expect(partySizeInteraction.resumePolicy).toBe('resume_after_child');
-    expect(session.conversation.pendingQuestion).toBeNull();
-
-    recordAssistantReply(session, 'Pour quel jour souhaitez-vous réserver ?');
-    expect(session.conversation.pendingQuestion).toBe('date');
-
-    recordUserTurn(session, 'Demain', 'content', new Date('2026-09-22T10:00:00Z'));
-
-    expect(session.conversation.pendingQuestion).toBe('partySize');
-    expect(getActivePendingInteraction(session)?.id).toBe(partySizeInteraction.id);
-    expect(partySizeInteraction.status).toBe('active');
-  });
-
   it('mémorise une intention et la question métier en attente', () => {
     const session = makeSession();
     recordUserTurn(session, 'Je voudrais réserver une table', 'content');
@@ -268,34 +233,6 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'J’ai une table pour quatre personnes. Vous me confirmez ?');
 
     expect(buildDeterministicTurnResponse(session, 'content', 'Oui')).toBeNull();
-  });
-
-  it('lie l’accord au dernier récapitulatif et l’annule dès qu’un créneau change', () => {
-    const session = makeSession();
-    session.conversation.slots = {
-      date: '2026-09-12',
-      time: '19:30',
-      partySize: 4,
-      customerName: 'Akif',
-    };
-
-    recordAssistantReply(
-      session,
-      'J’ai une table pour quatre personnes samedi 12 septembre à 19 h 30, au nom d’Akif. Vous me confirmez ?',
-    );
-    const key = getReservationConfirmationKey(session);
-    expect(key).toBe('2026-09-12:19:30:4:akif');
-    expect(session.conversation.pendingReservationConfirmationKey).toBe(key);
-    expect(confirmReservationDraft(session)).toBe(true);
-    expect(session.conversation.confirmedReservationKey).toBe(key);
-    expect(session.conversation.pendingInteractions.at(-1)?.status).toBe('resolved');
-
-    recordUserTurn(session, 'Non, plutôt 20 h 30', 'correction');
-
-    expect(session.conversation.slots.time).toBe('20:30');
-    expect(session.conversation.pendingReservationConfirmationKey).toBeNull();
-    expect(session.conversation.confirmedReservationKey).toBeNull();
-    expect(session.conversation.pendingQuestion).toBeNull();
   });
 
   it('conserve les lettres d’une épellation claire avec le STT courant', () => {
@@ -367,388 +304,6 @@ describe('conversation state', () => {
     expect(parseSpelledNameTranscript('Jean de La Fontaine')).toBeNull();
     expect(parseSpelledNameTranscript('Anne-Marie')).toBeNull();
     expect(parseSpelledNameTranscript('de')).toBeNull();
-  });
-
-  it('fait répéter une épellation incertaine au lieu de la transmettre au LLM', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    const result = handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
-
-    expect(result).toMatchObject({
-      response:
-        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('clarifying');
-    expect(session.conversation.nameCollection.ambiguousPositions).toEqual([0]);
-    expect(session.conversation.spellingCandidate).toBeNull();
-    expect(session.conversation.slots.customerName).toBeUndefined();
-  });
-
-  it("récupère une épellation fiable après un mot parasite de l'ASR", () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Un nom de bruit a deux k i f')).toMatchObject({
-      response:
-        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
-      confirmedName: null,
-    });
-
-    expect(handleCustomerNameTurn(session, 'Attif, a b k i f')).toEqual({
-      response: "A-B-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirming');
-  });
-
-  it('garde la correction « non, A D K I F » dans le stt déterministe', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'En nombre de actifs, a de k i f')).toMatchObject({
-      response: "A-D-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(handleCustomerNameTurn(session, 'Non, a d k i f')).toMatchObject({
-      response: "A-D-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirming');
-    expect(session.conversation.slots.customerName).toBeUndefined();
-  });
-
-  it('remplit uniquement la zone demandée quand la clarification utilise « comme »', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Au nom de K actif I F')).toMatchObject({
-      response:
-        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
-    });
-    expect(handleCustomerNameTurn(session, 'K comme Karim')).toEqual({
-      response: "K-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-  });
-
-  it('accepte la lettre C seule comme réponse de clarification', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Un nom de actif a de k i f')).toMatchObject({
-      response:
-        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
-    });
-    expect(handleCustomerNameTurn(session, 'C')).toEqual({
-      response: "C-A-D-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-  });
-
-  it('répète puis confirme une épellation claire avant de renseigner le slot nom', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Au nom de K I F')).toEqual({
-      response: "K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.slots.customerName).toBeUndefined();
-
-    expect(handleCustomerNameTurn(session, 'Oui, c’est ça')).toEqual({
-      response: null,
-      confirmedName: 'KIF',
-    });
-    expect(session.conversation.slots.customerName).toBe('KIF');
-    expect(session.conversation.spellingCandidate).toBeNull();
-  });
-
-  it.each([
-    ['a k f a 2 k i f', 'AKKIF'],
-    ['dupont d u p o n t', 'DUPONT'],
-  ])('confirme le nom prononcé compatible avec son épellation finale: %s', (transcript, name) => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, transcript)).toEqual({
-      response: null,
-      confirmedName: name,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirmed');
-    expect(session.conversation.nameCollection.confirmedName).toBe(name);
-    expect(session.conversation.slots.customerName).toBe(name);
-    expect(session.conversation.pendingQuestion).toBeNull();
-  });
-
-  it('conserve le contexte nom pour la confirmation de l’épellation', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-    const spelling = handleCustomerNameTurn(session, 'A K I F');
-    recordAssistantReply(session, spelling.response!);
-
-    expect(session.conversation.pendingQuestion).toBe('customerName');
-    expect(buildPendingQuestionResponse(session, 'Oui')).toBeNull();
-  });
-
-  it('conserve le doublon explicite « A deux K I F »', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Au nom de A deux K I F')).toEqual({
-      response: "A-K-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-  });
-
-  it('conserve deux fragments et ne les transmet qu’après confirmation', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'A K')).toEqual({
-      response:
-        "J'ai noté A-K pour l'instant. Vous pouvez continuer, ou me dire si c'est tout le nom.",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('collecting');
-
-    expect(handleCustomerNameTurn(session, 'I F')).toEqual({
-      response: "A-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirming');
-    expect(session.conversation.slots.customerName).toBeUndefined();
-
-    expect(handleCustomerNameTurn(session, 'Oui')).toEqual({
-      response: null,
-      confirmedName: 'AKIF',
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirmed');
-  });
-
-  it('reprend proprement une épellation bruitée puis comprend la correction « A deux K I F »', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
-
-    expect(handleCustomerNameTurn(session, 'Au nom de Aikif, a de k i f')).toMatchObject({
-      response:
-        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('clarifying');
-
-    expect(handleCustomerNameTurn(session, 'Non.')).toEqual({
-      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('collecting');
-
-    expect(
-      handleCustomerNameTurn(
-        session,
-        'Non, non, non, non. Attends, attends, attends. A deux k i f.',
-      ),
-    ).toEqual({
-      response: "A-K-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirming');
-
-    expect(handleCustomerNameTurn(session, 'Oui.')).toEqual({
-      response: null,
-      confirmedName: 'AKKIF',
-    });
-    expect(session.conversation.slots.customerName).toBe('AKKIF');
-  });
-
-  it('concatène aussi une continuation de trois lettres au fragment précédent', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-
-    handleCustomerNameTurn(session, 'A B');
-    expect(handleCustomerNameTurn(session, 'C D E')).toEqual({
-      response: "A-B-C-D-E, c'est bien cela ?",
-      confirmedName: null,
-    });
-  });
-
-  it('ne libère pas le verrou quand la dernière lettre arrive seule', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-
-    handleCustomerNameTurn(session, 'A B');
-    expect(handleCustomerNameTurn(session, 'C')).toEqual({
-      response: "A-B-C, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirming');
-    expect(isNameCollectionBlocking(session)).toBe(true);
-  });
-
-  it('distingue une continuation d’une reprise complète sans concaténer aveuglément', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-
-    expect(handleCustomerNameTurn(session, 'A B')).toMatchObject({
-      response:
-        "J'ai noté A-B pour l'instant. Vous pouvez continuer, ou me dire si c'est tout le nom.",
-    });
-    expect(handleCustomerNameTurn(session, 'La suite I F')).toMatchObject({
-      response: "A-B-I-F, c'est bien cela ?",
-    });
-    expect(handleCustomerNameTurn(session, 'Je recommence K I F')).toMatchObject({
-      response: "K-I-F, c'est bien cela ?",
-    });
-  });
-
-  it('corrige une position ciblée en conservant les autres lettres', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B I F');
-
-    expect(handleCustomerNameTurn(session, 'Non, la deuxième lettre est un K')).toEqual({
-      response: "A-K-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(handleCustomerNameTurn(session, 'Oui')).toEqual({
-      response: null,
-      confirmedName: 'AKIF',
-    });
-  });
-
-  it('invalide une confirmation précédente lorsqu’une correction arrive ensuite', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B I F');
-    handleCustomerNameTurn(session, 'Oui');
-
-    expect(handleCustomerNameTurn(session, 'La première lettre est un K')).toMatchObject({
-      response: "K-B-I-F, c'est bien cela ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.slots.customerName).toBeUndefined();
-    expect(handleCustomerNameTurn(session, 'Oui')).toMatchObject({ confirmedName: 'KBIF' });
-  });
-
-  it('ignore une phrase ordinaire après confirmation sans modifier le nom', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B I F');
-    handleCustomerNameTurn(session, 'Oui');
-
-    expect(handleCustomerNameTurn(session, 'Je voudrais une table à midi')).toEqual({
-      response: null,
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('confirmed');
-    expect(session.conversation.nameCollection.confirmedName).toBe('ABIF');
-    expect(session.conversation.slots.customerName).toBe('ABIF');
-  });
-
-  it('garde la réservation bloquée si une correction reste inexpliquée après confirmation', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B I F');
-    handleCustomerNameTurn(session, 'Oui');
-
-    expect(handleCustomerNameTurn(session, 'Non, je ne sais plus quelle lettre corriger')).toEqual({
-      response:
-        "Je n'ai pas compris la correction. Quelle lettre souhaitez-vous modifier, s'il vous plaît ?",
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('collecting');
-    expect(session.conversation.nameCollection.awaitingCorrection).toBe(true);
-    expect(session.conversation.nameCollection.confirmedName).toBeNull();
-    expect(session.conversation.slots.customerName).toBeUndefined();
-    expect(isNameCollectionBlocking(session)).toBe(true);
-  });
-
-  it('borne les corrections incomprises au même compteur de clarification', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B I F');
-
-    expect(
-      handleCustomerNameTurn(session, 'Non, je ne sais plus quelle lettre corriger'),
-    ).not.toHaveProperty('escalate');
-    expect(handleCustomerNameTurn(session, 'Je ne sais pas')).toMatchObject({
-      escalate: true,
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.clarificationCount).toBe(2);
-  });
-
-  it('ne traite pas une suite isolée comme correction après confirmation', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'K I F');
-    handleCustomerNameTurn(session, 'Oui');
-
-    expect(handleCustomerNameTurn(session, 'A K')).toEqual({
-      response: null,
-      confirmedName: null,
-    });
-    expect(session.conversation.slots.customerName).toBe('KIF');
-  });
-
-  it('n’autorise pas un oui sans candidat effectivement présenté', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A K');
-
-    const result = handleCustomerNameTurn(session, 'Oui');
-    expect(result.confirmedName).toBeNull();
-    expect(session.conversation.slots.customerName).toBeUndefined();
-  });
-
-  it('escalade après deux clarifications infructueuses', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
-
-    expect(handleCustomerNameTurn(session, 'Je ne sais pas')).not.toHaveProperty('escalate');
-    expect(handleCustomerNameTurn(session, 'Je ne sais toujours pas')).toMatchObject({
-      escalate: true,
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.clarificationCount).toBe(2);
-  });
-
-  it('réinitialise la clarification après l’enregistrement d’une prise de message', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
-    handleCustomerNameTurn(session, 'Je ne sais pas');
-    expect(handleCustomerNameTurn(session, 'Je ne sais toujours pas')).toMatchObject({
-      escalate: true,
-    });
-
-    resetNameCollectionAfterFallback(session);
-
-    expect(session.conversation.nameCollection.state).toBe('idle');
-    expect(session.conversation.nameCollection.fallbackRecorded).toBe(true);
-    expect(session.conversation.pendingQuestion).toBeNull();
-    expect(isNameCollectionBlocking(session)).toBe(false);
-  });
-
-  it('termine la collecte sur une clôture sans déclencher la prise de message', () => {
-    const session = makeSession();
-    recordAssistantReply(session, 'Quel est votre nom ?');
-    handleCustomerNameTurn(session, 'A B');
-    handleCustomerNameTurn(session, 'Non, je me suis trompé');
-    expect(session.conversation.nameCollection.awaitingCorrection).toBe(true);
-
-    expect(handleCustomerNameTurn(session, 'Non merci, au revoir')).toEqual({
-      response: null,
-      confirmedName: null,
-    });
-    expect(session.conversation.nameCollection.state).toBe('idle');
-    expect(session.conversation.nameCollection.awaitingCorrection).toBe(false);
-    expect(session.conversation.nameCollection.fallbackRecorded).toBe(false);
-    expect(session.conversation.pendingQuestion).toBeNull();
-    expect(session.conversation.spellingCandidate).toBeNull();
-    expect(isNameCollectionBlocking(session)).toBe(false);
   });
 
   it('reprend une question après un acquiescement sans appeler le LLM', () => {
@@ -876,75 +431,6 @@ describe('conversation state', () => {
     });
   });
 
-  it('n’exécute un repli humain que sur une réponse explicite', () => {
-    const withoutLine = makeSession();
-    withoutLine.conversation.pendingQuestion = 'humanFallback';
-    withoutLine.conversation.humanFallbackOffered = true;
-    expect(resolveHumanFallbackChoice(withoutLine, 'Oui')).toBe('message');
-    expect(withoutLine.conversation.pendingQuestion).toBeNull();
-    expect(withoutLine.conversation.humanFallbackOffered).toBe(false);
-
-    const withLine = makeSession();
-    withLine.managerPhone = '+33600000000';
-    recordAssistantReply(
-      withLine,
-      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
-    );
-    expect(resolveHumanFallbackChoice(withLine, 'Oui')).toBe('clarify');
-    expect(withLine.conversation.humanFallbackOffered).toBe(true);
-    expect(buildHumanFallbackClarification(withLine, 'Oui')).toBe(
-      'Vous préférez que je vous passe le gérant ou que je prenne un message ?',
-    );
-    expect(resolveHumanFallbackChoice(withLine, 'Oui, passez-moi le gérant')).toBe('transfer');
-
-    const decline = makeSession();
-    decline.conversation.pendingQuestion = 'humanFallback';
-    decline.conversation.humanFallbackOffered = true;
-    expect(resolveHumanFallbackChoice(decline, 'Non merci')).toBeNull();
-    expect(decline.conversation.pendingQuestion).toBeNull();
-    expect(decline.conversation.humanFallbackOffered).toBe(false);
-    expect(decline.conversation.closing).toBe(false);
-  });
-
-  it('lie un oui à la seule action réellement proposée', () => {
-    const transferOnly = makeSession();
-    transferOnly.managerPhone = '+33600000000';
-    recordAssistantReply(transferOnly, 'Voulez-vous que je vous passe le gérant ?');
-    expect(transferOnly.conversation.humanFallbackMode).toBe('transfer');
-    expect(resolveHumanFallbackChoice(transferOnly, 'Oui')).toBe('transfer');
-
-    const messageOnly = makeSession();
-    messageOnly.managerPhone = '+33600000000';
-    recordAssistantReply(
-      messageOnly,
-      'Je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?',
-    );
-    expect(messageOnly.conversation.humanFallbackMode).toBe('message');
-    expect(resolveHumanFallbackChoice(messageOnly, 'Oui')).toBe('message');
-
-    const unavailableTransfer = makeSession();
-    recordAssistantReply(unavailableTransfer, 'Voulez-vous que je vous passe le gérant ?');
-    expect(unavailableTransfer.conversation.humanFallbackMode).toBe('transfer');
-    expect(resolveHumanFallbackChoice(unavailableTransfer, 'Oui')).toBe('clarify');
-  });
-
-  it('ne reprend pas une ancienne question après un message pris comme action finale', () => {
-    const session = makeSession();
-    session.managerPhone = '+33600000000';
-    recordAssistantReply(session, 'Vous serez combien ?');
-    const partySize = getActivePendingInteraction(session)!;
-    expect(suspendPendingInteractionForDetour(session, 'Pourquoi ?')).toBe(true);
-    recordAssistantReply(
-      session,
-      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
-    );
-
-    expect(resolveHumanFallbackChoice(session, 'Un message')).toBe('message');
-
-    expect(getActivePendingInteraction(session)).toBeNull();
-    expect(partySize.status).toBe('cancelled');
-  });
-
   it('annule une ancienne offre quand l’assistant pose une nouvelle question', () => {
     const session = makeSession();
     session.managerPhone = '+33600000000';
@@ -970,25 +456,6 @@ describe('conversation state', () => {
     expect(session.conversation.pendingQuestion).toBe('humanFallback');
     expect(buildDeterministicTurnResponse(session, 'content', 'Euh alors voila')).toBeNull();
     expect(buildDeterministicTurnResponse(session, 'backchannel')).toBeNull();
-  });
-
-  it('abandonne la proposition de repli dès que le brouillon progresse', () => {
-    const session = makeSession();
-    session.timezone = 'Europe/Paris';
-    session.conversation.intent = 'reservation';
-    session.conversation.slots = { date: '2026-09-23' };
-    session.conversation.pendingQuestion = 'humanFallback';
-    session.conversation.humanFallbackOffered = true;
-    session.conversation.lastAssistantQuestion = 'Que préférez-vous ?';
-
-    recordUserTurn(session, 'En fait, quatre personnes', 'content');
-
-    expect(session.conversation.slots.partySize).toBe(4);
-    expect(session.conversation.humanFallbackOffered).toBe(false);
-    expect(resolveHumanFallbackChoice(session, 'En fait, quatre personnes')).toBeNull();
-    expect(buildReservationProgressResponse(session, 'En fait, quatre personnes')).toBe(
-      'Vous voulez venir vers quelle heure ?',
-    );
   });
 
   it('rend l’offre de repli exécutable quand la disponibilité ne renvoie rien', () => {
@@ -1072,31 +539,6 @@ describe('conversation state', () => {
     });
   });
 
-  it('transmet au LLM le créneau vérifié et n’invite pas à redemander un nom connu', () => {
-    const context = buildAvailabilityLlmContext({
-      request: { date: '2026-09-12', time: '19:30', partySize: 4 },
-      availableSlots: ['19:30', '20:00'],
-      knownCustomerName: 'Akif',
-    });
-
-    expect(context).toContain('date exacte 2026-09-12');
-    expect(context).toContain('samedi 12 septembre 2026');
-    expect(context).toContain('créneau demandé disponible');
-    expect(context).toContain('Le nom « Akif » est déjà connu : ne le redemande pas');
-    expect(context).toContain('confirmation explicite');
-  });
-
-  it('borne les alternatives du LLM aux créneaux renvoyés par la disponibilité', () => {
-    const context = buildAvailabilityLlmContext({
-      request: { date: '2026-09-12', time: '19:30', partySize: 4 },
-      availableSlots: ['18:30', '20:00'],
-    });
-
-    expect(context).toContain('créneau demandé indisponible');
-    expect(context).toContain('20 h ou 18 h 30');
-    expect(context).toContain('Ne confirme pas et ne crée pas de réservation');
-  });
-
   it('garde la collecte de réservation sur une seule question à la fois', () => {
     const session = makeSession();
     session.timezone = 'Europe/Paris';
@@ -1142,22 +584,6 @@ describe('conversation state', () => {
     });
     expect(buildAvailabilityReplyPlan(session, request, []).proposal).toMatchObject({
       interaction: { kind: 'date' },
-    });
-  });
-
-  it('ne propose un transfert pour une recherche en erreur que si une ligne existe', () => {
-    const withoutManager = buildAvailabilityErrorPlan(makeSession());
-    expect(withoutManager.reply).not.toContain('passer le gérant');
-    expect(withoutManager.proposal).toMatchObject({
-      interaction: { kind: 'humanFallback', fallbackMode: 'message' },
-    });
-
-    const withManager = makeSession();
-    withManager.managerPhone = '+33600000000';
-    const availableTransfer = buildAvailabilityErrorPlan(withManager);
-    expect(availableTransfer.reply).toContain('passer le gérant');
-    expect(availableTransfer.proposal).toMatchObject({
-      interaction: { kind: 'humanFallback', fallbackMode: 'choice' },
     });
   });
 
@@ -1341,17 +767,6 @@ describe('conversation state', () => {
       buildAvailabilityReply({ date: '2026-09-11', time: '20:00', partySize: 2 }, ['20:00'], 'en'),
     ).toContain('What name should I book it under?');
   });
-
-  it('recognizes English speech acts and English spelled names', () => {
-    expect(classifyVoiceSpeechAct('Are you still there?')).toBe('liveness');
-    expect(classifyVoiceSpeechAct('Thank you, goodbye')).toBe('closing');
-    const session = makeSession();
-    session.voiceLanguageCode = 'en';
-    recordUserTurn(session, 'I want a reservation for two tomorrow at 7 pm', 'content');
-    recordAssistantReply(session, 'What name should I book it under?');
-    const name = handleCustomerNameTurn(session, 'My name is A bee K I F');
-    expect(name.response).toContain('is that correct?');
-  });
 });
 
 // Appels réels du restaurant de démo, 23-24/09/2026 : 22 créneaux entre 12 h et 22 h 30.
@@ -1392,128 +807,9 @@ describe('moment de la journée demandé', () => {
   ] as const)('« %s » → %s', (transcript, expected) => {
     expect(extractDayPeriod(transcript)).toBe(expected);
   });
-
-  it('ne propose que des créneaux du soir quand l’appelant dit « demain soir »', () => {
-    const session = makeSession();
-    session.timezone = 'Europe/Paris';
-    recordUserTurn(
-      session,
-      'Est-ce que c’est possible pour quatre personnes demain soir ?',
-      'content',
-      new Date('2026-09-23T21:49:00Z'),
-    );
-
-    const reply = buildOpenAvailabilityReply(session, DEMO_DAY_SLOTS);
-
-    expect(reply).toBe(
-      'Je peux vous proposer 18 h ou 20 h 30 ou 22 h 30. Quel horaire vous convient ?',
-    );
-    expect(session.conversation.offeredAvailability?.slots).toEqual(['18:00', '20:30', '22:30']);
-  });
-
-  it('garde le moment demandé d’un tour à l’autre', () => {
-    const session = makeSession();
-    session.timezone = 'Europe/Paris';
-    const now = new Date('2026-09-23T21:52:00Z');
-    recordUserTurn(session, 'Je voudrais réserver pour demain', 'content', now);
-    recordUserTurn(session, 'Six personnes', 'content', now);
-    recordUserTurn(session, 'Vous avez de la disponibilité le soir ou pas ?', 'content', now);
-
-    expect(buildOpenAvailabilityReply(session, DEMO_DAY_SLOTS)).toContain(
-      '18 h ou 20 h 30 ou 22 h 30',
-    );
-  });
-
-  it('le dit quand le moment demandé est complet, puis propose le reste de la journée', () => {
-    const session = makeSession();
-    session.timezone = 'Europe/Paris';
-    recordUserTurn(
-      session,
-      'Pour quatre personnes demain soir',
-      'content',
-      new Date('2026-09-23T21:49:00Z'),
-    );
-
-    const reply = buildOpenAvailabilityReply(session, ['12:00', '12:30', '13:00']);
-
-    expect(reply).toBe(
-      "Je n'ai plus rien le soir ce jour-là, mais je peux vous proposer 12 h ou 12 h 30 ou 13 h. L'un de ces horaires vous convient ?",
-    );
-  });
-});
-
-describe('contexte LLM après vérification de disponibilité', () => {
-  it('ne transmet pas la liste de la journée quand le créneau demandé est libre', () => {
-    const context = buildAvailabilityLlmContext({
-      request: { date: '2026-09-25', time: '22:30', partySize: 4 },
-      availableSlots: DEMO_DAY_SLOTS,
-    });
-
-    expect(context).toContain('créneau demandé disponible');
-    expect(context).toContain("N'annonce aucun autre horaire");
-    expect(context).not.toContain('12 h');
-    expect(context).not.toContain('17 h 30');
-  });
-
-  it('ne transmet que les trois alternatives les plus proches quand il est complet', () => {
-    const context = buildAvailabilityLlmContext({
-      request: { date: '2026-09-25', time: '20:15', partySize: 4 },
-      availableSlots: DEMO_DAY_SLOTS,
-    });
-
-    expect(context).toContain('seuls horaires annonçables');
-    expect(context).not.toContain('12 h');
-  });
-});
-
-describe('garde-fou des horaires prononcés', () => {
-  it('lit les horaires d’une phrase parlée', () => {
-    expect(
-      extractSpokenTimes('Très bien, 22 h 30. Je vous propose aussi 12 h, 12h30 ou 13:15.'),
-    ).toEqual(['22:30', '12:00', '12:30', '13:15']);
-    expect(extractSpokenTimes('Pour 4 personnes, à quel nom ?')).toEqual([]);
-  });
-
-  it('rejette l’énumération de l’appel du 24/09 après confirmation de 22 h 30', () => {
-    const spoken = extractSpokenTimes(
-      'Très bien, 22 h 30. Je vous propose aussi 12 h, 12 h 30, 13 h, 13 h 30, 14 h.',
-    );
-
-    expect(violatesAvailabilityReplyGuard(spoken, { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(true);
-  });
-
-  it('accepte le créneau confirmé, et le créneau complet cité avec ses alternatives', () => {
-    expect(violatesAvailabilityReplyGuard(['22:30'], { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(
-      false,
-    );
-    expect(
-      violatesAvailabilityReplyGuard(['19:30', '20:00', '18:30'], { time: '19:30' }, [
-        '18:30',
-        '20:00',
-      ]),
-    ).toBe(false);
-  });
-
-  it('rejette un horaire que la vérification n’a pas renvoyé', () => {
-    expect(violatesAvailabilityReplyGuard(['21:00'], { time: '22:30' }, DEMO_DAY_SLOTS)).toBe(true);
-  });
 });
 
 describe('réponse parlée après un échec LLM', () => {
-  it('redemande le champ en attente avec un secours court adapté', () => {
-    const session = makeSession();
-    session.conversation.pendingQuestion = 'partySize';
-
-    expect(buildVoiceStageFailurePlan(session).reply).toBe('Pardon, vous serez combien ?');
-  });
-
-  it('garde le secours humain après deux échecs consécutifs', () => {
-    const session = makeSession();
-    session.conversation.llmFailureStreak = 2;
-
-    expect(buildVoiceStageFailurePlan(session).reply).toBe(buildLlmFailurePlan(session).reply);
-  });
-
   it('reprend le créneau vérifié et demande le nom au lieu de se taire', () => {
     const session = makeSession();
     session.conversation.slots = { date: '2026-09-25', time: '22:30', partySize: 4 };

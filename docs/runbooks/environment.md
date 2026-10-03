@@ -193,7 +193,7 @@ VOICE_LLM_HEDGE_MS="700"
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
-Secours du tour structuré (restaurants de `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`) :
+Secours du tour structuré :
 si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
 réseau, circuit ouvert), la même requête JSON Schema stricte part vers
 OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
@@ -352,10 +352,10 @@ VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 # Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
 # ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
 DEEPGRAM_API_HOST="api.deepgram.com"
-# Parcours vocal moderne par défaut : tour structuré, Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés
-# Deepgram et écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false
-# (seules les listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion ramène un restaurant à l'ancien
-# chemin (outils, Scribe) mais n'annule pas ses listes explicites. Le hedging suit le tour structuré.
+# Parcours vocal moderne par défaut : Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés Deepgram et
+# écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false (seules les
+# listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion retire ces trois réglages à un restaurant
+# (Scribe, sans Dialogue V2) mais n'annule pas ses listes explicites. Le tour structuré est toujours actif.
 VOICE_V2_DEFAULT="false"
 VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
@@ -501,6 +501,15 @@ Latence d'environ 4 s par tour, sans importance pour un job hebdomadaire. Les ap
 coût. Ces annotations restent des
 jugements de modèle et ne constituent pas une vérité humaine.
 
+> **Retiré le 3 octobre 2026.** Le shadow TurnPlan in-band, l'autorité TurnPlan, les tours
+> différés et le taux de shadow déterministe reposaient sur le mode à outils : leur code est
+> supprimé. `VOICE_TURN_PLAN_SHADOW_ENABLED`, `VOICE_TURN_PLAN_AUTHORITY_ENABLED`,
+> `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` et `VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` n'ont
+> plus d'effet et les métriques `sokar_voice_turn_plan_*` ne sont plus alimentées par les appels.
+> Les paragraphes qui suivent décrivent l'ancien comportement et valent pour l'historique des
+> mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
+> `SPECULATIVE_LLM_ENABLED` / `SPECULATIVE_LLM_RESTAURANT_IDS` (pré-réflexion du chemin à outils).
+
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
 Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse
@@ -547,11 +556,11 @@ continue de comparer le plan à l'état déterministe seul. Décisions comptées
 `sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
 l'accord par dimension sur des appels réels.
 
-`VOICE_STRUCTURED_TURN_RESTAURANT_IDS` (IDs séparés par des virgules ; vide = aucun) fait
-passer les restaurants listés sur le **tour structuré** : un seul appel au modèle, en JSON
-Schema strict, comprend le tour (interprétation, brouillon, attente, action) et formule la
-réponse ; `say` est lu en streaming. Aucune règle lexicale du chemin historique ne
-s'applique à ces restaurants. Le code valide le format et la plausibilité des valeurs
+Le **tour structuré** est le seul parcours de dialogue vocal : le mode à outils (appel de
+fonctions, extracteurs lexicaux, relances déterministes, fillers, TurnPlan en autorité ou en
+shadow in-band) a été supprimé le 3 octobre 2026, et `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`
+n'existe plus. Un seul appel au modèle, en JSON Schema strict, comprend le tour (interprétation,
+brouillon, attente, action) et formule la réponse ; `say` est lu en streaming. Le code valide le format et la plausibilité des valeurs
 (date dans l'horizon, heure, couverts, nom), exécute les actions autorisées
 (disponibilité réelle ; réservation seulement après un récapitulatif lu au tour précédent
 et accepté, sur un créneau vérifié ; message ; transfert ; fin d'appel) et rend leur

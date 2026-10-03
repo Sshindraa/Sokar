@@ -14,7 +14,6 @@ import {
   STT_AUDIO_BUFFER_MAX,
   handleSttMessage,
   handleNormalizedSttMessage,
-  setSttSpellingProfile,
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
@@ -628,15 +627,6 @@ describe('handleSttMessage', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  it('active le profil d’épellation sans envoyer de commande non supportée par Scribe', () => {
-    const session = makeSession();
-    const ws = makeWsMock();
-    session.sttWs = ws;
-    setSttSpellingProfile(session, true);
-    expect(session.sttTurnConfig?.spellingActive).toBe(true);
-    expect(ws.send).not.toHaveBeenCalled();
-  });
-
   describe('fin de tour hybride', () => {
     beforeEach(() => {
       process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
@@ -679,16 +669,6 @@ describe('handleSttMessage', () => {
       expect(isSmartEndpointEnabled(session)).toBe(true);
       delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
       expect(isSmartEndpointEnabled(session)).toBe(false);
-    });
-
-    it('utilise un silence Scribe de 0,5 s seulement quand le flag est actif', () => {
-      const session = makeSession();
-      setSttSpellingProfile(session, false);
-      expect(session.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.5);
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      const legacy = makeSession({ callControlId: 'cc-stt-legacy' });
-      setSttSpellingProfile(legacy, false);
-      expect(legacy.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.95);
     });
 
     it('envoie immédiatement une phrase complète', () => {

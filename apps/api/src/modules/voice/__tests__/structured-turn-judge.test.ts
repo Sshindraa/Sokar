@@ -133,7 +133,6 @@ function fixture() {
     }),
     handoffToManager: vi.fn().mockResolvedValue('Je vous passe le gérant.'),
     recordCallerMessage: vi.fn().mockResolvedValue('Message enregistré.'),
-    processUtteranceStreaming: vi.fn(),
   } as unknown as CallSessionManager;
   return { session, mgr, outputs, judgeCalls, judgeScript };
 }
@@ -145,7 +144,6 @@ function spoken(): string[] {
 beforeEach(() => {
   __resetMetrics();
   vi.clearAllMocks();
-  vi.stubEnv('VOICE_STRUCTURED_TURN_RESTAURANT_IDS', RESTAURANT_ID);
   vi.stubEnv('VOICE_TURN_JUDGE_RESTAURANT_IDS', RESTAURANT_ID);
   return () => vi.unstubAllEnvs();
 });

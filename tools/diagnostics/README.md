@@ -10,7 +10,6 @@ Non exécutés en CI — usage développeur local uniquement.
 | `test-stt-tts.mjs`              | Valide les 3 APIs vocales (ElevenLabs Scribe STT, Cartesia TTS, Cerebras LLM) indépendamment | `pnpm test:diagnostic`                                 |
 | `benchmark-cartesia-voices.mjs` | Génère un corpus français/anglais pour comparer les voix Sonic 3.6                           | `node tools/diagnostics/benchmark-cartesia-voices.mjs` |
 | `dogfood-sokar.sh`              | Dogfood QA du site/dashboard via Hermes CLI                                                  | `pnpm dogfood:sokar`                                   |
-| `simulate-voice-call.ts`        | Simule un appel vocal contre l'API locale (`/api/test/simulate-call`)                        | `pnpm test:voice:simulate`                             |
 | `test-mcp-client.ts`            | Client de test pour les endpoints MCP de l'API (depuis le contexte `apps/api`)               | `pnpm test:mcp:client`                                 |
 | `sokar-mcp-stdio.ts`            | Bridge MCP stdio pour Claude Desktop (depuis le contexte `apps/api`)                         | `pnpm test:mcp:stdio`                                  |
 

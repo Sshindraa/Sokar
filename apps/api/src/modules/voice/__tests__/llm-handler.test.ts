@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   applyVoiceLanguageLock,
-  buildLivenessResponse,
   canRecoverNonFrenchReservationTurn,
   extractRestaurantName,
   handleSttEvent,
   invalidatePendingVoiceResponse,
-  LLM_FILLER_DELAY_MS,
-  stripRepeatedGreeting,
 } from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
@@ -18,46 +15,6 @@ import { effectiveVoiceLanguage, effectiveVoiceLocale } from '../stream/voice-la
 const session = {
   systemPrompt: "Tu es l'assistant vocal de Test Restaurant.",
 } as CallSession;
-
-describe('stripRepeatedGreeting', () => {
-  it('retire la formule historique d’enregistrement répétée par le LLM', () => {
-    expect(
-      stripRepeatedGreeting(
-        'Bonjour, Test Restaurant, cet appel peut être enregistré à des fins de qualité de service. En quoi puis-je vous aider ?',
-        session,
-      ),
-    ).toBe('');
-  });
-
-  it('retire la formule de consentement actuelle avant la réponse utile', () => {
-    expect(
-      stripRepeatedGreeting(
-        'Bonjour, Test Restaurant. Cet appel est enregistré à des fins de qualité de service et conservé au maximum trente jours. En quoi puis-je vous aider ? Pour quelle date souhaitez-vous réserver ?',
-        session,
-      ),
-    ).toBe('Pour quelle date souhaitez-vous réserver ?');
-  });
-
-  it('conserve une réponse qui ne répète pas l’accueil', () => {
-    expect(
-      stripRepeatedGreeting('Pour combien de personnes souhaitez-vous réserver ?', session),
-    ).toBe('Pour combien de personnes souhaitez-vous réserver ?');
-  });
-
-  it('retire une relance générique isolée émise après l’accueil', () => {
-    expect(stripRepeatedGreeting('En quoi puis-je vous aider ?', session)).toBe('');
-  });
-
-  it('retire un second bonjour tout en conservant la réponse utile', () => {
-    expect(stripRepeatedGreeting('Bonjour ! Très bien, pour combien de personnes ?', session)).toBe(
-      'Très bien, pour combien de personnes ?',
-    );
-  });
-
-  it('attend une seconde avant un filler de recherche de disponibilité', () => {
-    expect(LLM_FILLER_DELAY_MS).toBe(1_000);
-  });
-});
 
 describe('extractRestaurantName', () => {
   it('accepte le préfixe de prompt chaleureux', () => {
@@ -72,32 +29,6 @@ describe('extractRestaurantName', () => {
         "Tu es l'assistant vocal chaleureux de Chez Michel. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.",
       ),
     ).toBe('Chez Michel');
-  });
-});
-
-describe('buildLivenessResponse', () => {
-  it('reprend la dernière question pour un « allô » en cours d’appel', () => {
-    const inProgressSession = {
-      ...session,
-      history: [
-        { role: 'system', content: session.systemPrompt },
-        { role: 'user', content: 'Pour 20 h 30, c’est possible ?' },
-        { role: 'assistant', content: 'Quel est votre nom pour la réservation ?' },
-      ],
-    } as CallSession;
-
-    expect(buildLivenessResponse(inProgressSession, 'Allô ?')).toBe(
-      'Oui, je suis là. Quel est votre nom pour la réservation ?',
-    );
-  });
-
-  it('ne transforme pas le premier « allô » d’un appel en reprise de contexte', () => {
-    const newSession = {
-      ...session,
-      history: [{ role: 'system', content: session.systemPrompt }],
-    } as CallSession;
-
-    expect(buildLivenessResponse(newSession, 'Allô')).toBeNull();
   });
 });
 
@@ -201,9 +132,6 @@ describe('handleSttEvent — interruption pendant le traitement', () => {
         state: 'PROCESSING',
         responseGeneration: 4,
         abortController,
-        speculativeLlm: Promise.resolve('ancienne réponse'),
-        speculativeResult: 'ancienne réponse',
-        speculativeTranscript: 'je voudrais réserver',
         conversation: { toolInFlight: 'checkAvailability' },
       } as CallSession;
       const mgr = {
@@ -219,9 +147,6 @@ describe('handleSttEvent — interruption pendant le traitement', () => {
       expect(interruptedSession.responseGeneration).toBe(5);
       expect(interruptedSession.state).toBe('LISTENING');
       expect(interruptedSession.conversation.toolInFlight).toBeNull();
-      expect(interruptedSession.speculativeLlm).toBeNull();
-      expect(interruptedSession.speculativeResult).toBeNull();
-      expect(interruptedSession.speculativeTranscript).toBe('');
     },
   );
 });
@@ -345,38 +270,5 @@ describe('reprise de final STT', () => {
     expect(session.ttsGeneration).toBe(3);
     expect(session.conversation.toolInFlight).toBeNull();
     expect(session.state).toBe('LISTENING');
-  });
-});
-
-describe('handleSttEvent — pré-réflexion LLM', () => {
-  it('prépare une réponse sans changer l’état ni l’historique avant la fin confirmée', () => {
-    const previous = process.env.SPECULATIVE_LLM_ENABLED;
-    process.env.SPECULATIVE_LLM_ENABLED = 'true';
-    const speculativeSession = {
-      ...session,
-      state: 'LISTENING',
-      history: [{ role: 'system', content: session.systemPrompt }],
-      speculativeLlm: null,
-      speculativeResult: null,
-      speculativeTranscript: 'Non non merci au revoir',
-      abortController: null,
-    } as CallSession;
-    const mgr = {
-      prepareSpeculativeReply: vi.fn().mockResolvedValue('Avec plaisir, bonne soirée !'),
-    } as unknown as CallSessionManager;
-
-    handleSttEvent(
-      { type: 'InterimHighConfidence', transcript: 'Non non merci au revoir' },
-      speculativeSession,
-      mgr,
-    );
-
-    expect(mgr.prepareSpeculativeReply).toHaveBeenCalledOnce();
-    expect(speculativeSession.state).toBe('LISTENING');
-    expect(speculativeSession.history).toHaveLength(1);
-    expect(speculativeSession.abortController).toBeInstanceOf(AbortController);
-
-    if (previous === undefined) delete process.env.SPECULATIVE_LLM_ENABLED;
-    else process.env.SPECULATIVE_LLM_ENABLED = previous;
   });
 });

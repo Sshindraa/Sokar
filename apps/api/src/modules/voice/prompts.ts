@@ -66,16 +66,11 @@ export interface SystemPromptContext {
   giftCardMinimumAmount?: number | null;
   /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
   maxPartySize?: number;
-  /**
-   * Tour structuré : le modèle reçoit la base commune seule (identité, restaurant, ton). La section propre au mode
-   * à outils n'existe que pour les restaurants encore sur ce mode (voir isVoiceStructuredTurnEnabled).
-   */
-  structuredTurn?: boolean;
 }
 
 /**
- * Base commune aux deux modes : identité, date, ton et règles de conversation, horaires. Aucune mention
- * d'outil : le tour structuré (structured-turn/prompt.ts) décrit lui-même ses actions.
+ * Base du prompt : identité, date, ton et règles de conversation, horaires. Aucune mention d'outil :
+ * le tour structuré (structured-turn/prompt.ts) décrit lui-même ses actions.
  */
 function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
   // Optional first-utterance VIP/returning greeting injected by the pipeline
@@ -131,30 +126,6 @@ ${formatOpeningHours(ctx.openingHours)}
 `;
 }
 
-/** Consignes propres au mode à outils : inchangées, simplement séparées de la base commune. */
-function buildToolsSection(ctx: SystemPromptContext): string {
-  const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
-  return `RÈGLES DU MODE À OUTILS :
-- Dès que tu as la date, l'heure et le nombre de personnes, appelle checkAvailability immédiatement dans le même tour. Ne demande pas la permission et ne dis jamais « je vais vérifier » sans appeler l'outil.
-- Si le créneau demandé n'est pas disponible, tu ne proposes que des horaires explicitement renvoyés par checkAvailability. Si l'outil ne renvoie aucun créneau, propose le gérant ou la prise de message.
-- Pour les cartes cadeaux : le montant minimum est ${minimumGiftCardAmount}€. Tu refuses les montants inférieurs.
-- Tu peux guider l'achat d'une carte cadeau et envoyer un lien de paiement par SMS. Confirme le montant avec l'appelant. La carte est créée uniquement après le paiement en ligne.
-- Tu ne dois JAMAIS dicter le code cadeau. Tu dis : "Le lien de paiement vous sera envoyé par SMS au numéro indiqué."
-- La carte cadeau n'est pas utilisable par téléphone. Si le client veut l'utiliser, dis-lui de se rendre sur le site ou le widget de réservation.
-- Si le SMS n'est pas envoyé, transfère au gérant.
-- Transfert : « Je vous passe le gérant pour cela. » Appelle handoffToManager dans le même tour : ne prononce jamais une phrase de transfert sans l'exécuter. Ne donne pas de détail inventé pendant l'attente.
-
-OUTILS DISPONIBLES :
-- createReservation : finaliser une réservation (demande d'abord nom, date, heure, nombre)
-- checkAvailability : vérifier immédiatement le créneau demandé dès que date, heure et nombre sont connus ; toute alternative annoncée doit provenir exactement du résultat de cet outil
-- cancelReservation : annuler une réservation existante (demande le nom et la date pour identifier la réservation)
-- reportDelay : signaler un retard après avoir confirmé nom, date, heure et durée. Le Copilot prévient l’équipe ; tu ne promets aucun changement de table.
-- takeMessage : enregistrer un message du client pour le gérant (demande spéciale, rappel, réclamation)
-- handoffToManager : transférer l'appel au gérant
-- purchaseGiftCard : vendre une carte cadeau (le code est envoyé par SMS à l'expéditeur)
-- recommendGiftCardAmount : conseiller un montant de carte cadeau`;
-}
-
 function buildExtras(ctx: SystemPromptContext): string {
   const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
   const extraPart = ctx.personality?.systemPromptExtra
@@ -165,6 +136,5 @@ function buildExtras(ctx: SystemPromptContext): string {
 
 export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): string {
   const body = buildCommonBody(ctx, now);
-  if (ctx.structuredTurn === true) return `${body}\n${buildExtras(ctx)}`;
-  return `${body}\n\n${buildToolsSection(ctx)}\n${buildExtras(ctx)}`;
+  return `${body}\n${buildExtras(ctx)}`;
 }

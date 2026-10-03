@@ -12,7 +12,6 @@ import {
   completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
   markVoiceTurnTtsSynthesisFirstByte,
-  recordVoiceTurnClassification,
   recordVoiceTurnEvent,
   snapshotVoiceTurnTelemetry,
   startVoiceTurn,
@@ -52,7 +51,6 @@ describe('voice turn telemetry', () => {
     const transcript = 'Je voudrais réserver demain pour deux personnes.';
 
     startVoiceTurn(session, transcript);
-    recordVoiceTurnClassification(session, 'content');
     recordVoiceTurnEvent(session, 'availability_completed', { durationMs: 125 });
 
     expect(session.currentTurn?.id).toMatch(/^[0-9a-f-]{36}$/);
@@ -68,12 +66,12 @@ describe('voice turn telemetry', () => {
       phase: 'speech',
       sequence: 1,
     });
-    expect(structured[2]?.voiceTurn).toMatchObject({
+    expect(structured[1]?.voiceTurn).toMatchObject({
       event: 'availability_completed',
       phase: 'availability',
-      sequence: 3,
+      sequence: 2,
     });
-    expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(2);
   });
 
   it('redémarre la mesure de latence à chaque tour', () => {

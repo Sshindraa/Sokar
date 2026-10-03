@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { applyVoiceLanguageLock, processTranscriptStreaming } from '../stream/llm-handler';
 import { recordUserTurn } from '../stream/conversation-controller';
 import { CallSessionManager } from '../stream/manager';
 import type { CallSession } from '../stream/types';
@@ -58,20 +57,5 @@ describe('parcours du verrou français', () => {
 
     expect(session.conversation.slots.time).toBe('11:00');
     expect(effectiveVoiceLanguage(session)).toBe('fr');
-  });
-
-  it('relance en français après un transcript non-FR incompréhensible sans perdre la question', async () => {
-    applyVoiceLanguageLock(session, 'Zo gaat ie', 'nl');
-    expect(session.forceFrenchReprompt).toBe(true);
-
-    await processTranscriptStreaming(session, 'Zo gaat ie', manager);
-
-    expect(mocks.speak).toHaveBeenCalledWith(
-      session,
-      expect.stringContaining('répondre en français'),
-    );
-    expect(session.history.at(-1)?.content).toContain('en français');
-    expect(session.conversation.pendingQuestion).toBe('time');
-    expect(session.state).toBe('LISTENING');
   });
 });

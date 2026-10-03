@@ -1,17 +1,13 @@
 /**
- * Integration tests for CallSessionManager — exercises the full per-call state
- * machine, mock-LLM utterance processing, tool execution, and barge-in handling
- * without requiring network access (uses SOKAR_SIMULATE_MOCK_LLM=true).
+ * Integration tests for CallSessionManager — exercises the per-call state machine and barge-in
+ * handling without requiring network access.
  *
  * Scopes:
  *  1. Session lifecycle (IDLE → LISTENING → PROCESSING → SPEAKING)
  *  2. State machine: invalid transitions rejected
- *  3. Mock LLM: simple greeting when no reservation intent
- *  4. Mock LLM: createReservation tool path when user mentions réservation/table
- *  5. Barge-in during SPEAKING: clears Telnyx buffer, transitions to LISTENING
- *  6. Transcript accumulation across multiple utterances
- *  7. Cleanup clears timers, aborts in-flight requests, closes elevenlabs WS
- *  8. handleBargeIn is a no-op when not SPEAKING
+ *  3. Barge-in during SPEAKING: clears Telnyx buffer, transitions to LISTENING
+ *  4. Cleanup clears timers, aborts in-flight requests, closes the STT socket
+ *  5. handleBargeIn is a no-op when not SPEAKING
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -55,8 +51,6 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
 
 describe('CallSessionManager — integration', () => {
   beforeEach(() => {
-    // Mock LLM path — no network
-    process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
     // Each test gets a fresh singleton
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
@@ -101,60 +95,6 @@ describe('CallSessionManager — integration', () => {
 
       expect(session.ended).toBe(true);
       expect(mgr.transition(session, 'PROCESSING')).toBe(false);
-    });
-  });
-
-  describe('mock LLM utterance processing', () => {
-    it('returns greeting text when no reservation intent', async () => {
-      const mgr = CallSessionManager.getInstance();
-      const session = makeSession();
-
-      const reply = await mgr.simulateUtterance(session.callControlId, 'Bonjour');
-
-      expect(reply).toMatch(/bonjour|réserver|table/i);
-      expect(session.turnCount).toBe(1);
-      expect(session.state).toBe('SPEAKING');
-      // user message appended, assistant message appended
-      const userMsgs = session.history.filter((m) => m.role === 'user');
-      const assistantMsgs = session.history.filter((m) => m.role === 'assistant');
-      expect(userMsgs.length).toBeGreaterThanOrEqual(1);
-      expect(assistantMsgs.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('does NOT call createReservation on a generic greeting', async () => {
-      const mgr = CallSessionManager.getInstance();
-      const session = makeSession();
-      const reply = await mgr.simulateUtterance(session.callControlId, 'Bonjour');
-      expect(reply.toLowerCase()).not.toMatch(/noté|réservation confirmée/);
-    });
-
-    it('throws when session is unknown', async () => {
-      const mgr = CallSessionManager.getInstance();
-      await expect(mgr.simulateUtterance('does-not-exist', 'Bonjour')).rejects.toThrow(/not found/);
-    });
-
-    it('throws when session is already ended', async () => {
-      const mgr = CallSessionManager.getInstance();
-      const session = makeSession();
-      mgr.cleanup(session);
-      await expect(mgr.simulateUtterance(session.callControlId, 'Bonjour')).rejects.toThrow(
-        /already ended/,
-      );
-    });
-  });
-
-  describe('transcript accumulation', () => {
-    it('accumulates each simulated utterance into session.transcript', async () => {
-      const mgr = CallSessionManager.getInstance();
-      const session = makeSession();
-
-      await mgr.simulateUtterance(session.callControlId, 'Bonjour');
-      await mgr.simulateUtterance(session.callControlId, 'Je voudrais réserver');
-
-      expect(session.transcript).toContain('Bonjour');
-      expect(session.transcript).toContain('réserver');
-      // Separated by a space
-      expect(session.transcript.split(' ').length).toBeGreaterThanOrEqual(4);
     });
   });
 

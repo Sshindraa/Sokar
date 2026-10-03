@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import type {
   CallSession,
   SttWord,
-  VoiceSpeechAct,
   VoiceTurnLatencyTrace,
   VoiceTurnTelemetry,
   VoiceTurnPath,
@@ -22,7 +21,7 @@ import {
   recordVoiceQualityTurnEvent,
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
-import { recordDebugCallerText, recordDebugSpeechAct } from './debug-dialogue';
+import { recordDebugCallerText } from './debug-dialogue';
 
 export type VoiceTurnPhase =
   | 'speech'
@@ -288,18 +287,6 @@ export function wordConfidenceStats(words: SttWord[]): {
     meanWordConfidence: round(values.reduce((sum, value) => sum + value, 0) / values.length),
     lowConfidenceWordCount: values.filter((value) => value < 0.5).length,
   };
-}
-
-export function recordVoiceTurnClassification(
-  session: CallSession,
-  speechAct: VoiceSpeechAct,
-): void {
-  recordDebugSpeechAct(session, speechAct);
-  recordVoiceTurnEvent(session, 'classified', {
-    speechAct,
-    intent: session.conversation.intent,
-    pendingQuestion: session.conversation.pendingQuestion,
-  });
 }
 
 /** Évite de rattacher la fin d'un ancien pipeline au tour suivant. */

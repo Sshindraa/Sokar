@@ -14,7 +14,6 @@ import {
 } from './conversation-state';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
-import { isSpeculativeLlmEnabled } from './speculation';
 import { describeTranscript } from './pii-redact';
 import {
   voiceProviderErrorsTotal,
@@ -353,16 +352,6 @@ export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
   minSpeechDurationMs: 80,
   minSilenceDurationMs: 220,
 };
-
-/**
- * Scribe ne permet pas de modifier la VAD sur une socket active. Ce profil
- * est conservé pour la prochaine connexion et la grâce côté application.
- */
-export const SPELLING_STT_TURN_CONFIG: SttTurnConfig = {
-  vadSilenceThresholdSecs: 1.2,
-  minSpeechDurationMs: 80,
-  minSilenceDurationMs: 180,
-};
 export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
@@ -700,25 +689,6 @@ function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurn
     ...(previous ?? {}),
     ...(next ?? {}),
   };
-}
-
-/**
- * Scribe ne propose pas de reconfiguration sur une socket active. On mémorise
- * le profil métier pour une prochaine connexion et pour la grâce de fin de tour.
- */
-export function setSttSpellingProfile(session: CallSession, active: boolean): void {
-  // Changement d'état du pipeline de fin de tour : on ne garde pas d'audio en
-  // attente, sinon il serait attribué à un profil VAD qui n'est plus le bon.
-  flushSttChunkBuffer(session);
-  const state = ensureSttTurnConfig(session);
-  if (active && !state.spellingActive) {
-    state.previous = cloneSttTurnConfig(state.applied ?? state.base);
-  }
-  state.spellingActive = active;
-  state.desired = cloneSttTurnConfig(
-    active ? SPELLING_STT_TURN_CONFIG : (state.previous ?? state.base),
-  );
-  if (!active) state.previous = null;
 }
 
 function clearPendingSttEndOfTurn(session: CallSession): void {
@@ -1500,20 +1470,6 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   const partials = (session.turnPartials ??= []);
   if (partials.at(-1) !== cleanTranscript) partials.push(cleanTranscript);
   if (partials.length > MAX_TURN_PARTIALS) partials.splice(0, partials.length - MAX_TURN_PARTIALS);
-
-  const wordCount = cleanTranscript.split(/\s+/u).filter(Boolean).length;
-  const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
-  if (
-    isSpeculativeEnabled &&
-    !isNameCollectionBlocking(session) &&
-    session.conversation?.pendingQuestion !== 'customerName' &&
-    wordCount >= 3 &&
-    wordCount <= 20 &&
-    cleanTranscript !== session.speculativeTranscript
-  ) {
-    session.speculativeTranscript = cleanTranscript;
-    session.onSttEvent?.({ type: 'InterimHighConfidence', transcript: cleanTranscript });
-  }
 }
 
 function dispatchCommittedTranscript(

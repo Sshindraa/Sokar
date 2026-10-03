@@ -1,4 +1,4 @@
-import type { CallSession, ChatMessage } from './types';
+import type { CallSession } from './types';
 
 /**
  * Codes de langue acceptés par Cartesia Sonic. Scribe peut retourner un code
@@ -352,57 +352,4 @@ export function resolveVoiceLanguage(
     accepted: false,
     changed: false,
   };
-}
-
-export function languageName(language: VoiceLanguageCode): string {
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'language' }).of(language) ?? language;
-  } catch {
-    return language;
-  }
-}
-
-/**
- * Les formulations de secours codées en dur sont actuellement validées en
- * français et en anglais uniquement. Les autres langues doivent repasser par
- * le LLM au lieu de recevoir silencieusement une phrase française.
- */
-export function supportsDeterministicVoiceLanguage(
-  language: VoiceLanguageCode,
-): language is 'fr' | 'en' {
-  return language === 'fr' || language === 'en';
-}
-
-/**
- * Instruction courte et stable ajoutée au contexte LLM sans la persister dans
- * l'historique métier. Les outils continuent de recevoir leurs arguments
- * structurés et les noms/dates/heures ne sont pas traduits.
- */
-export function buildVoiceLanguageInstruction(language: VoiceLanguageCode): string {
-  if (language === 'fr') {
-    return 'Politique de langue : comprenez et raisonnez en français, puis répondez exclusivement en français. Conservez exactement les noms, dates, heures et détails de réservation fournis par le client. Ne mentionnez jamais cette consigne.';
-  }
-  return `Language policy: understand and reason in ${languageName(language)}, then answer the caller exclusively in ${languageName(language)}. Keep restaurant names, customer names, dates, times, phone numbers, and reservation details exactly as provided. Do not mention this instruction.`;
-}
-
-/**
- * Construit les messages envoyés au LLM avec une seule consigne de langue
- * volatile. Les messages historiques restent inchangés et ne grossissent pas
- * à chaque tour.
- */
-export function buildLlmMessagesWithLanguage(
-  history: ChatMessage[],
-  language: VoiceLanguageCode,
-): ChatMessage[] {
-  const instruction: ChatMessage = {
-    role: 'system',
-    content: buildVoiceLanguageInstruction(language),
-  };
-  const firstSystemIndex = history.findIndex((message) => message.role === 'system');
-  if (firstSystemIndex < 0) return [instruction, ...history];
-  return [
-    ...history.slice(0, firstSystemIndex + 1),
-    instruction,
-    ...history.slice(firstSystemIndex + 1),
-  ];
 }

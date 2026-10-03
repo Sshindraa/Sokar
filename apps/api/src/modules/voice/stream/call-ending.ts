@@ -3,23 +3,8 @@ import { WebSocket } from 'ws';
 import type { CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { speakTtsStreamed } from './tts-handler';
-import { cancelScheduledFiller } from './filler-scheduler';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { logger } from '../../../shared/logger/pino';
-
-/** A thank-you alone never authorizes hanging up during a reservation. */
-export function isExplicitCallEnd(transcript: string): boolean {
-  const normalized = transcript
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return /^(?:(?:oui|non|merci|ok|d accord|tres bien|allez|thanks?|thank you|yes|no|okay)\s+)*(?:au revoir|bonne journee|bonne soiree|a bientot|a demain|c est tout|je raccroche|on arrete|laissez tomber|goodbye|bye|see you|that s all|hang up|have a good day|have a great day|have a good evening|have a great evening)(?:\s+(?:merci|au revoir|bonne journee|bonne soiree|a demain|thanks?|thank you))*$/.test(
-    normalized,
-  );
-}
 
 export function acknowledgeCallEnding(
   session: CallSession,
@@ -45,12 +30,8 @@ export async function finishCall(
   if (session.ended || session.ending) return;
   session.abortController?.abort();
   session.abortController = null;
-  session.speculativeLlm = null;
-  session.speculativeResult = null;
-  session.speculativeTranscript = '';
   session.responseGeneration++;
   session.ttsGeneration++;
-  cancelScheduledFiller(session);
   session.ttsContext?.cancel();
   session.ttsContext = null;
   // Flush stale audio before installing our own mark; clear also acknowledges old marks.

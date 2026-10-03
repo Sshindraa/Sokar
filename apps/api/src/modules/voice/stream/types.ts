@@ -359,11 +359,6 @@ export type SttEvent =
     }
   | { type: 'SpeechResumed' }
   | {
-      type: 'InterimHighConfidence';
-      transcript: string;
-      words?: SttWord[];
-    }
-  | {
       type: 'Unavailable';
       reason: 'auth' | 'quota' | 'terms' | 'connection' | 'configuration';
       message: string;
@@ -659,14 +654,6 @@ export interface CallSession {
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
-
-  // LLM spéculatif
-  /** Promise LLM en cours (spéculation sur interim result) */
-  speculativeLlm: Promise<string> | null;
-  /** Transcript utilisé pour la spéculation (pour vérifier si toujours valide) */
-  speculativeTranscript: string;
-  /** Résultat LLM spéculatif mis en cache (résolu). */
-  speculativeResult: string | null;
 
   // Transcript cumulé (persistance)
   /** Transcript final cumulé de tout l'appel (concaténation des UtteranceEnd) */

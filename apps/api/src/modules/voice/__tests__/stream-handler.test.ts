@@ -30,8 +30,6 @@ const { mockMgr } = vi.hoisted(() => ({
     delete: vi.fn(),
     transition: vi.fn().mockReturnValue(true),
     handleBargeIn: vi.fn(),
-    processUtterance: vi.fn(),
-    processUtteranceStreaming: vi.fn().mockResolvedValue(''),
   },
 }));
 
@@ -46,10 +44,6 @@ vi.mock('../stream/stt-bridge', () => ({
   closeStt: vi.fn(),
   connectStt: vi.fn().mockResolvedValue(undefined),
   sttProviderId: vi.fn(() => 'deepgram'),
-}));
-
-vi.mock('../stream/fillers-cache', () => ({
-  playFiller: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../tts-cache', () => ({
