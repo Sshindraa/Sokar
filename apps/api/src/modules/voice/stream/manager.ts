@@ -17,14 +17,14 @@ import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
+import { createConversationState } from './conversation-controller';
 import {
-  createConversationState,
   getActivePendingInteraction,
   getReservationConfirmationKey,
   isNameCollectionBlocking,
   voiceMaxPartySize,
-} from './conversation-controller';
-import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
+} from './conversation-state';
+import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './voice-action-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
 import { splitHeardReply } from './interrupted-reply';
 import { clearFastBargeIn } from './fast-barge-in';

@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
 import { CallSessionManager, _resetCircuitBreakersForTesting } from '../stream/manager';
-import { getReservationConfirmationKey } from '../stream/conversation-controller';
+import { getReservationConfirmationKey } from '../stream/conversation-state';
 import type { CallSession } from '../stream/types';
 
 // ── Module mocks (identiques à stream-manager.test.ts) ─────────────────────

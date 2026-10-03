@@ -4,9 +4,9 @@ import { captureTurnPlanPolicySnapshot } from '../stream/turn-plan-shadow';
 import {
   activatePendingInteraction,
   createConversationState,
-  getActivePendingInteraction,
   recordUserTurn,
 } from '../stream/conversation-controller';
+import { getActivePendingInteraction } from '../stream/conversation-state';
 import type { TurnPlan, TurnPlanContext } from '../stream/turn-plan';
 import type { CallSession } from '../stream/types';
 import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';

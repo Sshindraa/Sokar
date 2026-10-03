@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { NB_CORPUS, type CriticalCategory } from './nb-corpus';
 import { digitSequence, normalizeTokens } from './nb-normalize';
 import type { BenchRecord } from './nb-run';
-import { extractConversationSlots } from '../../src/modules/voice/stream/conversation-controller';
+import { extractConversationSlots } from '../../src/modules/voice/stream/conversation-state';
 
 const clips = new Map(NB_CORPUS.map((clip) => [clip.id, clip]));
 const categoryField: Partial<Record<CriticalCategory, 'date' | 'time' | 'partySize'>> = {

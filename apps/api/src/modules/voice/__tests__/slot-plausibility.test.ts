@@ -10,8 +10,8 @@ import {
   recordAssistantReplyFromLlmTextFallback,
   recordAssistantReplyWithPolicy,
   recordUserTurn,
-  voiceMaxPartySize,
 } from '../stream/conversation-controller';
+import { voiceMaxPartySize } from '../stream/conversation-state';
 import type { CallSession } from '../stream/types';
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // mercredi
