@@ -1433,3 +1433,9 @@ Feu vert de l'utilisateur, selon le plan validé le 02/10. Production : 100 % to
 - **Enregistrement** démarré au décroché (plus après l'accueil) ; le rapport d'appel liste les interruptions et refus vus par les journaux (`turnTaking.loggedInterruptions`), accueil compris.
 - **Krisp.** Appels avec un mot court de confiance < 0,5 avant le premier tour : 0 sur 20 avant Krisp (25–29/09), 4 sur 15 depuis (30/09 – 03/10), tous coupant l'accueil ; Fisher exact p ≈ 0,03. Suggestif, pas une preuve : appels de test peu nombreux, d'autres changements ont été déployés sur la période.
 - **Non mesuré.** Pas de passage au banc LLM (`voice-structured-bench`) : le mot bruit n'atteint plus le modèle ; les 7 mots seuls des journaux sont rejoués en test unitaire.
+
+## 2026-10-03 — Voix : relecture du nom « H, O, E, T » au lieu de « H, O, U, E, T » (appel 8f254faa), journalisation de la seconde passe
+
+- **Constat.** Transcription directe et après coup contiennent « h o u e t ». Le brouillon du modèle portait `HOËT` (mot reconnu avant les lettres) ; le garde-fou `spelled_name_mismatch` a retenu la première phrase (qui disait pourtant H, O, U, E, T) et lancé une seconde passe ; la phrase dite faisait 22 caractères, soit « Je relis : H, O, E, T. ». Le nom enregistré en fin d'appel est bon (« Houet »).
+- **Non expliqué.** Un test moteur qui rejoue ce cas (seconde passe gardant `HOËT` et disant H, O, E, T) passe : le code dit bien H, O, U, E, T. La cause en production diffère ; la sortie brute de la seconde passe n'était pas journalisée.
+- **Ajouté.** `voiceDebug: structured_output_pass2` (restaurants de test seulement) : fait donné à la seconde passe, `say`, brouillon, phrases réellement dites, nom en mémoire. Test de non-régression conservé. À faire au prochain appel avec épellation : lire cette ligne, puis corriger la cause.

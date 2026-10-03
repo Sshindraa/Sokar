@@ -1036,6 +1036,17 @@ export async function runStructuredTurn(
         changedFields: reapplied.changed.join(',') || null,
         rejectedFields: reapplied.rejected.join(',') || null,
       });
+      // Seconde passe (appel 8f254faa : relecture « H, O, E, T » alors que le premier passage disait « H, O, U, E, T ») :
+      // ce que le code lui a demandé, ce que le modèle a produit, et ce qui a vraiment été dit.
+      logVoiceDebugText(session, 'structured_output_pass2', {
+        transcript,
+        fact: actionResult.slice(0, 600),
+        say: second.output.say,
+        draft: JSON.stringify(second.output.draft),
+        spoken: spokenPhrases.join(' | '),
+        spokenByStream: second.spoken,
+        stateName: state.draft.customerName,
+      });
       final = second.output;
       if (!noHangUp && second.output.action === 'end_call' && second.output.confidence !== 'low') {
         if (second.output.say.trim()) {
