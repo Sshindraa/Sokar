@@ -311,22 +311,24 @@ function handleTelnyxMessage(
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       // Avant l'accueil : l'audio de l'appelant doit être nettoyé dès ses premiers mots.
       startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
+      session.greetingText = greeting;
+      session.greetingPlaying = true;
+      // Dès le décroché : l'accueil et ses interruptions doivent figurer dans l'enregistrement.
+      startTestCallRecording(session).catch((err) => {
+        logger.error(
+          { err, callId: session.callControlId },
+          '[stream] Failed to start test call recording',
+        );
+        captureException(err as Error, {
+          tags: { service: 'handler', action: 'test-recording-start' },
+          extra: { callId: session.callControlId },
+        });
+      });
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
         .then(async () => {
           writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
-          try {
-            await startTestCallRecording(session);
-          } catch (err) {
-            logger.error(
-              { err, callId: session.callControlId },
-              '[stream] Failed to start test call recording',
-            );
-            captureException(err as Error, {
-              tags: { service: 'handler', action: 'test-recording-start' },
-              extra: { callId: session.callControlId },
-            });
-          }
+          session.greetingPlaying = false;
           mgr.transition(session, 'LISTENING');
         })
         .catch((err) => {
@@ -339,6 +341,7 @@ function handleTelnyxMessage(
             tags: { service: 'handler', action: 'greeting-tts' },
             extra: { callId: session.callControlId },
           });
+          session.greetingPlaying = false;
           mgr.transition(session, 'LISTENING');
         });
 

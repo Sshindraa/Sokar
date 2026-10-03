@@ -611,6 +611,7 @@ export class CallSessionManager {
     clearFastBargeIn(session);
     session.responseGeneration++;
     session.ttsGeneration++;
+    if (session.greetingPlaying) session.greetingInterrupted = true;
     // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
     const snapshot = session.ttsContext?.interruptionSnapshot?.();
     session.interruptedReply = snapshot?.text.trim()

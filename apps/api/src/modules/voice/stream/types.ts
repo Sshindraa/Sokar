@@ -630,6 +630,12 @@ export interface CallSession {
   ttsContext: ActiveTtsContext | null;
   /** Dernière réponse coupée par l'appelant, jusqu'au prochain tour traité. */
   interruptedReply?: InterruptedReply;
+  /** Texte de l'accueil, tant qu'il peut encore être repris après une coupure sans suite. */
+  greetingText?: string;
+  /** L'accueil est en cours de lecture. */
+  greetingPlaying?: boolean;
+  /** L'accueil a été coupé et aucun tour n'a été traité depuis. */
+  greetingInterrupted?: boolean;
   /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
   /** Tours précédents conservés jusqu'à la finalisation de l'appel. */

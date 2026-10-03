@@ -2014,3 +2014,90 @@ describe('assemblage des segments autour d’une épellation (appel 3ba7c66f)', 
     expect(ends(onEvent).map((entry) => entry.transcript)).toEqual(['a']);
   });
 });
+
+describe('mot seul peu sûr : ni interruption, ni tour (appel f2200632)', () => {
+  function greetingSession() {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    session.state = 'SPEAKING';
+    session.greetingPlaying = true;
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    return { session, onEvent, handleBargeIn };
+  }
+  const rouge = [{ word: 'rouge', confidence: 0.278, start: 0.48, end: 0.88 }];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('une partielle « rouge » à 0,28 ne coupe pas l’accueil', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'rouge', words: rouge });
+    expect(handleBargeIn).not.toHaveBeenCalled();
+  });
+
+  it('une partielle de plusieurs mots coupe l’accueil, même peu sûre', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'je voudrais réserver',
+      words: [
+        { word: 'je', confidence: 0.3, start: 0, end: 0.1 },
+        { word: 'voudrais', confidence: 0.3, start: 0.1, end: 0.3 },
+        { word: 'réserver', confidence: 0.3, start: 0.3, end: 0.6 },
+      ],
+    });
+    expect(handleBargeIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('une partielle d’un mot sûr coupe l’accueil', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'allô',
+      words: [{ word: 'allô', confidence: 0.92, start: 0, end: 0.3 }],
+    });
+    expect(handleBargeIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('le même mot validé comme texte final n’ouvre aucun tour, même hors accueil', () => {
+    const { session, onEvent, handleBargeIn } = greetingSession();
+    session.state = 'LISTENING';
+    session.greetingPlaying = false;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'rouge',
+      words: rouge,
+      speechFinal: true,
+      speechEndOffsetMs: 880,
+    });
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+    expect(handleBargeIn).not.toHaveBeenCalled();
+  });
+
+  it('un mot sûr reste un tour', () => {
+    const { session, onEvent } = greetingSession();
+    session.state = 'LISTENING';
+    session.greetingPlaying = false;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'oui',
+      words: [{ word: 'oui', confidence: 0.95, start: 0.1, end: 0.4 }],
+      speechFinal: true,
+      speechEndOffsetMs: 400,
+    });
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+  });
+});

@@ -23,6 +23,9 @@ const MESSAGE_TYPES: Record<string, string> = {
   '[voice-report] call linked': 'call_linked',
   '[barge-in] User spoke while assistant was speaking. Interrupting.': 'barge_in_detected',
   '[barge-in] Call interrupted': 'call_interrupted',
+  '[barge-in] Refused: a single weak word is not enough to interrupt': 'barge_in_refused',
+  '[stt] Ignoring a single weak word: noise, not a turn': 'noise_word_ignored',
+  '[greeting] Resuming the greeting after a noise': 'greeting_resumed',
   '[stt] Transcript ignored: no caller voice in the incoming audio': 'no_caller_voice',
   '[stt] Assistant echo filtered': 'echo_filtered',
   '[voice] No-input recovery': 'no_input_recovery',
@@ -253,4 +256,56 @@ export function buildLogTurns(events: readonly LogEvent[]): LogTurn[] {
     }
   }
   return list;
+}
+
+export type LoggedInterruptionType =
+  | 'barge_in_detected'
+  | 'barge_in_refused'
+  | 'noise_word_ignored'
+  | 'greeting_resumed';
+
+/** Interruption (ou refus d'interrompre) vue par le serveur, indépendamment de l'enregistrement audio. */
+export interface LoggedInterruption {
+  type: LoggedInterruptionType;
+  atMs: number;
+  /** Secondes depuis le démarrage du flux : repère indépendant de l'audio, qui peut commencer plus tard. */
+  offsetSec: number | null;
+  /** Avant le premier tour : l'accueil est en cours ou vient d'être coupé. */
+  beforeFirstTurn: boolean;
+  wordCount?: number;
+  minWordConfidence?: number | null;
+  voiceMs?: number | null;
+}
+
+const LOGGED_INTERRUPTION_TYPES = new Set<string>([
+  'barge_in_detected',
+  'barge_in_refused',
+  'noise_word_ignored',
+  'greeting_resumed',
+]);
+
+/**
+ * Les interruptions des journaux, y compris celles d'avant le premier tour (l'accueil) et d'avant le
+ * début de l'enregistrement : `buildLogTurns` ne les voit pas, faute de tour qui les contienne.
+ */
+export function buildLoggedInterruptions(events: readonly LogEvent[]): LoggedInterruption[] {
+  const ordered = [...events].sort((a, b) => a.atMs - b.atMs);
+  const startMs = ordered.find((event) => event.type === 'stream_start')?.atMs ?? null;
+  const firstTurnMs = ordered.find((event) => event.type === 'started')?.atMs ?? Infinity;
+  return ordered
+    .filter((event) => LOGGED_INTERRUPTION_TYPES.has(event.type))
+    .map((event) => {
+      const f = event.fields;
+      return {
+        type: event.type as LoggedInterruptionType,
+        atMs: event.atMs,
+        offsetSec: startMs === null ? null : Math.round(((event.atMs - startMs) / 1000) * 10) / 10,
+        beforeFirstTurn: event.atMs <= firstTurnMs,
+        ...(num(f.wordCount) !== undefined ? { wordCount: num(f.wordCount) } : {}),
+        ...('minWordConfidence' in f
+          ? { minWordConfidence: num(f.minWordConfidence) ?? null }
+          : {}),
+        ...('voiceMs' in f ? { voiceMs: num(f.voiceMs) ?? null } : {}),
+      };
+    });
 }

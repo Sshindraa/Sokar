@@ -27,6 +27,7 @@ function report(overrides: Partial<CallReport> = {}): CallReport {
       unfinished: [],
       overlaps: [],
       interruptions: [],
+      loggedInterruptions: [],
       splitSpellings: [],
       identicalRespellings: [],
     },
