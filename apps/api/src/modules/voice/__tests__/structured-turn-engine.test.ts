@@ -731,6 +731,30 @@ describe('tour structuré (canary)', () => {
       expect(session.structuredTurn?.draft.customerName).toBe('HOUET');
     });
 
+    it.each(['open', 'customerName'] as const)(
+      'vérifie aussi la relecture de la seconde passe qui déclare awaiting=%s',
+      async (awaiting) => {
+        const { session, mgr, outputs } = askingName();
+        outputs.push(
+          turn({
+            draft: named('HOËT'),
+            awaiting: 'customerNameConfirmation',
+            say: 'Je relis : H, O, U, E, T. C’est bien ça ?',
+          }),
+          turn({
+            draft: named('HOUET'),
+            awaiting,
+            say: 'Je relis : H, O, E, T. C’est bien ça ?',
+          }),
+        );
+
+        await processTranscriptStreaming(session, 'c’est au nom de hoët h o u e t', mgr);
+
+        expect(spoken().join(' ')).not.toContain('H, O, E, T');
+        expect(spoken().join(' ')).toContain('H, O, U, E, T');
+      },
+    );
+
     it('ne change rien quand le nom relu est exactement ce qui a été épelé', async () => {
       const { session, mgr, outputs } = askingName();
       outputs.push(
