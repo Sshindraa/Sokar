@@ -670,7 +670,10 @@ export async function runStructuredTurn(
       if (readbackName === null && !slotConflict && action === 'none') {
         const awaitingNow = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1];
         if (awaitingNow === 'customerNameConfirmation') {
-          const proposed = parseStreamedCustomerName(extractor.raw);
+          // Brouillon sans nom (seconde passe qui ne le répète pas, appel 8f254faa) : la relecture se vérifie
+          // quand même, contre le nom déjà retenu. Sinon « H, O, E, T » passait pour « HOUET ».
+          const streamed = parseStreamedCustomerName(extractor.raw);
+          const proposed = streamed?.trim() ? streamed : state.draft.customerName;
           if (proposed?.trim()) {
             const expected = reconcileSpelledName(
               { ...state.draft, customerName: proposed },
