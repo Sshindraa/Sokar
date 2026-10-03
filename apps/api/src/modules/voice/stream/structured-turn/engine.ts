@@ -12,11 +12,7 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import {
-  isVoiceStructuredTurnEnabled,
-  isVoiceTurnJudgeEnabled,
-  isVoiceUnderstandingCheckEnabled,
-} from '../feature-flags';
+import { isVoiceTurnJudgeEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -75,13 +71,6 @@ import {
   takeSpeculation,
 } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
-
-export function isStructuredTurnEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return isVoiceStructuredTurnEnabled(restaurantId, env);
-}
 
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
@@ -369,7 +358,7 @@ export function speculateStructuredTurn(
   partialTranscript: string,
   onVerdict?: (turnComplete: boolean) => void,
 ): void {
-  if (!isStructuredSpeculationEnabled() || !isStructuredTurnEnabled(session.restaurantId)) return;
+  if (!isStructuredSpeculationEnabled()) return;
   if (session.ended || session.ending || session.state !== 'LISTENING') return;
   const state = session.structuredTurn ?? createStructuredTurnState();
   const transcript = [state.pendingFragment, partialTranscript]
@@ -419,7 +408,6 @@ export async function generateRecoveryReply(
   kind: StructuredRecoveryKind,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  if (!isStructuredTurnEnabled(session.restaurantId)) return null;
   if (typeof mgr.streamStructuredCompletion !== 'function') return null;
   const state = session.structuredTurn ?? createStructuredTurnState();
   const today = todayInTimezone(session.timezone || 'Europe/Paris');

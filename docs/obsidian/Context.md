@@ -24,6 +24,7 @@
 - [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
 - [ ] MCP : fusionner puis déployer le reset compatible avec l’audit, nettoyer le run existant du staging et rejouer les écritures après déploiement. Claude staging est reconnecté avec la portée multi-restaurants approuvée par l’utilisateur ; seuls les tests Chez Sokar sont autorisés pour ce run. Les clients n’exposent pas `initialize`/`tools/list` bruts.
 - [ ] Rapport automatique d'appel : activé en prod le 03/10 (worker). Après un appel réel de test, lire `voice_call_audio.py report <id>` ; vérifier que la ligne `[voice-report] call linked` relie bien l'appel (statut `linked`, plus `matched_by_time`).
+- [ ] Mode à outils supprimé (03/10, PR 1 + 2) : après le déploiement, lire le rapport du premier appel de test ; ~2 500 lignes de dialogue historique ne restent que pour le banc STT (`conversation-controller.ts`, `expected-answer.ts`, `slot-confidence.ts`) : décider de les déplacer sous `scripts/voice-stt-bench/`.
 
 ## Décisions récentes
 

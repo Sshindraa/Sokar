@@ -650,10 +650,6 @@ Module : `apps/api/src/modules/test/test.routes.ts`
 
 Simule un appel Telnyx entrant (dev/test).
 
-### POST /api/test/simulate-utterance
-
-Injecte une utterance dans une session vocale.
-
 ### GET /api/test/simulate-call/:callControlId/reservations
 
 Liste les résas créées par un appel simulé.

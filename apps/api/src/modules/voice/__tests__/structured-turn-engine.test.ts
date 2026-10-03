@@ -130,7 +130,6 @@ function fixture() {
     }),
     handoffToManager: vi.fn().mockResolvedValue('Je vous passe le gérant.'),
     recordCallerMessage: vi.fn().mockResolvedValue('Message enregistré.'),
-    processUtteranceStreaming: vi.fn(),
   } as unknown as CallSessionManager;
   return { session, mgr, outputs };
 }
@@ -142,7 +141,6 @@ function spoken(): string[] {
 beforeEach(() => {
   __resetMetrics();
   vi.clearAllMocks();
-  vi.stubEnv('VOICE_STRUCTURED_TURN_RESTAURANT_IDS', RESTAURANT_ID);
   return () => vi.unstubAllEnvs();
 });
 
@@ -165,7 +163,6 @@ describe('tour structuré (canary)', () => {
 
     await processTranscriptStreaming(session, 'en fait vous êtes ouvert quelle heure plutôt', mgr);
 
-    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     expect(spoken()).toEqual([
       'Nous ouvrons de 19 h à 23 h.',
       'Vers quelle heure voulez-vous venir ?',
@@ -878,14 +875,9 @@ describe('tour structuré (canary)', () => {
       expect(await generateRecoveryReply(session, mgr, 'silence')).toBeNull();
     });
 
-    it('rend null sans appeler le modèle hors du tour structuré ou sans accès au modèle', async () => {
-      const { session, mgr } = asking();
+    it('rend null sans appeler le modèle quand le gestionnaire n’y donne pas accès', async () => {
+      const { session } = asking();
       expect(await generateRecoveryReply(session, {}, 'silence')).toBeNull();
-      (session as { restaurantId: string }).restaurantId = 'restaurant-hors-structure';
-      vi.stubEnv('VOICE_V2_DEFAULT', 'false');
-      expect(await generateRecoveryReply(session, mgr, 'silence')).toBeNull();
-      expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
-      vi.unstubAllEnvs();
     });
   });
 
@@ -1548,16 +1540,6 @@ describe('tour structuré (canary)', () => {
       speculateStructuredTurn(session, mgr, 'attendez');
       expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
     });
-  });
-
-  it('n’utilise pas le moteur hors allowlist', async () => {
-    vi.stubEnv('VOICE_STRUCTURED_TURN_RESTAURANT_IDS', 'autre-resto');
-    const { session, mgr } = fixture();
-    vi.mocked(mgr.processUtteranceStreaming).mockResolvedValue('Bonjour.');
-
-    await processTranscriptStreaming(session, 'bonjour', mgr);
-
-    expect(mgr.streamStructuredCompletion).not.toHaveBeenCalled();
   });
 });
 

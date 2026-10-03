@@ -410,9 +410,9 @@ describe('indépendance du banc', () => {
   );
   const normalize = (text: string) =>
     text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/g, ' ');
-  // Le prompt réel reçu par le modèle, dans les deux modes, consignes de compréhension comprises.
-  const prompts = [true, false].map((structuredTurn) => {
-    const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn });
+  // Le prompt réel reçu par le modèle, consignes de compréhension comprises.
+  const prompts = [true, false].map(() => {
+    const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours });
     const [system] = buildStructuredTurnMessages({
       systemPrompt: base,
       history: [],

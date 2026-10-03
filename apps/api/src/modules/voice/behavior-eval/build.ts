@@ -86,7 +86,6 @@ export function buildRequest(
         openingHours: profile.openingHours as never,
         timezone: profile.timezone ?? 'Europe/Paris',
         ...(profile.maxPartySize ? { maxPartySize: profile.maxPartySize } : {}),
-        structuredTurn: true,
         ...(profile.voiceGender ? { voiceGender: profile.voiceGender } : {}),
         ...(profile.systemPromptExtra
           ? { personality: { systemPromptExtra: profile.systemPromptExtra } }
