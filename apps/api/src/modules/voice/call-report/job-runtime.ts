@@ -5,6 +5,7 @@
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import { buildTelnyxWebhookJobId } from '../../../shared/queue/job-options';
+import { redisQueue } from '../../../shared/redis/client';
 import {
   getPrivateRecording,
   isTestCallRecordingEnabled,
@@ -15,6 +16,8 @@ import { transcribeWithDeepgram, type Transcriber } from './deepgram-batch';
 import {
   buildCallReportJob,
   isCallReportEnabled,
+  reportLimit,
+  reserveReportSlot,
   type ReportCallRow,
   type ReportJobDeps,
   type ReportJobResult,
@@ -23,6 +26,7 @@ import { readCallLogLines } from './log-files';
 import type { ReportTurnRow } from './types';
 
 export const CALL_REPORT_JOB_NAME = 'build-call-report';
+const REPORT_COUNTER_KEY = 'call-report:generated';
 const DEFAULT_LOG_DIR = '/var/log/sokar';
 
 function deepgramTranscriber(): Transcriber {
@@ -79,6 +83,10 @@ export function createReportJobDeps(): ReportJobDeps {
         fromMs,
         toMs,
       }),
+    reserveSlot: () => reserveReportSlot(redisQueue, reportLimit()),
+    releaseSlot: async () => {
+      if (reportLimit() !== null) await redisQueue.decr(REPORT_COUNTER_KEY);
+    },
     transcribe: (wav, engine) => deepgramTranscriber()(wav, engine),
     store: putPrivateObject,
     log: logger,

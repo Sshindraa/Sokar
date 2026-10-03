@@ -9,6 +9,7 @@ import { collectGuards } from './guards';
 import { buildLogTurns, type LogEvent, type LogSelection, type LogTurn } from './log-events';
 import { redactPii } from '../stream/pii-redact';
 import { attributeSilenceCause, findSilences, type CauseInput } from './silences';
+import { findIdenticalRespellings } from './respelling';
 import { findSplitSpellings } from './spelling';
 import { oneLineSummary, rankIssues } from './summary';
 import { tokenize } from './tokens';
@@ -418,6 +419,7 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
       lastAgentEnd > lastCallerEnd &&
       lastAgentText.trim().endsWith('?'));
   const outcome = { result: call.outcome, abandoned, lastExchanges: exchanges.slice(-3) };
+  const identicalRespellings = findIdenticalRespellings(rows);
   const splitSpellings = findSplitSpellings(
     rows.map((row) => ({ turnId: row.turnId, callerText: row.callerText })),
   );
@@ -431,6 +433,7 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
     interruptions,
     guards,
     splitSpellings,
+    identicalRespellings,
     outcome,
   });
 
@@ -466,7 +469,7 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
     ears,
     mouth,
     silences,
-    turnTaking: { unfinished, overlaps, interruptions, splitSpellings },
+    turnTaking: { unfinished, overlaps, interruptions, splitSpellings, identicalRespellings },
     guards,
     counters: { noCallerVoice },
     outcome,

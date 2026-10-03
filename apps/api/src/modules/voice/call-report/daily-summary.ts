@@ -10,6 +10,8 @@ export interface DailySummary {
   earsDivergences: number;
   mouthDivergences: number;
   abandoned: number;
+  /** Ré-épellations identiques après relecture : erreur d'oreille systématique probable. */
+  systematicEarErrors: number;
   /** Rapports générés sans les journaux du serveur : leurs causes de silence manquent. */
   withoutLogs: number;
   costUsd: number;
@@ -23,6 +25,7 @@ export function summarizeReports(reports: readonly CallReport[]): DailySummary {
     earsDivergences: 0,
     mouthDivergences: 0,
     abandoned: 0,
+    systematicEarErrors: 0,
     withoutLogs: 0,
     costUsd: 0,
     lines: [],
@@ -36,6 +39,7 @@ export function summarizeReports(reports: readonly CallReport[]): DailySummary {
       (item) => item.severity === 'high' && !item.cutByInterruption,
     ).length;
     if (report.outcome.abandoned) summary.abandoned++;
+    summary.systematicEarErrors += report.turnTaking?.identicalRespellings?.length ?? 0;
     if (report.logs.status === 'missing' || report.logs.status === 'ambiguous')
       summary.withoutLogs++;
     summary.costUsd += report.costUsd;
@@ -59,6 +63,7 @@ export function renderDailySummary(day: string, summary: DailySummary): string {
     `- Divergences de transcription (lettre ou nombre, direct contre après coup) : **${summary.earsDivergences}**`,
     `- Écarts de prononciation (texte envoyé contre piste agent) : **${summary.mouthDivergences}**`,
     `- Appels abandonnés (réservation voulue, aucune réservation) : **${summary.abandoned}**`,
+    `- Erreurs d'oreille systématiques probables (lettres relues puis épelées à l'identique) : **${summary.systematicEarErrors}**`,
     `- Coût des transcriptions après coup : ≈ ${summary.costUsd.toFixed(3)} $`,
   );
   if (summary.withoutLogs > 0) {

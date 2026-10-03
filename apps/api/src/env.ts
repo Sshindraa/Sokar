@@ -344,6 +344,8 @@ const EnvSchema = z
     CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
     // Rapport automatique de chaque appel de test (docs/runbooks/call-reports.md) : opt-in, désactivé par défaut.
     CALL_REPORT_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Plafond du nombre de rapports générés (coût Deepgram) ; absent = illimité.
+    CALL_REPORT_MAX_REPORTS: z.coerce.number().int().positive().optional(),
     // Dossier des journaux de l'API lus par le worker pour le rapport (défaut /var/log/sokar).
     CALL_REPORT_LOG_DIR: z.string().optional(),
     CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),

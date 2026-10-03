@@ -1400,3 +1400,15 @@ Source : événements `voiceTurn` de tous les journaux disponibles (19/09 → 03
 - **Activation** : `CALL_REPORT_ENABLED=true` ajouté à `/opt/sokar/apps/api/.env`, `pm2 reload sokar-workers --update-env` (workers prêts). Retrait : supprimer la ligne et recharger. Pas de redémarrage de l'API.
 - **Essai de bout en bout en production** sur l'appel 03b19223 (job lancé à la main depuis `dist/`) : rapport stocké en 4,5 s, 0,0097 $, lu par `voice_call_audio.py report 03b19223` ; `report --day 2026-10-02` donne le résumé. Journaux : comptes seulement.
 - À vérifier au prochain appel réel de test : rapport produit tout seul après « recording stored privately », ligne de liaison `[voice-report] call linked` (statut `linked`).
+
+## 2026-10-03 — Voix : signal « ré-épellation identique après relecture » ajouté au rapport d'appel
+
+- **Signal.** Des lettres relues par l'agent, non validées (l'appelant épelle de nouveau), puis une suite de lettres transcrite identique à celle relue : erreur d'oreille systématique probable, gravité 97 dans la synthèse. Suites de lettres seulement, au moins trois, aucun mot (`call-report/respelling.ts`). Aussi dans le résumé quotidien.
+- **Mesure sur les 4 appels de validation.** Détecté sur 3ba7c66f (« a 2 s a m » relu par « A, double A, S, A, M », puis épelé de nouveau à l'identique ; il passe en tête de la synthèse). **Pas détecté sur 8043662c** : les deux épellations diffèrent d'une lettre (« a 2 s 2 m » puis « a 2 s a 2 m »), donc la règle d'identité stricte ne s'applique pas. Une tolérance d'une lettre le rattraperait, au prix de faux positifs sur des épellations corrigées pour de bon : à décider sur de vrais rapports, pas avant.
+- **Note pour une phase suivante (non implémentée).** Pendant l'appel, dans ce même cas (relecture refusée puis nouvelle épellation identique à la suite refusée), l'agent ne relit pas une deuxième fois à l'identique. Le code lui donne en données les lettres doublées (count > 1), les plus ambiguës à l'oral, et le modèle pose une question ciblée sur elles. À mesurer au banc avant de garder (voir la note « aucune phrase codée en dur » : principes, pas de phrase à dire).
+- Faux positifs du rapport : volontairement non traités, à reprendre après une semaine de vrais rapports, en commençant par ceux qui reviennent.
+
+## 2026-10-03 — Voix : rapport d'appel limité aux 100 prochains appels
+
+- Décision de l'utilisateur : borner le coût Deepgram des rapports. `CALL_REPORT_MAX_REPORTS=100` (compteur Redis `call-report:generated`, base des files) ; au-delà, le job ne fait rien et journalise `limit reached`. Un rapport en échec rend sa place. Les rapports ne coûtent rien côté Cerebras (aucun appel au modèle de dialogue) : seule dépense, Deepgram (~1,5 centime par appel).
+- Retrait du plafond : supprimer la variable et recharger `sokar-workers --update-env`.

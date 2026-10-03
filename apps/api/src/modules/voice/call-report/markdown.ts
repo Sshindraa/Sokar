@@ -158,6 +158,13 @@ export function renderMarkdown(report: CallReport): string {
       `- ${spelling.texts.map(quote).join(' → ')} (tours ${spelling.turnIds.map((id) => id.slice(0, 8)).join(', ')})`,
     );
   }
+  lines.push('', "**Ré-épellations identiques après relecture (erreur d'oreille probable)**", '');
+  if (report.turnTaking.identicalRespellings.length === 0) lines.push('Aucune.');
+  for (const respelling of report.turnTaking.identicalRespellings) {
+    lines.push(
+      `- « ${respelling.letters.join(' ')} » : relecture ${quote(respelling.readbackText)} (tour ${respelling.readbackTurnId.slice(0, 8)}), puis épelé de nouveau à l'identique (tours ${respelling.secondTurnIds.map((id) => id.slice(0, 8)).join(', ')})`,
+    );
+  }
   lines.push('', '**Interruptions**', '');
   if (interruptions.length === 0) lines.push('Aucune.');
   for (const item of interruptions) {

@@ -290,6 +290,27 @@ describe('analyzeCall', () => {
     expect(result.ears.find((item) => item.turnId === 't1')).toBeUndefined();
   });
 
+  it("signale une suite de lettres relue, non validée, puis épelée à l'identique (erreur d'oreille probable)", () => {
+    const same = input();
+    same.turns = [
+      {
+        sequence: 1,
+        turnId: 't1',
+        callerText: 'a 2 s a m',
+        agentText: 'Je note A, double A, S, A, M. C’est bien ça ?',
+      },
+      {
+        sequence: 2,
+        turnId: 't2',
+        callerText: 'non a 2 s a m',
+        agentText: 'Je note A, double A, S, A, M.',
+      },
+    ];
+    const result = analyzeCall(same);
+    expect(result.turnTaking.identicalRespellings).toHaveLength(1);
+    expect(result.summary.issues.some((issue) => issue.kind === 'systematic_ear_error')).toBe(true);
+  });
+
   it("signale l'abandon d'un appel de réservation qui finit sans réservation, avec ses derniers échanges", () => {
     const abandoned = input();
     abandoned.call.intent = 'RESERVATION';

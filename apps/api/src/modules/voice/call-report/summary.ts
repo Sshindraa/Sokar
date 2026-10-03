@@ -4,6 +4,7 @@
  * silence, qui passe avant un chevauchement.
  */
 import type { Guard } from './guards';
+import type { Respelling } from './respelling';
 import type { SplitSpelling } from './spelling';
 import type { Overlap, UnfinishedVerdict } from './turn-taking';
 import type {
@@ -23,6 +24,7 @@ export interface IssueParts {
   interruptions: readonly InterruptionReport[];
   guards: readonly Guard[];
   splitSpellings: readonly SplitSpelling[];
+  identicalRespellings: readonly Respelling[];
   outcome: {
     result: string | null;
     abandoned: boolean;
@@ -129,6 +131,17 @@ export function rankIssues(parts: IssueParts): Issue[] {
       title: `Appel sans réservation (${parts.outcome.result ?? 'issue inconnue'})${last ? ` après ${quote(last.callerText)}` : ''}`,
       evidence: trail ? `derniers échanges : ${trail}` : 'sans issue',
       turnId: null,
+      atSec: null,
+    });
+  }
+
+  for (const respelling of parts.identicalRespellings) {
+    issues.push({
+      kind: 'systematic_ear_error',
+      score: 97,
+      title: `Erreur d'oreille systématique probable : « ${respelling.letters.join(' ')} » relu, non validé, puis épelé de nouveau à l'identique`,
+      evidence: `relecture refusée : ${quote(respelling.readbackText)} ; les deux fois la même suite transcrite`,
+      turnId: respelling.secondTurnIds[0] ?? null,
       atSec: null,
     });
   }

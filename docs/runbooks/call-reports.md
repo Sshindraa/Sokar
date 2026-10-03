@@ -37,7 +37,14 @@ dialogue par tour n'existe pas et le rapport est réduit : il le dit). Le démar
 ```text
 CALL_REPORT_ENABLED=true          # défaut false
 CALL_REPORT_LOG_DIR=/var/log/sokar  # défaut ; dossier des journaux de l'API, lu par le worker
+CALL_REPORT_MAX_REPORTS=100       # plafond du nombre de rapports ; absent = illimité
 ```
+
+**Plafond.** `CALL_REPORT_MAX_REPORTS` borne la dépense Deepgram : le compteur est la clé Redis
+`call-report:generated` (base des files), incrémentée avant chaque rapport ; au-delà du plafond le job
+ne fait rien et journalise `[call-report] limit reached`. Un rapport en échec rend sa place. Pour
+repartir de zéro : `redis-cli DEL call-report:generated` ; pour relever le plafond : changer la variable
+et recharger `sokar-workers --update-env`. Voir l'état : `redis-cli GET call-report:generated`.
 
 Recharger `sokar-workers` avec `--update-env`. Retrait : remettre `false`. Les rapports déjà écrits
 restent jusqu'à l'expiration de l'enregistrement.
@@ -64,6 +71,16 @@ Déclenchement : « Telnyx recording stored privately » (ou la reprise `recover
 5. **Les tours de parole** : chaque verdict « inachevé » et si l'appelant a repris ; chaque
    chevauchement de plus de 300 ms ; chaque interruption (réelle, écho, ou non confirmée) ; chaque
    épellation répartie sur plusieurs tours.
+   **Ré-épellation identique après relecture** (gravité 97, juste sous la prononciation) : l'agent
+   reprend des lettres, l'appelant ne valide pas et épelle de nouveau, et la suite de lettres transcrite
+   est **identique** à celle relue. Si la transcription était juste, la relecture aurait été acceptée :
+   le moteur entend deux fois la même chose, contre ce que dit l'appelant (erreur d'oreille
+   systématique probable). Comparaison de suites de lettres uniquement (jetons d'un seul caractère,
+   au moins trois) ; le refus se lit dans la nouvelle épellation, pas dans « non ». Sur les 4 appels de
+   validation : détecté sur 3ba7c66f (« a 2 s a m » relu puis épelé trois fois), **pas sur 8043662c**,
+   où les deux épellations diffèrent d'une lettre (« a 2 s 2 m » puis « a 2 s a 2 m »). Une tolérance
+   d'une lettre le rattraperait mais ferait aussi remonter des épellations réellement corrigées : non
+   retenue sans mesure sur de vrais rapports.
 6. **Les garde-fous** : `phrase_dropped`, relecture de nom refusée, action refusée, mots retirés par le
    filtre d'écho, avec le texte concerné.
 7. **L'issue** : résultat, abandon (réservation voulue sans réservation), derniers échanges.
