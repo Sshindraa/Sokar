@@ -102,6 +102,7 @@ describe('renderMarkdown', () => {
       '## Silences',
       '## Tours de parole',
       '## Garde-fous',
+      'Ré-épellations identiques après relecture',
       '## Issue',
     ]) {
       expect(markdown).toContain(heading);

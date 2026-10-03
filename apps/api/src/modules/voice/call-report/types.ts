@@ -4,6 +4,7 @@ import type { Guard } from './guards';
 import type { Attribution, SilenceOwner } from './silences';
 import type { Overlap, UnfinishedVerdict, InterruptionVerdict } from './turn-taking';
 import type { LogSelection } from './log-events';
+import type { Respelling } from './respelling';
 import type { SplitSpelling } from './spelling';
 
 export const REPORT_VERSION = 1;
@@ -99,6 +100,7 @@ export type IssueKind =
   | 'interruption_echo'
   | 'echo_stripped_words'
   | 'guard_name_refused'
+  | 'systematic_ear_error'
   | 'spelling_split'
   | 'abandoned';
 
@@ -137,6 +139,8 @@ export interface CallReport {
     overlaps: Overlap[];
     interruptions: InterruptionReport[];
     splitSpellings: SplitSpelling[];
+    /** Lettres relues, non validées, puis épelées de nouveau à l'identique : erreur d'oreille systématique probable. */
+    identicalRespellings: Respelling[];
   };
   guards: Guard[];
   counters: { noCallerVoice: number };

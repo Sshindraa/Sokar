@@ -23,7 +23,13 @@ function report(overrides: Partial<CallReport> = {}): CallReport {
     ears: [],
     mouth: [],
     silences: [],
-    turnTaking: { unfinished: [], overlaps: [], interruptions: [], splitSpellings: [] },
+    turnTaking: {
+      unfinished: [],
+      overlaps: [],
+      interruptions: [],
+      splitSpellings: [],
+      identicalRespellings: [],
+    },
     guards: [],
     counters: { noCallerVoice: 0 },
     outcome: { result: 'RESERVED', abandoned: false, lastExchanges: [] },
@@ -104,6 +110,7 @@ describe('summarizeReports', () => {
     expect(summary.earsDivergences).toBe(1);
     expect(summary.mouthDivergences).toBe(1);
     expect(summary.abandoned).toBe(1);
+    expect(summary.systematicEarErrors).toBe(0);
     expect(summary.costUsd).toBeCloseTo(0.03, 5);
   });
 

@@ -56,6 +56,7 @@ const parts = (overrides = {}) => ({
   interruptions: [],
   guards: [],
   splitSpellings: [],
+  identicalRespellings: [],
   outcome: { result: 'RESERVED', abandoned: false, lastExchanges: [] },
   ...overrides,
 });
@@ -117,6 +118,32 @@ describe('rankIssues', () => {
 
   it('ne garde pas les écarts de gravité basse', () => {
     expect(rankIssues(parts({ ears: [ears({ kind: 'word', severity: 'low' })] }))).toEqual([]);
+  });
+});
+
+describe("erreur d'oreille systématique", () => {
+  it('classe une ré-épellation identique après relecture au-dessus de la compréhension, sous la prononciation', () => {
+    const issues = rankIssues(
+      parts({
+        mouth: [mouth()],
+        ears: [ears()],
+        identicalRespellings: [
+          {
+            letters: ['a', '2', 's', 'a', 'm'],
+            readbackTurnId: 't6',
+            readbackText: 'Je note A, double A, S, A, M. C’est bien ça ?',
+            firstTurnIds: ['t6'],
+            secondTurnIds: ['t12'],
+          },
+        ],
+      }),
+    );
+    expect(issues.map((issue) => issue.kind).slice(0, 3)).toEqual([
+      'mouth_isolated_letters',
+      'systematic_ear_error',
+      'ears_live_wrong',
+    ]);
+    expect(issues[1].title).toContain('a 2 s a m');
   });
 });
 
