@@ -23,6 +23,28 @@ describe('isSpelledAt', () => {
 });
 
 describe('compareEars', () => {
+  it('ne prend pas le « h » de « 18 h 30 » pour une lettre isolée (appel 8f254faa)', () => {
+    const result = compareEars({
+      live: '18 h 30 pour trois ça',
+      engines: { nova: '18 heures 30 pour 3 ça' },
+    });
+    expect(result.map((item) => item.kind)).not.toContain('isolated_letters');
+    expect(result.every((item) => item.severity !== 'high')).toBe(true);
+  });
+
+  it('garde une vraie lettre isolée collée à un nombre dans une épellation', () => {
+    const result = compareEars({
+      live: 'a 2 k i f',
+      engines: { nova: 'a 3 k i f' },
+    });
+    expect(result.map((item) => item.kind)).toContain('number');
+    const letters = compareEars({
+      live: 'nom a 2 k i f',
+      engines: { nova: 'nom a 2 k i s' },
+    });
+    expect(letters.map((item) => item.kind)).toContain('isolated_letters');
+  });
+
   it('ne signale rien quand les trois oreilles concordent', () => {
     const text = 'je voudrais réserver pour quatre';
     expect(compareEars({ live: text, engines: { nova: text, whisper: text } })).toEqual([]);
