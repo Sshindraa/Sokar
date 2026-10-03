@@ -1393,3 +1393,10 @@ Source : événements `voiceTurn` de tous les journaux disponibles (19/09 → 03
 - **Validation (8043662c, 935ff343, 03b19223, 3ba7c66f).** Trouvés : « deux secondes et deux mètres », « H… Huey » (relecture H, O, U, E, T correcte non signalée), 2,98 s après un verdict « inachevé » sans reprise, abandon à 7, « m » entendu « a m » (le « a » perdu) et « a » que personne n'a entendu (segment recollé) avec interruption réelle. Raté : « A, M » entendu « a deux m » par les trois oreilles (8043662c). Énergie identique au script Python (écart 0,000 s sur 70 bornes). Faux positifs : hallucinations de Whisper, « h » après un chiffre, zones d'épellation confuses (détail dans `docs/runbooks/call-reports.md`).
 - **Limites.** Journaux à 14 jours (rapport sans causes au-delà, signalé) ; liaison par l'heure pour les appels d'avant la ligne de liaison ; erreur commune aux trois oreilles invisible.
 - **À faire.** Valider par l'utilisateur, puis activer `CALL_REPORT_ENABLED=true` sur le worker (avec `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` pour Chez Sokar). Phase suivante (client robot) non commencée.
+
+## 2026-10-03 — Voix : rapport automatique d'appel activé en production
+
+- PR #391 fusionnée (392f2884), CI, staging et production verts. Prérequis déjà en place sur le VPS : `CALL_RECORDING_ENABLED=true`, `DEEPGRAM_API_KEY`, `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`.
+- **Activation** : `CALL_REPORT_ENABLED=true` ajouté à `/opt/sokar/apps/api/.env`, `pm2 reload sokar-workers --update-env` (workers prêts). Retrait : supprimer la ligne et recharger. Pas de redémarrage de l'API.
+- **Essai de bout en bout en production** sur l'appel 03b19223 (job lancé à la main depuis `dist/`) : rapport stocké en 4,5 s, 0,0097 $, lu par `voice_call_audio.py report 03b19223` ; `report --day 2026-10-02` donne le résumé. Journaux : comptes seulement.
+- À vérifier au prochain appel réel de test : rapport produit tout seul après « recording stored privately », ligne de liaison `[voice-report] call linked` (statut `linked`).
