@@ -23,10 +23,8 @@ import {
 import { voiceConfig, type VoiceConfig } from '../../../env';
 import type { CallSession, ChatMessage } from '../stream/types';
 import type { getRestaurantTools } from '../tools';
-import {
-  activatePendingInteraction,
-  getReservationConfirmationKey,
-} from '../stream/conversation-controller';
+import { activatePendingInteraction } from '../stream/conversation-controller';
+import { getReservationConfirmationKey } from '../stream/conversation-state';
 
 // ── Module mocks ───────────────────────────────────────────────────────────
 

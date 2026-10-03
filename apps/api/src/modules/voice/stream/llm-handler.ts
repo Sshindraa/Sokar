@@ -53,13 +53,9 @@ import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.
 import { isSpeculativeLlmEnabled } from './speculation';
 import { isVoiceDeepgramDialoguePilot, resolveVoiceFeatureSnapshot } from './feature-flags';
 import {
-  getActivePendingInteraction,
-  extractConversationSlots,
   isModelTurnStalled,
-  isNameCollectionBlocking,
   isVoiceQuestionTranscript,
   isVoiceDialogueStopRequest,
-  isVoiceDialogueIncompleteTranscript,
   findVoiceSlotContradictions,
   isDirectVoiceAnswerToPendingQuestion,
   buildVoiceCorrectionClarification,
@@ -67,6 +63,12 @@ import {
   isSafeVoiceCorrectionReply,
   recordModelTurnStall,
 } from './conversation-controller';
+import {
+  getActivePendingInteraction,
+  extractConversationSlots,
+  isNameCollectionBlocking,
+  isVoiceDialogueIncompleteTranscript,
+} from './conversation-state';
 import {
   captureTurnPlanPolicySnapshot,
   isTurnPlanShadowEnabled,
@@ -105,7 +107,6 @@ import {
 } from './voice-language';
 import {
   buildAvailabilityErrorPlan,
-  buildLlmFailurePlan,
   buildVoiceStageFailurePlan,
   buildRecapRejectionPlan,
   extractSpokenTimes,
@@ -113,7 +114,6 @@ import {
   getOpenAvailabilityRequest,
   buildOpenAvailabilityReply,
   buildAvailabilityLlmContext,
-  buildAvailabilityReplyPlan,
   buildDeterministicTurnPlan,
   buildHumanFallbackClarification,
   buildReservationProgressPlan,
@@ -124,7 +124,6 @@ import {
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
   parseSpelledNameTranscriptDetailed,
-  finalAssistantQuestion,
   isAffirmativeShortResponse,
   isNegativeShortResponse,
   recordAssistantReplyWithPolicy,
@@ -134,6 +133,11 @@ import {
   suspendPendingInteractionForDetour,
   resetNameCollectionAfterFallback,
 } from './conversation-controller';
+import {
+  buildLlmFailurePlan,
+  buildAvailabilityReplyPlan,
+  finalAssistantQuestion,
+} from './conversation-state';
 import { voiceConfig } from '../../../env';
 import { voiceLlmSpokenFallbackTotal } from '../../../shared/observability/metrics';
 

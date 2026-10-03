@@ -27,7 +27,7 @@ import {
   buildLlmFailurePlan,
   getReservationConfirmationKey,
   voiceMaxPartySize,
-} from '../conversation-controller';
+} from '../conversation-state';
 import {
   appendDebugSpeechText,
   recordDebugAgentSpeech,

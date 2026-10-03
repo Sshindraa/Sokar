@@ -4,13 +4,10 @@ import {
   buildDeterministicTurnPlan,
   buildAvailabilityFollowupPlan,
   buildAvailabilityFollowupResponse,
-  buildAvailabilityReplyPlan,
   buildAvailabilityErrorPlan,
   buildAvailabilityLlmContext,
-  buildAvailabilityReply,
   buildAnswerChoicePlan,
   openingHourTimes,
-  buildLlmFailurePlan,
   buildVoiceStageFailurePlan,
   buildOpenAvailabilityReply,
   extractDayPeriod,
@@ -21,7 +18,6 @@ import {
   classifyVoiceSpeechAct,
   classifyVoiceSpeechActInContext,
   createConversationState,
-  extractConversationSlots,
   getReadyAvailabilityRequest,
   guardDialogueReprompt,
   buildReservationProgressPlan,
@@ -29,10 +25,7 @@ import {
   buildPendingQuestionResponse,
   confirmReservationDraft,
   extractPlainCustomerName,
-  getActivePendingInteraction,
-  getReservationConfirmationKey,
   handleCustomerNameTurn,
-  isNameCollectionBlocking,
   parseSpelledNameTranscript,
   parseSpelledNameTranscriptDetailed,
   recordAssistantReply as applyAssistantReplyPolicyDecision,
@@ -45,6 +38,15 @@ import {
   suspendPendingInteractionForDetour,
   pendingQuestionFrom,
 } from '../stream/conversation-controller';
+import {
+  buildAvailabilityReplyPlan,
+  buildAvailabilityReply,
+  buildLlmFailurePlan,
+  extractConversationSlots,
+  getActivePendingInteraction,
+  getReservationConfirmationKey,
+  isNameCollectionBlocking,
+} from '../stream/conversation-state';
 import { decideAssistantInteractionPolicy } from '../stream/turn-policy';
 import type { CallSession } from '../stream/types';
 

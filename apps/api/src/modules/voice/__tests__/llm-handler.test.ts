@@ -11,10 +11,8 @@ import {
 } from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
-import {
-  createConversationState,
-  extractConversationSlots,
-} from '../stream/conversation-controller';
+import { createConversationState } from '../stream/conversation-controller';
+import { extractConversationSlots } from '../stream/conversation-state';
 import { effectiveVoiceLanguage, effectiveVoiceLocale } from '../stream/voice-language';
 
 const session = {

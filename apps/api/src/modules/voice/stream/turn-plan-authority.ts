@@ -1,20 +1,19 @@
 import type { CallSession, PendingInteractionKind, VoiceSpeechAct } from './types';
 import { turnPlanFacts, type TurnPlan, type TurnPlanContext } from './turn-plan';
 import { isTurnPlanShadowEnabled, type TurnPlanPolicySnapshot } from './turn-plan-shadow';
-import {
-  decideAssistantInteractionPolicy,
-  decideTurnPlanPolicy,
-  type AssistantInteractionProposal,
-} from './turn-policy';
+import { decideAssistantInteractionPolicy, decideTurnPlanPolicy } from './turn-policy';
+import { type AssistantInteractionProposal } from './voice-action-policy';
 import {
   clearReservationConfirmation,
+  proposeAssistantInteractionFromLlmText,
+  recordAssistantReplyWithPolicy,
+} from './conversation-controller';
+import {
   finalAssistantQuestion,
   getReservationConfirmationKey,
   isNameCollectionBlocking,
-  proposeAssistantInteractionFromLlmText,
-  recordAssistantReplyWithPolicy,
   voiceMaxPartySize,
-} from './conversation-controller';
+} from './conversation-state';
 import { recordVoiceTurnPlanAuthority } from '../../../shared/observability/metrics';
 
 /**

@@ -11,7 +11,7 @@ import { speculateStructuredTurn } from './structured-turn/engine';
 import {
   isNameCollectionBlocking,
   isVoiceDialogueIncompleteTranscript,
-} from './conversation-controller';
+} from './conversation-state';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';

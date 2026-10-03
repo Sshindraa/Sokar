@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  authorizeVoiceTool,
   decideTurnPolicy,
   type DeterministicTurnProposal,
   type TurnPolicyContext,
-  type VoiceToolPolicyContext,
 } from '../stream/turn-policy';
+import { authorizeVoiceTool, type VoiceToolPolicyContext } from '../stream/voice-action-policy';
 
 function context(overrides: Partial<TurnPolicyContext> = {}): TurnPolicyContext {
   return {
