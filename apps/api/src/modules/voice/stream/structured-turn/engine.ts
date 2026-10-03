@@ -538,6 +538,9 @@ export async function runStructuredTurn(
     ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
   };
 
+  /** Fait sur le nom donné à la seconde passe : celle-ci relit alors le nom retenu. */
+  let pendingNameFact: string | null = null;
+
   const runPass = async (
     actionResult?: string,
     onlyActions?: readonly StructuredTurnAction[],
@@ -669,7 +672,9 @@ export async function runStructuredTurn(
       // Le nom est connu avant `say` : si la phrase relit le nom, on la retient jusqu'à pouvoir vérifier ses lettres.
       if (readbackName === null && !slotConflict && action === 'none') {
         const awaitingNow = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1];
-        if (awaitingNow === 'customerNameConfirmation') {
+        // La passe qui suit un fait sur le nom est une relecture, quel que soit l'`awaiting` que le modèle déclare.
+        const readbackPass = actionResult !== undefined && actionResult === pendingNameFact;
+        if (awaitingNow === 'customerNameConfirmation' || readbackPass) {
           // Brouillon sans nom (seconde passe qui ne le répète pas, appel 8f254faa) : la relecture se vérifie
           // quand même, contre le nom déjà retenu. Sinon « H, O, E, T » passait pour « HOUET ».
           const streamed = parseStreamedCustomerName(extractor.raw);
@@ -969,6 +974,7 @@ export async function runStructuredTurn(
       // rien n'a été dit ; le second passage reçoit le fait réel.
       actionResult =
         first.hoursFact ?? first.nameFact ?? first.correctionFact ?? (await runAvailability());
+      if (!first.hoursFact && first.nameFact) pendingNameFact = first.nameFact;
     } else {
       switch (first.output.action) {
         case 'end_call':
