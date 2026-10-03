@@ -670,7 +670,10 @@ export async function runStructuredTurn(
       if (readbackName === null && !slotConflict && action === 'none') {
         const awaitingNow = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1];
         if (awaitingNow === 'customerNameConfirmation') {
-          const proposed = parseStreamedCustomerName(extractor.raw);
+          // Brouillon sans nom (seconde passe qui ne le répète pas, appel 8f254faa) : la relecture se vérifie
+          // quand même, contre le nom déjà retenu. Sinon « H, O, E, T » passait pour « HOUET ».
+          const streamed = parseStreamedCustomerName(extractor.raw);
+          const proposed = streamed?.trim() ? streamed : state.draft.customerName;
           if (proposed?.trim()) {
             const expected = reconcileSpelledName(
               { ...state.draft, customerName: proposed },
@@ -1035,6 +1038,17 @@ export async function runStructuredTurn(
         ...(second.output.understanding ? { understanding: second.output.understanding } : {}),
         changedFields: reapplied.changed.join(',') || null,
         rejectedFields: reapplied.rejected.join(',') || null,
+      });
+      // Seconde passe (appel 8f254faa : relecture « H, O, E, T » alors que le premier passage disait « H, O, U, E, T ») :
+      // ce que le code lui a demandé, ce que le modèle a produit, et ce qui a vraiment été dit.
+      logVoiceDebugText(session, 'structured_output_pass2', {
+        transcript,
+        fact: actionResult.slice(0, 600),
+        say: second.output.say,
+        draft: JSON.stringify(second.output.draft),
+        spoken: spokenPhrases.join(' | '),
+        spokenByStream: second.spoken,
+        stateName: state.draft.customerName,
       });
       final = second.output;
       if (!noHangUp && second.output.action === 'end_call' && second.output.confidence !== 'low') {
