@@ -27,6 +27,8 @@ export interface BillingStatus {
 export type OpeningHours = {
   open: string;
   close: string;
+  slots?: Array<{ open: string; close: string }>;
+  services?: Array<{ open: string; close: string }>;
 };
 
 export interface Restaurant {

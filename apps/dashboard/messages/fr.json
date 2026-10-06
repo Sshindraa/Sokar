@@ -27,8 +27,8 @@
     "marketing": "Campagnes",
     "reputation": "Avis clients",
     "loyalty": "Avantages clients",
-    "experiences": "Offres",
-    "events": "Événements",
+    "experiences": "Expériences à réserver",
+    "events": "Événements & billets",
     "distribution": "Partenaires",
     "usage": "Consommation",
     "margin": "Marge Sokar",
@@ -93,5 +93,25 @@
     "settings": "Réglages",
     "signOut": "Déconnexion",
     "signingOut": "Déconnexion…"
+  },
+  "offerChooser": {
+    "openButton": "Créer une offre",
+    "title": "Que souhaitez-vous créer ?",
+    "description": "Choisissez le parcours adapté à votre offre.",
+    "experience": {
+      "title": "Expérience à réserver",
+      "description": "Atelier, brunch, cours de cuisine… Vos clients choisissent une date et réservent des places.",
+      "action": "Créer une expérience"
+    },
+    "event": {
+      "title": "Événement avec billets",
+      "description": "Concert, soirée, dîner-spectacle… Proposez plusieurs tarifs et contrôlez les billets à l’entrée.",
+      "action": "Créer un événement"
+    },
+    "giftCard": {
+      "title": "Carte cadeau",
+      "description": "Un montant ou une formule à offrir, puis à utiliser dans votre restaurant.",
+      "action": "Créer une carte cadeau"
+    }
   }
 }

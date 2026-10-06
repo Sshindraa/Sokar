@@ -8,10 +8,36 @@ import {
   DialogDescription,
   DialogHeader,
 } from '@/components/ui/dialog';
+import { ArrowLeft } from 'lucide-react';
 import { useOnboarding } from './onboarding-provider';
 import type { OnboardingTaskKey } from './types';
 import { STEP_COMPONENTS, STEP_KEYS, STEP_META } from './steps';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { OnboardingNavFooter } from './onboarding-nav-footer';
+
+const CONNECT_STEP_COPY = {
+  'connect-identity': {
+    title: 'Votre restaurant en quelques mots',
+    description: 'Nous avons préparé votre page. Vérifiez-la avant de continuer.',
+  },
+  'connect-location': {
+    title: 'Où se trouve votre restaurant ?',
+    description: 'Vérifiez l’adresse qui aidera vos clients à vous trouver près de chez eux.',
+  },
+  'connect-cuisine': {
+    title: 'Votre cuisine et votre ambiance',
+    description: 'Ces repères aideront vos clients à savoir si votre restaurant leur correspond.',
+  },
+  'connect-capacity': {
+    title: 'Des réservations à votre rythme',
+    description: 'Vérifiez les règles proposées. Vous pourrez les ajuster à tout moment.',
+  },
+  'connect-activation': {
+    title: 'Votre page est prête',
+    description: 'Prévisualisez-la, puis choisissez si vous souhaitez la publier maintenant.',
+  },
+} as const;
 
 /**
  * Modal centré qui héberge une étape d'onboarding.
@@ -22,7 +48,7 @@ import { OnboardingNavFooter } from './onboarding-nav-footer';
  * - Footer de navigation partagé avec la page dédiée via OnboardingNavFooter.
  */
 export function OnboardingModal() {
-  const { state, activeStep, openStepModal, closeStepModal, updateTask } = useOnboarding();
+  const { activeStep, openStepModal, closeStepModal, updateTask } = useOnboarding();
 
   const open = Boolean(activeStep);
 
@@ -67,39 +93,97 @@ export function OnboardingModal() {
     if (next) openStepModal(next);
   };
 
-  const completedCount = state?.completedCount ?? 0;
-  const totalCount = state?.totalCount ?? STEP_KEYS.length;
-  const progress = state?.progress ?? 0;
+  const isIdentity = activeStep === 'connect-identity';
+  const isConnect = meta?.group === 'connect';
+  const connectCopy = activeStep
+    ? CONNECT_STEP_COPY[activeStep as keyof typeof CONNECT_STEP_COPY]
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent
+        overlayClassName={isConnect ? 'bg-foreground/40 backdrop-blur-[2px]' : undefined}
+        className={cn(
+          'flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-3xl flex-col overflow-hidden p-0',
+          isConnect &&
+            'max-w-5xl md:[&:has([data-review=true])]:max-w-3xl md:[&:has([data-wide-review=true])]:max-w-5xl md:max-h-[calc(100dvh-2rem)] md:gap-0',
+          isIdentity && 'md:[&:has([data-review=true])]:max-w-xl',
+        )}
+      >
+        <DialogHeader
+          className={cn(
+            'shrink-0 border-b border-border px-6 pb-5 pt-6 text-left sm:px-8',
+            isConnect && 'md:py-[clamp(8px,calc((100dvh_-_600px)/10_+_8px),20px)]',
+          )}
+        >
           <DialogTitle className="flex items-center gap-2">
             {meta && (
-              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-primary">
-                {meta.group === 'voice' ? 'Voice' : 'Connect'} · {meta.index}/5
+              <span className="shrink-0 whitespace-nowrap rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-primary">
+                {meta.group === 'voice' ? 'Assistant vocal' : 'Connect'} · {meta.index}/5
               </span>
             )}
-            {meta?.title ?? 'Mise en service'}
+            {connectCopy?.title ?? meta?.title ?? 'Mise en service'}
           </DialogTitle>
+          <DialogDescription>
+            {connectCopy?.description ?? 'Configurez votre restaurant, une étape à la fois.'}
+          </DialogDescription>
+          {meta && (
+            <div
+              className={cn('flex gap-1.5 pt-3', isConnect && 'md:pt-1')}
+              aria-label={`Étape ${meta.index} sur 5`}
+            >
+              {Array.from({ length: 5 }, (_, index) => (
+                <span
+                  key={index}
+                  className={cn(
+                    'h-1 flex-1 rounded-full bg-muted',
+                    index < meta.index && 'bg-primary',
+                  )}
+                />
+              ))}
+            </div>
+          )}
         </DialogHeader>
 
         {StepComponent && activeStep && (
-          <div className="pt-2">
+          <div
+            data-onboarding-body
+            className={cn(
+              'min-h-0 overflow-y-auto px-6 py-6 sm:px-8',
+              isConnect && 'md:py-[clamp(8px,calc((100dvh_-_600px)/10_+_8px),20px)]',
+            )}
+          >
             <StepComponent onComplete={handleComplete} />
           </div>
         )}
 
-        <OnboardingNavFooter
-          currentStep={activeStep ?? 'restaurant'}
-          onPrev={prev ? handlePrev : null}
-          onNext={next ? handleNext : null}
-          onExit={closeStepModal}
-          completedCount={completedCount}
-          totalCount={totalCount}
-          progress={progress}
-        />
+        {isConnect ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-background px-6 py-4 sm:px-8 md:py-[clamp(8px,calc((100dvh_-_600px)/15_+_8px),16px)]">
+            <div className="flex flex-wrap items-center gap-1">
+              {activeStep !== 'connect-identity' && prev && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handlePrev}
+                  className="gap-2 transition-all duration-200"
+                >
+                  <ArrowLeft size={16} />
+                  Étape précédente
+                </Button>
+              )}
+            </div>
+            <div id="connect-step-actions" className="flex items-center justify-end" />
+          </div>
+        ) : (
+          <div className="shrink-0 px-6 pb-4 sm:px-8">
+            <OnboardingNavFooter
+              currentStep={activeStep ?? 'restaurant'}
+              onPrev={prev ? handlePrev : null}
+              onNext={next ? handleNext : null}
+              onExit={closeStepModal}
+            />
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -136,13 +136,15 @@ export class CapacityAwareAvailabilityService {
 
     const dayOfWeek = computeDayOfWeek(args.date);
     const openingHours = normalizeOpeningHours(restaurant.openingHours);
-    const dayHours = openingHours.find((d) => d.dayIndex === dayOfWeek);
+    const dayHours = openingHours.filter((period) => period.dayIndex === dayOfWeek);
 
-    if (!dayHours) {
+    if (dayHours.length === 0) {
       return emptyAvailability(args);
     }
 
-    const allSlots = generateSlots(dayHours.open, dayHours.close, SLOT_MINUTES);
+    const allSlots = Array.from(
+      new Set(dayHours.flatMap((period) => generateSlots(period.open, period.close, SLOT_MINUTES))),
+    ).sort();
     if (allSlots.length === 0) {
       return emptyAvailability(args);
     }

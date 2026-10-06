@@ -1,5 +1,8 @@
+import { isLocalGiftCardTest } from './gift-card-local-test';
 import { giftCardOperationsRoutes } from './gift-card-operations.routes';
 import type { FastifyInstance } from 'fastify';
+import type Stripe from 'stripe';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { Prisma, GiftCard, GiftCardRedemption } from '@prisma/client';
 import { db } from '../../shared/db/client';
@@ -13,6 +16,7 @@ import {
   retrieveConnectedAccount,
   createConnectedAccount,
   createConnectedAccountLink,
+  createConnectedAccountSession,
 } from './stripe.service';
 import { GiftCardPaymentConflictError, GiftCardPaymentService } from './gift-card-payment.service';
 import { GiftCardCheckoutService } from './gift-card-checkout.service';
@@ -25,6 +29,10 @@ import { retrievePaymentIntent } from './stripe.service';
 import { giftCardHash } from './gift-card-finance.util';
 import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
 import { handleBillingWebhook } from '../billing/billing.service';
+import {
+  handleExperienceCheckoutStripeEvent,
+  handleExperienceRefundStripeEvent,
+} from '../experiences/experience-payment.service';
 
 const ListGiftCardsQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED', 'CLOSED']).optional(),
@@ -345,22 +353,64 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get(
+    '/restaurants/:id/gift-cards/test-context',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      reply.header('Cache-Control', 'no-store');
+      if (id !== req.restaurantId) return reply.status(403).send({ error: 'Accès refusé' });
+      if (!isLocalGiftCardTest(id)) return reply.send({ enabled: false });
+      if (req.siteRole !== 'OWNER')
+        return reply.status(403).send({ error: 'Action réservée au propriétaire' });
+      const restaurant = await db.restaurant.findUniqueOrThrow({
+        where: { id: req.restaurantId },
+        select: { slug: true, giftCardEnabled: true },
+      });
+      if (!restaurant.slug) return reply.send({ enabled: false });
+      return reply.send({
+        enabled: true,
+        purchaseUrl: `http://localhost:4002/widget/${encodeURIComponent(restaurant.slug)}/gift-card`,
+        beneficiaryBaseUrl: 'http://localhost:4002/gift-card/',
+        giftCardEnabled: restaurant.giftCardEnabled,
+        emailConfigured: !!process.env.RESEND_API_KEY,
+        smsConfigured: !!process.env.TELNYX_API_KEY && !!process.env.TELNYX_FROM_NUMBER,
+      });
+    },
+  );
+  app.get(
     '/restaurants/:id/gift-cards/stripe-connect',
     { preHandler: requireOrg() },
     async (req, reply) => {
       const { id } = req.params as { id: string };
       if (id !== req.restaurantId) return reply.status(403).send({ error: 'Accès refusé' });
+      reply.header('Cache-Control', 'no-store');
       const restaurant = await db.restaurant.findUniqueOrThrow({
         where: { id: req.restaurantId },
         select: { giftCardStripeAccountId: true },
       });
       if (!restaurant.giftCardStripeAccountId)
-        return reply.send({ connected: false, chargesEnabled: false, payoutsEnabled: false });
+        return reply.send({
+          connected: false,
+          chargesEnabled: false,
+          payoutsEnabled: false,
+          canConfigure: req.siteRole === 'OWNER',
+          detailsSubmitted: false,
+          onboardingState: 'configuration_required',
+          actionItems: [
+            'Renseigner les informations de votre établissement et votre compte bancaire',
+          ],
+          deadline: null,
+        });
       const account = await retrieveConnectedAccount(restaurant.giftCardStripeAccountId);
       return reply.send({
         connected: true,
         chargesEnabled: account.chargesEnabled,
         payoutsEnabled: account.payoutsEnabled,
+        canConfigure: req.siteRole === 'OWNER',
+        detailsSubmitted: account.detailsSubmitted,
+        onboardingState: account.onboardingState,
+        actionItems: account.actionItems,
+        deadline: account.deadline,
       });
     },
   );
@@ -381,6 +431,31 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       await db.restaurant.update({ where: { id }, data: { giftCardStripeAccountId: accountId } });
       const link = await createConnectedAccountLink(accountId);
       return reply.send({ url: link.url });
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/gift-cards/stripe-connect/session',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (id !== req.restaurantId || req.siteRole !== 'OWNER')
+        return reply.status(403).send({ error: 'Accès réservé au propriétaire' });
+      const restaurant = await db.restaurant.findUniqueOrThrow({
+        where: { id: req.restaurantId },
+        select: { giftCardStripeAccountId: true, managerEmail: true },
+      });
+      const accountId =
+        restaurant.giftCardStripeAccountId ??
+        (await createConnectedAccount(id, restaurant.managerEmail));
+      if (!restaurant.giftCardStripeAccountId) {
+        await db.restaurant.update({
+          where: { id: req.restaurantId },
+          data: { giftCardStripeAccountId: accountId },
+        });
+      }
+      reply.header('Cache-Control', 'no-store');
+      return reply.send(await createConnectedAccountSession(accountId));
     },
   );
 
@@ -930,7 +1005,28 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
-      if (event.type === 'payment_intent.succeeded') {
+      if (
+        [
+          'checkout.session.completed',
+          'checkout.session.async_payment_succeeded',
+          'checkout.session.expired',
+        ].includes(event.type)
+      ) {
+        const result = await handleExperienceCheckoutStripeEvent({
+          eventId: event.id,
+          eventType: event.type,
+          occurredAt: new Date(event.created * 1_000),
+          payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+          accountId: event.account ?? null,
+          session: event.data.object as Stripe.Checkout.Session,
+        });
+        if (!result.handled) {
+          logger.info(
+            { eventType: event.type },
+            '[stripe-webhook] Unhandled checkout session event',
+          );
+        }
+      } else if (event.type === 'payment_intent.succeeded') {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
         if (pi.metadata?.type === 'crowdfunding_contribution') {
@@ -987,6 +1083,16 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           paymentIntentId = await retrieveChargePaymentIntent(charge.charge, event.account);
         }
         if (paymentIntentId) {
+          if (event.type.startsWith('refund.')) {
+            await handleExperienceRefundStripeEvent({
+              eventId: event.id,
+              eventType: event.type,
+              occurredAt: new Date(event.created * 1_000),
+              payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+              accountId: event.account ?? null,
+              refund: event.data.object as Stripe.Refund,
+            });
+          }
           const paymentService = new GiftCardPaymentService(db);
           await paymentService.handleRefundUpdated(paymentIntentId, charge.status, event.account);
         }

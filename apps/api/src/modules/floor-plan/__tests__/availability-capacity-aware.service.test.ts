@@ -47,7 +47,10 @@ import { redisCache } from '../../../shared/redis/client';
 type MinimalRestaurant = Restaurant & { exposureSettings: RestaurantExposureSettings | null };
 
 function makeRestaurant(
-  overrides: Partial<MinimalRestaurant> & { id: string; openingHours: unknown },
+  overrides: Partial<Omit<MinimalRestaurant, 'openingHours'>> & {
+    id: string;
+    openingHours: unknown;
+  },
 ): MinimalRestaurant {
   return {
     id: overrides.id,
@@ -109,6 +112,9 @@ function makeRestaurant(
     giftCardCommissionRate: (overrides.giftCardCommissionRate ?? 0.05) as unknown as Prisma.Decimal,
     giftCardStripeAccountId: null,
     giftCardEnabled: overrides.giftCardEnabled ?? false,
+    experienceStripeAccountId: overrides.experienceStripeAccountId ?? null,
+    experienceCommissionRate: (overrides.experienceCommissionRate ??
+      null) as unknown as Prisma.Decimal | null,
     crmSensitiveNoteRoles: overrides.crmSensitiveNoteRoles ?? null,
     exposureSettings: overrides.exposureSettings ?? null,
   };
@@ -399,11 +405,11 @@ const openingHours = {
   sunday: { open: '19:00', close: '22:30' },
 };
 
-function makeBaseRestaurant(capacitySpecials: unknown = {}) {
+function makeBaseRestaurant(capacitySpecials: unknown = {}, hours: unknown = openingHours) {
   return makeRestaurant({
     id: RESTAURANT_ID,
     timezone: 'Europe/Paris',
-    openingHours,
+    openingHours: hours,
     exposureSettings: makeExposureSettings({
       restaurantId: RESTAURANT_ID,
       capacitySpecials: capacitySpecials as Prisma.JsonValue,
@@ -432,6 +438,61 @@ describe('CapacityAwareAvailabilityService', () => {
     expect(dto.slots.length).toBeGreaterThan(0);
     expect(dto.slots[0]).toHaveProperty('time');
     expect(dto.slots[0]).toHaveProperty('available');
+  });
+
+  it('génère des créneaux au déjeuner et au dîner sans ouvrir la pause', async () => {
+    const splitHours = {
+      ...openingHours,
+      thursday: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant({}, splitHours),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+    const times = dto.slots.map((slot) => slot.time);
+
+    expect(times).toContain('12:00');
+    expect(times).toContain('19:00');
+    expect(times).not.toContain('15:00');
+    expect(times).not.toContain('18:30');
+  });
+
+  it('propose après minuit sur le jour calendrier suivant', async () => {
+    const overnightHours = {
+      ...openingHours,
+      thursday: {
+        open: '22:00',
+        close: '02:00',
+        slots: [{ open: '22:00', close: '02:00' }],
+      },
+      friday: null,
+    };
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant({}, overnightHours),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date: '2026-07-03',
+      partySize: 2,
+    });
+    const times = dto.slots.map((slot) => slot.time);
+
+    expect(times).toContain('00:00');
+    expect(times).toContain('01:30');
+    expect(times).not.toContain('02:00');
   });
 
   it('créneau disponible si au moins une table libre', async () => {

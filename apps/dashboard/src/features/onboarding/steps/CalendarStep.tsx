@@ -1,70 +1,92 @@
 'use client';
 
-import { Calendar, Globe } from 'lucide-react';
+import { Calendar, Check, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { useOnboarding } from '../onboarding-provider';
-import { StepHeader } from '../ui';
+import { StepHeader, OnboardingAction, OnboardingPreview } from '../ui';
 import type { StepProps } from '../types';
 
 export function CalendarStep({ onComplete }: StepProps) {
   const { state, updateTask } = useOnboarding();
   const connected = Boolean(state?.restaurant.googleConnected);
-  const calendarId = state?.restaurant.googleCalendarId;
 
   async function handleComplete() {
-    await updateTask('complete', 'calendar');
-    onComplete('phone');
+    const updated = await updateTask('complete', 'calendar');
+    if (updated) onComplete('phone');
   }
 
-  async function handleSkip() {
-    await updateTask('skip', 'calendar', { reason: 'Agenda manuel' });
-    onComplete('phone');
+  async function handleManualPlanning() {
+    const updated = await updateTask('complete', 'calendar', {
+      metadata: { planningMode: 'sokar' },
+    });
+    if (updated) onComplete('phone');
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+    <div className="space-y-3">
       <StepHeader
         icon={Calendar}
-        title="Connexion au planning"
-        body="Google Calendar nous permet de vérifier la disponibilité en temps réel avant d'attribuer une table."
+        title="Choisissez votre planning"
+        body="Retrouvez vos réservations et préparez chaque service depuis un même endroit."
       />
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-background/60 p-4 transition-colors duration-200">
-          <p className="text-sm text-muted-foreground font-semibold">Statut de la connexion</p>
-          <div className="mt-2 flex items-center gap-2">
-            <span
-              className={cn(
-                'h-2.5 w-2.5 rounded-full',
-                connected ? 'bg-success animate-pulse' : 'bg-muted',
-              )}
-            />
-            <span className="text-sm font-medium">
-              {connected ? `Connecté · ID : ${calendarId}` : 'Non connecté'}
-            </span>
+      <div className="grid max-w-6xl items-start gap-10 lg:grid-cols-2 lg:gap-12">
+        <div className="space-y-5 py-1">
+          <div className="rounded-2xl border border-foreground/25 bg-background p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                <CalendarDays size={20} />
+              </span>
+              <div className="flex-1">
+                <h3 className="text-base font-semibold">Planning Sokar</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Inclus, prêt à utiliser</p>
+              </div>
+              <Check size={18} aria-hidden="true" />
+            </div>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">
+              Vos réservations et vos arrivées réunies dans l’onglet Réservations.
+            </p>
+          </div>
+          <div role="status" className="rounded-2xl border border-border p-5">
+            <p className="text-sm font-medium">
+              {connected ? 'Google Calendar est connecté' : 'Google Calendar'}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {connected
+                ? 'Votre connexion existante est conservée.'
+                : 'La connexion n’est pas disponible dans cet écran. Vous pouvez continuer avec Sokar ; votre agenda Google ne sera pas synchronisé.'}
+            </p>
           </div>
         </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {!connected && (
-            <Button variant="outline" className="transition-colors duration-200" disabled>
-              <Globe size={16} />
-              Connexion Google Calendar (Aperçu)
-            </Button>
-          )}
-          {connected ? (
-            <Button onClick={handleComplete}>Continuer</Button>
-          ) : (
-            <Button onClick={handleSkip} variant="outline">
-              Utiliser le planning manuel (Sokar OS)
-            </Button>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          En choisissant le planning manuel, vous gérez les arrivées depuis l&apos;onglet
-          Réservations.
-        </p>
+        <OnboardingPreview
+          eyebrow="Chaque service, bien préparé"
+          title="Une vue claire de vos réservations"
+          icon={CalendarDays}
+        >
+          <div className="grid grid-cols-3 gap-2 border-b border-background/15 pb-4 text-xs text-background/60">
+            <span>Réservations</span>
+            <span>Arrivées</span>
+            <span>Disponibilités</span>
+          </div>
+          <p className="text-xl font-medium leading-8">
+            Du premier appel à l’arrivée de vos clients.
+          </p>
+          <p className="text-sm leading-6 text-background/60">
+            Sokar prend les réservations. Vous les retrouvez dans votre planning pour organiser
+            votre accueil.
+          </p>
+        </OnboardingPreview>
       </div>
+      <OnboardingAction>
+        {connected ? (
+          <Button onClick={handleComplete} className="transition-all duration-200">
+            Continuer vers les appels
+          </Button>
+        ) : (
+          <Button onClick={handleManualPlanning} className="transition-all duration-200">
+            Utiliser le planning manuel (Sokar OS)
+          </Button>
+        )}
+      </OnboardingAction>
     </div>
   );
 }

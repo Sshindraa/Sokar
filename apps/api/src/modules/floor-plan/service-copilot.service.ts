@@ -142,12 +142,13 @@ export class ServiceCopilotService {
     );
 
     const lateThreshold = new Date(now.getTime() - LATE_THRESHOLD_MINUTES * 60_000);
+    const lateWindowStart = new Date(now.getTime() - LATE_WINDOW_AFTER_STARTS_MINUTES * 60_000);
     const soonFreeMax = new Date(now.getTime() + SOON_FREE_WINDOW_MINUTES * 60_000);
     const waitingListMax = new Date(now.getTime() + WAITING_LIST_WINDOW_MINUTES * 60_000);
     const waitingListUrgent = new Date(now.getTime() + WAITING_LIST_URGENCY_MINUTES * 60_000);
 
     const [lateReservations, seatedReservations, waitingListEntries] = await Promise.all([
-      this.fetchLateReservations(restaurantId, lateThreshold),
+      this.fetchLateReservations(restaurantId, lateWindowStart, lateThreshold),
       this.fetchSeatedReservations(restaurantId, now),
       this.fetchWaitingListEntries(restaurantId, now, waitingListMax),
     ]);
@@ -211,13 +212,17 @@ export class ServiceCopilotService {
       if (rec) this.addUnique(recommendations, seen, rec);
     }
 
-    recommendations.sort((a, b) => {
+    const currentRecommendations = recommendations.filter(
+      (recommendation) => new Date(recommendation.expiresAt).getTime() > now.getTime(),
+    );
+
+    currentRecommendations.sort((a, b) => {
       const priorityDiff = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
       if (priorityDiff !== 0) return priorityDiff;
       return new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime();
     });
 
-    return recommendations.slice(0, 3);
+    return currentRecommendations.slice(0, 3);
   }
 
   private async fetchReportedDelays(restaurantId: string, now: Date) {
@@ -390,13 +395,14 @@ export class ServiceCopilotService {
 
   private fetchLateReservations(
     restaurantId: string,
+    lateWindowStart: Date,
     lateThreshold: Date,
   ): Promise<ReservationWithTable[]> {
     return this.prisma.reservation.findMany({
       where: {
         restaurantId,
         state: 'CONFIRMED',
-        startsAt: { not: null, lt: lateThreshold },
+        startsAt: { not: null, gte: lateWindowStart, lt: lateThreshold },
       },
       select: {
         id: true,
@@ -481,7 +487,7 @@ export class ServiceCopilotService {
       reason: `Le client n'est pas arrivé et le créneau a débuté il y a ${minutesLate} minutes.`,
       action: {
         type: 'link',
-        label: 'Gérer la réservation',
+        label: 'Ouvrir les réservations',
         href: '/dashboard/reservations',
       },
       entityId: reservation.id,
@@ -610,7 +616,7 @@ export class ServiceCopilotService {
       reason: `Une table est disponible vers ${formatTime(entry.slotStart, timeZone)} pour ${entry.partySize} couverts.`,
       action: {
         type: 'link',
-        label: 'Proposer une table',
+        label: 'Ouvrir la Salle',
         href: '/dashboard/floor-plan',
       },
       entityId: entry.id,

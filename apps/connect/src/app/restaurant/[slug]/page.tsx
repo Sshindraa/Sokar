@@ -20,8 +20,8 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { headers } from 'next/headers';
 import { fetchPublicRestaurant, fetchPublishedSlugs, fetchAvailability } from '@/lib/api-client';
+import { fetchPublicExperiences } from '@/lib/api/experiences';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView, trackEvent } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
@@ -166,9 +166,6 @@ export default async function RestaurantPage({
     notFound();
   }
 
-  // Read CSP nonce from middleware (audit sécurité Phase 2)
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
-
   // Track page_view côté client (en ISR, le server-side ne s'exécute qu'au revalidate)
   // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
 
@@ -215,6 +212,13 @@ export default async function RestaurantPage({
   );
   const availableSlots = availability?.slots.filter((s) => s.available).slice(0, 4) ?? [];
   const previewShown = availableSlots.length > 0;
+  let hasBookableExperiences = false;
+  try {
+    const experienceCatalog = await fetchPublicExperiences(restaurant.slug);
+    hasBookableExperiences = experienceCatalog.experiences.length > 0;
+  } catch {
+    // The public experience module is independently feature-gated.
+  }
 
   // Track availability_preview_shown (fire-and-forget, best-effort)
   if (previewShown) {
@@ -246,10 +250,9 @@ export default async function RestaurantPage({
 
   return (
     <>
-      <ReservationJsonLd jsonLd={jsonLd} nonce={nonce} />
+      <ReservationJsonLd jsonLd={jsonLd} />
       <script
         type="application/ld+json"
-        nonce={nonce}
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
@@ -465,6 +468,21 @@ export default async function RestaurantPage({
               Voir les disponibilités
             </BookCtaLink>
           </section>
+
+          {hasBookableExperiences && (
+            <section className="mb-8 rounded-xl border border-border bg-background p-6">
+              <h2 className="mb-2 text-xl font-semibold text-ink">Ateliers et événements</h2>
+              <p className="text-sm text-muted-foreground">
+                Découvrez les expériences proposées par le restaurant et réservez votre date.
+              </p>
+              <Link
+                href={`/restaurant/${restaurant.slug}/experiences`}
+                className="mt-4 inline-flex items-center justify-center rounded-lg bg-ink px-5 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-ink/90"
+              >
+                Découvrir les expériences
+              </Link>
+            </section>
+          )}
 
           <section className="rounded-xl border border-border bg-background p-6">
             <h2 className="mb-3 text-xl font-semibold text-ink">Questions fréquentes</h2>

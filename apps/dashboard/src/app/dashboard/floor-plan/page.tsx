@@ -249,7 +249,7 @@ export default function FloorPlanPage() {
       )}
 
       {selectedFloorPlanId && activeView === 'service-live' && (
-        <ServiceCopilotWidget showCalm={false} />
+        <ServiceCopilotWidget showCalm={false} density="service" />
       )}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <FloorPlanCanvas

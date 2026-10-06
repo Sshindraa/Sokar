@@ -14,55 +14,57 @@ datasource db {
 // Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
-  id                      String                 @id @default(uuid())
+  id                        String                 @id @default(uuid())
   /// Compte commercial auquel appartient cet établissement.
   /// Nullable pendant le backfill initial pour préserver les restaurants existants.
-  accountId               String?                @map("account_id")
-  isPrimary               Boolean                @default(false) @map("is_primary")
-  siteStatus              String                 @default("ACTIVE") @map("site_status")
-  name                    String
-  plan                    Plan                   @default(STARTER)
-  managerPhone            String                 @map("manager_phone")
-  managerEmail            String                 @map("manager_email")
-  phoneNumber             String                 @unique @map("phone_number")
-  openingHours            Json                   @map("opening_hours")
-  carrier                 String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
-  smsConfirmEnabled       Boolean                @default(true) @map("sms_confirm_enabled")
-  theforkSavings          Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
-  googleCalendarId        String?                @map("google_calendar_id")
-  googleRefreshToken      String?                @map("google_refresh_token")
-  onboardingTasks         Json                   @default("{}") @map("onboarding_tasks")
-  onboardingDone          Boolean                @default(false) @map("onboarding_done")
-  onboardingCompletedAt   DateTime?              @map("onboarding_completed_at")
-  onboardingActivatedAt   DateTime?              @map("onboarding_activated_at")
-  onboardingLastSeenAt    DateTime?              @map("onboarding_last_seen_at")
-  firstCallAt             DateTime?              @map("first_call_at")
+  accountId                 String?                @map("account_id")
+  isPrimary                 Boolean                @default(false) @map("is_primary")
+  siteStatus                String                 @default("ACTIVE") @map("site_status")
+  name                      String
+  plan                      Plan                   @default(STARTER)
+  managerPhone              String                 @map("manager_phone")
+  managerEmail              String                 @map("manager_email")
+  phoneNumber               String                 @unique @map("phone_number")
+  openingHours              Json                   @map("opening_hours")
+  carrier                   String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled         Boolean                @default(true) @map("sms_confirm_enabled")
+  theforkSavings            Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  googleCalendarId          String?                @map("google_calendar_id")
+  googleRefreshToken        String?                @map("google_refresh_token")
+  onboardingTasks           Json                   @default("{}") @map("onboarding_tasks")
+  onboardingDone            Boolean                @default(false) @map("onboarding_done")
+  onboardingCompletedAt     DateTime?              @map("onboarding_completed_at")
+  onboardingActivatedAt     DateTime?              @map("onboarding_activated_at")
+  onboardingLastSeenAt      DateTime?              @map("onboarding_last_seen_at")
+  firstCallAt               DateTime?              @map("first_call_at")
   // Provisioning fields
-  provisioningStatus      String                 @default("PENDING") @map("provisioning_status")
-  telnyxPhoneNumberId     String?                @map("telnyx_phone_number_id")
-  forwardingConfiguredAt  DateTime?              @map("forwarding_configured_at")
-  testCallValidatedAt     DateTime?              @map("test_call_validated_at")
-  createdAt               DateTime               @default(now()) @map("created_at")
-  updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at")
-  calls                   Call[]
-  reservations            Reservation[]
-  customers               Customer[]
-  messages                Message[]
-  reactivationCampaigns   ReactivationCampaign[]
-  personality             AgentPersonality?
-  callQuotas              CallQuota[]
-  agenticHolds            AgenticHold[]
-  floorPlans              FloorPlan[]
-  giftCards               GiftCard[]
-  giftCardPacks           GiftCardPack[]
-  waitingListEntries      WaitingListEntry[]
-  giftCardMinimumAmount   Int?                   @map("gift_card_minimum_amount")
-  giftCardCommissionRate  Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
-  giftCardEnabled         Boolean                @default(false) @map("gift_card_enabled")
-  giftCardStripeAccountId String?                @unique @map("gift_card_stripe_account_id")
+  provisioningStatus        String                 @default("PENDING") @map("provisioning_status")
+  telnyxPhoneNumberId       String?                @map("telnyx_phone_number_id")
+  forwardingConfiguredAt    DateTime?              @map("forwarding_configured_at")
+  testCallValidatedAt       DateTime?              @map("test_call_validated_at")
+  createdAt                 DateTime               @default(now()) @map("created_at")
+  updatedAt                 DateTime               @default(now()) @updatedAt @map("updated_at")
+  calls                     Call[]
+  reservations              Reservation[]
+  customers                 Customer[]
+  messages                  Message[]
+  reactivationCampaigns     ReactivationCampaign[]
+  personality               AgentPersonality?
+  callQuotas                CallQuota[]
+  agenticHolds              AgenticHold[]
+  floorPlans                FloorPlan[]
+  giftCards                 GiftCard[]
+  giftCardPacks             GiftCardPack[]
+  waitingListEntries        WaitingListEntry[]
+  giftCardMinimumAmount     Int?                   @map("gift_card_minimum_amount")
+  giftCardCommissionRate    Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
+  giftCardEnabled           Boolean                @default(false) @map("gift_card_enabled")
+  giftCardStripeAccountId   String?                @unique @map("gift_card_stripe_account_id")
+  experienceStripeAccountId String?                @unique @map("experience_stripe_account_id")
+  experienceCommissionRate  Decimal?               @map("experience_commission_rate") @db.Decimal(5, 4)
   /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
   /// Null signifie « utiliser CRM_SENSITIVE_NOTE_ROLES » au niveau de l'API.
-  crmSensitiveNoteRoles   String?                @map("crm_sensitive_note_roles")
+  crmSensitiveNoteRoles     String?                @map("crm_sensitive_note_roles")
 
   // Agentic reservations (P0)
   slug                              String?                            @unique @map("slug")
@@ -126,6 +128,8 @@ model Restaurant {
   experiences                       Experience[]
   experienceSessions                ExperienceSession[]
   experienceReservations            ExperienceReservation[]
+  experienceCheckouts               ExperienceCheckout[]
+  experiencePaymentEvents           ExperiencePaymentEvent[]
   events                            Event[]
   eventSessions                     EventSession[]
   eventTicketTypes                  EventTicketType[]
@@ -1172,9 +1176,18 @@ enum ExperienceReservationStatus {
   CANCELLED
 }
 
-/// Provider-neutral catalogue entry for a paid or complimentary restaurant
-/// experience. The local foundation stores the price/capacity snapshot but
-/// deliberately does not create a payment or external channel listing.
+enum ExperienceCheckoutStatus {
+  OPEN
+  PAID
+  FREE
+  EXPIRED
+  REFUND_PENDING
+  REFUNDED
+  REFUND_FAILED
+}
+
+/// Publicly reservable restaurant experience. Online checkout and distribution
+/// remain controlled by the experiences and experience-booking feature gates.
 model Experience {
   id              String                  @id @default(uuid())
   restaurantId    String                  @map("restaurant_id")
@@ -1192,6 +1205,7 @@ model Experience {
   restaurant      Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   sessions        ExperienceSession[]
   reservations    ExperienceReservation[]
+  checkouts       ExperienceCheckout[]
 
   @@unique([restaurantId, key], map: "experiences_restaurant_key_key")
   @@index([restaurantId, status, updatedAt], map: "experiences_restaurant_status_updated_idx")
@@ -1213,6 +1227,7 @@ model ExperienceSession {
   restaurant       Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   experience       Experience              @relation(fields: [experienceId], references: [id], onDelete: Cascade)
   reservations     ExperienceReservation[]
+  checkouts        ExperienceCheckout[]
 
   @@unique([experienceId, startsAt], map: "experience_sessions_experience_starts_key")
   @@index([restaurantId, status, startsAt], map: "experience_sessions_restaurant_status_starts_idx")
@@ -1227,6 +1242,9 @@ model ExperienceReservation {
   experienceId    String                      @map("experience_id")
   sessionId       String                      @map("session_id")
   customerId      String?                     @map("customer_id")
+  customerName    String?                     @map("customer_name")
+  customerEmail   String?                     @map("customer_email")
+  customerPhone   String?                     @map("customer_phone")
   reservationId   String?                     @map("reservation_id")
   idempotencyKey  String?                     @unique @map("idempotency_key")
   quantity        Int                         @default(1)
@@ -1244,11 +1262,63 @@ model ExperienceReservation {
   session         ExperienceSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   customer        Customer?                   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   reservation     Reservation?                @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  paymentCheckout ExperienceCheckout?
 
   @@index([restaurantId, status, createdAt], map: "experience_reservations_restaurant_status_created_idx")
   @@index([sessionId, status], map: "experience_reservations_session_status_idx")
   @@index([restaurantId, customerId, createdAt], map: "experience_reservations_customer_created_idx")
   @@map("experience_reservations")
+}
+
+/// Temporary capacity hold for an online, full-payment experience checkout.
+model ExperienceCheckout {
+  id                      String                   @id @default(uuid())
+  restaurantId            String                   @map("restaurant_id")
+  experienceId            String                   @map("experience_id")
+  sessionId               String                   @map("session_id")
+  reservationId           String?                  @unique @map("reservation_id")
+  quantity                Int
+  unitPriceCents          Int                      @map("unit_price_cents")
+  totalPriceCents         Int                      @map("total_price_cents")
+  sokarFeeCents           Int                      @map("sokar_fee_cents")
+  currency                String                   @default("EUR")
+  status                  ExperienceCheckoutStatus @default(OPEN)
+  stripeAccountId         String                   @map("stripe_account_id")
+  stripeCheckoutSessionId String?                  @unique @map("stripe_checkout_session_id")
+  stripePaymentIntentId   String?                  @unique @map("stripe_payment_intent_id")
+  stripeRefundId          String?                  @unique @map("stripe_refund_id")
+  idempotencyKey          String                   @unique @map("idempotency_key")
+  expiresAt               DateTime                 @map("expires_at")
+  refundedAt              DateTime?                @map("refunded_at")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  restaurant              Restaurant               @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  experience              Experience               @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  session                 ExperienceSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  reservation             ExperienceReservation?   @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  events                  ExperiencePaymentEvent[]
+
+  @@index([restaurantId, status, expiresAt])
+  @@index([sessionId, status, expiresAt])
+  @@map("experience_checkouts")
+}
+
+/// Idempotent signed-provider event ledger; only a payload hash is retained.
+model ExperiencePaymentEvent {
+  id              String             @id @default(uuid())
+  restaurantId    String             @map("restaurant_id")
+  checkoutId      String             @map("checkout_id")
+  providerEventId String             @unique @map("provider_event_id")
+  eventType       String             @map("event_type")
+  payloadHash     String             @map("payload_hash")
+  occurredAt      DateTime           @map("occurred_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  restaurant      Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  checkout        ExperienceCheckout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@unique([checkoutId, providerEventId])
+  @@index([restaurantId, occurredAt])
+  @@map("experience_payment_events")
 }
 
 enum EventStatus {
@@ -2816,13 +2886,13 @@ model GiftCardRedemption {
   amount        Decimal  @db.Decimal(10, 2)
   redeemedAt    DateTime @default(now()) @map("redeemed_at")
 
-  operationKey String? @unique @map("operation_key")
-  restaurantId String? @map("restaurant_id")
-  ticketReference String? @map("ticket_reference")
+  operationKey     String?  @unique @map("operation_key")
+  restaurantId     String?  @map("restaurant_id")
+  ticketReference  String?  @map("ticket_reference")
   billAmount Decimal? @db.Decimal(10, 2) @map("bill_amount")
   balanceAfter Decimal? @db.Decimal(10, 2) @map("balance_after")
   complementAmount Decimal? @db.Decimal(10, 2) @map("complement_amount")
-  actor String?
+  actor            String?
 
   giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
@@ -2900,7 +2970,7 @@ model GiftCardPaymentEntry {
   contributionId      String?  @map("contribution_id")
   kind                String
   amountCents         Int      @map("amount_cents")
-  pendingRefund Boolean @default(false) @map("pending_refund")
+  pendingRefund       Boolean  @default(false) @map("pending_refund")
   refundedAmountCents Int      @default(0) @map("refunded_amount_cents")
   currency            String   @default("eur")
   stripeAccountId     String?  @map("stripe_account_id")
@@ -2908,7 +2978,6 @@ model GiftCardPaymentEntry {
 
   @@index([giftCardId])
   @@map("gift_card_payment_entries")
-
 }
 
 /// Persisted before provider calls so a crash can replay the same refund operation.
@@ -2933,21 +3002,22 @@ model GiftCardRefundRequest {
 
 /// Provider acceptance is separate from financial state and queue dispatch.
 model GiftCardDelivery {
-  id String @id @default(uuid())
-  restaurantId String @map("restaurant_id")
-  giftCardId String @map("gift_card_id")
-  kind String
-  referenceId String? @map("reference_id")
-  channel String
-  status String @default("PENDING")
-  idempotencyKey String @unique @map("idempotency_key")
-  attempts Int @default(0)
-  providerMessageId String? @map("provider_message_id")
-  lastErrorCode String? @map("last_error_code")
-  startedAt DateTime? @map("started_at")
-  sentAt DateTime? @map("sent_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  restaurantId      String    @map("restaurant_id")
+  giftCardId        String    @map("gift_card_id")
+  kind              String
+  referenceId       String?   @map("reference_id")
+  channel           String
+  status            String    @default("PENDING")
+  idempotencyKey    String    @unique @map("idempotency_key")
+  attempts          Int       @default(0)
+  providerMessageId String?   @map("provider_message_id")
+  lastErrorCode     String?   @map("last_error_code")
+  startedAt         DateTime? @map("started_at")
+  sentAt            DateTime? @map("sent_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+
   @@index([restaurantId, status, createdAt])
   @@index([giftCardId, createdAt])
   @@map("gift_card_deliveries")

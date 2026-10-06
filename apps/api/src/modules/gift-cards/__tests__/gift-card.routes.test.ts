@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { constructWebhookEvent, retrievePaymentIntent } from '../stripe.service';
+import * as stripeService from '../stripe.service';
+import * as localTest from '../gift-card-local-test';
 import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { logger } from '../../../shared/logger/pino.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
@@ -23,6 +25,123 @@ const AUTH = { authorization: 'Bearer fake-token' };
 const RESTAURANT_ID = 'test-rest-1';
 
 describe('gift-card routes', () => {
+  describe('local test context', () => {
+    it('does not read restaurant data outside the local test guard', async () => {
+      const guard = vi.spyOn(localTest, 'isLocalGiftCardTest').mockReturnValue(false);
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/test-context`,
+        headers: AUTH,
+      });
+      expect(response.json()).toEqual({ enabled: false });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(db.restaurant.findUniqueOrThrow).not.toHaveBeenCalled();
+      guard.mockRestore();
+    });
+    it('restricts demo tools to its owner and scoped restaurant', async () => {
+      const guard = vi.spyOn(localTest, 'isLocalGiftCardTest').mockReturnValue(true);
+      const app = await getApp();
+      for (const [id, headers, code] of [
+        [RESTAURANT_ID, {}, 401],
+        ['other', AUTH, 403],
+        [RESTAURANT_ID, { ...AUTH, 'x-test-site-role': 'STAFF' }, 403],
+        [RESTAURANT_ID, { ...AUTH, 'x-test-site-role': 'MANAGER' }, 403],
+      ] as const) {
+        const response = await app.inject({
+          method: 'GET',
+          url: `/restaurants/${id}/gift-cards/test-context`,
+          headers,
+        });
+        expect(response.statusCode).toBe(code);
+      }
+      guard.mockRestore();
+    });
+    it('returns local buyer links without exposing provider credentials', async () => {
+      const guard = vi.spyOn(localTest, 'isLocalGiftCardTest').mockReturnValue(true);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+        slug: 'demo',
+        giftCardEnabled: true,
+      } as never);
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards/test-context`,
+        headers: AUTH,
+      });
+      expect(response.json()).toMatchObject({
+        enabled: true,
+        purchaseUrl: 'http://localhost:4002/widget/demo/gift-card',
+        beneficiaryBaseUrl: 'http://localhost:4002/gift-card/',
+        giftCardEnabled: true,
+      });
+      expect(typeof response.json().emailConfigured).toBe('boolean');
+      expect(Object.keys(response.json()).sort()).toEqual(
+        [
+          'enabled',
+          'purchaseUrl',
+          'beneficiaryBaseUrl',
+          'giftCardEnabled',
+          'emailConfigured',
+          'smsConfigured',
+        ].sort(),
+      );
+      guard.mockRestore();
+    });
+  });
+
+  describe('embedded Connect onboarding', () => {
+    it('rejects anonymous, foreign tenant, staff and manager requests before accessing Stripe', async () => {
+      const session = vi
+        .spyOn(stripeService, 'createConnectedAccountSession')
+        .mockResolvedValue({ clientSecret: 'mock', publishableKey: 'pk_test' });
+      const app = await getApp();
+      for (const [restaurant, headers, code] of [
+        [RESTAURANT_ID, {}, 401],
+        ['other', AUTH, 403],
+        [RESTAURANT_ID, { ...AUTH, 'x-test-site-role': 'STAFF' }, 403],
+        [RESTAURANT_ID, { ...AUTH, 'x-test-site-role': 'MANAGER' }, 403],
+      ] as const) {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/restaurants/${restaurant}/gift-cards/stripe-connect/session`,
+          headers,
+        });
+        expect(response.statusCode).toBe(code);
+      }
+      expect(session).not.toHaveBeenCalled();
+      session.mockRestore();
+    });
+    it('reuses the existing account and creates a fresh non-cacheable session on every request', async () => {
+      const session = vi
+        .spyOn(stripeService, 'createConnectedAccountSession')
+        .mockResolvedValue({ clientSecret: 'mock', publishableKey: 'pk_test' });
+      const create = vi.spyOn(stripeService, 'createConnectedAccount');
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+        giftCardStripeAccountId: 'acct_existing',
+        managerEmail: 'owner@example.invalid',
+      } as never);
+      const app = await getApp();
+      for (let i = 0; i < 2; i++) {
+        const response = await app.inject({
+          method: 'POST',
+          url: `/restaurants/${RESTAURANT_ID}/gift-cards/stripe-connect/session`,
+          headers: AUTH,
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.json()).toEqual({
+          clientSecret: 'mock',
+          publishableKey: 'pk_test',
+        });
+      }
+      expect(session).toHaveBeenNthCalledWith(1, 'acct_existing');
+      expect(session).toHaveBeenCalledTimes(2);
+      expect(create).not.toHaveBeenCalled();
+      session.mockRestore();
+      create.mockRestore();
+    });
+  });
   afterAll(async () => {
     await closeApp();
   });

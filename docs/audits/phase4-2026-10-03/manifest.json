@@ -1,0 +1,87 @@
+{
+  "capturedAt": "2026-10-02T22:55:10.661Z",
+  "baseline": "Interface après la phase 3, mêmes scénarios et dimensions que la phase 0",
+  "browser": "Playwright Chromium",
+  "referenceClock": "2026-10-02T18:15:00.000Z",
+  "timezone": "Europe/Paris",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000
+    },
+    "ipad": {
+      "width": 1024,
+      "height": 768
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "screenshots": [
+    {
+      "filename": "reservations-desktop-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-ipad-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "ipad",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-mobile-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-desktop-liste-vide.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "liste-vide",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-mobile-erreur.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "erreur",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-desktop-nom-long.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "nom-long",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-ipad-nom-long.png",
+      "screen": "reservations",
+      "viewport": "ipad",
+      "state": "nom-long",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-mobile-nom-long.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "nom-long",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-mobile-liste-courte.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "liste-courte",
+      "route": "/dashboard/reservations"
+    }
+  ],
+  "unexpectedApiRequests": []
+}

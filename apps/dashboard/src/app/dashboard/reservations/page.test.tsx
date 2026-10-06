@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
+  isMobile: false,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -16,11 +17,19 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/useMediaQuery', () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => mocks.isMobile,
 }));
 
 vi.mock('@/components/ConfirmDialog', () => ({
-  ConfirmDialog: () => null,
+  ConfirmDialog: ({
+    open,
+    onConfirm,
+    confirmLabel,
+  }: {
+    open: boolean;
+    onConfirm: () => void;
+    confirmLabel: string;
+  }) => (open ? <button onClick={onConfirm}>{confirmLabel}</button> : null),
 }));
 
 function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
@@ -61,6 +70,7 @@ function makeWaitingListEntry(overrides: Partial<WaitingListEntry> = {}): Waitin
 describe('ReservationsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isMobile = false;
     Element.prototype.scrollIntoView = vi.fn();
     mocks.get.mockResolvedValue([]);
     mocks.post.mockResolvedValue({});
@@ -134,20 +144,97 @@ describe('ReservationsPage', () => {
 
   it('annule une réservation via le contrat status du dashboard', async () => {
     mocks.get.mockResolvedValue([makeReservation()]);
-    mocks.patch.mockResolvedValue({});
+    mocks.patch.mockResolvedValue(makeReservation({ status: 'CANCELLED', state: 'CANCELLED' }));
     render(<ReservationsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('combobox')).toBeInTheDocument();
+      expect(
+        screen.getByRole('combobox', { name: 'Autres actions pour Alice' }),
+      ).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('combobox'));
-    fireEvent.click(await screen.findByRole('option', { name: 'Annulée' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Autres actions pour Alice' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Annuler' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler la réservation' }));
 
     await waitFor(() => {
       expect(mocks.patch).toHaveBeenCalledWith('reservations/r1', { status: 'CANCELLED' });
       expect(screen.getByText('Annulée')).toBeInTheDocument();
     });
+  });
+
+  it('ne propose pas de transition sur un état terminal', async () => {
+    mocks.get.mockResolvedValue([makeReservation({ state: 'HONORED', status: 'SEATED' })]);
+    render(<ReservationsPage />);
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Terminer le service' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: 'Autres actions pour Alice' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('termine le service via la transition canonique et recharge la réponse serveur', async () => {
+    const seated = makeReservation({ state: 'SEATED', status: 'SEATED', tableId: 't1' });
+    mocks.get
+      .mockResolvedValueOnce([seated])
+      .mockResolvedValueOnce([
+        makeReservation({ state: 'HONORED', status: 'SEATED', tableId: 't1' }),
+      ]);
+    mocks.patch.mockResolvedValue(undefined);
+    render(<ReservationsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Terminer le service' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith(
+        'restaurants/org_test/floor-plan/reservations/r1/state',
+        { state: 'HONORED' },
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Terminer le service' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('garde le statut et bloque une seconde action pendant une mutation échouée', async () => {
+    let rejectMutation!: (reason: Error) => void;
+    mocks.get.mockResolvedValue([makeReservation({ state: 'PENDING' })]);
+    mocks.patch.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectMutation = reject;
+      }),
+    );
+    render(<ReservationsPage />);
+    const confirm = await screen.findByRole('button', { name: 'Confirmer' });
+    fireEvent.click(confirm);
+    expect(screen.getByRole('button', { name: 'En cours…' })).toBeDisabled();
+    rejectMutation(new Error('Service indisponible'));
+    expect(await screen.findByText('Service indisponible')).toBeInTheDocument();
+    expect(screen.getByText('En attente')).toBeInTheDocument();
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
+  });
+
+  it('donne sur mobile la même prochaine action et cache celles des états terminaux', async () => {
+    mocks.isMobile = true;
+    mocks.get.mockResolvedValue([
+      makeReservation({ id: 'pending', state: 'PENDING', customerName: 'Alice' }),
+      makeReservation({
+        id: 'seated',
+        state: 'SEATED',
+        status: 'SEATED',
+        customerName: 'Bob',
+        tableId: 't1',
+      }),
+      makeReservation({
+        id: 'honored',
+        state: 'HONORED',
+        status: 'SEATED',
+        customerName: 'Charles',
+      }),
+    ]);
+    render(<ReservationsPage />);
+    await waitFor(() => expect(screen.getByText('Charles')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Terminer le service' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Afficher les actions' })).toHaveLength(2);
   });
 
   describe("File d'attente", () => {

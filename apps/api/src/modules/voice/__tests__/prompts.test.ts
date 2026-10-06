@@ -93,6 +93,37 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  it('annonce les deux services dans le prompt et le calendrier', () => {
+    const hours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+    expect(formatOpeningHours(hours)).toContain('Mardi : 12:00–14:30 puis 19:00–22:30');
+    expect(describeDate('2026-09-29', hours)?.hours).toBe('ouvert 12:00–14:30 puis 19:00–22:30');
+  });
+
+  it('annonce les slots du nouvel onboarding dans le prompt vocal', () => {
+    const hours = {
+      thu: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+
+    expect(formatOpeningHours(hours)).toContain('Jeudi : 12:00–14:30 puis 19:00–22:30');
+    expect(describeDate('2026-09-24', hours)?.hours).toBe('ouvert 12:00–14:30 puis 19:00–22:30');
+  });
+
   it("interdit d'annoncer une disponibilité avant le nombre de personnes (appel c5d6b07d)", () => {
     const [system] = buildStructuredTurnMessages({
       systemPrompt: 'Prompt',

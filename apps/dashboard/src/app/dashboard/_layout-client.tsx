@@ -1,6 +1,5 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ReactNode, useEffect, useId, useRef, useState } from 'react';
@@ -39,23 +38,16 @@ import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { AccountMenu } from '@/components/AccountMenu';
+import { OnboardingWizard } from '@/features/onboarding/onboarding-wizard';
+import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-access-boundary';
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
-import {
-  DashboardOnboardingGate,
-  DashboardOnboardingPanel,
-} from '@/features/onboarding/onboarding-dashboard';
+import { DashboardOnboardingPanel } from '@/features/onboarding/onboarding-dashboard';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
 import { SiteProvider, SiteSwitcher } from '@/features/sites/site-context';
-
-// OnboardingModal importe steps.tsx (1725 lignes, tous les composants de step).
-// Lazy-load pour éviter de charger tout l'onboarding dans le bundle du dashboard
-// quand l'utilisateur n'ouvre jamais le modal.
-const OnboardingModal = dynamic(
-  () => import('@/features/onboarding/onboarding-modal').then((m) => m.OnboardingModal),
-  { ssr: false },
-);
+import { Button } from '@/components/ui/button';
+import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 
 // Le libellé de chaque item de nav passe par `useTranslations('nav')`. Les
 // icônes et les hrefs ne dépendent pas de la locale, donc ils restent dans
@@ -174,6 +166,36 @@ function SidebarNavItem({
     >
       <Icon size={17} strokeWidth={active ? 2.25 : 1.75} />
       <span className={cn('truncate text-sm font-medium', !expanded && 'sr-only')}>{label}</span>
+    </Link>
+  );
+}
+
+function OffersPanelNavItem({
+  href,
+  label,
+  active,
+  onClick,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        'flex h-9 w-full items-center rounded-lg px-3 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active
+          ? 'bg-primary font-semibold text-primary-foreground hover:bg-primary'
+          : 'font-medium text-muted-foreground hover:bg-accent hover:text-foreground',
+      )}
+    >
+      <span className="truncate">{label}</span>
     </Link>
   );
 }
@@ -487,7 +509,7 @@ function DashboardModeSwitcher({
       className={cn(
         compact
           ? 'dashboard-mobile-only dashboard-mobile-mode-switcher dashboard-mobile-mode-switcher--inline relative z-30'
-          : 'dashboard-desktop-only dashboard-mode-switcher fixed left-1/2 top-4 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2',
+          : 'dashboard-desktop-only dashboard-mode-switcher fixed left-1/2 top-6 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2',
       )}
     >
       {modeNav}
@@ -526,18 +548,21 @@ function DashboardSidebar({
   pathname,
   salleView,
   isSokarOperator,
+  onCreateOffer,
 }: {
   pathname: string;
   salleView: string;
   isSokarOperator: boolean;
+  onCreateOffer: () => void;
 }) {
   const tNav = useTranslations('nav');
+  const tOfferChooser = useTranslations('offerChooser');
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const [openGroup, setOpenGroup] = useState<NavGroupId | null>(null);
   const openGroupDefinition = navGroups.find((group) => group.id === openGroup) ?? null;
 
   return (
-    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 shadow-2xl shadow-background/40 backdrop-blur-xl">
+    <aside className="dashboard-desktop-sidebar fixed bottom-4 left-4 top-4 z-40 w-16 flex-col items-center rounded-[1.4rem] border border-border bg-card/85 p-2 pt-[9px] shadow-2xl shadow-background/40 backdrop-blur-xl">
       <Link
         href="/dashboard"
         aria-label="Sokar"
@@ -607,29 +632,62 @@ function DashboardSidebar({
             <span className="text-sm font-semibold text-foreground">
               {tNav(openGroupDefinition.key)}
             </span>
-            <button
-              type="button"
-              aria-label={tNav('collapse')}
-              title={tNav('collapse')}
-              onClick={() => setOpenGroup(null)}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X size={15} />
-            </button>
-          </div>
-          <div className="mt-2 space-y-1">
-            {openGroupDefinition.items.map((item) => (
-              <SidebarNavItem
-                key={item.href}
-                href={item.href}
-                label={tNav(item.key)}
-                icon={item.icon}
-                active={isNavItemActive(pathname, item)}
-                expanded
+            {openGroupDefinition.id !== 'offers' && (
+              <button
+                type="button"
+                aria-label={tNav('collapse')}
+                title={tNav('collapse')}
                 onClick={() => setOpenGroup(null)}
-              />
-            ))}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
+          <div
+            className={cn(
+              'mt-2',
+              openGroupDefinition.id === 'offers' ? 'space-y-1.5' : 'space-y-1',
+            )}
+          >
+            {openGroupDefinition.items.map((item) =>
+              openGroupDefinition.id === 'offers' ? (
+                <OffersPanelNavItem
+                  key={item.href}
+                  href={item.href}
+                  label={tNav(item.key)}
+                  active={isNavItemActive(pathname, item)}
+                  onClick={() => setOpenGroup(null)}
+                />
+              ) : (
+                <SidebarNavItem
+                  key={item.href}
+                  href={item.href}
+                  label={tNav(item.key)}
+                  icon={item.icon}
+                  active={isNavItemActive(pathname, item)}
+                  expanded
+                  onClick={() => setOpenGroup(null)}
+                />
+              ),
+            )}
+          </div>
+          {openGroupDefinition.id === 'offers' && (
+            <div className="mt-3 border-t border-border pt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setOpenGroup(null);
+                  onCreateOffer();
+                }}
+                className="h-9 w-full rounded-lg"
+              >
+                {tOfferChooser('openButton')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -658,7 +716,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { theme } = useDashboardTheme();
   const { orgId, get, isSignedIn } = useApi();
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const requestedFloorPlanId = searchParams.get('floorPlanId');
@@ -668,6 +725,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const [floorPlansLoading, setFloorPlansLoading] = useState(false);
   const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
+  const [createOfferOpen, setCreateOfferOpen] = useState(false);
   const isLegacyOperatorPath =
     pathname === '/dashboard/usage' ||
     pathname === '/dashboard/admin' ||
@@ -804,12 +862,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className={cn(theme, 'dashboard-shell sokar-page relative min-h-screen overflow-hidden')}>
+    <div className="dashboard-shell sokar-page relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
-      {hasClerkKey && <SyncOrganization />}
       <SubscribeFromPricing />
-      <DashboardOnboardingGate />
-      <OnboardingModal />
       <DashboardModeSwitcher
         salleMode={salleMode}
         floorPlans={floorPlans}
@@ -821,12 +876,14 @@ function DashboardShell({ children }: { children: ReactNode }) {
         pathname={pathname}
         salleView={searchParams.get('view') ?? ''}
         isSokarOperator={operatorAccess === true}
+        onCreateOffer={() => setCreateOfferOpen(true)}
       />
-      <div className="dashboard-desktop-only fixed left-24 top-4 z-50 h-12 max-w-[calc(50vw-18rem)] items-center gap-3">
-        <DashboardBrand restaurantName={restaurantName} />
+      <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
+      <div className="dashboard-desktop-only fixed left-24 top-6 z-50 h-12 max-w-[calc(50vw-18rem)] items-center gap-3">
         <SiteSwitcher />
       </div>
-      <div className="dashboard-desktop-only fixed right-8 top-4 z-50 h-12 items-center gap-2">
+      <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
+        <DashboardBrand restaurantName={restaurantName} />
         <AccountMenu />
       </div>
       <div
@@ -900,7 +957,19 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
       <DashboardThemeProvider>
         <CreateRestaurantGate>
           <DashboardSiteBoundary>
-            <DashboardShell>{children}</DashboardShell>
+            {hasClerkKey && <SyncOrganization />}
+            <OnboardingAccessBoundary
+              controls={
+                <div className="flex items-center gap-3">
+                  <SiteSwitcher />
+                  <ThemeToggle />
+                  <AccountMenu />
+                </div>
+              }
+              onboarding={<OnboardingWizard />}
+            >
+              <DashboardShell>{children}</DashboardShell>
+            </OnboardingAccessBoundary>
           </DashboardSiteBoundary>
         </CreateRestaurantGate>
       </DashboardThemeProvider>

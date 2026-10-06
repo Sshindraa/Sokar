@@ -1,10 +1,18 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type DashboardTheme = 'dark' | 'light';
 
 const STORAGE_KEY = 'sokar-dashboard-theme';
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 interface DashboardThemeContextValue {
   theme: DashboardTheme;
@@ -18,27 +26,35 @@ export function DashboardThemeProvider({ children }: { children: ReactNode }) {
   // via le toggle en haut à droite et persiste par navigateur.
   const [theme, setTheme] = useState<DashboardTheme>('dark');
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark') setTheme(stored);
-  }, []);
+  // Le script du layout amorce le thème avant l'hydratation sur les chargements
+  // directs. Cette synchronisation le réapplique aussi après une navigation SPA
+  // depuis la page d'accueil, qui est exclue du thème dashboard.
+  useIsomorphicLayoutEffect(() => {
+    let storedTheme: string | null = null;
+    try {
+      storedTheme = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      // Le thème sombre reste le défaut si le stockage local est indisponible.
+    }
 
-  // Les Dialog Radix sont portés par un portal directement sous `body`.
-  // Refléter le thème sur la racine garantit que leurs tokens restent alignés
-  // avec le dashboard, y compris en mode clair.
-  useEffect(() => {
+    const next = storedTheme === 'light' ? 'light' : 'dark';
     const root = document.documentElement;
     root.classList.remove('dark', 'light');
-    root.classList.add(theme);
-    return () => root.classList.remove('dark', 'light');
-  }, [theme]);
+    root.classList.add(next);
+    setTheme(next);
+  }, []);
 
   const toggleTheme = () => {
-    setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
+    const next = theme === 'dark' ? 'light' : 'dark';
+    const root = document.documentElement;
+    root.classList.remove('dark', 'light');
+    root.classList.add(next);
+    try {
       window.localStorage.setItem(STORAGE_KEY, next);
-      return next;
-    });
+    } catch {
+      // Le thème reste actif pour cette session si le stockage local est désactivé.
+    }
+    setTheme(next);
   };
 
   return (

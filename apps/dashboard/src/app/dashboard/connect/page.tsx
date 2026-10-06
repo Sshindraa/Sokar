@@ -21,10 +21,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  CustomDomainCard,
-  type Props as CustomDomainCardProps,
-} from './custom-domain-card';
+import { CustomDomainCard, type Props as CustomDomainCardProps } from './custom-domain-card';
 import { SubdomainCard } from './subdomain-card';
 
 // ── Types ──────────────────────────────────────────────
@@ -214,7 +211,7 @@ export default function ConnectDashboardPage() {
               <ScoreCircle score={score.score} level={score.level} />
               <div className="max-w-[200px]">
                 <p className="text-sm font-medium">
-                  {score.completed}/{score.total} étapes complétées
+                  {score.completed}/{score.total} éléments du profil configurés
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{score.message}</p>
               </div>
@@ -377,18 +374,6 @@ export default function ConnectDashboardPage() {
                         pour autoriser les crawlers d&apos;IA et exposer les métadonnées de
                         réservation.
                       </p>
-                      {settings.connectPublished && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggle('connectAgentic')}
-                          disabled={saving !== null}
-                          className="w-full transition-all duration-200"
-                        >
-                          <Bot className="mr-2 h-4 w-4" />
-                          Activer la découverte IA
-                        </Button>
-                      )}
                     </div>
                   )}
                 </CardContent>
@@ -396,10 +381,7 @@ export default function ConnectDashboardPage() {
             </div>
 
             {/* Subdomain gratuit (zero config) */}
-            <SubdomainCard
-              slug={settings.slug}
-              connectPublished={settings.connectPublished}
-            />
+            <SubdomainCard slug={settings.slug} connectPublished={settings.connectPublished} />
 
             {/* Domaine personnalisé (P2 premium) */}
             <CustomDomainCard

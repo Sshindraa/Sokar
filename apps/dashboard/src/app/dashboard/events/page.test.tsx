@@ -4,6 +4,10 @@ import EventsPage from './page';
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+
 vi.mock('@/lib/api', () => ({
   useApi: () => ({ get: apiMocks.get, post: apiMocks.post, patch: apiMocks.patch }),
 }));
@@ -84,6 +88,7 @@ const ticket = {
 describe('EventsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/dashboard/events');
     apiMocks.get.mockImplementation((path: string) => {
       if (path.startsWith('events?')) return Promise.resolve({ data: [event] });
       if (path.startsWith('event-orders')) return Promise.resolve({ data: [order] });
@@ -108,14 +113,19 @@ describe('EventsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Événements' })).toBeInTheDocument();
     expect((await screen.findAllByText('Soirée dégustation')).length).toBeGreaterThan(0);
     expect(await screen.findByText(/Alice Martin/)).toBeInTheDocument();
-    expect(screen.getByText('Sessions ouvertes')).toBeInTheDocument();
+    expect(screen.getByText('Dates ouvertes')).toBeInTheDocument();
   });
 
-  it('crée un événement avec la clé et le nom saisis', async () => {
+  it('crée un événement depuis un formulaire dédié et génère sa clé depuis le nom', async () => {
     render(<EventsPage />);
     await screen.findByRole('heading', { name: 'Événements' });
-    fireEvent.change(screen.getAllByLabelText('Clé')[0], { target: { value: 'atelier-vins' } });
-    fireEvent.change(screen.getAllByLabelText('Nom')[0], { target: { value: 'Atelier vins' } });
+    await screen.findByText('Dates ouvertes');
+    expect(screen.queryByLabelText('Nom de l’événement')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Créer un événement' }));
+    fireEvent.change(await screen.findByLabelText('Nom de l’événement'), {
+      target: { value: 'Atelier vins' },
+    });
+    expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Créer l’événement' }));
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith('events', {
@@ -123,15 +133,52 @@ describe('EventsPage', () => {
         name: 'Atelier vins',
       }),
     );
-    expect(await screen.findByText(/Événement créé en brouillon/)).toBeInTheDocument();
+    expect(await screen.findByText(/Ajoutez maintenant une première date/)).toBeInTheDocument();
+  });
+
+  it('ouvre directement le formulaire quand le choix global demande un nouvel événement', async () => {
+    window.history.replaceState({}, '', '/dashboard/events?create=1');
+    render(<EventsPage />);
+    expect(await screen.findByRole('heading', { name: 'Nouvel événement' })).toBeInTheDocument();
+    expect(window.location.search).toBe('');
+  });
+
+  it('affiche un seul état vide avant la première création', async () => {
+    apiMocks.get.mockResolvedValue({ data: [] });
+    render(<EventsPage />);
+    expect(
+      await screen.findByRole('heading', { name: 'Créez votre premier événement' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Aucun événement.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Aucun événement pour le moment')).not.toBeInTheDocument();
+  });
+
+  it('convertit le prix du tarif en euros vers les centimes de l’API', async () => {
+    render(<EventsPage />);
+    await screen.findByRole('heading', { name: 'Événements' });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un tarif' }));
+    fireEvent.change(await screen.findByLabelText('Nom du tarif'), {
+      target: { value: 'Tarif enfant' },
+    });
+    fireEvent.change(screen.getByLabelText('Prix du billet'), { target: { value: '25,50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter le tarif' }));
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('events/event-1/ticket-types', {
+        key: 'tarif-enfant',
+        name: 'Tarif enfant',
+        priceCents: 2550,
+        maxPerOrder: 10,
+      }),
+    );
   });
 
   it('émet une commande et affiche les codes une seule fois', async () => {
     render(<EventsPage />);
     await screen.findByRole('heading', { name: 'Événements' });
-    fireEvent.change(screen.getByLabelText('Session'), { target: { value: 'session-1' } });
+    await screen.findByText('Dates ouvertes');
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: 'session-1' } });
     fireEvent.change(screen.getByLabelText('Tarif'), { target: { value: 'ticket-type-1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Émettre' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Créer la commande' }));
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
         'events/event-1/sessions/session-1/orders',
@@ -141,13 +188,14 @@ describe('EventsPage', () => {
         }),
       ),
     );
-    expect(await screen.findByText(/Codes à remettre/)).toBeInTheDocument();
+    expect(await screen.findByText(/Billets à remettre/)).toBeInTheDocument();
   });
 
   it('contrôle un billet depuis le code saisi', async () => {
     render(<EventsPage />);
     await screen.findByRole('heading', { name: 'Événements' });
-    fireEvent.change(screen.getByPlaceholderText('Code 12 caractères'), {
+    await screen.findByText('Dates ouvertes');
+    fireEvent.change(screen.getByPlaceholderText('Code du billet'), {
       target: { value: '00000000ABCD' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Contrôler' }));
@@ -163,6 +211,8 @@ describe('EventsPage', () => {
     apiMocks.get.mockRejectedValue(new Error('EVENTS_DISABLED'));
     render(<EventsPage />);
     expect(await screen.findByText('EVENTS_DISABLED')).toBeInTheDocument();
-    expect(screen.getByText(/Paiement et distribution en préparation/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Le paiement et la vente en ligne seront disponibles prochainement.'),
+    ).toBeInTheDocument();
   });
 });

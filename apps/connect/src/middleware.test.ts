@@ -17,11 +17,17 @@ function makeNextUrl(href: string): URL {
 
 function makeRequest(
   pathname: string,
-  options: { userAgent?: string; preview?: string; host?: string } = {},
+  options: {
+    userAgent?: string;
+    preview?: string;
+    host?: string;
+    search?: Record<string, string>;
+  } = {},
 ): Parameters<typeof middleware>[0] {
   const origin = options.host ? `https://${options.host}` : 'https://sokar.tech';
   const url = new URL(pathname, origin);
   if (options.preview) url.searchParams.set('preview', options.preview);
+  Object.entries(options.search ?? {}).forEach(([key, value]) => url.searchParams.set(key, value));
   const nextUrl = makeNextUrl(url.href);
   const headers = new Headers({ 'user-agent': options.userAgent ?? 'Mozilla/5.0' });
   if (options.host) headers.set('host', options.host);
@@ -57,9 +63,17 @@ describe('middleware framing policy', () => {
   });
 
   it('keeps preview framing restricted to dashboard origin', () => {
-    const response = middleware(makeRequest('/restaurant/chez-sokar-demo', { preview: '1' }));
-    expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-    expect(getCspFrameAncestors(response)).toBe("'self'");
+    const previousDashboardUrl = process.env.DASHBOARD_URL;
+    process.env.DASHBOARD_URL = 'http://localhost:3000';
+
+    try {
+      const response = middleware(makeRequest('/restaurant/chez-sokar-demo', { preview: '1' }));
+      expect(response.headers.get('X-Frame-Options')).toBeNull();
+      expect(getCspFrameAncestors(response)).toBe("'self' http://localhost:3000");
+    } finally {
+      if (previousDashboardUrl === undefined) delete process.env.DASHBOARD_URL;
+      else process.env.DASHBOARD_URL = previousDashboardUrl;
+    }
   });
 
   it('allows browser calls to the configured public API origin', () => {
@@ -107,6 +121,22 @@ describe('middleware framing policy', () => {
       if (previousNodeEnv === undefined) delete env.NODE_ENV;
       else env.NODE_ENV = previousNodeEnv;
     }
+  });
+});
+
+describe('middleware booking route alias', () => {
+  it('rewrites /book/[slug] to the public widget and preserves query parameters', () => {
+    const response = middleware(
+      makeRequest('/book/chez-sokar-demo', {
+        search: { source: 'restaurant', partySize: '2' },
+      }),
+    );
+
+    expect(response.headers.get('x-middleware-rewrite')).toBe(
+      'https://sokar.tech/widget/chez-sokar-demo?source=restaurant&partySize=2',
+    );
+    expect(response.headers.get('X-Frame-Options')).toBeNull();
+    expect(getCspFrameAncestors(response)).toBe('*');
   });
 });
 

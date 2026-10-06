@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent } from 'react';
-import { Loader2, Save, Store } from 'lucide-react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, ArrowRight, Check, Loader2, Pencil, Save, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -10,12 +11,12 @@ export function StepHeader({
   title,
   body,
 }: {
-  icon: typeof Store;
+  icon: LucideIcon;
   title: string;
   body: string;
 }) {
   return (
-    <div>
+    <div data-step-header>
       <div className="mb-4 inline-flex rounded-lg bg-primary/10 p-3 text-primary">
         <Icon size={22} />
       </div>
@@ -25,12 +26,33 @@ export function StepHeader({
   );
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  hint,
+  source,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  source?: string | null;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block space-y-2">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {children}
-    </label>
+    <div className="space-y-2">
+      <label className="block space-y-2">
+        <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+          <span className="min-w-0">{label}</span>
+          {source ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <Check size={12} aria-hidden="true" />
+              {source}
+            </span>
+          ) : null}
+        </span>
+        {children}
+      </label>
+      {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+    </div>
   );
 }
 
@@ -67,13 +89,157 @@ export function Segmented({
   );
 }
 
-export function SubmitButton({ saving, children }: { saving: boolean; children: React.ReactNode }) {
-  return (
-    <Button type="submit" disabled={saving} className="transition-all duration-200">
-      {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+export function OnboardingAction({ children }: { children: ReactNode }) {
+  const [footer, setFooter] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setFooter(document.getElementById('onboarding-step-actions'));
+  }, []);
+  return footer ? createPortal(children, footer) : children;
+}
+
+export function SubmitButton({
+  saving,
+  disabled = false,
+  children,
+}: {
+  saving: boolean;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [footer, setFooter] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setFooter(document.getElementById('onboarding-step-actions'));
+  }, []);
+  const action = (
+    <Button
+      type="submit"
+      form={footer ? 'onboarding-voice-form' : undefined}
+      disabled={saving || disabled}
+      className="transition-all duration-200"
+    >
+      {saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowRight size={16} />}
       {children}
     </Button>
   );
+  return footer ? createPortal(action, footer) : action;
+}
+
+export function ConnectReviewLayout({
+  editing,
+  onEditingChange,
+  icon: Icon,
+  title,
+  summary,
+  children,
+  wide = false,
+  canExitEditing = true,
+  summaryStaysVisible = false,
+  editorId = 'connect-step-editor',
+  hideHeader = false,
+}: {
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  icon: LucideIcon;
+  title: string;
+  summary: ReactNode;
+  children: ReactNode;
+  wide?: boolean;
+  canExitEditing?: boolean;
+  summaryStaysVisible?: boolean;
+  editorId?: string;
+  hideHeader?: boolean;
+}) {
+  return (
+    <div
+      data-review={summaryStaysVisible || !editing}
+      data-wide-review={wide && !editing ? true : undefined}
+      className="mx-auto w-full max-w-2xl"
+    >
+      <section className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+        {!hideHeader && (
+          <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+                <Icon size={20} aria-hidden="true" />
+              </span>
+              <h2 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+                {title}
+              </h2>
+            </div>
+            {(!editing || canExitEditing) && (
+              <Button
+                type="button"
+                variant={editing ? 'ghost' : 'outline'}
+                size="sm"
+                aria-expanded={editing}
+                onClick={() => onEditingChange(!editing)}
+                className="shrink-0 gap-2 rounded-full transition-all duration-200"
+              >
+                {editing ? <ArrowLeft size={14} /> : <Pencil size={14} />}
+                {editing ? 'Retour au résumé' : 'Modifier les informations'}
+              </Button>
+            )}
+          </header>
+        )}
+        {summaryStaysVisible ? (
+          <div className="p-5 sm:p-6">
+            {summary}
+            <div
+              id={editorId}
+              aria-hidden={!editing}
+              inert={!editing}
+              className={cn(
+                'pointer-events-none grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,margin] duration-300 ease-out motion-reduce:transition-none',
+                editing && 'pointer-events-auto mt-5 grid-rows-[1fr] opacity-100',
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="border-t border-border pt-5">{children}</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            key={editing ? 'edit' : 'summary'}
+            className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+          >
+            <div className="p-5 sm:p-6">{editing ? children : summary}</div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export function ConnectStepAction({
+  formId,
+  saving,
+  label,
+}: {
+  formId: string;
+  saving: boolean;
+  label: string;
+}) {
+  const [footer, setFooter] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setFooter(document.getElementById('connect-step-actions'));
+  }, []);
+
+  const action = (
+    <Button
+      type="submit"
+      form={formId}
+      disabled={saving}
+      className="min-w-40 gap-2 transition-all duration-200"
+    >
+      {saving ? <Loader2 className="animate-spin" size={16} /> : null}
+      {saving ? 'Enregistrement…' : label}
+      {!saving && <ArrowRight size={16} />}
+    </Button>
+  );
+
+  return footer ? createPortal(action, footer) : action;
 }
 
 export const DAY_LABELS = [
@@ -122,7 +288,12 @@ export const FEATURES_PRESETS = [
   'brunch',
 ];
 
-export function resizeImage(file: File, maxWidth: number, maxHeight: number): Promise<string> {
+export function resizeImage(
+  file: File,
+  maxWidth: number,
+  maxHeight: number,
+  cropRatio?: number,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -131,8 +302,10 @@ export function resizeImage(file: File, maxWidth: number, maxHeight: number): Pr
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
+        const sourceWidth = cropRatio ? Math.min(img.width, img.height * cropRatio) : img.width;
+        const sourceHeight = cropRatio ? Math.min(img.height, img.width / cropRatio) : img.height;
+        let width = sourceWidth;
+        let height = sourceHeight;
 
         if (width > height) {
           if (width > maxWidth) {
@@ -149,11 +322,54 @@ export function resizeImage(file: File, maxWidth: number, maxHeight: number): Pr
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
+        ctx?.drawImage(
+          img,
+          (img.width - sourceWidth) / 2,
+          (img.height - sourceHeight) / 2,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          width,
+          height,
+        );
         resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
       img.onerror = reject;
     };
     reader.onerror = reject;
   });
+}
+
+export function OnboardingPreview({
+  eyebrow,
+  title,
+  icon: Icon,
+  children,
+}: {
+  eyebrow: string;
+  title?: string;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <aside className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+      <div className="px-6 py-4">
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          {eyebrow}
+        </p>
+        {title ? <h3 className="mt-2 text-lg font-semibold tracking-tight">{title}</h3> : null}
+      </div>
+      <div className="relative mx-3 mb-3 overflow-hidden rounded-2xl bg-foreground p-6 text-background">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full border border-background/10"
+        />
+        <span className="relative mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-background/20">
+          <Icon size={21} aria-hidden="true" />
+        </span>
+        <div className="relative space-y-4">{children}</div>
+      </div>
+    </aside>
+  );
 }

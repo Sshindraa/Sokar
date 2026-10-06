@@ -47,7 +47,7 @@ function OnboardingStepContent() {
 
   if (loading || !state) {
     return (
-      <main className="dark sokar-page min-h-screen p-6 pt-28 md:p-8 md:pt-32">
+      <main className="sokar-page min-h-screen p-6 pt-28 md:p-8 md:pt-32">
         <div className="mx-auto max-w-6xl space-y-4">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-40 w-full" />
@@ -60,7 +60,7 @@ function OnboardingStepContent() {
   const StepComponent = STEP_COMPONENTS[step];
 
   return (
-    <main className="dark sokar-page relative min-h-screen overflow-hidden p-4 pt-28 md:p-8 md:pt-32">
+    <main className="sokar-page relative min-h-screen overflow-hidden p-4 pt-28 md:p-8 md:pt-32">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       <div className="relative z-10 mx-auto max-w-6xl space-y-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -89,12 +89,6 @@ function OnboardingStepContent() {
         <section className="rounded-lg border border-border bg-card/90 p-4 shadow-xl backdrop-blur-xl transition-all duration-200 md:p-6">
           {StepComponent && <StepComponent onComplete={handleComplete} />}
         </section>
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {state.completedCount}/{state.totalCount} étapes validées · {state.progress}% prêt
-          </p>
-        </div>
       </div>
     </main>
   );

@@ -1,7 +1,7 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { Check, ChevronDown, Globe } from 'lucide-react';
+import { useState } from 'react';
+import { Check, ChevronDown, Globe, Gem, Waves, Gauge, Zap, Heart, AudioLines } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
@@ -9,14 +9,14 @@ import { useOnboarding } from '../onboarding-provider';
 import {
   StepHeader,
   Field,
-  Segmented,
-  SubmitButton,
+  OnboardingAction,
   PROFILE_OPTIONS,
   FILLER_OPTIONS,
   SUGGESTIONS,
 } from '../ui';
 import { DemoCallPlayer } from './DemoCallPlayer';
 import type { StepProps } from '../types';
+import { getErrorMessage } from '@/types/api';
 import { KNOWLEDGE_TEXT_MAX_LENGTH } from '@/constants/ui';
 
 export function KnowledgeStep({ onComplete }: StepProps) {
@@ -26,15 +26,20 @@ export function KnowledgeStep({ onComplete }: StepProps) {
 
   const [profileType, setProfileType] = useState(personality?.profileType || 'BISTROT_BRASSERIE');
   const [fillerStyle, setFillerStyle] = useState(personality?.fillerStyle || 'CASUAL');
-  const [speakingRate, setSpeakingRate] = useState(Number(personality?.speakingRate || 1.0));
+  const [speakingRate, setSpeakingRate] = useState(() => {
+    const rate = Number(personality?.speakingRate || 1);
+    return [0.85, 1, 1.15].reduce((nearest, value) =>
+      Math.abs(value - rate) < Math.abs(nearest - rate) ? value : nearest,
+    );
+  });
   const [systemPromptExtra, setSystemPromptExtra] = useState(personality?.systemPromptExtra || '');
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+
   const [demoPlayed, setDemoPlayed] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  async function handleSave(e: FormEvent) {
-    e.preventDefault();
+  async function handleSave() {
     setSaving(true);
     try {
       await patch(`restaurants/${orgId}/personality`, {
@@ -43,146 +48,241 @@ export function KnowledgeStep({ onComplete }: StepProps) {
         speakingRate,
         systemPromptExtra,
       });
-      await updateTask('complete', 'knowledge');
-      setSaved(true);
     } finally {
       setSaving(false);
     }
   }
 
-  function handleContinue() {
-    onComplete('calendar');
+  async function handleContinue() {
+    setSaving(true);
+    try {
+      await updateTask('complete', 'knowledge');
+      onComplete('calendar');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de continuer. Réessayez.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function adjust(change: () => void) {
+    change();
+    setDemoPlayed(false);
   }
 
   return (
-    <form onSubmit={handleSave} className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+    <div className="space-y-3">
       <StepHeader
         icon={Globe}
-        title="Ce que l'assistant doit savoir"
-        body="Vous configurez ici le ton, l'ambiance et les consignes commerciales que l'IA doit respecter."
+        title="Consignes & démo"
+        body="Donnez à Sokar la manière de parler qui correspond à votre restaurant."
       />
-      <div className="space-y-5">
-        <Segmented
-          label="Profil d'établissement"
-          value={profileType}
-          options={PROFILE_OPTIONS}
-          onChange={setProfileType}
-        />
-        <Segmented
-          label="Style d'élocution"
-          value={fillerStyle}
-          options={FILLER_OPTIONS}
-          onChange={setFillerStyle}
-        />
-
-        <Field label={`Vitesse de parole : ${speakingRate.toFixed(1)}x`}>
-          <input
-            type="range"
-            min="0.7"
-            max="1.5"
-            step="0.1"
-            value={speakingRate}
-            onChange={(e) => setSpeakingRate(Number(e.target.value))}
-            className="w-full accent-primary"
+      <div className="grid max-w-6xl items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-12">
+        <div className="min-w-0 space-y-5 py-1">
+          <Segmented
+            label="Style de votre restaurant"
+            value={profileType}
+            options={PROFILE_OPTIONS}
+            onChange={(value) => adjust(() => setProfileType(value))}
           />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Calme</span>
-            <span>Normal</span>
-            <span>Dynamique</span>
-          </div>
-        </Field>
+          <Segmented
+            label="Ton de voix"
+            value={fillerStyle}
+            options={FILLER_OPTIONS.map((option) => ({
+              ...option,
+              description:
+                option.value === 'WARM'
+                  ? 'Convivial'
+                  : option.value === 'FORMAL'
+                    ? 'Soigné'
+                    : 'Spontané',
+            }))}
+            onChange={(value) => adjust(() => setFillerStyle(value))}
+          />
 
-        {/* Progressive disclosure : le champ systemPromptExtra est intimidant
+          <Segmented
+            label="Rythme de parole"
+            rhythm
+            value={String(speakingRate)}
+            options={[
+              { value: '0.85', label: 'Calme' },
+              { value: '1', label: 'Modéré' },
+              { value: '1.15', label: 'Dynamique' },
+            ]}
+            onChange={(value) => adjust(() => setSpeakingRate(Number(value)))}
+          />
+
+          {/* Progressive disclosure : le champ systemPromptExtra est intimidant
             pour un gérant non-tech. On le fold derrière un toggle, et on ne
             le révèle qu'aux utilisateurs qui veulent affiner. */}
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:text-foreground"
-          >
-            <ChevronDown
-              size={16}
-              className={cn('transition-transform duration-200', showAdvanced && 'rotate-180')}
-            />
-            Affiner le comportement (optionnel)
-          </button>
-
-          {showAdvanced && (
-            <Field label="Consignes particulières (ex: suggestions, plats signatures)">
-              <textarea
-                value={systemPromptExtra}
-                onChange={(e) => setSystemPromptExtra(e.target.value)}
-                placeholder="Exemple : Toujours proposer notre formule midi en semaine. Parler de notre terrasse ombragée."
-                className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                maxLength={KNOWLEDGE_TEXT_MAX_LENGTH}
+          <div className="space-y-3">
+            <button
+              type="button"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:text-foreground"
+            >
+              <ChevronDown
+                size={16}
+                className={cn('transition-transform duration-200', showAdvanced && 'rotate-180')}
               />
+              Affiner le comportement (optionnel)
+            </button>
+
+            {showAdvanced && (
+              <Field label="Consignes particulières (ex: suggestions, plats signatures)">
+                <textarea
+                  value={systemPromptExtra}
+                  onChange={(e) => adjust(() => setSystemPromptExtra(e.target.value))}
+                  placeholder="Exemple : Toujours proposer notre formule midi en semaine. Parler de notre terrasse ombragée."
+                  className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  maxLength={KNOWLEDGE_TEXT_MAX_LENGTH}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() =>
+                        adjust(() =>
+                          setSystemPromptExtra((current) =>
+                            `${current} ${s}`.trim().slice(0, KNOWLEDGE_TEXT_MAX_LENGTH),
+                          ),
+                        )
+                      }
+                      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
+          </div>
+          {demoPlayed && (
+            <div className="border-t border-border pt-4">
+              <p className="text-sm font-medium">Comment trouvez-vous Sokar ?</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSystemPromptExtra((current) => `${current} ${s}`.trim())}
-                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                  >
-                    + {s}
-                  </button>
-                ))}
+                <Button type="button" variant="outline" onClick={handleContinue} disabled={saving}>
+                  Parfait
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => adjust(() => setFillerStyle('WARM'))}
+                >
+                  Plus chaleureux
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => adjust(() => setFillerStyle('FORMAL'))}
+                >
+                  Plus formel
+                </Button>
               </div>
-            </Field>
+            </div>
           )}
         </div>
-
-        {!saved ? (
-          <SubmitButton saving={saving}>Sauvegarder et écouter un aperçu</SubmitButton>
-        ) : (
-          <div className="space-y-4">
-            <DemoCallPlayer onPlayed={() => setDemoPlayed(true)} />
-            <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success transition-colors duration-200">
-              <Check size={16} />
-              <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
-            </div>
-
-            {demoPlayed && (
-              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 transition-opacity duration-300">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                    H
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-foreground">
-                      Un mot de Hamza, fondateur
-                    </p>
-                    <p className="text-sm leading-6 text-muted-foreground">
-                      Bienvenue chez Sokar. Si l&apos;assistant ne répond pas comme vous le
-                      souhaitez — style trop formel, phrase mal coupée, information manquante —
-                      écrivez-moi directement à{' '}
-                      <a
-                        href="mailto:hamza@sokar.tech"
-                        className="font-medium text-primary underline-offset-2 hover:underline"
-                      >
-                        hamza@sokar.tech
-                      </a>
-                      . J&apos;ajuste la configuration pour vous, sans intermédiaire.
-                    </p>
-                    <p className="pt-1 text-xs text-muted-foreground">
-                      — Hamza, fondateur de Sokar
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <Button
-              type="button"
-              onClick={handleContinue}
-              className="w-full transition-colors duration-200"
-            >
-              Continuer vers l&apos;agenda
-            </Button>
-          </div>
-        )}
+        <div className="min-w-0 space-y-3">
+          <DemoCallPlayer
+            key={JSON.stringify([profileType, fillerStyle, speakingRate, systemPromptExtra])}
+            styleLabel={FILLER_OPTIONS.find((option) => option.value === fillerStyle)?.label}
+            rhythmLabel={speakingRate < 1 ? 'Calme' : speakingRate > 1 ? 'Dynamique' : 'Modéré'}
+            beforePlay={handleSave}
+            onPlayed={() => setDemoPlayed(true)}
+          />
+        </div>
       </div>
-    </form>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <OnboardingAction>
+        <Button
+          type="button"
+          onClick={handleContinue}
+          disabled={!demoPlayed || saving}
+          className="transition-all duration-200"
+        >
+          Ça me convient → Continuer vers le planning
+        </Button>
+      </OnboardingAction>
+    </div>
+  );
+}
+
+function Segmented({
+  label,
+  value,
+  options,
+  onChange,
+  rhythm = false,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string; description?: string }>;
+  onChange: (value: string) => void;
+  rhythm?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div
+        className={cn('flex gap-2', rhythm && 'rounded-xl bg-muted/60 p-1')}
+        role="group"
+        aria-label={label}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border px-2 py-2.5 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              option.description && 'relative flex-col gap-1 py-3',
+              value === option.value
+                ? 'border-foreground/25 bg-background font-medium text-foreground shadow-sm'
+                : rhythm
+                  ? 'border-transparent bg-transparent text-muted-foreground hover:text-foreground'
+                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+            )}
+          >
+            {option.description ? (
+              <span className="mb-1 text-foreground/70">
+                {option.value === 'WARM' ? (
+                  <Heart size={18} aria-hidden="true" />
+                ) : option.value === 'FORMAL' ? (
+                  <Gem size={18} aria-hidden="true" />
+                ) : (
+                  <AudioLines size={18} aria-hidden="true" />
+                )}
+              </span>
+            ) : rhythm ? (
+              option.value === '0.85' ? (
+                <Waves size={15} aria-hidden="true" />
+              ) : option.value === '1' ? (
+                <Gauge size={15} aria-hidden="true" />
+              ) : (
+                <Zap size={15} aria-hidden="true" />
+              )
+            ) : value === option.value ? (
+              <Check size={14} aria-hidden="true" />
+            ) : null}
+            {option.label}
+            {option.description && (
+              <span className="text-xs font-normal text-muted-foreground">
+                {option.description}
+              </span>
+            )}
+            {option.description && value === option.value && (
+              <Check size={12} aria-hidden="true" className="absolute right-2 top-2" />
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

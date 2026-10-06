@@ -50,6 +50,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export type GiftCardListProps = {
   items: GiftCardListItem[];
+  isCrowdfunding: boolean;
   onView?: (card: GiftCardListItem) => void;
   onCancel?: (card: GiftCardListItem) => void;
   onClose?: (card: GiftCardListItem) => void;
@@ -58,6 +59,7 @@ export type GiftCardListProps = {
 
 export default function GiftCardList({
   items,
+  isCrowdfunding,
   onView,
   onCancel,
   onClose,
@@ -66,7 +68,6 @@ export default function GiftCardList({
   const isMobile = useIsMobile();
 
   if (items.length === 0) {
-    const isCrowdfunding = items.length === 0 && onClose !== undefined;
     return (
       <div className="sokar-empty">
         <Gift size={40} className="opacity-30" />
@@ -75,7 +76,7 @@ export default function GiftCardList({
         </p>
         <p className="text-xs opacity-60">
           {isCrowdfunding
-            ? 'Les cagnottes créées via le widget apparaîtront ici.'
+            ? 'Les cagnottes créées via votre page de réservation apparaîtront ici.'
             : 'Les cartes cadeaux vendues ou créées manuellement apparaîtront ici.'}
         </p>
       </div>

@@ -1,4 +1,5 @@
 'use client';
+import { GiftCardTestBanner } from './gift-card-test-banner';
 
 /**
  * Sokar Connect — GiftCardPurchase.
@@ -84,6 +85,7 @@ export function GiftCardPurchase({
 
   return (
     <div style={widgetStyle} className="space-y-5">
+      <GiftCardTestBanner />
       {/* Stepper — progress bar style comme le widget résa */}
       <div className="flex items-center gap-1.5">
         {visibleSteps.map((s) => {

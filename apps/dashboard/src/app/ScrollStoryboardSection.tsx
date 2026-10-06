@@ -184,7 +184,25 @@ export default function ScrollStoryboardSection() {
                   <p className="text-xs text-muted-foreground">Assistant en communication</p>
                 </div>
               </div>
-              <div className="mt-5 h-24 rounded-2xl border border-white/8 bg-black/45" />
+              <div className="mt-5 flex h-24 items-center justify-between gap-4 rounded-2xl border border-white/8 bg-black/45 px-4">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">
+                    <PhoneCall size={12} aria-hidden="true" /> Exemple d’appel
+                  </p>
+                  <p className="mt-2 truncate text-sm font-medium text-white">
+                    « Bonjour, avez-vous une table pour deux ce soir ? »
+                  </p>
+                </div>
+                <div aria-hidden="true" className="flex shrink-0 items-center gap-1">
+                  {[12, 22, 15, 28, 18, 32, 20, 13, 25, 16, 10].map((height, index) => (
+                    <span
+                      key={index}
+                      style={{ height }}
+                      className="w-1 rounded-full bg-pricing-accent/80"
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <FloatingMetric label="Appels traites" value="412" className="relative inset-auto" />

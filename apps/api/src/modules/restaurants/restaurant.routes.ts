@@ -1,11 +1,17 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
+import { normalizePhone } from '@sokar/shared';
 import { requireOrg } from '../../plugins/clerk';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
+import {
+  getOnboardingPlaceDetails,
+  isOnboardingPlacesEnabled,
+  searchOnboardingPlaces,
+} from './onboarding-places.service';
 import {
   applyOnboardingTransition,
   computeOnboardingState,
@@ -17,6 +23,7 @@ import {
   type OnboardingTaskState,
   UpdateOnboardingSchema,
 } from './onboarding.service';
+import { OpeningHoursSchema } from './opening-hours.schema';
 import { invalidateRestaurantContextCache } from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
 import {
@@ -65,10 +72,7 @@ const RestaurantProfileSchema = z.object({
   managerPhone: z.string().regex(/^\+?[0-9]{10,15}$/),
   managerEmail: z.string().email(),
   phoneNumber: z.string().min(5),
-  openingHours: z.record(
-    z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
-    z.union([z.object({ open: z.string(), close: z.string() }), z.null()]),
-  ),
+  openingHours: OpeningHoursSchema,
   googleCalendarId: z.string().nullable().optional(),
   giftCardMinimumAmount: z.number().int().min(0).optional(),
   giftCardEnabled: z.boolean().optional(),
@@ -134,8 +138,19 @@ const CapacitySpecialsSchema = z
   .passthrough();
 
 const UpdateRestaurantSchema = RestaurantProfileSchema.extend({
+  phoneE164: z.string().trim().max(32).optional().nullable(),
+  googlePlaceId: z.string().trim().max(200).optional().nullable(),
   capacitySpecials: CapacitySpecialsSchema.optional(),
 }).partial();
+
+const OnboardingPlaceSearchSchema = z.object({
+  query: z.string().trim().min(2).max(120),
+  sessionToken: z.string().uuid(),
+});
+const OnboardingPlaceDetailsSchema = z.object({
+  placeId: z.string().trim().min(5).max(200),
+  sessionToken: z.string().uuid(),
+});
 
 const UpdateConnectSchema = z.object({
   slug: z
@@ -200,6 +215,8 @@ function onboardingPayload(
       name: restaurant.name,
       managerPhone: restaurant.managerPhone,
       managerEmail: restaurant.managerEmail,
+      phoneE164: restaurant.phoneE164,
+      googlePlaceId: restaurant.googlePlaceId,
       phoneNumber: restaurant.phoneNumber,
       phoneAssigned: hasUsablePhone(restaurant.phoneNumber),
       openingHours: restaurant.openingHours,
@@ -825,17 +842,19 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(personality);
   });
 
-  // ─── Appel test onboarding : le gérant entend l'IA sur SON propre numéro ──
+  // ─── Appel test onboarding : vérifie la ligne publique du restaurant ───────
   // Le déclenchement est journalisé comme appel en attente ; la validation
   // intervient uniquement après confirmation explicite du gérant.
 
   const TestCallSchema = z.object({
-    phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
+    // Compatibilité avec les anciennes versions du dashboard. Le serveur utilise phoneE164.
+    phoneNumber: z.string().optional(),
   });
+  const TestCallPhoneSchema = z.string().regex(/^\+[1-9]\d{9,14}$/);
 
   const postTestCall = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
-    const body = TestCallSchema.parse(req.body ?? {});
+    TestCallSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       include: { personality: true },
@@ -849,16 +868,25 @@ export async function restaurantRoutes(app: FastifyInstance) {
       });
     }
 
+    const restaurantPhone = TestCallPhoneSchema.safeParse(
+      normalizePhone(restaurant.phoneE164?.trim() ?? ''),
+    );
+    if (!restaurantPhone.success) {
+      return reply.status(409).send({
+        code: 'NO_RESTAURANT_PHONE',
+        error: 'Renseignez le numéro public du restaurant au format international.',
+      });
+    }
+
     const baseUrl = process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
     const webhookUrl = `${baseUrl}/voice/stream`;
 
     try {
-      const { callControlId } = await placeOutboundCall(body.phoneNumber, {
+      const { callControlId } = await placeOutboundCall(restaurantPhone.data, {
         webhookUrl,
         clientState: {
           kind: 'onboarding_test_call',
           restaurantId,
-          targetManagerPhone: body.phoneNumber,
         },
         timeoutSecs: 30,
       });
@@ -887,10 +915,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         message: 'Appel test déclenché. Confirmez sa réception après avoir entendu l’assistant.',
       });
     } catch (err: unknown) {
-      logger.error(
-        { err, restaurantId, target: body.phoneNumber },
-        '[onboarding] test call failed',
-      );
+      logger.error({ err, restaurantId }, '[onboarding] test call failed');
       return reply.status(502).send({
         code: 'TELNYX_FAILED',
         error:
@@ -1268,6 +1293,57 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
+
+  const postOnboardingPlaceSearch = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!isOnboardingPlacesEnabled()) {
+      return reply.status(503).send({
+        error:
+          'La recherche de restaurant n’est pas disponible. Vous pouvez saisir les informations manuellement.',
+      });
+    }
+    const body = OnboardingPlaceSearchSchema.parse(req.body);
+    try {
+      const suggestions = await searchOnboardingPlaces(body.query, body.sessionToken);
+      return reply.send({ suggestions });
+    } catch (err) {
+      app.log.warn(
+        { reason: err instanceof Error ? err.message : 'unknown' },
+        '[onboarding] Google Places search failed',
+      );
+      return reply.status(502).send({ error: 'La recherche est temporairement indisponible.' });
+    }
+  };
+
+  const postOnboardingPlaceDetails = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!isOnboardingPlacesEnabled()) {
+      return reply.status(503).send({
+        error:
+          'La recherche de restaurant n’est pas disponible. Vous pouvez saisir les informations manuellement.',
+      });
+    }
+    const body = OnboardingPlaceDetailsSchema.parse(req.body);
+    try {
+      const place = await getOnboardingPlaceDetails(body.placeId, body.sessionToken);
+      return reply.send(place);
+    } catch (err) {
+      app.log.warn(
+        { reason: err instanceof Error ? err.message : 'unknown' },
+        '[onboarding] Google Places details failed',
+      );
+      return reply.status(502).send({ error: 'Les informations du lieu sont indisponibles.' });
+    }
+  };
+
+  app.post(
+    '/restaurant/onboarding/places/autocomplete',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    postOnboardingPlaceSearch,
+  );
+  app.post(
+    '/restaurant/onboarding/places/details',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    postOnboardingPlaceDetails,
+  );
 
   app.post(
     '/restaurant/onboarding/demo-call',

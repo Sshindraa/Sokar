@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 import { getErrorMessage } from '@/types/api';
+import { buildWidgetPreviewUrl } from '@/lib/widget-preview-url';
 
 const DEFAULT_PRIMARY = '#0f172a';
 const DEFAULT_ACCENT = '#f97316';
@@ -47,10 +48,7 @@ function buildSnippet(slug: string, primary: string, accent: string): string {
 }
 
 function buildWidgetUrl(slug: string, primary: string, accent: string): string {
-  return (
-    `${WIDGET_HOST}/widget/${slug}?embedded=1&primary=` +
-    `${encodeURIComponent(primary.replace('#', ''))}&accent=${encodeURIComponent(accent.replace('#', ''))}`
-  );
+  return buildWidgetPreviewUrl(slug, primary, accent);
 }
 
 export default function WidgetIntegrationPage() {

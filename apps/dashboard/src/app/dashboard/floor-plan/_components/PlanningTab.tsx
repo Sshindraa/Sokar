@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { normalizeOpeningHours } from '@sokar/shared';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { AlertCircle, Calendar, Clock, Users, UtensilsCrossed } from 'lucide-react';
@@ -47,7 +48,6 @@ import {
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DEFAULT_OPEN = '10:00';
 const DEFAULT_CLOSE = '23:00';
 const SLOT_HEIGHT = 64;
@@ -303,16 +303,39 @@ export function PlanningTab({ orgId }: PlanningTabProps) {
 
     const tables = sections.flatMap((s) => s.tables);
 
-    const dayKey = DAY_KEYS[parseISO(date).getDay()] ?? 'mon';
-    const hours = restaurant?.openingHours?.[dayKey];
-    let open = parseTime(hours?.open) ?? parseTime(DEFAULT_OPEN) ?? 600;
-    let close = parseTime(hours?.close) ?? parseTime(DEFAULT_CLOSE) ?? 1380;
+    const dayIndex = parseISO(date).getDay();
+    const servicePeriods = normalizeOpeningHours(restaurant?.openingHours).filter(
+      (period) => period.dayIndex === dayIndex,
+    );
+    let open =
+      servicePeriods.reduce<number | null>((earliest, period) => {
+        const time = parseTime(period.open);
+        return time == null ? earliest : earliest == null ? time : Math.min(earliest, time);
+      }, null) ??
+      parseTime(DEFAULT_OPEN) ??
+      600;
+    let close =
+      servicePeriods.reduce<number | null>((latest, period) => {
+        const time = parseTime(period.close);
+        return time == null ? latest : latest == null ? time : Math.max(latest, time);
+      }, null) ??
+      parseTime(DEFAULT_CLOSE) ??
+      1380;
     if (close <= open) close += 24 * 60;
 
     const count = Math.max(0, Math.floor((close - open) / 30));
     const slots = Array.from({ length: count }, (_, i) => {
       const minutes = open + i * 30;
-      return { minutes, label: formatSlotLabel(minutes) };
+      const isOpen = servicePeriods.length
+        ? servicePeriods.some((period) => {
+            const start = parseTime(period.open);
+            let end = parseTime(period.close);
+            if (start == null || end == null) return false;
+            if (end <= start) end += 24 * 60;
+            return minutes >= start && minutes < end;
+          })
+        : true;
+      return { minutes, label: formatSlotLabel(minutes), isOpen };
     });
 
     const activeCap = tables.filter((t) => t.isActive).reduce((sum, t) => sum + t.capacity, 0);
@@ -583,7 +606,13 @@ export function PlanningTab({ orgId }: PlanningTabProps) {
                 {timeSlots.map((slot, index) => (
                   <div
                     key={slot.label}
-                    className="border-b border-border p-2 text-xs text-muted-foreground text-right"
+                    title={slot.isOpen ? undefined : 'Restaurant fermé'}
+                    className={cn(
+                      'border-b border-border p-2 text-xs text-right',
+                      slot.isOpen
+                        ? 'text-muted-foreground'
+                        : 'bg-muted/40 text-muted-foreground/70',
+                    )}
                     style={{ gridColumn: 1, gridRow: index + 3 }}
                   >
                     {slot.label}
@@ -604,7 +633,10 @@ export function PlanningTab({ orgId }: PlanningTabProps) {
                       {timeSlots.map((_, slotIndex) => (
                         <div
                           key={slotIndex}
-                          className="absolute left-0 right-0 border-b border-border/50"
+                          className={cn(
+                            'absolute left-0 right-0 border-b border-border/50',
+                            !timeSlots[slotIndex]?.isOpen && 'bg-muted/30',
+                          )}
                           style={{
                             top: `${slotIndex * SLOT_HEIGHT}px`,
                             height: `${SLOT_HEIGHT}px`,

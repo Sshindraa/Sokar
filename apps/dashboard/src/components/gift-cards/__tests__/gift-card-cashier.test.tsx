@@ -69,7 +69,7 @@ describe('gift card cashier', () => {
     mocks.get.mockResolvedValue({ ...detail, card: { ...detail.card, status: 'PAYMENT_REVIEW' } });
     render(<GiftCardCashier giftCardId="card" onChanged={vi.fn()} />);
     expect(
-      await screen.findByText('Cette carte ne peut pas être débitée dans son état actuel.'),
+      await screen.findByText('Le paiement de cette carte doit être vérifié avant tout débit.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vérifier le débit' })).not.toBeInTheDocument();
     expect(mocks.post).not.toHaveBeenCalled();

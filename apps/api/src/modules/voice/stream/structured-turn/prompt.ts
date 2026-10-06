@@ -62,11 +62,13 @@ export function describeDate(
   );
   const days = normalizeOpeningHours(openingHours);
   if (!days.length) return { date, weekday, hours: 'horaires non renseignés' };
-  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
+  const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
   return {
     date,
     weekday,
-    hours: slot ? `ouvert ${slot.open}–${slot.close}` : 'FERMÉ ce jour-là',
+    hours: periods.length
+      ? `ouvert ${periods.map((period) => `${period.open}–${period.close}`).join(' puis ')}`
+      : 'FERMÉ ce jour-là',
   };
 }
 

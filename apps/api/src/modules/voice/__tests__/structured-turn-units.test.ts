@@ -414,6 +414,23 @@ describe('outsideOpeningHoursFact', () => {
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '11:00' })).not.toBeNull();
   });
 
+  it('reconnaît aussi les heures hors service entre le déjeuner et le dîner', () => {
+    const splitHours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+    expect(outsideOpeningHoursFact(splitHours, { date: '2026-10-06', time: '16:00' })).toContain(
+      '(12:00–14:30 puis 19:00–22:30)',
+    );
+    expect(outsideOpeningHoursFact(splitHours, { date: '2026-10-06', time: '20:00' })).toBeNull();
+  });
+
   it('reste muet quand tout est compatible ou inconnu', () => {
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '12:00' })).toBeNull();
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();

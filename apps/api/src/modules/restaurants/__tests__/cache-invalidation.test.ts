@@ -71,6 +71,16 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
       payload: {
         name: 'Chez Test Modifié',
         managerEmail: 'new@test.fr',
+        openingHours: {
+          tue: {
+            open: '12:00',
+            close: '22:30',
+            services: [
+              { open: '12:00', close: '14:30' },
+              { open: '19:00', close: '22:30' },
+            ],
+          },
+        },
         plan: 'PREMIUM',
       },
     });
@@ -78,7 +88,22 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
     expect(res.statusCode).toBe(200);
     expect(db.restaurant.update).toHaveBeenCalledWith({
       where: { id: 'test-rest-1' },
-      data: expect.not.objectContaining({ plan: expect.anything() }),
+      data: expect.objectContaining({
+        openingHours: {
+          tue: {
+            open: '12:00',
+            close: '22:30',
+            services: [
+              { open: '12:00', close: '14:30' },
+              { open: '19:00', close: '22:30' },
+            ],
+          },
+        },
+      }),
+    });
+    expect(db.restaurant.update).not.toHaveBeenCalledWith({
+      where: { id: 'test-rest-1' },
+      data: expect.objectContaining({ plan: expect.anything() }),
     });
     expect(redisCache.del).toHaveBeenCalledWith('phone:pn-test');
   });

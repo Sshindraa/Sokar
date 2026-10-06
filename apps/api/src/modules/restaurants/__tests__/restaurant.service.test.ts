@@ -335,4 +335,22 @@ describe('RestaurantService.isOpen', () => {
     // 2026-09-12 est un samedi
     expect(RestaurantService.isOpen(ctx, '2026-09-12', '20:00')).toBe(true);
   });
+
+  it('respecte la coupure entre le déjeuner et le dîner', () => {
+    const ctx = {
+      openingHours: {
+        mon: {
+          open: '12:00',
+          close: '22:30',
+          services: [
+            { open: '12:00', close: '14:30' },
+            { open: '19:00', close: '22:30' },
+          ],
+        },
+      },
+    };
+    expect(RestaurantService.isOpen(ctx, '2026-09-07', '13:00')).toBe(true);
+    expect(RestaurantService.isOpen(ctx, '2026-09-07', '16:00')).toBe(false);
+    expect(RestaurantService.isOpen(ctx, '2026-09-07', '20:00')).toBe(true);
+  });
 });

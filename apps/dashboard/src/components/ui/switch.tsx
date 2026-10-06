@@ -16,6 +16,7 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
     return (
       <button
         ref={ref}
+        type="button"
         id={id}
         role="switch"
         aria-checked={checked}
