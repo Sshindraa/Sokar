@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getGiftCardOrigin } from '@/lib/gift-card-origin';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
 import { getParentOrigin } from './post-message-security';
@@ -166,14 +167,6 @@ function parseRequestedPartySize(value: string | null): number | null {
 
 function parseRequestedTime(value: string | null): string | null {
   return value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
-}
-
-export function getGiftCardOrigin(currentOrigin: string, nodeEnv = process.env.NODE_ENV): string {
-  const origin = new URL(currentOrigin);
-  if (nodeEnv === 'development' && ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)) {
-    origin.port = '4002';
-  }
-  return origin.origin;
 }
 
 async function publicApiFetch<T = unknown>(

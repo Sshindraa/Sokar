@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor, act, fireEvent } from '@testing-library/react';
-import ReservationWidget, { getGiftCardOrigin } from './page';
+import { getGiftCardOrigin } from '@/lib/gift-card-origin';
+import ReservationWidget from './page';
 import { getParentOrigin } from './post-message-security';
 
 // ---------------------------------------------------------------------------

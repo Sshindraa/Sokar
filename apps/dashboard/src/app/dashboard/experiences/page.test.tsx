@@ -223,8 +223,10 @@ describe('ExperiencesPage', () => {
       await screen.findByText('Ajoutez une première date avant d’activer cette expérience.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Activer l’expérience' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter une date' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter la date' }));
+    const addSessionButton = await screen.findByRole('button', { name: 'Ajouter une date' });
+    await waitFor(() => expect(addSessionButton).toBeEnabled());
+    fireEvent.click(addSessionButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
     expect(await screen.findByText('Prête à être activée')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Activer l’expérience' })).toBeEnabled();
   });
@@ -241,7 +243,7 @@ describe('ExperiencesPage', () => {
     );
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByLabelText('Autres actions'));
-    fireEvent.click(screen.getByRole('button', { name: 'Supprimer l’expérience' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Supprimer l’expérience' }));
     expect(apiMocks.del).not.toHaveBeenCalled();
     expect(await screen.findByRole('dialog')).toHaveTextContent('Cette action est définitive');
     fireEvent.click(screen.getByRole('button', { name: /^Supprimer$/ }));
