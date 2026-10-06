@@ -12,10 +12,12 @@ export function OnboardingAccessBoundary({
   children,
   onboarding,
   controls,
+  enforceAccess = true,
 }: {
   children: ReactNode;
   onboarding: ReactNode;
   controls?: ReactNode;
+  enforceAccess?: boolean;
 }) {
   const { state, loading, refresh } = useOnboarding();
   const pathname = usePathname();
@@ -27,13 +29,15 @@ export function OnboardingAccessBoundary({
     );
 
   useEffect(() => {
-    if (loading) return;
+    if (!enforceAccess || loading) return;
     if (complete && pathname === '/onboarding') {
       router.replace('/dashboard');
     } else if (!complete && pathname.startsWith('/dashboard')) {
       router.replace('/onboarding');
     }
-  }, [complete, loading, pathname, router]);
+  }, [complete, enforceAccess, loading, pathname, router]);
+
+  if (!enforceAccess) return <>{children}</>;
 
   if (!loading && complete && pathname !== '/onboarding') return <>{children}</>;
   if (!loading && complete && pathname === '/onboarding') {

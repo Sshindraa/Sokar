@@ -959,6 +959,7 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
           <DashboardSiteBoundary>
             {hasClerkKey && <SyncOrganization />}
             <OnboardingAccessBoundary
+              enforceAccess={hasClerkKey}
               controls={
                 <div className="flex items-center gap-3">
                   <SiteSwitcher />

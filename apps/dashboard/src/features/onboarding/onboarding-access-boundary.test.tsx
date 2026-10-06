@@ -23,9 +23,12 @@ function stateWith(status: OnboardingStatus): OnboardingState {
     steps: ONBOARDING_TASK_KEYS.map((key) => ({ key, status })),
   } as OnboardingState;
 }
-function mount() {
+function mount(enforceAccess = true) {
   return render(
-    <OnboardingAccessBoundary onboarding={<p>Parcours de configuration</p>}>
+    <OnboardingAccessBoundary
+      enforceAccess={enforceAccess}
+      onboarding={<p>Parcours de configuration</p>}
+    >
       <p>Réservations accessibles</p>
     </OnboardingAccessBoundary>,
   );
@@ -52,6 +55,12 @@ it('refuse une étape absente', () => {
   mocks.state.steps.pop();
   mount();
   expect(screen.queryByText('Réservations accessibles')).not.toBeInTheDocument();
+});
+it('laisse accéder au dashboard de prévisualisation sans vérifier un onboarding inexistant', () => {
+  mount(false);
+  expect(screen.getByText('Réservations accessibles')).toBeInTheDocument();
+  expect(screen.queryByText('Parcours de configuration')).not.toBeInTheDocument();
+  expect(mocks.replace).not.toHaveBeenCalled();
 });
 it('déverrouille immédiatement quand les dix étapes sont terminées', () => {
   const view = mount();
