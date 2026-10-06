@@ -2,7 +2,9 @@
 
 import { ClerkProvider } from '@clerk/nextjs';
 import { usePathname } from 'next/navigation';
-import { ReactNode } from 'react';
+import { useEffect, useLayoutEffect, type ReactNode } from 'react';
+
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export default function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -10,6 +12,12 @@ export default function Providers({ children }: { children: ReactNode }) {
   const isDemoMode = Boolean(
     process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING,
   );
+
+  useIsomorphicLayoutEffect(() => {
+    if (pathname === '/') {
+      document.documentElement.classList.remove('dark', 'light');
+    }
+  }, [pathname]);
 
   const needsClerk =
     pathname?.startsWith('/login') ||

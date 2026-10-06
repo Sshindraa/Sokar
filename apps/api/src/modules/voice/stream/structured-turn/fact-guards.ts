@@ -628,14 +628,16 @@ export function outsideOpeningHoursFact(
   if (!days.length) return null;
   const [year, month, day] = draft.date.split('-').map(Number);
   const utc = new Date(Date.UTC(year, month - 1, day));
-  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
-  if (!slot || slot.close <= slot.open) return null;
-  if (draft.time >= slot.open && draft.time <= slot.close) return null;
+  const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
+  if (!periods.length || periods.some((period) => period.close <= period.open)) return null;
+  if (periods.some((period) => draft.time >= period.open && draft.time <= period.close))
+    return null;
   const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
     utc,
   );
+  const ranges = periods.map((period) => `${period.open}–${period.close}`).join(' puis ');
   return (
-    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${slot.open}–${slot.close}). ` +
+    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${ranges}). ` +
     "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
     'et laisse-le choisir une heure dans ces horaires.'
   );

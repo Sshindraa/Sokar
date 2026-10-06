@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
+import { normalizeOpeningHours } from '@sokar/shared';
 
 const PeriodSchema = z.enum(['today', '7d', '30d']).default('7d');
 
@@ -269,16 +270,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
       select: { openingHours: true },
     });
 
-    const openingHours = restaurant.openingHours as Record<
-      string,
-      { open: string; close: string } | null
-    > | null;
-    if (!openingHours || typeof openingHours !== 'object') {
+    const rawOpeningHours = restaurant.openingHours;
+    if (!rawOpeningHours || typeof rawOpeningHours !== 'object') {
       return reply.send({
         days: [],
         summary: { underbookedDays: 0, totalOpenDays: 0, revenueAtRisk: 0 },
       });
     }
+    const openingHours = normalizeOpeningHours(rawOpeningHours);
 
     // Fenêtre : 7 prochains jours à partir d'aujourd'hui
     const today = new Date();
@@ -336,10 +335,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
-      const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
-      const slot = openingHours[dayKey];
+      const periods = openingHours.filter((period) => period.dayIndex === date.getDay());
 
-      if (!slot || !slot.open || !slot.close) {
+      if (periods.length === 0) {
         days.push({
           date: date.toISOString().split('T')[0],
           dayName: dayLabels[date.getDay()],
@@ -378,8 +376,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
         date: date.toISOString().split('T')[0],
         dayName: dayLabels[date.getDay()],
         isOpen: true,
-        openTime: slot.open,
-        closeTime: slot.close,
+        openTime: periods[0].open,
+        closeTime: periods[periods.length - 1].close,
         reservationCount,
         covers,
         isUnderbooked,

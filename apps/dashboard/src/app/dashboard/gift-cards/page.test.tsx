@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   orgId: 'org_test',
 }));
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+
 vi.mock('@/lib/api/gift-cards', () => ({
   useGiftCardApi: () => ({
     listGiftCards: mocks.listGiftCards,
@@ -33,7 +37,8 @@ vi.mock('@/components/gift-cards/GiftCardSectionNav', () => ({
 }));
 
 vi.mock('@/components/gift-cards/gift-card-form', () => ({
-  default: () => null,
+  default: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="Créer une carte cadeau" /> : null,
 }));
 
 vi.mock('@/components/gift-cards/gift-card-list', () => ({
@@ -46,6 +51,7 @@ vi.mock('@/components/ConfirmDialog', () => ({
 
 describe('GiftCardsPage', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/dashboard/gift-cards');
     vi.clearAllMocks();
     mocks.listGiftCards
       .mockRejectedValueOnce(new Error('Impossible de joindre le serveur API'))
@@ -62,6 +68,21 @@ describe('GiftCardsPage', () => {
     });
     mocks.listGiftCardPacks.mockResolvedValue([]);
     mocks.get.mockResolvedValue({ giftCardMinimumAmount: null, giftCardCommissionRate: null });
+  });
+
+  it('ouvre le formulaire demandé après un chargement réussi, y compris après réessai', async () => {
+    window.history.replaceState({}, '', '/dashboard/gift-cards?create=1');
+    render(<GiftCardsPage />);
+    await screen.findByRole('alert');
+    expect(
+      screen.queryByRole('dialog', { name: 'Créer une carte cadeau' }),
+    ).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?create=1');
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+    expect(
+      await screen.findByRole('dialog', { name: 'Créer une carte cadeau' }),
+    ).toBeInTheDocument();
+    expect(window.location.search).toBe('');
   });
 
   it('ne boucle pas sur les appels et permet de réessayer après une panne', async () => {

@@ -1,0 +1,150 @@
+{
+  "capturedAt": "2026-10-02T21:44:09.090Z",
+  "baseline": "Interface courante après la phase 1, avant toute retouche visuelle",
+  "browser": "Playwright Chromium",
+  "referenceClock": "2026-10-02T18:15:00.000Z",
+  "timezone": "Europe/Paris",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000
+    },
+    "ipad": {
+      "width": 1024,
+      "height": 768
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "screenshots": [
+    {
+      "filename": "salle-desktop-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "desktop",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "reservations-desktop-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "widget-desktop-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "desktop",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-desktop-coordonnees.png",
+      "screen": "widget",
+      "viewport": "desktop",
+      "state": "coordonnees",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "salle-ipad-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "ipad",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "reservations-ipad-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "ipad",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "widget-ipad-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "ipad",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "salle-mobile-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "reservations-mobile-liste-remplie.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "liste-remplie",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "widget-mobile-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-coordonnees.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "coordonnees",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "salle-mobile-trois-recommandations.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "trois-recommandations",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "reservations-desktop-liste-vide.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "liste-vide",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "reservations-mobile-erreur.png",
+      "screen": "reservations",
+      "viewport": "mobile",
+      "state": "erreur",
+      "route": "/dashboard/reservations"
+    },
+    {
+      "filename": "widget-mobile-creneau-indisponible.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "creneau-indisponible",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-jour-complet.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "jour-complet",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "salle-desktop-apres-minuit.png",
+      "screen": "salle",
+      "viewport": "desktop",
+      "state": "apres-minuit",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "reservations-desktop-chargement.png",
+      "screen": "reservations",
+      "viewport": "desktop",
+      "state": "chargement",
+      "route": "/dashboard/reservations"
+    }
+  ],
+  "unexpectedApiRequests": []
+}

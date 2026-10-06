@@ -1,3 +1,5 @@
+import type { DayHours, Slot } from './hours';
+
 export type StepProps = {
   onComplete: (nextStep: OnboardingTaskKey | null) => void;
 };
@@ -41,9 +43,11 @@ export type OnboardingRestaurant = {
   name: string;
   managerPhone: string;
   managerEmail: string;
+  phoneE164?: string | null;
+  googlePlaceId?: string | null;
   phoneNumber: string;
   phoneAssigned: boolean;
-  openingHours: Record<string, { open: string; close: string } | null>;
+  openingHours: Record<string, DayHours>;
   googleCalendarId: string | null;
   googleConnected: boolean;
   personality?: {
@@ -85,6 +89,9 @@ export type OnboardingRestaurant = {
   } | null;
 };
 
+export type OpeningHourPeriod = Slot;
+export type OpeningHoursDay = Exclude<DayHours, null>;
+
 export type OnboardingState = {
   onboardingDone: boolean; // Voice onboarding done
   voiceOnboardingDone: boolean;
@@ -113,3 +120,16 @@ export type OnboardingAction =
   | 'block'
   | 'activate'
   | 'first_call';
+
+export const ONBOARDING_TASK_KEYS: OnboardingTaskKey[] = [
+  'restaurant',
+  'hours',
+  'knowledge',
+  'calendar',
+  'phone',
+  'connect-identity',
+  'connect-location',
+  'connect-cuisine',
+  'connect-capacity',
+  'connect-activation',
+];

@@ -14,6 +14,7 @@ const baseRestaurant = {
   managerPhone: '+33612345678',
   managerEmail: 'restaurant@sokar.tech',
   phoneNumber: '+33123456789',
+  phoneE164: '+33611112222',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
   googleRefreshToken: 'google-refresh-token',
   googleCalendarId: 'primary',
@@ -25,6 +26,7 @@ const baseRestaurant = {
   firstCallAt: null,
   personality: { id: 'personality-1' },
 };
+const PLACES_SESSION_ID = '00000000-0000-4000-8000-000000000000';
 
 describe('restaurant.routes - onboarding', () => {
   beforeEach(() => {
@@ -54,7 +56,29 @@ describe('restaurant.routes - onboarding', () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
-  it('déclenche un vrai appel test Telnyx vers le téléphone du restaurant', async () => {
+  it('garde la recherche Google Places fermée tant que son drapeau dédié est désactivé', async () => {
+    vi.stubEnv('GOOGLE_PLACES_API_KEY', 'test-server-key');
+    vi.stubEnv('GOOGLE_PLACES_ONBOARDING_ENABLED', 'false');
+    try {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurant/onboarding/places/autocomplete',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          query: 'Le Bistrot Lyon',
+          sessionToken: PLACES_SESSION_ID,
+        },
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toMatch(/saisir les informations manuellement/i);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('déclenche un appel test vers le numéro public enregistré du restaurant', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
       baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
@@ -76,7 +100,7 @@ describe('restaurant.routes - onboarding', () => {
       method: 'POST',
       url: '/restaurant/onboarding/test-call',
       headers: { authorization: 'Bearer test', host: 'api.test.local' },
-      payload: { phoneNumber: '+33611112222' },
+      payload: {},
     });
 
     expect(res.statusCode).toBe(200);
@@ -92,7 +116,6 @@ describe('restaurant.routes - onboarding', () => {
         clientState: expect.objectContaining({
           kind: 'onboarding_test_call',
           restaurantId: 'test-rest-1',
-          targetManagerPhone: '+33611112222',
         }),
         timeoutSecs: 30,
       }),
@@ -123,7 +146,7 @@ describe('restaurant.routes - onboarding', () => {
       method: 'POST',
       url: '/restaurant/onboarding/test-call',
       headers: { authorization: 'Bearer test', host: 'api.test.local' },
-      payload: { phoneNumber: '+33611112222' },
+      payload: {},
     });
 
     expect(res.statusCode).toBe(502);

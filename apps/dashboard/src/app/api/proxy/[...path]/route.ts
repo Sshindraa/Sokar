@@ -100,6 +100,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       body: body ? JSON.stringify(body) : undefined,
     });
 
+    if (res.headers.get('content-type')?.startsWith('audio/')) {
+      const headers = new Headers();
+      for (const name of [
+        'content-type',
+        'content-length',
+        'content-range',
+        'accept-ranges',
+        'cache-control',
+      ]) {
+        const value = res.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      return new Response(res.body, { status: res.status, headers });
+    }
+
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
   });

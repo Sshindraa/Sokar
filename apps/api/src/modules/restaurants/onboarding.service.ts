@@ -35,7 +35,7 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   // Voice group
   {
     key: 'restaurant',
-    title: 'Identité du restaurant',
+    title: 'Vérifions votre restaurant',
     description: 'Nom et coordonnées de contact du restaurant.',
     required: true,
     group: 'voice',
@@ -43,15 +43,15 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   },
   {
     key: 'hours',
-    title: 'Quand répondre et réserver',
-    description: "Créneaux d'ouverture que l'assistant peut proposer.",
+    title: 'Quand prenez-vous des réservations ?',
+    description: 'Horaires des créneaux proposés par Sokar.',
     required: false,
     group: 'voice',
     index: 2,
   },
   {
     key: 'knowledge',
-    title: "Ce que l'assistant doit savoir",
+    title: 'Consignes & démo',
     description: 'Ton, ambiance et consignes commerciales.',
     required: false,
     group: 'voice',
@@ -194,7 +194,7 @@ function markCompleted(tasks: OnboardingTasksMap, task: OnboardingTask, now: str
 
 export type RestaurantLike = {
   name?: string | null;
-  managerPhone?: string | null;
+  phoneE164?: string | null;
   managerEmail?: string | null;
   openingHours?: unknown;
   personality?: unknown;
@@ -264,7 +264,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   if (
     restaurant.name &&
     restaurant.name !== 'Mon Restaurant' &&
-    restaurant.managerPhone &&
+    restaurant.phoneE164 &&
     restaurant.managerEmail
   ) {
     markCompleted(tasks, 'restaurant', now);

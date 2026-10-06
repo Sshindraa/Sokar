@@ -469,9 +469,10 @@ const EnvSchema = z
     // restaurant pilot are qualified.
     REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
     LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Experiences remain local-only until capacity, pricing and pilot
-    // procedures are validated; no payment or distribution provider is called.
+    // Internal experience management and public paid bookings have independent
+    // gates. Public Checkout remains off until Connect/payment readiness is proven.
     EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),
+    EXPERIENCE_BOOKING_ENABLED: z.enum(['true', 'false']).default('false'),
     // Event ticketing remains local-only until payment, refund and distribution
     // contracts are qualified with a pilot.
     EVENTS_ENABLED: z.enum(['true', 'false']).default('false'),

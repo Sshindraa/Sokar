@@ -1428,7 +1428,6 @@ function TableCard({
   // Keep one visual language for tables in both modes. The editor and Live
   // still provide different interactions, but the table itself should remain
   // recognisable when moving between them.
-  const liveCustomerName = status?.reservation?.customerName?.trim() || null;
   const liveStatusLabel = status ? statusMeta[status.status].label : null;
   const liveRailClass =
     status?.status === 'occupied'
@@ -1519,7 +1518,7 @@ function TableCard({
     <div
       ref={dragRef}
       className={cn(
-        'relative box-border min-w-0 min-h-0 select-none outline-none',
+        'relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'overflow-visible',
         !isOverlay && 'absolute',
         className,
@@ -1536,6 +1535,8 @@ function TableCard({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       aria-label={title}
+      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}`}
+      aria-pressed={onClick ? isSelected : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(e);
@@ -1615,7 +1616,7 @@ function TableCard({
             'transition-[border-color,box-shadow] duration-200',
             isSelected &&
               !isOverlay &&
-              'border-floor-table-accent ring-2 ring-inset ring-floor-table-accent/70',
+              'border-primary ring-2 ring-primary ring-offset-2 ring-offset-background',
           )}
           style={{
             height: liveBodyHeight,
@@ -1632,21 +1633,19 @@ function TableCard({
           <div
             className={cn(
               'absolute inset-0 flex flex-col items-start justify-between text-left',
-              compact ? 'px-2 py-1.5 pr-4' : 'px-3 py-2 pr-5',
+              compact ? 'px-2 py-1.5 pr-3' : 'px-3 py-2 pr-5',
             )}
           >
-            <p className="max-w-full truncate text-[10px] font-semibold leading-none text-floor-table-text/80">
+            <p className="max-w-full truncate pr-2 text-[11px] font-bold leading-none text-floor-table-text">
               {displayName}
             </p>
+            <p className="max-w-full truncate text-[9px] font-medium leading-none text-floor-table-text/75">
+              {table.capacity} pl.
+            </p>
             <div className="min-w-0 max-w-full leading-tight">
-              {liveCustomerName && !compact ? (
-                <p className="truncate text-[10px] font-medium text-floor-table-text">
-                  {liveCustomerName}
-                </p>
-              ) : null}
               <p
                 className={cn(
-                  'flex min-w-0 items-center gap-1 truncate text-[10px] font-medium',
+                  'flex min-w-0 items-center gap-1 truncate text-[9px] font-medium',
                   referenceStatusTextClass,
                 )}
               >
@@ -1735,7 +1734,6 @@ function DraggableReservation({
         onPointerDown?.(e);
         e.stopPropagation();
       }}
-      onClick={(e) => e.stopPropagation()}
       className={cn(
         'absolute inset-0 z-20 cursor-grab rounded-[inherit] active:cursor-grabbing',
         isDragging && 'opacity-0',

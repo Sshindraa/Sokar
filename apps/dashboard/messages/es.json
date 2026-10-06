@@ -27,8 +27,8 @@
     "marketing": "Campañas",
     "reputation": "Opiniones",
     "loyalty": "Ventajas para clientes",
-    "experiences": "Ofertas",
-    "events": "Eventos",
+    "experiences": "Experiencias con reserva",
+    "events": "Eventos y entradas",
     "distribution": "Socios",
     "usage": "Consumo",
     "margin": "Margen Sokar",
@@ -92,5 +92,25 @@
     "settings": "Ajustes",
     "signOut": "Cerrar sesión",
     "signingOut": "Cerrando sesión…"
+  },
+  "offerChooser": {
+    "openButton": "Crear una oferta",
+    "title": "¿Qué desea crear?",
+    "description": "Elija el formato adecuado para su oferta.",
+    "experience": {
+      "title": "Experiencia con reserva",
+      "description": "Taller, brunch, clase de cocina… Sus clientes eligen una fecha y reservan plazas.",
+      "action": "Crear una experiencia"
+    },
+    "event": {
+      "title": "Evento con entradas",
+      "description": "Concierto, fiesta, cena con espectáculo… Ofrezca varias tarifas y controle las entradas al acceder.",
+      "action": "Crear un evento"
+    },
+    "giftCard": {
+      "title": "Tarjeta regalo",
+      "description": "Un importe o una propuesta para regalar y utilizar en su restaurante.",
+      "action": "Crear una tarjeta regalo"
+    }
   }
 }

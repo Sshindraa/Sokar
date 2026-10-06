@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -20,7 +20,7 @@ import type { OnboardingStep, OnboardingStatus } from './types';
 const STATUS_LABEL: Record<OnboardingStatus, string> = {
   completed: 'Terminé',
   current: 'En cours',
-  blocked: 'Bloqué',
+  blocked: 'À résoudre',
   skipped: 'Plus tard',
   pending: 'À faire',
 };
@@ -47,9 +47,9 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
     impact: 'Rend les réponses plus naturelles dès le premier appel.',
   },
   calendar: {
-    title: 'Connectez le planning',
+    title: 'Connectez votre planning',
     body: 'Sokar vérifie les disponibilités avant de confirmer une table.',
-    cta: 'Connecter l’agenda',
+    cta: 'Configurer le planning',
     impact: 'Réduit les doubles réservations.',
   },
   phone: {
@@ -135,213 +135,202 @@ export function DashboardOnboardingGate() {
   return null;
 }
 
-export function DashboardOnboardingPanel() {
-  const { state, loading, error } = useOnboarding();
+type Journey = 'voice' | 'connect';
 
-  if (!hasClerkKey || loading || !state) return null;
+const STEP_LABELS: Record<string, string> = {
+  restaurant: 'Restaurant',
+  hours: 'Horaires',
+  knowledge: 'Consignes et démo',
+  calendar: 'Planning',
+  phone: 'Appels',
+  'connect-identity': 'Identité publique',
+  'connect-location': 'Localisation',
+  'connect-cuisine': 'Cuisine et ambiance',
+  'connect-capacity': 'Réservations',
+  'connect-activation': 'Publication',
+};
 
-  // Pattern Mural (+10% rétention J7) : la checklist ne disparaît pas
-  // brutalement à la fin. On affiche un panneau "résumé" compact avec
-  // les checkmarks verts qui persiste, rappelant que tout est configuré
-  // et invitant à découvrir les fonctionnalités du dashboard.
-  if (state.voiceOnboardingDone && state.connectOnboardingDone) {
-    return <OnboardingCompletedSummary />;
-  }
+function nextStep(steps: OnboardingStep[]) {
+  return (
+    steps.find((step) => step.status === 'current' || step.status === 'pending') ??
+    steps.find((step) => step.status === 'blocked') ??
+    steps.find((step) => step.status === 'skipped')
+  );
+}
+
+export function DashboardOnboardingPanel({ required = false }: { required?: boolean } = {}) {
+  const { state, loading, error, openStepModal } = useOnboarding();
+  const [selectedJourney, setSelectedJourney] = useState<Journey | null>(null);
+
+  if (loading)
+    return (
+      <div
+        role="status"
+        className="mb-5 rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground"
+      >
+        Chargement de votre configuration…
+      </div>
+    );
+  if (!state)
+    return error ? (
+      <div
+        role="alert"
+        className="mb-5 rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground"
+      >
+        Votre configuration est momentanément indisponible. Actualisez la page pour réessayer.
+      </div>
+    ) : null;
+
+  const journey =
+    selectedJourney ?? (state.voiceOnboardingDone ? 'connect' : state.currentStep.group);
+  const steps = state.steps.filter((step) => step.group === journey);
+  const target = nextStep(steps);
+  const completed = steps.filter((step) => step.status === 'completed').length;
+  const isVoice = journey === 'voice';
+  const journeyDone = isVoice ? state.voiceOnboardingDone : state.connectOnboardingDone;
 
   return (
-    <div className="mb-5 space-y-4">
-      <OnboardingBanners />
-      <div className="grid gap-3 xl:grid-cols-[1.4fr_1fr]">
-        <OnboardingStepper />
-        <CurrentActionCard />
+    <section
+      aria-label="Mise en service de Sokar"
+      className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+    >
+      <div className="flex flex-col gap-4 border-b border-border p-6 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Mise en service
+          </p>
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">
+            {journeyDone
+              ? isVoice
+                ? 'Votre assistant est configuré'
+                : 'Votre page Connect est configurée'
+              : isVoice
+                ? 'Préparez votre assistant vocal'
+                : 'Préparez votre page de réservation'}
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {isVoice
+              ? 'Vos informations, une démonstration, puis la mise en service des appels.'
+              : 'Vos informations publiques, vos règles de réservation, puis la publication.'}
+          </p>
+        </div>
+        <div
+          role="group"
+          aria-label="Choisir le parcours"
+          className="flex flex-wrap gap-1 rounded-xl bg-secondary p-1"
+        >
+          {(['voice', 'connect'] as const).map((group) => (
+            <Button
+              key={group}
+              variant={journey === group ? 'default' : 'ghost'}
+              aria-pressed={journey === group}
+              onClick={() => setSelectedJourney(group)}
+              className="transition-all duration-200"
+            >
+              {group === 'voice' ? <PhoneCall size={16} /> : <ExternalLink size={16} />}
+              {group === 'voice' ? 'Assistant vocal' : 'Sokar Connect'}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-6 md:p-8">
+        {journeyDone ? (
+          <div className="space-y-4">
+            <CheckCircle2 className="text-success" size={24} />
+            <h3 className="text-lg font-semibold text-foreground">
+              {isVoice ? 'Vérifiez le résultat avec un appel test' : 'Vérifiez votre page publique'}
+            </h3>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              {isVoice
+                ? 'Appelez votre numéro Sokar, demandez une réservation et vérifiez qu’elle apparaît dans votre planning.'
+                : 'Ouvrez l’aperçu de votre page pour vérifier les informations et le parcours de réservation.'}
+            </p>
+            <Button
+              onClick={() => openStepModal(isVoice ? 'phone' : 'connect-activation')}
+              className="transition-all duration-200"
+            >
+              {isVoice ? 'Vérifier les appels' : 'Voir ma page'} <ArrowRight size={16} />
+            </Button>
+          </div>
+        ) : target ? (
+          <CurrentActionCard step={target} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Choisissez une étape ci-dessous pour vérifier votre configuration.
+          </p>
+        )}
+
+        <div className="mt-6 border-t border-border pt-5">
+          <div className="mb-4 flex items-center gap-4">
+            <p className="shrink-0 text-xs text-muted-foreground">
+              {completed} sur {steps.length} étapes terminées
+            </p>
+            <div className="max-w-40 flex-1">
+              <ProgressBar
+                value={steps.length ? (completed / steps.length) * 100 : 0}
+                accentClassName="bg-primary"
+              />
+            </div>
+          </div>
+          <ol className="flex flex-wrap gap-2" aria-label="Progression du parcours">
+            {steps.map((step) => (
+              <li key={step.key}>
+                <button
+                  type="button"
+                  onClick={() => openStepModal(step.key)}
+                  aria-current={target?.key === step.key ? 'step' : undefined}
+                  aria-label={`${STEP_LABELS[step.key] ?? step.title} — ${STATUS_LABEL[step.status]}`}
+                  className={cn(
+                    'inline-flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
+                    target?.key === step.key && 'bg-secondary font-semibold text-foreground',
+                  )}
+                >
+                  <StatusIcon status={step.status} />
+                  {STEP_LABELS[step.key] ?? step.title}
+                </button>
+              </li>
+            ))}
+          </ol>
+          <details className="mt-3">
+            <summary className="cursor-pointer rounded-lg py-2 text-sm text-muted-foreground transition-all duration-200 hover:text-foreground">
+              Voir toutes les étapes
+            </summary>
+            <div className="mt-3">
+              <OnboardingStepper />
+            </div>
+          </details>
+        </div>
+      </div>
+      <div className="flex flex-col gap-3 border-t border-border bg-secondary/30 px-6 py-4 md:flex-row md:items-center md:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {required
+            ? isVoice
+              ? 'Le parcours Sokar Connect est également requis pour ouvrir votre espace.'
+              : 'Le parcours Assistant vocal est également requis pour ouvrir votre espace.'
+            : isVoice
+              ? 'Vous souhaitez aussi recevoir des réservations en ligne ?'
+              : 'Vous souhaitez aussi confier vos appels à Sokar ?'}
+        </p>
+        <Button
+          variant="ghost"
+          onClick={() => setSelectedJourney(isVoice ? 'connect' : 'voice')}
+          className="justify-start transition-all duration-200"
+        >
+          {isVoice
+            ? required
+              ? 'Configurer Sokar Connect'
+              : 'Découvrir Sokar Connect'
+            : 'Configurer l’assistant vocal'}{' '}
+          <ArrowRight size={16} />
+        </Button>
       </div>
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive transition-all duration-200">
-          {error}
-        </div>
+        <p role="alert" className="border-t border-border p-4 text-sm text-destructive">
+          La modification n’a pas pu être enregistrée. Réessayez dans quelques instants.
+        </p>
       )}
-    </div>
-  );
-}
-
-/**
- * Panneau de résumé affiché après complétion de tout l'onboarding.
- * Persiste sur le dashboard — pattern Mural (+10% rétention J7).
- * Compact, non-bloquant, rappelle que tout est prêt.
- */
-function OnboardingCompletedSummary() {
-  const { state } = useOnboarding();
-  if (!state) return null;
-
-  const voiceSteps = state.steps.filter((s) =>
-    ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key),
-  );
-  const connectSteps = state.steps.filter((s) =>
-    [
-      'connect-identity',
-      'connect-location',
-      'connect-cuisine',
-      'connect-capacity',
-      'connect-activation',
-    ].includes(s.key),
-  );
-
-  return (
-    <div className="mb-5 rounded-2xl border border-success/20 bg-success/[0.06] p-5 shadow-sm transition-all duration-200">
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-success/25 bg-success/10 text-success">
-          <CheckCircle2 size={20} />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-foreground">
-            Configuration terminée — votre assistant est prêt
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Voice {state.voiceProgress}% · Connect {state.connectProgress}%
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-success/15 pt-4">
-        {voiceSteps.map((step) => (
-          <span
-            key={step.key}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            <Check size={12} className="text-success" />
-            {step.title.toLowerCase()}
-          </span>
-        ))}
-        {connectSteps.map((step) => (
-          <span
-            key={step.key}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            <Check size={12} className="text-success" />
-            {step.title.toLowerCase()}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function OnboardingBanners() {
-  const { state, openStepModal } = useOnboarding();
-  if (!state) return null;
-
-  const showVoiceBanner = !state.voiceOnboardingDone;
-  const showConnectBanner = !state.connectOnboardingDone;
-
-  const voiceCurrent =
-    state.steps
-      .filter((s) => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key))
-      .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[0];
-
-  const connectCurrent =
-    state.steps
-      .filter((s) =>
-        [
-          'connect-identity',
-          'connect-location',
-          'connect-cuisine',
-          'connect-capacity',
-          'connect-activation',
-        ].includes(s.key),
-      )
-      .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[5];
-
-  return (
-    <div className="flex flex-col gap-3">
-      {showVoiceBanner && (
-        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
-              <PhoneCall size={19} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-foreground">
-                Assistant Vocal Sokar ·{' '}
-                {
-                  state.steps.filter(
-                    (s) =>
-                      ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key) &&
-                      s.status === 'completed',
-                  ).length
-                }
-                /5 terminées
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {voiceCurrent.title.toLowerCase()}
-              </p>
-              <div className="mt-2.5 flex items-center gap-2">
-                <div className="w-40 max-w-[50vw]">
-                  <ProgressBar value={state.voiceProgress} accentClassName="bg-primary" />
-                </div>
-                <span className="text-[11px] font-bold text-muted-foreground">
-                  {state.voiceProgress}%
-                </span>
-              </div>
-            </div>
-          </div>
-          <Button
-            type="button"
-            onClick={() => openStepModal(voiceCurrent.key)}
-            className="w-full transition-all duration-200 md:w-auto"
-          >
-            Continuer la configuration de la Voice
-            <ArrowRight size={16} />
-          </Button>
-        </div>
-      )}
-
-      {showConnectBanner && (
-        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-warning/25 bg-warning/10 text-warning">
-              <ExternalLink size={19} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-foreground">
-                Sokar Connect ·{' '}
-                {
-                  state.steps.filter(
-                    (s) =>
-                      [
-                        'connect-identity',
-                        'connect-location',
-                        'connect-cuisine',
-                        'connect-capacity',
-                        'connect-activation',
-                      ].includes(s.key) && s.status === 'completed',
-                  ).length
-                }
-                /5 terminées
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {connectCurrent.title.toLowerCase()}
-              </p>
-              <div className="mt-2.5 flex items-center gap-2">
-                <div className="w-40 max-w-[50vw]">
-                  <ProgressBar value={state.connectProgress} accentClassName="bg-warning" />
-                </div>
-                <span className="text-[11px] font-bold text-muted-foreground">
-                  {state.connectProgress}%
-                </span>
-              </div>
-            </div>
-          </div>
-          <Button
-            type="button"
-            onClick={() => openStepModal(connectCurrent.key)}
-            className="w-full transition-all duration-200 md:w-auto bg-warning hover:bg-warning text-background"
-          >
-            Configurer Connect
-            <ArrowRight size={16} />
-          </Button>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
@@ -432,7 +421,7 @@ function StepperButton({ step, onClick }: { step: OnboardingStep; onClick: () =>
         </span>
       </div>
       <div>
-        <p className="mt-2 text-xs font-bold text-foreground line-clamp-2">
+        <p className="mt-2 text-xs font-bold text-foreground">
           {step.index}. {step.title}
         </p>
       </div>
@@ -440,80 +429,55 @@ function StepperButton({ step, onClick }: { step: OnboardingStep; onClick: () =>
   );
 }
 
-export function CurrentActionCard() {
-  const { state, openStepModal, updateTask } = useOnboarding();
+export function CurrentActionCard({ step: selectedStep }: { step?: OnboardingStep } = {}) {
+  const { state, openStepModal } = useOnboarding();
   if (!state) return null;
-
-  const step = state.currentStep;
+  const step = selectedStep ?? nextStep(state.steps) ?? state.currentStep;
   const copy = ACTION_COPY[step.key] ?? ACTION_COPY.restaurant;
-  const canSkip = !step.required && step.status !== 'completed';
+  const blocked = step.status === 'blocked';
+  const serviceIssue =
+    blocked && /clerk|oauth|api|configuration sokar/i.test(step.state.reason ?? '');
 
   return (
-    <section className="flex flex-col justify-between rounded-2xl border border-brand/20 bg-brand/[0.04] p-5 shadow-sm transition-all duration-200 md:p-6">
-      <div>
-        <div className="flex items-start justify-between gap-4">
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-brand">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-            Action recommandée
+    <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+      <div className="max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Prochaine étape
+        </p>
+        <h3 className="mt-3 text-2xl font-bold tracking-tight text-foreground">{copy.title}</h3>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{copy.body}</p>
+        {step.key === 'knowledge' && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            La démonstration permet d’écouter un exemple de conversation. Elle ne confirme pas une
+            réservation réelle.
           </p>
-          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card">
-            <StatusIcon status={step.status} />
-          </span>
-        </div>
-        <h2 className="mt-2 text-xl font-black tracking-tight text-foreground">{copy.title}</h2>
-
-        <p className="mt-3 text-sm text-muted-foreground">{copy.body}</p>
-        <div className="mt-4 rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground">
-          {copy.impact}
-        </div>
-
-        {step.status === 'blocked' && (
-          <div className="mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning transition-all duration-200">
-            {step.state.reason || 'Cette étape demande une action externe.'}
+        )}
+        {blocked && (
+          <div
+            role="status"
+            className="mt-4 rounded-xl border border-border bg-secondary/50 p-4 text-sm text-muted-foreground"
+          >
+            <p className="font-semibold text-foreground">
+              {serviceIssue
+                ? 'Une configuration côté Sokar est nécessaire'
+                : 'Cette étape reste à résoudre'}
+            </p>
+            <p className="mt-1">
+              {serviceIssue
+                ? 'La connexion au planning est indisponible pour le moment. Vous pouvez continuer à préparer les autres étapes ; les disponibilités de cet agenda ne sont pas encore vérifiées.'
+                : 'Ouvrez cette étape pour vérifier les informations et les options disponibles. Les autres réglages restent accessibles.'}
+            </p>
           </div>
         )}
       </div>
-
-      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-        <Button
-          type="button"
-          onClick={() => openStepModal(step.key)}
-          className={cn(
-            'transition-all duration-200',
-            step.key.startsWith('connect') && 'bg-warning hover:bg-warning text-background',
-          )}
-        >
-          {copy.cta}
-          <ArrowRight size={16} />
-        </Button>
-        {step.key === 'calendar' && step.status === 'blocked' && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => openStepModal('calendar')}
-            className="transition-all duration-200"
-          >
-            Réessayer Google
-            <ExternalLink size={16} />
-          </Button>
-        )}
-        {canSkip && (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => updateTask('skip', step.key, { reason: 'À reprendre plus tard' })}
-            className="transition-all duration-200"
-          >
-            Plus tard
-          </Button>
-        )}
-        {state.onboardingDone && step.key === 'phone' && (
-          <span className="inline-flex items-center gap-2 text-sm text-success self-center">
-            <CheckCircle2 size={16} />
-            Assistant configuré
-          </span>
-        )}
-      </div>
-    </section>
+      <Button
+        type="button"
+        onClick={() => openStepModal(step.key)}
+        className="shrink-0 transition-all duration-200"
+      >
+        {blocked ? 'Voir les options' : copy.cta}
+        <ArrowRight size={16} />
+      </Button>
+    </div>
   );
 }

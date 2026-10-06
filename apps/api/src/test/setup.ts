@@ -241,6 +241,21 @@ vi.mock('@prisma/client', async (importOriginal) => {
       update: vi.fn(),
       updateMany: vi.fn(),
     };
+    experienceCheckout = {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    experiencePaymentEvent = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+    };
     event = {
       findUnique: vi.fn(),
       findFirst: vi.fn(),

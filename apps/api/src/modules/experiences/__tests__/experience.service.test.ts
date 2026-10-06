@@ -104,6 +104,7 @@ describe('experience service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.restaurant.findFirst).mockResolvedValue({ id: RESTAURANT_ID } as never);
+    vi.mocked(db.experienceCheckout.findMany).mockResolvedValue([] as never);
   });
 
   it('creates a catalogue entry with normalized key and actor hash', async () => {

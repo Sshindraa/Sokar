@@ -6,10 +6,10 @@
  * - X-Content-Type-Options: nosniff
  * - X-Frame-Options: DENY (anti-clickjacking) — relaxé en SAMEORIGIN si ?preview=1
  * - Referrer-Policy: strict-origin-when-cross-origin
- * - Content-Security-Policy (nonce-based pour JSON-LD inline scripts, Cloudinary images)
+ * - Content-Security-Policy nonce-based pour les scripts exécutables, Cloudinary images
  *
  * CSP : utilise un nonce par requête pour autoriser uniquement les scripts
- * JSON-LD inline légitimes. Plus de 'unsafe-inline' sur script-src (audit
+ * exécutables inline légitimes. Plus de 'unsafe-inline' sur script-src (audit
  * sécurité Phase 2). style-src garde 'unsafe-inline' (Tailwind inline styles).
  *
  * En mode preview (?preview=1), on autorise l'embedding iframe depuis le
@@ -55,6 +55,20 @@ export function middleware(request: NextRequest) {
   // Server Components read it via headers() from 'next/headers'.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
+  const isPreview = request.nextUrl.searchParams.get('preview') === '1';
+
+  // URL de réservation courte : /book/[slug] sert le même widget que /widget/[slug].
+  // Garder l'URL courte et ses paramètres (date, heure, source) dans le navigateur.
+  const bookMatch = request.nextUrl.pathname.match(/^\/book\/([^/]+)$/);
+  if (bookMatch) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/widget/${bookMatch[1]}`;
+    const rewriteResponse = NextResponse.rewrite(url, {
+      request: { headers: requestHeaders },
+    });
+    applySecurityHeaders(rewriteResponse, request, nonce, false, true, isPreview);
+    return rewriteResponse;
+  }
 
   // Sokar Connect P2 — Premium subdomain detection.
   // Si le host n'est pas sokar.tech (ou www.), on vérifie si c'est un custom domain.
@@ -172,8 +186,6 @@ export function middleware(request: NextRequest) {
   }
 
   // ?preview=1 — mode preview dashboard (noindex, framing autorisé)
-  const isPreview = request.nextUrl.searchParams.get('preview') === '1';
-
   // Pages widget — autorisées à être embarquées dans un iframe sur n'importe quel domaine
   const isWidget = request.nextUrl.pathname.startsWith('/widget/');
 
@@ -196,12 +208,13 @@ function applySecurityHeaders(
   // Anti-MIME sniffing
   response.headers.set('X-Content-Type-Options', 'nosniff');
 
-  // Anti-clickjacking — DENY par défaut, SAMEORIGIN en preview.
+  // X-Frame-Options ne permet pas de déclarer une origine dashboard précise.
+  // Le preview cross-origin s'appuie donc uniquement sur CSP frame-ancestors.
   // Sur /widget/* on ne met PAS X-Frame-Options : la directive CSP
   // frame-ancestors * suffit et est la seule valeur standard cross-browser
   // pour autoriser l'embedding depuis n'importe quel domaine.
-  if (setXFrameDeny) {
-    response.headers.set('X-Frame-Options', isPreview ? 'SAMEORIGIN' : 'DENY');
+  if (setXFrameDeny && !isPreview) {
+    response.headers.set('X-Frame-Options', 'DENY');
   }
 
   // Pas de referrer vers des sites tiers non approuvés
@@ -229,7 +242,7 @@ function applySecurityHeaders(
   );
 
   // CSP : nonce-based pour script-src (audit sécurité Phase 2 — supprime 'unsafe-inline').
-  // Les scripts JSON-LD inline reçoivent le nonce via l'attribut nonce= en Server Component.
+  // Les blocs JSON-LD sont des données inertes et n'ont pas besoin d'un nonce par requête.
   // Le runtime webpack de Next en mode dev utilise eval pour le hot reload ; cette
   // exception reste limitée au développement et n'est jamais envoyée en production.
   // style-src garde 'unsafe-inline' (Tailwind injecte des styles inline au runtime).

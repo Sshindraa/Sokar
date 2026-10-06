@@ -41,8 +41,10 @@ vi.mock('next-intl', () => ({
       reputation: 'Avis',
       loyalty: 'Fidélité',
       reactivation: 'Relances',
-      experiences: 'Offres',
-      events: 'Événements',
+      openButton: 'Créer une offre',
+      title: 'Que souhaitez-vous créer ?',
+      experiences: 'Expériences à réserver',
+      events: 'Événements & billets',
       giftCards: 'Cartes cadeaux',
       connect: 'Connect',
       widget: 'Widget',
@@ -262,6 +264,8 @@ describe('MobileBottomNav', () => {
     expect(moreButton).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('dialog', { name: /Plus/i })).toBeInTheDocument();
     expect(screen.getByText('Campagnes')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Vue d’ensemble' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Créer une offre' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Réglages/i })).toHaveClass(
       'col-span-2',
       'md:col-span-3',
@@ -271,6 +275,14 @@ describe('MobileBottomNav', () => {
     const closeButtons = screen.getAllByRole('button', { name: /Fermer/i });
     fireEvent.click(closeButtons[0]);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('ouvre le choix de création depuis le menu mobile et ferme le panneau Plus', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: 'Plus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Créer une offre' }));
+    expect(screen.queryByRole('dialog', { name: 'Plus' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Que souhaitez-vous créer ?' })).toBeInTheDocument();
   });
 
   it('keeps primary items visible and closes the menu when navigating', () => {

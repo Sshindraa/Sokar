@@ -83,3 +83,24 @@ de prix et ajouter ses propres contrats d'idempotence et de réconciliation.
 - worker : `experience-session-expiry.worker.test.ts` (2 tests) ;
 - dashboard : `/dashboard/experiences` et `page.test.tsx` (5 tests) ;
 - typecheck API/dashboard, lint API/dashboard et `prisma validate` passent localement.
+
+## Addendum — paiement public (2 octobre 2026)
+
+La décision initiale « aucun paiement » est remplacée pour les réservations publiques par un
+checkout Stripe Connect à paiement intégral. La réservation n'est créée qu'après un événement
+Stripe signé et vérifié ; le retour navigateur sert uniquement à afficher l'état du webhook.
+Chaque checkout fige le prix, la commission et la quantité, réserve la capacité 35 minutes et porte
+une clé d'idempotence. Les événements de paiement/remboursement sont enregistrés par identifiant
+provider et empreinte SHA-256 ; le corps Stripe et les données de carte ne sont pas persistés.
+
+La migration `20261002160000_experience_public_checkout` est additive et n'a pas été appliquée.
+`EXPERIENCE_BOOKING_ENABLED=false` par défaut s'ajoute à `EXPERIENCES_ENABLED=false` ; les deux sont
+nécessaires pour ouvrir le parcours. Le statut dashboard agrège publication, compte Stripe et
+commission. L'annulation restaurateur déclenche un remboursement total idempotent ; une politique
+d'annulation client, les conditions commerciales, la fiscalité, les emails et le rapprochement
+restent des conditions de qualification, documentées dans
+[`../runbooks/experience-booking-pilot.md`](../runbooks/experience-booking-pilot.md).
+
+Ce code local ne constitue pas l'autorisation d'ouvrir la réservation en production. Qualifier la
+migration et les événements Connect en staging avec des comptes de test, puis conserver le flag
+fermé jusqu'à la validation des conditions commerciales et du parcours complet.

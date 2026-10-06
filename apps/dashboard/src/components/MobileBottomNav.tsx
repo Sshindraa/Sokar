@@ -19,6 +19,7 @@ import {
   Megaphone,
   Moon,
   MoreHorizontal,
+  Plus,
   PencilRuler,
   PhoneCall,
   Radio,
@@ -35,6 +36,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { cn, triggerHaptic } from '@/lib/utils';
+import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
@@ -103,8 +105,10 @@ export default function MobileBottomNav() {
   const router = useRouter();
   const tNav = useTranslations('nav');
   const tDashboard = useTranslations('dashboard');
+  const tOfferChooser = useTranslations('offerChooser');
   const { theme, toggleTheme } = useDashboardTheme();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [createOfferOpen, setCreateOfferOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [dragPreviewIndex, setDragPreviewIndex] = useState<number | null>(null);
@@ -503,6 +507,17 @@ export default function MobileBottomNav() {
                 );
               })}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                setCreateOfferOpen(true);
+              }}
+              className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-all duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus size={16} aria-hidden="true" />
+              {tOfferChooser('openButton')}
+            </button>
             <div className="mt-2 border-t border-border pt-2">
               <button
                 type="button"
@@ -629,6 +644,7 @@ export default function MobileBottomNav() {
           </div>
         </div>
       </nav>
+      <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
     </>
   );
 }

@@ -3,13 +3,25 @@ import {
   ExperienceReservationStatus,
   ExperienceSessionStatus,
   ExperienceStatus,
+  Prisma,
 } from '@prisma/client';
 import { z } from 'zod';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { requireCapability } from '../entitlements/entitlement.guard';
+import { RATE_LIMIT_PUBLIC_READ, RATE_LIMIT_PUBLIC_WRITE } from '../../plugins/rate-limit.policy';
+import { db } from '../../shared/db/client';
+import {
+  cancelPublicExperienceCheckout,
+  createPublicExperienceCheckout,
+  ExperienceCheckoutError,
+  getExperiencePaymentReadiness,
+  getPublicExperienceCheckout,
+  listPublicExperiences,
+} from './experience-payment.service';
 import {
   cancelExperienceReservation,
   createExperience,
+  deleteExperience,
   createExperienceSession,
   expireExperienceSessions,
   ExperienceConflictError,
@@ -79,9 +91,29 @@ const ReserveBodySchema = z.object({
 });
 
 const IdempotencyKeySchema = z.string().trim().min(8).max(200);
+const PublicExperienceSlugSchema = z.object({ slug: z.string().trim().min(1).max(160) });
+const PublicExperienceCheckoutParamsSchema = PublicExperienceSlugSchema.extend({
+  checkoutId: z.string().trim().uuid(),
+});
+const PublicExperienceCheckoutBodySchema = z.object({
+  experienceId: z.string().trim().uuid(),
+  sessionId: z.string().trim().uuid(),
+  quantity: z.number().int().min(1).max(20),
+});
+const PublicExperienceCheckoutStatusQuerySchema = z.object({
+  session_id: z.string().trim().min(1).max(255),
+});
+const ExperiencePaymentCommissionSchema = z.object({
+  restaurantId: z.string().trim().uuid(),
+  commissionRate: z.number().min(0).max(1).nullable(),
+});
 
 function experiencesEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.EXPERIENCES_ENABLED === 'true';
+}
+
+function experienceBookingEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return experiencesEnabled(environment) && environment.EXPERIENCE_BOOKING_ENABLED === 'true';
 }
 
 async function requireExperienceFeature(
@@ -131,6 +163,9 @@ function readIdempotencyKey(request: FastifyRequest): string | undefined {
 }
 
 function sendExperienceError(error: unknown, reply: FastifyReply): FastifyReply | undefined {
+  if (error instanceof ExperienceCheckoutError) {
+    return reply.status(error.statusCode).send({ error: error.code });
+  }
   if (
     error instanceof ExperienceNotFoundError ||
     error instanceof ExperienceSessionNotFoundError ||
@@ -171,6 +206,110 @@ const experienceConsume = experienceRead;
  * publish to a third-party events channel.
  */
 export async function experienceRoutes(app: FastifyInstance): Promise<void> {
+  app.get(
+    '/experiences/payment-readiness',
+    { preHandler: experienceRead },
+    async (request, reply) => {
+      try {
+        return reply.send({ data: await getExperiencePaymentReadiness(request.restaurantId) });
+      } catch (error) {
+        return sendExperienceError(error, reply) ?? Promise.reject(error);
+      }
+    },
+  );
+
+  app.patch(
+    '/api/internal/experiences/payment-config',
+    { preHandler: requireSokarOperator() },
+    async (request, reply) => {
+      const { restaurantId, commissionRate } = ExperiencePaymentCommissionSchema.parse(
+        request.body,
+      );
+      const restaurant = await db.restaurant.updateMany({
+        where: { id: restaurantId },
+        data: {
+          experienceCommissionRate:
+            commissionRate === null ? null : new Prisma.Decimal(commissionRate),
+        },
+      });
+      if (restaurant.count !== 1) return reply.status(404).send({ error: 'RESTAURANT_NOT_FOUND' });
+      return reply.send({ data: { restaurantId, commissionConfigured: commissionRate !== null } });
+    },
+  );
+
+  app.get(
+    '/public/r/:slug/experiences',
+    { config: { rateLimit: RATE_LIMIT_PUBLIC_READ } },
+    async (request, reply) => {
+      if (!experienceBookingEnabled()) {
+        return reply.status(503).send({ error: 'EXPERIENCE_BOOKING_DISABLED' });
+      }
+      const { slug } = PublicExperienceSlugSchema.parse(request.params);
+      try {
+        return reply.send({ data: await listPublicExperiences(slug) });
+      } catch (error) {
+        return sendExperienceError(error, reply) ?? Promise.reject(error);
+      }
+    },
+  );
+
+  app.post(
+    '/public/r/:slug/experiences/checkout',
+    { config: { rateLimit: RATE_LIMIT_PUBLIC_WRITE } },
+    async (request, reply) => {
+      if (!experienceBookingEnabled()) {
+        return reply.status(503).send({ error: 'EXPERIENCE_BOOKING_DISABLED' });
+      }
+      const { slug } = PublicExperienceSlugSchema.parse(request.params);
+      const body = PublicExperienceCheckoutBodySchema.parse(request.body);
+      const idempotencyKey = readIdempotencyKey(request);
+      if (!idempotencyKey) return reply.status(400).send({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
+      try {
+        return reply.status(201).send({
+          data: await createPublicExperienceCheckout({ slug, ...body, idempotencyKey }),
+        });
+      } catch (error) {
+        return sendExperienceError(error, reply) ?? Promise.reject(error);
+      }
+    },
+  );
+
+  app.get(
+    '/public/r/:slug/experiences/checkout/:checkoutId/status',
+    { config: { rateLimit: RATE_LIMIT_PUBLIC_READ } },
+    async (request, reply) => {
+      const params = PublicExperienceCheckoutParamsSchema.parse(request.params);
+      const { session_id: stripeSessionId } = PublicExperienceCheckoutStatusQuerySchema.parse(
+        request.query,
+      );
+      try {
+        return reply.send({
+          data: await getPublicExperienceCheckout({ ...params, stripeSessionId }),
+        });
+      } catch (error) {
+        return sendExperienceError(error, reply) ?? Promise.reject(error);
+      }
+    },
+  );
+
+  app.post(
+    '/public/r/:slug/experiences/checkout/:checkoutId/cancel',
+    { config: { rateLimit: RATE_LIMIT_PUBLIC_WRITE } },
+    async (request, reply) => {
+      const params = PublicExperienceCheckoutParamsSchema.parse(request.params);
+      const { session_id: stripeSessionId } = PublicExperienceCheckoutStatusQuerySchema.parse(
+        request.query,
+      );
+      try {
+        return reply.send({
+          data: await cancelPublicExperienceCheckout({ ...params, stripeSessionId }),
+        });
+      } catch (error) {
+        return sendExperienceError(error, reply) ?? Promise.reject(error);
+      }
+    },
+  );
+
   app.get('/experiences', { preHandler: experienceRead }, async (request, reply) => {
     const query = ExperienceListQuerySchema.parse(request.query);
     try {
@@ -196,6 +335,16 @@ export async function experienceRoutes(app: FastifyInstance): Promise<void> {
           actor: request.userId ?? 'unknown',
         }),
       });
+    } catch (error) {
+      return sendExperienceError(error, reply) ?? Promise.reject(error);
+    }
+  });
+
+  app.delete('/experiences/:id', { preHandler: experienceWrite }, async (request, reply) => {
+    const { id } = ExperienceParamsSchema.parse(request.params);
+    try {
+      await deleteExperience({ restaurantId: request.restaurantId, experienceId: id });
+      return reply.status(204).send();
     } catch (error) {
       return sendExperienceError(error, reply) ?? Promise.reject(error);
     }

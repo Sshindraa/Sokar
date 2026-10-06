@@ -20,6 +20,18 @@
 - Deploy scripts fail-fast if a critical `.env` is missing (API, dashboard, connect).
 - `packages/database/.env` is the only intentional duplicate: Prisma CLI does not follow symlinks and does not read `.env.local` from the root.
 
+### Recherche d'établissement Google Places
+
+- La recherche facultative d'établissement utilise `GOOGLE_PLACES_API_KEY` côté API uniquement.
+  Activer Places API (New) et restreindre la clé à cette API et aux IP des serveurs; ne jamais la
+  exposer dans `NEXT_PUBLIC_*` ou le navigateur.
+- L'API onboarding reste fermée tant que `GOOGLE_PLACES_ONBOARDING_ENABLED` n'est pas explicitement
+  à `true`; sa valeur d'exemple est `false`.
+- Les résultats de Places ont des règles d'attribution et de conservation propres à Google Maps.
+  Avant activation en production, valider les conditions EEE, la conservation des champs importés,
+  l'attribution, l'usage conjoint avec la carte OpenStreetMap de Connect et les mentions publiques
+  de conditions d'utilisation et de confidentialité.
+
 ## MCP et OAuth
 
 - `OAUTH_ISSUER_URL` est une URL validée au démarrage. En son absence, `API_URL` sert d'issuer ;
@@ -152,7 +164,8 @@ suivis tant qu'un pilote n'a pas produit ses preuves externes :
 | `CUSTOMER_GROUPS_ENABLED`      | `false`    | API d'identité de groupe Multi-site, sous consentement ; aucun rapprochement automatique ni campagne inter-sites n'est activé.                                                   |
 | `REPUTATION_ENABLED`           | `false`    | Demandes de feedback post-visite et récupération locale ; aucun envoi ni fournisseur d'avis n'est déclenché par le socle.                                                        |
 | `LOYALTY_ENABLED`              | `false`    | Catalogue d'avantages et grants à code hashé ; aucun point, envoi, POS ou débit n'est déclenché par le socle.                                                                    |
-| `EXPERIENCES_ENABLED`          | `false`    | Catalogue, sessions, capacité et réservations d'expériences ; aucun paiement, widget, téléphone ou canal événementiel externe n'est déclenché par le socle.                      |
+| `EXPERIENCES_ENABLED`          | `false`    | Catalogue et gestion interne des expériences, sessions et réservations.                                                                                                          |
+| `EXPERIENCE_BOOKING_ENABLED`   | `false`    | Parcours public de réservation et paiement intégral Stripe Connect ; exige aussi `EXPERIENCES_ENABLED=true`.                                                                     |
 | `EVENTS_ENABLED`               | `false`    | Catalogue, sessions, tarifs, jauges, billets, check-in et liste d'attente ; aucun paiement, facture fiscale, notification ou canal de distribution n'est déclenché par le socle. |
 | `DISTRIBUTION_ENABLED`         | `false`    | Connexions, snapshots, runs, liens et inbox webhook provider-neutral ; aucun OAuth, secret fournisseur, webhook public ou appel Google/Meta/API n'est déclenché par le socle.    |
 
@@ -870,3 +883,25 @@ cleaned up 2026-09-21). Use the opt-in for staging only, never for production.
 - Tests locaux uniquement : `GIFT_CARD_FINANCE_TEST_DATABASE_URL`, base dédiée sur localhost.
 
 Voir [activation et qualification des cartes cadeaux](gift-card-financial-safety.md).
+
+### Réservation publique des expériences
+
+`EXPERIENCE_BOOKING_ENABLED` reste à `false` par défaut dans tous les environnements. Son ouverture
+ne suffit pas seule : `EXPERIENCES_ENABLED` doit aussi être activé, la page Sokar Connect doit être
+publiée, le compte Stripe Connect du restaurant doit autoriser les encaissements et versements, et
+Sokar doit avoir renseigné la commission de ce restaurant. Le réglage opérateur accepte un taux
+fractionnaire (`0.05` = 5 %) via `PATCH /api/internal/experiences/payment-config`; `null` retire le
+taux et bloque à nouveau le paiement. La route exige `requireSokarOperator`.
+
+La page publique utilise Stripe Checkout sur le compte connecté ; les places sont retenues pendant
+35 minutes et la réservation n'est confirmée que par webhook signé. Une annulation depuis le
+dashboard déclenche un remboursement total idempotent. Le webhook Connect doit transmettre les
+événements `checkout.session.completed`, `checkout.session.expired`, `refund.created`,
+`refund.updated` et `refund.failed` pour les comptes connectés ; conserver les secrets de webhook
+dans `STRIPE_WEBHOOK_SECRET`, jamais dans le dépôt.
+
+Avant d'ouvrir un pilote réel, faire la migration uniquement en staging, jouer les scénarios payé,
+abandonné, expiré, webhook rejoué, capacité concurrente et remboursement échoué avec des comptes et
+clés Stripe de test. La politique d'annulation côté client, les conditions de vente, le traitement
+TVA/facture, les emails de confirmation/notification et le rapprochement quotidien restent à
+qualifier. Garder le flag fermé tant que ces éléments et le parcours staging ne sont pas validés.

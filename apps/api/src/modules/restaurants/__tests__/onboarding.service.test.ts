@@ -11,7 +11,6 @@ import {
 
 const baseEmpty = {
   name: 'Le Bistrot Sokar',
-  managerPhone: '+33600000000',
   managerEmail: 'restaurant@sokar.tech',
   openingHours: {},
   personality: null,
@@ -22,7 +21,7 @@ const baseEmpty = {
 
 const fullRestaurant = {
   name: 'Le Bistrot Sokar',
-  managerPhone: '+33600000000',
+  phoneE164: '+33600000001',
   managerEmail: 'restaurant@sokar.tech',
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   personality: { id: 'p1' },
@@ -36,13 +35,13 @@ function getStatus(tasks: OnboardingTasksMap, key: string) {
 }
 
 describe('computeOnboardingState', () => {
-  it('cas 1 : restaurant vide → seul `restaurant` peut être completed, le reste en pending/current', () => {
+  it('cas 1 : sans numéro public, restaurant reste à compléter', () => {
     const state = computeOnboardingState(baseEmpty);
-    expect(state.completedCount).toBe(1);
-    expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
+    expect(state.completedCount).toBe(0);
+    expect(getStatus(state.tasks, 'restaurant')).toBe('current');
     expect(state.onboardingDone).toBe(false);
-    expect(state.progress).toBe(10);
-    expect(state.currentStep.key).not.toBe('restaurant');
+    expect(state.progress).toBe(0);
+    expect(state.currentStep.key).toBe('restaurant');
   });
 
   it('cas 2 : restaurant pleinement configuré (Voice) → onboardingDone = true, progress = 50', () => {
@@ -90,9 +89,8 @@ describe('computeOnboardingState', () => {
   });
 
   it('cas 7 : minimumViableDone est false quand restaurant OU hours est incomplet', () => {
-    // baseEmpty a name/managerPhone/managerEmail mais pas d'openingHours
-    // → restaurant completed, hours current (auto-progression) → minimumViableDone = false
-    const state = computeOnboardingState(baseEmpty);
+    // Le numéro public est saisi ; hours reste incomplet.
+    const state = computeOnboardingState({ ...baseEmpty, phoneE164: '+33600000001' });
     expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
     expect(getStatus(state.tasks, 'hours')).toBe('current');
     expect(state.minimumViableDone).toBe(false);
@@ -101,6 +99,7 @@ describe('computeOnboardingState', () => {
   it('cas 8 : minimumViableDone est true quand restaurant ET hours sont completed', () => {
     const state = computeOnboardingState({
       ...baseEmpty,
+      phoneE164: '+33600000001',
       openingHours: { mon: { open: '12:00', close: '22:00' } },
     });
     expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
@@ -173,6 +172,7 @@ describe('applyOnboardingTransition', () => {
     // comme le fait la route PATCH (applyOnboardingTransition → computeOnboardingState).
     const state = computeOnboardingState({
       ...baseEmpty,
+      phoneE164: '+33600000001',
       onboardingTasks: after,
     });
     expect(state.currentStep.key).toBe('knowledge');
@@ -189,7 +189,7 @@ describe('applyOnboardingTransition', () => {
   });
 
   it('gère l’onboarding Sokar Connect : complétion et calcul des progrès indépendants', () => {
-    const emptyState = computeOnboardingState(baseEmpty);
+    const emptyState = computeOnboardingState({ ...baseEmpty, phoneE164: '+33600000001' });
     expect(emptyState.voiceOnboardingDone).toBe(false);
     expect(emptyState.connectOnboardingDone).toBe(false);
     expect(emptyState.voiceProgress).toBe(20);

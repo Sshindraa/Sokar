@@ -300,6 +300,12 @@ importers:
       '@sokar/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@stripe/connect-js':
+        specifier: ^3.4.6
+        version: 3.4.6
+      '@stripe/react-connect-js':
+        specifier: ^3.4.4
+        version: 3.4.4(@stripe/connect-js@3.4.6)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -516,6 +522,22 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@20.19.43)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.1.5(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
 
 packages:
+  '@stripe/react-connect-js@3.4.4':
+    resolution:
+      {
+        integrity: sha512-LUtVcGwnkOU9SO1t6j/kAhc89tMCPpFzXz+LU+fhJkOVSDFy8lnidd+t0vNmkVvVU3o8wNVvWgUMxRHL/d1QhQ==,
+      }
+    peerDependencies:
+      '@stripe/connect-js': '>=3.4.6'
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@stripe/connect-js@3.4.6':
+    resolution:
+      {
+        integrity: sha512-fuC/U/ONDBMKwTBxKAnEBQH+m0x+Tze62/bV1ZDLT7oRnsJgddEnRi7FzdwIxz9pmFZhOJpSaikLIBw9g/1o1w==,
+      }
+
   '@adobe/css-tools@4.5.0':
     resolution:
       {
@@ -10566,6 +10588,14 @@ packages:
       }
 
 snapshots:
+  '@stripe/react-connect-js@3.4.4(@stripe/connect-js@3.4.6)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@stripe/connect-js': 3.4.6
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+
+  '@stripe/connect-js@3.4.6': {}
+
   '@adobe/css-tools@4.5.0': {}
 
   '@alloc/quick-lru@5.2.0': {}

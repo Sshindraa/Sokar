@@ -14,6 +14,7 @@ import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 import { isPublicConnectPage } from '../connect/connect.types';
+import { normalizeOpeningHours } from '@sokar/shared';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -250,18 +251,16 @@ export class RestaurantService {
     return true;
   }
 
-  static isOpen(
-    ctx: { openingHours: Record<string, { open: string; close: string } | null> },
-    date: string,
-    time: string,
-  ): boolean {
-    const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  static isOpen(ctx: { openingHours: unknown }, date: string, time: string): boolean {
     const d = new Date(`${date}T${time}`);
-    const slot = ctx.openingHours[dayMap[d.getDay()]];
-    if (!slot) return false;
-    const [oh, om] = slot.open.split(':').map(Number);
-    const [ch, cm] = slot.close.split(':').map(Number);
     const mins = d.getHours() * 60 + d.getMinutes();
-    return mins >= oh * 60 + om && mins < ch * 60 + cm;
+    return normalizeOpeningHours(ctx.openingHours).some((period) => {
+      if (period.dayIndex !== d.getDay()) return false;
+      const [openHour, openMinute] = period.open.split(':').map(Number);
+      const [closeHour, closeMinute] = period.close.split(':').map(Number);
+      const opensAt = openHour * 60 + openMinute;
+      const closesAt = closeHour * 60 + closeMinute;
+      return mins >= opensAt && mins < closesAt;
+    });
   }
 }

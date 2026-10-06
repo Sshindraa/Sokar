@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getGiftCardOrigin } from '@/lib/gift-card-origin';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
 import { getParentOrigin } from './post-message-security';
+import { normalizeOpeningHours } from '@sokar/shared';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -45,7 +47,6 @@ const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
 
 const FRENCH_DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const FRENCH_DAYS_SHORT = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'];
-const DAYS_MAP = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const FRENCH_MONTHS = [
   'Janvier',
   'Février',
@@ -85,16 +86,16 @@ function formatLongFrenchDate(date: Date) {
   ].toLowerCase()}`;
 }
 
+function formatShortFrenchDate(date: Date) {
+  return `${date.getDate()} ${FRENCH_MONTHS_SHORT[date.getMonth()]}`;
+}
+
 function escapeICS(value: string) {
   return value
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\n/g, '\\n');
-}
-
-function formatShortFrenchDate(date: Date) {
-  return `${date.getDate()} ${FRENCH_MONTHS_SHORT[date.getMonth()]}`;
 }
 
 function triggerHaptic() {
@@ -105,6 +106,7 @@ function triggerHaptic() {
 interface OpeningHours {
   open: string;
   close: string;
+  services?: Array<{ open: string; close: string }>;
 }
 
 interface RestaurantPublic {
@@ -146,6 +148,27 @@ function formatDateParam(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function parseRequestedDate(value: string | null, now: Date): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (formatDateParam(date) !== value) return null;
+
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const lastDay = new Date(firstDay);
+  lastDay.setDate(lastDay.getDate() + 13);
+  return date >= firstDay && date <= lastDay ? date : null;
+}
+
+function parseRequestedPartySize(value: string | null): number | null {
+  if (!value || !/^[1-8]$/.test(value)) return null;
+  return Number(value);
+}
+
+function parseRequestedTime(value: string | null): string | null {
+  return value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+}
+
 async function publicApiFetch<T = unknown>(
   method: 'GET' | 'POST',
   path: string,
@@ -181,6 +204,10 @@ export default function ReservationWidget() {
   const params = useParams<{ restaurantId: string }>();
   const searchParams = useSearchParams();
   const restaurantId = params.restaurantId;
+  const requestedDateParam = searchParams.get('date');
+  const requestedPartySize = parseRequestedPartySize(searchParams.get('partySize'));
+  const requestedTime = parseRequestedTime(searchParams.get('time'));
+  const requestedDate = parseRequestedDate(requestedDateParam, new Date());
   const isEmbedded = searchParams.get('embedded') === '1';
   const marketingAttributionToken = searchParams.get('marketingAttributionToken') ?? '';
   // Origine explicite du parent, passée par le snippet embed Sokar.
@@ -205,14 +232,22 @@ export default function ReservationWidget() {
 
   // Booking Flow State
   const [step, setStep] = useState<1 | 2>(1);
-  const [partySize, setPartySize] = useState<number>(2);
+  const [partySize, setPartySize] = useState<number>(requestedPartySize ?? 2);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
+  const requestedSlotRef = useRef<{ date: string; partySize: number; time: string } | null>(
+    requestedDate && requestedPartySize && requestedTime
+      ? { date: formatDateParam(requestedDate), partySize: requestedPartySize, time: requestedTime }
+      : null,
+  );
+  const [selectionNotice, setSelectionNotice] = useState('');
   const [activeSection, setActiveSection] = useState<'party' | 'date' | 'time'>('party');
   const [availabilityRefreshing, setAvailabilityRefreshing] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
+  const [availabilityRetryNonce, setAvailabilityRetryNonce] = useState(0);
   const [availabilityDate, setAvailabilityDate] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const dateSectionRef = useRef<HTMLDivElement | null>(null);
   const timeSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Contact details
@@ -234,11 +269,14 @@ export default function ReservationWidget() {
   const [showGiftCard, setShowGiftCard] = useState(false);
   const [giftCardHeight, setGiftCardHeight] = useState<number | null>(null);
   const giftCardIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const giftCardOrigin = useMemo(
+    () => (typeof window === 'undefined' ? '' : getGiftCardOrigin(window.location.origin)),
+    [],
+  );
   const giftCardUrl = useMemo(() => {
-    if (typeof window === 'undefined' || !restaurantId) return '';
-    const origin = window.location.origin;
-    return `${origin}/widget/${encodeURIComponent(restaurantId)}/gift-card?embedded=1`;
-  }, [restaurantId]);
+    if (!giftCardOrigin || !restaurantId) return '';
+    return `${giftCardOrigin}/widget/${encodeURIComponent(restaurantId)}/gift-card?embedded=1`;
+  }, [giftCardOrigin, restaurantId]);
 
   // Auto-resize iframe when embedded (même mécanisme que le widget Connect).
   // On cible l'origine du parent (dérivée du referrer) plutôt que '*' afin
@@ -259,17 +297,15 @@ export default function ReservationWidget() {
   }, [isEmbedded, explicitParentOrigin]);
 
   // Listen for resize messages from the nested gift-card iframe (Connect).
-  // L'iframe gift-card est servie depuis la même origine que nous
-  // (`window.location.origin`), on valide donc `event.origin` strictement.
+  // En production elle partage notre origine ; en dev elle tourne sur le port Connect 4002.
   // On forwarde aussi au parent si on est soi-même embedded, pour que le
   // site du resto ajuste la hauteur totale du widget — en ciblant l'origine
   // du parent plutôt que '*'.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onMessage = (e: MessageEvent) => {
-      // Validation stricte : l'iframe gift-card est same-origin ET la source
-      // doit être l'iframe gift-card elle-même (pas une autre fenêtre).
-      if (e.origin !== window.location.origin) return;
+      // Validation stricte : origine Connect attendue et source = iframe cadeau.
+      if (e.origin !== giftCardOrigin) return;
       if (!giftCardIframeRef.current || e.source !== giftCardIframeRef.current.contentWindow)
         return;
       if (e.data?.type !== 'sokar-widget-resize' || typeof e.data?.height !== 'number') return;
@@ -286,7 +322,7 @@ export default function ReservationWidget() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [isEmbedded, explicitParentOrigin]);
+  }, [giftCardOrigin, isEmbedded, explicitParentOrigin]);
 
   // Load public restaurant info.
   // Le path param peut être un slug (URL friendly) ou un id Prisma.
@@ -308,15 +344,14 @@ export default function ReservationWidget() {
           );
         }
         setRestaurant(data);
-        const today = new Date();
-        setSelectedDate(today);
+        setSelectedDate(parseRequestedDate(requestedDateParam, new Date()) ?? new Date());
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de trouver ce restaurant'));
       } finally {
         setLoading(false);
       }
     })();
-  }, [restaurantId]);
+  }, [restaurantId, requestedDateParam]);
 
   // Generate next 14 days
   const days = useMemo(() => {
@@ -333,32 +368,29 @@ export default function ReservationWidget() {
   const getSlotsForDate = useCallback(
     (date: Date) => {
       if (!restaurant?.openingHours) return [];
-      const dayName = DAYS_MAP[date.getDay()];
-      const hours = restaurant.openingHours[dayName];
+      const periods = normalizeOpeningHours(restaurant.openingHours).filter(
+        (period) => period.dayIndex === date.getDay(),
+      );
+      const slots = periods.flatMap((period) => {
+        const [startHour, startMin] = period.open.split(':').map(Number);
+        const [endHour, endMin] = period.close.split(':').map(Number);
+        const start = new Date(date);
+        start.setHours(startHour, startMin, 0, 0);
+        const end = new Date(date);
+        end.setHours(endHour, endMin, 0, 0);
 
-      if (!hours || !hours.open || !hours.close) {
-        return [];
-      }
+        const periodSlots: string[] = [];
+        const current = new Date(start);
+        while (current < end) {
+          periodSlots.push(
+            `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`,
+          );
+          current.setMinutes(current.getMinutes() + 30);
+        }
+        return periodSlots;
+      });
 
-      const slots: string[] = [];
-      const [startHour, startMin] = hours.open.split(':').map(Number);
-      const [endHour, endMin] = hours.close.split(':').map(Number);
-
-      const start = new Date(date);
-      start.setHours(startHour, startMin, 0, 0);
-
-      const end = new Date(date);
-      end.setHours(endHour, endMin, 0, 0);
-
-      let current = new Date(start);
-      while (current < end) {
-        const hourStr = String(current.getHours()).padStart(2, '0');
-        const minStr = String(current.getMinutes()).padStart(2, '0');
-        slots.push(`${hourStr}:${minStr}`);
-        current.setMinutes(current.getMinutes() + 30);
-      }
-
-      return slots;
+      return [...new Set(slots)].sort();
     },
     [restaurant],
   );
@@ -390,7 +422,20 @@ export default function ReservationWidget() {
         );
         if (cancelled) return;
         setAvailableSlots(data.slots);
-        setSelectedTime((current) => (current && !data.slots.includes(current) ? '' : current));
+        const requestedSlot = requestedSlotRef.current;
+        if (requestedSlot?.date === date && requestedSlot.partySize === partySize) {
+          requestedSlotRef.current = null;
+          if (data.slots.includes(requestedSlot.time)) {
+            setSelectedTime(requestedSlot.time);
+          } else {
+            setSelectedTime('');
+            setSelectionNotice(
+              `Le créneau de ${requestedSlot.time.replace(':', 'h')} n’est plus disponible. Choisissez un autre horaire.`,
+            );
+          }
+        } else {
+          setSelectedTime((current) => (current && !data.slots.includes(current) ? '' : current));
+        }
       } catch (err: unknown) {
         if (cancelled) return;
         setAvailabilityError(getErrorMessage(err, 'Disponibilités indisponibles.'));
@@ -404,14 +449,14 @@ export default function ReservationWidget() {
     return () => {
       cancelled = true;
     };
-  }, [restaurant, selectedDate, partySize, success]);
+  }, [restaurant, selectedDate, partySize, success, availabilityRetryNonce]);
 
-  const nextAvailability = useMemo(() => {
+  const nextOpeningDay = useMemo(() => {
     for (const date of days) {
-      if (selectedDate && date.toDateString() === selectedDate.toDateString()) continue;
+      if (selectedDate && formatDateParam(date) <= formatDateParam(selectedDate)) continue;
       const slots = getSlotsForDate(date);
       if (slots.length > 0) {
-        return { date, time: slots[0] };
+        return date;
       }
     }
     return null;
@@ -654,8 +699,9 @@ export default function ReservationWidget() {
   const selectedDateShort = selectedDate ? formatShortFrenchDate(selectedDate) : 'Date';
   const hasService = timeSlots.length > 0;
   const selectedOpeningSlots = selectedDate ? getSlotsForDate(selectedDate) : [];
+  const isOpen = selectedOpeningSlots.length > 0;
   const isFullyBooked =
-    !availabilityRefreshing && selectedOpeningSlots.length > 0 && timeSlots.length === 0;
+    !availabilityRefreshing && !availabilityError && isOpen && timeSlots.length === 0;
   const serviceLabel =
     dinnerSlots.length > 0 && lunchSlots.length > 0
       ? 'Table'
@@ -666,24 +712,25 @@ export default function ReservationWidget() {
           : 'Réservation';
   const reservationStatus = selectedTime
     ? 'À confirmer'
-    : isFullyBooked
-      ? 'Complet'
-      : hasService
-        ? 'Disponible'
-        : 'Indisponible';
+    : availabilityError
+      ? 'Disponibilités indisponibles'
+      : availabilityRefreshing
+        ? 'Vérification en cours'
+        : isFullyBooked
+          ? 'Complet'
+          : hasService
+            ? 'Créneaux disponibles'
+            : isOpen
+              ? 'Ouvert'
+              : 'Fermé';
   const reservationTitle = selectedTime
     ? `Table à ${selectedTime.replace(':', 'h')}`
     : isFullyBooked
       ? 'Toutes les tables sont réservées'
-      : hasService
+      : isOpen
         ? `${serviceLabel} au ${restaurant?.name || 'restaurant'}`
         : 'Choisissez une autre date';
-  const nextAvailabilityLabel = nextAvailability
-    ? `${formatLongFrenchDate(nextAvailability.date)} · ${nextAvailability.time.replace(':', 'h')}`
-    : '';
-  const nextAvailabilityLabelWithAt = nextAvailability
-    ? `${formatLongFrenchDate(nextAvailability.date)} à ${nextAvailability.time.replace(':', 'h')}`
-    : '';
+  const nextOpeningDayLabel = nextOpeningDay ? formatLongFrenchDate(nextOpeningDay) : '';
 
   const canProceed =
     step === 1 ? Boolean(selectedTime) : Boolean(!submitting && customerName && customerPhone);
@@ -691,26 +738,30 @@ export default function ReservationWidget() {
     step === 1
       ? availabilityRefreshing
         ? 'Chargement des créneaux...'
-        : selectedTime
-          ? `Continuer · ${selectedTime.replace(':', 'h')}`
-          : isFullyBooked
-            ? nextAvailability
-              ? 'Voir les prochaines disponibilités'
-              : 'Voir les autres dates'
-            : hasService
-              ? 'Sélectionnez un horaire'
-              : nextAvailability
-                ? 'Voir les prochaines disponibilités'
-                : 'Voir les autres dates'
+        : availabilityError
+          ? 'Réessayer'
+          : selectedTime
+            ? `Continuer · ${selectedTime.replace(':', 'h')}`
+            : isFullyBooked
+              ? nextOpeningDay
+                ? 'Voir le prochain jour ouvert'
+                : 'Choisir une autre date'
+              : hasService
+                ? 'Sélectionnez un horaire'
+                : nextOpeningDay
+                  ? 'Voir le prochain jour ouvert'
+                  : 'Choisir une autre date'
       : submitting
         ? 'Validation...'
         : 'Valider la réservation';
   const primaryCtaDisabled = step === 1 ? availabilityRefreshing : !canProceed;
 
-  function goToNextAvailability() {
-    if (!nextAvailability) return;
+  function goToNextOpeningDay() {
+    if (!nextOpeningDay) return;
     triggerHaptic();
-    setSelectedDate(nextAvailability.date);
+    requestedSlotRef.current = null;
+    setSelectionNotice('');
+    setSelectedDate(nextOpeningDay);
     setSelectedTime('');
     setActiveSection('time');
     setTimeout(() => {
@@ -719,8 +770,17 @@ export default function ReservationWidget() {
   }
 
   function handlePrimaryAction() {
+    if (step === 1 && availabilityError) {
+      setAvailabilityRetryNonce((nonce) => nonce + 1);
+      return;
+    }
     if (step === 1 && !selectedTime && (!hasService || isFullyBooked)) {
-      goToNextAvailability();
+      if (nextOpeningDay) {
+        goToNextOpeningDay();
+      } else {
+        setActiveSection('date');
+        dateSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
       return;
     }
 
@@ -909,6 +969,8 @@ export default function ReservationWidget() {
                 <button
                   type="button"
                   onClick={() => {
+                    requestedSlotRef.current = null;
+                    setSelectionNotice('');
                     setSuccess(false);
                     setStep(1);
                     setSelectedTime('');
@@ -945,9 +1007,9 @@ export default function ReservationWidget() {
                         <span
                           className={cn(
                             'inline-flex rounded-full bg-white/75 px-3 py-1 text-[11px] font-extrabold text-[hsl(var(--reservation-ink))] shadow-sm backdrop-blur-xl',
-                            reservationStatus === 'Disponible'
+                            reservationStatus === 'Créneaux disponibles'
                               ? 'text-[hsl(var(--reservation-success))]'
-                              : reservationStatus === 'Indisponible'
+                              : reservationStatus === 'Fermé'
                                 ? 'text-[hsl(var(--reservation-soft))]'
                                 : reservationStatus === 'Complet'
                                   ? 'text-red-600'
@@ -1066,6 +1128,8 @@ export default function ReservationWidget() {
                               aria-pressed={partySize === size}
                               onClick={() => {
                                 triggerHaptic();
+                                requestedSlotRef.current = null;
+                                setSelectionNotice('');
                                 setPartySize(size);
                                 setSelectedTime('');
                                 setError('');
@@ -1084,6 +1148,7 @@ export default function ReservationWidget() {
                       </div>
 
                       <div
+                        ref={dateSectionRef}
                         className={cn(
                           'space-y-1.5 sm:space-y-2.5 lg:space-y-1.5 transition-opacity duration-200',
                           activeSection !== 'date' && 'opacity-90',
@@ -1098,15 +1163,17 @@ export default function ReservationWidget() {
                           {days.map((date, idx) => {
                             const isSelected = selectedDate?.toDateString() === date.toDateString();
                             const dateSlots = getSlotsForDate(date);
-                            const isAvailable = dateSlots.length > 0;
+                            const isOpen = dateSlots.length > 0;
                             return (
                               <button
                                 key={idx}
                                 type="button"
-                                aria-label={`${formatLongFrenchDate(date)} ${isAvailable ? 'disponible' : 'indisponible'}`}
+                                aria-label={`${formatLongFrenchDate(date)} ${isOpen ? 'ouvert' : 'fermé'}`}
                                 aria-pressed={isSelected}
                                 onClick={() => {
                                   triggerHaptic();
+                                  requestedSlotRef.current = null;
+                                  setSelectionNotice('');
                                   setSelectedDate(date);
                                   setSelectedTime('');
                                   setError('');
@@ -1118,11 +1185,11 @@ export default function ReservationWidget() {
                                     });
                                   }, 80);
                                 }}
-                                aria-disabled={!isAvailable}
+                                aria-disabled={!isOpen}
                                 className={cn(
                                   'relative flex h-[4.4rem] min-w-[4.75rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.35rem] text-center transition-all duration-200 active:scale-95 sm:h-[4.8rem] sm:min-w-[5rem] sm:rounded-[1.45rem] lg:h-[3.15rem] lg:min-w-0 lg:rounded-[0.95rem]',
                                   softPillClass,
-                                  !isAvailable && !isSelected
+                                  !isOpen && !isSelected
                                     ? 'text-[hsl(var(--reservation-soft))] opacity-70'
                                     : '',
                                   isSelected
@@ -1130,10 +1197,10 @@ export default function ReservationWidget() {
                                     : '',
                                 )}
                               >
-                                {isAvailable && !isSelected && (
+                                {isOpen && !isSelected && (
                                   <span className="absolute bottom-2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow))]" />
                                 )}
-                                {!isAvailable && !isSelected && (
+                                {!isOpen && !isSelected && (
                                   <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-black/15" />
                                 )}
                                 <span className="text-[22px] font-black leading-none tracking-normal sm:text-2xl lg:text-lg">
@@ -1160,6 +1227,14 @@ export default function ReservationWidget() {
                           <Clock size={13} />
                           Créneau horaire
                         </label>
+                        {selectionNotice && !availabilityRefreshing && !availabilityError && (
+                          <p
+                            role="status"
+                            className="rounded-xl border border-border bg-white/60 px-3 py-2 text-sm font-medium text-[hsl(var(--reservation-ink))]"
+                          >
+                            {selectionNotice}
+                          </p>
+                        )}
                         {availabilityRefreshing ? (
                           <div className="animate-in fade-in slide-in-from-right-2 duration-200 grid grid-cols-3 gap-2 lg:grid-cols-6">
                             {[1, 2, 3, 4, 5, 6].map((item) => (
@@ -1194,6 +1269,7 @@ export default function ReservationWidget() {
                                           aria-pressed={isSelected}
                                           onClick={() => {
                                             triggerHaptic();
+                                            setSelectionNotice('');
                                             setSelectedTime(time);
                                             setError('');
                                           }}
@@ -1226,8 +1302,8 @@ export default function ReservationWidget() {
                                 <p className="mt-1 text-xs font-semibold leading-snug text-[hsl(var(--reservation-soft))]">
                                   {isFullyBooked
                                     ? 'Toutes les tables sont réservées. Essayez une autre date.'
-                                    : nextAvailabilityLabel
-                                      ? `Prochaine disponibilité : ${nextAvailabilityLabel}`
+                                    : nextOpeningDayLabel
+                                      ? `Prochain jour ouvert : ${nextOpeningDayLabel}. Les créneaux seront vérifiés après sélection.`
                                       : 'Essayez une autre date ou une autre taille de table.'}
                                 </p>
                               </div>
@@ -1337,10 +1413,10 @@ export default function ReservationWidget() {
                     </button>
                     <p className="mt-2 px-4 text-center text-[11px] font-medium leading-snug text-[hsl(var(--reservation-soft))] lg:mt-1">
                       {step === 1
-                        ? selectedTime
-                          ? 'Choisissez un créneau pour continuer votre réservation.'
-                          : (!hasService || isFullyBooked) && nextAvailability
-                            ? `Nous avons trouvé la prochaine disponibilité : ${nextAvailabilityLabelWithAt}.`
+                        ? availabilityError
+                          ? 'La disponibilité n’a pas pu être vérifiée. Réessayez.'
+                          : (!hasService || isFullyBooked) && nextOpeningDay
+                            ? `Prochain jour ouvert : ${nextOpeningDayLabel}. Les places restent à vérifier.`
                             : !hasService || isFullyBooked
                               ? 'Essayez une autre date ou une autre taille de table.'
                               : 'Sélectionnez un horaire pour continuer.'

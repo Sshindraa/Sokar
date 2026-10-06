@@ -115,9 +115,25 @@ describe('vraisemblance des heures', () => {
     expect(isWithinOpeningHours(openingHours, undefined, '08:00')).toBe(false);
   });
 
+  it('traite le déjeuner et le dîner comme deux services distincts', () => {
+    const openingHours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    } as CallSession['openingHours'];
+    expect(isWithinOpeningHours(openingHours, '2026-09-29', '13:00')).toBe(true);
+    expect(isWithinOpeningHours(openingHours, '2026-09-29', '16:00')).toBe(false);
+    expect(isWithinOpeningHours(openingHours, '2026-09-29', '20:00')).toBe(true);
+  });
+
   it('gère un service qui finit après minuit', () => {
     const openingHours = { sat: { open: '19:00', close: '01:00' } } as CallSession['openingHours'];
-    expect(isWithinOpeningHours(openingHours, '2026-09-26', '00:30')).toBe(true);
+    expect(isWithinOpeningHours(openingHours, '2026-09-27', '00:30')).toBe(true);
     expect(isWithinOpeningHours(openingHours, '2026-09-26', '18:00')).toBe(false);
   });
 

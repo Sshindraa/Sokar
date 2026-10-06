@@ -25,6 +25,7 @@
     --info-foreground: 0 0% 98%;
     --success: 38 7.8% 52%;
     --success-foreground: 0 0% 98%;
+    --onboarding-complete: 142 85% 46%;
     --warning: 38 12% 58%;
     --warning-foreground: 0 0% 6.7%;
     --border: 0 0% 100% / 0.08;
@@ -95,6 +96,7 @@
     --info-foreground: 60 13% 95.5%;
     --success: 38 7.8% 52%;
     --success-foreground: 60 13% 95.5%;
+    --onboarding-complete: 142 85% 46%;
     --warning: 38 12% 58%;
     --warning-foreground: 0 0% 6.7%;
     --accent-cyan: 38 7.8% 52%;
@@ -124,7 +126,7 @@
     --secondary: 50 17% 93%;
     --secondary-foreground: 0 0% 6.7%;
     --muted: 50 17% 93%;
-    --muted-foreground: 38 7.8% 52%;
+    --muted-foreground: 38 7.8% 42%;
     --accent: 50 17% 93%;
     --accent-foreground: 0 0% 6.7%;
     --destructive: 0 26% 48%;
@@ -134,6 +136,7 @@
     --info-foreground: 0 0% 6.7%;
     --success: 38 8% 45%;
     --success-foreground: 60 13% 95.5%;
+    --onboarding-complete: 142 85% 31%;
     --warning: 38 10% 48%;
     --warning-foreground: 0 0% 6.7%;
     --accent-cyan: 38 7.8% 52%;
@@ -1029,8 +1032,8 @@ body {
 }
 
 .dashboard-brand-link {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
 }
 
 .dashboard-brand-logo {
@@ -1621,7 +1624,7 @@ body {
   }
 
   .dashboard-shell {
-    padding-top: 4.5rem;
+    padding-top: 5.5rem;
   }
 
   .dashboard-shell-content {

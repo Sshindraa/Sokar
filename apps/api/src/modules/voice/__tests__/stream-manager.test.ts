@@ -567,6 +567,7 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
     savedVoiceConfig = snapshotVoiceConfig();
     _resetCircuitBreakersForTesting();
     voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+    voiceConfig.OPENROUTER_API_KEY = undefined;
   });
 
   afterEach(() => {

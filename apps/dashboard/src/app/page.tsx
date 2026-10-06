@@ -163,7 +163,7 @@ export default function HomePage() {
               </div>
 
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/76 shadow-2xl shadow-black/20">
+                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20">
                   <Mic size={13} />
                   Sokar active votre standard
                   <ArrowRight size={12} />
@@ -173,7 +173,7 @@ export default function HomePage() {
                   L&apos;IA devient le nouveau levier de la restauration
                 </h1>
 
-                <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/62 md:text-base">
+                <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
                   Sokar aide les restaurants à capter chaque demande, fluidifier chaque service et
                   transformer l&apos;accueil client en avantage opérationnel.
                 </p>
@@ -197,7 +197,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="absolute inset-x-0 bottom-0 z-10 hidden grid-cols-2 gap-2 border-t border-white/8 bg-black/70 px-8 py-5 text-center text-[11px] font-semibold text-white/42 sm:grid sm:grid-cols-4 lg:grid-cols-7">
+            <div className="absolute inset-x-0 bottom-0 z-10 hidden grid-cols-2 gap-2 border-t border-white/8 bg-black/70 px-8 py-5 text-center text-[11px] font-semibold text-white/[0.42] sm:grid sm:grid-cols-4 lg:grid-cols-7">
               {[
                 'Réservations',
                 'SMS',
@@ -208,7 +208,7 @@ export default function HomePage() {
                 'Dashboard',
               ].map((item) => (
                 <div key={item} className="inline-flex items-center justify-center gap-2">
-                  <CheckCircle2 size={13} className="text-white/28" />
+                  <CheckCircle2 size={13} className="text-white/[0.28]" />
                   {item}
                 </div>
               ))}

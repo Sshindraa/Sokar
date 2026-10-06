@@ -1,7 +1,12 @@
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { normalizeOpeningHours } from '@sokar/shared';
 
-type DaySlot = { open: string; close: string } | null;
+type DaySlot = {
+  open: string;
+  close: string;
+  slots?: Array<{ open: string; close: string }>;
+  services?: Array<{ open: string; close: string }>;
+} | null;
 export type OpeningHours = {
   mon?: DaySlot;
   tue?: DaySlot;
@@ -35,8 +40,10 @@ export function formatOpeningHours(hours: unknown): string {
     return "Horaires non renseignés : n'annonce aucun horaire ni jour d'ouverture ; propose le gérant ou un message.";
   }
   return DAY_ORDER.map(([index, label]) => {
-    const slot = days.find((day) => day.dayIndex === index);
-    return slot ? `${label} : ${slot.open}–${slot.close}` : `${label} : fermé`;
+    const periods = days.filter((day) => day.dayIndex === index);
+    return periods.length
+      ? `${label} : ${periods.map((period) => `${period.open}–${period.close}`).join(' puis ')}`
+      : `${label} : fermé`;
   }).join('\n');
 }
 

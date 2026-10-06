@@ -85,76 +85,122 @@ function RecommendationCard({
   rec,
   onActionDone,
   onOpened,
+  compact = false,
 }: {
   rec: ServiceCopilotRecommendation;
   onActionDone: () => void;
   onOpened: (recommendation: ServiceCopilotRecommendation) => void;
+  compact?: boolean;
 }) {
   const { orgId, post, patch } = useApi();
   const [confirmRebalanceOpen, setConfirmRebalanceOpen] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState('');
   const Icon = kindIcon[rec.kind];
   const metric = formatMetric(rec);
+  const title = compact ? rec.title.split(' — ')[0] : rec.title;
+  const reason = compact && rec.kind === 'late-reservation' ? null : rec.reason;
 
   async function handleApiAction() {
-    if (rec.action.type !== 'api' || !rec.action.method || !rec.action.path) return;
+    if (actionPending || rec.action.type !== 'api' || !rec.action.method || !rec.action.path)
+      return;
+    setActionPending(true);
+    setActionError('');
     onOpened(rec);
     try {
       if (rec.kind === 'server-rebalance' && rec.telemetryToken && orgId) {
         await post(`restaurants/${orgId}/service-copilot/actions/server-rebalance`, {
           token: rec.telemetryToken,
         });
-        return;
-      }
-      if (rec.action.method === 'PATCH') {
+      } else if (rec.action.method === 'PATCH') {
         await patch(rec.action.path, rec.action.body);
       } else if (rec.action.method === 'POST') {
         await post(rec.action.path, rec.action.body);
       }
-    } finally {
       onActionDone();
+    } catch {
+      setActionError('Action non effectuée. Réessayez.');
+    } finally {
+      setActionPending(false);
     }
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm transition-all duration-200 hover:shadow-md">
-      <div className="flex items-start gap-3">
-        <Icon size={18} className="mt-0.5 shrink-0 text-muted-foreground" />
+    <div
+      className={cn(
+        'rounded-xl border border-border bg-card transition-all duration-200',
+        compact ? 'p-3 shadow-none' : 'p-4 shadow-sm hover:shadow-md',
+      )}
+    >
+      <div className={cn('flex items-start', compact ? 'gap-2.5' : 'gap-3')}>
+        <Icon size={compact ? 16 : 18} className="mt-0.5 shrink-0 text-muted-foreground" />
         <div className="flex-1">
-          <h3 className="font-bold leading-tight text-foreground">{rec.title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{rec.reason}</p>
-          {metric && (
+          <h3
+            className={cn(
+              'leading-tight text-foreground',
+              compact ? 'text-sm font-semibold' : 'font-bold',
+            )}
+          >
+            {title}
+          </h3>
+          {reason && (
+            <p
+              className={cn(
+                'text-muted-foreground',
+                compact ? 'mt-1 text-xs leading-snug' : 'mt-1 text-sm',
+              )}
+            >
+              {reason}
+            </p>
+          )}
+          {metric && !compact && (
             <p className="mt-2 text-xs font-semibold tabular-nums text-foreground">{metric}</p>
           )}
-          <div className="mt-3">
+          <div className={compact ? 'mt-2' : 'mt-3'}>
             {rec.action.type === 'link' && rec.action.href ? (
               <Link
                 href={rec.action.href}
                 onClick={() => onOpened(rec)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
+                className={cn(
+                  'inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent',
+                  compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
+                )}
               >
                 {rec.action.label}
               </Link>
             ) : rec.action.type === 'api' ? (
               <button
                 type="button"
+                disabled={actionPending}
                 onClick={() =>
                   rec.kind === 'server-rebalance'
                     ? setConfirmRebalanceOpen(true)
                     : void handleApiAction()
                 }
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
+                className={cn(
+                  'inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent',
+                  compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
+                )}
               >
-                {rec.action.label}
+                {actionPending ? 'En cours…' : rec.action.label}
               </button>
             ) : rec.action.type === 'call' && rec.action.href ? (
               <a
                 href={rec.action.href}
                 onClick={() => onOpened(rec)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
+                className={cn(
+                  'inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent',
+                  compact ? 'px-2.5 py-1.5' : 'px-3 py-2',
+                )}
               >
                 {rec.action.label}
               </a>
             ) : null}
+            {actionError && (
+              <p role="alert" className="mt-2 text-xs text-destructive">
+                {actionError}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -173,10 +219,17 @@ function RecommendationCard({
   );
 }
 
-export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: boolean }) {
+export default function ServiceCopilotWidget({
+  showCalm = true,
+  density = 'default',
+}: {
+  showCalm?: boolean;
+  density?: 'default' | 'service';
+}) {
   const { get, orgId, post, patch } = useApi();
   const [data, setData] = useState<ServiceCopilotRecommendationsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const api = useMemo(() => ({ get, post, patch }), [get, post, patch]);
@@ -206,6 +259,7 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
     let mounted = true;
     async function fetchRecommendations() {
       setLoading(true);
+      setLoadError(false);
       try {
         const res = await api.get<ServiceCopilotRecommendationsResponse>(
           `restaurants/${orgId}/service-copilot/recommendations`,
@@ -217,9 +271,10 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
           }
         }
       } catch {
-        // En mode démo/E2E, l’endpoint peut ne pas être joignable ; on ignore
-        // silencieusement pour ne pas polluer le cockpit avec un bandeau d’erreur.
-        if (mounted) setData(null);
+        if (mounted) {
+          setData(null);
+          setLoadError(true);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -248,8 +303,26 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
     );
   }
 
-  // En cas d’erreur ou de données vides, on ne bloque pas le cockpit : on affiche
-  // l’état “service fluide” pour éviter un bandeau d’erreur visible en mode démo/E2E.
+  if (loadError) {
+    return (
+      <section
+        aria-label="État du Copilot"
+        role="status"
+        className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-muted-foreground"
+      >
+        <AlertCircle size={16} aria-hidden="true" />
+        Recommandations indisponibles
+        <button
+          type="button"
+          onClick={() => setRefreshNonce((n) => n + 1)}
+          className="font-semibold text-foreground underline-offset-2 transition-all duration-200 hover:underline"
+        >
+          Réessayer
+        </button>
+      </section>
+    );
+  }
+
   if (!data || data.recommendations.length === 0) {
     if (!showCalm) return null;
 
@@ -276,18 +349,27 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
 
   const recs = data.recommendations.slice(0, 3);
   const priority = highestPriority(recs);
+  const compact = density === 'service';
 
   return (
     <section
       className={cn(
-        'rounded-2xl border p-4 md:p-5 transition-all duration-200',
+        'rounded-2xl border transition-all duration-200',
+        compact ? 'p-3 md:p-4' : 'p-4 md:p-5',
         containerClasses[priority],
       )}
     >
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className={cn('flex items-center justify-between gap-3', compact ? 'mb-2' : 'mb-3')}>
         <div className="flex items-center gap-3">
           <AlertCircle size={20} className={cn('shrink-0', iconColorClasses[priority])} />
-          <h2 className="text-lg font-bold text-foreground">Actions recommandées</h2>
+          <h2
+            className={cn(
+              'font-bold text-foreground',
+              compact ? 'text-sm sm:text-base' : 'text-lg',
+            )}
+          >
+            Actions recommandées
+          </h2>
         </div>
         <Link
           href="/dashboard/copilot/quality"
@@ -296,13 +378,22 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
           Qualité <BarChart3 size={14} />
         </Link>
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={cn(
+          'grid',
+          compact
+            ? 'gap-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
+            : 'gap-3 md:grid-cols-2 xl:grid-cols-3',
+          compact && recs.length === 1 && 'lg:grid-cols-1 xl:grid-cols-1',
+        )}
+      >
         {recs.map((rec) => (
           <RecommendationCard
             key={rec.id}
             rec={rec}
             onActionDone={() => setRefreshNonce((n) => n + 1)}
             onOpened={(recommendation) => trackTelemetry(recommendation, 'OPENED')}
+            compact={compact}
           />
         ))}
       </div>

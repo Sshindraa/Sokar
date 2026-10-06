@@ -2,7 +2,7 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
-> **Statut : ACTIF — vérifié le 15 septembre 2026.**
+> **Statut : ACTIF — vérifié le 2 octobre 2026.**
 > Le statut de chaque document produit et opérationnel est centralisé dans
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md), avec la réconciliation des audits dans
 > [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md).
@@ -102,8 +102,10 @@ La fondation expériences est authentifiée par organisation via `requireOrg`, l
 `experiences.manage` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération, avec
 `EXPERIENCES_ENABLED=false` par défaut. Les fiches restent en brouillon jusqu'à activation ; une
 réservation d'une session active acquiert un advisory lock PostgreSQL, vérifie la capacité et fige
-le prix. Le worker `experience-session-expiry` ferme les sessions terminées toutes les 15 minutes.
-Les paiements, le widget, la voix et les canaux d'événements externes ne sont pas appelés.
+le prix. `EXPERIENCE_BOOKING_ENABLED=false` sépare l'ouverture publique : lorsqu'il est activé en
+plus du flag socle, Sokar Connect publie les dates, tient les places pendant Stripe Checkout et
+confirme uniquement après webhook signé. Remboursements complets à l'annulation restaurateur ; les
+conditions commerciales et notifications restent à qualifier avant production.
 
 La fondation événements est authentifiée par organisation via `requireOrg`, la capability
 `events.manage` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération, avec
@@ -168,9 +170,9 @@ rollback reste possible.
 - La page fidélité (`/dashboard/loyalty`) lit les avantages et grants via l'API et expose les
   transitions d'émission/consommation. Elle reste verrouillée par `LOYALTY_ENABLED=false` tant que
   les règles, les canaux, le POS éventuel et le pilote ne sont pas qualifiés.
-- La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des sessions et annule les
-  réservations via l'API. Elle reste verrouillée par `EXPERIENCES_ENABLED=false` tant que paiement,
-  widget/téléphone, événements et pilote ne sont pas qualifiés.
+- La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des dates et annule les
+  réservations via l'API. Elle affiche l'état réel de l'ouverture publique ; le checkout Connect
+  reste désactivé par `EXPERIENCE_BOOKING_ENABLED=false` jusqu'à qualification staging.
 - La page distribution (`/dashboard/distribution`) lit les connexions et traces de qualification,
   permet de créer une référence opaque et de mettre un run local en file. Elle reste verrouillée
   par `DISTRIBUTION_ENABLED=false` tant que le fournisseur, la signature, le worker et le pilote ne
@@ -293,12 +295,16 @@ rollback reste possible.
 ### Expériences et sessions
 
 - `apps/api/src/modules/experiences/experience.routes.ts` expose le catalogue, les sessions, les
-  réservations, l'annulation et l'expiration interne sous `experiences.manage`.
+  réservations, le checkout public, l'état de préparation Stripe, l'annulation et l'expiration
+  interne sous `experiences.manage`.
 - `experience.service.ts` borne les dates, montants et capacités, refuse les fiches inactives,
   hache les clés d'idempotence, verrouille la session et conserve le snapshot de prix.
+- `experience-payment.service.ts` réserve temporairement la capacité, vérifie le webhook Stripe
+  Connect, confirme la réservation après paiement et déclenche les remboursements totaux.
 - `experience-session-expiry.worker.ts` traite la queue `experience-session-expiry` toutes les
-  15 minutes. `EXPERIENCES_ENABLED=false` reste le défaut ; paiement et distribution sont hors
-  périmètre.
+  15 minutes. Les deux flags restent à `false` par défaut. Voir
+  [`docs/runbooks/experience-booking-pilot.md`](runbooks/experience-booking-pilot.md) avant tout
+  pilote réel.
 
 ### Événements et billetterie locale
 

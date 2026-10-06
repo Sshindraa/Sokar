@@ -21,6 +21,7 @@ const sdk = vi.hoisted(() => ({
   rawRequest: vi.fn(),
   accountRetrieve: vi.fn(),
   accountLinkCreate: vi.fn(),
+  accountSessionCreate: vi.fn(),
 }));
 
 vi.mock('stripe', () => {
@@ -30,6 +31,7 @@ vi.mock('stripe', () => {
     rawRequest = sdk.rawRequest;
     accounts = { retrieve: sdk.accountRetrieve };
     accountLinks = { create: sdk.accountLinkCreate };
+    accountSessions = { create: sdk.accountSessionCreate };
     paymentIntents = {
       create: sdk.create.mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
       retrieve: sdk.retrieve.mockResolvedValue({
@@ -82,9 +84,35 @@ import {
   retrievePaymentIntent,
   constructWebhookEvent,
   createRefund,
+  createConnectedAccountSession,
 } from '../stripe.service';
 
 describe('stripe.service', () => {
+  it('grants an onboarding-only session without disabling Stripe authentication', async () => {
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test');
+    sdk.accountSessionCreate.mockResolvedValue({ client_secret: 'mock' });
+    try {
+      expect(await createConnectedAccountSession('acct_existing')).toEqual({
+        clientSecret: 'mock',
+        publishableKey: 'pk_test',
+      });
+      expect(sdk.accountSessionCreate).toHaveBeenCalledWith({
+        account: 'acct_existing',
+        components: { account_onboarding: { enabled: true } },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it('does not open a session without a configured public key', async () => {
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', '');
+    try {
+      await expect(createConnectedAccountSession('acct_existing')).rejects.toThrow('clé publique');
+      expect(sdk.accountSessionCreate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     (
@@ -283,6 +311,9 @@ describe('Stripe Connect account creation', () => {
         chargesEnabled: true,
         payoutsEnabled: true,
         detailsSubmitted: true,
+        onboardingState: 'ready',
+        actionItems: [],
+        deadline: null,
       });
       await createConnectedAccountLink('acct_testMerchant');
       expect(sdk.accountLinkCreate).toHaveBeenCalledWith({

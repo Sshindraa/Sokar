@@ -41,13 +41,7 @@ describe('ReservationJsonLd component', () => {
     expect(script?.textContent).toContain('"name":"Chez Sokar"');
   });
 
-  it('sets the nonce attribute when provided', () => {
-    const { container } = render(<ReservationJsonLd jsonLd={makeJsonLd()} nonce="abc123" />);
-    const script = container.querySelector('script[type="application/ld+json"]');
-    expect(script?.getAttribute('nonce')).toBe('abc123');
-  });
-
-  it('does not set nonce when not provided', () => {
+  it('does not add a per-request nonce to the data block', () => {
     const { container } = render(<ReservationJsonLd jsonLd={makeJsonLd()} />);
     const script = container.querySelector('script[type="application/ld+json"]');
     expect(script?.getAttribute('nonce')).toBeNull();

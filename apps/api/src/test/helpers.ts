@@ -240,6 +240,21 @@ vi.mock('../shared/db/client', () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    experienceCheckout: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    experiencePaymentEvent: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+    },
     event: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -490,6 +505,21 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    experienceCheckout: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    experiencePaymentEvent: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
     },
     event: {
       findUnique: vi.fn(),

@@ -25,6 +25,7 @@ describe('PhoneStep', () => {
       restaurant: {
         phoneNumber: '+33123456789',
         phoneAssigned: true,
+        phoneE164: '+33123456789',
         managerPhone: '+33612345678',
       },
       steps: [{ key: 'phone', state: { status: 'current', metadata: {} } }],
@@ -42,6 +43,9 @@ describe('PhoneStep', () => {
     fireEvent.click(screen.getByRole('button', { name: /j'ai compris/i }));
     fireEvent.click(await screen.findByRole('button', { name: /lancer un appel test/i }));
 
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith('restaurant/onboarding/test-call', {});
+    });
     expect(await screen.findByRole('button', { name: /j'ai reçu l'appel/i })).toBeInTheDocument();
     expect(onboardingMocks.updateTask).not.toHaveBeenCalled();
 

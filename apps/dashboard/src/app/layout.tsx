@@ -51,7 +51,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const messages = await getMessages();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script
+          id="sokar-theme-bootstrap"
+          dangerouslySetInnerHTML={{
+            __html: `try {
+              const root = document.documentElement;
+              if (window.location.pathname === '/') {
+                root.classList.remove('dark', 'light');
+              } else {
+                const storedTheme = window.localStorage.getItem('sokar-dashboard-theme');
+                const theme = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark';
+                root.classList.remove('dark', 'light');
+                root.classList.add(theme);
+              }
+            } catch {}`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-background antialiased">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>

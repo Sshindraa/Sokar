@@ -834,7 +834,10 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(screen.getByText('couverts')).toBeInTheDocument();
     expect(screen.getByText('tables occupées')).toBeInTheDocument();
     expect(screen.getByText('réservations')).toBeInTheDocument();
+    const occupiedTable = screen.getByRole('button', { name: /Martin Dupont/ });
+    fireEvent.click(occupiedTable.querySelector('[role="presentation"]')!);
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
+    expect(occupiedTable).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('Occupée').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTitle('Occupée')).toBeInTheDocument();
   });

@@ -13,8 +13,32 @@ import { useRouter } from 'next/navigation';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 import type { OnboardingAction, OnboardingState, OnboardingTaskKey } from './types';
+import type { DayHours } from './hours';
+
+export type IdentityDraft = {
+  restaurantId: string;
+  slug: string;
+  description: string;
+  coverImageUrl: string;
+};
+
+export type PlaceImportDraft = {
+  placeId: string;
+  name: string;
+  phoneE164: string;
+  formattedAddress: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  openingHours: Record<string, DayHours>;
+  hoursNeedReview: string[];
+};
 
 type OnboardingContextValue = {
+  identityDraft: IdentityDraft | null;
+  setIdentityDraft: (draft: IdentityDraft | null) => void;
+  placeImportDraft: PlaceImportDraft | null;
+  setPlaceImportDraft: (draft: PlaceImportDraft | null) => void;
   state: OnboardingState | null;
   loading: boolean;
   error: string;
@@ -50,8 +74,8 @@ const PREVIEW_STATE: OnboardingState = {
   connectProgress: 0,
   currentStep: {
     key: 'hours',
-    title: 'Quand répondre et réserver',
-    description: "Créneaux d'ouverture que l'assistant peut proposer.",
+    title: 'Horaires de réservation',
+    description: 'Jours et plages où le restaurant accepte les réservations.',
     required: false,
     group: 'voice',
     index: 2,
@@ -62,7 +86,7 @@ const PREVIEW_STATE: OnboardingState = {
     // Voice group
     {
       key: 'restaurant',
-      title: 'Identité du restaurant',
+      title: 'Vérifions votre restaurant',
       description: 'Nom et coordonnées de contact du restaurant.',
       required: true,
       group: 'voice',
@@ -72,8 +96,8 @@ const PREVIEW_STATE: OnboardingState = {
     },
     {
       key: 'hours',
-      title: 'Quand répondre et réserver',
-      description: "Créneaux d'ouverture que l'assistant peut proposer.",
+      title: 'Horaires de réservation',
+      description: 'Jours et plages où le restaurant accepte les réservations.',
       required: false,
       group: 'voice',
       index: 2,
@@ -82,7 +106,7 @@ const PREVIEW_STATE: OnboardingState = {
     },
     {
       key: 'knowledge',
-      title: "Ce que l'assistant doit savoir",
+      title: 'Consignes & démo',
       description: 'Ton, ambiance et consignes commerciales.',
       required: false,
       group: 'voice',
@@ -174,9 +198,10 @@ const PREVIEW_STATE: OnboardingState = {
   },
   restaurant: {
     id: 'preview',
-    name: 'Le Bistrot Sokar',
+    name: 'Chez Sokar',
     managerPhone: '+33600000000',
     managerEmail: 'restaurant@sokar.local',
+    phoneE164: '+33123456789',
     phoneNumber: '+33100000000',
     phoneAssigned: true,
     openingHours: {},
@@ -287,6 +312,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(PREVIEW_STATE);
+  const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
+  const [placeImportDraft, setPlaceImportDraft] = useState<PlaceImportDraft | null>(null);
   const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
@@ -329,8 +356,22 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
       activeStep,
       openStepModal,
       closeStepModal,
+      identityDraft,
+      setIdentityDraft,
+      placeImportDraft,
+      setPlaceImportDraft,
     }),
-    [state, refresh, updateTask, openStep, activeStep, openStepModal, closeStepModal],
+    [
+      state,
+      refresh,
+      updateTask,
+      openStep,
+      activeStep,
+      openStepModal,
+      closeStepModal,
+      identityDraft,
+      placeImportDraft,
+    ],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
@@ -342,12 +383,15 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OnboardingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
+  const [placeImportDraft, setPlaceImportDraft] = useState<PlaceImportDraft | null>(null);
   const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
     if (!orgId) return;
 
     setLoading(true);
+    setState(null);
     setError('');
     try {
       // Fire-and-forget : sync l'org Clerk en parallèle du fetch onboarding.
@@ -431,6 +475,10 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
       activeStep,
       openStepModal,
       closeStepModal,
+      identityDraft,
+      setIdentityDraft,
+      placeImportDraft,
+      setPlaceImportDraft,
     }),
     [
       state,
@@ -442,6 +490,8 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
       activeStep,
       openStepModal,
       closeStepModal,
+      identityDraft,
+      placeImportDraft,
     ],
   );
 

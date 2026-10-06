@@ -1017,6 +1017,25 @@ describe('relecture naturelle et question fermée', () => {
     expect(openingHourTimes(null)).toEqual([]);
   });
 
+  it('ne propose pas les heures de la pause entre le déjeuner et le dîner', () => {
+    const hours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    } as CallSession['openingHours'];
+
+    const times = openingHourTimes(hours, '2026-09-29');
+    expect(times).toContain('14:15');
+    expect(times).toContain('19:00');
+    expect(times).not.toContain('15:00');
+    expect(times).not.toContain('18:00');
+  });
+
   it('garde le comportement actuel quand le flag est coupé', () => {
     process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'false';
     const session = makeSession();

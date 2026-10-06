@@ -53,26 +53,19 @@ export const STEP_COMPONENTS: Record<OnboardingTaskKey, (props: StepProps) => Re
   'connect-activation': ConnectActivationStep,
 };
 
-export const STEP_KEYS: OnboardingTaskKey[] = [
-  'restaurant',
-  'hours',
-  'knowledge',
-  'calendar',
-  'phone',
-  'connect-identity',
-  'connect-location',
-  'connect-cuisine',
-  'connect-capacity',
-  'connect-activation',
-];
+export { ONBOARDING_TASK_KEYS as STEP_KEYS } from './types';
 
 export const STEP_META: Record<
   OnboardingTaskKey,
   { title: string; group: 'voice' | 'connect'; index: number }
 > = {
-  restaurant: { title: 'Identité du restaurant', group: 'voice', index: 1 },
-  hours: { title: 'Quand répondre et réserver', group: 'voice', index: 2 },
-  knowledge: { title: "Ce que l'assistant doit savoir", group: 'voice', index: 3 },
+  restaurant: { title: 'Vérifions votre restaurant', group: 'voice', index: 1 },
+  hours: {
+    title: 'Horaires de réservation',
+    group: 'voice',
+    index: 2,
+  },
+  knowledge: { title: 'Consignes & démo', group: 'voice', index: 3 },
   calendar: { title: 'Connexion au planning', group: 'voice', index: 4 },
   phone: { title: 'Mise en service des appels', group: 'voice', index: 5 },
   'connect-identity': { title: 'Identité publique', group: 'connect', index: 1 },

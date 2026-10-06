@@ -1,0 +1,66 @@
+'use client';
+
+import { ReactNode } from 'react';
+import { Moon, Sun } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { AccountMenu } from '@/components/AccountMenu';
+import { useDashboardTheme } from '@/features/theme/dashboard-theme';
+import { SyncOrganization } from '@/app/dashboard/SyncOrganization';
+import { useApi } from '@/lib/api';
+import { SiteProvider, SiteSwitcher } from '@/features/sites/site-context';
+import { DashboardThemeProvider } from '@/features/theme/dashboard-theme';
+import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-access-boundary';
+import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
+import { OnboardingWizard } from '@/features/onboarding/onboarding-wizard';
+
+function OnboardingThemeToggle() {
+  const { theme, toggleTheme } = useDashboardTheme();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={toggleTheme}
+      aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+      className="transition-all duration-200"
+    >
+      {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+    </Button>
+  );
+}
+
+const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+function OnboardingSiteBoundary({ children }: { children: ReactNode }) {
+  const { organizationId } = useApi();
+  return <SiteProvider organizationId={organizationId}>{children}</SiteProvider>;
+}
+
+function OnboardingPageContent() {
+  return (
+    <OnboardingSiteBoundary>
+      {hasClerkKey && <SyncOrganization />}
+      <OnboardingAccessBoundary
+        controls={
+          <div className="flex items-center gap-3">
+            <SiteSwitcher />
+            <OnboardingThemeToggle />
+            <AccountMenu />
+          </div>
+        }
+        onboarding={<OnboardingWizard />}
+      >
+        {null}
+      </OnboardingAccessBoundary>
+    </OnboardingSiteBoundary>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <OnboardingProvider>
+      <DashboardThemeProvider>
+        <OnboardingPageContent />
+      </DashboardThemeProvider>
+    </OnboardingProvider>
+  );
+}
