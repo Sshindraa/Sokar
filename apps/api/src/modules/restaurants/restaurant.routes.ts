@@ -43,6 +43,13 @@ import {
 import { normalizeVoiceLocale } from '../voice/stream/voice-language';
 import { CARTESIA_MODEL } from '@sokar/config';
 import { redisCache } from '../../shared/redis/client';
+import { isVoicePipelineEnabled } from '../../shared/configcat';
+import {
+  LIVE_DEMO_MAX_DURATION_SEC,
+  buildLiveDemoWsUrl,
+  issueLiveDemoTicket,
+  liveDemoUnavailableReason,
+} from '../voice/demo/live-demo';
 import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
 import {
   assertClerkOrganizationMember,
@@ -1053,6 +1060,47 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   };
 
+  // ─── Démonstration en direct (appel navigateur, pipeline vocal réel) ────
+  // Émet un ticket à usage unique : le WebSocket `/voice/demo-stream/:ticket` est public, c'est ce
+  // ticket (émis ici, après authentification) qui l'autorise. Aucune écriture métier n'est faite
+  // pendant la démonstration : les réservations et messages sont simulés par la session `demo`.
+  const postLiveDemo = async (req: FastifyRequest, reply: FastifyReply) => {
+    const restaurantId = req.restaurantId;
+
+    const unavailable = liveDemoUnavailableReason();
+    if (unavailable || !(await isVoicePipelineEnabled(restaurantId))) {
+      return reply.status(503).send({
+        code: 'LIVE_DEMO_UNAVAILABLE',
+        error:
+          "L'appel en direct n'est pas disponible pour le moment. Vous pouvez écouter l'aperçu pré-enregistré.",
+      });
+    }
+
+    const issued = await issueLiveDemoTicket(redisCache, restaurantId);
+    if (!issued.ok) {
+      return reply.status(429).send({
+        code: 'LIVE_DEMO_DAILY_LIMIT',
+        error:
+          "Vous avez atteint le nombre d'appels d'essai pour aujourd'hui. Réessayez demain ou écoutez l'aperçu pré-enregistré.",
+      });
+    }
+
+    trackOnboardingEvent({
+      event: 'onboarding_demo_call_played',
+      restaurantId,
+      userId: req.userId,
+      task: 'knowledge',
+      metadata: { mode: 'live' },
+    }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
+
+    const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+    return reply.send({
+      ticket: issued.ticket,
+      wsUrl: buildLiveDemoWsUrl(publicUrl, issued.ticket),
+      maxDurationSec: LIVE_DEMO_MAX_DURATION_SEC,
+    });
+  };
+
   const patchConnect = async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
@@ -1354,6 +1402,17 @@ export async function restaurantRoutes(app: FastifyInstance) {
     '/api/restaurant/onboarding/demo-call',
     { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     postDemoCall,
+  );
+
+  app.post(
+    '/restaurant/onboarding/live-demo',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    postLiveDemo,
+  );
+  app.post(
+    '/api/restaurant/onboarding/live-demo',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    postLiveDemo,
   );
 
   app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
