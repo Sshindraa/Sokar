@@ -208,6 +208,8 @@ export class RestaurantService {
     const cached = await getCachedContext(cacheKey);
     if (cached) return cached as CachedRestaurantContext;
 
+    // tenant-scoping: global — résolution du tenant lui-même par son numéro Sokar unique (routage
+    // d'un appel entrant) : il n'existe pas encore de `restaurantId` à filtrer.
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { phoneNumber: phoneNumberId },
       select: RESTAURANT_CONTEXT_SELECT,
@@ -230,6 +232,8 @@ export class RestaurantService {
    * modifiée, donc un contexte en cache serait périmé.
    */
   static async loadContextById(restaurantId: string): Promise<CachedRestaurantContext> {
+    // tenant-scoping: global — `Restaurant` est le tenant lui-même : la clé primaire est celle du
+    // restaurant authentifié (ticket de démonstration émis pour `req.restaurantId`).
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       select: RESTAURANT_CONTEXT_SELECT,
