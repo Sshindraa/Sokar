@@ -416,6 +416,12 @@ export interface CallSession {
    */
   maxPartySize?: number;
   restaurantName: string;
+  /**
+   * Appel de démonstration lancé depuis le navigateur pendant l'onboarding. Aucun effet de bord
+   * réel : pas d'écriture (réservation, message), pas de transfert, pas de raccrochage Telnyx, pas
+   * de finalisation ni de facturation d'appel.
+   */
+  demo?: boolean;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
   /** Keyterms métier non personnels préparés pour le chemin Deepgram ciblé. */

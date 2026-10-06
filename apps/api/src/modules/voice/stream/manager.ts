@@ -409,6 +409,8 @@ export class CallSessionManager {
     telnyxWs: WebSocket;
     callLegId: string;
     codec: 'PCMA' | 'PCMU' | 'L16';
+    /** Appel de démonstration depuis le navigateur : aucun effet de bord réel (voir `CallSession.demo`). */
+    demo?: boolean;
     personality?: {
       fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
       systemPromptExtra?: string | null;
@@ -449,6 +451,7 @@ export class CallSessionManager {
       isVip: opts.isVip,
       telnyxWs: opts.telnyxWs,
       codec: opts.codec,
+      ...(opts.demo ? { demo: true } : {}),
       history: [
         { role: 'system', content: opts.systemPrompt },
         { role: 'assistant', content: greeting },
@@ -1346,6 +1349,16 @@ export class CallSessionManager {
             session.conversation.slots.customerName;
           const reservationCustomerName = confirmedCustomerName ?? customerName ?? 'Client';
 
+          // Démonstration d'onboarding : tout le parcours (disponibilité, relecture, accord, nom)
+          // est réel, seule l'écriture est simulée. Rien n'est créé dans l'agenda du restaurant.
+          if (session.demo) {
+            session.reservationCreatedAt = Date.now();
+            return terminalToolReply(
+              executionControl,
+              `Réservation confirmée pour ${reservationCustomerName}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s).`,
+            );
+          }
+
           try {
             const callRecordId = await this.resolveCallRecordId(session);
             if (!callRecordId) {
@@ -1402,6 +1415,13 @@ export class CallSessionManager {
         case 'takeMessage': {
           const { customerName, message, callbackPhone } = args;
 
+          if (session.demo) {
+            return terminalToolReply(
+              executionControl,
+              `J'ai bien noté votre message pour le gérant : "${message}". Il vous recontactera${callbackPhone ? ` au ${callbackPhone}` : ''} dès que possible. Merci de votre appel.`,
+            );
+          }
+
           try {
             const callRecordId = await this.resolveCallRecordId(session);
             if (!callRecordId) {
@@ -1450,6 +1470,14 @@ export class CallSessionManager {
         }
 
         case 'handoffToManager':
+          // Jamais de transfert réel pendant une démonstration : le gérant ne doit pas être appelé.
+          if (session.demo) {
+            session.handoffConclusion = 'demo_no_transfer';
+            return terminalToolReply(
+              executionControl,
+              'Dans un vrai appel, je vous passerais le gérant. Pour cette démonstration, je peux plutôt prendre un message à lui transmettre.',
+            );
+          }
           if (!session.managerPhone?.trim()) {
             session.handoffConclusion = 'manager_unconfigured';
             recordVoiceTransfer(session, authorizationBasis, 'unconfigured');

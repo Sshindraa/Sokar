@@ -133,6 +133,7 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     codec: 'PCMA',
     giftCardMinimumAmount: overrides.giftCardMinimumAmount,
     personality: overrides.personality,
+    demo: overrides.demo,
   });
 }
 
@@ -405,6 +406,71 @@ describe('CallSessionManager — tool execution', () => {
         customerPhone: '+33****0001',
       }),
     );
+  });
+});
+
+describe('CallSessionManager — session de démonstration (onboarding)', () => {
+  beforeEach(() => {
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+    vi.clearAllMocks();
+    mockTelnyxFetch.mockResolvedValue({ ok: true });
+  });
+
+  it('create marque la session demo uniquement sur demande', () => {
+    expect(makeSession({ callControlId: 'cc-demo-off' }).demo).toBeUndefined();
+    expect(makeSession({ callControlId: 'cc-demo-on', demo: true }).demo).toBe(true);
+  });
+
+  it('simule la réservation : réponse de confirmation, aucune écriture en base', async () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ demo: true });
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
+
+    const reply = await mgr.createReservationFromConversation(session);
+
+    expect(reply).toContain('Réservation confirmée pour Jean');
+    expect(ReservationService.create).not.toHaveBeenCalled();
+    expect(db.call.findUnique).not.toHaveBeenCalled();
+    expect(session.reservationCreatedAt).toBeDefined();
+  });
+
+  it('garde la relecture et l’accord explicite avant de simuler la réservation', async () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ demo: true });
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
+    session.conversation.confirmedReservationKey = null;
+
+    const reply = await mgr.createReservationFromConversation(session);
+
+    expect(reply).toBeNull();
+    expect(session.reservationCreatedAt).toBeUndefined();
+  });
+
+  it('simule le message au gérant : aucune écriture en base', async () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ demo: true });
+
+    const reply = await mgr.recordCallerMessage(session, 'Rappelez-moi demain');
+
+    expect(reply).toContain('Rappelez-moi demain');
+    expect(db.message.create).not.toHaveBeenCalled();
+    expect(db.call.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('ne transfère jamais vers le gérant : aucun appel Telnyx', async () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ demo: true, managerPhone: '+33612345678' });
+
+    const reply = await mgr.handoffToManager(session, {
+      kind: 'human_fallback_choice',
+      choice: 'transfer',
+    });
+
+    expect(reply).toContain('démonstration');
+    expect(mockTelnyxFetch).not.toHaveBeenCalled();
+    expect(session.handoffInProgress).toBeFalsy();
+    expect(session.handoffConclusion).toBe('demo_no_transfer');
   });
 });
 

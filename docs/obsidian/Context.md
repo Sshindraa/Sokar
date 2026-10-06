@@ -15,6 +15,7 @@
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 
 - [ ] Banc voix : décider phase 1b et annoter humainement `bf3893ae` (`truthStatus: unverified`) ; ablation/substitution ne discriminent pas.
+- [ ] Appel en direct onboarding : l'essayer avec les vrais fournisseurs (écho, latence, réservation simulée), puis déployer `microphone=(self)` (nginx prod) avant la mise en ligne.
 - [ ] Appel réel Chez Sokar : valider compréhension/épellation, mesurer le délai de relecture et tester « A, deux S, A, M ».
 - [ ] Après l’appel réel, vérifier `judge` (disponibilité/délai) et rejouer « je voudrais bien venir » ; retrait via `VOICE_TURN_JUDGE_RESTAURANT_IDS`.
 - [ ] Banc voix : traiter la répétition mot pour mot (20–55 %, seuil 80 %) et utiliser le vrai prompt `prompts.ts`.

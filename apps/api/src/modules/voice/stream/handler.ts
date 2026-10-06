@@ -226,8 +226,11 @@ function finishL16Endian(session: CallSession): void {
   logL16Endian(session, (session.l16EndianProbe ?? new L16EndianProbe()).finish());
 }
 
-/** Gère chaque message du WebSocket Telnyx et retourne la session mise à jour. */
-function handleTelnyxMessage(
+/**
+ * Gère chaque message du WebSocket Telnyx et retourne la session mise à jour.
+ * Exporté pour la démonstration navigateur, qui parle le même protocole.
+ */
+export function handleTelnyxMessage(
   msg: TelnyxStreamMessage,
   callId: string,
   socket: WebSocket,
@@ -310,20 +313,25 @@ function handleTelnyxMessage(
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       // Avant l'accueil : l'audio de l'appelant doit être nettoyé dès ses premiers mots.
-      startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
+      // Démonstration navigateur : pas de leg Telnyx, donc ni suppression de bruit ni enregistrement.
+      if (!session.demo) {
+        startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
+      }
       session.greetingText = greeting;
       session.greetingPlaying = true;
       // Dès le décroché : l'accueil et ses interruptions doivent figurer dans l'enregistrement.
-      startTestCallRecording(session).catch((err) => {
-        logger.error(
-          { err, callId: session.callControlId },
-          '[stream] Failed to start test call recording',
-        );
-        captureException(err as Error, {
-          tags: { service: 'handler', action: 'test-recording-start' },
-          extra: { callId: session.callControlId },
+      if (!session.demo) {
+        startTestCallRecording(session).catch((err) => {
+          logger.error(
+            { err, callId: session.callControlId },
+            '[stream] Failed to start test call recording',
+          );
+          captureException(err as Error, {
+            tags: { service: 'handler', action: 'test-recording-start' },
+            extra: { callId: session.callControlId },
+          });
         });
-      });
+      }
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
         .then(async () => {
