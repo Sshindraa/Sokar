@@ -41,12 +41,20 @@ Configuration de la personnalité vocale (AgentPersonality).
 
 ### Onboarding
 
-| Méthode | Route                                                                        | Description                                                            |
-| ------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| GET     | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | État d'onboarding                                                      |
-| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | Mise à jour état                                                       |
-| POST    | `/restaurant/onboarding/test-call` ou `/api/restaurant/onboarding/test-call` | Déclenche un appel outbound et conserve son `callControlId` en attente |
-| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | `action=first_call` avec le `callControlId` confirme l'appel reçu      |
+| Méthode | Route                                                                        | Description                                                                     |
+| ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| GET     | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | État d'onboarding                                                               |
+| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | Mise à jour état                                                                |
+| POST    | `/restaurant/onboarding/test-call` ou `/api/restaurant/onboarding/test-call` | Déclenche un appel outbound et conserve son `callControlId` en attente          |
+| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | `action=first_call` avec le `callControlId` confirme l'appel reçu               |
+| GET     | `/restaurant/onboarding/floor` ou `/api/restaurant/onboarding/floor`         | Tables actives du plan par défaut, groupées par taille, et effectifs            |
+| PUT     | `/restaurant/onboarding/floor` ou `/api/restaurant/onboarding/floor`         | Création rapide de la salle : `{ tables: [{ capacity, count }] }`               |
+| PUT     | `/restaurant/onboarding/practical` ou `/api/restaurant/onboarding/practical` | Faits pratiques : `{ practicalInfo: {…}, dietary? }`, `null` efface une réponse |
+
+`GET /restaurant/onboarding` renvoie aussi `readiness` (`ready`, `checks`, `tableCount`, `seatCount`,
+`largestTableCapacity`) : vrai seulement avec horaires, tables actives et règles. `PATCH` refuse
+`complete` sur `floor` sans table (409 `NO_TABLES`) et `activate` si `readiness.ready` est faux
+(409 `NOT_READY_TO_BOOK`).
 
 Les routes existent en double préfixe (`/restaurant` et `/api/restaurant`)
 probablement pour des raisons de compat historique.
