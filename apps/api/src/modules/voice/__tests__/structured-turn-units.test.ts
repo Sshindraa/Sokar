@@ -164,6 +164,33 @@ describe('vérification de compréhension', () => {
   });
 });
 
+describe('consigne de suite du second passage', () => {
+  const systemOf = (actionResult: string, formulation = false) =>
+    String(
+      buildStructuredTurnMessages({
+        systemPrompt: 'Système.',
+        history: [],
+        transcript: 'vers vingt heures',
+        state: createStructuredTurnState(),
+        actionResult,
+        formulation,
+      })[0]?.content,
+    );
+
+  it("une consigne de suite n'est pas un résultat d'action à annoncer", () => {
+    const system = systemOf("Tu redemandes ce qui est déjà retenu : l'heure (20:00).", true);
+    expect(system).toContain('CONSIGNE DE SUITE');
+    expect(system).not.toContain("RÉSULTAT D'ACTION (déjà exécutée");
+    expect(system).not.toContain('Annonce le résultat');
+  });
+
+  it('un résultat d’action garde son gabarit', () => {
+    const system = systemOf('Réservation créée.');
+    expect(system).toContain("RÉSULTAT D'ACTION");
+    expect(system).toContain('Annonce le résultat');
+  });
+});
+
 describe('applyProposedDraft', () => {
   const today = '2026-09-26';
 
@@ -429,6 +456,30 @@ describe('outsideOpeningHoursFact', () => {
       '(12:00–14:30 puis 19:00–22:30)',
     );
     expect(outsideOpeningHoursFact(splitHours, { date: '2026-10-06', time: '20:00' })).toBeNull();
+  });
+
+  it('refuse une heure après la dernière réservation fixée du service', () => {
+    const withLastBooking = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30', lastBooking: '14:00' },
+          { open: '19:00', close: '22:30', lastBooking: '21:30' },
+        ],
+      },
+    };
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '22:00' }),
+    ).toContain('après la dernière réservation du mardi pour ce service (21:30');
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '14:30' }),
+    ).toContain("jusqu'à 14:00");
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '21:30' }),
+    ).toBeNull();
+    // Sans dernière réservation fixée, le comportement historique est conservé.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();
   });
 
   it('reste muet quand tout est compatible ou inconnu', () => {

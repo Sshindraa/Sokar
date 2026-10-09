@@ -56,6 +56,36 @@ export function isVoiceTurnJudgeEnabled(
   );
 }
 
+/**
+ * Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires…) donnés à
+ * l'assistant pour qu'il réponde aux questions des appelants au lieu de botter en touche. Seulement
+ * pour les restaurants listés (`VOICE_PRACTICAL_INFO_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoicePracticalInfoEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_PRACTICAL_INFO_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
+ * Style de la maison dans le prompt : les réglages « Style » et « Ton de voix » de l'onboarding
+ * (`profileType`, `fillerStyle`) modifient la façon de parler de l'assistant. Seulement pour les
+ * restaurants listés (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoicePersonalityStyleEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_PERSONALITY_STYLE_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,

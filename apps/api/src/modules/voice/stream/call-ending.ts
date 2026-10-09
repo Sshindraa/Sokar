@@ -72,6 +72,16 @@ export async function finishCall(
     ending.complete = undefined;
   }
   if (session.ended) return;
+  // Démonstration navigateur : pas de leg Telnyx à raccrocher. On prévient le navigateur puis on ferme ;
+  // la fermeture du WebSocket déclenche le nettoyage de la démonstration.
+  if (session.demo) {
+    if (session.telnyxWs.readyState === WebSocket.OPEN) {
+      session.telnyxWs.send(JSON.stringify({ event: 'ended', reason: 'agent_hangup' }));
+      session.telnyxWs.close(1000, 'agent_hangup');
+    }
+    mgr.cleanup(session);
+    return;
+  }
   // Reuse one command id for the bounded retry: a network timeout must not issue
   // a logically different hangup command. Normal stream-stop/webhook does cleanup.
   for (let attempt = 0; attempt < 2; attempt++) {

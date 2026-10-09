@@ -27,7 +27,15 @@ function historyOf(testCase: BehaviorCase, file: BehaviorCasesFile) {
   return named;
 }
 
+/** Réglages « Style » et « Ton de voix » de l'onboarding, appliqués au prompt (drapeau de style allumé). */
+export interface BehaviorPersona {
+  profileType?: string;
+  fillerStyle?: string;
+}
+
 export interface BuildOptions {
+  /** Persona du restaurant : absent = prompt d'avant (drapeau de style éteint). */
+  persona?: BehaviorPersona;
   /** Vérification de compréhension (reading + understanding), comme le drapeau de production. */
   understanding?: boolean;
 }
@@ -87,9 +95,17 @@ export function buildRequest(
         timezone: profile.timezone ?? 'Europe/Paris',
         ...(profile.maxPartySize ? { maxPartySize: profile.maxPartySize } : {}),
         ...(profile.voiceGender ? { voiceGender: profile.voiceGender } : {}),
-        ...(profile.systemPromptExtra
-          ? { personality: { systemPromptExtra: profile.systemPromptExtra } }
+        ...(profile.systemPromptExtra || options.persona
+          ? {
+              personality: {
+                ...(profile.systemPromptExtra
+                  ? { systemPromptExtra: profile.systemPromptExtra }
+                  : {}),
+                ...options.persona,
+              },
+            }
           : {}),
+        ...(options.persona ? { personalityStyleEnabled: true } : {}),
       },
       new Date(`${file.today}T12:00:00Z`),
     ),

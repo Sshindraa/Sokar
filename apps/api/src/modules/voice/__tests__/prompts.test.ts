@@ -39,6 +39,61 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('8+');
   });
 
+  describe('style de la maison (Style et Ton de voix de l’onboarding)', () => {
+    const styled = (
+      personality: { profileType?: string; fillerStyle?: string } | null,
+      personalityStyleEnabled = true,
+    ) => buildSystemPrompt({ ...baseCtx, personality, personalityStyleEnabled });
+
+    it('laisse le prompt strictement inchangé quand le drapeau est coupé', () => {
+      const reference = buildSystemPrompt(baseCtx);
+      expect(styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' }, false)).toBe(
+        reference,
+      );
+    });
+
+    it('laisse le prompt inchangé pour le réglage par défaut (bistrot, naturel)', () => {
+      const reference = buildSystemPrompt(baseCtx);
+      expect(styled({ profileType: 'BISTROT_BRASSERIE', fillerStyle: 'CASUAL' })).toBe(reference);
+      expect(styled(null)).toBe(reference);
+    });
+
+    it('règle les mots et la politesse, jamais le rythme : la maison reste une conversation téléphonique', () => {
+      const prompt = styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' });
+      expect(prompt).toContain('jamais le rythme');
+      expect(prompt).toContain('on parle, on ne rédige pas');
+    });
+
+    it('la politesse du ton formel est présente sans se répéter d’un tour à l’autre', () => {
+      expect(styled({ fillerStyle: 'FORMAL' })).toContain("ne se répète pas d'un tour à l'autre");
+    });
+
+    it('garde mot pour mot le ton chaleureux (réglage validé)', () => {
+      expect(styled({ fillerStyle: 'WARM' })).toContain(
+        "- Ton de voix : chaleureux et convivial. Tu fais sentir à l'appelant qu'il est le bienvenu : quand sa demande s'y prête, une courte marque d'attention personnelle avant d'enchaîner, dite simplement, sans point d'exclamation ni formule toute faite répétée d'un tour à l'autre.",
+      );
+    });
+
+    it.each([
+      [{ profileType: 'SEMI_GASTRO' }, 'semi-gastronomique'],
+      [{ profileType: 'GASTRONOMIQUE' }, 'gastronomique'],
+      [{ fillerStyle: 'WARM' }, 'chaleureux et convivial'],
+      [{ fillerStyle: 'FORMAL' }, 'formel et soigné'],
+    ])('ajoute le registre de %j', (personality, expected) => {
+      const prompt = styled(personality);
+      expect(prompt).toContain('REGISTRE DE LA MAISON');
+      expect(prompt).toContain(expected);
+    });
+
+    it('cumule le style et le ton, et garde la brièveté et les règles de réservation', () => {
+      const prompt = styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' });
+      expect(prompt.match(/^- Maison gastronomique/m)).not.toBeNull();
+      expect(prompt.match(/^- Ton de voix/m)).not.toBeNull();
+      expect(prompt).toContain('la brièveté et les règles de réservation ne changent pas');
+      expect(prompt.indexOf('REGISTRE DE LA MAISON')).toBeLessThan(prompt.indexOf('DATE COURANTE'));
+    });
+  });
+
   it('liste un jour absent des horaires comme fermé, dans l’ordre de la semaine', () => {
     const hours = formatOpeningHours({
       fri: { open: '12:00', close: '23:00' },
@@ -53,6 +108,26 @@ describe('buildSystemPrompt', () => {
       'Samedi : fermé',
       'Dimanche : fermé',
     ]);
+  });
+
+  it('annonce la dernière réservation de chaque service quand elle est fixée', () => {
+    const hours = formatOpeningHours({
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30', lastBooking: '14:00' },
+          { open: '19:00', close: '22:30', lastBooking: '21:30' },
+        ],
+      },
+      fri: { open: '12:00', close: '23:00', lastBooking: '21:30' },
+      sat: { open: '12:00', close: '22:00' },
+    });
+    expect(hours).toContain(
+      'Mardi : 12:00–14:30 (dernière réservation à 14:00) puis 19:00–22:30 (dernière réservation à 21:30)',
+    );
+    expect(hours).toContain('Vendredi : 12:00–23:00 (dernière réservation à 21:30)');
+    expect(hours).toContain('Samedi : 12:00–22:00\n');
   });
 
   it('lit aussi les formats longs et schema.org, comme le calcul des créneaux', () => {
@@ -391,6 +466,17 @@ describe('phrases à dire : des principes, pas des formules', () => {
     expect(prompt).toContain("ne dis pas « c'est noté » pour cet horaire");
   });
 
+  it("une information retenue n'a pas à être redite : ni répétition interdite en bloc, ni confirmation à chaque tour", () => {
+    expect(prompt).toContain("Une information retenue n'a pas besoin d'être redite à voix haute");
+    expect(prompt).toContain(
+      'Tu ne demandes pas de confirmer cette date, cette heure ou ce nombre',
+    );
+    expect(prompt).not.toContain("Tu ne répètes pas ce que l'appelant vient de dire");
+    expect(prompt).not.toContain('fais-lui confirmer cette valeur');
+    expect(prompt).toContain('reste un réflexe, même variée');
+    expect(prompt).toContain('ni aucune autre formule qui revient à chaque tour');
+  });
+
   it("garde des exemples d'interprétation de l'entrée, avec des valeurs absentes du banc", () => {
     // Ce que dit l'appelant : on garde, pour apprendre à le comprendre.
     for (const heard of [
@@ -494,5 +580,23 @@ describe('genre de la voix', () => {
     ).toBeUndefined();
     expect(agentVoiceGender(null, {})).toBeUndefined();
     expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'autre' })).toBeUndefined();
+  });
+});
+
+describe('tour structuré : informations déjà données', () => {
+  it('retient le jour, l’heure et le nombre dits dans une question, et ne les redemande pas', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'vous êtes ouvert demain',
+      state: createStructuredTurnState(),
+      openingHours: {} as never,
+    });
+    expect(system.content).toContain(
+      'même dans une question sur les horaires ou les disponibilités',
+    );
+    expect(system.content).toContain(
+      "sauf s'ils sont ambiguës, contredits par ce que l'appelant vient de dire, ou si le créneau n'est plus disponible",
+    );
   });
 });
