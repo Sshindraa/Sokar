@@ -1,10 +1,22 @@
 'use client';
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowRight, Check, Loader2, Pencil, Save, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+function useFooterTarget(id: string) {
+  const [footer, setFooter] = useState<HTMLElement | null | undefined>(undefined);
+
+  useIsomorphicLayoutEffect(() => {
+    setFooter(document.getElementById(id));
+  }, [id]);
+
+  return footer;
+}
 
 export function StepHeader({
   icon: Icon,
@@ -90,10 +102,8 @@ export function Segmented({
 }
 
 export function OnboardingAction({ children }: { children: ReactNode }) {
-  const [footer, setFooter] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setFooter(document.getElementById('onboarding-step-actions'));
-  }, []);
+  const footer = useFooterTarget('onboarding-step-actions');
+  if (footer === undefined) return null;
   return footer ? createPortal(children, footer) : children;
 }
 
@@ -106,16 +116,15 @@ export function SubmitButton({
   disabled?: boolean;
   children: React.ReactNode;
 }) {
-  const [footer, setFooter] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    setFooter(document.getElementById('onboarding-step-actions'));
-  }, []);
+  const footer = useFooterTarget('onboarding-step-actions');
+  if (footer === undefined) return null;
+
   const action = (
     <Button
       type="submit"
       form={footer ? 'onboarding-voice-form' : undefined}
       disabled={saving || disabled}
-      className="transition-all duration-200"
+      className="h-12 rounded-full px-6 transition-all duration-200"
     >
       {saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowRight size={16} />}
       {children}
@@ -153,16 +162,16 @@ export function ConnectReviewLayout({
     <div
       data-review={summaryStaysVisible || !editing}
       data-wide-review={wide && !editing ? true : undefined}
-      className="mx-auto w-full max-w-2xl"
+      className={cn('w-full', wide ? 'max-w-6xl' : 'max-w-5xl')}
     >
-      <section className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+      <section className="overflow-hidden rounded-[2.25rem] bg-card">
         {!hideHeader && (
-          <header className="flex items-center justify-between gap-4 border-b border-border px-5 py-4 sm:px-6">
+          <header className="flex flex-wrap items-center justify-between gap-4 bg-muted/70 px-5 py-5 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-card text-brand">
                 <Icon size={20} aria-hidden="true" />
               </span>
-              <h2 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+              <h2 className="min-w-0 text-lg font-semibold tracking-tight text-foreground sm:text-xl">
                 {title}
               </h2>
             </div>
@@ -173,7 +182,7 @@ export function ConnectReviewLayout({
                 size="sm"
                 aria-expanded={editing}
                 onClick={() => onEditingChange(!editing)}
-                className="shrink-0 gap-2 rounded-full transition-all duration-200"
+                className="shrink-0 gap-2 rounded-lg transition-all duration-200"
               >
                 {editing ? <ArrowLeft size={14} /> : <Pencil size={14} />}
                 {editing ? 'Retour au résumé' : 'Modifier les informations'}
@@ -220,18 +229,15 @@ export function ConnectStepAction({
   saving: boolean;
   label: string;
 }) {
-  const [footer, setFooter] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setFooter(document.getElementById('connect-step-actions'));
-  }, []);
+  const footer = useFooterTarget('connect-step-actions');
+  if (footer === undefined) return null;
 
   const action = (
     <Button
       type="submit"
       form={formId}
       disabled={saving}
-      className="min-w-40 gap-2 transition-all duration-200"
+      className="h-11 min-w-40 gap-2 rounded-xl px-5 transition-all duration-200"
     >
       {saving ? <Loader2 className="animate-spin" size={16} /> : null}
       {saving ? 'Enregistrement…' : label}
@@ -353,7 +359,7 @@ export function OnboardingPreview({
   children: ReactNode;
 }) {
   return (
-    <aside className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+    <aside className="overflow-hidden rounded-[2.25rem] bg-card">
       <div className="px-6 py-4">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           {eyebrow}

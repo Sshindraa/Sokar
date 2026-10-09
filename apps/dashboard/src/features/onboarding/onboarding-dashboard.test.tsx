@@ -96,45 +96,45 @@ it('permet de choisir le parcours vocal et de rouvrir une étape terminée', () 
   expect(mocks.openStepModal).toHaveBeenCalledWith('restaurant');
 });
 
-it('privilégie une étape réalisable et garde le planning accessible', () => {
+it('privilégie une étape réalisable et garde l’étape bloquée accessible', () => {
   const state = createPreviewState();
-  const calendar: OnboardingStep = {
+  const blockedStep: OnboardingStep = {
     ...state.steps[0],
-    key: 'calendar',
-    title: 'Planning',
+    key: 'phone',
+    title: 'Appels',
     status: 'blocked',
     state: { status: 'blocked', reason: 'Clerk/API OAuth' },
   };
   const hours: OnboardingStep = {
-    ...calendar,
+    ...blockedStep,
     key: 'hours',
     title: 'Horaires',
     status: 'pending',
     state: { status: 'pending' },
   };
-  mocks.state = { ...state, currentStep: calendar, steps: [...state.steps, calendar, hours] };
+  mocks.state = { ...state, currentStep: blockedStep, steps: [...state.steps, blockedStep, hours] };
   render(<DashboardOnboardingPanel />);
   fireEvent.click(screen.getByRole('button', { name: 'Configurer les horaires' }));
   expect(mocks.openStepModal).toHaveBeenCalledWith('hours');
-  expect(screen.getByRole('button', { name: 'Planning — À résoudre' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Appels — À résoudre' })).toBeInTheDocument();
   expect(screen.queryByText(/Réessayer Google/)).not.toBeInTheDocument();
 });
 
 it('explique une dépendance Sokar sans exposer le diagnostic technique', () => {
   const state = createPreviewState();
-  const calendar: OnboardingStep = {
+  const blockedStep: OnboardingStep = {
     ...state.steps[0],
-    key: 'calendar',
-    title: 'Planning',
+    key: 'phone',
+    title: 'Appels',
     status: 'blocked',
     state: { status: 'blocked', reason: 'Clerk/API OAuth' },
   };
-  mocks.state = { ...state, currentStep: calendar, steps: [calendar] };
+  mocks.state = { ...state, currentStep: blockedStep, steps: [blockedStep] };
   render(<DashboardOnboardingPanel />);
   expect(screen.getByText('Une configuration côté Sokar est nécessaire')).toBeInTheDocument();
   expect(screen.queryByText(/Clerk/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Voir les options' }));
-  expect(mocks.openStepModal).toHaveBeenCalledWith('calendar');
+  expect(mocks.openStepModal).toHaveBeenCalledWith('phone');
 });
 
 it('invite à vérifier les appels une fois la configuration terminée', () => {
@@ -144,4 +144,42 @@ it('invite à vérifier les appels une fois la configuration terminée', () => {
   expect(screen.getByText('Vérifiez le résultat avec un appel test')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Vérifier les appels' }));
   expect(mocks.openStepModal).toHaveBeenCalledWith('phone');
+});
+
+const notReady = {
+  ready: false,
+  checks: [
+    { key: 'hours' as const, label: 'Horaires de réservation', ok: true },
+    { key: 'tables' as const, label: 'Tables de la salle', ok: false },
+    { key: 'rules' as const, label: 'Règles de réservation', ok: false },
+  ],
+  tableCount: 0,
+  seatCount: 0,
+  largestTableCapacity: 0,
+};
+
+it('prévient que les clients ne peuvent pas réserver et ouvre ce qui manque', () => {
+  mocks.state = { ...createPreviewState(), readiness: notReady };
+  render(<DashboardOnboardingPanel />);
+
+  expect(screen.getByText('Vos clients ne peuvent pas encore réserver')).toBeInTheDocument();
+  expect(
+    screen.getByText('Il manque : tables de la salle, règles de réservation.'),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Compléter/ }));
+  expect(mocks.openStepModal).toHaveBeenCalledWith('floor');
+});
+
+it('ne signale rien quand les clients peuvent réserver', () => {
+  mocks.state = {
+    ...createPreviewState(),
+    readiness: {
+      ...notReady,
+      ready: true,
+      checks: notReady.checks.map((c) => ({ ...c, ok: true })),
+    },
+  };
+  render(<DashboardOnboardingPanel />);
+
+  expect(screen.queryByText('Vos clients ne peuvent pas encore réserver')).not.toBeInTheDocument();
 });

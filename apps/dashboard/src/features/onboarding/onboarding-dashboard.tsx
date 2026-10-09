@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useOnboarding } from './onboarding-provider';
-import type { OnboardingStep, OnboardingStatus } from './types';
+import type { OnboardingStep, OnboardingStatus, OnboardingTaskKey } from './types';
 
 const STATUS_LABEL: Record<OnboardingStatus, string> = {
   completed: 'Terminé',
@@ -40,23 +40,29 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
     cta: 'Configurer les horaires',
     impact: 'Empêche les propositions hors service.',
   },
+  floor: {
+    title: 'Décrivez votre salle et vos règles',
+    body: 'Sokar calcule vos disponibilités à partir de vos tables, de la durée d’un repas et de la taille maximale des groupes : sans elles, aucun créneau ne peut être proposé.',
+    cta: 'Configurer ma salle',
+    impact: 'Sans table, aucun client ne peut réserver.',
+  },
   knowledge: {
     title: 'Donnez le ton et les consignes',
     body: 'Un assistant crédible sait quoi recommander et comment parler aux clients.',
     cta: 'Configurer la personnalité',
     impact: 'Rend les réponses plus naturelles dès le premier appel.',
   },
-  calendar: {
-    title: 'Connectez votre planning',
-    body: 'Sokar vérifie les disponibilités avant de confirmer une table.',
-    cta: 'Configurer le planning',
-    impact: 'Réduit les doubles réservations.',
-  },
   phone: {
     title: 'Mettez les appels en service',
     body: 'Le numéro Sokar et le renvoi opérateur transforment la configuration en appels réels.',
     cta: 'Activer le téléphone',
     impact: 'Dernière étape avant le test grandeur nature.',
+  },
+  channels: {
+    title: 'Vérifiez vos canaux de réservation',
+    body: 'Testez les créneaux calculés, puis configurez votre page en ligne dans Sokar Connect. Le lien et le widget seront disponibles après publication.',
+    cta: 'Vérifier mes canaux',
+    impact: 'Confirmez vos disponibilités avant de publier votre page de réservation.',
   },
   'connect-identity': {
     title: 'Configurez l’identité publique de votre page',
@@ -75,12 +81,6 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
     body: 'Sélectionnez vos types de cuisine, la gamme de prix, les options de régime et les atouts du restaurant (terrasse, privatisation, etc.).',
     cta: 'Configurer la cuisine et l’ambiance',
     impact: 'Aide les assistants IA à recommander votre restaurant selon les critères clients.',
-  },
-  'connect-capacity': {
-    title: 'Établissez les règles de réservation',
-    body: 'Indiquez la capacité d’accueil, les limites de groupe et configurez d’éventuels acomptes pour sécuriser vos tables.',
-    cta: 'Configurer les règles',
-    impact: 'Prévient le no-show et évite les surréservations indésirables.',
   },
   'connect-activation': {
     title: 'Activez la page internet et son mode agent',
@@ -125,8 +125,7 @@ export function DashboardOnboardingGate() {
     if (loading || !state) return;
     if (state.minimumViableDone) return;
     if (activeStep) return; // déjà ouverte
-    const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
-    const voiceSteps = state.steps.filter((s) => voiceKeys.includes(s.key));
+    const voiceSteps = state.steps.filter((s) => s.group === 'voice');
     const targetStep =
       voiceSteps.find((s) => s.status === 'current' || s.status === 'pending') ?? voiceSteps[0];
     openStepModal(targetStep.key);
@@ -140,14 +139,14 @@ type Journey = 'voice' | 'connect';
 const STEP_LABELS: Record<string, string> = {
   restaurant: 'Restaurant',
   hours: 'Horaires',
+  floor: 'Salle et règles',
   knowledge: 'Consignes et démo',
-  calendar: 'Planning',
   phone: 'Appels',
+  channels: 'Canaux',
   'connect-identity': 'Identité publique',
   'connect-location': 'Localisation',
   'connect-cuisine': 'Cuisine et ambiance',
-  'connect-capacity': 'Réservations',
-  'connect-activation': 'Publication',
+  'connect-activation': 'Finalisation et publication',
 };
 
 function nextStep(steps: OnboardingStep[]) {
@@ -155,6 +154,49 @@ function nextStep(steps: OnboardingStep[]) {
     steps.find((step) => step.status === 'current' || step.status === 'pending') ??
     steps.find((step) => step.status === 'blocked') ??
     steps.find((step) => step.status === 'skipped')
+  );
+}
+
+const READINESS_STEP: Record<'hours' | 'tables' | 'rules', OnboardingTaskKey> = {
+  hours: 'hours',
+  tables: 'floor',
+  rules: 'floor',
+};
+
+/**
+ * Tant qu'il manque les horaires, les tables ou les règles, aucun canal (téléphone, widget, Google,
+ * assistants IA) ne peut proposer de créneau : on le dit clairement, avec un accès direct à ce qui manque.
+ */
+function ReadinessNotice() {
+  const { state, openStepModal } = useOnboarding();
+  const readiness = state?.readiness;
+  if (!readiness || readiness.ready) return null;
+  const missing = readiness.checks.filter((check) => !check.ok);
+
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-3 border-b border-warning/30 bg-warning/10 px-6 py-4 transition-all duration-200 md:flex-row md:items-center md:justify-between"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <AlertTriangle className="mt-0.5 shrink-0 text-warning" size={18} aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            Vos clients ne peuvent pas encore réserver
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Il manque : {missing.map((check) => check.label.toLowerCase()).join(', ')}.
+          </p>
+        </div>
+      </div>
+      <Button
+        variant="outline"
+        onClick={() => openStepModal(READINESS_STEP[missing[0].key])}
+        className="shrink-0 transition-all duration-200"
+      >
+        Compléter <ArrowRight size={16} />
+      </Button>
+    </div>
   );
 }
 
@@ -210,8 +252,8 @@ export function DashboardOnboardingPanel({ required = false }: { required?: bool
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {isVoice
-              ? 'Vos informations, une démonstration, puis la mise en service des appels.'
-              : 'Vos informations publiques, vos règles de réservation, puis la publication.'}
+              ? 'Votre restaurant, votre salle et vos règles, une démonstration, puis la mise en service des appels.'
+              : 'Vos informations publiques, puis la publication de votre page.'}
           </p>
         </div>
         <div
@@ -233,6 +275,8 @@ export function DashboardOnboardingPanel({ required = false }: { required?: bool
           ))}
         </div>
       </div>
+
+      <ReadinessNotice />
 
       <div className="p-6 md:p-8">
         {journeyDone ? (
@@ -338,18 +382,8 @@ export function OnboardingStepper() {
   const { state, openStepModal } = useOnboarding();
   if (!state) return null;
 
-  const voiceSteps = state.steps.filter((s) =>
-    ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key),
-  );
-  const connectSteps = state.steps.filter((s) =>
-    [
-      'connect-identity',
-      'connect-location',
-      'connect-cuisine',
-      'connect-capacity',
-      'connect-activation',
-    ].includes(s.key),
-  );
+  const voiceSteps = state.steps.filter((s) => s.group === 'voice');
+  const connectSteps = state.steps.filter((s) => s.group === 'connect');
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:p-6">

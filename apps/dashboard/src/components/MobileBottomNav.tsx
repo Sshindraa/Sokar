@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -98,6 +99,7 @@ type NavGeometry = {
 const DRAG_THRESHOLD = 6;
 const LIQUID_SETTLE_TRANSITION =
   'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), width 240ms cubic-bezier(0.22, 1, 0.36, 1)';
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
@@ -112,6 +114,7 @@ export default function MobileBottomNav() {
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [dragPreviewIndex, setDragPreviewIndex] = useState<number | null>(null);
+  const [liquidReady, setLiquidReady] = useState(false);
 
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const salleEditMode = searchParams.get('view') === 'edit-plan';
@@ -228,21 +231,24 @@ export default function MobileBottomNav() {
       // A route update can arrive while the settle transition is still
       // running. If it points at the same tab, leave the in-flight transform
       // alone instead of cancelling it with a second write.
-      if (!force && settledIndexRef.current === index) return;
+      if (!force && settledIndexRef.current === index) return false;
 
       const geometry = getGeometry();
-      if (!geometry) return;
+      if (!geometry) return false;
       const center = geometry.centers[index] ?? geometry.centers[0];
       if (center !== undefined) {
         setLiquidPosition(center, animate);
         settledIndexRef.current = index;
+        return true;
       }
+      return false;
     },
     [getGeometry, setLiquidPosition],
   );
 
-  useEffect(() => {
-    settleLiquid(committedIndex, false);
+  useIsomorphicLayoutEffect(() => {
+    geometryRef.current = null;
+    if (settleLiquid(committedIndex, false)) setLiquidReady(true);
 
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
@@ -251,7 +257,7 @@ export default function MobileBottomNav() {
       // The bar can change width when rotating or entering the iPad layout.
       // Invalidate the cached measurements before settling the lens.
       geometryRef.current = null;
-      settleLiquid(committedIndex, false, true);
+      if (settleLiquid(committedIndex, false, true)) setLiquidReady(true);
     });
     resizeObserver.observe(container);
 
@@ -423,7 +429,7 @@ export default function MobileBottomNav() {
   // monté pendant une navigation entre les onglets principaux. On le ferme
   // dès que l'URL change afin de ne jamais laisser le voile/modal au-dessus
   // d'une nouvelle page.
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     setMoreOpen(false);
   }, [pathname]);
 
@@ -546,6 +552,7 @@ export default function MobileBottomNav() {
           ref={containerRef}
           className={cn(
             'dashboard-mobile-nav__inner',
+            !liquidReady && 'is-initializing',
             isDragging && 'is-dragging',
             isPressed && 'is-pressed',
           )}

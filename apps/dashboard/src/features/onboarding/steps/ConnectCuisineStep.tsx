@@ -86,7 +86,7 @@ export function ConnectCuisineStep({ onComplete }: StepProps) {
       });
       const updated = await updateTask('complete', 'connect-cuisine');
       if (!updated) throw new Error('completion failed');
-      onComplete('connect-capacity');
+      onComplete('connect-activation');
     } catch {
       setEditing(true);
       setError('La sauvegarde a échoué. Vos informations sont conservées, réessayez.');

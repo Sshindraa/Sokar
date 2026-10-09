@@ -1,19 +1,27 @@
-export type Slot = { open: string; close: string };
-export type DayHours = { open: string; close: string; slots?: Slot[]; services?: Slot[] } | null;
+/** lastBooking : dernière heure de début de réservation du service, incluse. */
+export type Slot = { open: string; close: string; lastBooking?: string };
+export type DayHours = {
+  open: string;
+  close: string;
+  lastBooking?: string;
+  slots?: Slot[];
+  services?: Slot[];
+} | null;
 export type WeekHours = Record<string, DayHours>;
 export type Mode = 'continuous' | 'split';
 
 export const PRESETS: Record<Mode, Slot[]> = {
-  continuous: [{ open: '12:00', close: '22:00' }],
+  continuous: [{ open: '12:00', close: '22:00', lastBooking: '21:30' }],
   split: [
-    { open: '12:00', close: '14:30' },
-    { open: '19:00', close: '22:30' },
+    { open: '12:00', close: '14:30', lastBooking: '14:00' },
+    { open: '19:00', close: '22:30', lastBooking: '22:00' },
   ],
 };
 
 export const SLOT_LABELS = ['Midi', 'Soir'] as const;
 const MINUTES_PER_DAY = 24 * 60;
 const LATEST_OVERNIGHT_CLOSE = 6 * 60;
+const BOOKING_STEP_MINUTES = 30;
 
 function toMinutes(value: string): number | null {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
@@ -24,12 +32,103 @@ function toMinutes(value: string): number | null {
   return hours * 60 + minutes;
 }
 
+/**
+ * Services du jour, chacun avec sa dernière réservation : une valeur absente (horaires enregistrés
+ * avant cette option) est remplie avec le dernier créneau qui tient avant la fermeture.
+ */
 export function slotsOf(day: DayHours): Slot[] {
   if (!day) return [];
-  if (day.slots?.length) return day.slots;
+  if (day.slots?.length) return day.slots.map(withLastBooking);
   // Read the local legacy shape while old records are being opened and saved.
-  if (day.services?.length) return day.services;
-  return [{ open: day.open, close: day.close }];
+  if (day.services?.length) return day.services.map(withLastBooking);
+  return [withLastBooking({ open: day.open, close: day.close, lastBooking: day.lastBooking })];
+}
+
+function formatTime(totalMinutes: number): string {
+  const minutes = totalMinutes % MINUTES_PER_DAY;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+/** Heures de début valides pour la dernière réservation : grille de 30 min, avant la fermeture. */
+export function lastBookingOptions(slot: Slot): string[] {
+  const open = toMinutes(slot.open);
+  const end = overnightEnd(slot);
+  if (open == null || end == null) return [];
+  const options: string[] = [];
+  for (let current = open; current < end; current += BOOKING_STEP_MINUTES) {
+    options.push(formatTime(current));
+  }
+  return options;
+}
+
+/** Dernier créneau qui tient avant la fermeture : la règle appliquée avant cette option. */
+export function defaultLastBooking(slot: Slot): string | undefined {
+  const open = toMinutes(slot.open);
+  const end = overnightEnd(slot);
+  if (open == null || end == null) return undefined;
+  let last: number | undefined;
+  for (let current = open; current + BOOKING_STEP_MINUTES <= end; current += BOOKING_STEP_MINUTES) {
+    last = current;
+  }
+  return last == null ? undefined : formatTime(last);
+}
+
+function withLastBooking(slot: Slot): Slot {
+  if (slot.lastBooking) return slot;
+  const fallback = defaultLastBooking(slot);
+  return fallback ? { ...slot, lastBooking: fallback } : slot;
+}
+
+function keepOrDefaultLastBooking(slot: Slot, candidate: string | undefined): Slot {
+  const lastBooking =
+    candidate && lastBookingOptions(slot).includes(candidate)
+      ? candidate
+      : defaultLastBooking(slot);
+  return lastBooking ? { ...slot, lastBooking } : slot;
+}
+
+/**
+ * Modifie une borne d'un service en gardant la dernière réservation cohérente : elle suit la
+ * fermeture tant qu'elle valait la valeur par défaut, et revient à la valeur par défaut si elle
+ * n'est plus valide.
+ */
+export function updateSlot(slot: Slot, key: keyof Slot, value: string): Slot {
+  const next = { ...slot, [key]: value };
+  if (key === 'lastBooking') return next;
+  const followsDefault = slot.lastBooking === defaultLastBooking(slot);
+  return keepOrDefaultLastBooking(next, followsDefault ? undefined : slot.lastBooking);
+}
+
+/** Heures de début proposées aux clients pour un service : de l'ouverture à la dernière réservation. */
+export function bookingStarts(slot: Slot): string[] {
+  const options = lastBookingOptions(slot);
+  const last = slot.lastBooking ?? defaultLastBooking(slot);
+  const index = last ? options.indexOf(last) : -1;
+  return index >= 0 ? options.slice(0, index + 1) : options;
+}
+
+/** Jours ouverts consécutifs aux mêmes services, dans l'ordre de la semaine : de quoi la résumer. */
+export function groupWeek(
+  hours: WeekHours,
+  days: readonly string[],
+): { days: string[]; slots: Slot[] }[] {
+  const groups: { days: string[]; slots: Slot[]; key: string }[] = [];
+  let previousOpen = false;
+  for (const day of days) {
+    const slots = slotsOf(hours[day] ?? null);
+    if (!slots.length) {
+      previousOpen = false;
+      continue;
+    }
+    const key = JSON.stringify(
+      slots.map(({ open, close, lastBooking }) => [open, close, lastBooking]),
+    );
+    const last = groups[groups.length - 1];
+    if (previousOpen && last?.key === key) last.days.push(day);
+    else groups.push({ days: [day], slots, key });
+    previousOpen = true;
+  }
+  return groups.map(({ days: groupDays, slots }) => ({ days: groupDays, slots }));
 }
 
 export function toDayHours(slots: Slot[]): DayHours {
@@ -39,7 +138,11 @@ export function toDayHours(slots: Slot[]): DayHours {
 
   return slots.length > 1
     ? { open: first.open, close: last.close, slots: slots.map((slot) => ({ ...slot })) }
-    : { open: first.open, close: first.close };
+    : {
+        open: first.open,
+        close: first.close,
+        ...(first.lastBooking ? { lastBooking: first.lastBooking } : {}),
+      };
 }
 
 export function modeOf(day: DayHours): Mode {
@@ -52,7 +155,11 @@ export function switchMode(day: DayHours, mode: Mode): DayHours {
   if (slots.length === 0 || modeOf(day) === mode) return day;
   const first = slots[0];
   const last = slots.at(-1)!;
-  if (mode === 'continuous') return toDayHours([{ open: first.open, close: last.close }]);
+  if (mode === 'continuous') {
+    return toDayHours([
+      keepOrDefaultLastBooking({ open: first.open, close: last.close }, last.lastBooking),
+    ]);
+  }
 
   const firstOpen = toMinutes(first.open);
   const lastClose = toMinutes(last.close);
@@ -61,8 +168,11 @@ export function switchMode(day: DayHours, mode: Mode): DayHours {
   return toDayHours(
     canKeepBounds
       ? [
-          { open: first.open, close: PRESETS.split[0].close },
-          { open: PRESETS.split[1].open, close: dinnerClose },
+          keepOrDefaultLastBooking({ open: first.open, close: PRESETS.split[0].close }, undefined),
+          keepOrDefaultLastBooking(
+            { open: PRESETS.split[1].open, close: dinnerClose },
+            last.lastBooking,
+          ),
         ]
       : PRESETS.split,
   );
@@ -109,6 +219,12 @@ export function validateDay(day: DayHours): string | null {
     const currentEnd = currentOpen + (current.end - current.open);
     if (currentOpen < previousEnd || currentEnd <= currentOpen) {
       return 'Les services se chevauchent. Vérifiez la fin du midi et le début du soir.';
+    }
+  }
+
+  for (const slot of slots) {
+    if (!slot.lastBooking || !lastBookingOptions(slot).includes(slot.lastBooking)) {
+      return 'Indiquez la dernière réservation de chaque service, dans le service et par pas de 30 minutes.';
     }
   }
 

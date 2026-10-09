@@ -1277,6 +1277,10 @@ body {
   backdrop-filter: blur(24px) saturate(165%) contrast(1.06) brightness(1.1);
 }
 
+.dashboard-mobile-nav__inner.is-initializing .dashboard-mobile-nav__liquid-indicator {
+  opacity: 0;
+}
+
 /* Une lentille a besoin d’un bord spéculaire et d’un reflet mouvant : ce sont
    eux qui rendent la matière perceptible lorsque l’arrière-plan est sombre. */
 .dashboard-mobile-nav__liquid-indicator::before,

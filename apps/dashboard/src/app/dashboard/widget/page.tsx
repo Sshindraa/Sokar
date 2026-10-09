@@ -27,10 +27,10 @@ import {
 import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 import { getErrorMessage } from '@/types/api';
 import { buildWidgetPreviewUrl } from '@/lib/widget-preview-url';
+import { buildWidgetSnippet, WIDGET_HOST } from '@/lib/widget-snippet';
 
 const DEFAULT_PRIMARY = '#0f172a';
 const DEFAULT_ACCENT = '#f97316';
-const WIDGET_HOST = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech';
 
 type ConnectSettings = {
   restaurantId: string;
@@ -38,14 +38,6 @@ type ConnectSettings = {
   name: string;
   connectPublished: boolean;
 };
-
-const PROD_WIDGET_HOST = 'https://sokar.tech';
-
-function buildSnippet(slug: string, primary: string, accent: string): string {
-  const isProd = WIDGET_HOST === PROD_WIDGET_HOST;
-  const hostAttr = isProd ? '' : ` data-host="${WIDGET_HOST}"`;
-  return `<script src="${WIDGET_HOST}/embed.js" data-slug="${slug}"${hostAttr} data-primary="${primary}" data-accent="${accent}"></script>`;
-}
 
 function buildWidgetUrl(slug: string, primary: string, accent: string): string {
   return buildWidgetPreviewUrl(slug, primary, accent);
@@ -88,7 +80,7 @@ export default function WidgetIntegrationPage() {
     if (!settings) return;
     setCopyError(null);
     try {
-      await navigator.clipboard.writeText(buildSnippet(settings.slug, primary, accent));
+      await navigator.clipboard.writeText(buildWidgetSnippet(settings.slug, primary, accent));
       setCopied(true);
       setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
     } catch {
@@ -183,7 +175,7 @@ export default function WidgetIntegrationPage() {
                 <Input
                   id="snippet"
                   readOnly
-                  value={buildSnippet(settings.slug, primary, accent)}
+                  value={buildWidgetSnippet(settings.slug, primary, accent)}
                   className="font-mono text-xs"
                 />
               </div>

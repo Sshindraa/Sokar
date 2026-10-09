@@ -7,34 +7,63 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
-import type { OnboardingAction, OnboardingState, OnboardingTaskKey } from './types';
+import type {
+  OnboardingAction,
+  OnboardingRestaurant,
+  OnboardingState,
+  OnboardingStatus,
+  OnboardingStep,
+  OnboardingTaskKey,
+  OnboardingTaskState,
+} from './types';
 import type { DayHours } from './hours';
+import { getVisibleOnboardingState, resolveOnboardingTask } from './types';
+import { usePlaceImportDraft } from './use-place-import-draft';
 
 export type IdentityDraft = {
   restaurantId: string;
   slug: string;
   description: string;
   coverImageUrl: string;
+  pageFields?: Pick<
+    OnboardingRestaurant,
+    | 'formattedAddress'
+    | 'postalCode'
+    | 'city'
+    | 'country'
+    | 'lat'
+    | 'lng'
+    | 'cuisineType'
+    | 'priceRange'
+    | 'dietary'
+    | 'ambiance'
+  >;
 };
 
 export type PlaceImportDraft = {
   placeId: string;
   name: string;
+  /** Nom commercial déduit côté API (sans ville ni quartier) ; absent sur d'anciens brouillons. */
+  displayName?: string;
   phoneE164: string;
   formattedAddress: string;
   postalCode: string;
   city: string;
   country: string;
+  lat?: number;
+  lng?: number;
   openingHours: Record<string, DayHours>;
   hoursNeedReview: string[];
 };
 
 type OnboardingContextValue = {
+  setRestaurantDraft: (fields: Partial<OnboardingRestaurant>) => void;
   identityDraft: IdentityDraft | null;
   setIdentityDraft: (draft: IdentityDraft | null) => void;
   placeImportDraft: PlaceImportDraft | null;
@@ -58,6 +87,22 @@ type OnboardingContextValue = {
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
+function previewStep(
+  key: OnboardingTaskKey,
+  title: string,
+  description: string,
+  group: 'voice' | 'connect',
+  index: number,
+  status: OnboardingStatus,
+  required = false,
+): OnboardingStep {
+  const state: OnboardingTaskState =
+    status === 'blocked'
+      ? { status, reason: 'Aperçu : Google OAuth demande une configuration Clerk/API.' }
+      : { status };
+  return { key, title, description, required, group, index, status, state };
+}
+
 const PREVIEW_STATE: OnboardingState = {
   onboardingDone: false,
   voiceOnboardingDone: false,
@@ -67,127 +112,97 @@ const PREVIEW_STATE: OnboardingState = {
   onboardingActivatedAt: null,
   onboardingLastSeenAt: new Date().toISOString(),
   firstCallAt: null,
-  completedCount: 1,
-  totalCount: 10,
-  progress: 10,
-  voiceProgress: 20,
+  completedCount: 0,
+  totalCount: 9,
+  progress: 0,
+  voiceProgress: 0,
   connectProgress: 0,
   currentStep: {
-    key: 'hours',
-    title: 'Horaires de réservation',
-    description: 'Jours et plages où le restaurant accepte les réservations.',
-    required: false,
+    key: 'restaurant',
+    title: 'Commençons par votre restaurant',
+    description: 'Nom et coordonnées de contact du restaurant.',
+    required: true,
     group: 'voice',
-    index: 2,
+    index: 1,
     status: 'current',
     state: { status: 'current' },
   },
   steps: [
-    // Voice group
-    {
-      key: 'restaurant',
-      title: 'Vérifions votre restaurant',
-      description: 'Nom et coordonnées de contact du restaurant.',
-      required: true,
-      group: 'voice',
-      index: 1,
-      status: 'completed',
-      state: { status: 'completed' },
-    },
-    {
-      key: 'hours',
-      title: 'Horaires de réservation',
-      description: 'Jours et plages où le restaurant accepte les réservations.',
-      required: false,
-      group: 'voice',
-      index: 2,
-      status: 'current',
-      state: { status: 'current' },
-    },
-    {
-      key: 'knowledge',
-      title: 'Consignes & démo',
-      description: 'Ton, ambiance et consignes commerciales.',
-      required: false,
-      group: 'voice',
-      index: 3,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
-    {
-      key: 'calendar',
-      title: 'Connexion au planning',
-      description: 'Google Calendar ou fallback manuel.',
-      required: false,
-      group: 'voice',
-      index: 4,
-      status: 'blocked',
-      state: {
-        status: 'blocked',
-        reason: 'Aperçu : Google OAuth demande une configuration Clerk/API.',
-      },
-    },
-    {
-      key: 'phone',
-      title: 'Mise en service des appels',
-      description: 'Numéro Sokar et consignes de renvoi opérateur.',
-      required: false,
-      group: 'voice',
-      index: 5,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
+    // Socle commun + assistant vocal
+    previewStep(
+      'restaurant',
+      'Commençons par votre restaurant',
+      'Nom et coordonnées de contact du restaurant.',
+      'voice',
+      1,
+      'current',
+      true,
+    ),
+    previewStep(
+      'hours',
+      'Horaires de réservation',
+      'Jours et plages où le restaurant accepte les réservations.',
+      'voice',
+      2,
+      'pending',
+    ),
+    previewStep(
+      'floor',
+      'Salle et règles',
+      'Vos tables, vos règles de réservation et les informations pratiques que vos clients demandent.',
+      'voice',
+      3,
+      'pending',
+    ),
+    previewStep(
+      'knowledge',
+      'Consignes & démo',
+      'Ton, ambiance et consignes commerciales.',
+      'voice',
+      4,
+      'pending',
+    ),
+    previewStep(
+      'phone',
+      'Mise en service des appels',
+      'Numéro Sokar et consignes de renvoi opérateur.',
+      'voice',
+      5,
+      'pending',
+    ),
     // Sokar Connect group
-    {
-      key: 'connect-identity',
-      title: 'Identité publique',
-      description: 'Slug, description et photo de couverture.',
-      required: false,
-      group: 'connect',
-      index: 1,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
-    {
-      key: 'connect-location',
-      title: 'Localisation',
-      description: 'Adresse, coordonnées et carte.',
-      required: false,
-      group: 'connect',
-      index: 2,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
-    {
-      key: 'connect-cuisine',
-      title: 'Cuisine & ambiance',
-      description: 'Type de cuisine, tarifs et spécificités.',
-      required: false,
-      group: 'connect',
-      index: 3,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
-    {
-      key: 'connect-capacity',
-      title: 'Capacité & règles',
-      description: "Capacité d'accueil, durée de service et acompte.",
-      required: false,
-      group: 'connect',
-      index: 4,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
-    {
-      key: 'connect-activation',
-      title: 'Activation & preview',
-      description: 'Mise en ligne de la page et des métadonnées.',
-      required: false,
-      group: 'connect',
-      index: 5,
-      status: 'pending',
-      state: { status: 'pending' },
-    },
+    previewStep(
+      'connect-identity',
+      'Identité publique',
+      'Slug, description et photo de couverture.',
+      'connect',
+      1,
+      'pending',
+    ),
+    previewStep(
+      'connect-location',
+      'Localisation',
+      'Adresse, coordonnées et carte.',
+      'connect',
+      2,
+      'pending',
+    ),
+    previewStep(
+      'connect-cuisine',
+      'Cuisine & ambiance',
+      'Type de cuisine, tarifs et spécificités.',
+      'connect',
+      3,
+      'pending',
+    ),
+    previewStep(
+      'connect-activation',
+      'Activation & preview',
+      'Mise en ligne de la page et des métadonnées.',
+      'connect',
+      4,
+      'pending',
+    ),
   ],
   defaultHours: {
     tue: { open: '12:00', close: '22:00' },
@@ -198,10 +213,10 @@ const PREVIEW_STATE: OnboardingState = {
   },
   restaurant: {
     id: 'preview',
-    name: 'Chez Sokar',
-    managerPhone: '+33600000000',
-    managerEmail: 'restaurant@sokar.local',
-    phoneE164: '+33123456789',
+    name: '',
+    managerPhone: '',
+    managerEmail: '',
+    phoneE164: null,
     phoneNumber: '+33100000000',
     phoneAssigned: true,
     openingHours: {},
@@ -255,21 +270,12 @@ function updatePreviewStep(
     return step;
   });
 
-  const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
-  const connectKeys = [
-    'connect-identity',
-    'connect-location',
-    'connect-cuisine',
-    'connect-capacity',
-    'connect-activation',
-  ];
-
-  const voiceSteps = steps.filter((s) => voiceKeys.includes(s.key));
+  const voiceSteps = steps.filter((s) => s.group === 'voice');
   const voiceCompleted = voiceSteps.filter((s) => s.status === 'completed').length;
   const voiceOnboardingDone = voiceCompleted === voiceSteps.length;
   const voiceProgress = Math.round((voiceCompleted / voiceSteps.length) * 100);
 
-  const connectSteps = steps.filter((s) => connectKeys.includes(s.key));
+  const connectSteps = steps.filter((s) => s.group === 'connect');
   const connectCompleted = connectSteps.filter((s) => s.status === 'completed').length;
   const connectOnboardingDone = connectCompleted === connectSteps.length;
   const connectProgress = Math.round((connectCompleted / connectSteps.length) * 100);
@@ -281,10 +287,9 @@ function updatePreviewStep(
     steps.find((step) => step.status !== 'completed') ??
     steps[steps.length - 1];
 
-  const restaurantStep = steps.find((s) => s.key === 'restaurant');
-  const hoursStep = steps.find((s) => s.key === 'hours');
-  const minimumViableDone =
-    restaurantStep?.status === 'completed' && hoursStep?.status === 'completed';
+  const minimumViableDone = ['restaurant', 'hours', 'floor'].every(
+    (key) => steps.find((s) => s.key === key)?.status === 'completed',
+  );
 
   return {
     ...current,
@@ -311,9 +316,12 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
 function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [state, setState] = useState<OnboardingState | null>(PREVIEW_STATE);
+  const [state, setState] = useState<OnboardingState | null>(
+    getVisibleOnboardingState(PREVIEW_STATE),
+  );
+  const previewState = useRef(getVisibleOnboardingState(PREVIEW_STATE));
   const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
-  const [placeImportDraft, setPlaceImportDraft] = useState<PlaceImportDraft | null>(null);
+  const [placeImportDraft, setPlaceImportDraft] = usePlaceImportDraft('preview');
   const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
@@ -321,26 +329,33 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateTask = useCallback(async (action: OnboardingAction, task?: OnboardingTaskKey) => {
-    let nextState: OnboardingState | null = null;
-    setState((current) => {
-      nextState = updatePreviewStep(current ?? PREVIEW_STATE, action, task);
-      return nextState;
-    });
+    const nextState = updatePreviewStep(previewState.current, action, task);
+    previewState.current = nextState;
+    setState(nextState);
     return nextState;
   }, []);
 
   const openStep = useCallback(
     async (task: OnboardingTaskKey) => {
-      await updateTask('start', task);
-      router.push(`/onboarding/${task}`);
+      const target = resolveOnboardingTask(task) ?? task;
+      await updateTask('start', target);
+      router.push(`/onboarding/${target}`);
     },
     [router, updateTask],
   );
 
   const openStepModal = useCallback((task: OnboardingTaskKey) => {
-    setActiveStep(task);
+    setActiveStep(resolveOnboardingTask(task) ?? task);
   }, []);
 
+  const setRestaurantDraft = useCallback((fields: Partial<OnboardingRestaurant>) => {
+    const next = {
+      ...previewState.current,
+      restaurant: { ...previewState.current.restaurant, ...fields },
+    };
+    previewState.current = next;
+    setState(next);
+  }, []);
   const closeStepModal = useCallback(() => {
     setActiveStep(null);
   }, []);
@@ -358,6 +373,7 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
       closeStepModal,
       identityDraft,
       setIdentityDraft,
+      setRestaurantDraft,
       placeImportDraft,
       setPlaceImportDraft,
     }),
@@ -370,7 +386,9 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
       openStepModal,
       closeStepModal,
       identityDraft,
+      setRestaurantDraft,
       placeImportDraft,
+      setPlaceImportDraft,
     ],
   );
 
@@ -384,7 +402,7 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
-  const [placeImportDraft, setPlaceImportDraft] = useState<PlaceImportDraft | null>(null);
+  const [placeImportDraft, setPlaceImportDraft] = usePlaceImportDraft(orgId);
   const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
@@ -411,7 +429,7 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
         await syncPromise;
         data = await get<OnboardingState>('restaurant/onboarding');
       }
-      setState(data);
+      setState(getVisibleOnboardingState(data));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de charger la mise en service'));
     } finally {
@@ -438,8 +456,9 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
           task,
           ...options,
         });
-        setState(data);
-        return data;
+        const visible = getVisibleOnboardingState(data);
+        setState(visible);
+        return visible;
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de mettre à jour la mise en service'));
         return null;
@@ -450,16 +469,22 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
 
   const openStep = useCallback(
     async (task: OnboardingTaskKey) => {
-      await updateTask('start', task);
-      router.push(`/onboarding/${task}`);
+      const target = resolveOnboardingTask(task) ?? task;
+      await updateTask('start', target);
+      router.push(`/onboarding/${target}`);
     },
     [router, updateTask],
   );
 
   const openStepModal = useCallback((task: OnboardingTaskKey) => {
-    setActiveStep(task);
+    setActiveStep(resolveOnboardingTask(task) ?? task);
   }, []);
 
+  const setRestaurantDraft = useCallback((fields: Partial<OnboardingRestaurant>) => {
+    setState((current) =>
+      current ? { ...current, restaurant: { ...current.restaurant, ...fields } } : current,
+    );
+  }, []);
   const closeStepModal = useCallback(() => {
     setActiveStep(null);
   }, []);
@@ -477,6 +502,7 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
       closeStepModal,
       identityDraft,
       setIdentityDraft,
+      setRestaurantDraft,
       placeImportDraft,
       setPlaceImportDraft,
     }),
@@ -491,7 +517,9 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
       openStepModal,
       closeStepModal,
       identityDraft,
+      setRestaurantDraft,
       placeImportDraft,
+      setPlaceImportDraft,
     ],
   );
 

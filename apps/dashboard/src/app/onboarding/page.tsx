@@ -18,12 +18,16 @@ function OnboardingThemeToggle() {
   return (
     <Button
       variant="ghost"
-      size="icon"
       onClick={toggleTheme}
       aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
-      className="transition-all duration-200"
+      className="h-10 justify-start rounded-full px-3 text-muted-foreground transition-all duration-200 hover:text-foreground"
     >
-      {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+      {theme === 'dark' ? (
+        <Sun size={18} aria-hidden="true" />
+      ) : (
+        <Moon size={18} aria-hidden="true" />
+      )}
+      {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
     </Button>
   );
 }
@@ -43,11 +47,10 @@ function OnboardingPageContent() {
         controls={
           <div className="flex items-center gap-3">
             <SiteSwitcher />
-            <OnboardingThemeToggle />
             <AccountMenu />
           </div>
         }
-        onboarding={<OnboardingWizard />}
+        onboarding={<OnboardingWizard footerControls={<OnboardingThemeToggle />} />}
       >
         {null}
       </OnboardingAccessBoundary>

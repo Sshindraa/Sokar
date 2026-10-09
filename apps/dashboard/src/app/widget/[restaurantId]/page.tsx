@@ -8,7 +8,7 @@ import { getGiftCardOrigin } from '@/lib/gift-card-origin';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
 import { getParentOrigin } from './post-message-security';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -364,31 +364,14 @@ export default function ReservationWidget() {
     return result;
   }, []);
 
-  // Generate 30-min time slots based on opening hours
+  // Créneaux de 30 min de chaque service, jusqu'à sa dernière réservation
   const getSlotsForDate = useCallback(
     (date: Date) => {
       if (!restaurant?.openingHours) return [];
       const periods = normalizeOpeningHours(restaurant.openingHours).filter(
         (period) => period.dayIndex === date.getDay(),
       );
-      const slots = periods.flatMap((period) => {
-        const [startHour, startMin] = period.open.split(':').map(Number);
-        const [endHour, endMin] = period.close.split(':').map(Number);
-        const start = new Date(date);
-        start.setHours(startHour, startMin, 0, 0);
-        const end = new Date(date);
-        end.setHours(endHour, endMin, 0, 0);
-
-        const periodSlots: string[] = [];
-        const current = new Date(start);
-        while (current < end) {
-          periodSlots.push(
-            `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`,
-          );
-          current.setMinutes(current.getMinutes() + 30);
-        }
-        return periodSlots;
-      });
+      const slots = periods.flatMap((period) => bookingSlotsOf(period));
 
       return [...new Set(slots)].sort();
     },

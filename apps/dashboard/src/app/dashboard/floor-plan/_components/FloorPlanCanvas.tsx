@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
@@ -124,6 +132,8 @@ import {
 } from '@dnd-kit/core';
 import { useUndoHistory } from './useUndoHistory';
 import { useIsMobile, useMediaQuery } from '@/lib/useMediaQuery';
+
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 const DEFAULT_CANVAS_WIDTH = 1400;
 const DEFAULT_CANVAS_HEIGHT = 900;
@@ -2878,7 +2888,7 @@ export function FloorPlanCanvas({
   // 100 % ne montre qu'un quart de la salle. On cadre la zone occupée par les
   // tables (et on la centre) une fois, puis on respecte le zoom choisi par le
   // restaurateur.
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!touchCanvasLayout && !live) return;
     if (loading || error) return;
     if (serviceTab !== 'plan') return;
@@ -2905,9 +2915,8 @@ export function FloorPlanCanvas({
       viewport.scrollTop = fit.scroll.top;
       autoFittedPlanIdRef.current = planId;
     };
-    const frame = window.requestAnimationFrame(applyInitialFit);
+    applyInitialFit();
     return () => {
-      window.cancelAnimationFrame(frame);
       if (retryFrame !== null) window.cancelAnimationFrame(retryFrame);
     };
   }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);

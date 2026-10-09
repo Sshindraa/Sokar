@@ -21,7 +21,7 @@ beforeEach(() => {
 it('enregistre avant la démo, invalide après ajustement et complète seulement à la validation', async () => {
   const complete = vi.fn();
   render(<KnowledgeStep onComplete={complete} />);
-  const next = screen.getByRole('button', { name: /Ça me convient/ });
+  const next = screen.getByRole('button', { name: 'Continuer' });
   expect(next).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Calme' }));
   fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
@@ -39,7 +39,7 @@ it('enregistre avant la démo, invalide après ajustement et complète seulement
   fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
   await waitFor(() => expect(next).toBeEnabled());
   fireEvent.click(next);
-  await waitFor(() => expect(complete).toHaveBeenCalledWith('calendar'));
+  await waitFor(() => expect(complete).toHaveBeenCalledWith('phone'));
   expect(mocks.updateTask).toHaveBeenCalledWith('complete', 'knowledge');
 });
 it('affiche une erreur et ne génère pas la démo si la sauvegarde échoue', async () => {
@@ -48,5 +48,14 @@ it('affiche une erreur et ne génère pas la démo si la sauvegarde échoue', as
   fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
   await screen.findByText('Enregistrement indisponible');
   expect(mocks.fetch).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: /Ça me convient/ })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Continuer' })).toBeDisabled();
+});
+
+it('explique pourquoi « Continuer » est grisé, puis propose un ajustement après l’écoute', async () => {
+  render(<KnowledgeStep onComplete={vi.fn()} />);
+  expect(screen.getByText(/Écoutez la démonstration/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Écouter Sokar' }));
+  await screen.findByText('Un ajustement ?');
+  expect(screen.queryByText(/Écoutez la démonstration/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Parfait' })).not.toBeInTheDocument();
 });

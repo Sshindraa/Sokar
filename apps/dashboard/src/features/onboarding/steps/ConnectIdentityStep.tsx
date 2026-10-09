@@ -1,25 +1,22 @@
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { ImagePlus, MapPin, Pencil, Sparkles } from 'lucide-react';
+import { Check, Clock3, ImagePlus, MapPin, Monitor, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
 import { useOnboarding } from '../onboarding-provider';
-import { ConnectStepAction, resizeImage } from '../ui';
-import type { OnboardingRestaurant } from '../types';
+import {
+  ConnectStepAction,
+  CUISINES_PRESETS,
+  DIETARY_PRESETS,
+  FEATURES_PRESETS,
+  resizeImage,
+} from '../ui';
+import { groupWeek } from '../hours';
 import type { StepProps } from '../types';
 import { IMAGE_RESIZE_MAX_DIMENSION } from '@/constants/ui';
-
-function suggestDescription(restaurant: OnboardingRestaurant) {
-  const location = restaurant.city ? ` à ${restaurant.city}` : '';
-  const cuisine = restaurant.cuisineType?.length
-    ? ` Découvrez notre cuisine ${restaurant.cuisineType.join(', ').toLowerCase()}.`
-    : '';
-  const name = restaurant.name || 'Notre restaurant';
-  return `Découvrez ${name}${location}.${cuisine}`.slice(0, 200);
-}
 
 function suggestSlug(name: string) {
   return name
@@ -30,64 +27,147 @@ function suggestSlug(name: string) {
     .replace(/^-|-$/g, '');
 }
 
-export function ConnectIdentityStep({ onComplete }: StepProps) {
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAY_LABELS: Record<string, string> = {
+  mon: 'Lun',
+  tue: 'Mar',
+  wed: 'Mer',
+  thu: 'Jeu',
+  fri: 'Ven',
+  sat: 'Sam',
+  sun: 'Dim',
+};
+
+export function ConnectIdentityStep({ onComplete, onNavigate }: StepProps) {
   const { patch, post, get, orgId } = useApi();
-  const { state, updateTask, identityDraft, setIdentityDraft } = useOnboarding();
+  const {
+    state,
+    updateTask,
+    identityDraft,
+    setIdentityDraft,
+    placeImportDraft,
+    setRestaurantDraft,
+  } = useOnboarding();
   const restaurant = state!.restaurant;
+  const name = restaurant.name || placeImportDraft?.displayName || placeImportDraft?.name || '';
   const draft = identityDraft?.restaurantId === restaurant.id ? identityDraft : null;
-  const [slug, setSlug] = useState(draft?.slug ?? restaurant.slug ?? suggestSlug(restaurant.name));
+  const [slug, setSlug] = useState(draft?.slug ?? restaurant.slug ?? suggestSlug(name));
   const [description, setDescription] = useState(
-    draft?.description ??
-      (restaurant.description?.trim() ? restaurant.description : suggestDescription(restaurant)),
+    draft?.description === 'Découvrez Notre restaurant.' && !restaurant.description
+      ? ''
+      : (draft?.description ?? restaurant.description ?? ''),
   );
   const [coverImageUrl, setCoverImageUrl] = useState(
     draft?.coverImageUrl ?? restaurant.coverImageUrl ?? '',
   );
-  const [editingInfo, setEditingInfo] = useState(false);
-  const [retry, setRetry] = useState(0);
+  const [location, setLocation] = useState({
+    formattedAddress:
+      draft?.pageFields?.formattedAddress ??
+      placeImportDraft?.formattedAddress ??
+      restaurant.formattedAddress ??
+      '',
+    postalCode:
+      draft?.pageFields?.postalCode ?? placeImportDraft?.postalCode ?? restaurant.postalCode ?? '',
+    city: draft?.pageFields?.city ?? placeImportDraft?.city ?? restaurant.city ?? '',
+    country: draft?.pageFields?.country ?? placeImportDraft?.country ?? restaurant.country ?? 'FR',
+    lat:
+      draft?.pageFields?.lat ??
+      (placeImportDraft ? (placeImportDraft.lat ?? null) : (restaurant.lat ?? null)),
+    lng:
+      draft?.pageFields?.lng ??
+      (placeImportDraft ? (placeImportDraft.lng ?? null) : (restaurant.lng ?? null)),
+  });
+  const [cuisineType, setCuisineType] = useState(
+    draft?.pageFields?.cuisineType ?? restaurant.cuisineType ?? [],
+  );
+  const [priceRange, setPriceRange] = useState<number | null>(
+    draft?.pageFields?.priceRange ?? restaurant.priceRange ?? null,
+  );
+  const [dietary, setDietary] = useState(draft?.pageFields?.dietary ?? restaurant.dietary ?? []);
+  const [ambiance, setAmbiance] = useState(
+    draft?.pageFields?.ambiance ?? restaurant.ambiance ?? [],
+  );
+  const [customCuisine, setCustomCuisine] = useState('');
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [manualCoordinates, setManualCoordinates] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [imageError, setImageError] = useState('');
-  const [editingDescription, setEditingDescription] = useState(false);
-  const [editingPhoto, setEditingPhoto] = useState(false);
-  const effectiveDescription = description.trim() || suggestDescription(restaurant);
-  const [editingSlug, setEditingSlug] = useState(false);
-  const slugInput = useRef<HTMLInputElement>(null);
-  const [slugCheck, setSlugCheck] = useState<{
-    slug: string;
-    status: 'available' | 'taken' | 'error';
-  } | null>(null);
-  const originalFile = useRef<File | null>(null);
+  const [slugCheck, setSlugCheck] = useState<{ slug: string; available: boolean } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const slugInput = useRef<HTMLInputElement>(null);
+  const slugEdited = useRef(false);
+  const locationEdited = useRef(Boolean(draft?.pageFields));
   const validSlug = /^[a-z0-9-]+$/.test(slug);
-  const status = slugCheck?.slug === slug ? slugCheck.status : null;
+  const hours = groupWeek(restaurant.openingHours ?? {}, DAYS);
+
+  // Le brouillon Google est restauré après le premier rendu ; conserver les modifications manuelles.
+  useEffect(() => {
+    if (!placeImportDraft || locationEdited.current) return;
+    setLocation({
+      formattedAddress: placeImportDraft.formattedAddress,
+      postalCode: placeImportDraft.postalCode,
+      city: placeImportDraft.city,
+      country: placeImportDraft.country,
+      lat: placeImportDraft.lat ?? null,
+      lng: placeImportDraft.lng ?? null,
+    });
+  }, [placeImportDraft]);
 
   useEffect(() => {
-    setIdentityDraft({ restaurantId: restaurant.id, slug, description, coverImageUrl });
-  }, [restaurant.id, slug, description, coverImageUrl, setIdentityDraft]);
+    if (!slugEdited.current && !slug && name) setSlug(suggestSlug(name));
+  }, [name, slug]);
+  useEffect(() => {
+    setIdentityDraft({
+      restaurantId: restaurant.id,
+      slug,
+      description,
+      coverImageUrl,
+      pageFields: { ...location, cuisineType, priceRange, dietary, ambiance },
+    });
+  }, [
+    restaurant.id,
+    slug,
+    description,
+    coverImageUrl,
+    location,
+    cuisineType,
+    priceRange,
+    dietary,
+    ambiance,
+    setIdentityDraft,
+  ]);
 
   useEffect(() => {
-    if (!slug || !validSlug) return;
+    if (!validSlug) return;
     let cancelled = false;
     const timeout = setTimeout(async () => {
       try {
-        const res = await get<{ available: boolean }>(
+        const result = await get<{ available: boolean }>(
           `restaurants/check-slug?slug=${encodeURIComponent(slug)}`,
         );
-        if (!cancelled) setSlugCheck({ slug, status: res.available ? 'available' : 'taken' });
+        if (!cancelled) setSlugCheck({ slug, available: result.available });
       } catch {
-        if (!cancelled) setSlugCheck({ slug, status: 'error' });
+        /* La vérification sera retentée lors de l’enregistrement. */
       }
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [slug, validSlug, get, retry]);
+  }, [slug, validSlug, get]);
 
-  async function upload(file?: File, cropRatio?: number) {
-    if (!file) return;
+  function changeLocation(
+    key: 'formattedAddress' | 'postalCode' | 'city' | 'country',
+    value: string,
+  ) {
+    locationEdited.current = true;
+    setLocation((current) => ({ ...current, [key]: value, lat: null, lng: null }));
+  }
+
+  async function upload(file?: File) {
+    if (!file || uploading) return;
     setImageError('');
     if (
       !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
@@ -96,397 +176,586 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
       setImageError('Choisissez une image JPG, PNG ou WebP de moins de 10 Mo.');
       return;
     }
-    originalFile.current = file;
     setUploading(true);
     try {
       setCoverImageUrl(
-        await resizeImage(file, IMAGE_RESIZE_MAX_DIMENSION, IMAGE_RESIZE_MAX_DIMENSION, cropRatio),
+        await resizeImage(file, IMAGE_RESIZE_MAX_DIMENSION, IMAGE_RESIZE_MAX_DIMENSION),
       );
     } catch {
-      setImageError('Cette image ne peut pas être ouverte. Essayez une autre photo.');
+      setImageError('Cette photo ne peut pas être ouverte. Essayez une autre image.');
     } finally {
       setUploading(false);
     }
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
     if (saving || uploading) return;
-    setSaving(true);
     setError('');
+    if (!validSlug) {
+      setError('Vérifiez le lien de votre page.');
+      slugInput.current?.focus();
+      return;
+    }
+    if (
+      ![location.formattedAddress, location.postalCode, location.city, location.country].every(
+        (value) => value.trim(),
+      )
+    ) {
+      setEditingLocation(true);
+      setError('Complétez l’adresse de votre restaurant.');
+      return;
+    }
+    setSaving(true);
     try {
-      if (!validSlug) {
-        setEditingInfo(true);
-        setEditingSlug(true);
-        setError('Vérifiez l’adresse de votre page.');
-        return;
-      }
       const availability =
-        status === 'available'
-          ? { available: true }
+        slugCheck?.slug === slug
+          ? slugCheck
           : await get<{ available: boolean }>(
               `restaurants/check-slug?slug=${encodeURIComponent(slug)}`,
             );
       if (!availability.available) {
-        setEditingInfo(true);
-        setEditingSlug(true);
-        setError('Cette adresse est déjà utilisée. Choisissez une autre adresse.');
+        setError('Cette adresse de page est déjà utilisée. Choisissez un autre lien.');
+        slugInput.current?.focus();
         return;
       }
-      if (coverImageUrl && coverImageUrl !== restaurant.coverImageUrl) {
-        await post(`restaurants/${orgId}/images`, { url: coverImageUrl, isCover: true });
+      let coordinates = { lat: location.lat, lng: location.lng };
+      if (coordinates.lat === null || coordinates.lng === null) {
+        const query = `${location.formattedAddress}, ${location.postalCode} ${location.city}, ${location.country}`;
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+          );
+          if (!response.ok) throw new Error('geocoding');
+          const results: Array<{ lat: string; lon: string }> = await response.json();
+          coordinates = {
+            lat: results[0] ? Number(results[0].lat) : null,
+            lng: results[0] ? Number(results[0].lon) : null,
+          };
+        } catch {
+          setEditingLocation(true);
+          setManualCoordinates(true);
+          setError('La position ne peut pas être vérifiée. Réessayez ou précisez les coordonnées.');
+          return;
+        }
       }
-      await patch(`restaurants/${orgId}/connect`, {
+      if (
+        coordinates.lat === null ||
+        coordinates.lng === null ||
+        !Number.isFinite(coordinates.lat) ||
+        !Number.isFinite(coordinates.lng) ||
+        Math.abs(coordinates.lat) > 90 ||
+        Math.abs(coordinates.lng) > 180
+      ) {
+        setEditingLocation(true);
+        setManualCoordinates(true);
+        setError('Adresse introuvable. Vérifiez-la ou précisez sa position.');
+        return;
+      }
+      setLocation((current) => ({ ...current, ...coordinates }));
+      if (coverImageUrl && coverImageUrl !== restaurant.coverImageUrl)
+        await post(`restaurants/${orgId}/images`, { url: coverImageUrl, isCover: true });
+      const pageFields = {
         slug,
-        description: effectiveDescription,
+        description: description.trim(),
         coverImageUrl,
-      });
+        ...location,
+        ...coordinates,
+        cuisineType,
+        priceRange,
+        dietary,
+        ambiance,
+      };
+      await patch(`restaurants/${orgId}/connect`, pageFields);
+      setRestaurantDraft?.({ ...pageFields, name });
       const updated = await updateTask('complete', 'connect-identity');
       if (!updated) throw new Error('completion failed');
       setIdentityDraft(null);
-      onComplete('connect-location');
+      onComplete('connect-activation');
     } catch {
-      setEditingInfo(true);
-      setError('La sauvegarde a échoué. Votre saisie est conservée, veuillez réessayer.');
+      setError('L’enregistrement a échoué. Votre saisie est conservée, réessayez.');
     } finally {
       setSaving(false);
     }
   }
 
+  function tags(
+    label: string,
+    values: string[],
+    selected: string[],
+    setSelected: (values: string[]) => void,
+  ) {
+    return (
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm font-medium">{label}</legend>
+        <div className="flex flex-wrap gap-2">
+          {values.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={selected.includes(value)}
+              onClick={() =>
+                setSelected(
+                  selected.includes(value)
+                    ? selected.filter((item) => item !== value)
+                    : [...selected, value],
+                )
+              }
+              className={cn(
+                'rounded-full px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                selected.includes(value)
+                  ? 'bg-foreground text-background'
+                  : 'bg-muted text-foreground hover:bg-muted/70',
+              )}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
+
   return (
     <form
       id="connect-identity-form"
-      data-review={!editingInfo}
       onSubmit={handleSubmit}
-      className={cn(
-        'grid items-start gap-6',
-        editingInfo ? 'md:grid-cols-[1.1fr_1fr]' : 'mx-auto w-full max-w-lg',
-      )}
+      noValidate
+      className="grid items-start gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] xl:gap-12"
     >
-      <div className={cn('min-w-0 space-y-4', !editingInfo && 'hidden')}>
-        <div className="divide-y divide-border">
-          <div className="space-y-3 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium">Adresse</p>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                aria-label={editingSlug ? 'Terminer l’édition de l’adresse' : 'Modifier l’adresse'}
-                aria-expanded={editingSlug}
-                onClick={() => setEditingSlug((value) => !value)}
-                className="h-auto p-0 text-xs transition-all duration-200"
-              >
-                {editingSlug ? 'Terminer' : 'Modifier'}
-              </Button>
-            </div>
-            {editingSlug ? (
-              <Input
-                ref={slugInput}
-                id="connect-slug"
-                aria-label="Adresse de votre page"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase().trim())}
-                className="transition-all duration-200"
-              />
-            ) : (
-              <p className="break-all text-sm text-muted-foreground">
-                sokar.tech/restaurant/{slug}
-              </p>
-            )}
-            {(status === 'taken' || status === 'error' || !validSlug) && (
-              <div className="space-y-2">
-                <p role="status" className="text-xs text-destructive">
-                  {!validSlug
-                    ? 'Utilisez des lettres minuscules, chiffres et tirets.'
-                    : status === 'taken'
-                      ? 'Cette adresse est déjà utilisée.'
-                      : 'La vérification de l’adresse est indisponible.'}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    status === 'taken'
-                      ? setSlug(`${slug}-${suggestSlug(restaurant.city || 'restaurant')}`)
-                      : (setSlugCheck(null), setRetry((value) => value + 1))
-                  }
-                  className="transition-all duration-200"
-                >
-                  {status === 'taken' ? 'Essayer une autre adresse' : 'Réessayer la vérification'}
-                </Button>
-              </div>
-            )}
-          </div>
-          <div className="space-y-3 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium">Présentation</p>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                aria-label={
-                  editingDescription
-                    ? 'Terminer l’édition de la présentation'
-                    : 'Modifier la présentation'
-                }
-                aria-expanded={editingDescription}
-                onClick={() => {
-                  if (editingDescription && !description.trim())
-                    setDescription(suggestDescription(restaurant));
-                  setEditingDescription((value) => !value);
-                }}
-                className="h-auto p-0 text-xs transition-all duration-200"
-              >
-                {editingDescription ? 'Terminer' : 'Modifier'}
-              </Button>
-            </div>
-            {editingDescription ? (
-              <div className="space-y-2">
-                <textarea
-                  aria-label="Comment souhaitez-vous être présenté ?"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  maxLength={200}
-                  className="h-24 w-full rounded-lg border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <p className="text-right text-xs text-muted-foreground">{description.length}/200</p>
-              </div>
-            ) : (
-              <p className="text-sm leading-6 text-muted-foreground">{effectiveDescription}</p>
-            )}
-            {effectiveDescription === suggestDescription(restaurant) && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Sparkles size={14} aria-hidden="true" />
-                Proposition Sokar
-              </p>
-            )}
-          </div>
-          <div className="space-y-3 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-14 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                  {coverImageUrl ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={coverImageUrl}
-                        alt="Votre couverture"
-                        className="h-full w-full object-cover"
-                      />
-                    </>
-                  ) : (
-                    <span className="text-sm font-semibold">
-                      {restaurant.name
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .map((word) => word[0])
-                        .join('')
-                        .toUpperCase() || 'S'}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Couverture</p>
-                  <p className="text-xs text-muted-foreground">
-                    {coverImageUrl ? 'Votre couverture est prête' : 'Visuel par défaut Sokar'}
-                  </p>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                aria-expanded={editingPhoto}
-                onClick={() => setEditingPhoto((value) => !value)}
-                className="h-auto p-0 text-xs transition-all duration-200"
-              >
-                {editingPhoto ? 'Terminer' : coverImageUrl ? 'Changer' : 'Ajouter une photo'}
-              </Button>
-            </div>
-          </div>
-        </div>
-        {editingPhoto && (
-          <div className="space-y-3 md:space-y-[clamp(4px,calc((100dvh_-_600px)/30_+_4px),8px)]">
-            <p className="text-sm font-medium">
-              Photo de couverture{' '}
-              <span className="font-normal text-muted-foreground">· Facultative</span>
-            </p>
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => {
-                void upload(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-              className="sr-only"
-              tabIndex={-1}
-              aria-label="Choisir une photo de couverture"
-            />
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (!uploading) void upload(e.dataTransfer.files[0]);
-              }}
-              className="flex min-h-[150px] md:min-h-[80px] flex-col items-center justify-center gap-3 md:gap-2 rounded-xl border border-dashed border-border bg-muted/30 p-4 md:p-3 text-center transition-all duration-200 hover:border-primary/50"
-            >
-              <ImagePlus size={24} className="text-muted-foreground md:hidden" />
-              <p className="text-sm text-muted-foreground">
-                {uploading
-                  ? 'Préparation de votre photo…'
-                  : coverImageUrl
-                    ? 'Votre photo est visible dans l’aperçu.'
-                    : 'Glissez-déposez une photo de votre restaurant.'}
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={uploading}
-                  onClick={() => fileInput.current?.click()}
-                  className="transition-all duration-200"
-                >
-                  {coverImageUrl ? 'Remplacer la photo' : 'Choisir une photo'}
-                </Button>
-                {coverImageUrl && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setCoverImageUrl('');
-                    }}
-                    className="transition-all duration-200"
-                  >
-                    Supprimer
-                  </Button>
-                )}
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              JPG, PNG ou WebP · 10 Mo maximum · Format paysage conseillé.
-            </p>
-            {coverImageUrl && originalFile.current && (
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                disabled={uploading}
-                onClick={() => void upload(originalFile.current!, 16 / 10)}
-                className="h-auto p-0 text-xs transition-all duration-200"
-              >
-                Recadrer au format paysage
-              </Button>
-            )}
-            {imageError && (
-              <p role="alert" className="text-sm text-destructive">
-                {imageError}
-              </p>
-            )}
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-
-      <aside
-        id="connect-identity-preview"
-        className="min-w-0 space-y-3"
-        aria-label="Aperçu de votre fiche publique"
-      >
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Aperçu client
-          </p>
-        </div>
-        <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-          <div className="flex aspect-[16/10] md:aspect-auto md:h-[clamp(80px,16dvh,140px)] items-center justify-center bg-muted">
+      <section aria-label="Personnaliser votre page" className="min-w-0 space-y-6">
+        <div className="flex items-center gap-4 rounded-3xl bg-card p-4 sm:p-5">
+          <button
+            type="button"
+            disabled={uploading}
+            aria-label="Choisir une photo de couverture"
+            onClick={() => fileInput.current?.click()}
+            className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-brand/10 text-brand transition-all duration-200 hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             {coverImageUrl ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={coverImageUrl}
-                  alt={`Couverture de ${restaurant.name}`}
-                  className="h-full w-full object-cover"
-                  onError={() =>
-                    setImageError(
-                      'La photo ne peut pas être affichée. Remplacez-la par une autre image.',
-                    )
-                  }
+                  alt="Votre couverture"
+                  className="size-full object-cover"
                 />
               </>
             ) : (
-              <div
-                className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 via-muted to-primary/5"
-                aria-label="Couverture par défaut"
-              >
-                <div className="space-y-1 px-6 text-center">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    Bienvenue chez
-                  </p>
-                  <p className="text-xl font-semibold tracking-tight text-foreground">
-                    {restaurant.name || 'Votre restaurant'}
-                  </p>
-                  {restaurant.cuisineType?.length ? (
-                    <p className="text-xs text-muted-foreground">
-                      {restaurant.cuisineType.join(' · ')}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+              <ImagePlus size={26} aria-hidden="true" />
             )}
-          </div>
-          <div className="space-y-4 p-6 md:space-y-[clamp(8px,calc((100dvh_-_600px)/15_+_8px),16px)] md:p-5">
-            <div className="space-y-2 md:space-y-[clamp(4px,calc((100dvh_-_600px)/30_+_4px),8px)]">
-              <h2 className="break-words text-xl font-semibold tracking-tight">
-                {restaurant.name || 'Votre restaurant'}
-              </h2>
-              {restaurant.city && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <MapPin size={14} />
-                  {restaurant.city}
-                </p>
+          </button>
+          <div className="min-w-0 space-y-1">
+            <p className="text-base font-semibold">Votre photo de couverture</p>
+            <p className="text-xs text-muted-foreground">
+              Facultative · JPG, PNG, WebP · 10 Mo max.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                variant="link"
+                disabled={uploading}
+                onClick={() => fileInput.current?.click()}
+                className="h-auto p-0 text-sm transition-all duration-200"
+              >
+                {uploading
+                  ? 'Préparation…'
+                  : coverImageUrl
+                    ? 'Changer la photo'
+                    : 'Ajouter une photo'}
+              </Button>
+              {coverImageUrl && (
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setCoverImageUrl('')}
+                  className="h-auto p-0 text-sm text-muted-foreground transition-all duration-200"
+                >
+                  Retirer
+                </Button>
               )}
             </div>
-            <p className="min-h-[60px] md:min-h-0 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
-              {effectiveDescription}
+          </div>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(event) => {
+              void upload(event.target.files?.[0]);
+              event.target.value = '';
+            }}
+          />
+        </div>
+        {imageError && (
+          <p role="alert" className="text-sm text-destructive">
+            {imageError}
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <label htmlFor="connect-description" className="flex justify-between text-sm font-medium">
+            Présentation <span className="font-normal text-muted-foreground">Facultative</span>
+          </label>
+          <textarea
+            id="connect-description"
+            value={description}
+            maxLength={200}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Une cuisine, une atmosphère, une histoire…"
+            className="min-h-24 w-full resize-y rounded-2xl border-0 bg-card p-4 text-base leading-6 transition-all duration-200 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <MapPin
+                size={18}
+                className="mt-0.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <div>
+                <p className="text-sm font-medium">Adresse du restaurant</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {location.formattedAddress
+                    ? `${location.formattedAddress}, ${location.postalCode} ${location.city}`
+                    : 'À compléter'}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto shrink-0 p-0 text-sm transition-all duration-200"
+              aria-expanded={editingLocation}
+              onClick={() => setEditingLocation(!editingLocation)}
+            >
+              {editingLocation ? 'Fermer' : location.formattedAddress ? 'Modifier' : 'Compléter'}
+            </Button>
+          </div>
+          {editingLocation && (
+            <div className="space-y-3 rounded-2xl bg-card p-4">
+              <label className="block space-y-1 text-sm">
+                Rue et numéro
+                <Input
+                  value={location.formattedAddress}
+                  onChange={(event) => changeLocation('formattedAddress', event.target.value)}
+                  autoComplete="street-address"
+                  className="transition-all duration-200"
+                />
+              </label>
+              <div className="grid grid-cols-[0.4fr_0.6fr] gap-3">
+                <label className="block space-y-1 text-sm">
+                  Code postal
+                  <Input
+                    value={location.postalCode}
+                    onChange={(event) => changeLocation('postalCode', event.target.value)}
+                    autoComplete="postal-code"
+                    className="transition-all duration-200"
+                  />
+                </label>
+                <label className="block space-y-1 text-sm">
+                  Ville
+                  <Input
+                    value={location.city}
+                    onChange={(event) => changeLocation('city', event.target.value)}
+                    autoComplete="address-level2"
+                    className="transition-all duration-200"
+                  />
+                </label>
+              </div>
+              <label className="block space-y-1 text-sm">
+                Pays
+                <Input
+                  value={location.country}
+                  onChange={(event) => changeLocation('country', event.target.value.toUpperCase())}
+                  autoComplete="country"
+                  maxLength={2}
+                  className="transition-all duration-200"
+                />
+              </label>
+              {manualCoordinates && (
+                <div className="grid grid-cols-2 gap-3">
+                  {(['lat', 'lng'] as const).map((key) => (
+                    <label key={key} className="block space-y-1 text-sm">
+                      {key === 'lat' ? 'Latitude' : 'Longitude'}
+                      <Input
+                        type="number"
+                        step="any"
+                        value={location[key] ?? ''}
+                        onChange={(event) =>
+                          setLocation((current) => ({
+                            ...current,
+                            [key]: event.target.value === '' ? null : Number(event.target.value),
+                          }))
+                        }
+                        className="transition-all duration-200"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="connect-slug" className="text-sm font-medium">
+            Votre lien de réservation
+          </label>
+          <div className="flex items-center gap-1 rounded-2xl bg-card px-4 focus-within:ring-2 focus-within:ring-ring">
+            <span className="shrink-0 text-xs text-muted-foreground">sokar.tech/restaurant/</span>
+            <Input
+              id="connect-slug"
+              ref={slugInput}
+              value={slug}
+              onChange={(event) => {
+                slugEdited.current = true;
+                setSlug(event.target.value.toLowerCase().trim());
+              }}
+              className="min-w-0 border-0 bg-transparent px-0 shadow-none transition-all duration-200 focus-visible:ring-0"
+            />
+          </div>
+          {slugCheck?.slug === slug && !slugCheck.available && (
+            <p role="status" className="text-xs text-destructive">
+              Ce lien est déjà utilisé.
             </p>
-            <div className="rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-primary-foreground">
-              Réserver une table
+          )}
+        </div>
+
+        <details className="group rounded-2xl bg-card p-4 sm:p-5">
+          <summary className="cursor-pointer text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Cuisine et ambiance{' '}
+            <span className="ml-2 font-normal text-muted-foreground">Facultatif</span>
+          </summary>
+          <div className="mt-5 space-y-5">
+            {tags(
+              'Cuisine',
+              [...new Set([...CUISINES_PRESETS, ...cuisineType])],
+              cuisineType,
+              setCuisineType,
+            )}
+            <div className="flex gap-2">
+              <Input
+                aria-label="Autre cuisine"
+                placeholder="Autre cuisine"
+                value={customCuisine}
+                onChange={(event) => setCustomCuisine(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (customCuisine.trim()) {
+                      setCuisineType([...new Set([...cuisineType, customCuisine.trim()])]);
+                      setCustomCuisine('');
+                    }
+                  }
+                }}
+                className="transition-all duration-200"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!customCuisine.trim()}
+                onClick={() => {
+                  setCuisineType([...new Set([...cuisineType, customCuisine.trim()])]);
+                  setCustomCuisine('');
+                }}
+                className="transition-all duration-200"
+              >
+                Ajouter
+              </Button>
+            </div>
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium">Gamme de prix</legend>
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4].map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-label={`Gamme de prix ${value}`}
+                    aria-pressed={priceRange === value}
+                    onClick={() => setPriceRange(priceRange === value ? null : value)}
+                    className={cn(
+                      'rounded-full px-4 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      priceRange === value
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-foreground',
+                    )}
+                  >
+                    {'€'.repeat(value)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            {tags(
+              'Régimes alimentaires',
+              [...new Set([...DIETARY_PRESETS, ...dietary])],
+              dietary,
+              setDietary,
+            )}
+            {tags(
+              'Ambiance et atouts',
+              [...new Set([...FEATURES_PRESETS, ...ambiance])],
+              ambiance,
+              setAmbiance,
+            )}
+          </div>
+        </details>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </section>
+
+      <aside
+        aria-label="Aperçu de votre page de réservation"
+        className="min-w-0 lg:sticky lg:top-0"
+      >
+        <div className="mx-auto w-full max-w-xl space-y-3">
+          <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <Monitor size={15} aria-hidden="true" /> Aperçu client
+            </span>
+            <span>
+              {restaurant.exposureSettings?.connectPublished ? 'Page publiée' : 'Non publiée'}
+            </span>
+          </div>
+          <div className="overflow-hidden rounded-[2rem] bg-card shadow-lg shadow-foreground/5">
+            <div className="relative flex aspect-[2.6/1] items-center justify-center overflow-hidden bg-brand/10">
+              {coverImageUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={coverImageUrl}
+                    alt={`Couverture de ${name}`}
+                    className="absolute inset-0 size-full object-cover"
+                    onError={() =>
+                      setImageError(
+                        'La photo ne peut pas être affichée. Choisissez une autre image.',
+                      )
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <div
+                    aria-hidden="true"
+                    className="absolute -right-8 -top-20 size-64 rounded-full bg-brand/10"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute -bottom-24 -left-8 size-56 rounded-full bg-background/50"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="relative font-medium text-5xl tracking-tight text-brand/40"
+                  >
+                    {name
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((word) => word[0])
+                      .join('') || 'S'}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="space-y-5 p-6 sm:p-7">
+              <div className="space-y-2">
+                <h2 className="break-words text-2xl font-semibold tracking-tight">
+                  {name || 'Nom du restaurant à compléter'}
+                </h2>
+                {(cuisineType.length > 0 || priceRange) && (
+                  <p className="text-sm text-muted-foreground">
+                    {[cuisineType.join(' · '), priceRange ? '€'.repeat(priceRange) : '']
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                )}
+              </div>
+              {description.trim() && (
+                <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">
+                  {description}
+                </p>
+              )}
+              {location.formattedAddress && (
+                <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <MapPin size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    {location.formattedAddress}
+                    <br />
+                    {location.postalCode} {location.city}
+                  </span>
+                </p>
+              )}
+              {hours.length > 0 && (
+                <details className="text-sm">
+                  <summary className="flex cursor-pointer items-center gap-2 text-muted-foreground transition-all duration-200">
+                    <Clock3 size={16} aria-hidden="true" /> Horaires
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {hours.map((group) => (
+                      <div
+                        key={group.days.join('-')}
+                        className="flex flex-wrap justify-between gap-2"
+                      >
+                        <span>
+                          {group.days.length > 1
+                            ? `${DAY_LABELS[group.days[0]]} – ${DAY_LABELS[group.days.at(-1)!]}`
+                            : DAY_LABELS[group.days[0]]}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {group.slots.map((slot) => `${slot.open}–${slot.close}`).join(' / ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {restaurant.phoneE164 && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Phone size={16} aria-hidden="true" />
+                  {restaurant.phoneE164}
+                </p>
+              )}
+              {(ambiance.length > 0 || dietary.length > 0) && (
+                <div className="flex flex-wrap gap-2">
+                  {[...new Set([...ambiance, ...dietary])].map((value) => (
+                    <span key={value} className="rounded-full bg-muted px-3 py-1 text-xs">
+                      {value}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="rounded-full bg-foreground px-5 py-3 text-center text-sm font-medium text-background">
+                Réserver une table
+              </div>
             </div>
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Check size={14} aria-hidden="true" /> Horaires et règles partagés avec vos
+              réservations
+            </span>
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('restaurant')}
+                className="underline underline-offset-4 transition-all duration-200"
+              >
+                Revoir mon restaurant
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-          <p className="text-xs text-muted-foreground">Adresse · Présentation · Couverture</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-expanded={editingInfo}
-            aria-label={editingInfo ? 'Terminer les modifications' : 'Modifier les informations'}
-            onClick={() => setEditingInfo((value) => !value)}
-            className="h-9 shrink-0 gap-2 rounded-full border-primary/20 bg-primary/5 px-4 text-sm font-medium text-foreground shadow-sm transition-all duration-200 hover:border-primary/30 hover:bg-primary/10 hover:shadow-md"
-          >
-            <Pencil size={14} aria-hidden="true" />
-            {editingInfo ? 'Terminer les modifications' : 'Modifier les informations'}
-          </Button>
-        </div>
-        <p className="text-center text-xs text-muted-foreground">
-          Publication à l’étape d’activation.
-        </p>
       </aside>
       <ConnectStepAction
         formId="connect-identity-form"
         saving={saving || uploading}
-        label="Continuer vers l’adresse"
+        label="Vérifier avant publication"
       />
     </form>
   );
