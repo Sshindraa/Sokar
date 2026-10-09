@@ -2,6 +2,7 @@ import type { DayHours, Slot } from './hours';
 
 export type StepProps = {
   onComplete: (nextStep: OnboardingTaskKey | null) => void;
+  onNavigate?: (step: OnboardingTaskKey) => void;
 };
 
 export type OnboardingStatus = 'completed' | 'current' | 'blocked' | 'skipped' | 'pending';
@@ -9,13 +10,13 @@ export type OnboardingStatus = 'completed' | 'current' | 'blocked' | 'skipped' |
 export type OnboardingTaskKey =
   | 'restaurant'
   | 'hours'
+  | 'floor'
   | 'knowledge'
-  | 'calendar'
   | 'phone'
+  | 'channels'
   | 'connect-identity'
   | 'connect-location'
   | 'connect-cuisine'
-  | 'connect-capacity'
   | 'connect-activation';
 
 export type OnboardingTaskState = {
@@ -61,6 +62,7 @@ export type OnboardingRestaurant = {
     pronunciationDictId?: string | null;
     emotion?: string | null;
   } | null;
+  practicalInfo?: PracticalInfo;
   // Sokar Connect fields
   slug?: string;
   description?: string | null;
@@ -92,7 +94,29 @@ export type OnboardingRestaurant = {
 export type OpeningHourPeriod = Slot;
 export type OpeningHoursDay = Exclude<DayHours, null>;
 
+/** Faits pratiques du restaurant ; une clé absente signifie « non précisé », jamais « non ». */
+export type PracticalInfo = {
+  terrace?: boolean;
+  privatization?: boolean;
+  parking?: 'onsite' | 'nearby' | 'none';
+  accessible?: boolean;
+  pets?: 'yes' | 'terrace' | 'no';
+  kidsMenu?: boolean;
+  menuUrl?: string;
+  notes?: string;
+};
+
+export type ReservationReadiness = {
+  ready: boolean;
+  checks: Array<{ key: 'hours' | 'tables' | 'rules'; label: string; ok: boolean }>;
+  tableCount: number;
+  seatCount: number;
+  largestTableCapacity: number;
+};
+
 export type OnboardingState = {
+  /** Ce qu'il manque pour que les clients puissent réserver, quel que soit le canal. */
+  readiness?: ReservationReadiness;
   onboardingDone: boolean; // Voice onboarding done
   voiceOnboardingDone: boolean;
   connectOnboardingDone: boolean;
@@ -121,15 +145,50 @@ export type OnboardingAction =
   | 'activate'
   | 'first_call';
 
+// `floor` couvre les tables et les règles de réservation, communes à tous les canaux.
 export const ONBOARDING_TASK_KEYS: OnboardingTaskKey[] = [
   'restaurant',
   'hours',
+  'floor',
   'knowledge',
-  'calendar',
   'phone',
   'connect-identity',
-  'connect-location',
-  'connect-cuisine',
-  'connect-capacity',
   'connect-activation',
 ];
+
+/** Les anciennes tâches restent acceptées par l’API et rejoignent l’éditeur Connect. */
+export function resolveOnboardingTask(key: string | null): OnboardingTaskKey | undefined {
+  if (key === 'channels' || key === 'connect-location' || key === 'connect-cuisine')
+    return 'connect-identity';
+  return ONBOARDING_TASK_KEYS.find((task) => task === key);
+}
+
+/** Projection du parcours actuel, sans retirer les clés historiques du contrat API. */
+export function getVisibleOnboardingState(state: OnboardingState): OnboardingState {
+  const steps = state.steps.filter((step) => ONBOARDING_TASK_KEYS.includes(step.key));
+  const voice = steps.filter((step) => step.group === 'voice');
+  const connect = steps.filter((step) => step.group === 'connect');
+  const completed = steps.filter((step) => step.status === 'completed').length;
+  const voiceCompleted = voice.filter((step) => step.status === 'completed').length;
+  const connectCompleted = connect.filter((step) => step.status === 'completed').length;
+  const voiceDone = voice.length > 0 && voiceCompleted === voice.length;
+  const currentStep = !ONBOARDING_TASK_KEYS.includes(state.currentStep.key)
+    ? (steps.find((step) => step.status === 'current') ??
+      steps.find((step) => step.status !== 'completed') ??
+      steps[steps.length - 1] ??
+      state.currentStep)
+    : state.currentStep;
+  return {
+    ...state,
+    steps,
+    currentStep,
+    completedCount: completed,
+    totalCount: steps.length,
+    progress: steps.length ? Math.round((completed / steps.length) * 100) : 0,
+    onboardingDone: voiceDone,
+    voiceOnboardingDone: voiceDone,
+    voiceProgress: voice.length ? Math.round((voiceCompleted / voice.length) * 100) : 0,
+    connectOnboardingDone: connect.length > 0 && connectCompleted === connect.length,
+    connectProgress: connect.length ? Math.round((connectCompleted / connect.length) * 100) : 0,
+  };
+}

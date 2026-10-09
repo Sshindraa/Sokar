@@ -50,8 +50,9 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
     const body = res.json();
     expect(body.audio).toBeNull();
     expect(body.fallback).toBe(true);
+    expect(body.transcript).toMatch(/^Bonjour, ici Le Bistrot\./);
     expect(body.transcript).toContain('Le Bistrot');
-    expect(body.transcript).toMatch(/table pour quatre/i);
+    expect(body.transcript).toMatch(/disponibilités pour deux personnes ce soir/i);
     expect(body.scriptId).toBe('reservation');
     expect(synthesizeText).not.toHaveBeenCalled();
   });
@@ -77,7 +78,7 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
     expect(res.body).toBe(fakeMp3.toString('binary'));
     expect(synthesizeText).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining('Le Bistrot'),
+        text: 'Bonjour, ici Le Bistrot. Bien sûr. À quel nom est la réservation ?',
         speed: 1.0,
       }),
     );

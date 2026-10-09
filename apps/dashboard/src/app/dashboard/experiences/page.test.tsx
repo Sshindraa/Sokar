@@ -1,6 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExperiencesPage from './page';
+
+// La page charge ses données en plusieurs requêtes : sous charge (pré-push, CI), 1 s par défaut ne suffit pas.
+configure({ asyncUtilTimeout: 5000 });
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -120,7 +123,7 @@ describe('ExperiencesPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Créer une expérience' }));
     expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Atelier vins' } });
+    fireEvent.change(await screen.findByLabelText('Nom'), { target: { value: 'Atelier vins' } });
     fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
       target: { value: '45.50' },
     });
@@ -149,7 +152,7 @@ describe('ExperiencesPage', () => {
     render(<ExperiencesPage />);
     await screen.findByRole('heading', { name: 'Expériences & événements' });
     fireEvent.click(await screen.findByRole('button', { name: 'Ajouter une date' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter la date' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
 
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -178,7 +181,7 @@ describe('ExperiencesPage', () => {
   it('modifie une offre sans changer sa clé ni son statut', async () => {
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
-    expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins');
+    await waitFor(() => expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins'));
     expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
     fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
       target: { value: '49,50' },
@@ -228,7 +231,7 @@ describe('ExperiencesPage', () => {
     fireEvent.click(addSessionButton);
     fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
     expect(await screen.findByText('Prête à être activée')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Activer l’expérience' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Activer l’expérience' })).toBeEnabled();
   });
 
   it('confirme une suppression de brouillon avant d’appeler l’API', async () => {
@@ -257,8 +260,8 @@ describe('ExperiencesPage', () => {
     expect(
       screen.queryByRole('button', { name: 'Supprimer l’expérience' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Archiver' }));
-    fireEvent.click(screen.getByRole('button', { name: /^Archiver$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Archiver' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Archiver$/ }));
     await waitFor(() =>
       expect(apiMocks.patch).toHaveBeenCalledWith('experiences/experience-1', {
         status: 'ARCHIVED',
@@ -269,11 +272,13 @@ describe('ExperiencesPage', () => {
   it('prépare une copie sans dates et sans créer de données avant validation', async () => {
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByLabelText('Autres actions'));
-    fireEvent.click(screen.getByRole('button', { name: 'Dupliquer' }));
-    expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins (copie)');
+    fireEvent.click(await screen.findByRole('button', { name: 'Dupliquer' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins (copie)'),
+    );
     expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
     expect(apiMocks.post).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Créer l’expérience' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Créer l’expérience' })).toBeEnabled();
   });
 
   it('présente un accueil vide sans formulaire ni compteurs', async () => {
@@ -284,7 +289,7 @@ describe('ExperiencesPage', () => {
     expect(screen.queryByText('Expériences actives')).not.toBeInTheDocument();
     expect(screen.queryByText('Prochaines dates')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Créer une expérience' }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('explique le verrouillage quand la fondation est désactivée', async () => {

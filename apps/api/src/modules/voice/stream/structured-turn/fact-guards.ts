@@ -630,11 +630,21 @@ export function outsideOpeningHoursFact(
   const utc = new Date(Date.UTC(year, month - 1, day));
   const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
   if (!periods.length || periods.some((period) => period.close <= period.open)) return null;
-  if (periods.some((period) => draft.time >= period.open && draft.time <= period.close))
-    return null;
   const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
     utc,
   );
+  const service = periods.find((period) => draft.time >= period.open && draft.time <= period.close);
+  if (service) {
+    // Dans le service, mais après la dernière réservation que le restaurateur a fixée.
+    const lastBooking = service.lastBooking;
+    if (!lastBooking || draft.time <= lastBooking) return null;
+    return (
+      `L'heure demandée (${draft.time}) est après la dernière réservation du ${weekday} ` +
+      `pour ce service (${lastBooking}, service ${service.open}–${service.close}). ` +
+      "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
+      `et laisse-le choisir une heure jusqu'à ${lastBooking}.`
+    );
+  }
   const ranges = periods.map((period) => `${period.open}–${period.close}`).join(' puis ');
   return (
     `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${ranges}). ` +

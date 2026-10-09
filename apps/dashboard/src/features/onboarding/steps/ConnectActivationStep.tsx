@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { Check, Copy, ExternalLink, Globe, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
+import { buildWidgetSnippet } from '@/lib/widget-snippet';
 import { useOnboarding } from '../onboarding-provider';
 import { ConnectReviewLayout, ConnectStepAction } from '../ui';
 import type { StepProps } from '../types';
@@ -14,11 +15,18 @@ const CONNECT_HOST =
     ? 'http://localhost:4002'
     : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech');
 
-export function ConnectActivationStep({ onComplete }: StepProps) {
+export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
   const { patch, orgId } = useApi();
-  const { state, updateTask } = useOnboarding();
+  const { state, updateTask, placeImportDraft } = useOnboarding();
   const restaurant = state!.restaurant;
   const exposure = restaurant.exposureSettings;
+  const pageReady =
+    Boolean(restaurant.slug) &&
+    state!.steps.some((step) => step.key === 'connect-identity' && step.status === 'completed');
+  const missingForBooking =
+    state!.readiness?.checks
+      .filter((check) => !check.ok)
+      .map((check) => check.label.toLowerCase()) ?? [];
 
   const [connectPublished, setConnectPublished] = useState<boolean>(
     exposure?.connectPublished || false,
@@ -27,7 +35,7 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'link' | 'widget' | null>(null);
   const [error, setError] = useState('');
 
   const previewUrl = `${CONNECT_HOST}/restaurant/${encodeURIComponent(restaurant.slug || '')}?preview=1`;
@@ -36,6 +44,11 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (saving) return;
+    if (!pageReady) {
+      onNavigate?.('connect-identity');
+      setError('Enregistrez votre page avant de la publier.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -59,10 +72,16 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
     }
   }
 
-  function handleCopy() {
-    void navigator.clipboard.writeText(publicUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
+  async function handleCopy(kind: 'link' | 'widget') {
+    if (!restaurant.slug) return;
+    const value = kind === 'link' ? publicUrl : buildWidgetSnippet(restaurant.slug);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      window.setTimeout(() => setCopied(null), CLIPBOARD_RESET_DELAY_MS);
+    } catch {
+      setError('Copie impossible : sélectionnez et copiez manuellement.');
+    }
   }
 
   const summary = (
@@ -87,28 +106,49 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
 
           <div className="rounded-xl bg-muted/50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Adresse publique
+              Lien de réservation
             </p>
-            <div className="mt-2 flex items-center gap-2">
-              <a
-                href={publicUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-w-0 flex-1 truncate text-sm font-medium text-foreground underline-offset-4 transition-all duration-200 hover:underline"
-              >
-                {publicUrl.replace(/^https?:\/\//, '')}
-              </a>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={handleCopy}
-                aria-label="Copier l’adresse publique"
-                className="h-9 w-9 shrink-0"
-              >
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-              </Button>
-            </div>
+            {connectPublished && restaurant.slug ? (
+              <>
+                <div className="mt-2 flex items-center gap-2">
+                  <a
+                    href={publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-foreground underline-offset-4 transition-all duration-200 hover:underline"
+                  >
+                    {publicUrl.replace(/^https?:\/\//, '')}
+                  </a>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void handleCopy('link')}
+                    aria-label="Copier le lien de réservation"
+                    className="h-9 w-9 shrink-0"
+                  >
+                    {copied === 'link' ? <Check size={16} /> : <Copy size={16} />}
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Partagez ce lien sur Google Maps et vos réseaux.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleCopy('widget')}
+                  className="mt-3 transition-all duration-200"
+                >
+                  {copied === 'widget' ? <Check size={15} /> : <Copy size={15} />}
+                  {copied === 'widget' ? 'Code copié' : 'Copier le code pour mon site'}
+                </Button>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Disponible après la publication de votre page.
+              </p>
+            )}
           </div>
 
           <div className="flex items-start gap-3 rounded-xl border border-border px-4 py-3">
@@ -158,8 +198,17 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
       data-review={!editing}
       data-wide-review={!editing}
       onSubmit={handleSubmit}
-      className="mx-auto w-full max-w-2xl space-y-4"
+      className="mx-auto w-full max-w-6xl space-y-4"
     >
+      {missingForBooking.length > 0 && (
+        <p
+          role="status"
+          className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm leading-6 text-foreground"
+        >
+          Votre page peut être publiée, mais vos clients ne pourront pas réserver tant qu’il manque
+          : {missingForBooking.join(', ')}. Complétez ces étapes depuis votre tableau de bord.
+        </p>
+      )}
       <ConnectReviewLayout
         editing={editing}
         onEditingChange={(next) => {
@@ -167,8 +216,31 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
           setError('');
         }}
         icon={Globe}
-        title="Publication de votre page"
-        summary={summary}
+        title="Publication"
+        summary={
+          pageReady ? (
+            summary
+          ) : (
+            <div className="space-y-4 py-4">
+              <p className="text-xl font-semibold tracking-tight">
+                {restaurant.name ||
+                  placeImportDraft?.displayName ||
+                  placeImportDraft?.name ||
+                  'Votre page'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Enregistrez votre page avant de la publier.
+              </p>
+              <Button
+                type="button"
+                onClick={() => onNavigate?.('connect-identity')}
+                className="rounded-full transition-all duration-200"
+              >
+                Revenir à ma page
+              </Button>
+            </div>
+          )
+        }
         wide
       >
         <div className="space-y-4">
@@ -207,7 +279,13 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
       <ConnectStepAction
         formId="connect-activation-form"
         saving={saving}
-        label={connectPublished ? 'Terminer la mise en service' : 'Publier ma page'}
+        label={
+          !pageReady
+            ? 'Compléter ma page'
+            : connectPublished
+              ? 'Terminer la mise en service'
+              : 'Publier ma page'
+        }
       />
 
       {celebrate && (

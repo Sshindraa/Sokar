@@ -84,7 +84,7 @@ describe('cartesia-synth', () => {
     const callBody: { voice: { id: string }; generation_config?: { speed?: number } } = JSON.parse(
       (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
     );
-    expect(callBody.voice.id).toBe('f786b574-daa5-4673-aa0c-cbe3e8534c02');
+    expect(callBody.voice.id).toBe('90358bc7-3328-4b93-a942-d0447d7d4b5c');
   });
 
   it('permet de surcharger la voiceId via les options', async () => {

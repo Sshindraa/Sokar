@@ -995,7 +995,7 @@ export default function SettingsPage() {
               <Input
                 value={voiceIdCa}
                 onChange={(e) => setVoiceIdCa(e.target.value)}
-                placeholder="f786b574-daa5-4673-aa0c-cbe3e8534c02"
+                placeholder="90358bc7-3328-4b93-a942-d0447d7d4b5c"
                 className="font-mono"
               />
             </div>

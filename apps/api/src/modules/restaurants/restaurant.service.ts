@@ -45,6 +45,10 @@ interface CachedRestaurantContext {
   readonly formattedAddress: string | null;
   readonly city: string | null;
   readonly cuisineType: string[];
+  /** Contextes en cache d'avant ces champs : `loadContext` les recalcule sous 5 min. */
+  readonly practicalInfo?: unknown;
+  readonly dietary?: string[];
+  readonly ambiance?: string[];
   readonly openingHours: unknown;
   readonly carrier: string;
   readonly smsConfirmEnabled: boolean;
@@ -118,6 +122,9 @@ function toCachedRestaurantContext(restaurant: {
   formattedAddress: string | null;
   city: string | null;
   cuisineType: string[];
+  practicalInfo: unknown;
+  dietary: string[];
+  ambiance: string[];
   openingHours: unknown;
   carrier: string;
   smsConfirmEnabled: boolean;
@@ -141,6 +148,9 @@ function toCachedRestaurantContext(restaurant: {
     formattedAddress: restaurant.formattedAddress ?? null,
     city: restaurant.city ?? null,
     cuisineType: restaurant.cuisineType ?? [],
+    practicalInfo: restaurant.practicalInfo ?? {},
+    dietary: restaurant.dietary ?? [],
+    ambiance: restaurant.ambiance ?? [],
     openingHours: restaurant.openingHours,
     carrier: restaurant.carrier,
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
@@ -151,6 +161,54 @@ function toCachedRestaurantContext(restaurant: {
     providerConfig: buildProviderConfig(restaurant),
   };
 }
+
+const RESTAURANT_CONTEXT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  publishedAt: true,
+  agenticOptIn: true,
+  plan: true,
+  managerPhone: true,
+  managerEmail: true,
+  phoneNumber: true,
+  timezone: true,
+  formattedAddress: true,
+  city: true,
+  cuisineType: true,
+  practicalInfo: true,
+  dietary: true,
+  ambiance: true,
+  openingHours: true,
+  carrier: true,
+  smsConfirmEnabled: true,
+  googleCalendarId: true,
+  giftCardMinimumAmount: true,
+  exposureSettings: {
+    select: {
+      maxPartySize: true,
+      connectPublished: true,
+    },
+  },
+  personality: {
+    select: {
+      id: true,
+      restaurantId: true,
+      profileType: true,
+      speakingRate: true,
+      volume: true,
+      pitchShift: true,
+      fillerStyle: true,
+      microphoneThreshold: true,
+      targetLatencyMs: true,
+      systemPromptExtra: true,
+      voiceIdCa: true,
+      pronunciationDictId: true,
+      emotion: true,
+      updatedAt: true,
+    },
+  },
+} as const;
 
 export async function invalidateRestaurantContextCache(phoneNumber: string | null | undefined) {
   if (!phoneNumber) return;
@@ -163,52 +221,11 @@ export class RestaurantService {
     const cached = await getCachedContext(cacheKey);
     if (cached) return cached as CachedRestaurantContext;
 
+    // tenant-scoping: global — résolution du tenant lui-même par son numéro Sokar unique (routage
+    // d'un appel entrant) : il n'existe pas encore de `restaurantId` à filtrer.
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { phoneNumber: phoneNumberId },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        publishedAt: true,
-        agenticOptIn: true,
-        plan: true,
-        managerPhone: true,
-        managerEmail: true,
-        phoneNumber: true,
-        timezone: true,
-        formattedAddress: true,
-        city: true,
-        cuisineType: true,
-        openingHours: true,
-        carrier: true,
-        smsConfirmEnabled: true,
-        googleCalendarId: true,
-        giftCardMinimumAmount: true,
-        exposureSettings: {
-          select: {
-            maxPartySize: true,
-            connectPublished: true,
-          },
-        },
-        personality: {
-          select: {
-            id: true,
-            restaurantId: true,
-            profileType: true,
-            speakingRate: true,
-            volume: true,
-            pitchShift: true,
-            fillerStyle: true,
-            microphoneThreshold: true,
-            targetLatencyMs: true,
-            systemPromptExtra: true,
-            voiceIdCa: true,
-            pronunciationDictId: true,
-            emotion: true,
-            updatedAt: true,
-          },
-        },
-      },
+      select: RESTAURANT_CONTEXT_SELECT,
     });
     const context = toCachedRestaurantContext(restaurant);
 
@@ -220,6 +237,23 @@ export class RestaurantService {
 
     await setCachedContext(cacheKey, contextWithPlan, REDIS_CTX_TTL_SECONDS);
     return contextWithPlan;
+  }
+
+  /**
+   * Contexte vocal d'un restaurant identifié par son id, sans cache. Sert à la démonstration
+   * d'onboarding : le restaurant n'a pas encore de numéro Sokar, et la personnalité vient d'être
+   * modifiée, donc un contexte en cache serait périmé.
+   */
+  static async loadContextById(restaurantId: string): Promise<CachedRestaurantContext> {
+    // tenant-scoping: global — `Restaurant` est le tenant lui-même : la clé primaire est celle du
+    // restaurant authentifié (ticket de démonstration émis pour `req.restaurantId`).
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: RESTAURANT_CONTEXT_SELECT,
+    });
+    const context = toCachedRestaurantContext(restaurant);
+    const effectivePlan = await getRestaurantPlanOverride(restaurant.id, context.plan);
+    return effectivePlan === context.plan ? context : { ...context, plan: effectivePlan };
   }
 
   static async checkMarginHealth(restaurantId: string): Promise<boolean> {

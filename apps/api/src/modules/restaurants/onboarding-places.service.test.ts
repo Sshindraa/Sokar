@@ -71,6 +71,7 @@ describe('onboarding Google Places service', () => {
       new Response(
         JSON.stringify({
           displayName: { text: 'Chez Sokar' },
+          location: { latitude: 45.76, longitude: 4.83 },
           formattedAddress: '12 Rue de la Paix, 69002 Lyon, France',
           addressComponents: [
             { longText: '12', types: ['street_number'] },
@@ -97,6 +98,8 @@ describe('onboarding Google Places service', () => {
     expect(details).toMatchObject({
       placeId: 'ChIJrestaurant123',
       name: 'Chez Sokar',
+      lat: 45.76,
+      lng: 4.83,
       formattedAddress: '12 Rue de la Paix',
       postalCode: '69002',
       city: 'Lyon',

@@ -1,15 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import {
-  ArrowRight,
-  Bot,
-  CalendarCheck,
-  CheckCircle2,
-  Mic,
-  PhoneCall,
-  Utensils,
-} from 'lucide-react';
+import { ArrowRight, Bot, CalendarCheck, Mic, PhoneCall, Utensils } from 'lucide-react';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
@@ -195,23 +187,6 @@ export default function HomePage() {
                   </Link>
                 </div>
               </div>
-            </div>
-
-            <div className="absolute inset-x-0 bottom-0 z-10 hidden grid-cols-2 gap-2 border-t border-white/8 bg-black/70 px-8 py-5 text-center text-[11px] font-semibold text-white/[0.42] sm:grid sm:grid-cols-4 lg:grid-cols-7">
-              {[
-                'Réservations',
-                'SMS',
-                'Planning',
-                'Clients VIP',
-                'Reporting',
-                'Google',
-                'Dashboard',
-              ].map((item) => (
-                <div key={item} className="inline-flex items-center justify-center gap-2">
-                  <CheckCircle2 size={13} className="text-white/[0.28]" />
-                  {item}
-                </div>
-              ))}
             </div>
           </div>
         </section>

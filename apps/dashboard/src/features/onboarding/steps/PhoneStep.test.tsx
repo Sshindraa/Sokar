@@ -40,7 +40,8 @@ describe('PhoneStep', () => {
     });
 
     render(<PhoneStep onComplete={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /j'ai compris/i }));
+    fireEvent.click(screen.getByLabelText('J’ai activé le renvoi'));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuer' }));
     fireEvent.click(await screen.findByRole('button', { name: /lancer un appel test/i }));
 
     await waitFor(() => {
@@ -57,5 +58,26 @@ describe('PhoneStep', () => {
     });
     expect(onboardingMocks.updateTask).toHaveBeenCalledWith('complete', 'phone');
     expect(onboardingMocks.updateTask).toHaveBeenCalledWith('activate');
+  });
+
+  it('montre le code de renvoi selon le type de ligne, numéro Sokar déjà rempli', () => {
+    render(<PhoneStep onComplete={vi.fn()} />);
+
+    expect(screen.getByText('**21*+33123456789#')).toBeInTheDocument();
+    expect(screen.getByText('##21#')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ligne fixe' }));
+    expect(screen.getByText('*21*0123456789#')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Box internet' }));
+    expect(screen.getByText(/Rubrique « Renvoi d’appel »/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copier le code' })).not.toBeInTheDocument();
+  });
+
+  it('ne laisse continuer qu’une fois le renvoi déclaré activé', () => {
+    render(<PhoneStep onComplete={vi.fn()} />);
+
+    const next = screen.getByRole('button', { name: 'Continuer' });
+    expect(next).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('J’ai activé le renvoi'));
+    expect(next).toBeEnabled();
   });
 });

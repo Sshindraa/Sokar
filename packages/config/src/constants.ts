@@ -28,7 +28,7 @@ export const DEFAULT_MAX_PARTY_SIZE = 7;
 // Follow Cartesia's latest stable Sonic 3.6 snapshot automatically.
 // Change this deliberately if reproducible voice behavior becomes a release gate.
 export const CARTESIA_MODEL = 'sonic-3.6';
-export const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
+export const DEFAULT_CARTESIA_VOICE_ID = '90358bc7-3328-4b93-a942-d0447d7d4b5c';
 
 // ─── Phase 2 — TTS Cache ─────────────────────────────────────────────────
 export const TTS_CACHE_TTL_SECONDS = 86_400 * 7; // 7 jours

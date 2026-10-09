@@ -4,11 +4,14 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
+import { buildPracticalFacts } from '../restaurants/practical-info';
 import { buildSystemPrompt, type OpeningHours, agentVoiceGender } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import {
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
+  isVoicePracticalInfoEnabled,
+  isVoicePersonalityStyleEnabled,
 } from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
@@ -189,6 +192,16 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           customerGreeting,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
           voiceGender: agentVoiceGender(ctx.personality),
+          personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),
+          ...(isVoicePracticalInfoEnabled(ctx.id)
+            ? {
+                restaurantFacts: buildPracticalFacts({
+                  practicalInfo: ctx.practicalInfo,
+                  dietary: ctx.dietary,
+                  ambiance: ctx.ambiance,
+                }),
+              }
+            : {}),
         });
 
         // Créer un enregistrement Call minimal dès l'init
@@ -263,6 +276,14 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
           callLegId: payload.call_leg_id,
           codec: telnyxCodec,
+          ...(isVoicePersonalityStyleEnabled(ctx.id) && ctx.personality
+            ? {
+                greetingStyle: {
+                  profileType: ctx.personality.profileType,
+                  fillerStyle: ctx.personality.fillerStyle,
+                },
+              }
+            : {}),
           personality: ctx.personality
             ? {
                 fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(

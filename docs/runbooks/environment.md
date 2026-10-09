@@ -307,6 +307,21 @@ VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS=""
 # ou erreur : `turnComplete` du modèle, comme sans le juge. Métriques : sokar_voice_turn_judge_total{outcome},
 # sokar_voice_turn_judge_duration_ms. Banc A/B : voir Journal du 2026-10-02. Activer d'abord Chez Sokar.
 VOICE_TURN_JUDGE_RESTAURANT_IDS=""
+# Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires, menu), saisis à
+# l'étape « Votre restaurant en pratique » de l'onboarding et ajoutés au prompt de l'assistant pour les
+# restaurants listés (identifiants séparés par des virgules). Vide = aucun : le prompt est alors identique
+# à avant. Sans fait pour une question, l'assistant ne devine pas et propose le gérant. Activer d'abord
+# Chez Sokar et comparer les appels avec questions pratiques avant d'élargir.
+VOICE_PRACTICAL_INFO_RESTAURANT_IDS=""
+# Style de la maison : les réglages « Style » (bistrot, semi-gastro, gastronomique) et « Ton de voix »
+# (chaleureux, naturel, formel) de l'étape « Consignes & démo » modifient la façon de parler de
+# l'assistant, pour les restaurants listés. Vide = aucun : prompt identique à avant. Le réglage par
+# défaut (bistrot, naturel) n'ajoute rien. Mesuré le 08/10/2026 (scripts/voice-style-ab.ts) : formel
+# et gastronomique nettement plus soignés, chaleureux peu distinct du défaut.
+# Coût observé (09/10/2026, juge = modèle de production, 6 comparaisons) : la maison gastronomique formelle est
+# jugée plus soignée que le défaut mais moins naturelle (4 contre 2). Pour un son le plus naturel, le réglage par
+# défaut (bistrot, naturel) reste la recommandation ; la maison est un choix du restaurant.
+VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).

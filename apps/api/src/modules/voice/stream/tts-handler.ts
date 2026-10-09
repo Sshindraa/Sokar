@@ -190,6 +190,8 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
     `[speakTelnyxNative] Sending native Telnyx TTS speak command ${JSON.stringify(describeTranscript(text))}`,
   );
   if (session.ending?.nativePlayback) return;
+  // Pas de leg Telnyx en démonstration : la voix native n'existe pas, la synthèse Cartesia est la seule voie.
+  if (session.demo) return;
   if (session.ending) session.ending.nativePlayback = true;
   try {
     const language = effectiveVoiceLanguage(session);

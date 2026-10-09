@@ -1,14 +1,72 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Loader2, PhoneForwarded, ShieldCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  Copy,
+  Loader2,
+  Phone,
+  PhoneForwarded,
+  Router,
+  ShieldCheck,
+  Smartphone,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader, OnboardingAction, OnboardingPreview } from '../ui';
 import type { StepProps } from '../types';
 import { ONBOARDING_STEP_DELAY_MS } from '@/constants/ui';
+
+type LineType = 'mobile' | 'fixed' | 'box';
+
+const LINE_TYPES: Array<{ value: LineType; label: string; icon: typeof Phone }> = [
+  { value: 'mobile', label: 'Mobile', icon: Smartphone },
+  { value: 'fixed', label: 'Ligne fixe', icon: Phone },
+  { value: 'box', label: 'Box internet', icon: Router },
+];
+
+function StepBadge({ n }: { n: number }) {
+  return (
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
+      {n}
+    </span>
+  );
+}
+
+/** +33 1 23 45 67 89 → 01 23 45 67 89 : les lignes fixes se composent au format national. */
+function toNational(e164: string) {
+  return e164.startsWith('+33') ? `0${e164.slice(3)}` : e164;
+}
+
+/** Le geste exact pour activer le renvoi, avec le numéro Sokar déjà rempli. */
+function lineGuide(type: LineType, sokarNumber: string) {
+  if (type === 'mobile') {
+    return {
+      title: 'Composez ce code depuis le téléphone du restaurant, puis appuyez sur Appeler',
+      code: `**21*${sokarNumber}#`,
+      help: 'Un message de l’opérateur confirme l’activation.',
+      stop: '##21#',
+    };
+  }
+  if (type === 'fixed') {
+    return {
+      title: 'Composez ce code depuis la ligne fixe du restaurant',
+      code: `*21*${toNational(sokarNumber)}#`,
+      help: 'Si le code n’est pas reconnu, activez le renvoi depuis l’espace client de votre opérateur.',
+      stop: '#21#',
+    };
+  }
+  return {
+    title: 'Activez le renvoi dans l’espace client de votre opérateur',
+    code: '',
+    help: `Rubrique « Renvoi d’appel » de votre abonnement, vers le ${sokarNumber}. Le code à composer dépend de l’opérateur.`,
+    stop: '',
+  };
+}
 
 export function PhoneStep({ onComplete }: StepProps) {
   const { state, updateTask } = useOnboarding();
@@ -17,6 +75,9 @@ export function PhoneStep({ onComplete }: StepProps) {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [lineType, setLineType] = useState<LineType>('mobile');
+  const [forwardingDone, setForwardingDone] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [testCallControlId, setTestCallControlId] = useState<string | null>(null);
 
   const phoneNumber = state?.restaurant.phoneNumber ?? '';
@@ -27,6 +88,16 @@ export function PhoneStep({ onComplete }: StepProps) {
   const pendingTestCallControlId =
     testCallControlId ??
     (typeof persistedTestCallControlId === 'string' ? persistedTestCallControlId : null);
+
+  async function handleCopy(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
 
   async function handleTestCall() {
     if (!restaurantPhone) {
@@ -58,7 +129,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       if (code === 'NO_PHONE_ASSIGNED') {
         setTestError(
           apiMessage ??
-            "Aucun numéro Sokar attribué. L'équipe Sokar doit d'abord vous attribuer un numéro dédié.",
+            "Aucun numéro Sokar attribué. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Sokar doit d'abord vous en attribuer un.",
         );
       } else if (code === 'TELNYX_FAILED') {
         setTestError(
@@ -104,101 +175,148 @@ export function PhoneStep({ onComplete }: StepProps) {
     }
   }
 
-  // ─── Phase 1 : pre-permission screen ───────────────────────────
-  // Avant d'activer le renvoi d'appel (action opérateur irréversible),
-  // on explique exactement ce qui va se passer et on rassure sur la
-  // réversibilité. Pattern Brilliant/Centro — réduit la friction sur
-  // l'étape la plus engagée du flow voice.
+  // ─── Phase 1 : activer le renvoi ───────────────────────────────
+  // Le restaurateur choisit son type de ligne, voit le geste exact avec le numéro Sokar déjà
+  // rempli, et confirme l'avoir fait : on avance vers l'appel test seulement ensuite.
   if (!confirmed) {
+    const sokarNumber = hasAssignedPhone ? phoneNumber : '';
+    const guide = lineGuide(lineType, sokarNumber);
     return (
       <div className="space-y-3">
         <StepHeader
           icon={PhoneForwarded}
           title="Mise en service des appels"
-          body="Avant d'activer le renvoi, voici exactement ce qui va se passer et comment garder le contrôle."
+          body="Activez le renvoi d'appel vers votre numéro Sokar."
         />
-        <div className="grid max-w-6xl items-start gap-6 lg:grid-cols-2 lg:gap-12">
-          {/* Schéma visuel : du téléphone du restaurant vers Sokar */}
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-border bg-background p-5 transition-all duration-200">
-              <p className="text-sm font-semibold text-foreground">Ce qui va se passer</p>
-              <div className="mt-4 flex items-center gap-3">
-                <div className="flex-1 rounded-md border border-border bg-muted/30 p-3 text-center">
-                  <PhoneForwarded size={20} className="mx-auto text-muted-foreground" />
-                  <p className="mt-1 text-xs text-muted-foreground">Votre numéro de restaurant</p>
-                  <p className="text-sm font-medium text-foreground">{restaurantPhone || '—'}</p>
-                </div>
-                <ArrowRight size={18} className="text-muted-foreground" />
-                <div className="flex-1 rounded-md border border-primary/30 bg-primary/5 p-3 text-center">
-                  <ShieldCheck size={20} className="mx-auto text-primary" />
-                  <p className="mt-1 text-xs text-muted-foreground">Numéro Sokar</p>
-                  <p className="text-sm font-medium text-foreground">
-                    {hasAssignedPhone ? phoneNumber : 'À attribuer'}
-                  </p>
+        <div className="max-w-4xl">
+          {!hasAssignedPhone ? (
+            <p className="rounded-xl border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
+              L’appel test vérifie que le renvoi arrive bien jusqu’à votre numéro Sokar : il faut
+              donc que l’équipe Sokar vous l’ait attribué. Cette étape se débloquera dès que ce sera
+              fait ; vous pouvez continuer les autres étapes en attendant.
+            </p>
+          ) : (
+            <div className="space-y-5 rounded-[1.75rem] border border-border bg-card p-5 sm:p-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                <h3 className="flex shrink-0 items-center gap-2 text-sm font-semibold text-foreground">
+                  <StepBadge n={1} />
+                  Votre ligne est…
+                </h3>
+                <div
+                  role="group"
+                  aria-label="Type de ligne"
+                  className="grid flex-1 grid-cols-3 gap-1 rounded-xl bg-muted/50 p-1"
+                >
+                  {LINE_TYPES.map((option) => {
+                    const Icon = option.icon;
+                    const active = lineType === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setLineType(option.value)}
+                        className={cn(
+                          'flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                          active
+                            ? 'bg-foreground text-background shadow-sm'
+                            : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                        )}
+                      >
+                        <Icon size={16} aria-hidden />
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                Une fois le renvoi activé, les appels arrivant sur le numéro du restaurant seront
-                automatiquement transférés vers Sokar. L&apos;assistant vocal répond à votre place,
-                prend les réservations et gère les annulations.
-              </p>
-            </div>
 
-            {/* Rassurance réversibilité */}
-            <div className="rounded-xl border border-border bg-background p-4 transition-all duration-200">
-              <div className="flex items-start gap-3">
-                <ShieldCheck size={18} className="mt-0.5 shrink-0 text-success" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">Vous gardez le contrôle</p>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    Vous pouvez reprendre la main à tout moment en désactivant le renvoi depuis
-                    votre téléphone (composez{' '}
-                    <span className="font-mono text-foreground">##21#</span> sur la plupart des
-                    opérateurs français). Vous restez joignable directement pendant les heures de
-                    service si vous préférez décrocher vous-même.
+              <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                <div className="flex flex-col items-stretch justify-between gap-1 rounded-xl border border-border bg-muted/20 p-3">
+                  <div className="rounded-lg border border-border bg-background px-3 py-2 text-center">
+                    <p className="text-xs text-muted-foreground">Numéro du restaurant</p>
+                    <p className="text-base font-semibold tabular-nums text-foreground">
+                      {restaurantPhone || '—'}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-center text-primary" aria-hidden>
+                    <span className="h-3 w-px border-l border-dashed border-primary/50" />
+                    <ArrowRight size={16} className="rotate-90" />
+                  </div>
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-center">
+                    <p className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                      <ShieldCheck size={12} className="text-primary" aria-hidden />
+                      Numéro Sokar
+                    </p>
+                    <p className="text-base font-semibold tabular-nums text-foreground">
+                      {phoneNumber}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <h3 className="flex items-start gap-2 text-sm font-semibold text-foreground">
+                    <StepBadge n={2} />
+                    {guide.title}
+                  </h3>
+                  {guide.code ? (
+                    <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 py-2 pl-4 pr-2">
+                      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xl font-semibold tracking-wide text-foreground">
+                        {guide.code}
+                      </code>
+                      <Button
+                        type="button"
+                        variant={copied ? 'default' : 'outline'}
+                        onClick={() => handleCopy(guide.code)}
+                        className="shrink-0 transition-all duration-200"
+                      >
+                        {copied ? <Check size={16} /> : <Copy size={16} />}
+                        {copied ? 'Copié' : 'Copier'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <p className="text-sm leading-5 text-muted-foreground">
+                    {guide.help}
+                    {guide.stop ? (
+                      <>
+                        {' '}
+                        Pour arrêter le renvoi :{' '}
+                        <span className="font-mono font-medium text-foreground">{guide.stop}</span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
               </div>
+
+              <label
+                className={cn(
+                  'flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium text-foreground transition-all duration-200 focus-within:ring-2 focus-within:ring-ring',
+                  forwardingDone
+                    ? 'border-success/40 bg-success/10'
+                    : 'border-border hover:bg-accent',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={forwardingDone}
+                  onChange={(event) => setForwardingDone(event.target.checked)}
+                  className="size-5 accent-foreground"
+                />
+                J’ai activé le renvoi
+              </label>
             </div>
-            {!hasAssignedPhone && (
-              <p className="rounded-xl border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
-                Votre numéro dédié sera attribué par l’équipe Sokar. Vous pourrez ensuite activer le
-                renvoi et lancer l’appel test.
-              </p>
-            )}
-          </div>
-          <div className="space-y-4">
-            <OnboardingPreview
-              eyebrow="Un accueil, même quand vous êtes occupé"
-              title="Sokar prend le relais"
-              icon={PhoneForwarded}
-            >
-              <p className="text-xl font-medium leading-8">Chaque appel mérite une réponse.</p>
-              <p className="text-sm leading-6 text-background/60">
-                Après activation du renvoi, Sokar accueille vos clients, prend leurs réservations et
-                gère les annulations.
-              </p>
-              <div className="border-t border-background/15 pt-4 text-sm">
-                <span className="text-background/60">Votre numéro Sokar</span>
-                <p className="mt-1 text-xl font-semibold">
-                  {hasAssignedPhone ? phoneNumber : 'En attente d’attribution'}
-                </p>
-              </div>
-            </OnboardingPreview>
-          </div>
+          )}
 
           <OnboardingAction>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                type="button"
-                onClick={() => setConfirmed(true)}
-                disabled={!hasAssignedPhone}
-                className="transition-colors duration-200"
-              >
-                J&apos;ai compris, continuer
-                <ArrowRight size={16} />
-              </Button>
-            </div>
+            <Button
+              type="button"
+              onClick={() => setConfirmed(true)}
+              disabled={!hasAssignedPhone || !forwardingDone}
+              className="transition-all duration-200"
+            >
+              Continuer
+              <ArrowRight size={16} />
+            </Button>
           </OnboardingAction>
         </div>
       </div>
@@ -296,8 +414,9 @@ export function PhoneStep({ onComplete }: StepProps) {
         )}
         {!hasAssignedPhone && (
           <p className="text-xs text-muted-foreground">
-            L&apos;appel test sera disponible dès qu&apos;un numéro Sokar sera attribué à ce
-            restaurant par notre équipe.
+            L&apos;appel test vérifie que le renvoi arrive jusqu&apos;à votre numéro Sokar : il sera
+            disponible dès que l&apos;équipe Sokar vous l&apos;aura attribué. Vous pouvez continuer
+            les autres étapes en attendant.
           </p>
         )}
       </div>

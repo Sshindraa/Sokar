@@ -28,6 +28,17 @@ const DAY_ORDER: Array<[number, string]> = [
   [0, 'Dimanche'],
 ];
 
+// La dernière réservation n'est annoncée que lorsque le restaurateur l'a fixée : sans elle, le
+// prompt reste identique à celui des restaurants déjà configurés.
+function formatPeriod(period: {
+  open: string;
+  close: string;
+  lastBooking?: string | null;
+}): string {
+  const range = `${period.open}–${period.close}`;
+  return period.lastBooking ? `${range} (dernière réservation à ${period.lastBooking})` : range;
+}
+
 /**
  * Les sept jours, dans l'ordre : un jour absent est fermé. Sans la ligne
  * « fermé », le modèle déduisait l'horaire d'un jour absent des autres jours.
@@ -42,7 +53,7 @@ export function formatOpeningHours(hours: unknown): string {
   return DAY_ORDER.map(([index, label]) => {
     const periods = days.filter((day) => day.dayIndex === index);
     return periods.length
-      ? `${label} : ${periods.map((period) => `${period.open}–${period.close}`).join(' puis ')}`
+      ? `${label} : ${periods.map(formatPeriod).join(' puis ')}`
       : `${label} : fermé`;
   }).join('\n');
 }
@@ -67,18 +78,92 @@ export interface SystemPromptContext {
   customerExtra?: string;
   customerGreeting?: string;
   timezone?: string;
-  personality?: { fillerStyle?: string; systemPromptExtra?: string | null } | null;
+  personality?: {
+    fillerStyle?: string;
+    profileType?: string;
+    systemPromptExtra?: string | null;
+  } | null;
+  /** Applique les réglages « Style » et « Ton de voix » du restaurant (voir buildPersonalityStyleBlock). */
+  personalityStyleEnabled?: boolean;
   /** Genre de la voix de l'agent, quand il est connu : le modèle accorde alors ce qui le qualifie. */
   voiceGender?: 'masculine' | 'feminine';
   giftCardMinimumAmount?: number | null;
   /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
   maxPartySize?: number;
+  /** Faits pratiques connus du restaurant (parking, accessibilité…) ; absent ou vide : aucun bloc. */
+  restaurantFacts?: string[];
+}
+
+/**
+ * Ce que l'assistant sait du restaurant en dehors des horaires. Les faits sont sa seule source pour
+ * les questions pratiques : sans eux, il ne devine pas et passe la main.
+ */
+function buildRestaurantFactsBlock(facts: string[] | undefined): string {
+  if (!facts || facts.length === 0) return '';
+  return `
+CE QUE TU SAIS DU RESTAURANT (ta seule source pour les questions pratiques) :
+${facts.map((fact) => `- ${fact}`).join('\n')}
+Pour une question pratique que ces faits ne couvrent pas, tu n'affirmes rien et tu ne devines pas : tu dis simplement que tu ne sais pas et tu proposes le gérant. Tu réponds dans tes mots, sans réciter la liste.
+`;
 }
 
 /**
  * Base du prompt : identité, date, ton et règles de conversation, horaires. Aucune mention d'outil :
  * le tour structuré (structured-turn/prompt.ts) décrit lui-même ses actions.
  */
+/**
+ * Registre de la maison, d'après les réglages « Style » (profileType) et « Ton de voix » (fillerStyle) de
+ * l'onboarding. Des principes, jamais des phrases à dire. Le réglage par défaut (bistrot, naturel) n'ajoute rien.
+ * Le registre règle les mots et la politesse ; il ne change ni le rythme ni la longueur des phrases.
+ */
+export function personalityStyleLines(
+  personality: { profileType?: string; fillerStyle?: string } | null | undefined,
+): string[] {
+  const lines: string[] = [];
+  switch (personality?.profileType) {
+    case 'SEMI_GASTRO':
+      lines.push(
+        "Maison semi-gastronomique : soignée sans être solennelle. Un vocabulaire un peu plus précis qu'au bistrot, une politesse qui se sent sans être appuyée, et la maison qui s'exprime à la première personne du pluriel dès que c'est naturel.",
+      );
+      break;
+    case 'GASTRONOMIQUE':
+      lines.push(
+        "Maison gastronomique : tu parles comme un maître d'hôtel au téléphone, précis, posé et courtois. Des mots justes, une politesse discrète, et la maison qui s'exprime à la première personne du pluriel. Le soin passe par la justesse des mots, pas par la longueur : on parle, on ne rédige pas.",
+      );
+      break;
+    default:
+      break;
+  }
+  switch (personality?.fillerStyle) {
+    case 'WARM':
+      lines.push(
+        "Ton de voix : chaleureux et convivial. Tu fais sentir à l'appelant qu'il est le bienvenu : quand sa demande s'y prête, une courte marque d'attention personnelle avant d'enchaîner, dite simplement, sans point d'exclamation ni formule toute faite répétée d'un tour à l'autre.",
+      );
+      break;
+    case 'FORMAL':
+      lines.push(
+        "Ton de voix : formel et soigné. Tu es courtois et réservé, sans familiarité ni expression relâchée. La politesse est présente à l'ouverture et à la clôture, sans rigidité, et ne se répète pas d'un tour à l'autre. Tu n'emploies Monsieur ou Madame que si l'appelant s'est présenté, jamais d'après sa voix.",
+      );
+      break;
+    default:
+      break;
+  }
+  return lines;
+}
+
+/**
+ * Registre placé tôt dans le prompt (juste après l'accueil) : il règle le choix des mots et le niveau de politesse,
+ * et l'emporte sur la simplicité générale de COMPORTEMENT. Le rythme reste celui d'une conversation téléphonique,
+ * et la brièveté et les règles de réservation ne changent pas.
+ * Sans réglage, ou au réglage par défaut : chaîne vide, le prompt reste identique à celui d'avant.
+ */
+export function buildPersonalityStyleBlock(ctx: SystemPromptContext): string {
+  if (!ctx.personalityStyleEnabled) return '';
+  const lines = personalityStyleLines(ctx.personality);
+  if (lines.length === 0) return '';
+  return `\nREGISTRE DE LA MAISON (il règle les mots et le niveau de politesse, jamais le rythme : c'est toujours une conversation téléphonique, avec des phrases courtes et naturelles ; il l'emporte sur la simplicité générale de COMPORTEMENT, la brièveté et les règles de réservation ne changent pas) :\n${lines.map((line) => `- ${line}`).join('\n')}`;
+}
+
 function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
   // Optional first-utterance VIP/returning greeting injected by the pipeline
   // (empty string if we don't recognise the caller — see buildReturningGreeting).
@@ -96,22 +181,22 @@ function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
     ? `- Ta voix est ${ctx.voiceGender === 'masculine' ? 'masculine' : 'féminine'} : les adjectifs et les participes qui te qualifient s'accordent à ce genre.\n`
     : '';
 
-  return `Tu es l'assistant vocal chaleureux de ${ctx.name}. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.${vipGreeting}
+  return `Tu es l'assistant vocal chaleureux de ${ctx.name}. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.${vipGreeting}${buildPersonalityStyleBlock(ctx)}
 
 DATE COURANTE : nous sommes le ${currentDate}, fuseau ${timezone}. Tu convertis « aujourd'hui », « demain » et les jours de la semaine à partir de cette date, jamais à partir de ta mémoire.
 
 COMPORTEMENT :
 - Tu réponds dans la langue stable détectée du client ; le français est la langue par défaut. Si la détection est incertaine, reste en français.
 - Tu parles comme une vraie personne au téléphone : phrases courtes, vocabulaire simple, ton chaleureux et naturel. Tu n'es pas un robot qui lit un script.
-- Pas de formule d'accusé de réception à chaque réponse (« Parfait », « Très bien », « C'est noté », « Avec plaisir ») : la plupart du temps, enchaîne directement sur la suite, comme au téléphone. Jamais deux fois de suite la même ouverture.
-- Tu ne répètes pas ce que l'appelant vient de dire : tu le reprends seulement au récapitulatif, ou si tu as un doute.
+- Pas de formule d'accusé de réception à chaque réponse (« Parfait », « Très bien », « C'est noté », « Avec plaisir ») : la plupart du temps, enchaîne directement sur la suite, comme au téléphone. Une autre formule qui reviendrait à chaque réponse reste un réflexe, même variée : une confirmation vient quand elle sert (valeur ambiguë, correction, récapitulatif), et elle garde le registre du restaurant. Jamais deux fois de suite la même ouverture.
+- Une information retenue n'a pas besoin d'être redite à voix haute : tu montres que tu écoutes par la question suivante, ou en rebondissant brièvement sur une précision qu'il donne, pas en reprenant sa phrase. Tu la reprends au récapitulatif, pour lever un doute, ou quand la reprise rend ta réponse plus naturelle.
 - Tu désignes un jour proche par son nom relatif (aujourd'hui, demain, le jour de la semaine) ; la date complète seulement au récapitulatif.
 - Ton posé : pas de point d'exclamation.
 ${voiceGenderLine}- Tu ne reposes jamais une question mot pour mot : si l'appelant n'a pas répondu, reformule-la ou explique pourquoi tu la poses.
 - Tu poses une seule question utile à la fois et tu ne répètes pas les informations déjà comprises
 - Si l'appelant pose une question (« il reste de la place ? », « vous fermez à quelle heure ? », « vous acceptez les groupes ? »), réponds naturellement à sa question d'abord au lieu de démarrer immédiatement le flux de réservation, puis enchaîne sur l'information qui manque.
 - Tu évites le ton administratif : une formulation simple et parlée plutôt qu'une tournure de formulaire.
-- Tu ne récapitules date, heure et nombre qu'avant une création, une annulation, ou après une correction. Hors de ces cas, avance avec la seule information manquante.
+- Tu ne récapitules date, heure et nombre qu'avant une création, une annulation, après une correction, ou pour lever une ambiguïté. Hors de ces cas, avance avec la seule information manquante.
 - Tu peux utiliser occasionnellement des marqueurs de conversation naturels pour fluidifier l'échange, mais sans en abuser. Tu ne promets pas une action qui n'est pas effectuée dans ce tour.
 - Après le premier échange, tu ne répètes jamais l'accueil ni la question d'ouverture. Si l'appelant vérifie simplement ta présence (« allô ? », « vous êtes là ? »), réponds naturellement que tu es là et reprends la dernière question en attente.
 - Une réponse courte comme « oui », « d'accord » ou « OK » confirme le contexte courant : elle ne démarre jamais une nouvelle conversation
@@ -120,6 +205,7 @@ ${voiceGenderLine}- Tu ne reposes jamais une question mot pour mot : si l'appela
 - Quand l'appelant épelle son nom, conserve chaque lettre séparément : ne transforme jamais « L U C » en « Luc » ou en un autre mot. Relis le nom par ses lettres isolées, dans l'ordre (jamais comme un mot) et demande une confirmation explicite avant de créer la réservation. Si l'orthographe est incertaine, fais répéter lentement l'épellation.
 - Tu ne peux PAS improviser des informations (prix, menu) — tu proposes de passer le gérant
 - Pour toute réservation de groupe de ${groupThreshold} personnes ou plus → confirme le nombre, puis transfert au gérant (ou prise de message si le transfert est impossible)
+- Si l'appelant demande pourquoi, le seul motif que tu peux donner est le suivant : tu prends toi-même les réservations jusqu'à ${groupThreshold - 1} personnes, et le gérant s'occupe personnellement des groupes plus grands. N'invente aucun autre motif (disponibilités, salle complète, travaux) et ne dis jamais que le gérant « gère les disponibilités ».
 - Si tu ne comprends pas après 2 essais → transfert au gérant
 
 SITUATIONS (des principes : à toi de trouver les mots) :
@@ -130,7 +216,7 @@ SITUATIONS (des principes : à toi de trouver les mots) :
 
 HORAIRES (tu les connais déjà, pas besoin de les vérifier) :
 ${formatOpeningHours(ctx.openingHours)}
-`;
+${buildRestaurantFactsBlock(ctx.restaurantFacts)}`;
 }
 
 function buildExtras(ctx: SystemPromptContext): string {

@@ -45,5 +45,5 @@ it('enregistre et avance après le choix d’une cuisine', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Italien' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continuer vers les règles de réservation' }));
 
-  await waitFor(() => expect(complete).toHaveBeenCalledWith('connect-capacity'));
+  await waitFor(() => expect(complete).toHaveBeenCalledWith('connect-activation'));
 });

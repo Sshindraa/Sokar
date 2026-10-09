@@ -465,3 +465,254 @@ describe('restaurant.routes - onboarding', () => {
     });
   });
 });
+
+describe('restaurant.routes - onboarding : salle et prêt à réserver', () => {
+  const noTables = { _count: { _all: 0 }, _sum: { capacity: null }, _max: { capacity: null } };
+  const withTables = { _count: { _all: 8 }, _sum: { capacity: 28 }, _max: { capacity: 6 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      noTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+  });
+
+  it('refuse de valider « Votre salle » tant qu’aucune table n’existe', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'complete', task: 'floor' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NO_TABLES');
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('refuse de valider « Votre salle et vos règles » sans règles enregistrées', async () => {
+    const app = await getApp();
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...baseRestaurant,
+      exposureSettings: { capacitySpecials: { serviceDuration: 90 } },
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'complete', task: 'floor' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NO_RULES');
+  });
+
+  it('refuse de valider « Votre salle et vos règles » sans les réponses pratiques', async () => {
+    const app = await getApp();
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...baseRestaurant,
+      exposureSettings: { capacitySpecials: { serviceDurationMinutes: 90 } },
+      practicalInfo: { parking: 'onsite' },
+      ambiance: [],
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'complete', task: 'floor' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NO_PRACTICAL_INFO');
+  });
+
+  it('refuse la mise en service quand les clients ne peuvent pas encore réserver', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...baseRestaurant,
+      // Étapes marquées faites, mais la salle a été vidée depuis : plus aucune table active.
+      onboardingTasks: {
+        floor: { status: 'completed' },
+        channels: { status: 'completed' },
+      },
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'activate' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NOT_READY_TO_BOOK');
+  });
+
+  it('refuse de continuer vers Connect tant que le socle est incomplet', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'complete', task: 'channels' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NOT_READY_TO_BOOK');
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('expose l’état « prêt à réserver » dans la lecture de l’onboarding', async () => {
+    const app = await getApp();
+    const restaurant = {
+      ...baseRestaurant,
+      exposureSettings: { capacitySpecials: { serviceDurationMinutes: 90 } },
+      practicalInfo: {
+        terrace: true,
+        parking: 'none',
+        accessible: false,
+        pets: 'no',
+        kidsMenu: true,
+        privatization: false,
+      },
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>;
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      restaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+    vi.mocked(db.restaurant.update).mockResolvedValue(restaurant);
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().readiness).toMatchObject({
+      ready: true,
+      tableCount: 8,
+      seatCount: 28,
+      largestTableCapacity: 6,
+    });
+    expect(res.json().steps.find((step: { key: string }) => step.key === 'floor').status).toBe(
+      'completed',
+    );
+  });
+
+  it('renvoie les effectifs de la salle pour préremplir l’étape', async () => {
+    const app = await getApp();
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+    vi.mocked(db.table.groupBy).mockResolvedValue([
+      { capacity: 2, _count: { _all: 4 } },
+      { capacity: 6, _count: { _all: 4 } },
+    ] as unknown as Awaited<ReturnType<typeof db.table.groupBy>>);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/restaurant/onboarding/floor',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      tables: [
+        { capacity: 2, count: 4 },
+        { capacity: 6, count: 4 },
+      ],
+      stats: { tableCount: 8, seatCount: 28, largestTableCapacity: 6 },
+    });
+  });
+
+  it('refuse une salle sans table', async () => {
+    const app = await getApp();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/restaurant/onboarding/floor',
+      headers: { authorization: 'Bearer test' },
+      payload: { tables: [{ capacity: 4, count: 0 }] },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('restaurant.routes - onboarding : restaurant en pratique', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enregistre les faits, synchronise la fiche Connect et invalide les caches', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      practicalInfo: { parking: 'onsite', kidsMenu: true },
+      ambiance: ['brunch', 'terrasse'],
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+    vi.mocked(db.restaurant.update).mockResolvedValue({
+      practicalInfo: { kidsMenu: true, terrace: false, pets: 'terrace' },
+      ambiance: ['brunch'],
+      dietary: ['vegan'],
+      phoneNumber: '+33123456789',
+      slug: 'le-bistrot',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/restaurant/onboarding/practical',
+      headers: { authorization: 'Bearer test' },
+      payload: {
+        practicalInfo: { parking: null, terrace: false, pets: 'terrace' },
+        dietary: ['vegan'],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'test-rest-1' },
+        data: {
+          practicalInfo: { kidsMenu: true, terrace: false, pets: 'terrace' },
+          ambiance: ['brunch'],
+          dietary: ['vegan'],
+        },
+      }),
+    );
+    expect(res.json()).toMatchObject({ dietary: ['vegan'], ambiance: ['brunch'] });
+  });
+
+  it('refuse une valeur hors liste', async () => {
+    const app = await getApp();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/restaurant/onboarding/practical',
+      headers: { authorization: 'Bearer test' },
+      payload: { practicalInfo: { parking: 'garage' } },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+});

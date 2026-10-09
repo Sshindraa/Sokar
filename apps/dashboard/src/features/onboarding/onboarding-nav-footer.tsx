@@ -8,14 +8,14 @@ import type { OnboardingTaskKey } from './types';
 const NEXT_STEP_LABEL: Record<OnboardingTaskKey, string> = {
   restaurant: 'votre restaurant',
   hours: 'les horaires',
+  floor: 'votre salle et vos règles',
   knowledge: 'les consignes de l’assistant',
-  calendar: 'le planning',
   phone: 'les appels',
+  channels: 'vos canaux de réservation',
   'connect-identity': 'Sokar Connect',
   'connect-location': 'votre adresse',
   'connect-cuisine': 'la cuisine et l’ambiance',
-  'connect-capacity': 'les règles de réservation',
-  'connect-activation': 'la vérification de la page',
+  'connect-activation': 'la publication',
 };
 
 /**

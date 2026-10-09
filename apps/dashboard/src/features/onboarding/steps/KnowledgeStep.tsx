@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ChevronDown, Globe, Gem, Waves, Gauge, Zap, Heart, AudioLines } from 'lucide-react';
+import { ChevronDown, Globe, Gem, Waves, Gauge, Zap, Heart, AudioLines } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
@@ -57,7 +57,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
     setSaving(true);
     try {
       await updateTask('complete', 'knowledge');
-      onComplete('calendar');
+      onComplete('phone');
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de continuer. Réessayez.'));
     } finally {
@@ -77,8 +77,8 @@ export function KnowledgeStep({ onComplete }: StepProps) {
         title="Consignes & démo"
         body="Donnez à Sokar la manière de parler qui correspond à votre restaurant."
       />
-      <div className="grid max-w-6xl items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-12">
-        <div className="min-w-0 space-y-5 py-1">
+      <div className="grid max-w-6xl items-start gap-6 lg:grid-cols-2">
+        <div className="min-w-0 space-y-5 rounded-[1.75rem] border border-border bg-card p-5 sm:p-6">
           <Segmented
             label="Style de votre restaurant"
             value={profileType}
@@ -159,36 +159,36 @@ export function KnowledgeStep({ onComplete }: StepProps) {
               </Field>
             )}
           </div>
+          {!demoPlayed && (
+            <p className="text-sm text-muted-foreground">
+              Écoutez la démonstration avec ces réglages pour continuer.
+            </p>
+          )}
           {demoPlayed && (
-            <div className="border-t border-border pt-4">
-              <p className="text-sm font-medium">Comment trouvez-vous Sokar ?</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={handleContinue} disabled={saving}>
-                  Parfait
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => adjust(() => setFillerStyle('WARM'))}
-                >
-                  Plus chaleureux
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => adjust(() => setFillerStyle('FORMAL'))}
-                >
-                  Plus formel
-                </Button>
-              </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+              <p className="mr-1 text-sm font-medium">Un ajustement ?</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => adjust(() => setFillerStyle('WARM'))}
+              >
+                Plus chaleureux
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => adjust(() => setFillerStyle('FORMAL'))}
+              >
+                Plus formel
+              </Button>
             </div>
           )}
         </div>
         <div className="min-w-0 space-y-3">
           <DemoCallPlayer
             key={JSON.stringify([profileType, fillerStyle, speakingRate, systemPromptExtra])}
-            styleLabel={FILLER_OPTIONS.find((option) => option.value === fillerStyle)?.label}
-            rhythmLabel={speakingRate < 1 ? 'Calme' : speakingRate > 1 ? 'Dynamique' : 'Modéré'}
             beforePlay={handleSave}
             onPlayed={() => setDemoPlayed(true)}
           />
@@ -206,7 +206,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           disabled={!demoPlayed || saving}
           className="transition-all duration-200"
         >
-          Ça me convient → Continuer vers le planning
+          Continuer
         </Button>
       </OnboardingAction>
     </div>
@@ -229,59 +229,54 @@ function Segmented({
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-foreground">{label}</p>
-      <div
-        className={cn('flex gap-2', rhythm && 'rounded-xl bg-muted/60 p-1')}
-        role="group"
-        aria-label={label}
-      >
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={value === option.value}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              'flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border px-2 py-2.5 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              option.description && 'relative flex-col gap-1 py-3',
-              value === option.value
-                ? 'border-foreground/25 bg-background font-medium text-foreground shadow-sm'
-                : rhythm
-                  ? 'border-transparent bg-transparent text-muted-foreground hover:text-foreground'
-                  : 'border-border bg-transparent text-muted-foreground hover:border-foreground/30 hover:text-foreground',
-            )}
-          >
-            {option.description ? (
-              <span className="mb-1 text-foreground/70">
-                {option.value === 'WARM' ? (
+      <div className="flex gap-2" role="group" aria-label={label}>
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                'flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border px-2 py-2.5 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                option.description && 'flex-col gap-0.5 py-3',
+                selected
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border bg-background text-muted-foreground hover:border-foreground/40 hover:bg-accent hover:text-foreground',
+              )}
+            >
+              {option.description ? (
+                option.value === 'WARM' ? (
                   <Heart size={18} aria-hidden="true" />
                 ) : option.value === 'FORMAL' ? (
                   <Gem size={18} aria-hidden="true" />
                 ) : (
                   <AudioLines size={18} aria-hidden="true" />
-                )}
-              </span>
-            ) : rhythm ? (
-              option.value === '0.85' ? (
-                <Waves size={15} aria-hidden="true" />
-              ) : option.value === '1' ? (
-                <Gauge size={15} aria-hidden="true" />
-              ) : (
-                <Zap size={15} aria-hidden="true" />
-              )
-            ) : value === option.value ? (
-              <Check size={14} aria-hidden="true" />
-            ) : null}
-            {option.label}
-            {option.description && (
-              <span className="text-xs font-normal text-muted-foreground">
-                {option.description}
-              </span>
-            )}
-            {option.description && value === option.value && (
-              <Check size={12} aria-hidden="true" className="absolute right-2 top-2" />
-            )}
-          </button>
-        ))}
+                )
+              ) : rhythm ? (
+                option.value === '0.85' ? (
+                  <Waves size={15} aria-hidden="true" />
+                ) : option.value === '1' ? (
+                  <Gauge size={15} aria-hidden="true" />
+                ) : (
+                  <Zap size={15} aria-hidden="true" />
+                )
+              ) : null}
+              {option.label}
+              {option.description && (
+                <span
+                  className={cn(
+                    'text-xs font-normal',
+                    selected ? 'text-background/70' : 'text-muted-foreground',
+                  )}
+                >
+                  {option.description}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

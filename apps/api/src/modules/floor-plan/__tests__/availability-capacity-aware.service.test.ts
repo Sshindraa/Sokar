@@ -95,6 +95,7 @@ function makeRestaurant(
     noiseLevel: overrides.noiseLevel ?? null,
     dietary: overrides.dietary ?? [],
     attributeConfidence: overrides.attributeConfidence ?? {},
+    practicalInfo: overrides.practicalInfo ?? {},
     agenticOptIn: overrides.agenticOptIn ?? false,
     openaiReserveEnabled: overrides.openaiReserveEnabled ?? false,
     policyVersion: overrides.policyVersion ?? '2026-06-20',
@@ -465,6 +466,46 @@ describe('CapacityAwareAvailabilityService', () => {
     expect(times).toContain('19:00');
     expect(times).not.toContain('15:00');
     expect(times).not.toContain('18:30');
+  });
+
+  it('arrête les créneaux de chaque service à sa dernière réservation', async () => {
+    const splitHours = {
+      ...openingHours,
+      thursday: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30', lastBooking: '13:30' },
+          { open: '19:00', close: '22:30', lastBooking: '21:30' },
+        ],
+      },
+    };
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant({}, splitHours),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+    const times = dto.slots.map((slot) => slot.time);
+
+    expect(times).toContain('13:30');
+    expect(times).not.toContain('14:00');
+    expect(times).toContain('21:30');
+    expect(times).not.toContain('22:00');
+  });
+
+  it('garde le dernier créneau avant la fermeture quand lastBooking est absent', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+    const times = dto.slots.map((slot) => slot.time);
+
+    expect(times.at(-1)).toBe('22:00');
   });
 
   it('propose après minuit sur le jour calendrier suivant', async () => {

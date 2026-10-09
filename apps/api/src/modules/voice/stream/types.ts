@@ -416,6 +416,12 @@ export interface CallSession {
    */
   maxPartySize?: number;
   restaurantName: string;
+  /**
+   * Appel de démonstration lancé depuis le navigateur pendant l'onboarding. Aucun effet de bord
+   * réel : pas d'écriture (réservation, message), pas de transfert, pas de raccrochage Telnyx, pas
+   * de finalisation ni de facturation d'appel.
+   */
+  demo?: boolean;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
   /** Keyterms métier non personnels préparés pour le chemin Deepgram ciblé. */
@@ -632,6 +638,8 @@ export interface CallSession {
   interruptedReply?: InterruptedReply;
   /** Texte de l'accueil, tant qu'il peut encore être repris après une coupure sans suite. */
   greetingText?: string;
+  /** Style de la maison pour l'accueil composé (absent : accueil fixe). Voir styled-greeting.ts. */
+  greetingStyle?: { profileType?: string; fillerStyle?: string };
   /** L'accueil est en cours de lecture. */
   greetingPlaying?: boolean;
   /** L'accueil a été coupé et aucun tour n'a été traité depuis. */

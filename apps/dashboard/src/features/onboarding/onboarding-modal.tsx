@@ -11,15 +11,15 @@ import {
 import { ArrowLeft } from 'lucide-react';
 import { useOnboarding } from './onboarding-provider';
 import type { OnboardingTaskKey } from './types';
-import { STEP_COMPONENTS, STEP_KEYS, STEP_META } from './steps';
+import { STEP_COMPONENTS, STEP_GROUP_SIZE, STEP_KEYS, STEP_META } from './steps';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { OnboardingNavFooter } from './onboarding-nav-footer';
 
 const CONNECT_STEP_COPY = {
   'connect-identity': {
-    title: 'Votre restaurant en quelques mots',
-    description: 'Nous avons préparé votre page. Vérifiez-la avant de continuer.',
+    title: 'Votre restaurant, en ligne',
+    description: 'Personnalisez votre page et découvrez le résultat.',
   },
   'connect-location': {
     title: 'Où se trouve votre restaurant ?',
@@ -28,10 +28,6 @@ const CONNECT_STEP_COPY = {
   'connect-cuisine': {
     title: 'Votre cuisine et votre ambiance',
     description: 'Ces repères aideront vos clients à savoir si votre restaurant leur correspond.',
-  },
-  'connect-capacity': {
-    title: 'Des réservations à votre rythme',
-    description: 'Vérifiez les règles proposées. Vous pourrez les ajuster à tout moment.',
   },
   'connect-activation': {
     title: 'Votre page est prête',
@@ -119,7 +115,8 @@ export function OnboardingModal() {
           <DialogTitle className="flex items-center gap-2">
             {meta && (
               <span className="shrink-0 whitespace-nowrap rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-primary">
-                {meta.group === 'voice' ? 'Assistant vocal' : 'Connect'} · {meta.index}/5
+                {meta.group === 'voice' ? 'Votre restaurant' : 'Connect'} · {meta.index}/
+                {STEP_GROUP_SIZE[meta.group]}
               </span>
             )}
             {connectCopy?.title ?? meta?.title ?? 'Mise en service'}
