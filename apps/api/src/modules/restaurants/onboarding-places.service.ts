@@ -1,4 +1,5 @@
 import { normalizePhone } from '@sokar/shared';
+import { deriveDisplayName } from './place-display-name';
 
 const PLACES_API = 'https://places.googleapis.com/v1';
 
@@ -13,10 +14,14 @@ export type PlaceSuggestion = { placeId: string; mainText: string; secondaryText
 export type PlaceImportDetails = {
   placeId: string;
   name: string;
+  /** Nom commercial déduit du nom Google (sans ville ni quartier), modifiable par le restaurateur. */
+  displayName: string;
   formattedAddress: string;
   postalCode: string;
   city: string;
   country: string;
+  lat?: number;
+  lng?: number;
   phoneE164: string;
   openingHours: Record<
     string,
@@ -27,7 +32,7 @@ export type PlaceImportDetails = {
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 const FIELD_MASK =
-  'displayName,formattedAddress,addressComponents,internationalPhoneNumber,regularOpeningHours';
+  'displayName,formattedAddress,addressComponents,internationalPhoneNumber,regularOpeningHours,location';
 
 function apiKey() {
   return process.env.GOOGLE_PLACES_API_KEY?.trim();
@@ -188,22 +193,37 @@ export async function getOnboardingPlaceDetails(placeId: string, sessionToken: s
   const mapped = mapHours(
     (data.regularOpeningHours as { periods?: GooglePeriod[] } | undefined)?.periods,
   );
-  const displayName = data.displayName as GoogleText | undefined;
+  const googleName = (data.displayName as GoogleText | undefined)?.text ?? '';
+  const city =
+    component('locality')?.longText ??
+    component('postal_town')?.longText ??
+    component('administrative_area_level_3')?.longText ??
+    component('administrative_area_level_2')?.longText ??
+    '';
+  const postalCode = component('postal_code')?.longText ?? '';
+
+  const location = data.location as { latitude?: number; longitude?: number } | undefined;
+  const coordinates =
+    typeof location?.latitude === 'number' &&
+    Number.isFinite(location.latitude) &&
+    Math.abs(location.latitude) <= 90 &&
+    typeof location.longitude === 'number' &&
+    Number.isFinite(location.longitude) &&
+    Math.abs(location.longitude) <= 180
+      ? { lat: location.latitude, lng: location.longitude }
+      : {};
 
   return {
+    ...coordinates,
     placeId,
-    name: displayName?.text ?? '',
+    name: googleName,
+    displayName: await deriveDisplayName({ name: googleName, city, postalCode }),
     formattedAddress:
       streetAddress ||
       component('premise')?.longText ||
       (typeof data.formattedAddress === 'string' ? data.formattedAddress : ''),
-    postalCode: component('postal_code')?.longText ?? '',
-    city:
-      component('locality')?.longText ??
-      component('postal_town')?.longText ??
-      component('administrative_area_level_3')?.longText ??
-      component('administrative_area_level_2')?.longText ??
-      '',
+    postalCode,
+    city,
     country: component('country')?.shortText ?? 'FR',
     phoneE164:
       typeof data.internationalPhoneNumber === 'string'

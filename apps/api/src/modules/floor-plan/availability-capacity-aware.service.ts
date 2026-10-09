@@ -10,11 +10,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
-import { HOURS_TO_MINUTES } from '../../shared/constants/time.js';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
 import { ACTIVE_RESERVATION_STATES, intervalsOverlap } from '../../shared/reservations/capacity.js';
@@ -143,7 +142,7 @@ export class CapacityAwareAvailabilityService {
     }
 
     const allSlots = Array.from(
-      new Set(dayHours.flatMap((period) => generateSlots(period.open, period.close, SLOT_MINUTES))),
+      new Set(dayHours.flatMap((period) => bookingSlotsOf(period, SLOT_MINUTES))),
     ).sort();
     if (allSlots.length === 0) {
       return emptyAvailability(args);
@@ -283,19 +282,4 @@ function emptyAvailability(args: {
 function computeDayOfWeek(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-
-function generateSlots(open: string, close: string, stepMinutes: number): string[] {
-  const slots: string[] = [];
-  const [openH, openM] = open.split(':').map(Number);
-  const [closeH, closeM] = close.split(':').map(Number);
-  let cur = openH * HOURS_TO_MINUTES + openM;
-  const end = closeH * HOURS_TO_MINUTES + closeM;
-  while (cur + stepMinutes <= end) {
-    const h = Math.floor(cur / HOURS_TO_MINUTES);
-    const m = cur % HOURS_TO_MINUTES;
-    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-    cur += stepMinutes;
-  }
-  return slots;
 }

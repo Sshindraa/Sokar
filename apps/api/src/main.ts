@@ -61,6 +61,7 @@ import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
 import fastifyWebsocket from '@fastify/websocket';
 import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
+import { registerLiveDemoStreamRoute } from './modules/voice/demo/demo-stream';
 import { checkHealth } from './shared/health/checks';
 import { registerJobSchedulers } from './shared/queue/schedulers';
 
@@ -212,6 +213,7 @@ export async function buildApp() {
   await registerClerk(app);
   await app.register(fastifyWebsocket);
   registerMediaStreamRoutes(app);
+  registerLiveDemoStreamRoute(app);
 
   await app.register(telnyxVoiceRoutes);
   await app.register(smsInboundRoutes);

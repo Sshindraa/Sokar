@@ -1,15 +1,16 @@
 import { z } from 'zod';
+import { hasAnsweredPracticalInfo } from './practical-info';
 
 export const ONBOARDING_TASK_KEYS = [
   'restaurant',
   'hours',
+  'floor',
   'knowledge',
-  'calendar',
   'phone',
+  'channels',
   'connect-identity',
   'connect-location',
   'connect-cuisine',
-  'connect-capacity',
   'connect-activation',
 ] as const;
 
@@ -24,6 +25,10 @@ export const ONBOARDING_STATUSES = [
 ] as const;
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
+// Les tâches `restaurant`, `hours` et `floor` forment le socle commun à tous les canaux (téléphone,
+// widget, Google, MCP). `floor` couvre les tables, les règles de réservation (durée d'un repas, taille
+// maximale des groupes, annulation, acompte) et les informations pratiques facultatives (parking,
+// accessibilité, animaux…) : tout cela vaut pour tous les canaux.
 export const ONBOARDING_STEPS: ReadonlyArray<{
   key: OnboardingTask;
   title: string;
@@ -50,17 +55,18 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
     index: 2,
   },
   {
-    key: 'knowledge',
-    title: 'Consignes & démo',
-    description: 'Ton, ambiance et consignes commerciales.',
+    key: 'floor',
+    title: 'Votre salle et vos règles',
+    description:
+      'Vos tables, vos règles de réservation et, si vous le souhaitez, les informations pratiques que vos clients demandent.',
     required: false,
     group: 'voice',
     index: 3,
   },
   {
-    key: 'calendar',
-    title: 'Connexion au planning',
-    description: 'Google Calendar ou fallback manuel.',
+    key: 'knowledge',
+    title: 'Consignes & démo',
+    description: 'Ton, ambiance et consignes commerciales.',
     required: false,
     group: 'voice',
     index: 4,
@@ -73,11 +79,19 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
     group: 'voice',
     index: 5,
   },
+  {
+    key: 'channels',
+    title: 'Vos canaux de réservation',
+    description: 'Test des disponibilités avant la configuration de la page Sokar Connect.',
+    required: false,
+    group: 'voice',
+    index: 6,
+  },
   // Sokar Connect group
   {
     key: 'connect-identity',
-    title: 'Identité publique',
-    description: 'Slug, description et photo de couverture.',
+    title: 'Votre page',
+    description: 'Présentation, photo et informations publiques.',
     required: false,
     group: 'connect',
     index: 1,
@@ -99,20 +113,12 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
     index: 3,
   },
   {
-    key: 'connect-capacity',
-    title: 'Capacité & règles',
-    description: 'Capacité d’accueil, durée de service et acompte.',
-    required: false,
-    group: 'connect',
-    index: 4,
-  },
-  {
     key: 'connect-activation',
-    title: 'Activation & preview',
+    title: 'Publication',
     description: 'Mise en ligne de la page et des métadonnées.',
     required: false,
     group: 'connect',
-    index: 5,
+    index: 4,
   },
 ];
 
@@ -177,6 +183,25 @@ export function hasOpeningHours(openingHours: unknown): boolean {
   );
 }
 
+/**
+ * Les règles sont configurées quand la durée d'un repas est explicite : c'est la clé que la
+ * disponibilité lit (`resolveServiceDurationMinutes`). L'ancienne clé `serviceDuration` n'était lue
+ * par rien, elle ne compte donc pas.
+ */
+export function hasConfiguredRules(capacitySpecials: unknown): boolean {
+  if (
+    !capacitySpecials ||
+    typeof capacitySpecials !== 'object' ||
+    Array.isArray(capacitySpecials)
+  ) {
+    return false;
+  }
+  const specials = capacitySpecials as Record<string, unknown>;
+  return [specials.serviceDurationMinutes, specials.defaultServiceDurationMinutes].some(
+    (value) => typeof value === 'number' && value > 0,
+  );
+}
+
 export function hasUsablePhone(phoneNumber: string | null | undefined): boolean {
   return Boolean(phoneNumber && !phoneNumber.startsWith('+000'));
 }
@@ -192,10 +217,21 @@ function markCompleted(tasks: OnboardingTasksMap, task: OnboardingTask, now: str
   };
 }
 
+/** Tables actives du restaurant, telles que la disponibilité les voit (plans de salle actifs). */
+export type FloorStats = {
+  tableCount: number;
+  seatCount: number;
+  largestTableCapacity: number;
+};
+
 export type RestaurantLike = {
   name?: string | null;
   phoneE164?: string | null;
+  managerPhone?: string | null;
   managerEmail?: string | null;
+  practicalInfo?: unknown;
+  /** Absent : l'appelant ne l'a pas chargé, l'état stocké de `floor` fait foi. */
+  floorStats?: FloorStats | null;
   openingHours?: unknown;
   personality?: unknown;
   googleRefreshToken?: string | null;
@@ -242,6 +278,7 @@ export type OnboardingStateView = {
   tasks: OnboardingTasksMap;
   currentStep: OnboardingStepView;
   completedCount: number;
+  totalCount: number;
   progress: number;
   onboardingDone: boolean; // voice onboarding done
   voiceOnboardingDone: boolean;
@@ -250,11 +287,51 @@ export type OnboardingStateView = {
   connectProgress: number;
   /**
    * Seuil minimum pour accéder au dashboard sans modale bloquante.
-   * Requiert que les étapes `restaurant` ET `hours` soient `completed`
-   * (skip ne compte pas — l'utilisateur doit vraiment configurer ces deux).
+   * Requiert que `restaurant`, `hours` ET `floor` (tables et règles) soient `completed`
+   * (skip ne compte pas) : le socle sans lequel aucun canal ne peut proposer de créneau.
    */
   minimumViableDone: boolean;
+  /** Ce qu'il manque pour qu'un client puisse réserver, quel que soit le canal. */
+  readiness: ReservationReadiness;
 };
+
+export type ReservationReadinessCheckKey = 'hours' | 'tables' | 'rules';
+
+export type ReservationReadiness = {
+  ready: boolean;
+  checks: Array<{ key: ReservationReadinessCheckKey; label: string; ok: boolean }>;
+  tableCount: number;
+  seatCount: number;
+  largestTableCapacity: number;
+};
+
+/**
+ * La disponibilité se calcule sur les tables des plans de salle actifs, les horaires de réservation
+ * et les règles (durée de service). Sans l'un des trois, aucun canal ne peut proposer de créneau.
+ */
+export function computeReservationReadiness(restaurant: RestaurantLike): ReservationReadiness {
+  const floor = restaurant.floorStats ?? { tableCount: 0, seatCount: 0, largestTableCapacity: 0 };
+  const checks: ReservationReadiness['checks'] = [
+    {
+      key: 'hours',
+      label: 'Horaires de réservation',
+      ok: hasOpeningHours(restaurant.openingHours),
+    },
+    { key: 'tables', label: 'Tables de la salle', ok: floor.tableCount > 0 },
+    {
+      key: 'rules',
+      label: 'Règles de réservation',
+      ok: hasConfiguredRules(restaurant.exposureSettings?.capacitySpecials),
+    },
+  ];
+  return {
+    ready: checks.every((check) => check.ok),
+    checks,
+    tableCount: floor.tableCount,
+    seatCount: floor.seatCount,
+    largestTableCapacity: floor.largestTableCapacity,
+  };
+}
 
 export function computeOnboardingState(restaurant: RestaurantLike): OnboardingStateView {
   const now = new Date().toISOString();
@@ -265,6 +342,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     restaurant.name &&
     restaurant.name !== 'Mon Restaurant' &&
     restaurant.phoneE164 &&
+    restaurant.managerPhone?.trim() &&
     restaurant.managerEmail
   ) {
     markCompleted(tasks, 'restaurant', now);
@@ -274,35 +352,43 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     markCompleted(tasks, 'hours', now);
   }
 
-  if (restaurant.personality) {
-    markCompleted(tasks, 'knowledge', now);
+  if (
+    restaurant.floorStats &&
+    restaurant.floorStats.tableCount > 0 &&
+    hasConfiguredRules(restaurant.exposureSettings?.capacitySpecials) &&
+    hasAnsweredPracticalInfo(restaurant.practicalInfo, restaurant.ambiance)
+  ) {
+    markCompleted(tasks, 'floor', now);
   }
 
-  if (restaurant.googleRefreshToken) {
-    markCompleted(tasks, 'calendar', now);
+  if (restaurant.personality) {
+    markCompleted(tasks, 'knowledge', now);
   }
 
   if (hasUsablePhone(restaurant.phoneNumber)) {
     markCompleted(tasks, 'phone', now);
   }
 
-  // Auto-completion Sokar Connect
-  const hasCoverImage =
-    restaurant.coverImageUrl || (restaurant.images && restaurant.images.length > 0);
-  if (restaurant.slug && restaurant.description && hasCoverImage) {
-    markCompleted(tasks, 'connect-identity', now);
+  // Compatibilité : l’ancien contrôle intermédiaire n’exige plus de page dédiée.
+  // Conserver la clé dans l’API et ne l’acquérir que lorsque les réservations sont possibles.
+  if (computeReservationReadiness(restaurant).ready) {
+    markCompleted(tasks, 'channels', now);
   }
 
-  if (
+  // Auto-completion Sokar Connect
+  const hasConnectLocation = Boolean(
     restaurant.formattedAddress &&
     restaurant.city &&
     restaurant.postalCode &&
     restaurant.lat !== null &&
     restaurant.lat !== undefined &&
     restaurant.lng !== null &&
-    restaurant.lng !== undefined
-  ) {
-    markCompleted(tasks, 'connect-location', now);
+    restaurant.lng !== undefined,
+  );
+  if (hasConnectLocation) markCompleted(tasks, 'connect-location', now);
+  // Photo, présentation et cuisine sont facultatives dans l’éditeur unique.
+  if (restaurant.slug && (hasConnectLocation || restaurant.exposureSettings?.connectPublished)) {
+    markCompleted(tasks, 'connect-identity', now);
   }
 
   if (
@@ -315,13 +401,6 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   }
 
   const exposure = restaurant.exposureSettings;
-  const hasCapacitySpecials =
-    exposure?.capacitySpecials &&
-    typeof exposure.capacitySpecials === 'object' &&
-    Object.keys(exposure.capacitySpecials).length > 0;
-  if (hasCapacitySpecials) {
-    markCompleted(tasks, 'connect-capacity', now);
-  }
 
   if (exposure?.connectPublished) {
     markCompleted(tasks, 'connect-activation', now);
@@ -345,7 +424,10 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   }
 
   // Progression Sokar Connect group
-  const connectSteps = ONBOARDING_STEPS.filter((step) => step.group === 'connect');
+  // Adresse et cuisine sont intégrées à l’éditeur ; leurs clés restent exposées pour compatibilité.
+  const connectSteps = ONBOARDING_STEPS.filter(
+    (step) => step.key === 'connect-identity' || step.key === 'connect-activation',
+  );
   const connectCurrent = connectSteps.find((step) => tasks[step.key].status === 'current');
   if (!connectCurrent || tasks[connectCurrent.key].status === 'completed') {
     const nextConnect = connectSteps.find(
@@ -379,31 +461,37 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   const connectOnboardingDone = connectCompletedCount === connectSteps.length;
   const connectProgress = Math.round((connectCompletedCount / connectSteps.length) * 100);
 
-  const completedCount = ONBOARDING_STEPS.filter(
-    (step) => tasks[step.key].status === 'completed',
-  ).length;
-
+  const activeSteps = steps.filter(
+    (step) =>
+      step.group === 'voice' ||
+      step.key === 'connect-identity' ||
+      step.key === 'connect-activation',
+  );
+  const completedCount = activeSteps.filter((step) => step.status === 'completed').length;
   const currentStep =
-    steps.find((step) => step.status === 'current') ??
-    steps.find((step) => step.status === 'blocked') ??
-    steps.find((step) => step.status !== 'completed') ??
+    activeSteps.find((step) => step.status === 'current') ??
+    activeSteps.find((step) => step.status === 'blocked') ??
+    activeSteps.find((step) => step.status !== 'completed') ??
     steps[steps.length - 1];
 
-  const minimumViableDone =
-    tasks['restaurant'].status === 'completed' && tasks['hours'].status === 'completed';
+  const minimumViableDone = (['restaurant', 'hours', 'floor'] as const).every(
+    (key) => tasks[key].status === 'completed',
+  );
 
   return {
     steps,
     tasks,
     currentStep,
     completedCount,
-    progress: Math.round((completedCount / ONBOARDING_STEPS.length) * 100),
+    totalCount: activeSteps.length,
+    progress: Math.round((completedCount / activeSteps.length) * 100),
     onboardingDone: voiceOnboardingDone,
     voiceOnboardingDone,
     connectOnboardingDone,
     voiceProgress,
     connectProgress,
     minimumViableDone,
+    readiness: computeReservationReadiness(restaurant),
   };
 }
 

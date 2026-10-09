@@ -137,7 +137,7 @@ describe('perRestaurantProgress', () => {
     const events = [
       event('bloque', 'onboarding_step_started', 'restaurant', 0),
       event('bloque', 'onboarding_step_blocked', 'phone', 1),
-      event('bloque', 'onboarding_step_blocked', 'calendar', 2),
+      event('bloque', 'onboarding_step_blocked', 'phone', 2),
       event('avance', 'onboarding_step_started', 'restaurant', 0),
       event('avance', 'onboarding_step_completed', 'restaurant', 1),
       event('avance', 'onboarding_step_completed', 'hours', 2),

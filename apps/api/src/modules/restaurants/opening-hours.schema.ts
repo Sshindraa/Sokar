@@ -2,17 +2,22 @@ import { z } from 'zod';
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const MINUTES_PER_DAY = 24 * 60;
+const BOOKING_STEP_MINUTES = 30;
 const LATEST_OVERNIGHT_CLOSE = 6 * 60;
 
+// lastBooking: dernière heure de début de réservation du service, optionnelle pour rester
+// compatible avec les horaires déjà enregistrés (absente = dernier créneau avant la fermeture).
 const OpeningHourPeriodSchema = z.object({
   open: z.string().regex(TIME_PATTERN),
   close: z.string().regex(TIME_PATTERN),
+  lastBooking: z.string().regex(TIME_PATTERN).optional(),
 });
 
 export const OpeningHoursDaySchema = z
   .object({
     open: z.string().regex(TIME_PATTERN),
     close: z.string().regex(TIME_PATTERN),
+    lastBooking: z.string().regex(TIME_PATTERN).optional(),
     services: z.array(OpeningHourPeriodSchema).length(2).optional(),
     slots: z.array(OpeningHourPeriodSchema).max(2).optional(),
   })
@@ -21,7 +26,7 @@ export const OpeningHoursDaySchema = z
       ? day.slots
       : day.services?.length
         ? day.services
-        : [{ open: day.open, close: day.close }];
+        : [{ open: day.open, close: day.close, lastBooking: day.lastBooking }];
     const first = periods[0];
     const last = periods.at(-1);
     if (!first || !last) return;
@@ -30,6 +35,17 @@ export const OpeningHoursDaySchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Les heures principales doivent correspondre aux bornes des services.',
+      });
+    }
+
+    if (
+      day.lastBooking !== undefined &&
+      (day.slots?.length || day.services?.length) &&
+      day.lastBooking !== last.lastBooking
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'La dernière réservation du jour doit correspondre à celle du dernier service.',
       });
     }
 
@@ -46,6 +62,18 @@ export const OpeningHoursDaySchema = z
         continue;
       }
       if (close < open) close += MINUTES_PER_DAY;
+
+      if (period.lastBooking !== undefined) {
+        let lastBooking = toMinutes(period.lastBooking);
+        if (lastBooking < open) lastBooking += MINUTES_PER_DAY;
+        if (lastBooking >= close || (lastBooking - open) % BOOKING_STEP_MINUTES !== 0) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              'La dernière réservation doit tomber dans le service, par pas de 30 minutes, avant la fermeture.',
+          });
+        }
+      }
 
       let start = open;
       if (previousStart != null && start < previousStart) {
