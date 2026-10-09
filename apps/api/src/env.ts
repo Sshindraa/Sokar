@@ -44,7 +44,8 @@ const localEnv = path.resolve(__dirname, '../../../.env.local');
 
 const envFile = fs.existsSync(appEnv) ? appEnv : fs.existsSync(rootEnv) ? rootEnv : localEnv;
 
-dotenv.config({ path: envFile });
+// En test, on ne lit jamais le .env du développeur : les tests tournent comme en CI, sans fichier local.
+if (process.env.NODE_ENV !== 'test') dotenv.config({ path: envFile });
 
 // ─── Defaults dev (ergonomie out-of-the-box) ─────────────────────────────
 // En dev/test, si les 4 vars URL ne sont pas positionnées (pas de apps/api/.env
