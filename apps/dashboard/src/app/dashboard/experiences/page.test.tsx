@@ -178,7 +178,7 @@ describe('ExperiencesPage', () => {
   it('modifie une offre sans changer sa clé ni son statut', async () => {
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
-    expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins');
+    await waitFor(() => expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins'));
     expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
     fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
       target: { value: '49,50' },
