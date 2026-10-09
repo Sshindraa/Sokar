@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,8 @@ import { DemoCallRecorder, liveDemoRecordingDir } from '../demo-recorder';
 
 const frame = (ms: number) => Buffer.alloc(ms * 8, 0x55).toString('base64');
 const media = (ms: number) => JSON.stringify({ event: 'media', media: { payload: frame(ms) } });
+// ffmpeg et ffprobe ne sont pas sur le runner CI : les tests d'encodage ne tournent que là où ils existent.
+const hasFfmpeg = ['ffmpeg', 'ffprobe'].every((bin) => spawnSync(bin, ['-version']).status === 0);
 
 describe('liveDemoRecordingDir', () => {
   it('est inactif sans variable et refusé en production', () => {
@@ -31,36 +33,39 @@ describe('DemoCallRecorder', () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 
-  it('écrit un MP3 stéréo de la durée de l’appel, sans fichiers temporaires', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'demo-rec-'));
-    dirs.push(dir);
-    let now = 1_000;
-    const recorder = new DemoCallRecorder(() => now);
-    recorder.addInbound(frame(20));
-    now += 1_000;
-    // Une réplique de 1,5 s arrive d'un coup : elle est jouée à la suite, pas superposée.
-    recorder.addOutbound(media(500));
-    recorder.addOutbound(media(500));
-    recorder.addOutbound(media(500));
-    now += 3_000;
+  it.skipIf(!hasFfmpeg)(
+    'écrit un MP3 stéréo de la durée de l’appel, sans fichiers temporaires',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'demo-rec-'));
+      dirs.push(dir);
+      let now = 1_000;
+      const recorder = new DemoCallRecorder(() => now);
+      recorder.addInbound(frame(20));
+      now += 1_000;
+      // Une réplique de 1,5 s arrive d'un coup : elle est jouée à la suite, pas superposée.
+      recorder.addOutbound(media(500));
+      recorder.addOutbound(media(500));
+      recorder.addOutbound(media(500));
+      now += 3_000;
 
-    const file = await recorder.save(dir, 'appel');
-    expect(file).toBe(join(dir, 'appel.mp3'));
-    expect(existsSync(file as string)).toBe(true);
-    expect(readdirSync(dir)).toEqual(['appel.mp3']);
+      const file = await recorder.save(dir, 'appel');
+      expect(file).toBe(join(dir, 'appel.mp3'));
+      expect(existsSync(file as string)).toBe(true);
+      expect(readdirSync(dir)).toEqual(['appel.mp3']);
 
-    const probe = JSON.parse(
-      execFileSync('ffprobe', [
-        ...['-v', 'error', '-show_entries', 'stream=channels:format=duration', '-of', 'json'],
-        file as string,
-      ]).toString(),
-    );
-    expect(probe.streams[0].channels).toBe(2);
-    expect(Number(probe.format.duration)).toBeGreaterThan(2.3);
-    expect(Number(probe.format.duration)).toBeLessThan(3);
-  });
+      const probe = JSON.parse(
+        execFileSync('ffprobe', [
+          ...['-v', 'error', '-show_entries', 'stream=channels:format=duration', '-of', 'json'],
+          file as string,
+        ]).toString(),
+      );
+      expect(probe.streams[0].channels).toBe(2);
+      expect(Number(probe.format.duration)).toBeGreaterThan(2.3);
+      expect(Number(probe.format.duration)).toBeLessThan(3);
+    },
+  );
 
-  it('un clear coupe ce qui n’a pas encore été joué', async () => {
+  it.skipIf(!hasFfmpeg)('un clear coupe ce qui n’a pas encore été joué', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'demo-rec-'));
     dirs.push(dir);
     let now = 0;
