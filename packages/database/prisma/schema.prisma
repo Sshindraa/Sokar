@@ -82,6 +82,8 @@ model Restaurant {
   noiseLevel                        NoiseLevel?                        @map("noise_level")
   dietary                           String[]                           @default([])
   attributeConfidence               Json                               @default("{}") @map("attribute_confidence")
+  /// Faits pratiques saisis par le restaurateur (parking, accessibilité, animaux, menu…). Une clé absente signifie « non précisé », jamais « non ».
+  practicalInfo                     Json                               @default("{}") @map("practical_info")
   agenticOptIn                      Boolean                            @default(false) @map("agentic_opt_in")
   openaiReserveEnabled              Boolean                            @default(false) @map("openai_reserve_enabled")
   policyVersion                     String                             @default("2026-06-20") @map("policy_version")
