@@ -166,10 +166,8 @@ export function PhoneStep({ onComplete }: StepProps) {
         setTestError('La mise en service n’a pas été enregistrée. Réessayez.');
         return;
       }
-      setTestResult(
-        'Assistant vocal validé. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
-      );
-      window.setTimeout(() => onComplete('connect-identity'), ONBOARDING_STEP_DELAY_MS);
+      setTestResult('Assistant vocal validé. Votre IA répond maintenant au téléphone.');
+      window.setTimeout(() => onComplete(null), ONBOARDING_STEP_DELAY_MS);
     } finally {
       setCalling(false);
     }

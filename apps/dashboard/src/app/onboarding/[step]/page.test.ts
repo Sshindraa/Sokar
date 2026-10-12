@@ -36,3 +36,10 @@ it.each(['channels', 'connect-location', 'connect-cuisine'])(
     expect(redirect).toHaveBeenCalledWith('/onboarding?step=connect-identity');
   },
 );
+
+it('ouvre l’écran des canaux', async () => {
+  await expect(OnboardingStepPage({ params: Promise.resolve({ step: 'canaux' }) })).rejects.toThrow(
+    'redirect',
+  );
+  expect(redirect).toHaveBeenCalledWith('/onboarding?step=canaux');
+});

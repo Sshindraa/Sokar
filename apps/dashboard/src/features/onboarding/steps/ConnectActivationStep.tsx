@@ -280,11 +280,7 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
         formId="connect-activation-form"
         saving={saving}
         label={
-          !pageReady
-            ? 'Compléter ma page'
-            : connectPublished
-              ? 'Terminer la mise en service'
-              : 'Publier ma page'
+          !pageReady ? 'Compléter ma page' : connectPublished ? 'Continuer' : 'Publier ma page'
         }
       />
 
@@ -312,7 +308,7 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
                 className="flex-1"
                 onClick={() => onComplete(null)}
               >
-                Terminer la mise en service
+                Continuer
               </Button>
               <Button asChild className="flex-1">
                 <a href={publicUrl} target="_blank" rel="noopener noreferrer">
