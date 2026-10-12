@@ -438,6 +438,7 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
               <OnboardingChannels
                 steps={visibleSteps}
                 readiness={state.readiness}
+                phoneAssigned={state.restaurant.phoneAssigned}
                 onOpen={navigate}
               />
             )}
