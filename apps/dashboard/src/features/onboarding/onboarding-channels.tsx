@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ArrowRight, Check, DoorOpen, Globe, PhoneCall, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Clock, DoorOpen, Globe, PhoneCall, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { trackProgress, type OnboardingTrack, type TrackProgress } from './tracks';
@@ -51,10 +51,13 @@ function ChannelCard({
   track,
   progress,
   onOpen,
+  awaitingNumber = false,
 }: {
   track: ChannelTrack;
   progress: TrackProgress;
   onOpen: (key: OnboardingTaskKey) => void;
+  /** Téléphone : le numéro Sokar n'est pas encore attribué ; consignes et démo restent faisables. */
+  awaitingNumber?: boolean;
 }) {
   const channel = CHANNELS[track];
   const Icon = channel.icon;
@@ -70,12 +73,13 @@ function ChannelCard({
         </span>
         <span
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium',
+            'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium',
             progress.done ? 'bg-foreground text-background' : 'bg-background text-foreground/70',
           )}
         >
           {progress.done && <Check size={12} aria-hidden="true" />}
-          {statusLabel(progress)}
+          {awaitingNumber && <Clock size={12} aria-hidden="true" className="shrink-0" />}
+          {awaitingNumber ? 'Numéro Sokar en cours d’attribution' : statusLabel(progress)}
         </span>
       </div>
       <div>
@@ -110,15 +114,19 @@ function ChannelCard({
 export function OnboardingChannels({
   steps,
   readiness,
+  phoneAssigned,
   onOpen,
 }: {
   steps: OnboardingStep[];
   readiness?: ReservationReadiness;
+  /** Le restaurant a-t-il son numéro Sokar ? Sans lui, l'étape Appels ne peut pas se terminer. */
+  phoneAssigned: boolean;
   onOpen: (key: OnboardingTaskKey) => void;
 }) {
   const phone = trackProgress(steps, 'phone');
   const online = trackProgress(steps, 'online');
   const remaining = [phone, online].filter((progress) => !progress.done).length;
+  const awaitingNumber = !phoneAssigned && !phone.done;
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6">
@@ -148,7 +156,12 @@ export function OnboardingChannels({
       </section>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <ChannelCard track="phone" progress={phone} onOpen={onOpen} />
+        <ChannelCard
+          track="phone"
+          progress={phone}
+          onOpen={onOpen}
+          awaitingNumber={awaitingNumber}
+        />
         <ChannelCard track="online" progress={online} onOpen={onOpen} />
       </div>
 
@@ -175,11 +188,13 @@ export function OnboardingChannels({
       </section>
 
       <p role="status" className="text-xs text-muted-foreground">
-        {remaining === 0
-          ? 'Vos canaux sont prêts.'
-          : remaining === 1
-            ? 'Encore un canal à activer pour ouvrir votre espace.'
-            : 'Activez vos deux canaux, dans l’ordre de votre choix, pour ouvrir votre espace.'}
+        {awaitingNumber
+          ? 'Votre numéro Sokar est en cours d’attribution : votre espace s’ouvrira une fois ce numéro attribué et vos deux canaux prêts.'
+          : remaining === 0
+            ? 'Vos canaux sont prêts.'
+            : remaining === 1
+              ? 'Encore un canal à activer pour ouvrir votre espace.'
+              : 'Activez vos deux canaux, dans l’ordre de votre choix, pour ouvrir votre espace.'}
       </p>
     </div>
   );

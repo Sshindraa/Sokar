@@ -345,6 +345,7 @@ it('reprend un canal commencé plutôt que l’écran des canaux', () => {
 
 it('ramène aux canaux depuis la première étape d’un canal et via le lien direct', () => {
   mocks.state = withCompleted(SOCLE);
+  mocks.state.restaurant.phoneAssigned = true;
   window.history.replaceState(null, '', '/onboarding?step=knowledge');
   render(<OnboardingWizard />);
   fireEvent.click(screen.getAllByRole('button', { name: /Vos canaux/ })[0]);
@@ -408,4 +409,11 @@ it('termine Connect sans les anciennes tâches adresse et cuisine', () => {
   expect(visible.connectOnboardingDone).toBe(true);
   expect(visible.connectProgress).toBe(100);
   expect(visible.steps.map((step) => step.key)).not.toContain('connect-location');
+});
+
+it('transmet l’attribution du numéro Sokar à l’écran des canaux', () => {
+  mocks.state = withCompleted(SOCLE);
+  render(<OnboardingWizard />);
+  expect(screen.getByText('Numéro Sokar en cours d’attribution')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Configurer : Téléphone' })).toBeEnabled();
 });
