@@ -9,6 +9,12 @@ import {
   ReservationQuerySchema,
 } from './reservation.schema';
 import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES } from '@sokar/shared';
+import { db } from '../../shared/db/client';
+import {
+  isSlotTooSoon,
+  leadTimeRefusal,
+  loadMinLeadTimeMinutes,
+} from '../../shared/reservations/lead-time';
 
 // --- auth/public split ---
 // Les routes GET/PATCH/DELETE nécessitent une organisation (dashboard manager).
@@ -38,12 +44,22 @@ export async function reservationRoutes(app: FastifyInstance) {
   app.get('/restaurants/:id/availability', async (req, reply) => {
     const { id } = req.params as { id: string };
     const query = AvailabilityQuerySchema.parse(req.query);
-    const availability = await ReservationService.availability(id, query.date, query.partySize);
+    // Page /book : surface en ligne, donc soumise au délai minimum du restaurant.
+    const availability = await ReservationService.availability(id, query.date, query.partySize, {
+      minLeadTimeMinutes: await loadMinLeadTimeMinutes(db, id),
+    });
     return reply.send(availability);
   });
 
   app.post('/reservations', { preHandler: requireReservationService }, async (req, reply) => {
     const body = CreateReservationSchema.parse(req.body);
+    // Cette route est la création de la page /book (la voix passe par ReservationService, sans HTTP) :
+    // elle applique le délai minimum, comme l'affichage des créneaux. Le service, lui, ne l'applique
+    // pas : la voix et le personnel ne sont pas concernés.
+    const minLeadTimeMinutes = await loadMinLeadTimeMinutes(db, body.restaurantId);
+    if (isSlotTooSoon(new Date(body.reservedAt), minLeadTimeMinutes)) {
+      return reply.status(409).send(leadTimeRefusal(minLeadTimeMinutes));
+    }
     try {
       const reservation = await ReservationService.create({
         restaurantId: body.restaurantId,

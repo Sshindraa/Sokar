@@ -93,11 +93,16 @@ let app: FastifyInstance;
 describe('Sokar Connect — Waiting list routes', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Les créneaux de ces tests sont fixes (29 juin) : l'horloge est figée avant eux, sinon la liste
+    // d'attente refuserait des créneaux passés.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-25T10:00:00.000Z'));
     await redisCache.flushall();
     app = await getApp();
   });
 
   afterAll(async () => {
+    vi.useRealTimers();
     await closeApp();
   });
 
@@ -225,6 +230,111 @@ describe('Sokar Connect — Waiting list routes', () => {
 
       expect(res.statusCode).toBe(409);
       expect(res.json()).toEqual({ error: 'waiting_list_full' });
+    });
+  });
+
+  describe('créneau passé', () => {
+    it('refuse un créneau déjà commencé : invalid_slot, sans jamais rejoindre la liste', async () => {
+      mockRestaurantAndSettings();
+      // 20:30 à Paris : le créneau de 20:00 a commencé. Le moteur le renvoie « indisponible », ce qui
+      // ne veut pas dire « complet » : la liste d'attente n'a de sens que pour un créneau à venir.
+      vi.setSystemTime(new Date('2026-06-29T18:30:00.000Z'));
+      vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
+        restaurantId: RESTAURANT_ID,
+        date: '2026-06-29',
+        partySize: 4,
+        slots: [{ time: '20:00', available: false }],
+      });
+      vi.spyOn(TableAllocationService.prototype, 'allocate').mockResolvedValue(null);
+      const join = vi.spyOn(WaitingListService.prototype, 'join');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/waiting-list`,
+        payload: {
+          date: '2026-06-29',
+          time: '20:00',
+          partySize: 4,
+          customer: {
+            firstName: 'Alice',
+            lastName: 'Doe',
+            phone: '+33612345678',
+            email: 'alice@example.com',
+          },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'invalid_slot' });
+      expect(join).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('délai minimum de réservation', () => {
+    const payload = {
+      date: '2026-06-29',
+      time: '20:00',
+      partySize: 4,
+      customer: {
+        firstName: 'Alice',
+        lastName: 'Doe',
+        phone: '+33612345678',
+        email: 'alice@example.com',
+      },
+    };
+    const slotFull = () => {
+      vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
+        restaurantId: RESTAURANT_ID,
+        date: '2026-06-29',
+        partySize: 4,
+        slots: [{ time: '20:00', available: false }],
+      });
+      vi.spyOn(TableAllocationService.prototype, 'allocate').mockResolvedValue(null);
+      return vi.spyOn(WaitingListService.prototype, 'join');
+    };
+
+    it('refuse un créneau dans le délai (2 h) : 409 explicite en français, sans rejoindre la liste', async () => {
+      mockRestaurantAndSettings({ ...baseSettings, minLeadTimeMinutes: 120 });
+      // 20:00 à Paris = 18:00 UTC ; il est 17:00 UTC : le créneau est dans 1 h, sous les 2 h.
+      vi.setSystemTime(new Date('2026-06-29T17:00:00.000Z'));
+      const join = slotFull();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/waiting-list`,
+        payload,
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({
+        error:
+          'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.',
+        code: 'INSUFFICIENT_LEAD_TIME',
+        minLeadTimeMinutes: 120,
+      });
+      expect(join).not.toHaveBeenCalled();
+    });
+
+    it('laisse rejoindre la liste d’un créneau complet hors délai', async () => {
+      mockRestaurantAndSettings({ ...baseSettings, minLeadTimeMinutes: 120 });
+      vi.setSystemTime(new Date('2026-06-29T16:00:00.000Z')); // dans 2 h pile
+      const join = slotFull().mockResolvedValue({
+        entry: {
+          id: 'wl-1',
+          position: 1,
+          expiresAt: new Date('2026-06-29T20:00:00.000Z'),
+        },
+        actionToken: 'wl-123',
+      } as unknown as Awaited<ReturnType<typeof WaitingListService.prototype.join>>);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/waiting-list`,
+        payload,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(join).toHaveBeenCalledTimes(1);
     });
   });
 

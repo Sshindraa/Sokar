@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type {
   PrismaClient,
   Restaurant,
@@ -8,7 +8,10 @@ import type {
   AgenticHold,
 } from '@prisma/client';
 import { Prisma } from '@prisma/client';
-import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service.js';
+import {
+  CapacityAwareAvailabilityService,
+  markTooSoonSlotsUnavailable,
+} from '../availability-capacity-aware.service.js';
 
 vi.mock('../../../shared/redis/client', () => {
   const store = new Map<string, string>();
@@ -418,10 +421,20 @@ function makeBaseRestaurant(capacitySpecials: unknown = {}, hours: unknown = ope
   });
 }
 
+// Les dates de ces tests sont fixes : l'horloge est figée avant elles, sinon leurs créneaux seraient
+// (à juste titre) passés et indisponibles. Les cas « passé » ont leur propre describe plus bas.
+const BEFORE_FIXTURE_DATES = new Date('2026-07-01T06:00:00.000Z');
+
 describe('CapacityAwareAvailabilityService', () => {
   beforeEach(() => {
     (redisCache as unknown as { __resetStore: () => void }).__resetStore();
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(BEFORE_FIXTURE_DATES);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('retourne le contrat AvailabilityDto attendu', async () => {
@@ -827,5 +840,409 @@ describe('CapacityAwareAvailabilityService', () => {
 
     const slot20 = dto.slots.find((s) => s.time === '20:00');
     expect(slot20!.available).toBe(true);
+  });
+});
+
+describe('créneaux passés', () => {
+  // Jeudi 2 juillet 2026, restaurant à Paris (UTC+2) ouvert de 12:00 à 22:30 : créneaux de 12:00 à 22:00.
+  // Vendredi 3 juillet : 12:00 à 14:30.
+  const parisNow = (time: string) => new Date(`2026-07-02T${time}:00+02:00`);
+  const tomorrow = '2026-07-03';
+
+  function setup(hours: unknown = openingHours, timezone = 'Europe/Paris') {
+    const restaurant = makeBaseRestaurant({}, hours);
+    const { prisma } = makeMockPrisma({
+      restaurant: { ...restaurant, timezone },
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+    return new CapacityAwareAvailabilityService(prisma);
+  }
+
+  const slotOf = (dto: { slots: Array<{ time: string; available: boolean }> }, time: string) =>
+    dto.slots.find((slot) => slot.time === time);
+
+  beforeEach(() => {
+    (redisCache as unknown as { __resetStore: () => void }).__resetStore();
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(BEFORE_FIXTURE_DATES);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('à 15:00 à Paris : 12:00 est indisponible, 19:00 est inchangé', async () => {
+    const service = setup();
+
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      now: parisNow('15:00'),
+    });
+
+    expect(slotOf(dto, '12:00')?.available).toBe(false);
+    expect(slotOf(dto, '14:30')?.available).toBe(false);
+    expect(slotOf(dto, '15:00')?.available).toBe(false);
+    expect(slotOf(dto, '15:30')?.available).toBe(true);
+    expect(slotOf(dto, '19:00')?.available).toBe(true);
+  });
+
+  it('garde les créneaux passés dans le tableau : indisponibles, jamais introuvables', async () => {
+    const service = setup();
+    const before = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      now: parisNow('06:00'),
+    });
+    (redisCache as unknown as { __resetStore: () => void }).__resetStore();
+
+    const after = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      now: parisNow('15:00'),
+    });
+
+    expect(after.slots.map((slot) => slot.time)).toEqual(before.slots.map((slot) => slot.time));
+    expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort());
+    expect(slotOf(after, '12:00')).toEqual({ time: '12:00', available: false });
+  });
+
+  it('ne change rien pour les jours suivants et ferme les jours précédents', async () => {
+    const service = setup();
+    const now = parisNow('15:00');
+
+    const later = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date: tomorrow,
+      partySize: 2,
+      now,
+    });
+    const earlier = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date: '2026-07-01',
+      partySize: 2,
+      now,
+    });
+
+    expect(later.slots.length).toBeGreaterThan(0);
+    expect(later.slots.every((slot) => slot.available)).toBe(true);
+    expect(earlier.slots.length).toBeGreaterThan(0);
+    expect(earlier.slots.every((slot) => !slot.available)).toBe(true);
+  });
+
+  it('un créneau qui commence exactement maintenant est passé', async () => {
+    const service = setup();
+
+    const exactly = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      now: parisNow('12:00'),
+    });
+    expect(slotOf(exactly, '12:00')?.available).toBe(false);
+    expect(slotOf(exactly, '12:30')?.available).toBe(true);
+
+    (redisCache as unknown as { __resetStore: () => void }).__resetStore();
+    const justBefore = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      now: new Date(parisNow('12:00').getTime() - 1),
+    });
+    expect(slotOf(justBefore, '12:00')?.available).toBe(true);
+  });
+
+  it('lit l’horloge par défaut quand `now` n’est pas fourni', async () => {
+    vi.setSystemTime(parisNow('15:00'));
+    const service = setup();
+
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    expect(slotOf(dto, '12:00')?.available).toBe(false);
+    expect(slotOf(dto, '19:00')?.available).toBe(true);
+  });
+
+  describe('autour de minuit, serveur ou navigateur en UTC et restaurant à Paris', () => {
+    it('00:30 à Paris le 3 (22:30 UTC le 2) : le 2 est entièrement passé, le 3 entièrement à venir', async () => {
+      const service = setup();
+      const now = new Date('2026-07-02T22:30:00.000Z');
+      expect(now.toISOString().slice(0, 10)).toBe('2026-07-02');
+
+      const thursday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        now,
+      });
+      const friday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date: tomorrow,
+        partySize: 2,
+        now,
+      });
+
+      expect(thursday.slots.every((slot) => !slot.available)).toBe(true);
+      expect(friday.slots.every((slot) => slot.available)).toBe(true);
+    });
+
+    it('23:59:59 à Paris le 2 : le dernier créneau du 2 est passé, le 3 est à venir', async () => {
+      const service = setup();
+      const now = new Date('2026-07-02T21:59:59.000Z');
+
+      const thursday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        now,
+      });
+      const friday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date: tomorrow,
+        partySize: 2,
+        now,
+      });
+
+      expect(slotOf(thursday, '22:00')?.available).toBe(false);
+      expect(slotOf(friday, '12:00')?.available).toBe(true);
+    });
+
+    it('suit le fuseau du restaurant, pas celui de l’appelant : 13:00 à New York', async () => {
+      const service = setup(openingHours, 'America/New_York');
+      const now = new Date('2026-07-02T17:00:00.000Z'); // 13:00 à New York, 19:00 à Paris
+
+      const dto = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        now,
+      });
+
+      expect(slotOf(dto, '12:30')?.available).toBe(false);
+      expect(slotOf(dto, '13:00')?.available).toBe(false);
+      expect(slotOf(dto, '13:30')?.available).toBe(true);
+      expect(slotOf(dto, '19:00')?.available).toBe(true);
+    });
+  });
+
+  describe('cache de 30 secondes', () => {
+    it('ne repropose pas un créneau devenu passé pendant que la valeur est en cache', async () => {
+      const service = setup();
+      const args = { restaurantId: RESTAURANT_ID, date, partySize: 2 };
+
+      const first = await service.getAvailability({ ...args, now: parisNow('14:59') });
+      expect(slotOf(first, '15:00')?.available).toBe(true);
+      expect(redisCache.set).toHaveBeenCalledTimes(1);
+
+      // 30 secondes plus tard : le créneau de 15:00 a commencé, la valeur est toujours en cache.
+      const second = await service.getAvailability({
+        ...args,
+        now: new Date(parisNow('15:00').getTime() + 10_000),
+      });
+
+      expect(redisCache.set).toHaveBeenCalledTimes(1);
+      expect(slotOf(second, '15:00')?.available).toBe(false);
+      expect(slotOf(second, '15:30')?.available).toBe(true);
+    });
+
+    it('stocke le résultat brut, avec le fuseau, jamais le résultat filtré', async () => {
+      const service = setup();
+
+      await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        now: parisNow('15:00'),
+      });
+
+      const stored = JSON.parse(vi.mocked(redisCache.set).mock.calls[0][1] as string) as {
+        timeZone: string;
+        dto: { slots: Array<{ time: string; available: boolean }> };
+      };
+      expect(stored.timeZone).toBe('Europe/Paris');
+      expect(slotOf(stored.dto, '12:00')?.available).toBe(true);
+    });
+
+    it('ignore une valeur en cache à l’ancien format (le résultat seul) et la recalcule', async () => {
+      const service = setup();
+      const args = { restaurantId: RESTAURANT_ID, date, partySize: 2, now: parisNow('15:00') };
+      await service.getAvailability(args);
+      const key = vi.mocked(redisCache.set).mock.calls[0][0] as string;
+      const stale = JSON.stringify({
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        slots: [{ time: '12:00', available: true }],
+      });
+      await redisCache.set(key, stale);
+      vi.mocked(redisCache.set).mockClear();
+
+      const dto = await service.getAvailability(args);
+
+      expect(vi.mocked(redisCache.set)).toHaveBeenCalledTimes(1);
+      expect(dto.slots.length).toBeGreaterThan(1);
+      expect(slotOf(dto, '12:00')?.available).toBe(false);
+    });
+
+    it('ne modifie pas le résultat qu’il reçoit', () => {
+      const dto = {
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        slots: [{ time: '12:00', available: true }],
+      };
+
+      const marked = markTooSoonSlotsUnavailable(dto, 'Europe/Paris', parisNow('15:00'));
+
+      expect(marked.slots[0].available).toBe(false);
+      expect(dto.slots[0].available).toBe(true);
+    });
+  });
+
+  describe('délai minimum de réservation (surfaces en ligne)', () => {
+    const args = { restaurantId: RESTAURANT_ID, date, partySize: 2 };
+
+    it('avec 2 h à 15:00 : 16:30 est indisponible, 17:00 (maintenant + 2 h pile) est réservable', async () => {
+      const service = setup();
+
+      const dto = await service.getAvailability({
+        ...args,
+        now: parisNow('15:00'),
+        minLeadTimeMinutes: 120,
+      });
+
+      expect(slotOf(dto, '15:30')?.available).toBe(false);
+      expect(slotOf(dto, '16:30')?.available).toBe(false);
+      expect(slotOf(dto, '17:00')?.available).toBe(true);
+      expect(slotOf(dto, '19:00')?.available).toBe(true);
+    });
+
+    it('avec 30 min à 15:00 : 15:00 est passé, 15:30 (maintenant + 30 min pile) est réservable', async () => {
+      const service = setup();
+
+      const dto = await service.getAvailability({
+        ...args,
+        now: parisNow('15:00'),
+        minLeadTimeMinutes: 30,
+      });
+
+      expect(slotOf(dto, '15:00')?.available).toBe(false);
+      expect(slotOf(dto, '15:30')?.available).toBe(true);
+    });
+
+    it('sans délai (voix, personnel), le même créneau reste réservable', async () => {
+      const service = setup();
+
+      const dto = await service.getAvailability({ ...args, now: parisNow('15:00') });
+
+      expect(slotOf(dto, '15:30')?.available).toBe(true);
+      expect(slotOf(dto, '16:30')?.available).toBe(true);
+    });
+
+    it('garde la forme de la réponse : les créneaux trop proches restent dans le tableau', async () => {
+      const service = setup();
+      const without = await service.getAvailability({ ...args, now: parisNow('15:00') });
+      (redisCache as unknown as { __resetStore: () => void }).__resetStore();
+
+      const withLead = await service.getAvailability({
+        ...args,
+        now: parisNow('15:00'),
+        minLeadTimeMinutes: 120,
+      });
+
+      expect(withLead.slots.map((slot) => slot.time)).toEqual(
+        without.slots.map((slot) => slot.time),
+      );
+      expect(Object.keys(withLead).sort()).toEqual(Object.keys(without).sort());
+      expect(slotOf(withLead, '16:00')).toEqual({ time: '16:00', available: false });
+    });
+
+    it('applique le délai après le cache : une valeur lue sans délai ne fuit pas vers un appelant en ligne', async () => {
+      const service = setup();
+
+      // La voix lit d'abord (sans délai) : le cache reçoit le résultat brut.
+      const voice = await service.getAvailability({ ...args, now: parisNow('15:00') });
+      expect(slotOf(voice, '16:00')?.available).toBe(true);
+      expect(redisCache.set).toHaveBeenCalledTimes(1);
+
+      // Une page en ligne lit ensuite la même valeur en cache, avec son délai de 2 h.
+      const online = await service.getAvailability({
+        ...args,
+        now: parisNow('15:00'),
+        minLeadTimeMinutes: 120,
+      });
+
+      expect(redisCache.set).toHaveBeenCalledTimes(1); // lecture en cache, pas de recalcul
+      expect(slotOf(online, '16:00')?.available).toBe(false);
+      expect(slotOf(online, '17:00')?.available).toBe(true);
+
+      // Et l'inverse : le résultat « en ligne » n'a pas pollué le cache pour la voix.
+      const voiceAgain = await service.getAvailability({ ...args, now: parisNow('15:00') });
+      expect(slotOf(voiceAgain, '16:00')?.available).toBe(true);
+    });
+
+    it('stocke le résultat brut : le délai n’entre ni dans la valeur ni dans la clé', async () => {
+      const service = setup();
+
+      await service.getAvailability({ ...args, now: parisNow('15:00'), minLeadTimeMinutes: 120 });
+
+      const [key, value] = vi.mocked(redisCache.set).mock.calls[0] as unknown as [string, string];
+      expect(key).not.toMatch(/120|lead/i);
+      const stored = JSON.parse(value) as {
+        dto: { slots: Array<{ time: string; available: boolean }> };
+      };
+      expect(slotOf(stored.dto, '16:00')?.available).toBe(true);
+    });
+
+    it('un délai d’un jour ferme le début de demain, pas l’après-midi', async () => {
+      const service = setup();
+      const now = parisNow('15:00'); // jeudi 15:00
+
+      const friday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date: tomorrow,
+        partySize: 2,
+        now,
+        minLeadTimeMinutes: 1440,
+      });
+
+      // Vendredi 12:00 est dans 21 h, 14:00 dans 23 h : tous deux sous les 24 h de délai.
+      expect(slotOf(friday, '12:00')?.available).toBe(false);
+      expect(slotOf(friday, '14:00')?.available).toBe(false);
+    });
+
+    it('traverse minuit : à 23:30 avec 2 h, le début de demain est trop proche', async () => {
+      const service = setup();
+
+      const friday = await service.getAvailability({
+        restaurantId: RESTAURANT_ID,
+        date: tomorrow,
+        partySize: 2,
+        now: parisNow('23:30'),
+        minLeadTimeMinutes: 120,
+      });
+
+      // Vendredi 12:00 est dans 12 h 30 : réservable malgré le délai de 2 h.
+      expect(slotOf(friday, '12:00')?.available).toBe(true);
+    });
+
+    it('markTooSoonSlotsUnavailable ne modifie pas le résultat reçu et gère un délai géant', () => {
+      const dto = {
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        slots: [{ time: '19:00', available: true }],
+      };
+
+      const marked = markTooSoonSlotsUnavailable(dto, 'Europe/Paris', parisNow('15:00'), 120);
+      const huge = markTooSoonSlotsUnavailable(dto, 'Europe/Paris', parisNow('15:00'), 10_000);
+
+      expect(marked.slots[0].available).toBe(true);
+      expect(huge.slots[0].available).toBe(false);
+      expect(dto.slots[0].available).toBe(true);
+    });
   });
 });

@@ -12,6 +12,7 @@ import { GoogleCalendarClient } from '../../shared/google-calendar/client';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import { isSlotStartPast } from '../../shared/timezone/restaurant-time';
 import {
   observeReservationMutation,
   type ReservationNotificationObservation,
@@ -943,12 +944,22 @@ export class ReservationService {
     });
   }
 
+  /**
+   * `options.minLeadTimeMinutes` : délai minimum, passé par les surfaces EN LIGNE (page /book). La voix
+   * et le personnel n'en passent pas : pour eux, seul le passé est indisponible.
+   */
   static async availability(
     restaurantId: string,
     date: string,
     partySize: number,
+    options: { minLeadTimeMinutes?: number } = {},
   ): Promise<AvailabilityResult> {
-    const dto = await availability.getAvailability({ restaurantId, date, partySize });
+    const dto = await availability.getAvailability({
+      restaurantId,
+      date,
+      partySize,
+      minLeadTimeMinutes: options.minLeadTimeMinutes,
+    });
     return {
       restaurantId: dto.restaurantId,
       date: dto.date,
@@ -974,7 +985,8 @@ export class ReservationService {
       return { available: false, reason: 'closed' };
     }
 
-    if (startTime.getTime() <= Date.now()) {
+    // Même règle que le moteur de disponibilités : un créneau commencé n'est plus réservable.
+    if (isSlotStartPast(startTime)) {
       return { available: false, reason: 'past' };
     }
 

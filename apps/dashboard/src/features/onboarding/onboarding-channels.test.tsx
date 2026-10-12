@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { OnboardingChannels } from './onboarding-channels';
 import type { OnboardingStep, OnboardingTaskKey } from './types';
@@ -76,5 +76,30 @@ it('affiche le téléphone prêt une fois l’étape Appels terminée', () => {
   expect(screen.getByText('Prêt')).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent(
     'Encore un canal à activer pour ouvrir votre espace.',
+  );
+});
+
+it('explique « En salle » en trois étapes, sans bouton ni donnée réelle', () => {
+  const onOpen = vi.fn();
+  render(<OnboardingChannels steps={steps(SOCLE)} phoneAssigned onOpen={onOpen} />);
+
+  const card = screen.getByRole('region', { name: 'En salle' });
+  const items = within(card).getAllByRole('listitem');
+  expect(items.map((item) => item.textContent?.replace(/^\d/, ''))).toEqual([
+    'Un client arrive sans réservation.',
+    'Vous le placez sur votre plan de salle, avec son nombre de personnes.',
+    'Sa table n’est plus proposée au téléphone ni en ligne, jusqu’à « Libérer la table ».',
+  ]);
+  // Informative : aucune action, et le texte ne parle jamais de « walk-in ».
+  expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+  expect(within(card).queryByRole('link')).not.toBeInTheDocument();
+  expect(card.textContent).not.toMatch(/walk-?in/i);
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+it('ne retient pas l’accès à l’espace pour « En salle » : seuls les deux canaux comptent', () => {
+  render(<OnboardingChannels steps={steps(SOCLE)} phoneAssigned onOpen={vi.fn()} />);
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Activez vos deux canaux, dans l’ordre de votre choix, pour ouvrir votre espace.',
   );
 });

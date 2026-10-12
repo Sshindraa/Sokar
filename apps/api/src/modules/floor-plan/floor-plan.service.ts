@@ -7,7 +7,11 @@ import type {
   Wall,
   FloorPlanZone,
 } from '@prisma/client';
-import { zonedTimeToUtc } from './availability-capacity-aware.service.js';
+import {
+  CapacityAwareAvailabilityService,
+  zonedTimeToUtc,
+} from './availability-capacity-aware.service.js';
+import { resolveServiceDurationMinutes } from './floor-plan.types.js';
 import { TableAllocationService } from './table-allocation.service.js';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import { creationProjection } from '../../shared/reservations/reservation-state';
@@ -614,7 +618,16 @@ export class FloorPlanService {
     idempotencyKey: string;
   }): Promise<{ id: string }> {
     const now = new Date();
-    const endsAt = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    // Même durée de repas que le moteur de disponibilités : la table reste bloquée au téléphone, en
+    // ligne et sur MCP exactement le temps qu'un repas réservé la bloquerait.
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: args.restaurantId },
+      select: { exposureSettings: { select: { capacitySpecials: true } } },
+    });
+    const serviceDurationMinutes = resolveServiceDurationMinutes(
+      restaurant?.exposureSettings?.capacitySpecials,
+    );
+    const endsAt = new Date(now.getTime() + serviceDurationMinutes * 60 * 1000);
     const idempotencyScope = 'walk-in';
     const payloadHash = `${args.restaurantId}:${args.tableId}:${args.idempotencyKey}`;
     let replayed = false;
@@ -639,7 +652,7 @@ export class FloorPlanService {
             restaurantId: args.restaurantId,
             tableId: args.tableId,
             partySize: args.partySize,
-            customerName: args.customerName ?? 'Walk-in',
+            customerName: args.customerName ?? 'Sans réservation',
             reservedAt: now,
             channel: 'API',
             ...creationProjection('SEATED'),
@@ -683,6 +696,11 @@ export class FloorPlanService {
         throw err;
       }
     });
+
+    // La disponibilité est mise en cache : sans cela, la table resterait proposée jusqu'à 30 s.
+    if (!replayed) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(args.restaurantId);
+    }
 
     observeReservationMutation({
       source: 'walk_in',

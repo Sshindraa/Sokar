@@ -53,6 +53,8 @@ export type PublicRestaurantDto = {
   noiseLevel?: string;
   acceptsReservations: boolean;
   publishedAt: string;
+  /** Fuseau IANA du restaurant (absent pour une ancienne réponse en cache : Europe/Paris). */
+  timezone?: string;
   connectAgentic: boolean;
   // Note agrégée (importée Google Places, Phase 3). Absent si pas de Place ID.
   aggregateRating?: {

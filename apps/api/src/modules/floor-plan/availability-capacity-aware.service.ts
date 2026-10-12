@@ -21,6 +21,7 @@ import {
   DEFAULT_RESTAURANT_TIMEZONE,
   zonedTimeToUtc,
 } from '../../shared/timezone/restaurant-time.js';
+import { isSlotTooSoonAt } from '../../shared/reservations/lead-time.js';
 
 // Compatibilité pour les callers internes existants. L'implémentation est
 // désormais centralisée dans shared/timezone.
@@ -34,6 +35,56 @@ const SLOT_MINUTES = 30;
 const AVAILABILITY_CACHE_TTL_SECONDS = 30;
 const AVAILABILITY_VERSION_TTL_SECONDS = 120;
 const CACHE_KEY_PREFIX = 'availability:v:';
+// Écarts UTC extrêmes en usage (UTC-12 à UTC+14) : bornent la journée locale d'une date, donc
+// évitent de convertir chaque créneau quand la date est sans ambiguïté future ou passée.
+const MAX_UTC_OFFSET_AHEAD_MS = 14 * 60 * 60 * 1000;
+const MAX_UTC_OFFSET_BEHIND_MS = 12 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Valeur mise en cache : le résultat brut du moteur et le fuseau du restaurant. Le fuseau permet de
+ * marquer les créneaux passés APRÈS la lecture du cache, sans recharger le restaurant.
+ */
+type CachedAvailability = { timeZone: string; dto: AvailabilityDto };
+
+function parseCachedAvailability(raw: string): CachedAvailability | null {
+  const parsed = JSON.parse(raw) as Partial<CachedAvailability> | null;
+  // Ancien format (le DTO seul, sans fuseau) : ignoré, la valeur est recalculée.
+  if (!parsed || typeof parsed.timeZone !== 'string' || !parsed.dto) return null;
+  return { timeZone: parsed.timeZone, dto: parsed.dto };
+}
+
+/**
+ * Les créneaux déjà commencés, ou qui commencent avant maintenant plus le délai minimum, passent à
+ * `available: false`. Ils restent dans le tableau : un appelant qui cherche une heure doit lire
+ * « indisponible », pas « introuvable ». Le DTO reçu n'est jamais modifié (il peut être celui que le
+ * cache vient de stocker). `minLeadTimeMinutes` vaut 0 sauf pour les surfaces en ligne.
+ */
+export function markTooSoonSlotsUnavailable(
+  dto: AvailabilityDto,
+  timeZone: string,
+  now: Date,
+  minLeadTimeMinutes: number = 0,
+): AvailabilityDto {
+  const dayStart = Date.parse(`${dto.date}T00:00:00.000Z`);
+  if (Number.isNaN(dayStart)) return dto;
+  const lead = Number.isFinite(minLeadTimeMinutes) ? Math.max(0, minLeadTimeMinutes) : 0;
+  // Dès cet instant, un créneau est réservable : `maintenant + délai` est le plus petit début permis.
+  const earliestBookableMs = now.getTime() + lead * 60_000;
+  // Tous les créneaux de la date commencent au plus tôt à `earliestStartMs` (minuit local en UTC+14) :
+  // si maintenant et maintenant + délai ne l'atteignent pas, rien n'est trop proche.
+  const earliestStartMs = dayStart - MAX_UTC_OFFSET_AHEAD_MS;
+  if (now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs) return dto;
+  const allTooSoon = earliestBookableMs >= dayStart + DAY_MS + MAX_UTC_OFFSET_BEHIND_MS;
+  return {
+    ...dto,
+    slots: dto.slots.map((slot) =>
+      slot.available && (allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now))
+        ? { ...slot, available: false }
+        : slot,
+    ),
+  };
+}
 
 export class CapacityAwareAvailabilityService {
   private readonly allocation: TableAllocationService;
@@ -104,13 +155,25 @@ export class CapacityAwareAvailabilityService {
     date: string; // YYYY-MM-DD
     partySize: number;
     preferredSectionId?: string;
+    /** Horloge injectable (tests) : par défaut, l'instant de l'appel. */
+    now?: Date;
+    /**
+     * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
+     * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
+     */
+    minLeadTimeMinutes?: number;
   }): Promise<AvailabilityDto> {
+    // Une seule lecture de l'horloge par appel : le cache garde le résultat brut (sans passé ni délai),
+    // ils se marquent à chaque lecture, y compris pour une valeur en cache depuis quelques secondes.
+    // Le délai n'entre pas dans la clé de cache : il ne change que ce qu'on marque après.
+    const now = args.now ?? new Date();
     let version = 0;
     try {
       version = await this.getVersion(args.restaurantId);
       const cached = await redisCache.get(this.cacheKey(args, version));
-      if (cached) {
-        return JSON.parse(cached) as AvailabilityDto;
+      const hit = cached ? parseCachedAvailability(cached) : null;
+      if (hit) {
+        return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
       }
     } catch (err) {
       logger.warn(
@@ -249,9 +312,10 @@ export class CapacityAwareAvailabilityService {
 
     try {
       version = await this.getVersion(args.restaurantId);
+      const entry: CachedAvailability = { timeZone, dto };
       await redisCache.set(
         this.cacheKey(args, version),
-        JSON.stringify(dto),
+        JSON.stringify(entry),
         'EX',
         AVAILABILITY_CACHE_TTL_SECONDS,
       );
@@ -262,7 +326,7 @@ export class CapacityAwareAvailabilityService {
       );
     }
 
-    return dto;
+    return markTooSoonSlotsUnavailable(dto, timeZone, now, args.minLeadTimeMinutes);
   }
 }
 

@@ -11,8 +11,9 @@
  * DELETE). Each test asserts both happy path and the surface bugs/latency
  * issues that the routes expose.
  */
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
+import { db } from '../../../shared/db/client';
 import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from '../reservation.service';
 
 describe('reservation.routes', () => {
@@ -96,6 +97,10 @@ describe('reservation.routes', () => {
   describe('GET /restaurants/:id/availability (public)', () => {
     it("retourne les créneaux disponibles (route publique, pas d'auth requise)", async () => {
       const app = await getApp();
+      // Page /book : surface en ligne, la route transmet le délai minimum du restaurant (2 h ici).
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
+        minLeadTimeMinutes: 120,
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findUnique>>);
       const availability = {
         restaurantId: 'rest-123',
         date: '2099-06-05',
@@ -114,12 +119,15 @@ describe('reservation.routes', () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(ReservationService.availability).toHaveBeenCalledWith('rest-123', '2099-06-05', 2);
+      expect(ReservationService.availability).toHaveBeenCalledWith('rest-123', '2099-06-05', 2, {
+        minLeadTimeMinutes: 120,
+      });
       expect(res.json()).toEqual(availability);
     });
 
     it('utilise partySize=2 par défaut si non fourni', async () => {
       const app = await getApp();
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(null);
       vi.spyOn(ReservationService, 'availability').mockResolvedValue({
         restaurantId: 'rest-123',
         date: '2099-06-05',
@@ -134,7 +142,10 @@ describe('reservation.routes', () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(ReservationService.availability).toHaveBeenCalledWith('rest-123', '2099-06-05', 2);
+      // Sans réglages, le délai par défaut (30 min) s'applique.
+      expect(ReservationService.availability).toHaveBeenCalledWith('rest-123', '2099-06-05', 2, {
+        minLeadTimeMinutes: 30,
+      });
     });
 
     it('rejette partySize > 20 avec 400', async () => {
@@ -267,6 +278,89 @@ describe('reservation.routes', () => {
         customerPhone: '+33612345678',
       });
       expect(res.json().id).toBe('res-new');
+    });
+
+    describe('délai minimum de réservation (création de la page /book)', () => {
+      const NOW = new Date('2026-07-02T13:00:00.000Z');
+      const post = async (minutesFromNow: number) => {
+        const app = await getApp();
+        return app.inject({
+          method: 'POST',
+          url: '/reservations',
+          headers: serviceHeaders,
+          payload: {
+            restaurantId: 'rest-123',
+            reservedAt: new Date(NOW.getTime() + minutesFromNow * 60_000).toISOString(),
+            partySize: 2,
+            customerName: 'Alice',
+            customerPhone: '+33612345678',
+          },
+        });
+      };
+      const withLead = (minLeadTimeMinutes: number | null) =>
+        vi
+          .mocked(db.restaurantExposureSettings.findUnique)
+          .mockResolvedValue(
+            (minLeadTimeMinutes === null ? null : { minLeadTimeMinutes }) as unknown as Awaited<
+              ReturnType<typeof db.restaurantExposureSettings.findUnique>
+            >,
+          );
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(NOW);
+        vi.spyOn(ReservationService, 'create').mockResolvedValue({
+          id: 'res-new',
+        } as unknown as Awaited<ReturnType<typeof ReservationService.create>>);
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('refuse un créneau dans le délai : 409, code explicite, message en français, rien n’est créé', async () => {
+        withLead(120);
+
+        const res = await post(90);
+
+        expect(res.statusCode).toBe(409);
+        expect(res.json()).toEqual({
+          error:
+            'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.',
+          code: 'INSUFFICIENT_LEAD_TIME',
+          minLeadTimeMinutes: 120,
+        });
+        expect(ReservationService.create).not.toHaveBeenCalled();
+      });
+
+      it('accepte un créneau qui commence exactement à maintenant + délai', async () => {
+        withLead(120);
+
+        const res = await post(120);
+
+        expect(res.statusCode).toBe(201);
+        expect(ReservationService.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuse une minute avant la limite', async () => {
+        withLead(120);
+        expect((await post(119)).statusCode).toBe(409);
+      });
+
+      it('refuse un créneau déjà commencé, même sans réglages (délai par défaut de 30 min)', async () => {
+        withLead(null);
+
+        expect((await post(-5)).statusCode).toBe(409);
+        expect((await post(29)).statusCode).toBe(409);
+        expect((await post(30)).statusCode).toBe(201);
+      });
+
+      it('un restaurant à 0 min n’exclut que le passé', async () => {
+        withLead(0);
+
+        expect((await post(-1)).statusCode).toBe(409);
+        expect((await post(1)).statusCode).toBe(201);
+      });
     });
 
     it('rejette un partySize > 20 (Zod max(20)) avec 400', async () => {

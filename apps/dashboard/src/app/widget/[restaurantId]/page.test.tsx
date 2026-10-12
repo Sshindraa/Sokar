@@ -292,6 +292,53 @@ describe('présélection Connect', () => {
     expect(widget.queryByRole('button', { name: 'Choisir le créneau 20h30' })).toBeNull();
   });
 
+  it('affiche tel quel le message français du serveur quand la réservation est refusée pour délai minimum', async () => {
+    const TOO_SOON =
+      'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.';
+    const date = new Date();
+    date.setDate(date.getDate() + 2);
+    const dateValue = dateParam(date);
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    navMocks.setSearch(`date=${dateValue}&time=20%3A30&partySize=4`);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/availability')) {
+        return jsonResponse({
+          restaurantId: 'r1',
+          date: dateValue,
+          partySize: 4,
+          slots: ['20:00', '20:30'],
+        });
+      }
+      if (init?.method === 'POST' && url.endsWith('/reservations')) {
+        return {
+          ok: false,
+          status: 409,
+          text: async () =>
+            JSON.stringify({
+              error: TOO_SOON,
+              code: 'INSUFFICIENT_LEAD_TIME',
+              minLeadTimeMinutes: 120,
+            }),
+        } as unknown as Response;
+      }
+      return bookingRestaurantResponse();
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const widget = render(<ReservationWidget />);
+
+    fireEvent.click(await widget.findByRole('button', { name: /Continuer · 20h30/ }));
+    fireEvent.change(await widget.findByLabelText('Nom complet *'), {
+      target: { value: 'Alice Martin' },
+    });
+    fireEvent.change(widget.getByLabelText('Téléphone *'), { target: { value: '0600000000' } });
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+
+    expect(await widget.findByText(TOO_SOON)).toBeTruthy();
+    expect(
+      widget.queryByText(/Une erreur est survenue|SLOT_NOT_AVAILABLE|INSUFFICIENT_LEAD_TIME/),
+    ).toBeNull();
+  });
+
   it('ignore les paramètres invalides et revient aux critères habituels', async () => {
     const today = dateParam(new Date());
     navMocks.setParams({ restaurantId: 'chez-sokar' });

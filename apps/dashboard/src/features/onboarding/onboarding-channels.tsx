@@ -34,6 +34,13 @@ const CHANNELS: Record<
   },
 };
 
+/** « En salle » : les clients sans réservation, en trois gestes. Informatif, rien à régler ici. */
+const FLOOR_STEPS = [
+  'Un client arrive sans réservation.',
+  'Vous le placez sur votre plan de salle, avec son nombre de personnes.',
+  'Sa table n’est plus proposée au téléphone ni en ligne, jusqu’à « Libérer la table ».',
+];
+
 function statusLabel(progress: TrackProgress) {
   if (progress.done) return 'Prêt';
   if (progress.completed > 0)
@@ -179,10 +186,21 @@ export function OnboardingChannels({
           <h3 id="onboarding-channel-floor" className="mt-1.5 text-base font-semibold">
             En salle
           </h3>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Placez les clients sans réservation sur votre plan de salle : la table n’est plus
-            proposée au téléphone ni en ligne. Vous le retrouverez dans votre espace, une fois vos
-            canaux activés.
+          <ol className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+            {FLOOR_STEPS.map((step, index) => (
+              <li key={step} className="flex items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 text-[11px] font-medium text-foreground/70"
+                >
+                  {index + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Vous le retrouverez dans votre espace, une fois vos canaux activés.
           </p>
         </div>
       </section>

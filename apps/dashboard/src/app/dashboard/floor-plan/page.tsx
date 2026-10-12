@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
+import { FirstServiceGuide } from './_components/FirstServiceGuide';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
 import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
 import { DataFetchError } from '@/components/DataFetchError';
@@ -251,6 +252,7 @@ export default function FloorPlanPage() {
       {selectedFloorPlanId && activeView === 'service-live' && (
         <ServiceCopilotWidget showCalm={false} density="service" />
       )}
+      {selectedFloorPlanId && activeView === 'service-live' && <FirstServiceGuide />}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <FloorPlanCanvas
           key={`service-live-${selectedFloorPlanId}`}

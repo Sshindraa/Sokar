@@ -33,6 +33,14 @@ import {
 } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import { isSlotStartPast } from '../../shared/timezone/restaurant-time';
+import {
+  DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES,
+  INSUFFICIENT_LEAD_TIME,
+  isSlotTooSoon,
+  leadTimeRefusal,
+  loadMinLeadTimeMinutes,
+} from '../../shared/reservations/lead-time';
 import {
   CancelWaitingListTokenSchema,
   WaitingListJoinInputSchema,
@@ -44,6 +52,7 @@ import { IdempotencyService } from '../agentic-reservations/core/idempotency.ser
 import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
 import {
   buildPolicySnapshot,
+  PolicyValidationError,
   type PolicySnapshot,
 } from '../agentic-reservations/core/policies.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -468,11 +477,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
+      // Surface en ligne : le délai minimum du restaurant marque indisponibles les créneaux trop proches.
       const dto = await availability.getAvailability({
         restaurantId: restaurant.id,
         date: queryParse.data.date,
         partySize: queryParse.data.partySize,
         preferredSectionId: queryParse.data.preferredSectionId,
+        minLeadTimeMinutes: await loadMinLeadTimeMinutes(db, restaurant.id),
       });
 
       return reply.send(dto);
@@ -549,6 +560,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const timeZone = restaurantWithTz?.timezone ?? 'Europe/Paris';
       const slotStart = zonedTimeToUtc(bodyParse.data.date, bodyParse.data.time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
+
+      // Même règle que l'affichage : un créneau trop proche ne se bloque pas.
+      if (isSlotTooSoon(slotStart, policy.minLeadTimeMinutes)) {
+        return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));
+      }
 
       try {
         const hold = await holds.createHold({
@@ -845,6 +861,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           time: localTime,
           partySize: hold.partySize,
         });
+        // Créneau devenu trop proche entre le hold et la confirmation : un refus clair, pas un 500.
+        if (err instanceof PolicyValidationError && err.code === INSUFFICIENT_LEAD_TIME) {
+          return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));
+        }
         const message = err instanceof Error ? err.message : 'Internal error';
         if (message.toLowerCase().includes('idempot')) {
           return reply.status(409).send({ error: message });
@@ -925,6 +945,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const slot = availabilityDto.slots.find((s) => s.time === time);
       if (!slot) {
         return reply.status(400).send({ error: 'invalid_slot' });
+      }
+      // Un créneau passé est « indisponible » pour le moteur, mais il n'est pas « complet » : la liste
+      // d'attente n'a de sens que pour un créneau à venir.
+      if (isSlotStartPast(slotStart)) {
+        return reply.status(400).send({ error: 'invalid_slot' });
+      }
+      // Surface en ligne : un créneau dans le délai minimum ne se réserve pas, donc ne s'attend pas non plus.
+      const minLeadTimeMinutes =
+        settings?.minLeadTimeMinutes ?? DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES;
+      if (isSlotTooSoon(slotStart, minLeadTimeMinutes)) {
+        return reply.status(409).send(leadTimeRefusal(minLeadTimeMinutes));
       }
       if (slot.available) {
         return reply.status(409).send({ error: 'slot_now_available' });
