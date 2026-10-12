@@ -277,7 +277,12 @@ export async function restaurantRoutes(app: FastifyInstance) {
     phoneNumber: string,
     tasks: Record<OnboardingTask, OnboardingTaskState>,
   ) => {
-    enqueuePhoneAssignmentAlert(app.queues.phoneAssignment, { restaurantId, phoneNumber, tasks })
+    enqueuePhoneAssignmentAlert(app.queues.phoneAssignment, {
+      restaurantId,
+      phoneNumber,
+      tasks,
+      recipient: process.env.SOKAR_OPS_ALERT_EMAIL,
+    })
       .then((queued) => {
         if (queued) app.log.info({ restaurantId }, '[onboarding] phone assignment alert queued');
       })

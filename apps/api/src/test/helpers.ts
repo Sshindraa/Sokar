@@ -1183,7 +1183,10 @@ vi.mock('../shared/queue/queues', () => ({
       add: vi.fn(),
     },
     phoneAssignment: {
-      add: vi.fn().mockResolvedValue({}),
+      add: vi.fn().mockResolvedValue({
+        isFailed: vi.fn().mockResolvedValue(false),
+        remove: vi.fn().mockResolvedValue(undefined),
+      }),
     },
     reconciliation: {
       upsertJobScheduler: vi.fn(),
