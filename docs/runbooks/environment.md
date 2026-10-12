@@ -98,18 +98,6 @@ afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
 
-`SOKAR_OPS_ALERT_EMAIL` (API, optionnelle) reçoit l'e-mail « Numéro Sokar à attribuer » : un
-restaurant a terminé sa salle mais n'a pas encore de numéro, donc son canal Téléphone et son espace
-restent fermés tant qu'un opérateur ne l'attribue pas depuis `/admin/provisioning`. Une seule alerte
-par restaurant (file BullMQ `phone-assignment`, jobId = id du restaurant) ; elle ne contient que le
-nom, l'id et la ville du restaurant, jamais les coordonnées du gérant. Vide : rien n'est mis en
-file (l'alerte partira à la prochaine visite du restaurant une fois la variable posée, sinon un job
-terminé sans envoi bloquerait ce restaurant à vie) et le worker journalise sans envoyer. Un job
-échoué est retiré et remis en file à la visite suivante. Le worker n'envoie rien si le numéro a été
-attribué entre-temps. Cette variable n'est pas synchronisée par le CI : elle se pose à la main dans
-`apps/api/.env` du VPS (`/opt/sokar-staging` et `/opt/sokar`), puis redémarrer `sokar-api` et
-`sokar-workers`.
-
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
 notification client et ne peuvent pas limiter la consommation d'un restaurant.
 La promesse Essential/Pro reste sans quota ; le suivi visuel par établissement

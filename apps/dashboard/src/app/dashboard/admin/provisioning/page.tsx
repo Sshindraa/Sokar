@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { PendingNumbersSection } from './PendingNumbersSection';
 
 interface TelnyxNumberItem {
   id: string;
@@ -30,6 +31,7 @@ interface TelnyxNumberItem {
 interface ProvisioningStatusView {
   restaurantId: string;
   restaurantName: string;
+  city: string | null;
   phoneNumber: string;
   hasAssignedPhone: boolean;
   provisioningStatus: string;
@@ -37,6 +39,7 @@ interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  floorCompletedAt: string | null;
   testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
@@ -78,10 +81,12 @@ export default function AdminProvisioningPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
 
   const fetchRestaurants = useCallback(async () => {
     setLoadingList(true);
     setActionError(null);
+    setListError(null);
     try {
       const [resList, resNumbers] = await Promise.all([
         get<{ ok: boolean; restaurants: ProvisioningStatusView[] }>(
@@ -92,16 +97,18 @@ export default function AdminProvisioningPage() {
       setRestaurants(resList.restaurants ?? []);
       setAvailableNumbers(resNumbers.numbers ?? []);
 
-      if (resList.restaurants && resList.restaurants.length > 0 && !selectedId) {
-        setSelectedId(resList.restaurants[0].restaurantId);
+      // Premier restaurant par défaut, sans écraser un choix déjà fait.
+      if (resList.restaurants && resList.restaurants.length > 0) {
+        setSelectedId((current) => current ?? resList.restaurants[0].restaurantId);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur lors de la récupération des données';
       setActionError(msg);
+      setListError(msg);
     } finally {
       setLoadingList(false);
     }
-  }, [get, selectedId]);
+  }, [get]);
 
   useEffect(() => {
     fetchRestaurants();
@@ -141,6 +148,12 @@ export default function AdminProvisioningPage() {
     setCustomPhoneInput('');
     setSelectedTelnyxId('');
     setTestCallPhone('');
+  };
+
+  // Depuis « En attente de numéro » : le restaurant s'ouvre dans le panneau d'attribution.
+  const handleSelectPending = (id: string) => {
+    handleSelectRestaurant(id);
+    document.getElementById('provisioning-cockpit')?.scrollIntoView?.({ behavior: 'smooth' });
   };
 
   // Action 1 : Assign Phone
@@ -357,6 +370,14 @@ export default function AdminProvisioningPage() {
         </div>
       )}
 
+      <PendingNumbersSection
+        restaurants={restaurants}
+        loading={loadingList}
+        error={listError}
+        onSelect={handleSelectPending}
+        onRetry={fetchRestaurants}
+      />
+
       <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
         {/* Colonne gauche : liste des restaurants */}
         <div className="space-y-4">
@@ -425,7 +446,7 @@ export default function AdminProvisioningPage() {
 
         {/* Colonne droite : Cockpit de provisioning */}
         {selectedStatus ? (
-          <div className="space-y-6">
+          <div id="provisioning-cockpit" className="scroll-mt-6 space-y-6">
             {/* Header du restaurant sélectionné */}
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">

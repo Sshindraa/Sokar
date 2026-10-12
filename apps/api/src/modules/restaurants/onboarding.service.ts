@@ -206,6 +206,20 @@ export function hasUsablePhone(phoneNumber: string | null | undefined): boolean 
   return Boolean(phoneNumber && !phoneNumber.startsWith('+000'));
 }
 
+const SOCLE_TASKS: OnboardingTask[] = ['restaurant', 'hours', 'floor'];
+
+/**
+ * Date de fin de la salle (restaurant, hours, floor `completed`) : la plus récente des trois
+ * `completedAt`. `null` tant que l'une des trois tâches n'est pas terminée.
+ */
+export function socleCompletedAt(tasks: OnboardingTasksMap): string | null {
+  if (!SOCLE_TASKS.every((key) => tasks[key].status === 'completed')) return null;
+  const dates = SOCLE_TASKS.map((key) => tasks[key].completedAt)
+    .filter((value): value is string => typeof value === 'string')
+    .sort();
+  return dates.at(-1) ?? null;
+}
+
 function markCompleted(tasks: OnboardingTasksMap, task: OnboardingTask, now: string): void {
   if (tasks[task].status === 'completed') return;
   tasks[task] = {

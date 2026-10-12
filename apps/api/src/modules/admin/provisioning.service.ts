@@ -5,6 +5,7 @@ import {
   hasUsablePhone,
   computeOnboardingState,
   normalizeTasks,
+  socleCompletedAt,
 } from '../restaurants/onboarding.service';
 import { trackOnboardingEvent } from '../analytics/events.service';
 import pino from 'pino';
@@ -24,6 +25,8 @@ export interface TelnyxNumberItem {
 export interface ProvisioningStatusView {
   restaurantId: string;
   restaurantName: string;
+  /** Ville du restaurant (pas une donnée du gérant). */
+  city: string | null;
   phoneNumber: string;
   hasAssignedPhone: boolean;
   provisioningStatus: string;
@@ -31,6 +34,8 @@ export interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  /** Fin de la salle (la plus récente des tâches restaurant, hours, floor), `null` si inachevée. */
+  floorCompletedAt: string | null;
   testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
@@ -532,6 +537,7 @@ export class ProvisioningService {
     return {
       restaurantId: restaurant.id,
       restaurantName: restaurant.name,
+      city: restaurant.city ?? null,
       phoneNumber: restaurant.phoneNumber,
       hasAssignedPhone: isAssigned,
       provisioningStatus: restaurant.provisioningStatus,
@@ -543,6 +549,7 @@ export class ProvisioningService {
         ? restaurant.testCallValidatedAt.toISOString()
         : null,
       firstCallAt: restaurant.firstCallAt ? restaurant.firstCallAt.toISOString() : null,
+      floorCompletedAt: socleCompletedAt(normalizeTasks(restaurant.onboardingTasks)),
       testCallControlId: readTestCallControlId(restaurant.onboardingTasks),
       forwardingCode: ussdCode,
       steps: {

@@ -432,9 +432,6 @@ const EnvSchema = z
     ALERT_EMAIL_TO: z.string().optional(),
     ALERT_WEBHOOK_URL: optionalUrlSchema,
     ALERT_SMS_TO: z.string().optional(),
-    // Équipe Sokar prévenue quand un restaurant a terminé sa salle sans numéro Sokar attribué.
-    // Vide : l'alerte est journalisée, aucun e-mail ne part.
-    SOKAR_OPS_ALERT_EMAIL: z.string().optional(),
     // Jeton séparé pour le feed interne de marge (jamais exposé au dashboard client).
     SOKAR_INTERNAL_USAGE_TOKEN: z.string().optional(),
     // Rôles autorisés à lire les notes CRM sensibles. CSV ; le défaut applique

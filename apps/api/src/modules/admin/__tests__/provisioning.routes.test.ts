@@ -74,6 +74,112 @@ describe('admin provisioning routes', () => {
     expect(body.status.forwardingCode).toBe('*21*+33451221528#');
   });
 
+  describe('fin de la salle dans le statut de provisioning', () => {
+    const done = (completedAt: string) => ({ status: 'completed', completedAt });
+    const restaurant = (overrides: Record<string, unknown>) => ({
+      id: 'resto',
+      name: 'Chez Émile',
+      city: 'Lyon',
+      phoneNumber: '+000chez-emile',
+      provisioningStatus: 'PENDING',
+      telnyxPhoneNumberId: null,
+      forwardingConfiguredAt: null,
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      managerName: 'Émile Dupont',
+      managerEmail: 'emile@gerant.test',
+      managerPhone: '+33612345678',
+      onboardingTasks: {},
+      ...overrides,
+    });
+    const asRestaurant = (value: unknown) =>
+      value as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>;
+
+    it('renvoie la fin de la salle (la plus récente des trois tâches) et la ville', async () => {
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce(
+        asRestaurant(
+          restaurant({
+            onboardingTasks: {
+              restaurant: done('2026-10-12T08:00:00.000Z'),
+              hours: done('2026-10-12T08:05:00.000Z'),
+              floor: done('2026-10-12T08:30:00.000Z'),
+            },
+          }),
+        ),
+      );
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/admin/provisioning/resto',
+        headers: AUTH,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().status).toMatchObject({
+        city: 'Lyon',
+        hasAssignedPhone: false,
+        floorCompletedAt: '2026-10-12T08:30:00.000Z',
+      });
+    });
+
+    it('renvoie null tant que la salle n’est pas terminée', async () => {
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce(
+        asRestaurant(
+          restaurant({
+            onboardingTasks: {
+              restaurant: done('2026-10-12T08:00:00.000Z'),
+              hours: done('2026-10-12T08:05:00.000Z'),
+              floor: { status: 'current' },
+            },
+          }),
+        ),
+      );
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/admin/provisioning/resto',
+        headers: AUTH,
+      });
+      expect(res.json().status.floorCompletedAt).toBeNull();
+    });
+
+    it('la liste porte ce champ pour chaque restaurant, sans donnée du gérant', async () => {
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([
+        { id: 'a' },
+        { id: 'b' },
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
+      vi.mocked(db.restaurant.findUniqueOrThrow)
+        .mockResolvedValueOnce(
+          asRestaurant(
+            restaurant({
+              id: 'a',
+              onboardingTasks: {
+                restaurant: done('2026-10-12T08:00:00.000Z'),
+                hours: done('2026-10-12T08:05:00.000Z'),
+                floor: done('2026-10-12T08:30:00.000Z'),
+              },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(asRestaurant(restaurant({ id: 'b', city: null })));
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/admin/provisioning/restaurants',
+        headers: AUTH,
+      });
+      expect(res.statusCode).toBe(200);
+      const { restaurants } = res.json();
+      expect(
+        restaurants.map((r: { floorCompletedAt: string | null }) => r.floorCompletedAt),
+      ).toEqual(['2026-10-12T08:30:00.000Z', null]);
+      expect(restaurants[1].city).toBeNull();
+      const body = res.body;
+      for (const personal of ['Émile Dupont', 'emile@gerant.test', '+33612345678']) {
+        expect(body).not.toContain(personal);
+      }
+    });
+  });
+
   it('POST /admin/provisioning/:restaurantId/assign-phone attribue un numéro et met à jour le statut', async () => {
     const mockRestaurant = {
       id: 'test-rest-1',

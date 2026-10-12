@@ -39,7 +39,6 @@ import {
   QuickFloorSetupSchema,
 } from './onboarding-floor.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
-import { enqueuePhoneAssignmentAlert } from './phone-assignment-alert';
 import { isVoicePersonalityStyleEnabled } from '../voice/stream/feature-flags';
 import { resolveStyledGreeting } from '../voice/stream/styled-greeting';
 import { computeConnectScore } from '../connect/connect-score.service';
@@ -270,27 +269,6 @@ function onboardingPayload(
 }
 
 export async function restaurantRoutes(app: FastifyInstance) {
-  // Salle terminée sans numéro Sokar : l'équipe est prévenue (une seule fois par restaurant).
-  // Une panne Redis ne doit pas faire échouer la lecture ni l'écriture de l'onboarding.
-  const alertPhoneAssignmentIfNeeded = (
-    restaurantId: string,
-    phoneNumber: string,
-    tasks: Record<OnboardingTask, OnboardingTaskState>,
-  ) => {
-    enqueuePhoneAssignmentAlert(app.queues.phoneAssignment, {
-      restaurantId,
-      phoneNumber,
-      tasks,
-      recipient: process.env.SOKAR_OPS_ALERT_EMAIL,
-    })
-      .then((queued) => {
-        if (queued) app.log.info({ restaurantId }, '[onboarding] phone assignment alert queued');
-      })
-      .catch((err) =>
-        app.log.warn({ err, restaurantId }, '[onboarding] phone assignment alert not queued'),
-      );
-  };
-
   const getOnboarding = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
@@ -315,7 +293,6 @@ export async function restaurantRoutes(app: FastifyInstance) {
       },
       include: { personality: true, exposureSettings: true, images: true },
     });
-    alertPhoneAssignmentIfNeeded(restaurantId, updated.phoneNumber, state.tasks);
 
     return reply.send(
       onboardingPayload(updated, computeOnboardingState({ ...updated, floorStats })),
@@ -454,7 +431,6 @@ export async function restaurantRoutes(app: FastifyInstance) {
     });
 
     const updatedState = computeOnboardingState({ ...updated, floorStats });
-    alertPhoneAssignmentIfNeeded(restaurantId, updated.phoneNumber, nextState.tasks);
     const event = ONBOARDING_EVENT_BY_ACTION[body.action];
     if (event) {
       trackOnboardingEvent({
