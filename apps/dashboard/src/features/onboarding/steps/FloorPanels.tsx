@@ -21,9 +21,22 @@ import {
 
 export type PanelId = 'room' | 'practical';
 
+function seatsOf(counts: TableCounts) {
+  return Object.entries(counts).reduce((sum, [size, count]) => sum + Number(size) * count, 0);
+}
+
+/** Le modèle choisi reste repéré tant que la salle n'a pas été retouchée. */
+function sameCounts(a: TableCounts, b: TableCounts) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((key) => (a[Number(key)] ?? 0) === (b[Number(key)] ?? 0));
+}
+
 export type RailItem = { id: PanelId; title: string; summary: string; done: boolean };
 
-/** Fil de progression : deux sections, une seule ouverte, chacune résumée en une ligne une fois faite. */
+/**
+ * Fil de progression : deux sections, une seule ouverte. Même style léger que le parcours de l'étape
+ * Appels ; le résumé de chaque section reste visible pour savoir où l'on en est sans l'ouvrir.
+ */
 export function PanelRail({
   items,
   active,
@@ -34,21 +47,19 @@ export function PanelRail({
   onSelect: (id: PanelId) => void;
 }) {
   return (
-    <ol aria-label="Sections de l’étape" className="grid w-full grid-cols-2 gap-2">
+    <ol aria-label="Sections de l’étape" className="flex flex-wrap items-center gap-x-3 gap-y-1">
       {items.map((item, index) => {
         const current = item.id === active;
         return (
-          <li key={item.id} className="min-w-0">
+          <li key={item.id} className="flex min-w-0 items-center gap-3">
+            {index > 0 && (
+              <span aria-hidden="true" className="hidden h-px w-10 bg-border sm:block" />
+            )}
             <button
               type="button"
               aria-current={current ? 'step' : undefined}
               onClick={() => onSelect(item.id)}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-xl border px-4 py-1.5 text-left transition-all duration-200',
-                current
-                  ? 'border-foreground/30 bg-background shadow-sm'
-                  : 'border-border bg-muted/30 hover:bg-accent/50',
-              )}
+              className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-3 text-left transition-all duration-200 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span
                 aria-hidden="true"
@@ -65,13 +76,17 @@ export function PanelRail({
               </span>
               <span
                 className={cn(
-                  'min-w-0 truncate text-sm font-medium',
+                  'whitespace-nowrap text-sm font-medium',
                   current ? 'text-foreground' : 'text-muted-foreground',
                 )}
               >
                 {item.title}
                 {item.done ? <span className="sr-only"> — terminé</span> : null}
-                <span className="sr-only"> — {item.summary}</span>
+              </span>
+              <span className="sr-only truncate text-xs text-muted-foreground lg:not-sr-only">
+                <span className="sr-only"> — </span>
+                <span aria-hidden="true">· </span>
+                {item.summary}
               </span>
             </button>
           </li>
@@ -82,13 +97,21 @@ export function PanelRail({
 }
 
 function Stepper({
-  capacity,
   value,
   onChange,
+  min = 0,
+  max = MAX_PER_SIZE,
+  inputLabel,
+  decreaseLabel,
+  increaseLabel,
 }: {
-  capacity: number;
   value: number;
   onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  inputLabel: string;
+  decreaseLabel: string;
+  increaseLabel: string;
 }) {
   const buttonClass =
     'inline-flex size-9 items-center justify-center rounded-lg border border-border bg-background text-foreground transition-all duration-200 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40';
@@ -97,8 +120,8 @@ function Stepper({
       <button
         type="button"
         className={buttonClass}
-        aria-label={`Une table de ${capacity} en moins`}
-        disabled={value <= 0}
+        aria-label={decreaseLabel}
+        disabled={value <= min}
         onClick={() => onChange(value - 1)}
       >
         <Minus size={15} aria-hidden="true" />
@@ -106,20 +129,20 @@ function Stepper({
       <input
         type="number"
         inputMode="numeric"
-        min={0}
-        max={MAX_PER_SIZE}
+        min={min}
+        max={max}
         value={value}
-        aria-label={`Nombre de tables de ${capacity}`}
+        aria-label={inputLabel}
         onChange={(event) =>
-          onChange(Math.max(0, Math.min(MAX_PER_SIZE, Math.trunc(Number(event.target.value)) || 0)))
+          onChange(Math.max(min, Math.min(max, Math.trunc(Number(event.target.value)) || min)))
         }
         className="h-9 w-14 rounded-lg border border-input bg-background text-center text-sm font-semibold tabular-nums transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
       <button
         type="button"
         className={buttonClass}
-        aria-label={`Une table de ${capacity} en plus`}
-        disabled={value >= MAX_PER_SIZE}
+        aria-label={increaseLabel}
+        disabled={value >= max}
         onClick={() => onChange(value + 1)}
       >
         <Plus size={15} aria-hidden="true" />
@@ -198,24 +221,63 @@ export function TablesPanel({
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-foreground">Partir d’un modèle</span>
-              {TEMPLATES.map((template) => (
-                <button
-                  key={template.label}
-                  type="button"
-                  onClick={() => onTemplate(template.counts)}
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
-                >
-                  {template.label}
-                </button>
-              ))}
+            <div className="space-y-1.5">
+              <p id="floor-templates-label" className="text-xs text-muted-foreground">
+                Partir d’un modèle
+              </p>
+              <div
+                role="group"
+                aria-labelledby="floor-templates-label"
+                className="grid grid-cols-3 gap-1.5"
+              >
+                {TEMPLATES.map((template) => {
+                  const selected = sameCounts(counts, template.counts);
+                  return (
+                    <button
+                      key={template.label}
+                      type="button"
+                      aria-label={template.label}
+                      aria-pressed={selected}
+                      onClick={() => onTemplate(template.counts)}
+                      className={cn(
+                        'h-10 min-w-0 truncate whitespace-nowrap rounded-lg border px-1 text-sm font-medium xl:px-2 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        selected
+                          ? 'border-foreground bg-foreground text-background'
+                          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+                      )}
+                    >
+                      {template.label}
+                      <span
+                        className={cn(
+                          'ml-1.5 hidden text-xs font-normal xl:inline',
+                          !selected && 'opacity-70',
+                        )}
+                      >
+                        {seatsOf(template.counts)} couv.
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <ul className="flex flex-1 flex-col divide-y divide-border rounded-2xl border border-border bg-background">
+              <li className="flex items-center justify-between gap-3 px-5 py-2.5">
+                <span className="text-sm font-medium text-foreground">Vos tables</span>
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {totals.tables === 0
+                    ? 'Aucune table'
+                    : `${plural(totals.tables, 'table', 'tables')} · ${plural(totals.seats, 'couvert', 'couverts')}`}
+                </span>
+              </li>
               {sizes.map((size) => (
                 <li key={size} className="flex items-center justify-between gap-3 px-5 py-3">
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium text-foreground">
+                    <span
+                      className={cn(
+                        'block text-sm font-medium transition-all duration-200',
+                        (counts[size] ?? 0) > 0 ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
                       {tableLabel(size)}
                     </span>
                     {(counts[size] ?? 0) > 0 && (
@@ -225,9 +287,11 @@ export function TablesPanel({
                     )}
                   </span>
                   <Stepper
-                    capacity={size}
                     value={counts[size] ?? 0}
                     onChange={(value) => onCount(size, value)}
+                    inputLabel={`Nombre de tables de ${size}`}
+                    decreaseLabel={`Une table de ${size} en moins`}
+                    increaseLabel={`Une table de ${size} en plus`}
                   />
                 </li>
               ))}
@@ -371,6 +435,7 @@ function Tile({ label, value, detail }: { label: string; value: string; detail?:
 
 export type RulesValues = {
   maxParty: number;
+  partyCapacity: number;
   duration: number;
   durationOptions: number[];
   cancellation: string;
@@ -389,10 +454,12 @@ export function RulesPanel({
   onDepositRequired,
   onDepositAmount,
   onDepositThreshold,
+  onMaxParty,
   compact = false,
 }: {
   compact?: boolean;
   values: RulesValues;
+  onMaxParty: (value: number) => void;
   onDuration: (value: number) => void;
   onCancellation: (value: string) => void;
   onCustomPolicy: (value: string) => void;
@@ -454,7 +521,7 @@ export function RulesPanel({
             id="rule-cancellation"
             role="group"
             aria-labelledby="rule-cancellation-label"
-            className="grid grid-cols-[1fr_1fr_1fr_1.6fr_1fr] gap-1.5"
+            className="flex flex-wrap gap-1.5"
           >
             {CANCELLATION_PRESETS.map((item) => (
               <button
@@ -464,7 +531,7 @@ export function RulesPanel({
                 aria-pressed={v.cancellation === item.id}
                 onClick={() => onCancellation(item.id)}
                 className={cn(
-                  'min-h-10 min-w-0 whitespace-nowrap rounded-lg border px-1 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                  'min-h-10 flex-auto whitespace-nowrap rounded-lg border px-3 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   v.cancellation === item.id
                     ? 'border-foreground bg-foreground text-background'
                     : 'border-border bg-background text-muted-foreground hover:border-foreground/40 hover:bg-accent hover:text-foreground',
@@ -479,7 +546,7 @@ export function RulesPanel({
               aria-pressed={v.cancellation === CUSTOM_CANCELLATION}
               onClick={() => onCancellation(CUSTOM_CANCELLATION)}
               className={cn(
-                'min-h-10 min-w-0 whitespace-nowrap rounded-lg border px-1 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'min-h-10 flex-auto whitespace-nowrap rounded-lg border px-3 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 v.cancellation === CUSTOM_CANCELLATION
                   ? 'border-foreground bg-foreground text-background'
                   : 'border-border bg-background text-muted-foreground hover:border-foreground/40 hover:bg-accent hover:text-foreground',
@@ -501,6 +568,32 @@ export function RulesPanel({
                 'flex w-full rounded-xl border border-input bg-background px-3 py-2 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               )}
             />
+          )}
+        </RuleRow>
+        <RuleRow
+          id="rule-party"
+          title="Réservation en ligne jusqu’à"
+          hint="Calculé d’après votre plus grande table. Pour un groupe plus grand, le gérant prend le relais."
+          grouped
+          stacked
+        >
+          <div role="group" aria-labelledby="rule-party-label" className="flex items-center gap-3">
+            <Stepper
+              value={v.maxParty}
+              onChange={onMaxParty}
+              min={1}
+              max={100}
+              inputLabel="Nombre maximum de personnes par réservation"
+              decreaseLabel="Une personne de moins"
+              increaseLabel="Une personne de plus"
+            />
+            <span className="text-sm text-muted-foreground">personnes</span>
+          </div>
+          {v.maxParty > v.partyCapacity && (
+            <p className="text-xs leading-5 text-muted-foreground">
+              Plus que votre plus grande table ({v.partyCapacity} pers.) : il faudra rapprocher des
+              tables.
+            </p>
           )}
         </RuleRow>
         <div className="flex flex-col gap-3 px-5 py-3">
@@ -595,39 +688,5 @@ export function RulesPanel({
         </aside>
       )}
     </div>
-  );
-}
-
-/** Récapitulatif client de la salle et des règles, en une bande sous les deux colonnes. */
-export function RoomRecap({
-  maxParty,
-  onChange,
-}: {
-  maxParty: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <aside
-      aria-label="Ce que verront vos clients"
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground"
-    >
-      <span>Réservation en ligne jusqu’à</span>
-      <Input
-        type="number"
-        min={1}
-        max={100}
-        step={1}
-        required
-        defaultValue={maxParty}
-        aria-label="Nombre maximum de personnes par réservation"
-        onChange={(event) => {
-          const value = event.target.valueAsNumber;
-          if (Number.isInteger(value) && value >= 1 && value <= 100) onChange(value);
-        }}
-        className="h-9 w-20 rounded-lg bg-background text-center tabular-nums"
-      />
-      <span>personnes.</span>
-      <span className="text-muted-foreground">Au-delà, le gérant prend le relais.</span>
-    </aside>
   );
 }

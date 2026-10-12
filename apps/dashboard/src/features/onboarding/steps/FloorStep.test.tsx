@@ -136,6 +136,40 @@ it('dessine la salle et calcule tables, couverts et plus grande table', async ()
   expect(railItem(/Salle & conditions/)).toHaveTextContent('3 tables');
 });
 
+it('repère le modèle choisi et résume les tables en tête de liste', async () => {
+  await renderLoaded();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Petite salle' }));
+  expect(screen.getByRole('button', { name: 'Petite salle' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(screen.getByText('7 tables · 20 couverts')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Une table de 2 en plus' }));
+  expect(screen.getByRole('button', { name: 'Petite salle' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  expect(screen.getByText('8 tables · 22 couverts')).toBeInTheDocument();
+});
+
+it('règle la réservation en ligne avec le même compteur que les tables', async () => {
+  await renderLoaded();
+  fireEvent.click(screen.getByRole('button', { name: 'Une table de 4 en plus' }));
+  const party = screen.getByRole('spinbutton', {
+    name: 'Nombre maximum de personnes par réservation',
+  });
+  expect(party).toHaveValue(4);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Une personne de plus' }));
+  expect(party).toHaveValue(5);
+  expect(screen.getByText(/il faudra rapprocher des tables/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Une personne de moins' }));
+  expect(party).toHaveValue(4);
+  expect(screen.queryByText(/il faudra rapprocher des tables/)).not.toBeInTheDocument();
+});
+
 it('ajoute une autre taille de table', async () => {
   await renderLoaded();
 

@@ -41,7 +41,6 @@ import { AccountMenu } from '@/components/AccountMenu';
 import { OnboardingWizard } from '@/features/onboarding/onboarding-wizard';
 import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-access-boundary';
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
-import { DashboardOnboardingPanel } from '@/features/onboarding/onboarding-dashboard';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
@@ -918,7 +917,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
             <AccountMenu />
           </div>
         </div>
-        <DashboardOnboardingPanel />
         <main
           className={cn(
             'min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]',

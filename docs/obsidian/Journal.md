@@ -1969,6 +1969,74 @@ Le panneau Stripe présente maintenant l’état, l’effet sur les ventes/verse
 - Publication conservée au dernier écran, jamais automatique. Une page non enregistrée renvoie à l’éditeur ; garde serveur du slug, avertissement sur le socle de réservation et consentement IA conservés.
 - Validation : 67 tests dashboard ciblés et 92 API ciblés (dont 17 de ton) passent ; TypeScript dashboard/API et ESLint propres. Tests couvrent continuité d’adresse, lien indisponible, correction géocodée sans anciennes coordonnées, secours manuel, conservation de saisie, liens historiques, complétion sans enrichissements et confirmation finale. Vérification visuelle réelle desktop, iPad 820 px et mobile 390 px ; redirection réelle de l’ancienne page adresse. Aucun formulaire envoyé par le navigateur, aucune publication, aucun appel voix/Places payant exécuté. Runbook et TODO actualisés. Local uniquement, sans commit ni déploiement.
 
+## 2026-10-10 — Retrait du panneau de mise en service du dashboard
+Le parcours de configuration reste sur `/onboarding`, avant l’accès au dashboard. Le panneau redondant « Mise en service » a été retiré du layout dashboard et son composant dédié supprimé ; `OnboardingAccessBoundary` et les garde-fous des fonctionnalités restent en place.
+
+## 2026-10-10 — Application des dernières arrivées à toute la semaine
+Dans l’étape Horaires, le bouton de copie est visible dès qu’au moins deux jours sont ouverts. Il s’active après saisie des dernières arrivées du jour choisi, copie ces valeurs aux autres jours ouverts et laisse leurs plages d’ouverture/fermeture intactes ; les jours fermés restent fermés.
+
+## 2026-10-10 — Hiérarchie visuelle de l’étape Horaires
+L’étape met davantage en évidence le statut de la semaine, l’état de chaque jour, les plages de service et l’action de copie. Le contrôle de modification des horaires d’ouverture est maintenant une action explicite ; aucun changement au modèle de réservation.
+
+## 2026-10-11 — Ajustement du parcours Horaires
+Le contrôle de modification des horaires d’ouverture est placé à côté du jour sélectionné pour rester visible au-dessus du pied de page fixe. Le rendu a été vérifié sur `/onboarding`.
+
+## 2026-10-11 — Lisibilité de l’onboarding Horaires
+Progression du parcours explicitée en étapes terminées, compteur distinct des jours ouverts configurés, correction du contraste des statuts non sélectionnés et champs Midi/Soir uniformisés. Exemple de dernière arrivée et plages « Ouverture » ajoutés. Copie compactée, règle d’heures fixes et services incompatibles explicitée, choix des jours et annulation conservés. Le bouton Continuer expose la condition restante via une aide accessible. Navigation des deux parties clarifiée et sphère décorative du bandeau retirée. Aucun changement de contrat API ou de schéma.
+Validation : 14 tests Horaires/parcours et 15 tests de vouvoiement réussis, typecheck dashboard, ESLint ciblé et Prettier conformes ; contrôle visuel desktop et iPad 768 px. Serveur Next local relancé après blocage. Changements locaux, non déployés.
+
+## 2026-10-11 — Allègement de la page Horaires
+À la demande de l’utilisateur, retrait de l’exemple, du bandeau Vos jours / source Google Maps / compteur et du bloc de copie (avec son état et son annulation). La page affiche directement les jours puis les services. Configuration et validation jour par jour conservées.
+
+## 2026-10-11 — Nouvelle vue hebdomadaire des dernières arrivées
+Page Horaires réimaginée en tableau de semaine : sept lignes, colonnes Midi/Soir, sélection directe des dernières arrivées et plages d’ouverture discrètes. Suppression de la sélection de jour et des grandes cartes de services ; édition des ouvertures dans un dialogue par jour, avec ajout/retrait de service et fermeture du jour. Pas de bandeaux ni de copie réintroduits. Contrat API conservé.
+Validation : 14 tests Horaires/parcours réussis, typecheck et ESLint ciblé conformes ; rendu contrôlé en desktop, iPad (768 px) et mobile (390 px), dialogue d’édition vérifié.
+
+## 2026-10-11 — Retour aux cartes Horaires
+À la demande de l’utilisateur, abandon de la vue en tableau : retour aux cartes des jours et aux deux blocs Midi/Soir pour le jour sélectionné. Édition des ouvertures réintégrée sous les cartes. L’exemple, le bandeau Vos jours et le bloc de copie restent retirés.
+
+## 2026-10-11 — Affinage des cartes Horaires
+Structure en cartes conservée : jours compactés avec états accessibles, suppression des statuts répétés visibles, distinction Midi clair / Soir contrasté via les tokens du thème, contrôles horaires agrandis et plages d’ouverture discrètes. Longue aide du pied de page retirée pour alléger la composition. Aucun changement de logique ni de contrat API.
+Validation : 4 tests Horaires réussis, typecheck et ESLint ciblé conformes ; rendu vérifié en desktop, iPad et mobile.
+
+## 2026-10-11 — Application discrète des dernières arrivées à la semaine
+Bouton compact « Appliquer à la semaine » à côté du jour sélectionné, visible après configuration de ses services. Copie des heures fixes vers les services correspondants des jours ouverts, sans modifier les ouvertures ni les jours fermés. Services incompatibles conservés et signalés ; confirmation inline et annulation des valeurs/confirmations, invalidée après édition manuelle pour préserver les changements ultérieurs. Aucun changement API ou schéma. Validation : 7 tests Horaires, typecheck, ESLint et Prettier ; copie et annulation vérifiées dans le navigateur, rendu desktop/iPad/mobile.
+
+## 2026-10-11 — Reprise de l’API locale de l’onboarding
+L’étape Salle affichait une erreur réseau car l’API locale sur 127.0.0.1:4000 n’était pas démarrée. PostgreSQL et Redis locaux répondaient ; démarrage de l’API avec `pnpm --filter @sokar/api dev`. Contrôles : `/health` 200 et proxy onboarding 200. Aucun changement de code ou de données applicatives.
+
+## 2026-10-11 — Action de copie visible avant configuration
+L’action « Appliquer à la semaine » reste visible dès l’ouverture de l’étape dès qu’il y a plusieurs jours ouverts. Son état désactivé guide vers la configuration manquante (ou un jour ouvert / la correction des horaires), puis devient actionnable lorsque le jour sélectionné est prêt. Aucun changement API ou schéma. Vérification visuelle dans l’onboarding local.
+
+## 2026-10-11 — Dernières arrivées synchronisées automatiquement
+Suppression de l’action manuelle de copie : choisir une dernière arrivée pour Midi ou Soir la propage aux services correspondants des jours ouverts. Quand un service ferme plus tôt, l’heure est ramenée au dernier créneau possible avant la limite choisie ; si aucun créneau ne convient, le jour reste à compléter. Texte d’étape mis à jour. Aucun changement API ou schéma.
+
+
+## 2026-10-11 — Refonte de l’étape Appels de l’onboarding
+Composition avec aperçu du parcours des appels et configuration guidée, progression renvoi → appel test, sélection de ligne plus lisible et action « Passer à l’appel test ». Sur tablette et mobile, les instructions passent avant l’aperçu. Numéro restaurant absent : accès aux coordonnées et passage au test désactivé ; changement de type de ligne : confirmation du renvoi réinitialisée. Copie du code ou du numéro de destination avec retour accessible et erreur explicite ; retour aux instructions pendant le test. Aucun changement API, schéma ou fournisseur. Vérifications : 8 tests PhoneStep, 15 tests de ton, typecheck dashboard, ESLint ciblé, Prettier et revue navigateur bureau/iPad/mobile. La suite dashboard complète comporte 495 tests verts et 2 échecs dans HoursStep/onboarding-wizard, fichiers déjà modifiés avant cette intervention. Travail local, non déployé.
+
+
+## 2026-10-11 — Simplification de l’étape Appels
+Retrait du bloc d’accès « Renseigner le numéro » et du rappel « Ensuite, vérifions… » sous le guide de renvoi. L’indication sur le numéro manquant reste dans le pied de page auprès du bouton de test désactivé.
+
+## 2026-10-12 — Étape Appels : numéro saisi sur place, bandeau compact, plus de case à cocher
+Suite à une revue UX de l’étape 5. (1) Si le numéro public du restaurant manque, un champ « Numéro du restaurant » apparaît dans l’étape et l’enregistre (`PATCH restaurants/:id` avec `phoneE164`) : le bouton de test n’est plus bloqué sans issue. Cela remplace le lien retiré le 11/10 par une saisie sur place. Validation et format national déplacés dans `features/onboarding/phone-format.ts`, partagé avec RestaurantStep. (2) Le code de renvoi est affiché en blocs lisibles (`**21* +33 1 23 45 67 89 #`) ; la copie et le lecteur d’écran reçoivent le code exact. Le QR `tel:` a été écarté : iOS ne compose pas les liens contenant `*` ou `#`. (3) La grande carte noire devient un bandeau compact (numéro inchangé, flux clients → Sokar, code de désactivation), les pastilles 1/2 internes à la carte sont retirées (seul le parcours du haut est numéroté), la case « J’ai activé le renvoi » est supprimée au profit du bouton « J’ai composé le code » (« J’ai activé le renvoi » pour une box). Le `+33100000000` et le « 0/5 » de la capture venaient de l’aperçu local sans Clerk (`PREVIEW_STATE`), pas de la prod. Aucun changement d’API ni de schéma. Vérifications : 31 tests PhoneStep + RestaurantStep, typecheck dashboard, ESLint ciblé, revue navigateur bureau/iPad. Les 2 échecs HoursStep préexistent (fichier en cours de modification). Travail local, non déployé.
+
+## 2026-10-12 — Étape Appels sur un seul écran, numéro prérempli par Google
+Le champ « Numéro du restaurant » passe dans le bandeau (à la place de « Vos clients composent ») et se préremplit avec le téléphone de la fiche Google choisie à l’étape 1 (`placeImportDraft.phoneE164`, relu après le premier rendu, jamais d’écrasement d’une saisie). Il suffit de « Valider ». Dans le parcours normal, l’étape 1 enregistre déjà ce numéro et le champ n’apparaît pas. Mise en page resserrée : type de ligne en colonne à gauche du code (≥ lg), bandeau en ligne seulement ≥ xl, et `FitToHeight` (minZoom 0.75) en filet de sécurité. Vérifié sans défilement à 1430×745, 1024×768, 768×1024 (zoom 1) et 1280×600 (zoom 0,98). 9 tests PhoneStep, typecheck et ESLint verts. Travail local, non déployé.
+
+## 2026-10-12 — Étape Appels : type de ligne déduit du numéro
+Le type de ligne est présélectionné d’après le numéro du restaurant (enregistré, sinon saisi ou prérempli par Google) : 06/07 → Mobile, 09 → Box internet, 01 à 05 → Ligne fixe avec l’indication « Téléphone branché sur une box ? Choisissez Box internet. », numéro étranger ou incomplet → Mobile par défaut sans mention. Une ligne « Déduit de votre numéro … » l’explique ; un clic de l’utilisateur prime et n’est plus remplacé. Côté interface uniquement, sans appel réseau. Piste suivante, non engagée : recherche d’opérateur via Telnyx (instructions par opérateur pour les box), à chiffrer et à tester sur de vrais numéros. 12 tests PhoneStep, typecheck et ESLint verts ; vérifié sans défilement à 1430×745. Travail local, non déployé.
+
+## 2026-10-12 — Étape Appels : bouton « Modifier » du numéro du restaurant
+Quand le numéro est connu, le bandeau affiche « Modifier » à côté. Le champ s’ouvre prérempli et focalisé, avec « Valider » et une croix d’annulation (Échap aussi). Pendant la saisie, le type de ligne suit le numéro tapé dès qu’il est reconnaissable et les boutons d’avancée et d’appel test sont bloqués (« Validez d’abord le numéro du restaurant. »). Un numéro inchangé ferme le champ sans requête ; sinon `PATCH restaurants/:id { phoneE164 }`. 14 tests PhoneStep, typecheck et ESLint verts ; vérifié dans l’aperçu à 1430×745. Travail local, non déployé.
+
+## 2026-10-12 — Étape Salle et règles : fil allégé, modèle repéré, groupe maximum dans les règles
+Revue UX de l’étape 3, même direction que l’étape Appels. Le fil « Salle & conditions / Infos pratiques » passe du style onglets encadrés au style léger du parcours Appels, avec le résumé de chaque section visible dès lg (lu par les lecteurs d’écran en dessous). Les modèles de salle sont sur une grille de 3, le modèle actif est repéré (`aria-pressed`, tant que la salle n’est pas retouchée) et affiche ses couverts dès xl. La liste des tables a une ligne d’en-tête « Vos tables · N tables · N couverts » et les tailles à 0 sont atténuées. La bande « Réservation en ligne jusqu’à » (`RoomRecap`, supprimé) devient une règle de la colonne de droite avec le même compteur −/+ que les tables (`Stepper` généralisé), et une note apparaît si la limite dépasse la plus grande table. Les boutons d’annulation passent à la ligne au lieu d’être tronqués (défaut préexistant à 1024 px). Aucun changement d’API ni de données. 23 tests FloorStep (2 nouveaux), typecheck et ESLint verts ; sans défilement à 1430×745 et 1024×768. En iPad portrait (768×1024), l’étape défile encore d’environ 140 px : choix antérieur de garder la taille du texte plutôt que de réduire. Travail local, non déployé.
+
+## 2026-10-12 — Étape Salle et règles : réduction automatique
+Le contenu de l’étape (fil + sections superposées) passe dans `FitToHeight` (minZoom 0.8), comme l’étape Appels : iPad portrait tient sans défiler à 87,5 % (salle comme infos pratiques), 1430×745 à 97 % et 1024×768 à 98 % (la section Infos pratiques, la plus haute, fixe la hauteur commune). Sous 80 %, la zone défile. Remplace le choix précédent « le texte garde sa taille, les petits écrans défilent ». 23 tests FloorStep, typecheck et ESLint verts. Travail local, non déployé.
+
 ## 2026-10-12 — Onboarding : l’URL suit l’étape affichée
 `?step=` n’était lu qu’à l’ouverture (liens directs et redirections `/onboarding/[step]`) et jamais réécrit : l’adresse gardait l’étape d’arrivée (ex. `connect-identity` affiché sur « Salle et règles ») et un rechargement renvoyait vers une autre étape que celle en cours. Le wizard réécrit maintenant `?step=<clé>` à chaque changement d’étape via `history.replaceState` (pas d’entrée d’historique par étape : « Étape précédente » sert au retour). Les autres paramètres (ex. `utm_source`) sont conservés et les anciens noms (`channels`) sont remplacés par la clé actuelle. 3 nouveaux tests ; 24 tests wizard + route, typecheck et ESLint verts. Vérifié dans le navigateur : un clic met l’URL à jour, `/onboarding/channels` ouvre « Votre page » avec `?step=connect-identity`. À noter : dans le navigateur intégré en dev, un chargement direct de `/onboarding` reste parfois non hydraté (aussi sans ce changement) ; non investigué. Travail local, non déployé.
 

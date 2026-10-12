@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { normalizePhone } from '@sokar/shared';
+import { isValidPhoneInput, toNationalDisplay } from '../phone-format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApi } from '@/lib/api';
@@ -49,21 +50,16 @@ function isNameValid(value: string) {
   return value.trim().length > 0;
 }
 
-function validPhone(raw: string) {
-  return (
-    /^[+\d\s().-]+$/.test(raw) &&
-    /^\+[1-9]\d{9,14}$/.test(normalizePhone(raw)) &&
-    !/0{8,}$/.test(normalizePhone(raw))
-  );
-}
-
 function isPhoneValid(value: string) {
-  return validPhone(value);
+  return isValidPhoneInput(value);
 }
 
 function isMobileValid(value: string) {
   const normalized = normalizePhone(value);
-  return validPhone(value) && (!normalized.startsWith('+33') || /^\+33[67]\d{8}$/.test(normalized));
+  return (
+    isValidPhoneInput(value) &&
+    (!normalized.startsWith('+33') || /^\+33[67]\d{8}$/.test(normalized))
+  );
 }
 
 function isEmailValid(value: string) {
@@ -75,12 +71,6 @@ function isEmailValid(value: string) {
 
 function placeLabel(place: PlaceImportDraft) {
   return `${place.name}${place.city ? `, ${place.city}` : ''}`;
-}
-
-/** +33 9 73 03 43 88 → 09 73 03 43 88 : le format qu'un restaurateur français lit au téléphone. */
-function toNationalDisplay(e164: string) {
-  const national = e164.startsWith('+33') ? `0${e164.slice(3)}` : e164;
-  return /^0\d{9}$/.test(national) ? national.replace(/(\d{2})(?=\d)/g, '$1 ') : national;
 }
 
 /** Saisie laissée en cours sur cette étape : elle survit au passage sur une autre étape. */
