@@ -401,6 +401,84 @@ describe('ReservationWidget — étape customer', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 4 bis. Créneau trop proche (délai minimum) ou déjà pris : deux 409 différents
+// ---------------------------------------------------------------------------
+
+describe('ReservationWidget — refus 409 du hold et de la confirmation', () => {
+  const TOO_SOON_MESSAGE =
+    'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.';
+
+  beforeEach(() => {
+    setSearch('?slug=chez-sokar-demo');
+  });
+
+  function conflict(body: Record<string, unknown>) {
+    return { ok: false, status: 409, json: async () => body } as unknown as Response;
+  }
+
+  /** Jusqu'au formulaire « Vos coordonnées » rempli, puis clic sur Confirmer. */
+  async function submitFromCustomerStep() {
+    render(<ReservationWidget />);
+    await screen.findByRole('form', { name: 'Détails de la réservation' });
+    fireEvent.change(screen.getByLabelText(/Choisissez une date/), {
+      target: { value: '2030-01-15' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Voir les créneaux' }));
+    fireEvent.click(await screen.findByRole('button', { name: '19:00' }));
+    await screen.findByRole('form', { name: 'Vos coordonnées' });
+    fireEvent.change(screen.getByLabelText(/Prénom/), { target: { value: 'Marie' } });
+    fireEvent.change(screen.getByLabelText(/Téléphone/), { target: { value: '+33612345678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la réservation' }));
+  }
+
+  it('affiche le message français du serveur quand le hold est refusé pour délai minimum', async () => {
+    mockFetch.mockResolvedValueOnce(availabilityResponse());
+    mockFetch.mockResolvedValueOnce(
+      conflict({
+        error: TOO_SOON_MESSAGE,
+        code: 'INSUFFICIENT_LEAD_TIME',
+        minLeadTimeMinutes: 120,
+      }),
+    );
+
+    await submitFromCustomerStep();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(TOO_SOON_MESSAGE);
+    expect(alert).not.toHaveTextContent(/vient d'être réservé/);
+    // Retour aux horaires : le créneau refusé n'est plus proposé (le widget masque les indisponibles).
+    expect(screen.queryByRole('button', { name: '19:00' })).not.toBeInTheDocument();
+  });
+
+  it('garde « vient d’être réservé » pour un 409 sans code de délai', async () => {
+    mockFetch.mockResolvedValueOnce(availabilityResponse());
+    mockFetch.mockResolvedValueOnce(conflict({ error: 'Slot taken' }));
+
+    await submitFromCustomerStep();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/vient d'être réservé/);
+  });
+
+  it('affiche le message français quand la confirmation est refusée pour délai minimum', async () => {
+    mockFetch.mockResolvedValueOnce(availabilityResponse());
+    mockFetch.mockResolvedValueOnce(holdResponse());
+    mockFetch.mockResolvedValueOnce(
+      conflict({
+        error: TOO_SOON_MESSAGE,
+        code: 'INSUFFICIENT_LEAD_TIME',
+        minLeadTimeMinutes: 120,
+      }),
+    );
+
+    await submitFromCustomerStep();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(TOO_SOON_MESSAGE);
+    expect(alert).not.toHaveTextContent(/vient d'être réservé|Une erreur/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 5. Écran confirmation
 // ---------------------------------------------------------------------------
 

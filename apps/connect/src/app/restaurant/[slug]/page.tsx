@@ -27,6 +27,7 @@ import { trackPageView, trackEvent } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
 import { PageViewTracker } from '@/components/page-view-tracker';
 import { isValidSlug } from '@/lib/widget-colors';
+import { todayInTimezone } from '@/lib/restaurant-day';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
@@ -203,7 +204,8 @@ export default async function RestaurantPage({
 
   // Disponibilités inline (Phase 2) : aperçu des créneaux du jour pour
   // éviter le clic supplémentaire vers /book. ISR 30s côté API (cache Next 30s).
-  const today = new Date().toISOString().slice(0, 10);
+  // Le jour CHEZ le restaurant, pas le jour UTC (entre minuit et 2 h à Paris, ce dernier retarde d'un jour).
+  const today = todayInTimezone(restaurant.timezone);
   const previewPartySize = 2;
   const availability = await fetchAvailability(
     restaurant.slug,

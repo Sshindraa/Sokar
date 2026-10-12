@@ -347,4 +347,68 @@ describe('BookingWidget waiting list flow', () => {
     expect(body.giftCardCode).toBe('SKR-TEST-01');
     expect(body.giftCardReservationAmount).toBeUndefined();
   });
+
+  describe('créneau trop proche (délai minimum du restaurant)', () => {
+    const TOO_SOON_MESSAGE =
+      'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.';
+    const tooSoon = () =>
+      jsonResponse(
+        { error: TOO_SOON_MESSAGE, code: 'INSUFFICIENT_LEAD_TIME', minLeadTimeMinutes: 120 },
+        409,
+      );
+    const restaurant = () =>
+      jsonResponse({
+        id: 'rest-1',
+        slug,
+        name: 'Chez Sokar',
+        connectAgentic: false,
+        city: 'Paris',
+        sections: [],
+      });
+    const slots = () =>
+      jsonResponse({ date: todayIso(), partySize: 2, slots: [{ time: '19:00', available: true }] });
+
+    async function submitFromSlots() {
+      render(<BookingWidget slug={slug} />);
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+      fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: 'Marie' } });
+      fireEvent.change(screen.getByLabelText(/^Téléphone/i), {
+        target: { value: '+33612345678' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+    }
+
+    it('affiche le message français du serveur quand le hold est refusé, sans proposer la file d’attente', async () => {
+      setFetchSequence([restaurant(), slots(), tooSoon()]);
+
+      await submitFromSlots();
+
+      expect(await screen.findByText(TOO_SOON_MESSAGE)).toBeInTheDocument();
+      expect(screen.queryByText(/créneau déjà réservé/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /rejoindre la file d'attente/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('affiche le message français du serveur quand la confirmation est refusée, et revient aux horaires', async () => {
+      setFetchSequence([
+        restaurant(),
+        slots(),
+        jsonResponse({ holdId: 'hold', holdToken: 'tok', status: 'pending' }),
+        tooSoon(),
+      ]);
+
+      await submitFromSlots();
+
+      expect(await screen.findByText(TOO_SOON_MESSAGE)).toBeInTheDocument();
+      expect(screen.queryByText(/réservation a échoué/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Internal error/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /confirmer la réservation/i })).toBeNull();
+    });
+  });
 });

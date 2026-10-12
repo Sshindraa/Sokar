@@ -219,6 +219,8 @@ export type PublicRestaurantDto = {
   noiseLevel?: string;
   acceptsReservations: boolean;
   publishedAt: string; // ISO 8601
+  // Fuseau du restaurant (IANA) : « aujourd'hui » se calcule dans ce fuseau, pas dans celui du serveur.
+  timezone?: string;
   // Métadonnées internes (utiles pour le front, pas pour le SEO)
   connectAgentic: boolean;
   // Géolocalisation (exposée dans JSON-LD GeoCoordinates)

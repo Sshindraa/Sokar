@@ -195,6 +195,48 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
     expect(result.id).toBe('res-new');
   });
 
+  it('create : la voix et le personnel ne sont pas soumis au délai minimum en ligne', async () => {
+    // Jeudi 2 juillet 2026, 15:00 à Paris. Le restaurant règle 2 h de délai pour ses surfaces en ligne,
+    // mais le service de création (voix, personnel) ne lit pas ce délai : 15:30 reste réservable.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-02T13:00:00.000Z'));
+    try {
+      const restaurantWithLead = {
+        ...mockRestaurant,
+        exposureSettings: { capacitySpecials: null, minLeadTimeMinutes: 120 },
+      };
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+        restaurantWithLead as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+      );
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        restaurantWithLead as unknown as Awaited<
+          ReturnType<typeof db.restaurant.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
+        minLeadTimeMinutes: 120,
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findUnique>>);
+      vi.mocked(db.reservation.create).mockResolvedValue({
+        id: 'res-near',
+        restaurantId: 'rest-123',
+        reservedAt: new Date('2026-07-02T13:30:00.000Z'),
+        partySize: 4,
+        customerName: 'Alice',
+        customerPhone: '+33612345678',
+        googleEventId: null,
+      } as unknown as Awaited<ReturnType<typeof db.reservation.create>>);
+
+      const result = await ReservationService.create(
+        makeInput({ callId: undefined, reservedAt: new Date('2026-07-02T13:30:00.000Z') }),
+      );
+
+      expect(result.id).toBe('res-near');
+      expect(db.restaurantExposureSettings.findUnique).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('create : envoie une seule confirmation SMS sur le chemin normal legacy', async () => {
     const mockReservation = {
       id: 'res-sms',

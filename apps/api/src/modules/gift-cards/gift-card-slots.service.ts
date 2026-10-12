@@ -1,4 +1,5 @@
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
+import { loadMinLeadTimeMinutes } from '../../shared/reservations/lead-time.js';
 import { GiftCardService } from './gift-card.service';
 import { GiftCardSlot } from './gift-card.types.js';
 import type { PrismaClient } from '@prisma/client';
@@ -43,6 +44,9 @@ export class GiftCardSlotsService {
     const preferredTime = args.preferredTime ?? giftCard.preferredTime ?? undefined;
 
     const slots: GiftCardSlot[] = [];
+    // Surface en ligne : les créneaux proposés respectent le délai minimum du restaurant, sinon la
+    // réservation (qui le contrôle) refuserait ce que la carte vient de proposer.
+    const minLeadTimeMinutes = await loadMinLeadTimeMinutes(this.prisma, giftCard.restaurantId);
 
     if (preferredDate) {
       const dateStr = preferredDate.toISOString().slice(0, 10);
@@ -50,6 +54,7 @@ export class GiftCardSlotsService {
         restaurantId: giftCard.restaurantId,
         date: dateStr,
         partySize,
+        minLeadTimeMinutes,
       });
       const available = daySlots.slots.filter((s) => s.available);
       this.addMatchingSlots(available, dateStr, preferredTime, slots, 3);
@@ -66,6 +71,7 @@ export class GiftCardSlotsService {
           restaurantId: giftCard.restaurantId,
           date: dateStr,
           partySize,
+          minLeadTimeMinutes,
         });
 
         const available = daySlots.slots.filter((s) => s.available);

@@ -225,6 +225,7 @@ export class ConnectService {
       noiseLevel: r.noiseLevel ?? undefined,
       acceptsReservations: true,
       publishedAt: r.publishedAt!.toISOString(),
+      timezone: r.timezone ?? undefined,
       connectAgentic: r.exposureSettings?.connectAgentic ?? false,
       lat: r.lat ? Number(r.lat) : undefined,
       lng: r.lng ? Number(r.lng) : undefined,
@@ -260,6 +261,7 @@ export type PublicRestaurantSource = {
   noiseLevel: string | null;
   agenticOptIn: boolean;
   publishedAt: Date | null;
+  timezone?: string | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   googleRating: number | null;
