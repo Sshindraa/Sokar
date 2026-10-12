@@ -12,7 +12,7 @@
  * méthodes utilisées, plutôt que de s'appuyer sur le mock partagé (qui
  * ne couvre pas tous les modèles de ce service).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AvailabilityService } from '../core/availability.service';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 
@@ -447,5 +447,72 @@ describe('AvailabilityService', () => {
       // Le code fallback sur '2026-06-20'
       expect(policy.policyVersion).toBe('2026-06-20');
     });
+  });
+});
+
+// ─── Créneaux passés, moteur réel ───────────────────────────────────────
+// Seule la base est en doublure : le moteur de disponibilités et sa règle « créneau passé » sont les
+// vrais. Jeudi 2 juillet 2026, 15:00 à Paris (13:00 UTC).
+describe('AvailabilityService.checkAvailability — créneaux passés', () => {
+  const NOW = new Date('2026-07-02T13:00:00.000Z');
+  const paris = (time: string, date = '2026-07-02') => new Date(`${date}T${time}:00+02:00`);
+
+  function makeEnginePrisma() {
+    const restaurant = {
+      timezone: 'Europe/Paris',
+      openingHours: {
+        thu: { open: '12:00', close: '22:30' },
+        fri: { open: '12:00', close: '22:30' },
+      },
+      exposureSettings: { maxPartySize: 12, capacitySpecials: {} },
+      floorPlans: [{ tables: [{ capacity: 4 }] }],
+    };
+    return {
+      restaurant: { findUnique: vi.fn().mockResolvedValue(restaurant) },
+      reservation: { findMany: vi.fn().mockResolvedValue([]) },
+      agenticHold: { findMany: vi.fn().mockResolvedValue([]) },
+      table: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 't-1', capacity: 4, minCapacity: 1, sectionId: null }]),
+      },
+    } as unknown as ConstructorParameters<typeof AvailabilityService>[0];
+  }
+
+  const check = (start: Date) =>
+    new AvailabilityService(makeEnginePrisma()).checkAvailability({
+      restaurantId: RESTAURANT_ID,
+      partySize: 2,
+      slotStart: start,
+      slotEnd: new Date(start.getTime() + 2 * 60 * 60 * 1000),
+    });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('un créneau passé n’est plus disponible, et ses alternatives sont toutes à venir', async () => {
+    const result = await check(paris('12:00'));
+
+    expect(result.available).toBe(false);
+    expect(result.alternativeSlots?.length).toBeGreaterThan(0);
+    for (const alternative of result.alternativeSlots ?? []) {
+      expect(new Date(alternative.startsAt).getTime()).toBeGreaterThan(NOW.getTime());
+    }
+  });
+
+  it('un créneau qui commence exactement maintenant est passé', async () => {
+    expect((await check(paris('15:00'))).available).toBe(false);
+  });
+
+  it('un créneau à venir reste disponible, aujourd’hui comme demain', async () => {
+    expect((await check(paris('19:00'))).available).toBe(true);
+    expect((await check(paris('12:00', '2026-07-03'))).available).toBe(true);
   });
 });
