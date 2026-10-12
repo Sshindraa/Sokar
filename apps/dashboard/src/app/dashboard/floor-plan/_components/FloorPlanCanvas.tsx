@@ -131,6 +131,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { useUndoHistory } from './useUndoHistory';
+import { WALK_IN_DEFAULT_NAME, WalkInPlacement, walkInErrorMessage } from './WalkInPlacement';
 import { useIsMobile, useMediaQuery } from '@/lib/useMediaQuery';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -3188,43 +3189,44 @@ export function FloorPlanCanvas({
     [orgId, loadReservations],
   );
 
+  // Place un client sans réservation. Rejette avec un message clair : le formulaire de la table
+  // l'affiche, il n'y a donc pas de bandeau d'erreur global ici.
   const createWalkIn = useCallback(
-    async (tableId: string, partySize?: number, customerName?: string) => {
+    async (tableId: string, partySize: number, customerName?: string): Promise<void> => {
       if (!orgId) return;
+      const table = floorPlan?.tables?.find((t) => t.id === tableId);
+      const resolvedCustomerName = customerName?.trim() || WALK_IN_DEFAULT_NAME;
+      let created: { id: string };
       try {
-        const table = floorPlan?.tables?.find((t) => t.id === tableId);
-        const resolvedPartySize = partySize ?? table?.capacity ?? 2;
-        const resolvedCustomerName = customerName?.trim() || 'Walk-in';
-        const idempotencyKey = crypto.randomUUID();
-        const res = await postRef.current<{ id: string }>(
+        created = await postRef.current<{ id: string }>(
           `restaurants/${orgId}/floor-plan/walk-ins`,
           {
             tableId,
-            partySize: resolvedPartySize,
+            partySize,
             customerName: resolvedCustomerName,
-            idempotencyKey,
+            idempotencyKey: crypto.randomUUID(),
           },
         );
-        const now = new Date().toISOString();
-        setReservations((prev) => [
-          ...prev,
-          {
-            id: res.id,
-            tableId,
-            tableName: table?.name ?? null,
-            sectionName: table?.sectionName ?? null,
-            startsAt: now,
-            endsAt: now,
-            partySize: resolvedPartySize,
-            customerName: resolvedCustomerName,
-            state: 'SEATED',
-            seatedAt: now,
-          },
-        ]);
-        await loadReservations({ force: true });
       } catch (err) {
-        setError(getErrorMessage(err, 'Impossible de créer le walk-in'));
+        throw new Error(walkInErrorMessage(err));
       }
+      const now = new Date().toISOString();
+      setReservations((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          tableId,
+          tableName: table?.name ?? null,
+          sectionName: table?.sectionName ?? null,
+          startsAt: now,
+          endsAt: now,
+          partySize,
+          customerName: resolvedCustomerName,
+          state: 'SEATED',
+          seatedAt: now,
+        },
+      ]);
+      await loadReservations({ force: true });
     },
     [orgId, floorPlan?.tables, loadReservations],
   );
@@ -6731,33 +6733,18 @@ export function FloorPlanCanvas({
                 )
               }
             >
-              {selectedServiceReservation.state === 'SEATED' ? 'Terminer le service' : 'Installer'}
+              {selectedServiceReservation.state === 'SEATED' ? 'Libérer la table' : 'Installer'}
             </Button>
           ) : (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                className="h-10 min-w-0 flex-1 font-medium transition-all duration-200"
-                onClick={() =>
-                  void createWalkIn(selectedServiceTable.id, selectedServiceTable.capacity)
-                }
-              >
-                ⚡ Installer ({selectedServiceTable.capacity} pers.)
-              </Button>
-              {selectedServiceTable.capacity > 2 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-10 shrink-0 px-3 text-xs transition-all duration-200"
-                  onClick={() => void createWalkIn(selectedServiceTable.id, 2)}
-                  title="Installer 2 personnes"
-                >
-                  2 pers.
-                </Button>
-              ) : null}
-            </>
+            <WalkInPlacement
+              key={selectedServiceTable.id}
+              table={{
+                id: selectedServiceTable.id,
+                name: selectedServiceTable.displayName ?? selectedServiceTable.name,
+                capacity: selectedServiceTable.capacity,
+              }}
+              onPlace={(partySize, name) => createWalkIn(selectedServiceTable.id, partySize, name)}
+            />
           )}
           {selectedServiceReservation ? (
             <Button
@@ -7330,19 +7317,22 @@ export function FloorPlanCanvas({
               <p className="mt-1 text-xs text-muted-foreground">
                 Aucune réservation en cours ou imminente.
               </p>
-              <Button
-                size="sm"
-                className="mt-3 w-full"
-                onClick={() =>
-                  void createWalkIn(
-                    selectedServiceTable?.id ?? '',
-                    selectedServiceTable?.capacity ?? 2,
-                  )
-                }
-                disabled={!selectedServiceTable?.id}
-              >
-                ⚡ Installer Walk-in ({selectedServiceTable?.capacity ?? 2} pers.)
-              </Button>
+              {selectedServiceTable ? (
+                <div className="mt-3">
+                  <WalkInPlacement
+                    key={selectedServiceTable.id}
+                    table={{
+                      id: selectedServiceTable.id,
+                      name: selectedServiceTable.displayName ?? selectedServiceTable.name,
+                      capacity: selectedServiceTable.capacity,
+                    }}
+                    onPlace={(partySize, name) =>
+                      createWalkIn(selectedServiceTable.id, partySize, name)
+                    }
+                    className="w-full flex-none"
+                  />
+                </div>
+              ) : null}
             </div>
           )}
         </div>
