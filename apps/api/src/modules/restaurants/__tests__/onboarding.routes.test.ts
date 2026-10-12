@@ -716,3 +716,91 @@ describe('restaurant.routes - onboarding : restaurant en pratique', () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 });
+
+describe('restaurant.routes - onboarding : alerte « numéro Sokar à attribuer »', () => {
+  const withTables = { _count: { _all: 8 }, _sum: { capacity: 28 }, _max: { capacity: 6 } };
+  // Identité et horaires renseignés, tables, règles et réponses pratiques : la salle peut se terminer.
+  const readyRoom = {
+    ...baseRestaurant,
+    exposureSettings: { capacitySpecials: { serviceDurationMinutes: 90 } },
+    practicalInfo: {
+      terrace: true,
+      parking: 'none',
+      accessible: false,
+      pets: 'no',
+      kidsMenu: true,
+      privatization: false,
+    },
+  };
+
+  function mockRestaurant(phoneNumber: string) {
+    const restaurant = { ...readyRoom, phoneNumber };
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      restaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+    vi.mocked(db.restaurant.update).mockResolvedValue(
+      restaurant as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+  }
+
+  async function completeFloor() {
+    const app = await getApp();
+    return app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: { action: 'complete', task: 'floor' },
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.table.aggregate).mockResolvedValue(
+      withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
+    );
+  });
+
+  it('prévient l’équipe quand la salle est terminée sans numéro Sokar', async () => {
+    mockRestaurant('+000test-rest');
+
+    const res = await completeFloor();
+
+    expect(res.statusCode).toBe(200);
+    expect(queues.phoneAssignment.add).toHaveBeenCalledTimes(1);
+    expect(queues.phoneAssignment.add).toHaveBeenCalledWith(
+      'phone-assignment-needed',
+      { restaurantId: 'test-rest-1', floorCompletedAt: expect.any(String) },
+      { jobId: 'test-rest-1' },
+    );
+  });
+
+  it('ne prévient personne quand le restaurant a déjà son numéro', async () => {
+    mockRestaurant('+33123456789');
+
+    const res = await completeFloor();
+
+    expect(res.statusCode).toBe(200);
+    expect(queues.phoneAssignment.add).not.toHaveBeenCalled();
+  });
+
+  it('réutilise le même jobId quand la salle est refaite : BullMQ ne garde qu’une alerte', async () => {
+    mockRestaurant('+000test-rest');
+
+    await completeFloor();
+    await completeFloor();
+
+    const jobIds = vi
+      .mocked(queues.phoneAssignment.add)
+      .mock.calls.map(([, , options]) => options?.jobId);
+    expect(jobIds).toEqual(['test-rest-1', 'test-rest-1']);
+  });
+
+  it('n’échoue pas si la file est indisponible', async () => {
+    mockRestaurant('+000test-rest');
+    vi.mocked(queues.phoneAssignment.add).mockRejectedValueOnce(new Error('redis down'));
+
+    const res = await completeFloor();
+
+    expect(res.statusCode).toBe(200);
+  });
+});
