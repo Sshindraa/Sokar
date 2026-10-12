@@ -43,12 +43,6 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
-  // Alerte équipe : un restaurant a terminé sa salle mais attend son numéro Sokar. jobId = id du
-  // restaurant et jobs terminés conservés : BullMQ ignore tout nouvel ajout, une alerte par restaurant.
-  phoneAssignment: new Queue('phone-assignment', {
-    connection: redisQueue,
-    defaultJobOptions: { ...defaultReliableJobOptions, removeOnComplete: false },
-  }),
   reconciliation: new Queue('reconciliation', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
