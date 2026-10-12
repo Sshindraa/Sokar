@@ -69,9 +69,9 @@ const COPY: Record<OnboardingTaskKey, { title: string; body: string; label: stri
     label: 'Cuisine et ambiance',
   },
   'connect-activation': {
-    title: 'Publiez votre page',
-    body: 'Vérifiez votre page, puis publiez-la.',
-    label: 'Publication',
+    title: 'Vos conditions, puis la mise en ligne',
+    body: 'Réglez ce qui change en ligne, choisissez les assistants IA, puis publiez et partagez votre page.',
+    label: 'Règles et diffusion',
   },
 };
 
@@ -84,7 +84,7 @@ const STEP_HINTS: Partial<Record<OnboardingTaskKey, string>> = {
   'connect-identity': 'Personnalisation et aperçu',
   'connect-location': 'Adresse et localisation',
   'connect-cuisine': 'Cuisine et services',
-  'connect-activation': 'Aperçu et mise en ligne',
+  'connect-activation': 'Conditions, IA et partage',
 };
 
 const CHANNELS_COPY = {

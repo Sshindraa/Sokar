@@ -375,7 +375,7 @@ it('réserve la finalisation à la dernière étape de Sokar Connect', () => {
     status: step.key === 'connect-activation' ? 'current' : 'completed',
   }));
   render(<OnboardingWizard />);
-  expect(screen.getByRole('button', { name: 'Publication' })).toHaveAttribute(
+  expect(screen.getByRole('button', { name: 'Règles et diffusion' })).toHaveAttribute(
     'aria-current',
     'step',
   );

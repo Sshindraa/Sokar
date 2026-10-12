@@ -12,7 +12,8 @@
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
 
-- [ ] Onboarding v2 : parcours unique `/onboarding`, socle « Votre salle » (3 étapes) puis écran « Vos canaux » : Téléphone (2) et En ligne (Votre page, Publication) dans l’ordre choisi ; En salle (clients sans réservation) informatif. Phase 1 locale ; phases suivantes : en ligne fusionné (règles, réservation test, diffusion, IA), puis En salle. Anciennes étapes adresse/cuisine redirigées, enrichissements facultatifs ; direction UI sphères et capsules (référence Giza) en local, à valider ; décider numéro Telnyx automatique et compte Stripe unique avant les phases 2-3 (canaux, croissance).
+- [ ] Onboarding v2 : parcours unique `/onboarding`, socle « Votre salle » (3 étapes) puis écran « Vos canaux » : Téléphone (2) et En ligne (Votre page, Publication) dans l’ordre choisi ; En salle (clients sans réservation) informatif. Phases 1 et 2 (en ligne : règles, diffusion, IA) commitées en local, non poussées ; reste En salle. Anciennes étapes adresse/cuisine redirigées, enrichissements facultatifs ; direction UI sphères et capsules (référence Giza) en local, à valider ; décider numéro Telnyx automatique et compte Stripe unique avant les phases 2-3 (canaux, croissance).
+- [ ] Onboarding en ligne : bouton « Annuler la réservation test » dans l’étape Règles et diffusion (aujourd’hui le restaurateur réserve sur sa vraie page puis annule à la main).
 - [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 
