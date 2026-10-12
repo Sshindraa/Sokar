@@ -69,7 +69,7 @@ export const STEP_META: Record<
   'connect-identity': { title: 'Votre page', group: 'connect', index: 1 },
   'connect-location': { title: 'Localisation', group: 'connect', index: 2 },
   'connect-cuisine': { title: 'Cuisine & ambiance', group: 'connect', index: 3 },
-  'connect-activation': { title: 'Publication', group: 'connect', index: 2 },
+  'connect-activation': { title: 'Règles et diffusion', group: 'connect', index: 2 },
 };
 
 /** Nombre d'étapes de chaque groupe, pour les compteurs « n/N ». */
