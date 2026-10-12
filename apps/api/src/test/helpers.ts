@@ -1182,6 +1182,9 @@ vi.mock('../shared/queue/queues', () => ({
     onboarding: {
       add: vi.fn(),
     },
+    phoneAssignment: {
+      add: vi.fn().mockResolvedValue({}),
+    },
     reconciliation: {
       upsertJobScheduler: vi.fn(),
     },
