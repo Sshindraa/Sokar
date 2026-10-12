@@ -3,11 +3,13 @@
  * Utilise un mock Prisma pour isoler la logique métier.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { AgenticAdminService, OptInGuardError } from '../admin/admin.service';
 import { AuditLogService } from '../core/audit-log.service';
 import { PolicyValidationError } from '../core/policies.service';
+import { AvailabilityService } from '../core/availability.service';
+import { isPublicConnectPage } from '../../connect/connect.types';
 
 function makeFakes() {
   const restaurants = new Map<string, Record<string, unknown>>();
@@ -136,6 +138,22 @@ describe('agentic admin service', () => {
     });
   });
 
+  describe('getOptIn — état réellement actif', () => {
+    it('ne déclare pas MCP actif quand seul l’opt-in restaurant est posé (publication Connect)', async () => {
+      fakes.restaurants.set('r-1', {
+        id: 'r-1',
+        agenticOptIn: true,
+        openaiReserveEnabled: false,
+        policyVersion: '2026-06-20',
+      });
+      fakes.settings.set('r-1', { restaurantId: 'r-1', mcpEnabled: false });
+      expect((await fakes.service.getOptIn('r-1')).mcp).toBe(false);
+
+      fakes.settings.set('r-1', { restaurantId: 'r-1', mcpEnabled: true });
+      expect((await fakes.service.getOptIn('r-1')).mcp).toBe(true);
+    });
+  });
+
   describe('setOptIn', () => {
     beforeEach(() => {
       fakes.restaurants.set('r-1', {
@@ -219,17 +237,154 @@ describe('agentic admin service', () => {
       ).rejects.toThrow(/phoneE164/);
     });
 
+    it('active MCP sans revérifier un OpenAI Reserve déjà actif', async () => {
+      const r = fakes.restaurants.get('r-1')!;
+      r.agenticOptIn = true;
+      r.openaiReserveEnabled = true;
+      r.websiteUrl = null;
+      fakes.settings.set('r-1', { restaurantId: 'r-1', mcpEnabled: false, maxPartySize: 7 });
+      await fakes.service.setOptIn({
+        restaurantId: 'r-1',
+        input: { mcp: true, openaiReserve: true },
+        actor: 'user:test',
+      });
+      expect(fakes.settings.get('r-1')?.mcpEnabled).toBe(true);
+      expect(r.openaiReserveEnabled).toBe(true);
+    });
+
     it('désactiver MCP force OpenAI Reserve à false', async () => {
       fakes.restaurants.get('r-1')!.agenticOptIn = true;
       fakes.restaurants.get('r-1')!.openaiReserveEnabled = true;
+      fakes.settings.set('r-1', { restaurantId: 'r-1', mcpEnabled: true, maxPartySize: 7 });
       await fakes.service.setOptIn({
         restaurantId: 'r-1',
         input: { mcp: false, openaiReserve: false },
         actor: 'user:test',
       });
       const r = fakes.restaurants.get('r-1')!;
-      expect(r.agenticOptIn).toBe(false);
+      expect(fakes.settings.get('r-1')?.mcpEnabled).toBe(false);
       expect(r.openaiReserveEnabled).toBe(false);
+    });
+
+    describe('page Connect publiée (agenticOptIn porte aussi la page publique)', () => {
+      beforeEach(() => {
+        Object.assign(fakes.restaurants.get('r-1')!, {
+          slug: 'chez-emile',
+          publishedAt: new Date('2026-10-01T10:00:00Z'),
+          agenticOptIn: true,
+        });
+        fakes.settings.set('r-1', {
+          restaurantId: 'r-1',
+          connectPublished: true,
+          connectAgentic: false,
+          mcpEnabled: true,
+          maxPartySize: 7,
+        });
+      });
+
+      function publicPage() {
+        const r = fakes.restaurants.get('r-1')!;
+        const s = fakes.settings.get('r-1')!;
+        return isPublicConnectPage({
+          slug: r.slug as string,
+          publishedAt: r.publishedAt as Date,
+          agenticOptIn: r.agenticOptIn as boolean,
+          exposureSettings: { connectPublished: s.connectPublished as boolean },
+        });
+      }
+
+      it('couper MCP garde la page publique et le widget', async () => {
+        expect(publicPage()).toBe(true);
+        await fakes.service.setOptIn({
+          restaurantId: 'r-1',
+          input: { mcp: false, openaiReserve: false },
+          actor: 'user:test',
+        });
+        expect(fakes.restaurants.get('r-1')!.agenticOptIn).toBe(true);
+        expect(publicPage()).toBe(true);
+        expect((await fakes.service.getOptIn('r-1')).mcp).toBe(false);
+      });
+
+      it('couper MCP retire le restaurant des recherches MCP', async () => {
+        type Where = {
+          agenticOptIn?: boolean;
+          exposureSettings?: { is?: { mcpEnabled?: boolean } };
+        };
+        const matches = (where: Where) => {
+          const r = fakes.restaurants.get('r-1')!;
+          const s = fakes.settings.get('r-1')!;
+          if (where.agenticOptIn !== undefined && r.agenticOptIn !== where.agenticOptIn)
+            return false;
+          const mcp = where.exposureSettings?.is?.mcpEnabled;
+          return mcp === undefined || s.mcpEnabled === mcp;
+        };
+        // On capture le filtre réel du service ; la liste vide arrête la recherche avant les
+        // contrôles de créneau, qui ne sont pas l'objet du test.
+        const findMany = vi.fn(async (_args: { where: Where }) => []);
+        const availability = new AvailabilityService({
+          restaurant: { findMany, findUnique: vi.fn(), findFirst: vi.fn() },
+          restaurantExposureSettings: { findUnique: vi.fn() },
+        } as unknown as ConstructorParameters<typeof AvailabilityService>[0]);
+        const search = () =>
+          availability.searchAvailableRestaurants({
+            city: 'Lyon',
+            partySize: 2,
+            slotStart: new Date('2026-11-01T19:00:00Z'),
+            slotEnd: new Date('2026-11-01T20:30:00Z'),
+            maxResults: 5,
+          });
+
+        await search();
+        const where = findMany.mock.calls[0][0].where as Where;
+        expect(where.agenticOptIn).toBe(true);
+        expect(where.exposureSettings?.is?.mcpEnabled).toBe(true);
+        expect(matches(where)).toBe(true);
+
+        await fakes.service.setOptIn({
+          restaurantId: 'r-1',
+          input: { mcp: false, openaiReserve: false },
+          actor: 'user:test',
+        });
+        expect(matches(where)).toBe(false);
+      });
+
+      it('activer depuis une page publiée sans MCP remet les deux drapeaux', async () => {
+        fakes.settings.get('r-1')!.mcpEnabled = false;
+        await fakes.service.setOptIn({
+          restaurantId: 'r-1',
+          input: { mcp: true, openaiReserve: false },
+          actor: 'user:test',
+        });
+        expect(fakes.restaurants.get('r-1')!.agenticOptIn).toBe(true);
+        expect(fakes.settings.get('r-1')?.mcpEnabled).toBe(true);
+        expect(publicPage()).toBe(true);
+      });
+
+      it('journalise l’état MCP réel avant et après une coupure', async () => {
+        await fakes.service.setOptIn({
+          restaurantId: 'r-1',
+          input: { mcp: false, openaiReserve: false },
+          actor: 'user:test',
+        });
+        expect(fakes.audits).toHaveLength(1);
+        const metadata = fakes.audits[0].metadata as Record<string, Record<string, unknown>>;
+        expect(metadata.before).toEqual({ mcp: true, openaiReserve: false });
+        expect(metadata.after).toEqual({ mcp: false, openaiReserve: false });
+      });
+    });
+
+    it('active mcpEnabled quand la publication Connect a déjà posé agenticOptIn', async () => {
+      fakes.restaurants.get('r-1')!.agenticOptIn = true;
+      fakes.settings.set('r-1', { restaurantId: 'r-1', mcpEnabled: false, maxPartySize: 7 });
+      await fakes.service.setOptIn({
+        restaurantId: 'r-1',
+        input: { mcp: true, openaiReserve: false },
+        actor: 'user:test',
+      });
+      expect(fakes.settings.get('r-1')?.mcpEnabled).toBe(true);
+      const metadata = fakes.audits[0].metadata as Record<string, Record<string, unknown>>;
+      expect(metadata.before.mcp).toBe(false);
+      expect(metadata.after.mcp).toBe(true);
     });
 
     it("pas d'audit si rien ne change", async () => {
