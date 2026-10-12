@@ -14,6 +14,7 @@ import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader, SubmitButton } from '../ui';
+import { FitToHeight } from '../fit-to-height';
 import type { PracticalInfo, StepProps } from '../types';
 import {
   CANCELLATION_PRESETS,
@@ -33,7 +34,7 @@ import {
   type FloorResponse,
   type TableCounts,
 } from './floor-config';
-import { PanelRail, RoomRecap, RulesPanel, TablesPanel, type PanelId } from './FloorPanels';
+import { PanelRail, RulesPanel, TablesPanel, type PanelId } from './FloorPanels';
 import {
   PRACTICAL_REQUIRED,
   PracticalFields,
@@ -335,8 +336,9 @@ export function FloorStep({ onComplete }: StepProps) {
         title="Salle et règles"
         body="Vos tables, vos règles de réservation et l’essentiel à dire à vos clients : de quoi calculer vos disponibilités, au téléphone comme en ligne."
       />
-      {/* Le texte garde sa taille ; les petits écrans permettent le défilement. */}
-      <div className="min-w-0 flex-1">
+      {/* Sur un écran trop bas (iPad portrait, où les colonnes s'empilent), la section est réduite
+          pour tenir sans défiler ; sous 80 %, la zone défile plutôt que de rendre le texte illisible. */}
+      <FitToHeight minZoom={0.8} className="min-w-0 flex-1">
         <div className="flex flex-col gap-3">
           <PanelRail items={railItems} active={current} onSelect={go} />
 
@@ -378,6 +380,7 @@ export function FloorStep({ onComplete }: StepProps) {
                     compact
                     values={{
                       maxParty,
+                      partyCapacity,
                       duration,
                       durationOptions,
                       cancellation,
@@ -405,9 +408,9 @@ export function FloorStep({ onComplete }: StepProps) {
                     }}
                     onDepositAmount={setDepositAmount}
                     onDepositThreshold={setDepositThreshold}
+                    onMaxParty={setPartyLimit}
                   />
                 </div>
-                <RoomRecap key={partyCapacity} maxParty={maxParty} onChange={setPartyLimit} />
               </div>
             </PanelSlot>
 
@@ -438,7 +441,7 @@ export function FloorStep({ onComplete }: StepProps) {
             </PanelSlot>
           </div>
         </div>
-      </div>
+      </FitToHeight>
 
       {/* Une ligne est toujours réservée : une erreur n'agrandit ni ne réduit le reste de la page. */}
       <p role={error ? 'alert' : undefined} className="min-h-5 text-sm text-destructive">

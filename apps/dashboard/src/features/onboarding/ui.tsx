@@ -110,25 +110,39 @@ export function OnboardingAction({ children }: { children: ReactNode }) {
 export function SubmitButton({
   saving,
   disabled = false,
+  disabledReason,
   children,
 }: {
   saving: boolean;
   disabled?: boolean;
+  disabledReason?: string;
   children: React.ReactNode;
 }) {
   const footer = useFooterTarget('onboarding-step-actions');
   if (footer === undefined) return null;
 
   const action = (
-    <Button
-      type="submit"
-      form={footer ? 'onboarding-voice-form' : undefined}
-      disabled={saving || disabled}
-      className="h-12 rounded-full px-6 transition-all duration-200"
-    >
-      {saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowRight size={16} />}
-      {children}
-    </Button>
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      {disabled && disabledReason && (
+        <p
+          id="onboarding-submit-hint"
+          role="status"
+          className="max-w-64 text-sm text-muted-foreground"
+        >
+          {disabledReason}
+        </p>
+      )}
+      <Button
+        aria-describedby={disabled && disabledReason ? 'onboarding-submit-hint' : undefined}
+        type="submit"
+        form={footer ? 'onboarding-voice-form' : undefined}
+        disabled={saving || disabled}
+        className="h-12 rounded-full px-6 transition-all duration-200"
+      >
+        {saving ? <Loader2 className="animate-spin" size={16} /> : <ArrowRight size={16} />}
+        {children}
+      </Button>
+    </div>
   );
   return footer ? createPortal(action, footer) : action;
 }
