@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
@@ -755,9 +755,24 @@ describe('restaurant.routes - onboarding : alerte « numéro Sokar à attribuer 
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('SOKAR_OPS_ALERT_EMAIL', 'ops@sokar.test');
     vi.mocked(db.table.aggregate).mockResolvedValue(
       withTables as unknown as Awaited<ReturnType<typeof db.table.aggregate>>,
     );
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('ne met rien en file tant que SOKAR_OPS_ALERT_EMAIL est vide', async () => {
+    vi.stubEnv('SOKAR_OPS_ALERT_EMAIL', '');
+    mockRestaurant('+000test-rest');
+
+    const res = await completeFloor();
+
+    expect(res.statusCode).toBe(200);
+    expect(queues.phoneAssignment.add).not.toHaveBeenCalled();
   });
 
   it('prévient l’équipe quand la salle est terminée sans numéro Sokar', async () => {
