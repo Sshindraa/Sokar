@@ -8,6 +8,11 @@ import { buildPracticalFacts } from '../restaurants/practical-info';
 import { buildSystemPrompt, type OpeningHours, agentVoiceGender } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import {
+  handleOnboardingTestCallEvent,
+  isOnboardingTestCall,
+  parseClientState,
+} from './onboarding-test-call';
+import {
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
   isVoicePracticalInfoEnabled,
@@ -94,6 +99,22 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     const body = req.body as TelnyxCallPayload;
     const eventType = body.data.event_type;
     const payload = body.data.payload;
+
+    // Appel de test sortant du provisioning : le numéro appelé est celui du gérant, pas celui d'un restaurant.
+    // Ses événements sont traités ici, avant la résolution du restaurant par le numéro appelé.
+    const clientState = parseClientState(payload.client_state);
+    if (isOnboardingTestCall(clientState)) {
+      try {
+        const outcome = await handleOnboardingTestCallEvent(eventType, payload.call_control_id);
+        return reply.send({ result: outcome });
+      } catch (err) {
+        app.log.error(
+          { err: err instanceof Error ? err.message : String(err), eventType },
+          'Onboarding test call action failed',
+        );
+        return reply.send({ result: 'failed' });
+      }
+    }
 
     switch (eventType) {
       case 'call.recording.saved': {

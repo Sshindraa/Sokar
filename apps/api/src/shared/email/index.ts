@@ -10,6 +10,7 @@ import {
   type MessagingUsageContext,
 } from '../../modules/usage/messaging-usage.service';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, withTimeout } from '../resilience';
+import { logger } from '../logger/pino';
 
 // Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
 // L'API HTTP de Resend utilise le port 443 (HTTPS).
@@ -110,7 +111,27 @@ export function normalizeResendSendResponse(response: unknown): NotificationSend
   };
 }
 
+/**
+ * Liste blanche des destinataires (EMAIL_TEST_ALLOWLIST, adresses séparées par des virgules). Absente ou vide :
+ * aucune restriction. Utilisée en staging pendant une campagne de test, jamais en production.
+ */
+function isRecipientAllowed(to: string): boolean {
+  const raw = process.env.EMAIL_TEST_ALLOWLIST?.trim();
+  if (!raw) return true;
+  const allowed = raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+  return allowed.includes(to.trim().toLowerCase());
+}
+
 export async function sendEmail(opts: SendEmailOptions): Promise<void | NotificationSendResult> {
+  if (!isRecipientAllowed(opts.to)) {
+    // Refus certain : Resend n'est pas appelé, l'appelant ne relance pas, et l'adresse n'est jamais journalisée.
+    logger.warn({ reason: 'recipient_not_allowlisted' }, 'Email refused by test allowlist');
+    return { outcome: 'failure_certain', provider: 'resend', channel: 'email' };
+  }
+
   // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté
   // appelant pour qu'un envoi bloqué ne retienne pas le worker indéfiniment ;
   // la requête HTTP peut continuer côté SDK, mais l'appel métier est rendu.
