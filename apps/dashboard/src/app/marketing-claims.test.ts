@@ -32,6 +32,7 @@ const PUBLIC_COPY_FILES = [
   './login/[[...slug]]/page.tsx',
   './mcp/page.tsx',
   './privacy/page.tsx',
+  './solutions/assistant-telephonique-restaurant/page.tsx',
 ];
 
 describe('affirmations publiques', () => {
