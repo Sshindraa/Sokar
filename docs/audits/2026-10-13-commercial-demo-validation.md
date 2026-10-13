@@ -44,17 +44,32 @@ Le niveau 2 ne commence qu'une fois le niveau 1 validé.
 | Accès en lecture au dashboard du restaurant de test, pour lire les réservations créées                                                                                            | Hamza ou équipe technique | Relevé de la réservation (identifiant opaque, créneau, effectif, statut)    |
 | Rejeux LLM : la clé Cerebras sert aussi la production. Aucun rejeu sans plafond de requêtes et contrôle du solde (voir l'en-tête de `apps/api/scripts/voice-behavior-replay.mjs`) | Équipe technique          | Plafond consigné avant le lancement                                         |
 
-## 4. Premier appel de réservation (passerelle du niveau 2)
+## 4. Premier appel guidé de réservation (passerelle du niveau 2)
 
-Avant les sept scénarios, un appel de réservation simple est joué puis vérifié dans le dashboard :
+Avant les sept scénarios, Hamza passe un appel de réservation simple, guidé par le script ci-dessous.
+L'appel ne démarre que lorsque les conditions suivantes sont réunies :
 
-- la réservation existe, avec le créneau, l'effectif et le statut demandés ;
-- une seule réservation est créée ;
-- la réservation concorde avec les traces métier autorisées (horodatage, créneau, effectif) ;
-- l'appel est consigné dans le journal des essais (section 10).
+- niveau 1 validé : routage et webhook vérifiés, appel de test validé ;
+- `VOICE_DISABLED=false` en staging, décidé par l'équipe, et `GET /health` avec `telnyx` à `ok` ;
+- restaurant `chez-sokar-demo` sur staging : numéro de test attribué, créneau libre à la date choisie.
 
-Si l'un de ces points échoue, les scénarios ne sont pas joués. La cause est corrigée ou documentée,
-puis le premier appel est rejoué.
+**Script de l'appel** (à remettre à Hamza avec le numéro vérifié) :
+
+1. Appeler le numéro de test : `[numéro vérifié — à fournir]`.
+2. Dire : « Bonjour, je voudrais réserver une table pour deux personnes demain à vingt heures, au nom
+   de Test Sokar. »
+3. Répondre aux questions de l'assistant avec les mêmes éléments, sans en ajouter.
+4. Confirmer le créneau proposé, puis raccrocher.
+
+**Résultat attendu**, vérifié dans le dashboard du restaurant de test :
+
+- une réservation pour le lendemain, à vingt heures, pour deux personnes, au nom « Test Sokar » ;
+- statut confirmé, et une seule réservation créée ;
+- l'heure de l'appel et la réservation concordent dans les traces métier autorisées.
+
+**Relevé** : date et heure de l'appel, environnement et commit, identifiant opaque de la réservation,
+résultat, dans le journal des essais (section 10). Si un point échoue, les scénarios ne sont pas joués :
+la cause est corrigée ou documentée, puis l'appel est rejoué.
 
 ## 5. Scénarios (niveau 2)
 

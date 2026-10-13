@@ -517,3 +517,44 @@ Search Console n'est pas une condition.
 | VOICE-01, niveau 2                     | Premier appel de réservation exact, puis sept scénarios                                                            | Hamza ou équipe technique |
 | Affirmations restantes                 | Validation de l'hébergement, du ton, du rapport quotidien                                                          | Hamza                     |
 | LAND-01                                | Conditions de publication ci-dessus                                                                                | Hamza, puis livraison     |
+
+### 10.13 Notifications, téléphonie staging et landing : diagnostic et préparation (13/10/2026)
+
+**Notifications des démos.** Destinataire : `hamza@sokar.tech`. Responsable du suivi : Hamza. Délai affiché : aucun. Le secret `DEMO_REQUEST_NOTIFY_TO` existe au niveau dépôt, lu par staging, et dans l'environnement `production`, lu par la production. Le prochain déploiement l'écrit dans les `.env` via `sync-demo-request-config.sh` : la trace d'exécution reste à consigner.
+
+**Diagnostic des fournisseurs.** `GET /health` :
+
+- staging : `status: degraded`. `telnyx` en erreur, « TELNYX_API_KEY not configured ». `db`, `redis`, `queues` et `cartesia` sont `ok` ;
+- production : `status: ok`, `telnyx: ok` (462 ms).
+
+Le runbook staging prévoit `VOICE_DISABLED=true`, `RESEND_API_KEY` vide, et aucun appel réel sans configuration Telnyx complète. Dans le code, sans `RESEND_API_KEY`, l'envoi lève « RESEND_API_KEY is not set » : **une notification de démo ne peut pas partir de staging en l'état**.
+
+**Restaurant de test.** La fiche `chez-sokar-demo` existe sur staging, publiée sous le nom « Chez Sokar ». Son numéro affiché est le numéro public de démonstration : il n'est pas opérationnel et ne sert pas aux essais.
+
+**Affectation Telnyx.** Non vérifiable depuis ce poste : la clé Telnyx du `.env` de développement est vide. Le contrôle en lecture seule revient à Hamza (section « Ce qui bloque »).
+
+**Préparation livrée.**
+
+- Script `scripts/ops/sync-staging-provider-config.sh`. Il lit les secrets `*_STAGING` du seul workflow de staging. Sans secret, il ne modifie rien.
+- Tests manuels sur un `.env` factice : remplacement sans doublon, clé vide sans effet, antislash conservé, commentaire intact, aucune valeur affichée, valeur contenant un espace refusée, fichier absent refusé. Tous passent.
+- Le workflow de production ne lit aucun secret `_STAGING`. YAML de staging valide.
+- Runbook : section « Fournisseurs de staging » de `docs/runbooks/environment.md`.
+- Premier appel guidé : script rédigé dans la fiche VOICE-01, section 4. Le numéro, le restaurant et les conditions de staging restent à fournir.
+- Landing : brouillon `/solutions/assistant-telephonique-restaurant`, noindex, hors sitemap et hors navigation, cinq tests verts, typecheck sans erreur. Publication soumise aux conditions de la section 10.12, inchangées.
+
+**Ce qui bloque, par ordre.**
+
+1. Clés de staging, à fournir sans les coller dans le chat ni dans le dépôt, avec `pbpaste | gh secret set NOM --repo Sshindraa/Sokar` après les avoir copiées dans le presse-papiers :
+   - `RESEND_API_KEY_STAGING` : clé Resend dédiée à staging. Confirmer la liste des destinataires autorisés, exigée par le runbook ;
+   - `TELNYX_API_KEY_STAGING`, `TELNYX_APP_ID_STAGING`, `TELNYX_PUBLIC_KEY_STAGING`, `TELNYX_WEBHOOK_SECRET_STAGING`, `TELNYX_FROM_NUMBER_STAGING` : compte Telnyx, application d'appel dédiée à staging avec webhook `https://api-staging.sokar.tech/voice/telnyx`, numéro non affecté à la production.
+2. Décision de Hamza : `VOICE_DISABLED=false` en staging, réglage critique à signaler dans la PR concernée.
+3. Clés voix de staging à vérifier avec l'équipe : `ELEVENLABS_API_KEY` (transcription), et un LLM (`CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY`).
+4. Session opérateur sur staging dans le navigateur intégré, pour la visibilité, la notification et le traitement.
+
+**Ce qui est vérifié, et ce qui ne l'est pas.**
+
+- Enregistrement d'une démo sur staging : vérifié (201, section 10.2).
+- Notification en staging : bloquée, la clé d'envoi manque.
+- Notification en production : le chemin est configuré, non testé. Un essai créerait une demande réelle en production : à faire seulement avec votre accord.
+- Visibilité et traitement : bloqués, la session opérateur manque.
+- Voix : aucun appel passé, aucune clé écrite dans le dépôt ni dans le chat.
