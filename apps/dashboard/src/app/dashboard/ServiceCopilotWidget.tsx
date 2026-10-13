@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, BarChart3, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ServiceCopilotAccess } from '@/components/ServiceCopilotAccess';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
@@ -219,7 +220,7 @@ function RecommendationCard({
   );
 }
 
-export default function ServiceCopilotWidget({
+function ServiceCopilotWidgetContent({
   showCalm = true,
   density = 'default',
 }: {
@@ -398,5 +399,16 @@ export default function ServiceCopilotWidget({
         ))}
       </div>
     </section>
+  );
+}
+
+export default function ServiceCopilotWidget(props: {
+  showCalm?: boolean;
+  density?: 'default' | 'service';
+}) {
+  return (
+    <ServiceCopilotAccess>
+      <ServiceCopilotWidgetContent {...props} />
+    </ServiceCopilotAccess>
   );
 }

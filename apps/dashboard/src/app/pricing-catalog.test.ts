@@ -112,6 +112,18 @@ describe('catalogue des fonctionnalités', () => {
     );
   });
 
+  it('réserve le copilote de service à Pro et Multi-site, jamais à Essential', () => {
+    const copilot = CATALOG_FEATURES.filter((feature) => feature.id.startsWith('copilot-'));
+
+    expect(copilot.length).toBeGreaterThan(0);
+    for (const feature of copilot) {
+      expect(feature.introducedIn).toBe('Pro');
+    }
+    expect(
+      featuresIncludedIn('Essential').some((feature) => feature.id.startsWith('copilot-')),
+    ).toBe(false);
+  });
+
   it('couvre les trois formules dans l’ordre d’affichage', () => {
     expect(PLAN_ORDER).toEqual(['Essential', 'Pro', 'Multi-site']);
   });

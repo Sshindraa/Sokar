@@ -20,6 +20,14 @@ import {
 } from './FloorPlanCanvas';
 import type { FloorPlan, FloorPlanWall, PlanningReservation, WaitingListEntry } from '@/types/api';
 
+const accessMocks = vi.hoisted(() => ({ allowed: true }));
+vi.mock('@/lib/use-service-copilot-access', () => ({
+  useServiceCopilotAccess: () => ({ allowed: accessMocks.allowed }),
+}));
+beforeEach(() => {
+  accessMocks.allowed = true;
+});
+
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -736,6 +744,25 @@ describe('FloorPlanCanvas — actions Live service', () => {
       seatedAt: state === 'SEATED' ? new Date(now - 10 * 60_000).toISOString() : null,
     };
   }
+
+  it('laisse le service Essential utilisable sans charger ni ouvrir les plans avancés', async () => {
+    accessMocks.allowed = false;
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [makeReservation('CONFIRMED')];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
+    expect(await screen.findByRole('button', { name: 'Installer à table' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Analyser l’impact' })).not.toBeInTheDocument();
+    expect(
+      apiMocks.get.mock.calls.some(([path]) => String(path).includes('delay-recoveries')),
+    ).toBe(false);
+    expect(
+      apiMocks.get.mock.calls.some(([path]) => String(path).includes('/service-copilot/pulse')),
+    ).toBe(true);
+  });
 
   it('place les onglets du service en tête sans bandeau de pouls', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {

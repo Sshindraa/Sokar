@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   FloorPlanNotFoundError,
   FloorPlanService,
@@ -374,7 +375,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/restaurants/:id/service-copilot/recommendations',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -397,7 +398,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/telemetry',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -422,7 +423,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/restaurants/:id/service-copilot/telemetry-summary',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -436,7 +437,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/restaurants/:id/service-copilot/telemetry-review',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -454,7 +455,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/telemetry-review/:occurrenceId',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const { id: restaurantId, occurrenceId } = req.params as {
         id: string;
@@ -480,7 +481,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/actions/server-rebalance',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -574,7 +575,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/simulate',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -594,7 +595,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/delay-impact',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -612,7 +613,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/delay-impact/drafts',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -630,7 +631,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/delay-impact/apply',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -695,7 +696,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/restaurants/:id/service-copilot/delay-impact/revert',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {
@@ -738,7 +739,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/restaurants/:id/service-copilot/delay-recoveries',
-    { preHandler: requireOrg() },
+    { preHandler: [requireOrg(), requireCapability('floorPlan.copilot')] },
     async (req, reply) => {
       const restaurantId = (req.params as { id: string }).id;
       if (restaurantId !== req.restaurantId) {

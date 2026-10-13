@@ -50,6 +50,8 @@ export interface PricingPlan {
   note?: string;
   /** Fonctionnalités introduites par cette formule, avec leur statut. */
   features: PlanFeatureLine[];
+  /** Parcours démo avant l’inscription : la carte propose « Découvrir » au lieu de « Choisir ». */
+  demoFirst?: boolean;
   featured?: boolean;
 }
 
@@ -67,21 +69,24 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Pro',
     price: String(pricingFor('Pro').monthlyEur),
-    promise: 'Préparez la prochaine invitation de vos clients.',
-    description: 'Pour un restaurant qui souhaite préparer ses actions de fidélisation.',
+    promise: 'Gardez la main quand le service change.',
+    description:
+      'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
+    demoFirst: true,
     inherits: 'Tout le socle Essential',
     features: toFeatureLines('Pro'),
-    note: 'Aujourd’hui : préparation uniquement. L’envoi des campagnes et les profils clients avancés ne sont pas encore disponibles.',
+    note: 'Découvrez le copilote en démonstration avant de choisir. Une estimation ne vaut pas une table libre. En complément : préparation de segments et brouillons marketing, sans envoi.',
   },
   {
     label: 'Multi-site',
     price: String(pricingFor('Multi-site').monthlyEur),
     sitePrice: String(pricingFor('Multi-site').sitePriceEur),
+    demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
     description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
-    inherits: 'Le périmètre actuel de Pro par établissement',
+    inherits: 'Essential et le copilote Pro par établissement',
     features: toFeatureLines('Multi-site'),
-    note: 'Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles. Les accès des équipes sont validés lors de la mise en service.',
+    note: 'Une présentation précède le choix du copilote pour vos équipes. Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles.',
   },
 ];
 
