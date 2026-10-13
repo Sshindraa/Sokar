@@ -546,7 +546,7 @@ Le runbook staging prévoit `VOICE_DISABLED=true`, `RESEND_API_KEY` vide, et auc
 
 1. Clés de staging, à fournir sans les coller dans le chat ni dans le dépôt, avec `pbpaste | gh secret set NOM --repo Sshindraa/Sokar` après les avoir copiées dans le presse-papiers :
    - `RESEND_API_KEY_STAGING` : clé Resend dédiée à staging. Confirmer la liste des destinataires autorisés, exigée par le runbook ;
-   - `TELNYX_API_KEY_STAGING`, `TELNYX_APP_ID_STAGING`, `TELNYX_PUBLIC_KEY_STAGING`, `TELNYX_WEBHOOK_SECRET_STAGING`, `TELNYX_FROM_NUMBER_STAGING` : compte Telnyx, application d'appel dédiée à staging avec webhook `https://api-staging.sokar.tech/voice/telnyx`, numéro non affecté à la production.
+   - `TELNYX_API_KEY_STAGING`, `TELNYX_PUBLIC_KEY_STAGING`, `TELNYX_FROM_NUMBER_STAGING` (secrets) et `TELNYX_CONNECTION_ID_STAGING` (variable) : compte Telnyx, application d'appel dédiée à staging avec webhook `https://api-staging.sokar.tech/voice/telnyx`, numéro non affecté à la production.
 2. Décision de Hamza : `VOICE_DISABLED=false` en staging, réglage critique à signaler dans la PR concernée.
 3. Clés voix de staging à vérifier avec l'équipe : `ELEVENLABS_API_KEY` (transcription), et un LLM (`CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY`).
 4. Session opérateur sur staging dans le navigateur intégré, pour la visibilité, la notification et le traitement.
@@ -568,3 +568,36 @@ Le runbook staging prévoit `VOICE_DISABLED=true`, `RESEND_API_KEY` vide, et auc
 - **E-mail en staging** : non vérifié. `RESEND_API_KEY` n'est pas configurée en staging, donc l'envoi est désactivé ; le test de bout en bout attend la clé.
 - **Session opérateur** : toujours absente. `https://staging.sokar.tech/dashboard/admin/demo-requests` redirige vers `/dashboard`.
 - **Téléphonie staging** : `telnyx` reste en erreur. Les secrets `*_STAGING` restent à fournir ; leur synchronisation est dans cette PR (#423).
+
+### 10.15 Correction de la configuration staging et appels sortants (13/10/2026)
+
+**Corrections** (la PR #423 contenait des erreurs de nommage et de périmètre) :
+
+- `TELNYX_APP_ID` retiré : aucun consommateur dans l'API. Le rattachement d'un numéro lit `TELNYX_CONNECTION_ID` (`admin/provisioning.service`, assign-phone).
+- `TELNYX_WEBHOOK_SECRET` retiré : aucun consommateur. La signature des webhooks est vérifiée avec `TELNYX_PUBLIC_KEY` (`voice/telnyx.guard`).
+- `TELNYX_CONNECTION_ID` ajouté (variable `TELNYX_CONNECTION_ID_STAGING`) ; `EMAIL_FROM` ajouté (variable `EMAIL_FROM_STAGING`). Sans `EMAIL_FROM`, le code envoie depuis `noreply@sokar.fr`.
+- Script, workflow de staging, runbook et exemples `.env` alignés. Le workflow de production ne lit aucun réglage `_STAGING`. Treize vérifications du script passent, sur des valeurs factices.
+
+**Appels sortants : vérifiés, non opérationnels.** Trois défauts de code, non corrigés ici car ils touchent au pipeline vocal :
+
+1. Les deux appelants (`provisioning.service`, `restaurant.routes`) ne transmettent pas `connectionId` : `connection_id` part vide.
+2. Le webhook transmis est `${PUBLIC_API_URL}/voice/stream`, route WebSocket du flux média, et non un webhook HTTP. La cible serait `${PUBLIC_API_URL}/voice/telnyx`, mais le pipeline ne traite pas encore l'état `onboarding_test_call`.
+3. `PUBLIC_API_URL` n'a pas de valeur par défaut en staging : le repli du code est la production (`https://api.sokar.tech`).
+
+Impact : le test d'appel et `validate-test-call` (niveau 1 de VOICE-01) sont bloqués. L'appel de réservation entrant, par `/voice/telnyx`, ne l'est pas.
+
+**Liste consolidée des éléments manquants**
+
+| Élément                                          | Destination                                                        | Utilité                                           | Statut                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
+| `RESEND_API_KEY`                                 | secret `RESEND_API_KEY_STAGING`                                    | Envoi des notifications de démo                   | Manquant (clé dédiée à staging)                                |
+| `EMAIL_FROM`                                     | variable `EMAIL_FROM_STAGING`, valeur `noreply@staging.sokar.tech` | Expéditeur                                        | Manquant ; domaine `staging.sokar.tech` à vérifier dans Resend |
+| `TELNYX_API_KEY`                                 | secret `TELNYX_API_KEY_STAGING`                                    | Toute opération Telnyx                            | Manquant (clé dédiée)                                          |
+| `TELNYX_PUBLIC_KEY`                              | secret `TELNYX_PUBLIC_KEY_STAGING`                                 | Acceptation des webhooks                          | Manquant                                                       |
+| `TELNYX_CONNECTION_ID`                           | variable `TELNYX_CONNECTION_ID_STAGING`                            | Rattachement du numéro à l'application de staging | Manquant (identifiant de l'application)                        |
+| `TELNYX_FROM_NUMBER`                             | secret `TELNYX_FROM_NUMBER_STAGING`                                | Numéro émetteur, appels sortants et SMS           | Manquant (numéro E.164 de staging)                             |
+| `PUBLIC_API_URL`                                 | `.env` de staging                                                  | Cible des webhooks sortants                       | À confirmer : `https://api-staging.sokar.tech`                 |
+| `ELEVENLABS_API_KEY`                             | `.env` de staging                                                  | Transcription                                     | À confirmer                                                    |
+| LLM : `CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY` | `.env` de staging                                                  | Dialogue                                          | À confirmer                                                    |
+| Session opérateur staging                        | navigateur intégré                                                 | Visibilité, notification, traitement              | Manquante                                                      |
+| `VOICE_DISABLED=false`                           | `.env` de staging                                                  | Activation de la voix                             | Décision de Hamza                                              |
