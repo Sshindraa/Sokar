@@ -39,7 +39,10 @@ describe('auth.routes - POST /api/auth/sync', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ synced: true, restaurant: existing });
+    expect(res.json()).toEqual({
+      synced: true,
+      restaurant: { ...existing, googleCalendarConnected: false },
+    });
     expect(db.restaurant.create).not.toHaveBeenCalled();
     expect(clerkClient.organizations.getOrganization).not.toHaveBeenCalled();
   });
@@ -73,7 +76,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.synced).toBe(true);
-    expect(body.restaurant).toEqual(created);
+    expect(body.restaurant).toEqual({ ...created, googleCalendarConnected: false });
 
     expect(db.restaurant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

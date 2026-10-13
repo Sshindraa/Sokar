@@ -27,6 +27,10 @@ vi.mock('../plugins/clerk', () => ({
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
       }
+      // Un restaurateur connecté mais hors de la liste des opérateurs Sokar.
+      if (req.headers?.['x-test-not-operator']) {
+        return reply.status(403).send({ error: 'Sokar operator access required' });
+      }
       req.userId = 'test-operator-1';
     };
   },
