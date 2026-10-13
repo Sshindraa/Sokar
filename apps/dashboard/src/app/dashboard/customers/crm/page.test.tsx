@@ -40,8 +40,8 @@ describe('CrmPage', () => {
     render(<CrmPage />);
 
     expect(await screen.findByRole('heading', { name: 'CRM Pro' })).toBeInTheDocument();
-    expect(screen.getByText('Alice Martin')).toBeInTheDocument();
-    expect(screen.getByText('+33612345678 · alice@example.com')).toBeInTheDocument();
+    expect(await screen.findByText('Alice Martin')).toBeInTheDocument();
+    expect(await screen.findByText('+33612345678 · alice@example.com')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Doublons à traiter/i })).toHaveAttribute(
       'href',
       '/dashboard/customers/crm/duplicates',

@@ -36,6 +36,13 @@ const task = {
   updatedAt: '2026-09-14T10:00:00.000Z',
 };
 
+// Le bouton n’apparaît qu’une fois les tâches chargées, et reste désactivé pendant une action :
+// on attend qu’il soit actif, sinon React ignore le clic.
+async function clickWhenEnabled(name: string | RegExp) {
+  await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name }));
+}
+
 describe('ReputationPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,17 +59,17 @@ describe('ReputationPage', () => {
     render(<ReputationPage />);
 
     expect(await screen.findByRole('heading', { name: 'Réputation' })).toBeInTheDocument();
-    expect(screen.getByText('2.0/5')).toBeInTheDocument();
-    expect(screen.getAllByText('Service trop long')).toHaveLength(2);
-    expect(screen.getByText('À traiter')).toBeInTheDocument();
-    expect(screen.getByText('1 active(s)')).toBeInTheDocument();
+    expect(await screen.findByText('2.0/5')).toBeInTheDocument();
+    expect(await screen.findAllByText('Service trop long')).toHaveLength(2);
+    expect(await screen.findByText('À traiter')).toBeInTheDocument();
+    expect(await screen.findByText('1 active(s)')).toBeInTheDocument();
   });
 
   it('met une récupération en cours avec une mutation tenant-scoped', async () => {
     render(<ReputationPage />);
     await screen.findByRole('heading', { name: 'Réputation' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prendre en charge' }));
+    await clickWhenEnabled('Prendre en charge');
     await waitFor(() =>
       expect(apiMocks.patch).toHaveBeenCalledWith('reputation/recovery-tasks/task-1', {
         status: 'IN_PROGRESS',
