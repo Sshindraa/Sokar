@@ -405,6 +405,10 @@ describe('restaurant.routes - onboarding', () => {
         restaurant: expect.objectContaining({ slug: 'nouveau-slug', description: 'Bistrot sympa' }),
         exposureSettings: expect.objectContaining({ maxPartySize: 8, connectPublished: true }),
       });
+      // Le jeton Google Agenda ne quitte jamais le serveur.
+      expect(res.json().restaurant).not.toHaveProperty('googleRefreshToken');
+      expect(res.json().restaurant.googleCalendarConnected).toBe(true);
+      expect(res.body).not.toContain('google-refresh-token');
     });
 
     it('refuse de publier une page sans slug', async () => {
