@@ -582,7 +582,7 @@ Le runbook staging prévoit `VOICE_DISABLED=true`, `RESEND_API_KEY` vide, et auc
 
 1. Les deux appelants (`provisioning.service`, `restaurant.routes`) ne transmettent pas `connectionId` : `connection_id` part vide.
 2. Le webhook transmis est `${PUBLIC_API_URL}/voice/stream`, route WebSocket du flux média, et non un webhook HTTP. La cible serait `${PUBLIC_API_URL}/voice/telnyx`, mais le pipeline ne traite pas encore l'état `onboarding_test_call`.
-3. `PUBLIC_API_URL` n'a pas de valeur par défaut en staging : le repli du code est la production (`https://api.sokar.tech`).
+3. `PUBLIC_API_URL` n'a pas de valeur par défaut en staging. Le test d'appel du provisioning retombe alors sur `https://api.sokar.tech`, c'est-à-dire la production ; la route restaurant utilise l'hôte de la requête.
 
 Impact : le test d'appel et `validate-test-call` (niveau 1 de VOICE-01) sont bloqués. L'appel de réservation entrant, par `/voice/telnyx`, ne l'est pas.
 

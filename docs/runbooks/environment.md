@@ -974,8 +974,7 @@ Appels sortants (test d'appel du provisioning) : **non opérationnels en l'état
   (`GET /voice/stream/:callId`) et non un webhook HTTP : les événements Call Control ne peuvent pas être
   reçus. La cible serait `${PUBLIC_API_URL}/voice/telnyx`, mais le pipeline ne traite pas encore l'état
   `onboarding_test_call`.
-- `PUBLIC_API_URL` doit valoir `https://api-staging.sokar.tech` en staging. Sans lui, le repli du code est
-  `https://api.sokar.tech`, c'est-à-dire la production.
+- `PUBLIC_API_URL` doit valoir `https://api-staging.sokar.tech` en staging. Sans lui, le test d'appel du provisioning retombe sur `https://api.sokar.tech`, c'est-à-dire la production ; la route restaurant utilise l'hôte de la requête.
 
 Ces points relèvent d'une correction de code, à tester avant le niveau 1 de VOICE-01. L'appel de
 réservation entrant (`/voice/telnyx`) n'en dépend pas.
