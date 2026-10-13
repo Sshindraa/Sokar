@@ -112,7 +112,7 @@ describe('restaurant.routes - onboarding', () => {
     expect(placeOutboundCall).toHaveBeenCalledWith(
       '+33611112222',
       expect.objectContaining({
-        webhookUrl: 'http://api.test.local/voice/stream',
+        webhookUrl: 'http://api.test.local/voice/telnyx',
         clientState: expect.objectContaining({
           kind: 'onboarding_test_call',
           restaurantId: 'test-rest-1',

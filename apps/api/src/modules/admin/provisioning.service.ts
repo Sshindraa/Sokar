@@ -357,7 +357,7 @@ export class ProvisioningService {
     }
 
     const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.sokar.tech';
-    const webhookUrl = `${baseUrl}/voice/stream`;
+    const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     const { callControlId } = await placeOutboundCall(formattedTarget, {
       webhookUrl,

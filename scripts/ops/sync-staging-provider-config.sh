@@ -6,6 +6,8 @@
 # Chaque réglage est lu par un consommateur réel de l'API :
 #   RESEND_API_KEY        shared/email                       envoi des e-mails
 #   EMAIL_FROM            shared/email                       expéditeur (repli sur noreply@sokar.fr sinon)
+#   EMAIL_TEST_ALLOWLIST  shared/email                       destinataires autorisés pendant une campagne de test
+#   PUBLIC_API_URL        admin/provisioning, restaurants    base des URL de webhook (appel de test sortant)
 #   TELNYX_API_KEY        shared/telnyx/client               API Telnyx
 #   TELNYX_PUBLIC_KEY     voice/telnyx.guard                 vérification de la signature des webhooks
 #   TELNYX_CONNECTION_ID  admin/provisioning.service         rattachement du numéro à l'application d'appel
@@ -22,6 +24,8 @@ TARGET_ENV_FILE="${SOKAR_API_ENV_FILE:-/opt/sokar-staging/apps/api/.env}"
 PROVIDER_KEYS=(
   RESEND_API_KEY
   EMAIL_FROM
+  EMAIL_TEST_ALLOWLIST
+  PUBLIC_API_URL
   TELNYX_API_KEY
   TELNYX_PUBLIC_KEY
   TELNYX_CONNECTION_ID
@@ -32,6 +36,8 @@ PROVIDER_KEYS=(
 is_valid_value() {
   case "$1" in
     EMAIL_FROM) [[ "$2" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] ;;
+    EMAIL_TEST_ALLOWLIST) [[ "$2" =~ ^[^[:space:]@,]+@[^[:space:]@,]+\.[^[:space:]@,]+(,[^[:space:]@,]+@[^[:space:]@,]+\.[^[:space:]@,]+)*$ ]] ;;
+    PUBLIC_API_URL) [[ "$2" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] ;;
     TELNYX_FROM_NUMBER) [[ "$2" =~ ^\+[1-9][0-9]{7,14}$ ]] ;;
     *) [[ "$2" =~ ^[^[:space:]]{8,}$ ]] ;;
   esac

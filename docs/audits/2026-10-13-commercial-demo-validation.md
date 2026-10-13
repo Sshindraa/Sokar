@@ -30,7 +30,7 @@ réservation.
 | 1. Validation du provisioning (opérateur)   | Numéro attribué, webhook vérifié, renvoi confirmé, appel de test reçu | `assign-phone`, `verify-webhook`, `mark-forwarding`, `test-call`, puis `validate-test-call` avec le `callControlId` retourné ; `complete` accepté seulement sans `PROVISIONING_NOT_READY` | La qualité de la conversation et la réservation |
 | 2. Qualification conversationnelle (métier) | Réservation exacte dans le dashboard, puis les sept scénarios         | Premier appel de réservation (section 4), puis scénarios (section 5)                                                                                                                      | Le comportement sous charge et les pilotes      |
 
-Le niveau 2 ne commence qu'une fois le niveau 1 validé.
+Le niveau 2 dépend du seul bloc voix entrante (runbook, section fournisseurs de staging). Le niveau 1 (appel de test sortant) est un contrôle distinct : il conditionne la validation du provisioning, pas l'appel de réservation.
 
 ## 3. Prérequis à vérifier avant chaque session
 
@@ -50,7 +50,7 @@ Le niveau 2 ne commence qu'une fois le niveau 1 validé.
 Avant les sept scénarios, Hamza passe un appel de réservation simple, guidé par le script ci-dessous.
 L'appel ne démarre que lorsque les conditions suivantes sont réunies :
 
-- niveau 1 validé : routage et webhook vérifiés, appel de test validé ;
+- bloc voix entrante prêt : clés Telnyx, application d'appel et numéro de test rattaché, sans appel de test sortant ;
 - `VOICE_DISABLED=false` en staging, décidé par l'équipe, et `GET /health` avec `telnyx` à `ok` ;
 - restaurant `chez-sokar-demo` sur staging : numéro de test attribué, créneau libre à la date choisie.
 

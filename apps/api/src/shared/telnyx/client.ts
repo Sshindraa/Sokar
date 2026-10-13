@@ -196,27 +196,45 @@ export interface OutboundCallResult {
   callControlId: string;
 }
 
-export async function placeOutboundCall(
+export type OutboundCallRequest = Parameters<TelnyxClient['calls']['create']>[0];
+
+/**
+ * Paramètres de création d'un appel sortant. Telnyx exige une application d'appel (`connection_id`) : à défaut
+ * de le transmettre, on prend `TELNYX_CONNECTION_ID`, puis on refuse explicitement plutôt que d'envoyer un
+ * appel que Telnyx rejetterait sans message clair.
+ */
+export function buildOutboundCallParams(
   to: string,
   options: OutboundCallOptions,
-): Promise<OutboundCallResult> {
-  const t = getTelnyx();
+): OutboundCallRequest {
   const from = process.env.TELNYX_FROM_NUMBER;
   if (!from) {
     throw new Error('TELNYX_FROM_NUMBER is required for outbound calls');
   }
+  const connectionId = options.connectionId ?? process.env.TELNYX_CONNECTION_ID;
+  if (!connectionId) {
+    throw new Error('TELNYX_CONNECTION_ID is required for outbound calls');
+  }
 
-  const response = await t.calls.create({
+  return {
     to,
     from,
-    connection_id: options.connectionId,
+    connection_id: connectionId,
     webhook_url: options.webhookUrl,
     webhook_url_method: 'POST',
     client_state: options.clientState
       ? Buffer.from(JSON.stringify(options.clientState)).toString('base64')
       : undefined,
     timeout: options.timeoutSecs ?? 30,
-  });
+  };
+}
+
+export async function placeOutboundCall(
+  to: string,
+  options: OutboundCallOptions,
+): Promise<OutboundCallResult> {
+  const t = getTelnyx();
+  const response = await t.calls.create(buildOutboundCallParams(to, options));
 
   const callControlId = response?.data?.call_control_id ?? response?.call_control_id;
   if (!callControlId) {
