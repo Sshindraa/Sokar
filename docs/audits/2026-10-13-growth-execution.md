@@ -601,3 +601,29 @@ Impact : le test d'appel et `validate-test-call` (niveau 1 de VOICE-01) sont blo
 | LLM : `CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY` | `.env` de staging                                                  | Dialogue                                          | À confirmer                                                    |
 | Session opérateur staging                        | navigateur intégré                                                 | Visibilité, notification, traitement              | Manquante                                                      |
 | `VOICE_DISABLED=false`                           | `.env` de staging                                                  | Activation de la voix                             | Décision de Hamza                                              |
+
+### 10.16 Test d'appel sortant, e-mail de staging, abonnements et landing : résultats vérifiés (13/10/2026)
+
+**Résultats vérifiés**
+
+- **Appel de test sortant** (code, commit `602136a9`). `connection_id` est repris de `TELNYX_CONNECTION_ID`, sinon refus explicite. Le webhook est `${PUBLIC_API_URL}/voice/telnyx`. Au décroché (`call.answered`), le message est lu ; à la fin de la lecture (`call.speak.ended`), l'appel est raccroché. Ces événements sont traités avant la résolution du restaurant par le numéro appelé. Tests : paramètres d'appel (5), état et actions (6), routage du pipeline (2), URL de webhook dans le test de route (1). Pipeline : 29 tests verts. Typage de l'API : sans erreur.
+- **Contrats existants.** La signature de `placeOutboundCall` et les réponses des routes sont inchangées. Une seule assertion a été modifiée : l'URL de webhook du test de route, `/voice/stream` devenant `/voice/telnyx`. Elle figeait le défaut.
+- **E-mail de staging.** Expéditeur retenu : `noreply@sokar.tech`, déjà vérifié et utilisé en production (journal du 26/08 : clé d'envoi restreinte, envoi test accepté). Restriction `EMAIL_TEST_ALLOWLIST` : 3 tests verts. Variables de dépôt créées : `EMAIL_FROM_STAGING=noreply@sokar.tech`, `EMAIL_TEST_ALLOWLIST_STAGING=hamza@sokar.tech`, `PUBLIC_API_URL_STAGING=https://api-staging.sokar.tech`.
+- **Synchroniseur.** Treize vérifications et dix vérifications complémentaires passent, sur des valeurs factices.
+- **Abonnements** (`scripts/ops/verify-stripe-catalog.mjs`, lecture seule, clé de test, prix de staging) : 8 lignes sur 8 conformes, 0 échec. Essential 199 € par mois, 1 910,40 € par an ; Pro 299 € ; Multi-site 249 € ; site supplémentaire 99 €.
+- **Landing** (`/solutions/assistant-telephonique-restaurant`, worktree, port 3107). Rendu correct : titre, H1, `noindex, nofollow`, canonical, liens vers `/demo` et `/pricing`, emplacement de preuve. Console sans erreur. À 375 px : pas de défilement horizontal, contrôle visuel du haut et du bas de page. Aucun défaut relevé, aucune modification de la branche.
+
+**Constats non corrigés**
+
+- L'appel de test sortant n'a pas été joué sur le réseau : aucune clé Telnyx n'est disponible depuis ce poste. Le résultat réel dépend d'un appel de test par une personne.
+- Le repli de `EMAIL_FROM` dans le code reste `noreply@sokar.fr`, obsolète : la production utilise `noreply@sokar.tech`. Non modifié, hors périmètre.
+
+**Dépendances réelles, par bloc**
+
+| Bloc                      | Éléments manquants                                                                                                                                                                                   | Où les fournir                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| E-mail                    | `RESEND_API_KEY`, clé d'envoi restreinte pour staging                                                                                                                                                | secret `RESEND_API_KEY_STAGING`                      |
+| Voix entrante             | `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, `TELNYX_CONNECTION_ID` de l'application de staging, numéro de test rattaché ; clés `ELEVENLABS_API_KEY` et LLM à confirmer ; `VOICE_DISABLED=false`, décision | secrets et variables `_STAGING` ; `.env` de staging  |
+| Appel de test sortant     | `TELNYX_FROM_NUMBER` (numéro E.164 de staging) ; profil vocal sortant de l'application à confirmer                                                                                                   | secret `TELNYX_FROM_NUMBER_STAGING` ; portail Telnyx |
+| Démo                      | session opérateur sur staging dans le navigateur intégré                                                                                                                                             | navigateur intégré                                   |
+| Abonnements en production | clé Stripe de lecture, mode live, non fournie                                                                                                                                                        | non fournie                                          |
