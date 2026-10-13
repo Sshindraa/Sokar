@@ -15,19 +15,19 @@ describe('PricingSection', () => {
   it('affiche un CTA pour chaque formule avec la cadence annuelle sélectionnée', () => {
     render(<PricingSection />);
 
-    expect(screen.getByText('159')).toBeInTheDocument();
-    expect(screen.getByText('239')).toBeInTheDocument();
-    expect(screen.getByText('199')).toBeInTheDocument();
+    expect(screen.getByText('159,20')).toBeInTheDocument();
+    expect(screen.getByText('239,20')).toBeInTheDocument();
+    expect(screen.getByText('199,20')).toBeInTheDocument();
 
-    expect(screen.getByRole('link', { name: 'Souscrire Essential' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choisir Essential' })).toHaveAttribute(
       'href',
       '/register?plan=essential&billing=annual',
     );
-    expect(screen.getByRole('link', { name: 'Souscrire Pro' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choisir Pro' })).toHaveAttribute(
       'href',
       '/register?plan=pro&billing=annual',
     );
-    expect(screen.getByRole('link', { name: 'Souscrire Multi-site' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choisir Multi-site' })).toHaveAttribute(
       'href',
       '/register?plan=multi-site&billing=annual&sites=2',
     );
@@ -38,7 +38,7 @@ describe('PricingSection', () => {
 
     fireEvent.click(screen.getByRole('switch'));
 
-    expect(screen.getByRole('link', { name: 'Souscrire Pro' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choisir Pro' })).toHaveAttribute(
       'href',
       '/register?plan=pro&billing=monthly',
     );
@@ -49,17 +49,31 @@ describe('PricingSection', () => {
     const text = container.textContent ?? '';
 
     expect(text).toContain('249\u00a0€\u00a0HT/mois + 99\u00a0€\u00a0HT/site');
-    expect(text).toContain('+ 79\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 79,20\u00a0€\u00a0HT/site');
     expect(text).not.toContain('Économisez');
   });
 
-  it('précise que les prix sont hors taxes et que la formule annuelle engage 12 mois', () => {
-    const { container } = render(<PricingSection />);
-    const text = container.textContent ?? '';
+  it('précise le paiement annuel et distingue le mensuel', () => {
+    render(<PricingSection />);
+    expect(screen.getByText(/Paiement à l’année, engagement de 12 mois/)).toBeInTheDocument();
+    expect(screen.getByText(/1.*910,40 € HT facturés par an/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByText(/engagement de 12 mois/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Facturé chaque mois.')).toHaveLength(3);
+  });
 
-    expect(text).not.toContain('€/mois');
-    expect(text).toContain('€\u00a0HT/mois');
-    expect(screen.getAllByText('Facturation annuelle, engagement de 12 mois.')).toHaveLength(3);
+  it('calcule le total multi-site et transmet le nombre sélectionné', () => {
+    render(<PricingSection />);
+    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.change(screen.getByLabelText('Nombre d’établissements'), { target: { value: '3' } });
+    expect(screen.getByText(/Total pour 3 établissements : 447/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Choisir Multi-site' })).toHaveAttribute(
+      'href',
+      '/register?plan=multi-site&billing=monthly&sites=3',
+    );
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.getByText(/Total pour 3 établissements : 357,60/)).toBeInTheDocument();
+    expect(screen.getByText(/4.*291,20 € HT facturés par an/)).toBeInTheDocument();
   });
 
   it('masque le prix barré et les économies en mensuel', () => {
