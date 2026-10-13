@@ -1,3 +1,5 @@
+import { ANNUAL_DISCOUNT_PERCENT, PRICING_CATALOG } from '@sokar/shared';
+
 const groups = [
   {
     title: 'Accueil téléphonique',
@@ -132,11 +134,11 @@ const questions = [
   ],
   [
     'Quand suis-je débité et puis-je résilier ?',
-    'Le paiement est effectué par carte via Stripe après le parcours de mise en service. En mensuel, vous payez chaque mois et une résiliation prend effet à la fin de la période payée. En annuel, vous payez douze mois à l’avance avec 20 % de réduction. La résiliation conserve l’accès jusqu’à l’échéance ; aucun remboursement automatique en cours de période n’est prévu. Les prix affichés sont HT.',
+    `Le paiement est effectué par carte via Stripe après le parcours de mise en service. En mensuel, vous payez chaque mois et une résiliation prend effet à la fin de la période payée. En annuel, vous payez douze mois à l’avance avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. La résiliation conserve l’accès jusqu’à l’échéance ; aucun remboursement automatique en cours de période n’est prévu. Les prix affichés sont HT.`,
   ],
   [
     'Combien coûte un groupe de restaurants ?',
-    'La base Multi-site inclut le premier établissement. Chaque adresse supplémentaire ajoute 99 € HT/mois, ou 950,40 € HT/an. Le sélecteur affiche le total pour votre nombre d’établissements et transmet ce choix à l’inscription. Chaque adresse conserve ses propres horaires, règles et fichier client. Les accès des équipes sont vérifiés lors de la mise en service.',
+    `La base Multi-site à ${PRICING_CATALOG['multi-site'].monthlyCents / 100} € HT/mois inclut le premier établissement. Chaque adresse supplémentaire ajoute ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois. La réduction annuelle de ${ANNUAL_DISCOUNT_PERCENT} % s’applique à la base et aux établissements supplémentaires. Le montant annuel exact est indiqué avant paiement. Le sélecteur affiche le total pour votre nombre d’établissements et transmet ce choix à l’inscription. Chaque adresse conserve ses propres horaires, règles et fichier client. Les accès des équipes sont vérifiés lors de la mise en service.`,
   ],
 ];
 

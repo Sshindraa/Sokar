@@ -63,26 +63,26 @@ describe('catalogue Stripe attendu', () => {
     ]);
   });
 
-  it('fixe les montants mensuels du catalogue 199/299/249+99', () => {
+  it('fixe les montants mensuels du catalogue 199/299/299+99', () => {
     const amounts = Object.fromEntries(
       module.EXPECTED_CATALOG.map((entry) => [entry.env, entry.amount]),
     );
     expect(amounts.STRIPE_PRICE_ESSENTIAL_MONTHLY).toBe(19900);
     expect(amounts.STRIPE_PRICE_PRO_MONTHLY).toBe(29900);
-    expect(amounts.STRIPE_PRICE_MULTI_SITE_MONTHLY).toBe(24900);
+    expect(amounts.STRIPE_PRICE_MULTI_SITE_MONTHLY).toBe(29900);
     expect(amounts.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY).toBe(9900);
   });
 
-  it('reprend la grille annuelle -20 % du runbook Stripe', () => {
+  it('reprend la grille annuelle -10 % du runbook Stripe', () => {
     const amounts = Object.fromEntries(
       module.EXPECTED_CATALOG.map((entry) => [entry.env, entry.amount]),
     );
     const annual = module.EXPECTED_CATALOG.filter((entry) => entry.interval === 'year');
     expect(annual).toHaveLength(4);
-    expect(amounts.STRIPE_PRICE_ESSENTIAL_ANNUAL).toBe(191040);
-    expect(amounts.STRIPE_PRICE_PRO_ANNUAL).toBe(287040);
-    expect(amounts.STRIPE_PRICE_MULTI_SITE_ANNUAL).toBe(239040);
-    expect(amounts.STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL).toBe(95040);
+    expect(amounts.STRIPE_PRICE_ESSENTIAL_ANNUAL).toBe(214920);
+    expect(amounts.STRIPE_PRICE_PRO_ANNUAL).toBe(322920);
+    expect(amounts.STRIPE_PRICE_MULTI_SITE_ANNUAL).toBe(322920);
+    expect(amounts.STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL).toBe(106920);
   });
 
   it('dérive le nom de la variable de montant attendu', () => {

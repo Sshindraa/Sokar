@@ -1,3 +1,5 @@
+import { PRICING_CATALOG } from './pricing-catalog.cjs';
+
 /**
  * Plan enum — mirror of Prisma `Plan` enum.
  *
@@ -33,10 +35,10 @@ export const PLAN_LABELS: Record<Plan, string> = {
  * Keep these values aligned with `packages/config/src/constants.ts`.
  */
 export const PLAN_PRICES_EUR: Record<Plan, number | null> = {
-  ESSENTIAL: 199,
-  STARTER: 199,
-  PRO: 299,
-  PREMIUM: 249, // Multi-site base remains 249€ + 99€/site.
+  ESSENTIAL: PRICING_CATALOG.essential.monthlyCents / 100,
+  STARTER: PRICING_CATALOG.essential.monthlyCents / 100,
+  PRO: PRICING_CATALOG.pro.monthlyCents / 100,
+  PREMIUM: PRICING_CATALOG['multi-site'].monthlyCents / 100,
 };
 
 /**

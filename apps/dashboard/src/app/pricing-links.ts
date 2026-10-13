@@ -36,6 +36,6 @@ export function readPricingSelection(search: string) {
   return {
     plan,
     yearly: params.get('billing') !== 'monthly',
-    siteCount: Number.isInteger(count) && count >= 2 && count <= 100 ? count : 2,
+    siteCount: Number.isInteger(count) && count >= 1 && count <= 100 ? count : 2,
   };
 }

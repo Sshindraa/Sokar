@@ -656,3 +656,14 @@ Le décompte de la section 10.17 concerne le catalogue d'avant cette fusion. Le 
 - Les statuts « disponible » de la section 10.17 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
 
 **Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
+
+### 10.19 Fusion avec la tarification de #429 (14/10/2026)
+
+La décision de `main` remplace les montants de la section 10.17 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.17 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
+
+- Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
+- Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.
+- Montants exacts (inscription et Stripe) : 2 149,20 € HT par an pour Essential ; 3 229,20 € pour Pro et Multi-site de base ; Multi-site à 2 établissements 4 298,40 € HT par an, à 3 établissements 5 367,60 € HT par an.
+- Statuts et tableau comparatif : inchangés.
+
+**Vérifié.** Typage du dashboard et de l'API (après reconstruction de `@sokar/shared`), Prettier ; dashboard 83 fichiers et 621 tests verts ; paquet partagé 71 tests verts ; captures `/pricing` régénérées, 3/3 verts. Dans le navigateur (port 3107) : 179, 269 et 358 € s'affichent, « Découvrir Pro » et « Découvrir Multi-site » sont présents, console sans erreur.

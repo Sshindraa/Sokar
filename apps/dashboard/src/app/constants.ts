@@ -2,11 +2,14 @@
 // Used by both server and client components
 
 import {
-  featuresIntroducedIn,
-  pricingFor,
-  type FeatureStatus,
-  type PlanLabel,
-} from '@/app/pricing-catalog';
+  PLAN_PRICES_EUR,
+  PRICING_CATALOG,
+  ANNUAL_DISCOUNT_PERCENT,
+  annualPriceCents,
+  formatPriceCents,
+  formatMonthlyEquivalent,
+} from '@sokar/shared';
+import { featuresIntroducedIn, type FeatureStatus, type PlanLabel } from '@/app/pricing-catalog';
 
 export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
@@ -37,21 +40,18 @@ export interface PlanFeatureLine {
 
 export interface PricingPlan {
   label: PlanLabel;
-  /** Prix mensuel sans engagement, en euros HT. */
+  /** Prix mensuel sans engagement, en euros. */
   price: string;
-  /** Prix mensuel HT par établissement supplémentaire (Multi-site uniquement). */
+  /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
   sitePrice?: string;
-  /** Accroche affichée en tête de carte. */
-  promise: string;
   description: string;
+  promise: string;
   /** Formule précédente incluse en entier, affichée en tête de liste. */
   inherits?: string;
-  /** Précision sur ce qui n’est pas encore disponible. */
   note?: string;
+  demoFirst?: boolean;
   /** Fonctionnalités introduites par cette formule, avec leur statut. */
   features: PlanFeatureLine[];
-  /** Parcours démo avant l’inscription : la carte propose « Découvrir » au lieu de « Choisir ». */
-  demoFirst?: boolean;
   featured?: boolean;
 }
 
@@ -61,14 +61,14 @@ const toFeatureLines = (plan: PlanLabel): PlanFeatureLine[] =>
 export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
-    price: String(pricingFor('Essential').monthlyEur),
+    price: String(PLAN_PRICES_EUR.ESSENTIAL),
     promise: 'Vos appels et vos réservations, au même endroit.',
     description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
     features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
-    price: String(pricingFor('Pro').monthlyEur),
+    price: String(PLAN_PRICES_EUR.PRO),
     promise: 'Gardez la main quand le service change.',
     description:
       'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
@@ -79,8 +79,8 @@ export const PLANS: PricingPlan[] = [
   },
   {
     label: 'Multi-site',
-    price: String(pricingFor('Multi-site').monthlyEur),
-    sitePrice: String(pricingFor('Multi-site').sitePriceEur),
+    price: String(PLAN_PRICES_EUR.PREMIUM),
+    sitePrice: String(PRICING_CATALOG['multi-site-addon'].monthlyCents / 100),
     demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
     description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
@@ -108,13 +108,11 @@ export const FAQS = [
   },
   {
     question: 'Combien coûte Sokar ?',
-    answer:
-      'Essential à 199 € HT/mois, Pro à 299 € HT/mois et Multi-site à 249 € HT/mois pour le premier établissement, puis 99 € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec 20 % de réduction. Consultez les inclusions actuelles sur la page Tarifs.',
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro à ${PLAN_PRICES_EUR.PRO} € HT/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} € HT/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
-    answer:
-      "Nos forfaits mensuels sont totalement sans engagement, vous êtes libre d'arrêter quand vous le souhaitez. Si vous optez pour la facturation annuelle, vous vous engagez pour 12 mois et bénéficiez d'une réduction de 20% sur l'ensemble de vos mensualités.",
+    answer: `Nos forfaits mensuels sont totalement sans engagement, vous êtes libre d'arrêter quand vous le souhaitez. Si vous optez pour la facturation annuelle, vous vous engagez pour 12 mois et bénéficiez d'une réduction de ${ANNUAL_DISCOUNT_PERCENT}% sur l'ensemble de vos mensualités.`,
   },
   {
     question: "Comment se passe l'installation ?",
@@ -127,3 +125,18 @@ export const FAQS = [
       "Oui. Chaque restaurant dispose de son propre espace isolé. Notre politique de confidentialité détaille les données traitées, les sous-traitants et leur localisation. Vous pouvez demander l'export ou l'effacement de vos données.",
   },
 ];
+
+/** Montants en centimes avant formatage, sans arrondir l’équivalent annuel à l’euro. */
+// Compatibility helpers for existing consumers; the shared catalogue owns billing and formatting.
+export const billingAmount = (price: string | number, yearly: boolean, annualTotal = false) => {
+  const monthlyCents = Math.round(Number(price) * 100);
+  const totalCents = yearly ? annualPriceCents(monthlyCents) : monthlyCents;
+  return totalCents / (yearly && !annualTotal ? 1200 : 100);
+};
+
+export const formatPrice = (amount: number) => formatPriceCents(Math.round(amount * 100));
+
+export const DISPLAY_PRICE = (price: string, yearly: boolean) => {
+  const monthlyCents = Math.round(Number(price) * 100);
+  return formatMonthlyEquivalent(yearly ? annualPriceCents(monthlyCents) : monthlyCents, yearly);
+};

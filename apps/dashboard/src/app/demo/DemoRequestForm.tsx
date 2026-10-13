@@ -108,8 +108,10 @@ export default function DemoRequestForm() {
         <p className="text-sm text-muted-foreground">
           Votre demande concerne {selection.plan}, en facturation{' '}
           {selection.yearly ? 'annuelle' : 'mensuelle'}
-          {selection.plan === 'Multi-site' ? `, pour ${selection.siteCount} établissements` : ''}.
-          Votre choix sera conservé à l’inscription.
+          {selection.plan === 'Multi-site'
+            ? `, pour ${selection.siteCount} ${selection.siteCount === 1 ? 'établissement' : 'établissements'}`
+            : ''}
+          . Votre choix sera conservé à l’inscription.
         </p>
       )}
       <div className="grid gap-2">

@@ -1,26 +1,18 @@
 'use client';
 
+import { ANNUAL_DISCOUNT_PERCENT, pricingTotalCents, formatMonthlyEquivalent } from '@sokar/shared';
 import { useState } from 'react';
 import Link from 'next/link';
-import { PLANS, type PlanFeatureLine } from '@/app/constants';
+import { PLANS, DISPLAY_PRICE, type PlanFeatureLine } from '@/app/constants';
 import { getPlanSignupHref, getPlanDemoHref, type PublicPlan } from '@/app/pricing-links';
-import {
-  annualMonthlyCents,
-  annualTotalCents,
-  formatEuros,
-  pricingFor,
-  type FeatureStatus,
-} from '@/app/pricing-catalog';
+import type { FeatureStatus } from '@/app/pricing-catalog';
 import PlanComparison from '@/app/PlanComparison';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
-/** Espace insécable entre le montant et l'unité (« 159,20 € HT/mois »), comme en typographie française. */
-const euros = (amount: string, unit: 'mois' | 'site') => `${amount} € HT/${unit}`;
-
-/** Montant mensuel affiché : tarif plein, ou mensualité annuelle exacte (-20 %). */
-const monthlyAmount = (eur: number, yearly: boolean) =>
-  formatEuros(yearly ? annualMonthlyCents(eur) : eur * 100);
+/** Espace insécable entre le montant et l'unité (« 159 €/mois »), comme en typographie française. */
+const euros = (amount: string | number, unit: 'mois' | 'site') =>
+  `${amount}\u00a0€\u00a0HT/${unit}`;
 
 function StatusBadge({ status }: { status: FeatureStatus }) {
   const available = status === 'disponible';
@@ -65,9 +57,9 @@ function FeatureItem({ feature }: { feature: PlanFeatureLine }) {
 }
 
 /**
- * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section « Tarifs » de l'accueil et la
- * page /pricing. Une seule source des prix et des fonctionnalités : `PLANS`, issu du catalogue.
- * `showComparison` ajoute le tableau comparatif (page /pricing).
+ * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section
+ * « Tarifs » de l'accueil et la page /pricing : une seule mise en page, une
+ * seule source de prix (`PLANS`).
  */
 export default function PricingPlans({
   haptic = false,
@@ -126,14 +118,14 @@ export default function PricingPlans({
         >
           Annuel
           <span className="ml-1.5 px-2 py-0.5 text-[10px] bg-pricing-accent/20 text-pricing-accent border border-pricing-accent/30 rounded-full font-bold">
-            -20%
+            -{ANNUAL_DISCOUNT_PERCENT}%
           </span>
         </span>
       </div>
 
       <p className="mb-8 text-center text-sm text-white/70">
         {yearly
-          ? 'Paiement à l’année, engagement de 12 mois. Réduction de 20 %.'
+          ? 'Équivalents mensuels arrondis. Facturation annuelle, engagement de 12 mois. Montant exact indiqué avant paiement.'
           : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
         Tous les prix sont hors taxes.
       </p>
@@ -145,11 +137,8 @@ export default function PricingPlans({
     */}
       <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-y-0">
         {PLANS.map((plan) => {
-          const pricing = pricingFor(plan.label);
-          const sitePriceEur = pricing.sitePriceEur;
-          // Total mensuel HT : la formule de base, puis chaque établissement supplémentaire (Multi-site).
-          const totalMonthlyEur =
-            pricing.monthlyEur + (sitePriceEur !== null ? (siteCount - 1) * sitePriceEur : 0);
+          const yearlyPrice = DISPLAY_PRICE(plan.price, yearly);
+          const yearlySitePrice = plan.sitePrice ? DISPLAY_PRICE(plan.sitePrice, yearly) : null;
 
           return (
             <div
@@ -189,27 +178,27 @@ export default function PricingPlans({
                 {yearly && (
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-pricing-accent/30 bg-pricing-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-pricing-accent">
-                      -20% annuel
+                      -{ANNUAL_DISCOUNT_PERCENT}% annuel
                     </span>
                     <span className="text-xs font-semibold text-white/45 line-through">
                       {euros(plan.price, 'mois')}
-                      {sitePriceEur !== null ? ` + ${euros(String(sitePriceEur), 'site')}` : ''}
+                      {plan.sitePrice ? ` + ${euros(plan.sitePrice, 'site')}` : ''}
                     </span>
                   </div>
                 )}
                 <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
-                    {monthlyAmount(pricing.monthlyEur, yearly)}
+                    {yearlyPrice}
                   </span>
                   <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
-                  {sitePriceEur !== null && (
+                  {yearlySitePrice && (
                     <span className="text-sm font-semibold text-white/60">
-                      + {euros(monthlyAmount(sitePriceEur, yearly), 'site')}
+                      + {euros(yearlySitePrice, 'site')}
                     </span>
                   )}
                 </div>
 
-                {sitePriceEur !== null && (
+                {plan.sitePrice && (
                   <div className="relative z-10 mb-4 text-sm text-white/80">
                     <label htmlFor="pricing-sites">Nombre d’établissements</label>
                     <select
@@ -218,29 +207,31 @@ export default function PricingPlans({
                       onChange={(event) => setSiteCount(Number(event.target.value))}
                       className="ml-2 rounded-lg border border-white/20 bg-black p-2 text-white transition-all duration-200"
                     >
-                      {Array.from({ length: 99 }, (_, i) => i + 2).map((count) => (
+                      {Array.from({ length: 100 }, (_, i) => i + 1).map((count) => (
                         <option key={count} value={count}>
                           {count}
                         </option>
                       ))}
                     </select>
                     <p className="mt-2">
-                      Premier établissement inclus, puis {monthlyAmount(sitePriceEur, yearly)} €
-                      HT/mois par adresse supplémentaire.
+                      Premier établissement inclus, puis {yearlySitePrice} € HT/mois par adresse
+                      supplémentaire.
                     </p>
                     <p className="mt-2 font-semibold">
-                      Total pour {siteCount} établissements :{' '}
-                      {monthlyAmount(totalMonthlyEur, yearly)} € HT/mois.
+                      Total pour {siteCount} {siteCount === 1 ? 'établissement' : 'établissements'}{' '}
+                      :{' '}
+                      {formatMonthlyEquivalent(
+                        pricingTotalCents('multi-site', yearly, siteCount),
+                        yearly,
+                      )}{' '}
+                      € HT/mois.
                     </p>
                   </div>
                 )}
                 <p className="relative z-10 mb-3 text-sm text-white/80">
-                  {yearly
-                    ? `${formatEuros(annualTotalCents(totalMonthlyEur))} € HT facturés par an.`
-                    : 'Facturé chaque mois.'}
+                  {yearly ? 'Facturé annuellement.' : 'Facturé chaque mois.'}
                 </p>
               </div>
-
               {/* 3. Description */}
               <p className="relative z-10 mb-8 text-sm leading-relaxed text-white/50">
                 <strong className="mb-3 block text-lg font-semibold text-white">
