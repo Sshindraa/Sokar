@@ -10,7 +10,6 @@ import {
   formatEuros,
   pricingFor,
   type FeatureStatus,
-  type PlanLabel,
 } from '@/app/pricing-catalog';
 import PlanComparison from '@/app/PlanComparison';
 import { ArrowUpRight, Check } from 'lucide-react';
@@ -78,6 +77,7 @@ export default function PricingPlans({
   showComparison?: boolean;
 }) {
   const [yearly, setYearly] = useState(true);
+  const [siteCount, setSiteCount] = useState(2);
 
   const toggleBilling = () => {
     if (haptic) triggerHaptic(15);
@@ -131,22 +131,31 @@ export default function PricingPlans({
         </span>
       </div>
 
+      <p className="mb-8 text-center text-sm text-white/70">
+        {yearly
+          ? 'Paiement à l’année, engagement de 12 mois. Réduction de 20 %.'
+          : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
+        Tous les prix sont hors taxes.
+      </p>
       {/*
       Cards Grid. En md+, chaque carte est une sous-grille de 5 lignes
       (en-tête, prix, description, bouton, avantages) : les lignes sont
       partagées entre les cartes, donc les boutons et les listes restent
       alignés quelle que soit la longueur des textes.
     */}
-      <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:gap-y-0">
+      <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-y-0">
         {PLANS.map((plan) => {
-          const pricing = pricingFor(plan.label as PlanLabel);
+          const pricing = pricingFor(plan.label);
           const sitePriceEur = pricing.sitePriceEur;
+          // Total mensuel HT : la formule de base, puis chaque établissement supplémentaire (Multi-site).
+          const totalMonthlyEur =
+            pricing.monthlyEur + (sitePriceEur !== null ? (siteCount - 1) * sitePriceEur : 0);
 
           return (
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 md:row-span-5 md:grid md:grid-rows-subgrid',
+                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 lg:row-span-5 lg:grid lg:grid-rows-subgrid',
                 plan.featured
                   ? 'border-pricing-accent/25 bg-white/[0.08] shadow-[0_0_40px_hsl(var(--pricing-accent)_/_0.15)] hover:shadow-[0_0_60px_hsl(var(--pricing-accent)_/_0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
@@ -199,31 +208,51 @@ export default function PricingPlans({
                     </span>
                   )}
                 </div>
-                {yearly && (
-                  <p className="mt-2 text-xs text-white/45">
-                    Soit {formatEuros(annualTotalCents(pricing.monthlyEur))}
-                    {' € HT par an'}
-                    {sitePriceEur !== null &&
-                      `, + ${formatEuros(annualTotalCents(sitePriceEur))} € HT par an et par établissement supplémentaire`}
-                    .
-                  </p>
+
+                {sitePriceEur !== null && (
+                  <div className="relative z-10 mb-4 text-sm text-white/80">
+                    <label htmlFor="pricing-sites">Nombre d’établissements</label>
+                    <select
+                      id="pricing-sites"
+                      value={siteCount}
+                      onChange={(event) => setSiteCount(Number(event.target.value))}
+                      className="ml-2 rounded-lg border border-white/20 bg-black p-2 text-white transition-all duration-200"
+                    >
+                      {Array.from({ length: 99 }, (_, i) => i + 2).map((count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2">
+                      Premier établissement inclus, puis {monthlyAmount(sitePriceEur, yearly)} €
+                      HT/mois par adresse supplémentaire.
+                    </p>
+                    <p className="mt-2 font-semibold">
+                      Total pour {siteCount} établissements :{' '}
+                      {monthlyAmount(totalMonthlyEur, yearly)} € HT/mois.
+                    </p>
+                  </div>
                 )}
-                {yearly && (
-                  <p className="mt-2 text-xs text-white/45">
-                    Facturation annuelle, engagement de 12 mois.
-                  </p>
-                )}
+                <p className="relative z-10 mb-3 text-sm text-white/80">
+                  {yearly
+                    ? `${formatEuros(annualTotalCents(totalMonthlyEur))} € HT facturés par an.`
+                    : 'Facturé chaque mois.'}
+                </p>
               </div>
 
               {/* 3. Description */}
               <p className="relative z-10 mb-8 text-sm leading-relaxed text-white/50">
+                <strong className="mb-3 block text-lg font-semibold text-white">
+                  {plan.promise}
+                </strong>
                 {plan.description}
               </p>
 
               {/* 4. CTA */}
               <Link
-                href={getPlanSignupHref(plan.label as PublicPlan, yearly)}
-                aria-label={`Souscrire ${plan.label}`}
+                href={getPlanSignupHref(plan.label as PublicPlan, yearly, siteCount)}
+                aria-label={`Choisir ${plan.label}`}
                 className={cn(
                   'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200',
                   plan.featured
@@ -231,24 +260,31 @@ export default function PricingPlans({
                     : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
                 )}
               >
-                Souscrire
+                Choisir {plan.label}
                 <ArrowUpRight size={14} />
               </Link>
 
               {/* 5. Features : formule précédente, puis fonctionnalités introduites ici, avec leur statut */}
-              <ul className="relative z-10 mt-8 flex-1 space-y-4">
-                {plan.inherits && (
-                  <li className="flex items-start gap-3 text-sm text-white/70">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
-                      <Check size={12} className="text-pricing-accent" strokeWidth={3} />
-                    </span>
-                    {plan.inherits}
-                  </li>
+              <div className="relative z-10 mt-8">
+                <ul className="space-y-4">
+                  {plan.inherits && (
+                    <li className="flex items-start gap-3 text-sm text-white/70">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
+                        <Check size={12} className="text-pricing-accent" strokeWidth={3} />
+                      </span>
+                      {plan.inherits}
+                    </li>
+                  )}
+                  {plan.features.map((feature) => (
+                    <FeatureItem key={feature.label} feature={feature} />
+                  ))}
+                </ul>
+                {plan.note && (
+                  <p className="relative z-10 mt-5 text-sm leading-relaxed text-white/70">
+                    {plan.note}
+                  </p>
                 )}
-                {plan.features.map((feature) => (
-                  <FeatureItem key={feature.label} feature={feature} />
-                ))}
-              </ul>
+              </div>
             </div>
           );
         })}

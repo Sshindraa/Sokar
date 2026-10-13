@@ -98,6 +98,20 @@ describe('catalogue des fonctionnalités', () => {
     ).not.toEqual(expect.arrayContaining(['Synchronisation ZenChef, TheFork ou Lightspeed']));
   });
 
+  it('ne présente comme disponible ni la comparaison consolidée ni le partage des profils clients', () => {
+    const available = CATALOG_FEATURES.filter((feature) => feature.status === 'disponible');
+
+    expect(available.map((feature) => feature.label).join(' ')).not.toMatch(
+      /comparaison consolidée|profils clients partagés/i,
+    );
+  });
+
+  it('garde le suivi des absences dans la formule Essential, comme la page Tarifs', () => {
+    expect(featuresIntroducedIn('Essential').map((feature) => feature.label)).toContain(
+      'Un fichier client et le suivi des absences',
+    );
+  });
+
   it('couvre les trois formules dans l’ordre d’affichage', () => {
     expect(PLAN_ORDER).toEqual(['Essential', 'Pro', 'Multi-site']);
   });

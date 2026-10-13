@@ -93,8 +93,8 @@ const PAGES: VisualPage[] = [
   {
     name: 'pricing',
     url: '/pricing',
-    // La page tarifs a un h1 "Tarifs" avec la classe pricing-hero-title.
-    waitFor: '.pricing-hero-title',
+    // Le titre principal confirme le rendu de la page tarifs.
+    waitFor: '.pricing-hero h1',
     settleMs: 2000,
   },
 ];
@@ -108,6 +108,10 @@ test.describe('Régression visuelle — pages critiques', () => {
       await pwPage.addInitScript(() => {
         window.localStorage.setItem('sokar_pwa_dismissed', 'true');
       });
+
+      if (page.name === 'pricing') {
+        await pwPage.addInitScript(() => window.localStorage.setItem('theme', 'light'));
+      }
 
       // 1. Naviguer vers la page et attendre que le réseau soit inactif.
       await pwPage.goto(page.url, { waitUntil: 'networkidle' });
@@ -140,8 +144,22 @@ test.describe('Régression visuelle — pages critiques', () => {
         animations: 'disabled',
         caret: 'hide',
         stylePath: STABILITY_CSS,
-        fullPage: false,
+        fullPage: page.name === 'pricing',
       });
+      if (page.name === 'pricing') {
+        expect(
+          await pwPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        ).toBe(true);
+        await pwPage.getByRole('switch').click();
+        await pwPage.getByLabel('Nombre d’établissements').selectOption('3');
+        await expect(
+          pwPage.getByText('Total pour 3 établissements : 447 € HT/mois.'),
+        ).toBeVisible();
+        await expect(pwPage.getByRole('link', { name: 'Choisir Multi-site' })).toHaveAttribute(
+          'href',
+          '/register?plan=multi-site&billing=monthly&sites=3',
+        );
+      }
     });
   }
 });

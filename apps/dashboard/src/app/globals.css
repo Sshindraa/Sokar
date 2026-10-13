@@ -425,6 +425,12 @@ input[type='range']::-moz-range-thumb:hover {
 
 /* ===== PRICING SECTION — Tokenized Glassmorphism ===== */
 .pricing-root {
+  /* La surface publique conserve sa direction sombre avec une préférence claire mémorisée. */
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 70%;
+  --border: 0 0% 22%;
   position: relative;
   min-height: 100vh;
   overflow-x: hidden;

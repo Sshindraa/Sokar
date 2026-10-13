@@ -43,7 +43,7 @@ describe('PlanComparison', () => {
 
   it('réserve les fonctionnalités Multi-site à la formule Multi-site', () => {
     render(<PlanComparison />);
-    const row = rowFor('Une seule facture pour tout le groupe');
+    const row = rowFor('Une facturation réunie au niveau du groupe');
 
     expect(within(row).getAllByText('Non inclus')).toHaveLength(2);
     expect(within(row).getByText('Disponible')).toBeInTheDocument();

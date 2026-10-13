@@ -20,18 +20,49 @@ export interface CatalogFeature {
 
 /**
  * Source unique des cartes et du tableau de comparaison. L'ordre compte : les fonctionnalités d'une formule
- * sont regroupées derrière celles de la formule inférieure.
+ * sont regroupées derrière celles de la formule inférieure. Les libellés reprennent la rédaction publique de
+ * la page Tarifs ; une fonctionnalité non livrée reste « prévu », jamais « disponible ».
  */
 export const CATALOG_FEATURES: readonly CatalogFeature[] = [
   {
-    id: 'transfer',
-    label: 'Répond aux appels transférés',
+    id: 'phone-assistant',
+    label: 'Un assistant pour les réservations par téléphone',
     status: 'disponible',
     introducedIn: 'Essential',
   },
   {
-    id: 'booking',
-    label: "Réservations prises pendant l'appel",
+    id: 'shared-planning',
+    label: 'Les réservations téléphone, web et en salle dans un planning commun',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
+    id: 'connect-widget',
+    label: 'Votre page Connect et votre widget de réservation',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
+    id: 'floor-waitlist',
+    label: 'Plan de salle et liste d’attente pour organiser les couverts',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
+    id: 'client-file',
+    label: 'Un fichier client et le suivi des absences',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
+    id: 'number',
+    label: 'Un numéro dédié, configuré lors de la mise en service',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
+    id: 'google-agenda',
+    label: 'Synchronisation Google Agenda',
     status: 'disponible',
     introducedIn: 'Essential',
   },
@@ -41,20 +72,36 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     status: 'disponible',
     introducedIn: 'Essential',
   },
-  { id: 'number', label: '1 numéro dédié inclus', status: 'disponible', introducedIn: 'Essential' },
-  {
-    id: 'google-agenda',
-    label: 'Synchronisation Google Agenda',
-    status: 'disponible',
-    introducedIn: 'Essential',
-  },
   {
     id: 'tone',
     label: 'Ton adapté à votre établissement',
     status: 'prévu',
     introducedIn: 'Essential',
   },
-  { id: 'no-show', label: 'Suivi des no-shows', status: 'disponible', introducedIn: 'Pro' },
+  {
+    id: 'preparation-groups',
+    label: 'Préparation de groupes de clients',
+    status: 'disponible',
+    introducedIn: 'Pro',
+  },
+  {
+    id: 'campaign-drafts',
+    label: 'Brouillons de campagnes pour vos invitations',
+    status: 'disponible',
+    introducedIn: 'Pro',
+  },
+  {
+    id: 'recipient-preview',
+    label: 'Aperçu des destinataires avant tout envoi',
+    status: 'disponible',
+    introducedIn: 'Pro',
+  },
+  {
+    id: 'retention-rules',
+    label: 'Règles pour préparer vos actions de fidélisation',
+    status: 'disponible',
+    introducedIn: 'Pro',
+  },
   {
     id: 'ai-booking',
     label: 'Réservation depuis ChatGPT et Claude',
@@ -68,20 +115,32 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     introducedIn: 'Pro',
   },
   {
-    id: 'multi-dashboard',
-    label: 'Un seul tableau de bord pour tout piloter',
+    id: 'multi-navigation',
+    label: 'Passage d’une adresse à l’autre dans votre espace',
     status: 'disponible',
     introducedIn: 'Multi-site',
   },
   {
-    id: 'per-site-agent',
-    label: 'Un numéro et un agent par établissement',
+    id: 'per-site-planning',
+    label: 'Planning et fichier client propres à chaque restaurant',
+    status: 'disponible',
+    introducedIn: 'Multi-site',
+  },
+  {
+    id: 'per-site-hours',
+    label: 'Horaires et règles de réservation par adresse',
+    status: 'disponible',
+    introducedIn: 'Multi-site',
+  },
+  {
+    id: 'per-site-number',
+    label: 'Un numéro dédié par établissement',
     status: 'disponible',
     introducedIn: 'Multi-site',
   },
   {
     id: 'group-invoice',
-    label: 'Une seule facture pour tout le groupe',
+    label: 'Une facturation réunie au niveau du groupe',
     status: 'disponible',
     introducedIn: 'Multi-site',
   },

@@ -41,19 +41,17 @@ export interface PricingPlan {
   price: string;
   /** Prix mensuel HT par établissement supplémentaire (Multi-site uniquement). */
   sitePrice?: string;
+  /** Accroche affichée en tête de carte. */
+  promise: string;
   description: string;
   /** Formule précédente incluse en entier, affichée en tête de liste. */
   inherits?: string;
+  /** Précision sur ce qui n’est pas encore disponible. */
+  note?: string;
   /** Fonctionnalités introduites par cette formule, avec leur statut. */
   features: PlanFeatureLine[];
   featured?: boolean;
 }
-
-const PLAN_DESCRIPTIONS: Record<PlanLabel, string> = {
-  Essential: 'Pour démarrer.',
-  Pro: 'Pour maximiser chaque service.',
-  'Multi-site': 'Pour plusieurs établissements.',
-};
 
 const toFeatureLines = (plan: PlanLabel): PlanFeatureLine[] =>
   featuresIntroducedIn(plan).map(({ label, status }) => ({ label, status }));
@@ -62,24 +60,28 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(pricingFor('Essential').monthlyEur),
-    description: PLAN_DESCRIPTIONS.Essential,
+    promise: 'Vos appels et vos réservations, au même endroit.',
+    description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
     features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
     price: String(pricingFor('Pro').monthlyEur),
-    description: PLAN_DESCRIPTIONS.Pro,
-    inherits: "Tout l'Essential",
+    promise: 'Préparez la prochaine invitation de vos clients.',
+    description: 'Pour un restaurant qui souhaite préparer ses actions de fidélisation.',
+    inherits: 'Tout le socle Essential',
     features: toFeatureLines('Pro'),
-    featured: true,
+    note: 'Aujourd’hui : préparation uniquement. L’envoi des campagnes et les profils clients avancés ne sont pas encore disponibles.',
   },
   {
     label: 'Multi-site',
     price: String(pricingFor('Multi-site').monthlyEur),
     sitePrice: String(pricingFor('Multi-site').sitePriceEur),
-    description: PLAN_DESCRIPTIONS['Multi-site'],
-    inherits: 'Tout le Pro, sur chaque établissement',
+    promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
+    description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
+    inherits: 'Le périmètre actuel de Pro par établissement',
     features: toFeatureLines('Multi-site'),
+    note: 'Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles. Les accès des équipes sont validés lors de la mise en service.',
   },
 ];
 
@@ -102,7 +104,7 @@ export const FAQS = [
   {
     question: 'Combien coûte Sokar ?',
     answer:
-      'Trois forfaits : Essential à 199 € HT/mois, Pro à 299 € HT/mois (recommandé), et Multi-site à partir de 249 € HT/mois, plus 99 € HT par site supplémentaire. Les forfaits mensuels sont sans engagement. La facturation annuelle vous fait bénéficier de 20 % de réduction, avec un engagement de 12 mois. Le détail des fonctionnalités est sur notre page Tarifs.',
+      'Essential à 199 € HT/mois, Pro à 299 € HT/mois et Multi-site à 249 € HT/mois pour le premier établissement, puis 99 € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec 20 % de réduction. Consultez les inclusions actuelles sur la page Tarifs.',
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
