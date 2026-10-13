@@ -48,9 +48,18 @@ describe('PricingSection', () => {
     const { container } = render(<PricingSection />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('249\u00a0€/mois + 99\u00a0€/site');
-    expect(text).toContain('+ 79\u00a0€/site');
+    expect(text).toContain('249\u00a0€\u00a0HT/mois + 99\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 79\u00a0€\u00a0HT/site');
     expect(text).not.toContain('Économisez');
+  });
+
+  it('précise que les prix sont hors taxes et que la formule annuelle engage 12 mois', () => {
+    const { container } = render(<PricingSection />);
+    const text = container.textContent ?? '';
+
+    expect(text).not.toContain('€/mois');
+    expect(text).toContain('€\u00a0HT/mois');
+    expect(screen.getAllByText('Facturation annuelle, engagement de 12 mois.')).toHaveLength(3);
   });
 
   it('masque le prix barré et les économies en mensuel', () => {
@@ -60,7 +69,7 @@ describe('PricingSection', () => {
 
     const text = container.textContent ?? '';
     expect(screen.getByText('299')).toBeInTheDocument();
-    expect(text).toContain('+ 99\u00a0€/site');
+    expect(text).toContain('+ 99\u00a0€\u00a0HT/site');
     expect(text).not.toContain('Économisez');
     expect(text).not.toContain('-20% annuel');
   });

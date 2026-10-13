@@ -3024,3 +3024,32 @@ model GiftCardDelivery {
   @@index([giftCardId, createdAt])
   @@map("gift_card_deliveries")
 }
+
+enum DemoRequestStatus {
+  NEW
+  CONTACTED
+  DEMO_DONE
+  CLOSED
+}
+
+/// Demande de démonstration envoyée depuis la vitrine, sans compte Clerk.
+/// Les coordonnées ne servent qu'au suivi opérateur : jamais dans les logs, Sentry ou analytics.
+model DemoRequest {
+  id                String            @id @default(uuid())
+  idempotencyKey    String            @unique @map("idempotency_key") @db.VarChar(64)
+  establishmentName String            @map("establishment_name") @db.VarChar(120)
+  contactEmail      String            @map("contact_email") @db.VarChar(254)
+  contactPhone      String?           @map("contact_phone") @db.VarChar(32)
+  currentTool       String?           @map("current_tool") @db.VarChar(120)
+  mainProblem       String?           @map("main_problem") @db.VarChar(500)
+  pageVersion       String            @map("page_version") @db.VarChar(40)
+  status            DemoRequestStatus @default(NEW)
+  notifiedAt        DateTime?         @map("notified_at")
+  contactedAt       DateTime?         @map("contacted_at")
+  demoDoneAt        DateTime?         @map("demo_done_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, createdAt], map: "demo_requests_status_created_idx")
+  @@map("demo_requests")
+}

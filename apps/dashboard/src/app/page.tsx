@@ -8,6 +8,9 @@ import FaqSection from '@/app/FaqSection';
 import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
+import { HOME_METADATA } from '@/app/marketing-metadata';
+
+export const metadata = HOME_METADATA;
 
 // SSR les sections pour éviter le flash de skeleton sur 4G.
 // ScrollStoryboardSection : Framer Motion useScroll retourne progress=0 en SSR,
@@ -117,7 +120,7 @@ export default function HomePage() {
                 <span className="h-px flex-1 bg-gradient-to-r from-white/20 to-transparent" />
                 <span>
                   <span className="block text-xs font-semibold text-white">Appels entrants</span>
-                  <span className="text-[10px] text-white/40">+42 aujourd&apos;hui</span>
+                  <span className="text-[10px] text-white/40">Pris en charge par Sokar</span>
                 </span>
               </div>
 
@@ -162,27 +165,28 @@ export default function HomePage() {
                 </p>
 
                 <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  L&apos;IA devient le nouveau levier de la restauration
+                  Un assistant téléphonique pour vos réservations
                 </h1>
 
                 <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
-                  Sokar aide les restaurants à capter chaque demande, fluidifier chaque service et
-                  transformer l&apos;accueil client en avantage opérationnel.
+                  Sokar répond aux appels de votre restaurant, consulte vos disponibilités et
+                  enregistre les réservations. Vous gardez votre numéro : seuls les appels que vous
+                  transférez passent par Sokar.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
                   <Link
-                    href="/register"
+                    href="/demo"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
-                    Réserver une démo
+                    Demander une démonstration
                     <ArrowRight size={14} />
                   </Link>
                   <Link
-                    href="/#demo"
+                    href="/register"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
-                    Découvrir
+                    Créer votre compte
                     <ArrowRight size={14} />
                   </Link>
                 </div>

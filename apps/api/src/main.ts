@@ -40,6 +40,7 @@ import { connectRoutes } from './modules/connect/connect.routes';
 import { floorPlanRoutes } from './modules/floor-plan/floor-plan.routes';
 import { giftCardRoutes } from './modules/gift-cards/gift-card.routes';
 import { giftCardPackRoutes } from './modules/gift-cards/gift-card-pack.routes';
+import { demoRequestRoutes } from './modules/demo-requests/demo-request.routes';
 import { billingRoutes } from './modules/billing/billing.routes';
 import { entitlementRoutes } from './modules/entitlements/entitlement.routes';
 import { usageRoutes } from './modules/usage/usage.routes';
@@ -242,6 +243,7 @@ export async function buildApp() {
   await app.register(floorPlanRoutes);
   await app.register(giftCardRoutes);
   await app.register(giftCardPackRoutes);
+  await app.register(demoRequestRoutes);
   await app.register(billingRoutes);
   await app.register(entitlementRoutes);
   await app.register(usageRoutes);
