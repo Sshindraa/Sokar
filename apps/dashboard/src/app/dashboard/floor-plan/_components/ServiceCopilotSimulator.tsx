@@ -1,5 +1,7 @@
 'use client';
 
+import { ServiceCopilotAccess } from '@/components/ServiceCopilotAccess';
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
@@ -169,7 +171,7 @@ function ScenarioCard({ scenario, isBest }: { scenario: SimulationScenario; isBe
   );
 }
 
-export function ServiceCopilotSimulator({
+function ServiceCopilotSimulatorContent({
   orgId,
   selectedFloorPlanId,
 }: ServiceCopilotSimulatorProps) {
@@ -478,5 +480,13 @@ export function ServiceCopilotSimulator({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+export function ServiceCopilotSimulator(props: ServiceCopilotSimulatorProps) {
+  return (
+    <ServiceCopilotAccess>
+      <ServiceCopilotSimulatorContent {...props} />
+    </ServiceCopilotAccess>
   );
 }

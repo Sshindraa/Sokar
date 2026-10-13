@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { ServiceCopilotAccess } from '@/components/ServiceCopilotAccess';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, RefreshCw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,7 @@ function SummarySkeleton() {
   );
 }
 
-export default function CopilotQualityPage() {
+function CopilotQualityContent() {
   const { get, post, orgId } = useApi();
   const [days, setDays] = useState<(typeof PERIODS)[number]['days']>(30);
   const [summary, setSummary] = useState<ServiceCopilotTelemetrySummary | null>(null);
@@ -397,5 +398,13 @@ export default function CopilotQualityPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function CopilotQualityPage() {
+  return (
+    <ServiceCopilotAccess>
+      <CopilotQualityContent />
+    </ServiceCopilotAccess>
   );
 }

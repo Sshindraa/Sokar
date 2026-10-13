@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { getPlanSignupHref, readPricingSelection } from '@/app/pricing-links';
 
 const ENDPOINT = '/api/proxy/public/demo-requests';
 const PAGE_VERSION = 'demo-2026-10';
@@ -22,6 +23,10 @@ const FIELD_CLASS =
  */
 export default function DemoRequestForm() {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [selection, setSelection] = useState<ReturnType<typeof readPricingSelection>>(null);
+  useEffect(() => {
+    setSelection(readPricingSelection(window.location.search));
+  }, []);
   const [status, setStatus] = useState<FormStatus>('idle');
   const inFlight = useRef(false);
 
@@ -38,7 +43,9 @@ export default function DemoRequestForm() {
       contactPhone: text('contactPhone') || undefined,
       currentTool: text('currentTool') || undefined,
       mainProblem: text('mainProblem') || undefined,
-      pageVersion: PAGE_VERSION,
+      pageVersion: selection
+        ? `demo-${selection.plan.toLowerCase()}-${selection.yearly ? 'annual' : 'monthly'}${selection.plan === 'Multi-site' ? `-${selection.siteCount}` : ''}-2026-10`
+        : PAGE_VERSION,
       website: text('website') || undefined,
     };
 
@@ -79,7 +86,11 @@ export default function DemoRequestForm() {
         <p className="text-sm text-muted-foreground">
           Vous souhaitez déjà utiliser Sokar ?{' '}
           <Link
-            href="/register"
+            href={
+              selection
+                ? getPlanSignupHref(selection.plan, selection.yearly, selection.siteCount)
+                : '/register'
+            }
             className="font-medium text-foreground underline underline-offset-4"
           >
             Créer votre compte
@@ -93,6 +104,14 @@ export default function DemoRequestForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+      {selection && (
+        <p className="text-sm text-muted-foreground">
+          Votre demande concerne {selection.plan}, en facturation{' '}
+          {selection.yearly ? 'annuelle' : 'mensuelle'}
+          {selection.plan === 'Multi-site' ? `, pour ${selection.siteCount} établissements` : ''}.
+          Votre choix sera conservé à l’inscription.
+        </p>
+      )}
       <div className="grid gap-2">
         <Label htmlFor="establishmentName">Nom de votre établissement</Label>
         <Input
@@ -196,7 +215,14 @@ export default function DemoRequestForm() {
 
       <p className="text-center text-sm text-muted-foreground">
         Vous préférez créer votre compte tout de suite ?{' '}
-        <Link href="/register" className="font-medium text-foreground underline underline-offset-4">
+        <Link
+          href={
+            selection
+              ? getPlanSignupHref(selection.plan, selection.yearly, selection.siteCount)
+              : '/register'
+          }
+          className="font-medium text-foreground underline underline-offset-4"
+        >
           Créer votre compte
         </Link>
       </p>

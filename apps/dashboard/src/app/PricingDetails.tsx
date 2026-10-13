@@ -21,6 +21,41 @@ const groups = [
     ],
   },
   {
+    title: 'Décisions pendant le service',
+    rows: [
+      [
+        'Placement manuel, disponibilités et protections contre les conflits',
+        'Inclus',
+        'Inclus',
+        'Par adresse',
+      ],
+      [
+        'Pouls du service : arrivées, retards et liste d’attente',
+        'Inclus',
+        'Inclus',
+        'Par adresse',
+      ],
+      [
+        'Suggestions de retard et estimation des tables bientôt disponibles',
+        'Non inclus*',
+        'Copilote, à découvrir en démonstration',
+        'Copilote par adresse',
+      ],
+      [
+        'Rapprochements avec l’attente et analyse de réorganisation',
+        'Non inclus*',
+        'Copilote',
+        'Copilote par adresse',
+      ],
+      [
+        'Application après validation, historique et retour arrière sous conditions',
+        'Non inclus*',
+        'Copilote',
+        'Copilote par adresse',
+      ],
+    ],
+  },
+  {
     title: 'Clients et fidélisation',
     rows: [
       ['Fichier client opérationnel', 'Inclus', 'Inclus', 'Par adresse'],
@@ -85,7 +120,11 @@ const questions = [
   ],
   [
     'Qu’apporte Pro aujourd’hui ?',
-    'Pro reprend Essential et permet de préparer des groupes de clients, des règles et des brouillons de campagnes avec aperçu des destinataires. Les envois, les profils avancés et les cartes cadeaux restent indisponibles. Choisissez Pro si ce travail de préparation vous est utile dès aujourd’hui.',
+    'Essential permet à votre équipe de gérer les appels, les réservations et la salle. Pro ajoute le copilote : suggestions pour les retards, estimations de libération des tables, rapprochements avec les clients en attente et plans de réorganisation. Votre équipe valide le plan ; Sokar vérifie encore les disponibilités avant de l’appliquer. Une démonstration vous permet de découvrir ce parcours. La préparation marketing reste un complément, sans envoi de campagnes.',
+  ],
+  [
+    'Le copilote déplace-t-il seul mes réservations ?',
+    'Non. L’analyse propose un plan sans déplacer les réservations. L’équipe le valide et confirme l’acceptation du client en attente. Les disponibilités sont vérifiées au moment de l’application. Un retour arrière n’est proposé que si les réservations et tables n’ont pas évolué ; sinon l’équipe corrige la situation manuellement. Les estimations affichent leur fiabilité ou utilisent votre durée de repas lorsque l’historique est insuffisant. Elles ne rendent jamais une table disponible.',
   ],
   [
     'Comment sont facturés les appels et les SMS ?',
@@ -108,8 +147,8 @@ export default function PricingDetails() {
         Comparez selon votre quotidien.
       </h2>
       <p className="mb-8 text-muted-foreground">
-        Un socle commun pour préparer le service. Des fonctions supplémentaires dont le périmètre
-        est précisé ci-dessous.
+        Essential vous permet d’organiser le service. Pro ajoute des recommandations et des plans
+        d’action que votre équipe valide.
       </p>
       <div className="overflow-x-auto rounded-3xl border border-border">
         <table className="w-full min-w-[660px] text-left text-sm">
@@ -150,9 +189,11 @@ export default function PricingDetails() {
         </table>
       </div>
       <p className="mt-4 text-sm text-muted-foreground">
-        Les fonctions marquées « Non disponible » ne sont pas proposées comme inclusions actuelles.
-        Aucun délai d’ouverture n’est annoncé. Les modalités de support sont précisées lors de la
-        mise en service ; aucun délai de réponse ni disponibilité 7j/7 n’est promis.
+        * Les restaurants qui disposaient déjà du copilote conservent leur accès historique avec
+        Essential. Pour une nouvelle offre, le copilote accompagne Pro. Les fonctions marquées « Non
+        disponible » ne sont pas proposées comme inclusions actuelles. Aucun délai d’ouverture n’est
+        annoncé. Les modalités de support sont précisées lors de la mise en service ; aucun délai de
+        réponse ni disponibilité 7j/7 n’est promis.
       </p>
       <section className="mt-16" aria-labelledby="pricing-faq">
         <h2 id="pricing-faq" className="mb-6 text-3xl font-semibold">

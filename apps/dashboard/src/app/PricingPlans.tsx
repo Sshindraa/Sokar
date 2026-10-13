@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { PLANS, DISPLAY_PRICE, billingAmount, formatPrice } from '@/app/constants';
-import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
+import { getPlanSignupHref, getPlanDemoHref, type PublicPlan } from '@/app/pricing-links';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
@@ -194,8 +194,12 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
 
               {/* 4. CTA */}
               <Link
-                href={getPlanSignupHref(plan.label as PublicPlan, yearly, siteCount)}
-                aria-label={`Choisir ${plan.label}`}
+                href={(plan.demoFirst ? getPlanDemoHref : getPlanSignupHref)(
+                  plan.label as PublicPlan,
+                  yearly,
+                  siteCount,
+                )}
+                aria-label={`${plan.demoFirst ? 'Découvrir' : 'Choisir'} ${plan.label}`}
                 className={cn(
                   'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
                   plan.featured
@@ -203,7 +207,7 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                     : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
                 )}
               >
-                Choisir {plan.label}
+                {plan.demoFirst ? 'Découvrir' : 'Choisir'} {plan.label}
                 <ArrowUpRight size={14} />
               </Link>
 

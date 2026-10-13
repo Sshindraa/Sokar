@@ -155,9 +155,9 @@ test.describe('Régression visuelle — pages critiques', () => {
         await expect(
           pwPage.getByText('Total pour 3 établissements : 447 € HT/mois.'),
         ).toBeVisible();
-        await expect(pwPage.getByRole('link', { name: 'Choisir Multi-site' })).toHaveAttribute(
+        await expect(pwPage.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
           'href',
-          '/register?plan=multi-site&billing=monthly&sites=3',
+          '/demo?plan=multi-site&billing=monthly&sites=3',
         );
       }
     });

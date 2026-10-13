@@ -1,5 +1,7 @@
 'use client';
 
+import { useServiceCopilotAccess } from '@/lib/use-service-copilot-access';
+
 import {
   useCallback,
   useEffect,
@@ -2532,6 +2534,7 @@ export function FloorPlanCanvas({
   onSelectPlan?: (id: string) => void;
 }) {
   const { get, post, patch, del } = useApi();
+  const { allowed: copilotAllowed } = useServiceCopilotAccess(mode === 'service', orgId);
   const getRef = useRef(get);
   getRef.current = get;
   const patchRef = useRef(patch);
@@ -2638,10 +2641,20 @@ export function FloorPlanCanvas({
     waitingCustomerName: string;
     waitingTableName: string;
   } | null>(null);
+  useEffect(() => {
+    setDelayImpact(null);
+    setDelayRecoveries([]);
+    setCommunicationDrafts([]);
+    setAppliedDelayRecovery(null);
+    setDelayRecoveryApplied(false);
+    setDelayRecoveryReverted(false);
+  }, [orgId, copilotAllowed]);
+
   const lastInitialDelayImpactRef = useRef(initialDelayImpact);
   if (initialDelayImpact) lastInitialDelayImpactRef.current = initialDelayImpact;
-  const displayedInitialDelayImpact =
-    initialDelayImpact ?? (appliedDelayRecovery ? lastInitialDelayImpactRef.current : null);
+  const displayedInitialDelayImpact = copilotAllowed
+    ? (initialDelayImpact ?? (appliedDelayRecovery ? lastInitialDelayImpactRef.current : null))
+    : null;
   const initialDelayHandledRef = useRef<string | null>(null);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
@@ -3106,10 +3119,12 @@ export function FloorPlanCanvas({
               `restaurants/${orgId}/waiting-list?date=${liveDate}&status=PENDING`,
               { signal: controller.signal },
             ),
-            getRef.current<ServiceCopilotDelayRecoveryHistoryResponse>(
-              `restaurants/${orgId}/service-copilot/delay-recoveries?date=${liveDate}&limit=10`,
-              { signal: controller.signal },
-            ),
+            copilotAllowed
+              ? getRef.current<ServiceCopilotDelayRecoveryHistoryResponse>(
+                  `restaurants/${orgId}/service-copilot/delay-recoveries?date=${liveDate}&limit=10`,
+                  { signal: controller.signal },
+                )
+              : Promise.resolve({ recoveries: [] }),
             getRef.current<ServiceCopilotPulse>(
               `restaurants/${orgId}/service-copilot/pulse?date=${liveDate}`,
               { signal: controller.signal },
@@ -3166,7 +3181,7 @@ export function FloorPlanCanvas({
         }
       }
     },
-    [orgId, live, liveDate, floorPlanId],
+    [copilotAllowed, orgId, live, liveDate, floorPlanId],
   );
 
   const updateReservationState = useCallback(
@@ -3278,7 +3293,7 @@ export function FloorPlanCanvas({
 
   const simulateDelayImpact = useCallback(
     async (reservationId: string) => {
-      if (!orgId) return;
+      if (!orgId || !copilotAllowed) return;
       setDelayImpactLoading(true);
       setDelayImpact(null);
       setCommunicationDrafts([]);
@@ -3301,7 +3316,7 @@ export function FloorPlanCanvas({
         setDelayImpactLoading(false);
       }
     },
-    [orgId, delayMinutes],
+    [orgId, delayMinutes, copilotAllowed],
   );
 
   const updateDelayMinutes = useCallback(
@@ -3325,7 +3340,7 @@ export function FloorPlanCanvas({
   }, [initialDelayImpact?.serviceDate, live, liveDate]);
 
   useEffect(() => {
-    if (!live || !initialDelayImpact) {
+    if (!copilotAllowed || !live || !initialDelayImpact) {
       initialDelayHandledRef.current = null;
       setReportedDelayLookupError('');
       return;
@@ -3375,12 +3390,22 @@ export function FloorPlanCanvas({
         setDelayImpactLoading(false);
       }
     })();
-  }, [initialDelayImpact, lastUpdatedAt, live, liveDate, loadedLiveDate, orgId, reservations]);
+  }, [
+    copilotAllowed,
+    initialDelayImpact,
+    lastUpdatedAt,
+    live,
+    liveDate,
+    loadedLiveDate,
+    orgId,
+    reservations,
+  ]);
 
   const applyDelayRecovery = useCallback(async () => {
     if (applyingDelayRecoveryRef.current) return;
     if (
       !orgId ||
+      !copilotAllowed ||
       !delayImpact ||
       !delayImpact.feasible ||
       !delayImpactReservationId ||
@@ -3431,6 +3456,7 @@ export function FloorPlanCanvas({
     }
   }, [
     orgId,
+    copilotAllowed,
     delayImpact,
     delayImpactReservationId,
     waitingListAcceptanceConfirmed,
@@ -3441,7 +3467,8 @@ export function FloorPlanCanvas({
   ]);
 
   const revertDelayRecovery = useCallback(async () => {
-    if (revertingDelayRecoveryRef.current || !orgId || !appliedDelayRecovery) return;
+    if (!copilotAllowed || revertingDelayRecoveryRef.current || !orgId || !appliedDelayRecovery)
+      return;
     revertingDelayRecoveryRef.current = true;
     setRevertingDelayRecovery(true);
     try {
@@ -3464,7 +3491,7 @@ export function FloorPlanCanvas({
       revertingDelayRecoveryRef.current = false;
       setRevertingDelayRecovery(false);
     }
-  }, [orgId, appliedDelayRecovery, loadReservations]);
+  }, [copilotAllowed, orgId, appliedDelayRecovery, loadReservations]);
 
   const openPersistedRecoveryRevert = useCallback(
     (recovery: ServiceCopilotDelayRecoveryHistoryItem) => {
@@ -7154,7 +7181,7 @@ export function FloorPlanCanvas({
                   Suggérer des tables
                 </Button>
               </div>
-              {selectedServiceReservation.state === 'CONFIRMED' && (
+              {copilotAllowed && selectedServiceReservation.state === 'CONFIRMED' && (
                 <div className="space-y-2 rounded-md border border-border bg-card p-3">
                   <p className="text-xs font-semibold text-foreground">Retard annoncé</p>
                   <div className="flex items-center gap-2">
@@ -8483,7 +8510,7 @@ export function FloorPlanCanvas({
           </div>
         ) : null}
 
-        {live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
+        {copilotAllowed && live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
           <section
             role="region"
             aria-label="Historique des plans de retard"
