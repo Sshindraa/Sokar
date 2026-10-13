@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { PLAN_PRICES_EUR } from '@sokar/shared';
+import { PLAN_PRICES_EUR, ANNUAL_DISCOUNT_PERCENT } from '@sokar/shared';
 
 const SITE_NAME = 'Sokar';
 
 // Les montants viennent du catalogue partagé (HT, comme Stripe) : la description ne peut pas
 // diverger des prix réellement facturés.
-const PRICING_DESCRIPTION = `Essential ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro ${PLAN_PRICES_EUR.PRO} € HT/mois, Multi-site dès ${PLAN_PRICES_EUR.PREMIUM} € HT/mois. Sans engagement en mensuel, -20 % en annuel.`;
+const PRICING_DESCRIPTION = `Essential ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro ${PLAN_PRICES_EUR.PRO} € HT/mois, Multi-site dès ${PLAN_PRICES_EUR.PREMIUM} € HT/mois. Sans engagement en mensuel, -${ANNUAL_DISCOUNT_PERCENT} % en annuel.`;
 
 function pageMetadata(path: string, title: string, description: string): Metadata {
   return {

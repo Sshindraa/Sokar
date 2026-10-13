@@ -1,3 +1,4 @@
+import { PRICING_CATALOG_VERSION } from '@sokar/shared';
 import { createHash } from 'node:crypto';
 import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';
@@ -40,7 +41,7 @@ const MULTI_SITE_ADDON_PRICE_ENV_BY_INTERVAL: Record<BillingInterval, keyof Node
   annual: 'STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL',
 };
 
-const MIN_MULTI_SITE_COUNT = 2;
+const MIN_MULTI_SITE_COUNT = 1;
 const MAX_MULTI_SITE_COUNT = 100;
 const CHECKOUT_IDEMPOTENCY_BUCKET_MS = 24 * 60 * 60 * 1000;
 const STRIPE_EVENT_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
@@ -105,7 +106,7 @@ export class BillingInvalidSiteCountError extends Error {
   readonly code = 'INVALID_SITE_COUNT';
 
   constructor() {
-    super('Multi-site requires between 2 and 100 establishments');
+    super('Multi-site requires between 1 and 100 establishments');
     this.name = 'BillingInvalidSiteCountError';
   }
 }
@@ -143,7 +144,7 @@ export function resolveMultiSiteAddonPriceId(billing: BillingInterval): string |
 
 function normalizeSiteCount(plan: PublicBillingPlan, siteCount?: number): number {
   if (plan !== 'multi-site') return 1;
-  const normalized = siteCount ?? MIN_MULTI_SITE_COUNT;
+  const normalized = siteCount ?? 2;
   if (
     !Number.isInteger(normalized) ||
     normalized < MIN_MULTI_SITE_COUNT ||
@@ -324,6 +325,7 @@ export function buildCheckoutIdempotencyKey(input: {
 }): string {
   const bucket = Math.floor((input.now?.getTime() ?? Date.now()) / CHECKOUT_IDEMPOTENCY_BUCKET_MS);
   const source = [
+    PRICING_CATALOG_VERSION,
     input.scopeId ?? input.restaurantId,
     input.plan,
     input.billing,
@@ -356,8 +358,10 @@ export async function createCheckoutSession(input: {
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
   const addonPriceId =
-    input.plan === 'multi-site' ? resolveMultiSiteAddonPriceId(input.billing) : null;
-  if (!priceId || (input.plan === 'multi-site' && !addonPriceId)) {
+    input.plan === 'multi-site' && siteCount > 1
+      ? resolveMultiSiteAddonPriceId(input.billing)
+      : null;
+  if (!priceId || (input.plan === 'multi-site' && siteCount > 1 && !addonPriceId)) {
     throw new BillingNotConfiguredError();
   }
 

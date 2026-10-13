@@ -18,7 +18,7 @@ import {
 const CheckoutSchema = z.object({
   plan: z.enum(PUBLIC_BILLING_PLANS),
   billing: z.enum(BILLING_INTERVALS),
-  siteCount: z.number().int().min(2).max(100).optional(),
+  siteCount: z.number().int().min(1).max(100).optional(),
 });
 
 export async function billingRoutes(app: FastifyInstance) {
@@ -92,7 +92,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (error instanceof BillingInvalidSiteCountError) {
         return reply.status(400).send({
           error: 'INVALID_SITE_COUNT',
-          message: 'Choisissez entre 2 et 100 établissements pour la formule Multi-site.',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
         });
       }
       if (error instanceof BillingCheckoutError) {

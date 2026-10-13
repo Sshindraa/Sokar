@@ -1,5 +1,7 @@
 'use client';
 
+import { PRICING_CATALOG, pricingTotalCents, formatPriceCents } from '@sokar/shared';
+
 import { SignUp, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
@@ -31,7 +33,7 @@ type SignupSelection = {
 
 function readSiteCount(value: string | null): number {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 2 && parsed <= 100 ? parsed : 2;
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 2;
 }
 
 function readSignupSelection(search: string): SignupSelection | null {
@@ -216,7 +218,7 @@ export default function RegisterPage() {
             <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground transition-all duration-300 hover:border-foreground/15">
               <Sparkles size={11} className="text-muted-foreground" />
               {selectedPlan
-                ? `Formule ${selectedPlan.label}${selectedPlan.siteCount ? ` · ${selectedPlan.siteCount} établissements` : ''} · ${selectedPlan.billingLabel}`
+                ? `Formule ${selectedPlan.label}${selectedPlan.siteCount ? ` · ${selectedPlan.siteCount} ${selectedPlan.siteCount === 1 ? 'établissement' : 'établissements'}` : ''} · ${selectedPlan.billingLabel}`
                 : 'Création de votre espace restaurant'}
             </div>
             <h2 className="text-3xl font-bold tracking-tight mt-3">Créez votre compte</h2>
@@ -238,7 +240,7 @@ export default function RegisterPage() {
               <input
                 id="multi-site-count"
                 type="number"
-                min={2}
+                min={1}
                 max={100}
                 value={selectedPlan.siteCount ?? 2}
                 onChange={(event) =>
@@ -250,9 +252,30 @@ export default function RegisterPage() {
                 className="mt-2 flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                249 € de base + 99 € par établissement supplémentaire.
+                {PRICING_CATALOG['multi-site'].monthlyCents / 100} € HT/mois, premier établissement
+                inclus, puis {PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par
+                établissement supplémentaire.
               </p>
             </div>
+          )}
+
+          {selectedPlan && (
+            <p
+              className="mx-auto mb-5 max-w-sm text-center text-sm text-foreground"
+              aria-label="Récapitulatif de facturation"
+            >
+              {formatPriceCents(
+                pricingTotalCents(
+                  selectedPlan.slug,
+                  selectedPlan.billing === 'annual',
+                  selectedPlan.siteCount ?? 1,
+                ),
+              )}{' '}
+              € HT
+              {selectedPlan.billing === 'annual'
+                ? ' facturés par an, engagement de 12 mois.'
+                : ' facturés chaque mois.'}
+            </p>
           )}
 
           {!isLoaded ? (
