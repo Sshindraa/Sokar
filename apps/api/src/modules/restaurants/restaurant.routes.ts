@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { normalizePhone } from '@sokar/shared';
-import { requireOrg } from '../../plugins/clerk';
+import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
@@ -39,6 +39,7 @@ import {
   QuickFloorSetupSchema,
 } from './onboarding-floor.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
+import { toRestaurantResponse } from './restaurant-response';
 import { isVoicePersonalityStyleEnabled } from '../voice/stream/feature-flags';
 import { resolveStyledGreeting } from '../voice/stream/styled-greeting';
 import { computeConnectScore } from '../connect/connect-score.service';
@@ -105,6 +106,8 @@ const CreateRestaurantSchema = RestaurantProfileSchema;
 
 const CreateSiteSchema = z.object({
   name: z.string().trim().min(2).max(100),
+  // Ligne publique du site (le « Téléphone du site » saisi dans le dashboard), enregistrée dans
+  // `phoneE164`. Ce n'est pas le numéro Sokar : celui-ci est attribué par un opérateur.
   phoneNumber: z.string().trim().min(5).max(32),
   managerPhone: z.string().trim().max(32).default(''),
   managerEmail: z
@@ -160,11 +163,16 @@ const CapacitySpecialsSchema = z
   })
   .passthrough();
 
-const UpdateRestaurantSchema = RestaurantProfileSchema.extend({
-  phoneE164: z.string().trim().max(32).optional().nullable(),
-  googlePlaceId: z.string().trim().max(200).optional().nullable(),
-  capacitySpecials: CapacitySpecialsSchema.optional(),
-}).partial();
+// Le numéro Sokar (`phoneNumber`) aiguille les appels entrants : seul un opérateur Sokar l'attribue
+// (POST /admin/provisioning/:id/assign-phone). Le restaurateur ne peut pas le modifier ici ; un
+// `phoneNumber` envoyé est ignoré.
+const UpdateRestaurantSchema = RestaurantProfileSchema.omit({ phoneNumber: true })
+  .extend({
+    phoneE164: z.string().trim().max(32).optional().nullable(),
+    googlePlaceId: z.string().trim().max(200).optional().nullable(),
+    capacitySpecials: CapacitySpecialsSchema.optional(),
+  })
+  .partial();
 
 const OnboardingPlaceSearchSchema = z.object({
   query: z.string().trim().min(2).max(120),
@@ -471,7 +479,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(onboardingPayload(updated, updatedState));
   };
 
-  app.post('/restaurants', { preHandler: requireOrg() }, async (req, reply) => {
+  // Création directe d'un restaurant avec son numéro : réservée aux opérateurs Sokar. Les
+  // restaurateurs passent par l'inscription (POST /api/auth/sync), qui pose un numéro provisoire.
+  app.post('/restaurants', { preHandler: requireSokarOperator() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
       const restaurant = await app.db.restaurant.create({
@@ -482,7 +492,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
         { name: 'nightly', data: { restaurantId: restaurant.id } },
       );
-      return reply.status(201).send(restaurant);
+      return reply.status(201).send(toRestaurantResponse(restaurant));
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === 'P2002') {
         return reply.status(409).send({ error: 'Phone number already registered' });
@@ -627,7 +637,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
           isPrimary: false,
           siteStatus: 'ACTIVE',
           name: input.name,
-          phoneNumber: input.phoneNumber,
+          // Numéro Sokar provisoire, comme à l'inscription : un opérateur attribue le vrai numéro
+          // (provisioning). La ligne saisie par le restaurateur est sa ligne publique.
+          phoneNumber: `+000site-${randomUUID()}`,
+          phoneE164: normalizePhone(input.phoneNumber),
           managerPhone: input.managerPhone,
           managerEmail: input.managerEmail,
           openingHours: input.openingHours as Prisma.InputJsonValue,
@@ -816,10 +829,12 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     return reply.send(
-      await app.db.restaurant.findUniqueOrThrow({
-        where: { id },
-        include: { personality: true, exposureSettings: true },
-      }),
+      toRestaurantResponse(
+        await app.db.restaurant.findUniqueOrThrow({
+          where: { id },
+          include: { personality: true, exposureSettings: true },
+        }),
+      ),
     );
   });
 
@@ -937,7 +952,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (updated.slug) {
       await app.redisCache.del(`connect:restaurant:${updated.slug}`).catch(() => {});
     }
-    return reply.send(updated);
+    return reply.send(toRestaurantResponse(updated));
   });
 
   // ─── Personnalité de l'agent vocal ─────────────────────────────
@@ -1414,7 +1429,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     return reply.send({
-      restaurant: updatedRestaurant,
+      restaurant: toRestaurantResponse(updatedRestaurant),
       exposureSettings: updatedSettings,
     });
   };

@@ -108,7 +108,7 @@ export default function SettingsPage() {
 
   // Google Calendar Integration
   const [googleCalendarId, setGoogleCalendarId] = useState('primary');
-  const [googleRefreshToken, setGoogleRefreshToken] = useState<string | null>(null);
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
   const [savingCalendar, setSavingCalendar] = useState(false);
   const [savedCalendar, setSavedCalendar] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -169,7 +169,7 @@ export default function SettingsPage() {
         setManagerPhone(data.managerPhone || '');
         setManagerEmail(data.managerEmail || '');
         setGoogleCalendarId(data.googleCalendarId || 'primary');
-        setGoogleRefreshToken(data.googleRefreshToken || null);
+        setGoogleCalendarConnected(Boolean(data.googleCalendarConnected));
         if (pers && pers.id) {
           setPersonality(pers);
           setProfileType(pers.profileType || 'BISTROT_BRASSERIE');
@@ -306,12 +306,12 @@ export default function SettingsPage() {
     setError('');
     try {
       await post('integrations/google-calendar/disconnect');
-      setGoogleRefreshToken(null);
+      setGoogleCalendarConnected(false);
       setGoogleCalendarId('primary');
       if (restaurant) {
         setRestaurant({
           ...restaurant,
-          googleRefreshToken: null,
+          googleCalendarConnected: false,
           googleCalendarId: null,
         });
       }
@@ -728,7 +728,7 @@ export default function SettingsPage() {
                   Synchronisez automatiquement vos réservations avec votre agenda Google et vérifiez
                   la disponibilité en temps réel avant de confirmer.
                 </p>
-                {googleRefreshToken ? (
+                {googleCalendarConnected ? (
                   <div className="mt-3 flex items-center gap-2 transition-all duration-200">
                     <span className="inline-flex h-2 w-2 rounded-full bg-success animate-pulse" />
                     <span className="text-xs font-medium text-success">
@@ -745,7 +745,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              {googleRefreshToken ? (
+              {googleCalendarConnected ? (
                 <Button
                   variant="outline"
                   onClick={handleDisconnectCalendar}
@@ -763,7 +763,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {googleRefreshToken && (
+          {googleCalendarConnected && (
             <form
               onSubmit={handleSaveCalendarSettings}
               className="max-w-full sm:max-w-lg space-y-4 pt-6 border-t border-border animate-fade-in"

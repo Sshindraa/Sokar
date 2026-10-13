@@ -154,7 +154,10 @@ describe('restaurant routes — sites accessibles', () => {
         isPrimary: false,
         siteStatus: 'ACTIVE',
         name: 'Chez Sokar Paris',
-        phoneNumber: '+33123456789',
+        // La ligne saisie est la ligne publique du site ; le numéro Sokar est provisoire et
+        // attribué ensuite par un opérateur.
+        phoneNumber: expect.stringMatching(/^\+000site-/),
+        phoneE164: '+33123456789',
         plan: 'PREMIUM',
       }),
     });
