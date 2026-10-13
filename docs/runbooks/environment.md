@@ -931,3 +931,48 @@ abandonné, expiré, webhook rejoué, capacité concurrente et remboursement éc
 clés Stripe de test. La politique d'annulation côté client, les conditions de vente, le traitement
 TVA/facture, les emails de confirmation/notification et le rapprochement quotidien restent à
 qualifier. Garder le flag fermé tant que ces éléments et le parcours staging ne sont pas validés.
+
+## Fournisseurs de staging : e-mail et téléphonie
+
+Staging n'envoie ni e-mail ni appel tant que ces secrets ne sont pas fournis. Le workflow de staging les
+transmet à `scripts/ops/sync-staging-provider-config.sh`, qui les écrit dans le `.env` de staging. Le
+workflow de production ne lit aucun de ces secrets : une clé de staging ne peut donc pas atteindre la
+production.
+
+| Secret GitHub (niveau dépôt)    | Réglage écrit dans le `.env` de staging | Usage                                             |
+| ------------------------------- | --------------------------------------- | ------------------------------------------------- |
+| `RESEND_API_KEY_STAGING`        | `RESEND_API_KEY`                        | Envoi des e-mails, dont la notification des démos |
+| `TELNYX_API_KEY_STAGING`        | `TELNYX_API_KEY`                        | Accès à l'API Telnyx (numéros, appels)            |
+| `TELNYX_APP_ID_STAGING`         | `TELNYX_APP_ID`                         | Application d'appel Telnyx dédiée à staging       |
+| `TELNYX_PUBLIC_KEY_STAGING`     | `TELNYX_PUBLIC_KEY`                     | Vérification de la signature des webhooks         |
+| `TELNYX_WEBHOOK_SECRET_STAGING` | `TELNYX_WEBHOOK_SECRET`                 | Secret des webhooks                               |
+| `TELNYX_FROM_NUMBER_STAGING`    | `TELNYX_FROM_NUMBER`                    | Numéro d'émission de staging                      |
+
+Règles de fourniture :
+
+- Utiliser des clés distinctes de la production. Ne jamais copier une clé de production vers staging.
+- Ne jamais coller une clé dans le chat ni dans le dépôt. Copier la valeur dans le presse-papiers, puis
+  exécuter, pour chaque secret :
+
+  ```bash
+  pbpaste | gh secret set TELNYX_API_KEY_STAGING --repo Sshindraa/Sokar
+  ```
+
+- Une variable vide ne modifie rien. Le script refuse une valeur contenant un espace et n'affiche jamais
+  la valeur, seulement les noms synchronisés.
+- Les secrets prennent effet au déploiement suivant de staging (après CI verte sur `main`).
+- Le numéro attribué à staging ne doit jamais être un numéro de production. Le numéro public affiché sur
+  le site n'est pas un numéro opérationnel de test.
+- Webhook Telnyx de l'application staging : `https://api-staging.sokar.tech/voice/telnyx`, route
+  `POST /voice/telnyx` de l'API.
+
+Décisions réservées à l'équipe, non automatisées :
+
+1. **E-mail** : confirmer la destination de test (liste d'adresses autorisées), comme l'exige le runbook
+   staging. `EVENING_REPORTS_ENABLED=false` reste requis.
+2. **Voix** : `VOICE_DISABLED=false` seulement après validation des clés, du numéro et de l'application.
+   Réglage critique : il se modifie avec accord explicite et se signale dans la PR.
+3. **Clés voix** : `ELEVENLABS_API_KEY` (transcription) et le LLM (`CEREBRAS_API_KEY` ou
+   `OPENROUTER_API_KEY`) doivent être présents en staging. À vérifier avec l'équipe.
+
+Vérification : `GET https://api-staging.sokar.tech/health` doit passer le contrôle `telnyx` à `ok`.
