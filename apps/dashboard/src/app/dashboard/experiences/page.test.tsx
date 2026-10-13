@@ -1,4 +1,4 @@
-import { configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ExperiencesPage from './page';
 
@@ -6,8 +6,8 @@ import ExperiencesPage from './page';
 configure({ asyncUtilTimeout: 5000 });
 
 // Les boutons d’action (Créer une expérience, Modifier, Dupliquer, Archiver, Supprimer, Ajouter une
-// date) restent désactivés pendant le chargement, que la page fait deux fois à l’ouverture.
-// `findByRole` trouve déjà le bouton désactivé et React ignore le clic : on attend qu’il soit actif.
+// date) restent désactivés pendant le chargement. `findByRole` trouve déjà le bouton désactivé et
+// React ignore le clic : on attend qu’il soit actif.
 async function clickWhenEnabled(name: string | RegExp) {
   await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name }));
@@ -123,6 +123,117 @@ describe('ExperiencesPage', () => {
     expect(await screen.findByText(/Alice Martin/)).toBeInTheDocument();
     expect(screen.getByText('Prochaines dates')).toBeInTheDocument();
     expect(screen.getByText('Réservations confirmées')).toBeInTheDocument();
+  });
+
+  it('charge chaque donnée une seule fois à l’ouverture', async () => {
+    render(<ExperiencesPage />);
+    await screen.findByRole('heading', { name: 'Expériences & événements' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Modifier' })).toBeEnabled());
+    // Laisse passer un éventuel second chargement lancé après le premier rendu.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiMocks.get.mock.calls.map(([path]) => path).sort()).toEqual([
+      'experience-reservations?limit=100',
+      'experiences/experience-1/sessions?status=OPEN&limit=100',
+      'experiences/payment-readiness',
+      'experiences?limit=100',
+    ]);
+  });
+
+  it('charge les dates de l’expérience choisie quand on change de sélection', async () => {
+    const cocktails = {
+      ...experience,
+      id: 'experience-2',
+      key: 'cocktail-class',
+      name: 'Atelier cocktails',
+      status: 'DRAFT',
+      sessionCount: 0,
+      reservationCount: 0,
+    };
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?'))
+        return Promise.resolve({ data: [experience, cocktails] });
+      if (path.startsWith('experience-reservations'))
+        return Promise.resolve({ data: [reservation] });
+      if (path.startsWith('experiences/experience-2/sessions'))
+        return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [session] });
+    });
+    render(<ExperiencesPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Modifier' })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole('button', { name: /Atelier cocktails/ }));
+
+    await waitFor(() =>
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        'experiences/experience-2/sessions?status=OPEN&limit=100',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Atelier cocktails/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('sélectionne et charge les dates de l’expérience qu’on vient de créer', async () => {
+    const created = { ...experience, id: 'new-experience', name: 'Atelier vins', status: 'DRAFT' };
+    let createdOnServer = false;
+    apiMocks.post.mockImplementation(async (path: string) => {
+      if (path === 'experiences') {
+        createdOnServer = true;
+        return { data: created };
+      }
+      return { data: session };
+    });
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?'))
+        return Promise.resolve({ data: createdOnServer ? [experience, created] : [experience] });
+      if (path.startsWith('experience-reservations'))
+        return Promise.resolve({ data: [reservation] });
+      if (path.startsWith('experiences/new-experience/sessions'))
+        return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [session] });
+    });
+    render(<ExperiencesPage />);
+    await clickWhenEnabled('Créer une expérience');
+    fireEvent.change(await screen.findByLabelText('Nom'), { target: { value: 'Atelier vins' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Créer l’expérience' }));
+
+    await waitFor(() =>
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        'experiences/new-experience/sessions?status=OPEN&limit=100',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Atelier vins/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('recharge la liste après la suppression de l’expérience sélectionnée', async () => {
+    let deleted = false;
+    const draft = { ...experience, status: 'DRAFT', reservationCount: 0 };
+    apiMocks.del.mockImplementation(async () => {
+      deleted = true;
+      return {};
+    });
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?')) return Promise.resolve({ data: deleted ? [] : [draft] });
+      return Promise.resolve({
+        data: path.includes('/sessions?') && !deleted ? [session] : [],
+      });
+    });
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByLabelText('Autres actions'));
+    await clickWhenEnabled('Supprimer l’expérience');
+    fireEvent.click(screen.getByRole('button', { name: /^Supprimer$/ }));
+
+    await waitFor(() => expect(apiMocks.del).toHaveBeenCalledWith('experiences/experience-1'));
+    expect(await screen.findByText('Créez votre première expérience')).toBeInTheDocument();
+    const listLoads = apiMocks.get.mock.calls.filter(([path]) => path.startsWith('experiences?'));
+    expect(listLoads).toHaveLength(2);
   });
 
   it('convertit le prix saisi en euros en centimes pour l’API', async () => {
