@@ -3,12 +3,12 @@
  * Provisionne, de façon idempotente, le catalogue Stripe Sokar 199/299.
  *
  * Les Price Stripe sont immuables : cette commande ne modifie ni n'archive les
- * anciens prix. Elle crée une version v2 sur les produits existants puis rend
+ * anciens prix. Elle crée une version v3 sur les produits existants puis rend
  * les nouveaux `price_...` à synchroniser dans GitHub Actions.
  *
  * Par défaut, la commande est un aperçu. `--apply` est obligatoire pour créer
  * un prix. Une clé live exige en plus `--allow-live` et la variable de garde
- * `STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V2`.
+ * `STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V3`.
  *
  * Les huit variables STRIPE_PRICE_* désignent les prix sources : elles servent
  * uniquement à retrouver le produit Stripe correspondant. Elles peuvent donc
@@ -22,7 +22,8 @@
 import { EXPECTED_CATALOG, comparePrice } from './verify-stripe-catalog.mjs';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
-const CATALOG_VERSION = '2026-09-199-299';
+import catalogue from '../../packages/shared/src/pricing-catalog.cjs';
+const CATALOG_VERSION = catalogue.PRICING_CATALOG_VERSION;
 
 const PRICE_METADATA = {
   STRIPE_PRICE_ESSENTIAL_MONTHLY: { sokar_plan: 'essential', sokar_billing: 'monthly' },
@@ -196,10 +197,10 @@ export async function main(argv = process.argv.slice(2), environment = process.e
     apply &&
     mode === 'live' &&
     (!args.has('--allow-live') ||
-      environment.STRIPE_ALLOW_LIVE_CATALOG_MUTATION !== 'CREATE_SOKAR_CATALOG_V2')
+      environment.STRIPE_ALLOW_LIVE_CATALOG_MUTATION !== 'CREATE_SOKAR_CATALOG_V3')
   ) {
     process.stderr.write(
-      'Clé live détectée : ajouter --allow-live et STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V2.\n',
+      'Clé live détectée : ajouter --allow-live et STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V3.\n',
     );
     return 2;
   }
@@ -230,6 +231,22 @@ export async function main(argv = process.argv.slice(2), environment = process.e
           priceId: null,
           status: 'source invalide',
           problems: sourceProblems,
+        });
+        continue;
+      }
+
+      // Reuse unchanged monthly prices on their original product, without metadata mutation.
+      if (
+        target.interval === 'month' &&
+        comparePrice(target, source, target.amount).length === 0 &&
+        source.billing_scheme === 'per_unit'
+      ) {
+        rows.push({
+          env: target.env,
+          lookupKey: target.lookupKey,
+          priceId: source.id,
+          status: 'source inchangée réutilisée',
+          problems: [],
         });
         continue;
       }

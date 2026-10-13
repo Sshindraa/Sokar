@@ -21,7 +21,7 @@ function isBilling(value: string | null): value is Billing {
 
 function readSiteCount(value: string | null): number {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 2 && parsed <= 100 ? parsed : 2;
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100 ? parsed : 2;
 }
 
 /** Starts the hosted Stripe Checkout after Clerk has created the restaurant. */

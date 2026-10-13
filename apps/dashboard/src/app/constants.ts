@@ -1,7 +1,14 @@
 // Shared constants for the Sokar landing page
 // Used by both server and client components
 
-import { PLAN_PRICES_EUR } from '@sokar/shared';
+import {
+  PLAN_PRICES_EUR,
+  PRICING_CATALOG,
+  ANNUAL_DISCOUNT_PERCENT,
+  annualPriceCents,
+  formatPriceCents,
+  formatMonthlyEquivalent,
+} from '@sokar/shared';
 
 export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
@@ -74,7 +81,7 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Multi-site',
     price: String(PLAN_PRICES_EUR.PREMIUM),
-    sitePrice: '99',
+    sitePrice: String(PRICING_CATALOG['multi-site-addon'].monthlyCents / 100),
     demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
     description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
@@ -108,13 +115,11 @@ export const FAQS = [
   },
   {
     question: 'Combien coûte Sokar ?',
-    answer:
-      'Essential à 199 € HT/mois, Pro à 299 € HT/mois et Multi-site à 249 € HT/mois pour le premier établissement, puis 99 € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec 20 % de réduction. Consultez les inclusions actuelles sur la page Tarifs.',
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro à ${PLAN_PRICES_EUR.PRO} € HT/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} € HT/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
-    answer:
-      "Nos forfaits mensuels sont totalement sans engagement, vous êtes libre d'arrêter quand vous le souhaitez. Si vous optez pour la facturation annuelle, vous vous engagez pour 12 mois et bénéficiez d'une réduction de 20% sur l'ensemble de vos mensualités.",
+    answer: `Nos forfaits mensuels sont totalement sans engagement, vous êtes libre d'arrêter quand vous le souhaitez. Si vous optez pour la facturation annuelle, vous vous engagez pour 12 mois et bénéficiez d'une réduction de ${ANNUAL_DISCOUNT_PERCENT}% sur l'ensemble de vos mensualités.`,
   },
   {
     question: "Comment se passe l'installation ?",
@@ -129,14 +134,16 @@ export const FAQS = [
 ];
 
 /** Montants en centimes avant formatage, sans arrondir l’équivalent annuel à l’euro. */
-export const billingAmount = (price: string | number, yearly: boolean, annualTotal = false) =>
-  Math.round(Number(price) * 100 * (yearly ? 0.8 : 1) * (annualTotal ? 12 : 1)) / 100;
+// Compatibility helpers for existing consumers; the shared catalogue owns billing and formatting.
+export const billingAmount = (price: string | number, yearly: boolean, annualTotal = false) => {
+  const monthlyCents = Math.round(Number(price) * 100);
+  const totalCents = yearly ? annualPriceCents(monthlyCents) : monthlyCents;
+  return totalCents / (yearly && !annualTotal ? 1200 : 100);
+};
 
-export const formatPrice = (amount: number) =>
-  amount.toLocaleString('fr-FR', {
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-    maximumFractionDigits: 2,
-  });
+export const formatPrice = (amount: number) => formatPriceCents(Math.round(amount * 100));
 
-export const DISPLAY_PRICE = (price: string, yearly: boolean) =>
-  formatPrice(billingAmount(price, yearly));
+export const DISPLAY_PRICE = (price: string, yearly: boolean) => {
+  const monthlyCents = Math.round(Number(price) * 100);
+  return formatMonthlyEquivalent(yearly ? annualPriceCents(monthlyCents) : monthlyCents, yearly);
+};

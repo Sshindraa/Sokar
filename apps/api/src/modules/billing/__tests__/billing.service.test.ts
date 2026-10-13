@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../shared/db/client';
 import {
   BillingWebhookInProgressError,
+  buildCheckoutIdempotencyKey,
   billingIntervalFromStripeRecurringInterval,
   handleBillingWebhook,
   isBillingCheckoutEnabled,
@@ -18,6 +20,25 @@ describe('billing.service - release flag', () => {
       isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'true' }),
     ).toBe(true);
     expect(isBillingCheckoutEnabled({ NODE_ENV: 'test' })).toBe(true);
+  });
+});
+
+describe('billing.service - changement de catalogue', () => {
+  it('ne réutilise pas la clé Checkout de l’ancienne grille', () => {
+    const now = new Date('2026-10-14T00:00:00Z');
+    const bucket = Math.floor(now.getTime() / (24 * 60 * 60 * 1000));
+    const legacySource = ['account-1', 'multi-site', 'annual', 3, `auto:${bucket}`].join('|');
+    const legacyKey = `sokar-checkout-${createHash('sha256').update(legacySource).digest('hex').slice(0, 48)}`;
+    const input = {
+      restaurantId: 'restaurant-1',
+      scopeId: 'account-1',
+      plan: 'multi-site' as const,
+      billing: 'annual' as const,
+      siteCount: 3,
+      now,
+    };
+    expect(buildCheckoutIdempotencyKey(input)).not.toBe(legacyKey);
+    expect(buildCheckoutIdempotencyKey(input)).toBe(buildCheckoutIdempotencyKey(input));
   });
 });
 

@@ -153,7 +153,7 @@ test.describe('Régression visuelle — pages critiques', () => {
         await pwPage.getByRole('switch').click();
         await pwPage.getByLabel('Nombre d’établissements').selectOption('3');
         await expect(
-          pwPage.getByText('Total pour 3 établissements : 447 € HT/mois.'),
+          pwPage.getByText('Total pour 3 établissements : 497 € HT/mois.'),
         ).toBeVisible();
         await expect(pwPage.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
           'href',

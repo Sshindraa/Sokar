@@ -390,6 +390,35 @@ describe('billing.routes - checkout, portail et statut', () => {
     });
   });
 
+  it('facture un établissement Multi-site sans ligne supplémentaire ni prix addon', async () => {
+    process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      name: 'Restaurant',
+      managerEmail: 'manager@example.com',
+    } as never);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'multi-site', billing: 'monthly', siteCount: 1 },
+    });
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        line_items: [{ price: 'price_multi_site_monthly_test', quantity: 1 }],
+        metadata: expect.objectContaining({ siteCount: '1' }),
+      }),
+    );
+  });
+
   it('facture la base et les établissements supplémentaires du Multi-site', async () => {
     process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
     process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY = 'price_multi_site_addon_monthly_test';

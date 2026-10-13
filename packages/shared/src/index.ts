@@ -22,3 +22,5 @@ export * from './utils/fetch-with-timeout';
 export * from './utils/format';
 export * from './utils/opening-hours';
 export * from './utils/slugify';
+
+export * from './pricing-catalog.cjs';

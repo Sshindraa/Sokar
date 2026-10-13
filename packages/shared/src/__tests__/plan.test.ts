@@ -22,10 +22,10 @@ describe('plan', () => {
     expect(PLAN_LABELS.STARTER).toBe(PLAN_LABELS.ESSENTIAL);
   });
 
-  it('exposes the local 199/299 catalogue and keeps the multi-site base distinct', () => {
+  it('exposes the local 199/299 catalogue for new subscriptions', () => {
     expect(PLAN_PRICES_EUR.ESSENTIAL).toBe(199);
     expect(PLAN_PRICES_EUR.STARTER).toBe(199);
     expect(PLAN_PRICES_EUR.PRO).toBe(299);
-    expect(PLAN_PRICES_EUR.PREMIUM).toBe(249);
+    expect(PLAN_PRICES_EUR.PREMIUM).toBe(299);
   });
 });
