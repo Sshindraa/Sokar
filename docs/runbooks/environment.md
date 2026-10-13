@@ -98,6 +98,14 @@ afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
 
+### Demandes de démonstration
+
+`DEMO_REQUEST_NOTIFY_TO` (adresses séparées par des virgules) reçoit une notification pour chaque
+demande envoyée depuis `/demo`. Sans valeur, aucune notification n'est envoyée : la demande reste
+enregistrée et apparaît comme « Notification non envoyée » dans `/dashboard/admin/demo-requests`.
+L'envoi utilise `RESEND_API_KEY` et `EMAIL_FROM`. Le destinataire est choisi par le responsable
+commercial avant l'ouverture de la vitrine.
+
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
 notification client et ne peuvent pas limiter la consommation d'un restaurant.
 La promesse Essential/Pro reste sans quota ; le suivi visuel par établissement

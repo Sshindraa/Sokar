@@ -4,6 +4,9 @@ import { ArrowUpRight } from 'lucide-react';
 import MobileNav from '@/components/MobileNav';
 import { cn } from '@/lib/utils';
 import PricingPlans from '@/app/PricingPlans';
+import { PRICING_METADATA } from '@/app/marketing-metadata';
+
+export const metadata = PRICING_METADATA;
 
 /* ===== COMPONENT ===== */
 

@@ -20,6 +20,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Sokar — Restaurant Management',
   description: 'Assistant vocal intelligent pour votre restaurant',
+  // Base absolue pour les canonical et Open Graph relatifs des pages marketing.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech'),
   manifest: '/manifest.json',
   icons: {
     icon: [

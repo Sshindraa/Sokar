@@ -7,8 +7,9 @@ import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
-/** Espace insécable entre le montant et l'unité (« 159 €/mois »), comme en typographie française. */
-const euros = (amount: string | number, unit: 'mois' | 'site') => `${amount}\u00a0€/${unit}`;
+/** Espace insécable entre le montant et l'unité (« 159 € HT/mois »), comme en typographie française. */
+const euros = (amount: string | number, unit: 'mois' | 'site') =>
+  `${amount}\u00a0€\u00a0HT/${unit}`;
 
 /**
  * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section
@@ -131,13 +132,18 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
                     {yearlyPrice}
                   </span>
-                  <span className="text-sm font-semibold text-white/60">€/mois</span>
+                  <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
                   {yearlySitePrice && (
                     <span className="text-sm font-semibold text-white/60">
                       + {euros(yearlySitePrice, 'site')}
                     </span>
                   )}
                 </div>
+                {yearly && (
+                  <p className="mt-2 text-xs text-white/45">
+                    Facturation annuelle, engagement de 12 mois.
+                  </p>
+                )}
               </div>
 
               {/* 3. Description */}

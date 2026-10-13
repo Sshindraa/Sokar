@@ -42,8 +42,8 @@ export const PLANS: PricingPlan[] = [
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
     description: 'Pour démarrer.',
     features: [
-      'Répond à chaque appel, 24h/24',
-      'Réservations prises sans intervention',
+      'Répond aux appels transférés, 24h/24',
+      "Réservations prises pendant l'appel",
       'Ton adapté à votre établissement',
       'Rapport quotidien de vos appels',
       '1 numéro dédié inclus',
@@ -56,7 +56,7 @@ export const PLANS: PricingPlan[] = [
     features: [
       "Tout l'Essential, sans limite",
       'Vos clients reconnus à chaque appel',
-      'No-shows gérés, revenus récupérés',
+      'Suivi des no-shows',
       'Réservable depuis ChatGPT et Claude',
       'Support prioritaire 7j/7',
     ],
@@ -80,12 +80,12 @@ export const FAQS = [
   {
     question: "Comment fonctionne l'assistant vocal Sokar ?",
     answer:
-      "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités en temps réel, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat.",
+      "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat.",
   },
   {
     question: "Avec quels outils Sokar s'intègre-t-il ?",
     answer:
-      "Sokar se connecte nativement à Google Calendar pour synchroniser vos disponibilités en temps réel. Les réservations prises par Sokar sont automatiquement ajoutées à votre planning, sans double saisie. D'autres intégrations (ZenChef, TheFork, Lightspeed) sont en cours de développement et arriveront progressivement.",
+      "Sokar peut se connecter à Google Agenda pour consulter vos disponibilités et ajouter les réservations à votre planning. Nous ne proposons pas encore de synchronisation avec d'autres logiciels de réservation, comme ZenChef, TheFork ou Lightspeed.",
   },
   {
     question: 'Quel type de restaurant peut utiliser Sokar ?',
@@ -95,7 +95,7 @@ export const FAQS = [
   {
     question: 'Combien coûte Sokar ?',
     answer:
-      'Trois forfaits, sans engagement : Essential à 199€/mois, Pro à 299€/mois (recommandé), et Multi-site à partir de 249€/mois + 99€/site supplémentaire. La facturation annuelle vous fait bénéficier de 20% de réduction. Le détail des fonctionnalités est sur notre page Tarifs.',
+      'Trois forfaits : Essential à 199 € HT/mois, Pro à 299 € HT/mois (recommandé), et Multi-site à partir de 249 € HT/mois, plus 99 € HT par site supplémentaire. Les forfaits mensuels sont sans engagement. La facturation annuelle vous fait bénéficier de 20 % de réduction, avec un engagement de 12 mois. Le détail des fonctionnalités est sur notre page Tarifs.',
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
@@ -110,7 +110,7 @@ export const FAQS = [
   {
     question: 'Mes données et celles de mes clients sont-elles protégées ?',
     answer:
-      'Oui. Sokar est conforme au RGPD : les données sont hébergées en Europe, chiffrées au repos et en transit, et jamais partagées avec des tiers. Chaque restaurant dispose de son propre espace isolé, et vous pouvez exporter ou supprimer vos données à tout moment depuis votre dashboard.',
+      "Oui. Chaque restaurant dispose de son propre espace isolé. Notre politique de confidentialité détaille les données traitées, les sous-traitants et leur localisation. Vous pouvez demander l'export ou l'effacement de vos données.",
   },
 ];
 
