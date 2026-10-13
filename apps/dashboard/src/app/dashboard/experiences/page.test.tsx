@@ -5,6 +5,14 @@ import ExperiencesPage from './page';
 // La page charge ses données en plusieurs requêtes : sous charge (pré-push, CI), 1 s par défaut ne suffit pas.
 configure({ asyncUtilTimeout: 5000 });
 
+// Les boutons d’action (Créer une expérience, Modifier, Dupliquer, Archiver, Supprimer, Ajouter une
+// date) restent désactivés pendant le chargement, que la page fait deux fois à l’ouverture.
+// `findByRole` trouve déjà le bouton désactivé et React ignore le clic : on attend qu’il soit actif.
+async function clickWhenEnabled(name: string | RegExp) {
+  await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name }));
+}
+
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -121,7 +129,7 @@ describe('ExperiencesPage', () => {
     render(<ExperiencesPage />);
     await screen.findByRole('heading', { name: 'Expériences & événements' });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Créer une expérience' }));
+    await clickWhenEnabled('Créer une expérience');
     expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText('Nom'), { target: { value: 'Atelier vins' } });
     fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
@@ -151,7 +159,7 @@ describe('ExperiencesPage', () => {
   it('ouvre une session avec les dates converties en ISO', async () => {
     render(<ExperiencesPage />);
     await screen.findByRole('heading', { name: 'Expériences & événements' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter une date' }));
+    await clickWhenEnabled('Ajouter une date');
     fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
 
     await waitFor(() =>
@@ -180,7 +188,7 @@ describe('ExperiencesPage', () => {
 
   it('modifie une offre sans changer sa clé ni son statut', async () => {
     render(<ExperiencesPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Modifier' }));
+    await clickWhenEnabled('Modifier');
     await waitFor(() => expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins'));
     expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
     fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
@@ -246,7 +254,7 @@ describe('ExperiencesPage', () => {
     );
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByLabelText('Autres actions'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Supprimer l’expérience' }));
+    await clickWhenEnabled('Supprimer l’expérience');
     expect(apiMocks.del).not.toHaveBeenCalled();
     expect(await screen.findByRole('dialog')).toHaveTextContent('Cette action est définitive');
     fireEvent.click(screen.getByRole('button', { name: /^Supprimer$/ }));
@@ -260,7 +268,7 @@ describe('ExperiencesPage', () => {
     expect(
       screen.queryByRole('button', { name: 'Supprimer l’expérience' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('button', { name: 'Archiver' }));
+    await clickWhenEnabled('Archiver');
     fireEvent.click(await screen.findByRole('button', { name: /^Archiver$/ }));
     await waitFor(() =>
       expect(apiMocks.patch).toHaveBeenCalledWith('experiences/experience-1', {
@@ -272,7 +280,7 @@ describe('ExperiencesPage', () => {
   it('prépare une copie sans dates et sans créer de données avant validation', async () => {
     render(<ExperiencesPage />);
     fireEvent.click(await screen.findByLabelText('Autres actions'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Dupliquer' }));
+    await clickWhenEnabled('Dupliquer');
     await waitFor(() =>
       expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins (copie)'),
     );

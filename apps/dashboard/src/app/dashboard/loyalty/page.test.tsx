@@ -176,6 +176,11 @@ describe('LoyaltyPage', () => {
   it('attribue une attention à un client et affiche le code une seule fois', async () => {
     render(<LoyaltyPage />);
     await screen.findByRole('heading', { name: 'Attentions clients' });
+    // Le titre s’affiche avant les données : le bouton reste désactivé tant que les attentions et les
+    // clients ne sont pas chargés, et React ignore un clic sur un bouton désactivé.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Attribuer l’attention' })).toBeEnabled(),
+    );
 
     fireEvent.change(screen.getByLabelText('Client destinataire'), {
       target: { value: 'customer-2' },
@@ -196,6 +201,10 @@ describe('LoyaltyPage', () => {
   it('valide une attention avec son attribution et son code', async () => {
     render(<LoyaltyPage />);
     await screen.findByRole('heading', { name: 'Attentions clients' });
+    // Tant que les attributions ne sont pas chargées, l’option manque et le bouton reste désactivé.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Valider l’attention' })).toBeEnabled(),
+    );
 
     fireEvent.change(screen.getByLabelText('Attention à valider'), {
       target: { value: 'grant-1' },
@@ -221,7 +230,8 @@ describe('LoyaltyPage', () => {
     render(<LoyaltyPage />);
     await screen.findByRole('heading', { name: 'Attentions clients' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Annuler l’attribution' }));
+    // Le bouton n’existe qu’une fois la liste des attributions chargée.
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler l’attribution' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/ne pourra plus être validée/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler l’attribution' }));
