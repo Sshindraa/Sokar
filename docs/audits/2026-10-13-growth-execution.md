@@ -558,3 +558,13 @@ Le runbook staging prévoit `VOICE_DISABLED=true`, `RESEND_API_KEY` vide, et auc
 - Notification en production : le chemin est configuré, non testé. Un essai créerait une demande réelle en production : à faire seulement avec votre accord.
 - Visibilité et traitement : bloqués, la session opérateur manque.
 - Voix : aucun appel passé, aucune clé écrite dans le dépôt ni dans le chat.
+
+### 10.14 Preuves après déploiement de #420 et synchronisation des destinataires (13/10/2026, après 19:55 UTC)
+
+- **Déploiements** : #420 fusionnée à 19:44:46 UTC (squash `f6302538`). Deploy Staging (run 38458094330) à 19:50:54 et Deploy Production (run 38458617445) à 19:54:50 : succès.
+- **Destinataires des démos** : le script a écrit « Destinataires des demandes de démonstration synchronisés » en staging (19:51:09) et en production (19:54:59). La valeur n'apparaît dans aucun journal.
+- **Pages publiques en production** : `/register` et `/login` ne contiennent plus le témoignage, « 98.4 % », « Taux de réponse garanti » ni « Appels traités ce mois » (zéro occurrence chacun). Le libellé « Exemple illustratif — données simulées » est présent.
+- **Landing brouillon** : `/solutions/assistant-telephonique-restaurant` répond 404 en production et n'apparaît pas dans le sitemap. Elle est sur la branche `codex/landing-draft-2026-10-13`, en PR brouillon (#422).
+- **E-mail en staging** : non vérifié. `RESEND_API_KEY` n'est pas configurée en staging, donc l'envoi est désactivé ; le test de bout en bout attend la clé.
+- **Session opérateur** : toujours absente. `https://staging.sokar.tech/dashboard/admin/demo-requests` redirige vers `/dashboard`.
+- **Téléphonie staging** : `telnyx` reste en erreur. Les secrets `*_STAGING` restent à fournir ; leur synchronisation est dans cette PR (#423).
