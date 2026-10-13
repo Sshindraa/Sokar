@@ -36,6 +36,7 @@ describe('sitemap', () => {
         SITE,
         `${SITE}/assistant`,
         `${SITE}/pricing`,
+        `${SITE}/demo`,
         `${SITE}/restaurant/chez-sokar`,
       ]),
     );
@@ -46,7 +47,7 @@ describe('sitemap', () => {
 
     const urls = (await sitemap()).map((entry) => entry.url);
 
-    expect(urls).toEqual([SITE, `${SITE}/assistant`, `${SITE}/pricing`]);
+    expect(urls).toEqual([SITE, `${SITE}/assistant`, `${SITE}/pricing`, `${SITE}/demo`]);
   });
 
   it('échoue au lieu de publier un sitemap tronqué quand les données ne sont pas disponibles', async () => {

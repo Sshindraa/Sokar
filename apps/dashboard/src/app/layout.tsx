@@ -6,6 +6,7 @@ import Providers from '@/components/providers';
 import Header from '@/components/header';
 import PwaInstallBanner from '@/components/PwaInstallBanner';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale, type Locale } from '@/i18n/config';
+import { THEME_BOOTSTRAP } from '@/app/theme-bootstrap';
 import './globals.css';
 
 export const viewport: Viewport = {
@@ -55,22 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
-        <script
-          id="sokar-theme-bootstrap"
-          dangerouslySetInnerHTML={{
-            __html: `try {
-              const root = document.documentElement;
-              if (window.location.pathname === '/') {
-                root.classList.remove('dark', 'light');
-              } else {
-                const storedTheme = window.localStorage.getItem('sokar-dashboard-theme');
-                const theme = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'dark';
-                root.classList.remove('dark', 'light');
-                root.classList.add(theme);
-              }
-            } catch {}`,
-          }}
-        />
+        <script id="sokar-theme-bootstrap" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>
       <body className="min-h-screen bg-background antialiased">
         <NextIntlClientProvider locale={locale} messages={messages}>
