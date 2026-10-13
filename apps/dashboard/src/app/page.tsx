@@ -150,7 +150,7 @@ export default function HomePage() {
                 <span className="h-px flex-1 bg-gradient-to-l from-white/20 to-transparent" />
                 <span>
                   <span className="block text-xs font-semibold text-white">Assistant vocal</span>
-                  <span className="text-[10px] text-white/40">Toujours disponible</span>
+                  <span className="text-[10px] text-white/40">Répond aux appels transférés</span>
                 </span>
                 <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
                   <Bot size={14} />

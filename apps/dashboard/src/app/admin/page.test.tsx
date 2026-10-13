@@ -25,6 +25,10 @@ describe('AdminHomePage', () => {
       'href',
       '/admin/onboarding',
     );
+    expect(screen.getByRole('link', { name: /Demandes de démo/ })).toHaveAttribute(
+      'href',
+      '/admin/demo-requests',
+    );
     expect(screen.queryByText(/Chez Sokar HQ/)).not.toBeInTheDocument();
   });
 });

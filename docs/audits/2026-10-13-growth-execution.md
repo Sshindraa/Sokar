@@ -404,3 +404,116 @@ garanti) ; prix HT et engagement ; questions pratiques (FAQ) ; CTA vers `/demo`.
 - **Workflows Dependabot** : deux runs `Dependabot Updates` (npm_and_yarn à la racine) en échec sur `main` à 18:27 UTC (runs 38446873602 et 38446873630). Ils ne concernent pas #418 et ne sont pas traités ici.
 - **VOICE-01** : 0 appel passé. Protocole, scénarios et journal d'essais dans la [fiche de qualification](2026-10-13-commercial-demo-validation.md). Dépendances réelles : un restaurant de test et un numéro de test routé vers lui, et un appelant disposant de ce numéro. Les rejeux LLM ne remplacent pas cette qualification : ils ne couvrent ni la téléphonie, ni le STT, ni le TTS, et l'outil documenté utilise la clé Cerebras de production (en-tête de `apps/api/scripts/voice-behavior-replay.mjs`).
 - **LAND-01** : non publiée. Le plan conditionne la publication à la preuve VOICE-01 (backlog, section 17). Search Console ne bloque pas.
+
+### 10.11 Contrôles après déploiement de #418 (13/10/2026, après le run de production du 18:49 UTC)
+
+**Déploiements** (journaux GitHub Actions ; jobs « VPS » et « smoke tests » verts pour les quatre runs) :
+
+| Run         | Workflow          | Déclenché par            | Heure (UTC) |
+| ----------- | ----------------- | ------------------------ | ----------- |
+| 38447714633 | Deploy Staging    | CI de #418               | 18:33:29    |
+| 38448276498 | Deploy Production | Staging vert (#418)      | 18:37:39    |
+| 38449590156 | Deploy Staging    | CI de #419 (38448663489) | 18:47:20    |
+| 38449918493 | Deploy Production | Staging vert (#419)      | 18:49:48    |
+
+Le texte de `scripts/ops/sync-demo-request-config.sh` apparaît dans les journaux du run 38449918493 (lignes 78 et 244), affiché par l'action SSH. Aucun message d'exécution du script n'apparaît : cohérent avec la garde `-n` sur un secret vide. La preuve d'exécution (« Destinataires … synchronisés ») viendra avec le premier déploiement disposant du secret.
+
+**`/pricing` en production, thème clair mémorisé** (`sokar-dashboard-theme=light`, navigateur intégré) :
+
+- À 375 px : classe `light` absente de `<html>`, fond `rgb(10, 10, 10)`, texte `rgb(240, 240, 240)`, titre « Tarifs » en dégradé découpé sur le texte, visible sur la capture, sans défilement horizontal.
+- Largeur par défaut du panneau : la capture montre la page lisible (cartes et prix HT).
+- Référence avant #418 (production, #417) : classe `light`, fond `rgb(245, 245, 242)`, titre à couleur transparente sur fond clair : défaut confirmé.
+- Le code vérifié est celui de #418 : #419 ne modifie que la documentation.
+- Staging non contrôlé dans le navigateur (même code déployé).
+
+**Sitemap** (`curl`, après le run du 18:49 UTC) : `https://sokar.tech/sitemap.xml` et `https://staging.sokar.tech/sitemap.xml` contiennent `/assistant`, `/demo` et `/pricing`.
+
+**Demande de démonstration** : enregistrement vérifié sur staging avant ce contrôle (201, section 10.2). Visibilité opérateur, notification et traitement non vérifiés : accès opérateur et destinataires manquants.
+
+**Qualification vocale** : aucun essai. Le provisioning déclenche un appel Telnyx réel (`POST /api/admin/provisioning/:restaurantId/test-call`), puis exige une confirmation humaine (`validate-test-call`, appel « reçu et entendu »). Ces routes sont réservées à l'opérateur. Prérequis : session opérateur sur staging, restaurant de test provisionné (numéro attribué, webhook vérifié), une personne pour passer l'appel, un accès en lecture au dashboard du restaurant de test.
+
+**LAND-01** : non publiée. Critères du backlog (section 17) : COPY-01, VOICE-01, DEMO-01/02.
+
+- DEMO-01 : enregistrement vérifié ; notification et traitement à vérifier.
+- DEMO-02 : responsable désigné, délai de réponse défini, accès opérateur vérifié.
+- COPY-01 : affirmations signalées validées (« Support 7j/7 », « sans limite » pour Pro, « Vos clients reconnus à chaque appel », « Toujours disponible », FAQ données et RGPD).
+- VOICE-01 : aucune preuve.
+- Search Console : non bloquant.
+
+**Dépendances restantes** :
+
+| Débloque                              | Entrée attendue                                                                                                                  | Responsable               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Notifications staging puis production | Adresse de test, adresse commerciale                                                                                             | Hamza                     |
+| Visibilité, traitement, DEMO-02       | Connexion opérateur sur staging dans le navigateur intégré ; nom du responsable ; délai de réponse                               | Hamza                     |
+| VOICE-01                              | Restaurant de test provisionné sur staging, numéro et webhook vérifiés, personne pour l'appel, confirmation `validate-test-call` | Hamza ou équipe technique |
+| COPY-01                               | Validation des affirmations signalées                                                                                            | Hamza                     |
+| LAND-01                               | VOICE-01 qualifiée, DEMO-02 et COPY-01 satisfaits                                                                                | Hamza, puis livraison     |
+
+### 10.12 Livraison : affirmations retirées, demande traitable, VOICE-01 et LAND-01
+
+**Affirmations retirées ou reformulées.** La garde `apps/dashboard/src/app/marketing-claims.test.ts` liste les formulations sans preuve. Elle a échoué sur sept pages avant les corrections (sept cas rouges) et passe après. Chaque retrait est listé ci-dessous.
+
+| Page                         | Affirmation                                                                                                                          | Action                                                  | Motif                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Inscription et connexion     | Témoignage « Chef Matthieu, Bistrot L’Ardoise — 2 étoiles Michelin », « Sokar gère 100 % des appels », badge « Partenaire Certifié » | Retiré                                                  | Aucune source dans le dépôt ; le plan réserve les témoignages à leurs propres preuves |
+| Inscription et connexion     | « 98,4 % » « Taux de réponse garanti », « +18,4 % », « 412 » « Appels traités ce mois »                                              | Retiré                                                  | Valeurs codées en dur, sans source, présentées hors de tout libellé de simulation     |
+| Inscription et connexion     | Badge « Simulation temps réel »                                                                                                      | Remplacé par « Exemple illustratif — données simulées » | Même libellé que la démonstration de l’accueil                                        |
+| Offres, Essential            | « Répond aux appels transférés, 24h/24 »                                                                                             | « Répond aux appels transférés »                        | Disponibilité 24 h/24 non démontrée                                                   |
+| Offres, Pro                  | « Tout l’Essential, sans limite »                                                                                                    | « Tout l’Essential »                                    | Aucune limite de volume démontrée                                                     |
+| Offres, Pro                  | « Vos clients reconnus à chaque appel »                                                                                              | Retiré                                                  | Reconnaissance des appelants non démontrée dans le parcours vocal                     |
+| Offres, Pro                  | « Réservable depuis ChatGPT et Claude »                                                                                              | Retiré                                                  | MCP reste en observation (section 3 du rapport de préparation)                        |
+| Offres, Pro                  | « Support prioritaire 7j/7 »                                                                                                         | Retiré                                                  | Engagement de support non démontré                                                    |
+| Accueil                      | « Toujours disponible » (carte flottante)                                                                                            | « Répond aux appels transférés »                        | Garantie de disponibilité non démontrée                                               |
+| Illustration du parcours     | « client reconnu »                                                                                                                   | « fiche client »                                        | Reconnaissance non démontrée                                                          |
+| Page MCP                     | « Trois scopes, zéro débordement »                                                                                                   | « Trois scopes distincts »                              | Garantie absolue non démontrée                                                        |
+| Politique de confidentialité | « Sokar est conforme au RGPD. »                                                                                                      | Retiré                                                  | Affirmation juridique, à valider (dépendance juridique)                               |
+
+**Restent à confirmer, non modifiés :**
+
+- Hébergement « à Francfort, en Allemagne » (politique de confidentialité) : aucun élément du dépôt ne prouve la région du fournisseur. À confirmer par Hamza, ou à retirer.
+- « Ton adapté à votre établissement » : le réglage de style est soumis à des indicateurs de déploiement ciblé (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`). À confirmer avant publication.
+- « Rapport quotidien de vos appels » : un job de rapport quotidien existe dans l'API. Son contenu reste à vérifier sur un exemple réel.
+- Les chiffres de la démonstration de l'accueil (412, 189, 98 %) restent dans des blocs étiquetés « Exemple illustratif — données simulées ».
+
+**Demande de démo traitable.** La page `/admin/demo-requests` est reliée à l'accueil admin et à la navigation admin, avec un réexport de `dashboard/admin/demo-requests`. L'accès reste réservé à l'opérateur côté API (`requireSokarOperator`). Test `admin/page.test.tsx` : rouge sans le lien, vert avec. Restent à vérifier en staging : visibilité, notification et traitement, qui exigent une session opérateur et des destinataires.
+
+**VOICE-01.** La fiche `docs/audits/2026-10-13-commercial-demo-validation.md` distingue deux niveaux : la validation du provisioning (routage, webhook, renvoi, appel de test validé) et la qualification conversationnelle. Elle impose un premier appel de réservation exact dans le dashboard avant les sept scénarios. Statut : non exécutée. Le restaurant de test, le numéro de test et la personne disponible n'ont pas été renseignés.
+
+**LAND-01 : contenu et structure (non publié).**
+
+- Route : `/solutions/assistant-telephonique-restaurant`, créée à la publication seulement. Titre, description et canonical via `pageMetadata`. Sitemap et maillage depuis l'accueil et les offres seulement à la publication.
+- Cible : restaurateurs indépendants qui ne peuvent pas décrocher pendant le service.
+- Structure, dans l'ordre :
+  1. H1 : « Un assistant téléphonique pour votre restaurant ».
+  2. Problème : les appels pendant le service et les réservations qui ne sont pas prises. Aucun chiffre sans source.
+  3. Fonctionnement : le renvoi transfère l'appel, l'assistant répond, propose un créneau et confirme la réservation.
+  4. Démonstration : emplacement réservé à la preuve vocale (audio contrôlé par le visiteur, transcription accessible). Vide tant que VOICE-01 n'est pas qualifiée.
+  5. Résultat métier : vide avant preuve. Aucun gain chiffré.
+  6. Configuration et secours : numéro dédié inclus, renvoi, prise de relais humaine. Les limites réelles seront écrites d'après les scénarios 3, 4 et 5.
+  7. Limites : ce que l'assistant ne fait pas, établi par les essais.
+  8. Installation : numéro, renvoi, appel de test, les mêmes étapes que l'onboarding.
+  9. Prix : Essential, 199 € HT/mois, ou 159,20 € HT/mois en facturation annuelle (1 910,40 € HT/an, engagement de 12 mois). Montants issus de `PLAN_PRICES_EUR`.
+  10. Questions pratiques : quatre ou cinq questions couvertes par des faits (que se passe-t-il si l'assistant ne sait pas répondre, peut-on reprendre la main, le numéro change-t-il, quelles données sont enregistrées — lien vers la confidentialité).
+  11. Appel à l'action : « Demander une démonstration », vers `/demo`.
+- Conversion : demandes de démo (DEMO-01), source et version de page traçables sans donnée personnelle (METRIC-01).
+- Recette à la publication : HTML statique, statut 200, title et H1, canonical, sitemap, responsive, transcription disponible.
+- Conditions de publication, toutes requises :
+  1. Niveau 1 et niveau 2 de VOICE-01 validés, preuves archivées.
+  2. Demande de démo traitable de bout en bout : enregistrée, visible, notifiée, traitée.
+  3. Responsable désigné et délai de réponse décidé (aucun délai affiché pour l'instant).
+  4. Affirmations restantes validées (section ci-dessus).
+
+Search Console n'est pas une condition.
+
+**Dépendances restantes**
+
+| Débloque                               | Entrée attendue                                                                                                    | Responsable               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| Notifications, staging puis production | Adresse de test autorisée et adresse commerciale : non fournies (gabarits)                                         | Hamza                     |
+| Visibilité et traitement en staging    | Session opérateur sur staging : à organiser                                                                        | Hamza                     |
+| DEMO-02                                | Responsable des demandes : non fourni (gabarit). Délai affiché : aucun, décision enregistrée                       | Hamza                     |
+| VOICE-01, niveau 1                     | Restaurant de test (référence non fournie), numéro de test et personne disponible (non fournis), session opérateur | Hamza ou équipe technique |
+| VOICE-01, niveau 2                     | Premier appel de réservation exact, puis sept scénarios                                                            | Hamza ou équipe technique |
+| Affirmations restantes                 | Validation de l'hébergement, du ton, du rapport quotidien                                                          | Hamza                     |
+| LAND-01                                | Conditions de publication ci-dessus                                                                                | Hamza, puis livraison     |

@@ -18,7 +18,7 @@ const storySteps = [
   {
     kicker: 'Reservations automatiques',
     title: 'Chaque demande devient action',
-    accent: 'planning, SMS, client reconnu',
+    accent: 'planning, SMS, fiche client',
   },
   {
     kicker: 'Croissance mesurable',
