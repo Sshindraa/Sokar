@@ -329,45 +329,12 @@ export default function RegisterPage() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
             </span>
-            Simulation temps réel
+            Exemple illustratif — données simulées
           </div>
         </div>
 
         {/* Visual Showcase Center */}
         <div className="my-auto max-w-2xl mx-auto w-full z-10 space-y-6">
-          {/* Métrique d'Aperçu Flottante */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 shadow-lg transition-all duration-300 hover:-translate-y-0.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="sokar-icon-button h-9 w-9 border-border bg-secondary/50">
-                  <PhoneCall size={15} className="text-muted-foreground" />
-                </span>
-                <span className="rounded-full bg-primary/10 border border-primary/20 text-foreground px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
-                  Actif
-                </span>
-              </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight">412</p>
-              <p className="mt-1 text-xs text-muted-foreground font-medium">
-                Appels traités ce mois
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 shadow-lg transition-all duration-300 hover:-translate-y-0.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="sokar-icon-button h-9 w-9 border-border bg-secondary/50">
-                  <TrendingUp size={15} className="text-foreground" />
-                </span>
-                <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-foreground">
-                  +18.4%
-                </span>
-              </div>
-              <p className="mt-5 text-3xl font-bold tracking-tight">98.4%</p>
-              <p className="mt-1 text-xs text-muted-foreground font-medium">
-                Taux de réponse garanti
-              </p>
-            </div>
-          </div>
-
           {/* Simulateur d'Appel Conversationnel en Direct */}
           <div className="rounded-2xl border border-border bg-card/70 backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col h-[320px] transition-all duration-300">
             {/* Header du Chat */}
@@ -434,27 +401,6 @@ export default function RegisterPage() {
                   />
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-
-        {/* Testimonial Block */}
-        <div className="z-10 bg-card/40 border border-border/80 backdrop-blur-md rounded-2xl p-5 shadow-lg max-w-xl mx-auto w-full transition-all duration-200">
-          <p className="text-sm italic leading-relaxed text-muted-foreground">
-            {
-              '"Sokar gère 100% des appels entrants pendant les heures de pointe. L\'assistant prend les réservations directement et envoie le SMS de confirmation. Mon équipe reste concentrée sur la cuisine et le service."'
-            }
-          </p>
-          <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-3">
-            <div>
-              <p className="text-xs font-semibold text-foreground">Chef Matthieu</p>
-              <p className="text-xs text-muted-foreground">
-                Bistrot L’Ardoise — 2 étoiles Michelin
-              </p>
-            </div>
-            <div className="flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-foreground">
-              <CheckCircle size={10} />
-              Partenaire Certifié
             </div>
           </div>
         </div>

@@ -982,3 +982,66 @@ describe('finalisation commune des appels — ordre, doublons et pannes', () => 
     expect(new Set(jobIds).size).toBe(1);
   });
 });
+
+describe('POST /voice/telnyx — appel de test sortant du provisioning', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await getApp();
+  });
+
+  afterAll(async () => {
+    await closeApp();
+  });
+
+  const testCallState = Buffer.from(
+    JSON.stringify({ kind: 'onboarding_test_call', restaurantId: 'rest-1' }),
+  ).toString('base64');
+
+  function testCallEvent(eventType: string) {
+    return {
+      data: {
+        event_type: eventType,
+        payload: {
+          call_control_id: 'v3:test-call',
+          client_state: testCallState,
+          to: '+33612345678',
+          from: '+33100000000',
+        },
+      },
+    };
+  }
+
+  it('ne cherche pas de restaurant par le numéro du gérant et fait entendre le message au décroché', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: testCallEvent('call.answered'),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ result: 'spoken' });
+    expect(mockLoadContext).not.toHaveBeenCalled();
+    expect(mockTelnyxFetch).toHaveBeenCalledWith(
+      '/v2/calls/v3%3Atest-call/actions/speak',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('raccroche une fois le message lu', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: testCallEvent('call.speak.ended'),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ result: 'hung_up' });
+    expect(mockLoadContext).not.toHaveBeenCalled();
+    expect(mockTelnyxFetch).toHaveBeenCalledWith(
+      '/v2/calls/v3%3Atest-call/actions/hangup',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});

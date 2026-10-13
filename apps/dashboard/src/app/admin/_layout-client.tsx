@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   ChevronRight,
+  Inbox,
   LayoutDashboard,
   Moon,
   Radio,
@@ -28,6 +29,7 @@ const adminNavigation = [
   { href: '/admin/health', label: 'Santé des restaurants', icon: Activity },
   { href: '/admin/provisioning', label: 'Provisioning', icon: Radio },
   { href: '/admin/onboarding', label: 'Onboarding — cohorte', icon: Route },
+  { href: '/admin/demo-requests', label: 'Demandes de démo', icon: Inbox },
 ] as const;
 
 function AdminThemeToggle() {

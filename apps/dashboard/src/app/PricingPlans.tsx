@@ -8,7 +8,8 @@ import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
 /** Espace insécable entre le montant et l'unité (« 159 €/mois »), comme en typographie française. */
-const euros = (amount: string | number, unit: 'mois' | 'site') => `${amount}\u00a0€/${unit}`;
+const euros = (amount: string | number, unit: 'mois' | 'site') =>
+  `${amount}\u00a0€\u00a0HT/${unit}`;
 
 /**
  * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section

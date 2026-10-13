@@ -446,6 +446,12 @@ vi.mock('../shared/db/client', () => {
   };
 
   const dbObj = {
+    demoRequest: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     restaurant: {
       create: vi.fn(),
       update: vi.fn(),

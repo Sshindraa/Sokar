@@ -215,8 +215,8 @@ export default function PrivacyPage() {
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/62 md:text-base">
-            Sokar est conforme au RGPD. Cette politique décrit les données que nous collectons, leur
-            finalité, leur durée de conservation, et les droits dont vous disposez.
+            Cette politique décrit les données que nous collectons, leur finalité, leur durée de
+            conservation, et les droits dont vous disposez.
           </p>
 
           <p className="mt-6 text-xs uppercase tracking-wider text-white/40">

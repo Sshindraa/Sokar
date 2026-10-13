@@ -89,12 +89,12 @@ export const FAQS = [
   {
     question: "Comment fonctionne l'assistant vocal Sokar ?",
     answer:
-      "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités en temps réel, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat.",
+      "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat.",
   },
   {
     question: "Avec quels outils Sokar s'intègre-t-il ?",
     answer:
-      "Sokar se connecte nativement à Google Calendar pour synchroniser vos disponibilités en temps réel. Les réservations prises par Sokar sont automatiquement ajoutées à votre planning, sans double saisie. D'autres intégrations (ZenChef, TheFork, Lightspeed) sont en cours de développement et arriveront progressivement.",
+      "Sokar peut se connecter à Google Agenda pour consulter vos disponibilités et ajouter les réservations à votre planning. Nous ne proposons pas encore de synchronisation avec d'autres logiciels de réservation, comme ZenChef, TheFork ou Lightspeed.",
   },
   {
     question: 'Quel type de restaurant peut utiliser Sokar ?',
@@ -119,7 +119,7 @@ export const FAQS = [
   {
     question: 'Mes données et celles de mes clients sont-elles protégées ?',
     answer:
-      'Oui. Sokar est conforme au RGPD : les données sont hébergées en Europe, chiffrées au repos et en transit, et jamais partagées avec des tiers. Chaque restaurant dispose de son propre espace isolé, et vous pouvez exporter ou supprimer vos données à tout moment depuis votre dashboard.',
+      "Oui. Chaque restaurant dispose de son propre espace isolé. Notre politique de confidentialité détaille les données traitées, les sous-traitants et leur localisation. Vous pouvez demander l'export ou l'effacement de vos données.",
   },
 ];
 

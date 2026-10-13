@@ -48,9 +48,18 @@ describe('PricingSection', () => {
     const { container } = render(<PricingSection />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('249\u00a0€/mois + 99\u00a0€/site');
-    expect(text).toContain('+ 79,20\u00a0€/site');
+    expect(text).toContain('249\u00a0€\u00a0HT/mois + 99\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 79,20\u00a0€\u00a0HT/site');
     expect(text).not.toContain('Économisez');
+  });
+
+  it('précise le paiement annuel et distingue le mensuel', () => {
+    render(<PricingSection />);
+    expect(screen.getByText(/Paiement à l’année, engagement de 12 mois/)).toBeInTheDocument();
+    expect(screen.getByText(/1.*910,40 € HT facturés par an/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByText(/engagement de 12 mois/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Facturé chaque mois.')).toHaveLength(3);
   });
 
   it('calcule le total multi-site et transmet le nombre sélectionné', () => {
@@ -74,7 +83,7 @@ describe('PricingSection', () => {
 
     const text = container.textContent ?? '';
     expect(screen.getByText('299')).toBeInTheDocument();
-    expect(text).toContain('+ 99\u00a0€/site');
+    expect(text).toContain('+ 99\u00a0€\u00a0HT/site');
     expect(text).not.toContain('Économisez');
     expect(text).not.toContain('-20% annuel');
   });

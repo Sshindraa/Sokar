@@ -98,6 +98,17 @@ afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
 
+### Demandes de démonstration
+
+`DEMO_REQUEST_NOTIFY_TO` (adresses séparées par des virgules) reçoit une notification pour chaque
+demande envoyée depuis `/demo`. Sans valeur, aucune notification n'est envoyée : la demande reste
+enregistrée et apparaît comme « Notification non envoyée » dans `/dashboard/admin/demo-requests`.
+L'envoi utilise `RESEND_API_KEY` et `EMAIL_FROM`. Le destinataire est choisi par le responsable
+commercial avant l'ouverture de la vitrine. Il se définit comme secret GitHub
+`DEMO_REQUEST_NOTIFY_TO` des environnements staging et production ; le script
+`scripts/ops/sync-demo-request-config.sh` le copie dans le `.env` de l'API à chaque
+déploiement, sans l'afficher. Sans secret, la configuration existante est conservée.
+
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
 notification client et ne peuvent pas limiter la consommation d'un restaurant.
 La promesse Essential/Pro reste sans quota ; le suivi visuel par établissement
@@ -920,3 +931,66 @@ abandonné, expiré, webhook rejoué, capacité concurrente et remboursement éc
 clés Stripe de test. La politique d'annulation côté client, les conditions de vente, le traitement
 TVA/facture, les emails de confirmation/notification et le rapprochement quotidien restent à
 qualifier. Garder le flag fermé tant que ces éléments et le parcours staging ne sont pas validés.
+
+## Fournisseurs de staging : trois blocs indépendants
+
+Staging n'envoie aucun e-mail, ne prend aucun appel et ne passe aucun appel de test tant que les réglages de
+chaque bloc ne sont pas fournis. Le workflow de staging transmet ces réglages à
+`scripts/ops/sync-staging-provider-config.sh`, qui les écrit dans le `.env` de staging. Le workflow de
+production ne lit aucun de ces réglages : une valeur de staging ne peut pas atteindre la production.
+
+Chaque bloc se valide seul. Un bloc ne conditionne pas les autres.
+
+### Bloc 1 : e-mail
+
+| Réglage                | Où le renseigner                        | Lu par         | Utilité                                                                    |
+| ---------------------- | --------------------------------------- | -------------- | -------------------------------------------------------------------------- |
+| `RESEND_API_KEY`       | secret `RESEND_API_KEY_STAGING`         | `shared/email` | Clé d'envoi Resend, dédiée à staging et limitée à l'envoi                  |
+| `EMAIL_FROM`           | variable `EMAIL_FROM_STAGING`           | `shared/email` | Expéditeur déjà vérifié : `noreply@sokar.tech` (production)                |
+| `EMAIL_TEST_ALLOWLIST` | variable `EMAIL_TEST_ALLOWLIST_STAGING` | `shared/email` | Seuls ces destinataires reçoivent un e-mail. Campagne : `hamza@sokar.tech` |
+
+Règles :
+
+- Un envoi vers une adresse hors liste n'appelle pas Resend et échoue sans relance. L'adresse n'est jamais journalisée.
+- Sans `EMAIL_TEST_ALLOWLIST`, il n'y a aucune restriction. Ne jamais retirer la liste tant qu'une campagne de test est en cours.
+
+### Bloc 2 : voix entrante
+
+| Réglage                | Où le renseigner                        | Lu par                       | Utilité                                                                   |
+| ---------------------- | --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `TELNYX_API_KEY`       | secret `TELNYX_API_KEY_STAGING`         | `shared/telnyx/client`       | Clé d'API Telnyx, dédiée à staging                                        |
+| `TELNYX_PUBLIC_KEY`    | secret `TELNYX_PUBLIC_KEY_STAGING`      | `voice/telnyx.guard`         | Vérifie la signature des webhooks. Sans elle, les événements sont rejetés |
+| `TELNYX_CONNECTION_ID` | variable `TELNYX_CONNECTION_ID_STAGING` | `admin/provisioning.service` | Application d'appel Telnyx de staging, rattachée au numéro de test        |
+
+Hors `.env` (à vérifier avec l'équipe) : `ELEVENLABS_API_KEY` (transcription), une clé LLM
+(`CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY`), et `VOICE_DISABLED=false`, réglage critique à décider.
+
+Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.sokar.tech/voice/telnyx`.
+Le numéro de test est rattaché à cette application (provisioning, `assign-phone`). Ce numéro n'est jamais un
+numéro de production, ni le numéro public affiché sur le site.
+
+### Bloc 3 : appel de test sortant (provisioning)
+
+| Réglage                | Où le renseigner                        | Lu par                              | Utilité                                                                |
+| ---------------------- | --------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| `TELNYX_FROM_NUMBER`   | secret `TELNYX_FROM_NUMBER_STAGING`     | `shared/telnyx/client`              | Numéro émetteur de l'appel de test (format E.164)                      |
+| `TELNYX_CONNECTION_ID` | variable `TELNYX_CONNECTION_ID_STAGING` | `shared/telnyx/client`              | Application d'appel utilisée pour l'appel sortant (même que le bloc 2) |
+| `PUBLIC_API_URL`       | variable `PUBLIC_API_URL_STAGING`       | `admin/provisioning`, `restaurants` | Base des URL de webhook. Sans elle, le repli est la production         |
+
+Le code de l'appel de test est corrigé dans cette livraison : `connection_id` est transmis, le webhook est
+`${PUBLIC_API_URL}/voice/telnyx`, et le message de test est joué au décroché puis l'appel est raccroché.
+Côté Telnyx, l'application de staging doit disposer d'un profil vocal sortant autorisant les destinations
+de test ; à confirmer dans le portail.
+
+### Règles de fourniture
+
+- Secrets : `pbpaste | gh secret set NOM --repo Sshindraa/Sokar`. Variables : `gh variable set NOM --repo Sshindraa/Sokar --body "valeur"`.
+  Aucune valeur ne transite par le chat ni par le dépôt.
+- Une variable vide ne modifie rien. Le script refuse une valeur hors format et n'affiche jamais de valeur.
+- Les réglages prennent effet au déploiement de staging qui suit un merge sur `main`.
+
+### Vérifications
+
+- `GET https://api-staging.sokar.tech/health` : `telnyx` à `ok` (bloc 2).
+- Le bloc 1 se vérifie par un envoi de test vers `hamza@sokar.tech` uniquement.
+- Le bloc 3 se vérifie par un appel de test réel, validé par le gérant (`validate-test-call`).

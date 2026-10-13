@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, ArrowUpRight, BarChart3, Radio, Route } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, Inbox, Radio, Route } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const adminAreas = [
@@ -26,6 +26,12 @@ const adminAreas = [
     title: 'Onboarding — cohorte',
     description: "Mesurer l'abandon par étape et le délai jusqu'à la première réservation.",
     icon: Route,
+  },
+  {
+    href: '/admin/demo-requests',
+    title: 'Demandes de démo',
+    description: 'Suivre les demandes reçues, leur statut et l’état de la notification.',
+    icon: Inbox,
   },
 ] as const;
 

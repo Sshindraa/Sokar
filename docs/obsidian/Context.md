@@ -8,6 +8,9 @@
 
 ## TODOs actifs
 
+- [ ] Démo (migration appliquée en staging et prod le 13/10) : fournir le destinataire de test `DEMO_REQUEST_NOTIFY_TO` (secret GitHub, #418), vérifier la liste opérateur, fixer le délai de réponse. Landing : bloquée par la preuve vocale (VOICE-01), pas par Search Console.
+- [ ] Vitrine : faire valider juridiquement la FAQ données (hébergement et sous-traitants voix possiblement hors UE) et « Support prioritaire 7j/7 » ; confirmer la fiche publique `chez-sokar-demo` dans le sitemap.
+- [ ] Croissance : qualifier la démo vocale par appels réels (VOICE-01), puis publier la landing SEO (LAND-01) ; entretiens avec `docs/runbooks/restaurant-discovery-interview.md`.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.

@@ -1034,7 +1034,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     const baseUrl = process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
-    const webhookUrl = `${baseUrl}/voice/stream`;
+    const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     try {
       const { callControlId } = await placeOutboundCall(restaurantPhone.data, {

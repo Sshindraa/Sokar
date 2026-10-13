@@ -179,6 +179,12 @@ vi.mock('@prisma/client', async (importOriginal) => {
       delete: vi.fn(),
       deleteMany: vi.fn(),
     };
+    demoRequest = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
     reputationFeedbackRequest = {
       findUnique: vi.fn(),
       findFirst: vi.fn(),

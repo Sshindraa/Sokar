@@ -102,12 +102,14 @@ Voix/SMS : limites null, aucun quota client ni mécanisme automatique de dépass
 internes distincts, frais opérateur du renvoi séparés. Aucun changement du catalogue Stripe.
 
 Parcours : CTA « Choisir [formule] » vers `/register` avec plan, cadence et sites,
-inscription vers dashboard/onboarding existant. `/demo` n’existe pas dans l’arbre courant :
-la démonstration existante est `/#demo`, conservée ; aucun faux rendez-vous ajouté.
+inscription vers dashboard/onboarding existant. La section `/#demo` est conservée.
+Après intégration de main (#420), `/demo` recueille une demande de démonstration par e-mail,
+sans annoncer une réservation de rendez-vous ; ses métadonnées et les corrections de la FAQ
+accueil sont préservées.
 Les erreurs Checkout existantes restent traitées par `SubscribeFromPricing`, sans changement.
 
-Vérifications locales : tests cartes/calculs/CTA et SubscribeFromPricing (8 tests), typecheck
-dashboard, stylelint. Captures Playwright mobile 390, iPad 768, desktop 1440 avec préférence
+Vérifications locales : tests cartes/calculs/CTA et SubscribeFromPricing (9 tests), typecheck
+dashboard, stylelint, lint ; 565 tests dashboard avant synchronisation de main. Captures Playwright mobile 390, iPad 768, desktop 1440 avec préférence
 claire mémorisée, contrôle de débordement et total trois sites. Surface pricing sombre explicite
 pour conserver la lisibilité. Comparaison défilable sur mobile avec en-têtes sémantiques.
 Limites : pas de nouvel appel réel ni envoi SMS/e-mail ; pilotes Essential sept jours et
