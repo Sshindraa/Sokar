@@ -1,7 +1,12 @@
 // Shared constants for the Sokar landing page
 // Used by both server and client components
 
-import { PLAN_PRICES_EUR } from '@sokar/shared';
+import {
+  featuresIntroducedIn,
+  pricingFor,
+  type FeatureStatus,
+  type PlanLabel,
+} from '@/app/pricing-catalog';
 
 export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
@@ -25,48 +30,56 @@ export const SIMULATOR_STEPS = [
   { sender: 'assistant', text: 'Merci à vous, au revoir et bon appétit !' },
 ];
 
+export interface PlanFeatureLine {
+  label: string;
+  status: FeatureStatus;
+}
+
 export interface PricingPlan {
-  label: 'Essential' | 'Pro' | 'Multi-site';
-  /** Prix mensuel sans engagement, en euros. */
+  label: PlanLabel;
+  /** Prix mensuel sans engagement, en euros HT. */
   price: string;
-  /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
+  /** Prix mensuel HT par établissement supplémentaire (Multi-site uniquement). */
   sitePrice?: string;
   description: string;
-  features: string[];
+  /** Formule précédente incluse en entier, affichée en tête de liste. */
+  inherits?: string;
+  /** Fonctionnalités introduites par cette formule, avec leur statut. */
+  features: PlanFeatureLine[];
   featured?: boolean;
 }
+
+const PLAN_DESCRIPTIONS: Record<PlanLabel, string> = {
+  Essential: 'Pour démarrer.',
+  Pro: 'Pour maximiser chaque service.',
+  'Multi-site': 'Pour plusieurs établissements.',
+};
+
+const toFeatureLines = (plan: PlanLabel): PlanFeatureLine[] =>
+  featuresIntroducedIn(plan).map(({ label, status }) => ({ label, status }));
 
 export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
-    price: String(PLAN_PRICES_EUR.ESSENTIAL),
-    description: 'Pour démarrer.',
-    features: [
-      'Répond aux appels transférés',
-      "Réservations prises pendant l'appel",
-      'Ton adapté à votre établissement',
-      'Rapport quotidien de vos appels',
-      '1 numéro dédié inclus',
-    ],
+    price: String(pricingFor('Essential').monthlyEur),
+    description: PLAN_DESCRIPTIONS.Essential,
+    features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
-    price: String(PLAN_PRICES_EUR.PRO),
-    description: 'Pour maximiser chaque service.',
-    features: ["Tout l'Essential", 'Suivi des no-shows'],
+    price: String(pricingFor('Pro').monthlyEur),
+    description: PLAN_DESCRIPTIONS.Pro,
+    inherits: "Tout l'Essential",
+    features: toFeatureLines('Pro'),
     featured: true,
   },
   {
     label: 'Multi-site',
-    price: String(PLAN_PRICES_EUR.PREMIUM),
-    sitePrice: '99',
-    description: 'Pour plusieurs établissements.',
-    features: [
-      'Plan Pro sur tous vos établissements',
-      'Un seul dashboard pour tout piloter',
-      'Un numéro et un agent par site',
-      'Une seule facture pour tout le groupe',
-    ],
+    price: String(pricingFor('Multi-site').monthlyEur),
+    sitePrice: String(pricingFor('Multi-site').sitePriceEur),
+    description: PLAN_DESCRIPTIONS['Multi-site'],
+    inherits: 'Tout le Pro, sur chaque établissement',
+    features: toFeatureLines('Multi-site'),
   },
 ];
 
@@ -107,8 +120,3 @@ export const FAQS = [
       "Oui. Chaque restaurant dispose de son propre espace isolé. Notre politique de confidentialité détaille les données traitées, les sous-traitants et leur localisation. Vous pouvez demander l'export ou l'effacement de vos données.",
   },
 ];
-
-export const DISPLAY_PRICE = (price: string, yearly: boolean) => {
-  const num = parseInt(price, 10);
-  return yearly ? Math.round(num * 0.8).toString() : price;
-};

@@ -627,3 +627,18 @@ Impact : le test d'appel et `validate-test-call` (niveau 1 de VOICE-01) sont blo
 | Appel de test sortant     | `TELNYX_FROM_NUMBER` (numéro E.164 de staging) ; profil vocal sortant de l'application à confirmer                                                                                                   | secret `TELNYX_FROM_NUMBER_STAGING` ; portail Telnyx |
 | Démo                      | session opérateur sur staging dans le navigateur intégré                                                                                                                                             | navigateur intégré                                   |
 | Abonnements en production | clé Stripe de lecture, mode live, non fournie                                                                                                                                                        | non fournie                                          |
+
+### 10.17 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
+
+**Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.
+
+**Abonnements.**
+
+- Un catalogue unique (`apps/dashboard/src/app/pricing-catalog.ts`) : chaque fonctionnalité porte un statut, « disponible » ou « prévu », et la formule qui l'introduit. Les cartes et le tableau comparatif en dérivent.
+- Prix annuels exacts, sans arrondi : Essential 159,20 € HT par mois (1 910,40 € HT par an), Pro 239,20 € (2 870,40 €), Multi-site 199,20 € (2 390,40 €), site supplémentaire 79,20 € (950,40 €). Les anciens tests figeaient l'arrondi (159, 239, 199 et +79) : ils sont mis à jour pour les montants exacts.
+- Tableau comparatif sur `/pricing` : 12 fonctionnalités, 3 formules. Vérifié dans le navigateur : 20 cellules « Disponible », 7 « Prévu », 9 « Non inclus ».
+- Contrôle préalable du catalogue Stripe de staging, en lecture seule avec une clé de test : 8 lignes sur 8 conformes. Ce contrôle n'est pas le livrable du chantier.
+
+**Vérifié dans le navigateur** (worktree, port 3107) : `/pricing` sans erreur de console. À 375 px, la page ne déborde pas ; le tableau défile dans son conteneur.
+
+**À valider avant publication.** Le statut « disponible » de la synchronisation Google Agenda, de la facturation groupée Multi-site et du suivi des no-shows repose sur le code et la FAQ : à confirmer par le produit. Sont marqués « prévu » : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.

@@ -15,9 +15,9 @@ describe('PricingSection', () => {
   it('affiche un CTA pour chaque formule avec la cadence annuelle sélectionnée', () => {
     render(<PricingSection />);
 
-    expect(screen.getByText('159')).toBeInTheDocument();
-    expect(screen.getByText('239')).toBeInTheDocument();
-    expect(screen.getByText('199')).toBeInTheDocument();
+    expect(screen.getByText('159,20')).toBeInTheDocument();
+    expect(screen.getByText('239,20')).toBeInTheDocument();
+    expect(screen.getByText('199,20')).toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Souscrire Essential' })).toHaveAttribute(
       'href',
@@ -49,7 +49,10 @@ describe('PricingSection', () => {
     const text = container.textContent ?? '';
 
     expect(text).toContain('249\u00a0€\u00a0HT/mois + 99\u00a0€\u00a0HT/site');
-    expect(text).toContain('+ 79\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 79,20\u00a0€\u00a0HT/site');
+    expect(text).toContain('Soit 1\u00a0910,40\u00a0€\u00a0HT par an');
+    expect(text).toContain('Soit 2\u00a0870,40\u00a0€\u00a0HT par an');
+    expect(text).toContain('Soit 2\u00a0390,40\u00a0€\u00a0HT par an');
     expect(text).not.toContain('Économisez');
   });
 

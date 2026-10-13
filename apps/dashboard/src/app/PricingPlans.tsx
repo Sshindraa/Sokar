@@ -2,21 +2,81 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { PLANS, DISPLAY_PRICE } from '@/app/constants';
+import { PLANS, type PlanFeatureLine } from '@/app/constants';
 import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
+import {
+  annualMonthlyCents,
+  annualTotalCents,
+  formatEuros,
+  pricingFor,
+  type FeatureStatus,
+  type PlanLabel,
+} from '@/app/pricing-catalog';
+import PlanComparison from '@/app/PlanComparison';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
-/** Espace insécable entre le montant et l'unité (« 159 € HT/mois »), comme en typographie française. */
-const euros = (amount: string | number, unit: 'mois' | 'site') =>
-  `${amount}\u00a0€\u00a0HT/${unit}`;
+/** Espace insécable entre le montant et l'unité (« 159,20 € HT/mois »), comme en typographie française. */
+const euros = (amount: string, unit: 'mois' | 'site') => `${amount} € HT/${unit}`;
+
+/** Montant mensuel affiché : tarif plein, ou mensualité annuelle exacte (-20 %). */
+const monthlyAmount = (eur: number, yearly: boolean) =>
+  formatEuros(yearly ? annualMonthlyCents(eur) : eur * 100);
+
+function StatusBadge({ status }: { status: FeatureStatus }) {
+  const available = status === 'disponible';
+  return (
+    <span
+      className={cn(
+        'ml-2 inline-block rounded-full border px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider',
+        available
+          ? 'border-pricing-accent/30 bg-pricing-accent/10 text-pricing-accent'
+          : 'border-white/15 text-white/50',
+      )}
+    >
+      {available ? 'Disponible' : 'Prévu'}
+    </span>
+  );
+}
+
+function FeatureItem({ feature }: { feature: PlanFeatureLine }) {
+  const available = feature.status === 'disponible';
+  return (
+    <li className="flex items-start gap-3 text-sm text-white/70">
+      <span
+        className={cn(
+          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+          available
+            ? 'border-pricing-accent/40 bg-pricing-accent/10'
+            : 'border-white/15 bg-white/[0.04]',
+        )}
+      >
+        <Check
+          size={12}
+          className={available ? 'text-pricing-accent' : 'text-white/40'}
+          strokeWidth={3}
+        />
+      </span>
+      <span>
+        {feature.label}
+        <StatusBadge status={feature.status} />
+      </span>
+    </li>
+  );
+}
 
 /**
- * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section
- * « Tarifs » de l'accueil et la page /pricing : une seule mise en page, une
- * seule source de prix (`PLANS`).
+ * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section « Tarifs » de l'accueil et la
+ * page /pricing. Une seule source des prix et des fonctionnalités : `PLANS`, issu du catalogue.
+ * `showComparison` ajoute le tableau comparatif (page /pricing).
  */
-export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
+export default function PricingPlans({
+  haptic = false,
+  showComparison = false,
+}: {
+  haptic?: boolean;
+  showComparison?: boolean;
+}) {
   const [yearly, setYearly] = useState(true);
 
   const toggleBilling = () => {
@@ -79,8 +139,8 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
     */}
       <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:gap-y-0">
         {PLANS.map((plan) => {
-          const yearlyPrice = DISPLAY_PRICE(plan.price, yearly);
-          const yearlySitePrice = plan.sitePrice ? DISPLAY_PRICE(plan.sitePrice, yearly) : null;
+          const pricing = pricingFor(plan.label as PlanLabel);
+          const sitePriceEur = pricing.sitePriceEur;
 
           return (
             <div
@@ -124,21 +184,30 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                     </span>
                     <span className="text-xs font-semibold text-white/45 line-through">
                       {euros(plan.price, 'mois')}
-                      {plan.sitePrice ? ` + ${euros(plan.sitePrice, 'site')}` : ''}
+                      {sitePriceEur !== null ? ` + ${euros(String(sitePriceEur), 'site')}` : ''}
                     </span>
                   </div>
                 )}
                 <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
-                    {yearlyPrice}
+                    {monthlyAmount(pricing.monthlyEur, yearly)}
                   </span>
                   <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
-                  {yearlySitePrice && (
+                  {sitePriceEur !== null && (
                     <span className="text-sm font-semibold text-white/60">
-                      + {euros(yearlySitePrice, 'site')}
+                      + {euros(monthlyAmount(sitePriceEur, yearly), 'site')}
                     </span>
                   )}
                 </div>
+                {yearly && (
+                  <p className="mt-2 text-xs text-white/45">
+                    Soit {formatEuros(annualTotalCents(pricing.monthlyEur))}
+                    {' € HT par an'}
+                    {sitePriceEur !== null &&
+                      `, + ${formatEuros(annualTotalCents(sitePriceEur))} € HT par an et par établissement supplémentaire`}
+                    .
+                  </p>
+                )}
                 {yearly && (
                   <p className="mt-2 text-xs text-white/45">
                     Facturation annuelle, engagement de 12 mois.
@@ -156,7 +225,7 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                 href={getPlanSignupHref(plan.label as PublicPlan, yearly)}
                 aria-label={`Souscrire ${plan.label}`}
                 className={cn(
-                  'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
+                  'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200',
                   plan.featured
                     ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'
                     : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
@@ -166,21 +235,30 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                 <ArrowUpRight size={14} />
               </Link>
 
-              {/* 5. Features */}
+              {/* 5. Features : formule précédente, puis fonctionnalités introduites ici, avec leur statut */}
               <ul className="relative z-10 mt-8 flex-1 space-y-4">
-                {plan.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
+                {plan.inherits && (
+                  <li className="flex items-start gap-3 text-sm text-white/70">
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
                       <Check size={12} className="text-pricing-accent" strokeWidth={3} />
                     </span>
-                    {feat}
+                    {plan.inherits}
                   </li>
+                )}
+                {plan.features.map((feature) => (
+                  <FeatureItem key={feature.label} feature={feature} />
                 ))}
               </ul>
             </div>
           );
         })}
       </div>
+
+      {showComparison && (
+        <div className="mt-20 w-full">
+          <PlanComparison />
+        </div>
+      )}
     </>
   );
 }

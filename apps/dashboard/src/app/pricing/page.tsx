@@ -78,7 +78,7 @@ export default function PricingPage() {
           }}
         />
         <div className="flex flex-col items-center pb-8 pt-4 md:pb-10 md:pt-10">
-          <PricingPlans haptic />
+          <PricingPlans haptic showComparison />
         </div>
       </section>
 
