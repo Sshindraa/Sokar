@@ -223,3 +223,174 @@ routes publiques ajoutées (additives), changement de sitemap et de métadonnée
 4. **Mesurer la demande réelle** pendant deux semaines après ouverture de `/demo` : nombre de demandes,
    délai de réponse tenu, taux de demandes notifiées. Décider ensuite de la suite selon ces chiffres.
 5. **Réviser les textes signalés** avant la prochaine mise en production publique.
+
+## 10. Qualification après fusion (13/10/2026, soir)
+
+Brief de qualification : PR #417 fusionnée à 17:18:47 UTC (merge `298fd1ac`). Les preuves ci-dessous
+proviennent des journaux GitHub Actions, de contrôles HTTP en lecture seule, de tests locaux et de
+navigations sur la production. Les demandes de test sur staging ont été faites avec des données
+fictives.
+
+### 10.1 Déploiement vérifié (journaux GitHub Actions)
+
+| Environnement | Run                            | Migration `20261013120000_demo_requests`                                                             | Résultat                                                                                  |
+| ------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Staging       | 38438346093, 17:24 à 17:27 UTC | Appliquée à 17:26:57 UTC (« All migrations have been successfully applied »)                         | Smoke tests : succès                                                                      |
+| Production    | 38439002920, 17:29 à 17:32 UTC | Appliquée à 17:31:43 UTC, après sauvegarde `sokar-20261013T173139Z.dump` et restauration de contrôle | Health : API `/health` et `/livez` 200, dashboard 200, Connect 200 ; smoke tests : succès |
+
+La promotion en production a été automatique, comme le prévoit `AGENTS.md`, une fois CI et staging verts.
+Rollback disponible : snapshot pré-build et sauvegarde datée (`/var/backups/sokar/`).
+
+### 10.2 Demande de démonstration sur staging
+
+- Envoi de test par le formulaire de staging, avec des données fictives (établissement « QA test Sokar
+  13-10-2026 (à supprimer) », e-mail `qa.sokar.test@example.com`). Requête réseau :
+  `POST /api/proxy/public/demo-requests` → **201**. Le message « Demande bien enregistrée » est affiché.
+  La demande est donc persistée et la table existe.
+- **Visible dans l'administration : non vérifié.** Staging tourne en mode démo : une requête anonyme est
+  traitée comme `demo-user`, et `GET /admin/demo-requests` répond 403 (« Sokar operator access required »).
+  Il faut un compte opérateur connecté pour voir la liste. Cette demande de test doit être clôturée
+  par l'opérateur après contrôle.
+- **Notification reçue : non, et non configurable en l'état.** Constat : les workflows de déploiement
+  ne transmettaient pas `DEMO_REQUEST_NOTIFY_TO` au `.env` de l'API. Aucune notification n'a donc pu partir,
+  ni en staging ni en production. Correctif dans la PR #418 (secret GitHub + script de synchronisation).
+  Reste à fournir le destinataire de test autorisé et à créer le secret.
+
+### 10.3 Sitemap : disponibilité de l'API et comportement réel du cache
+
+Test local : build de production de Connect (`output: standalone`, Next 15.5), API simulée sur un port
+local, deux instances. Les réponses ci-dessous viennent de `curl` sur le serveur réel.
+
+| Étape | API                                            | Réponse             | Entrées | Lecture                                         |
+| ----- | ---------------------------------------------- | ------------------- | ------- | ----------------------------------------------- |
+| A1    | disponible, v1                                 | 200                 | 5       | Données fraîches                                |
+| A2    | disponible, v2 (3 fiches), cache encore valide | 200                 | 5       | Cache : aucune nouvelle requête à l'API         |
+| A3    | indisponible (503), cache encore valide        | 200                 | 5       | Cache : la panne est invisible                  |
+| A4    | indisponible, après 310 s                      | 200                 | 5       | Données périmées servies, pas de liste tronquée |
+| A5    | revenue, v2                                    | 200                 | 5       | Revalidation lancée en arrière-plan             |
+| A6    | revenue, v2                                    | 200                 | 6       | Données à jour                                  |
+| B1    | serveur froid (aucun cache), indisponible      | **500**, corps vide | 0       | Pas de liste tronquée                           |
+| B2    | serveur froid, revenue                         | 200                 | 5       | Liste complète                                  |
+
+Conclusions : le sitemap ne publie jamais une liste partielle. Une panne de l'API est absorbée par le
+cache de données pendant 5 min, puis par la donnée périmée. Au démarrage à froid, elle produit une erreur.
+En production, `cf-cache-status: DYNAMIC` : Cloudflare ne met pas le sitemap en cache. **Non testé** :
+le comportement de Nginx en amont et les effets de purge au déploiement.
+
+### 10.4 Pages modifiées sur mobile, iPad et desktop (production)
+
+| Page             | 375 px                                     | 768 px | 1024 px | Constat                                                             |
+| ---------------- | ------------------------------------------ | ------ | ------- | ------------------------------------------------------------------- |
+| `/` hero         | OK                                         | OK     | OK      | CTA empilés en mobile, sans débordement                             |
+| `/` section démo | OK (grille 2 colonnes puis pleine largeur) | OK     | OK      | Mention de simulation visible                                       |
+| `/pricing`       | **Illisible**                              | —      | —       | Thème clair stocké : fond clair, texte blanc. **Corrigé dans #418** |
+| `/demo`          | OK                                         | OK     | OK      | Lisible en thème clair comme en sombre                              |
+
+Constats hors périmètre, non corrigés : en-tête « Cas d'usage » sur deux lignes à 768 px (en-tête
+partagé, non modifié par cette branche) ; étiquettes décoratives « METRIC_CARD » et « 01_HMI_TUNER »
+dans les maquettes (pré-existantes, à trancher par Hamza).
+
+### 10.5 Défauts constatés et corrigés (PR #418)
+
+| Défaut                                                         | Correction                                                                                     | Preuve                                                                                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `/pricing` illisible quand le visiteur a choisi le thème clair | Liste des pages de vitrine étendue à `/pricing` ; script extrait dans `theme-bootstrap.ts`     | Test du script réel dans un contexte isolé (RED puis GREEN, 3/3) ; à vérifier sur la production après déploiement |
+| `/demo` absente du sitemap                                     | Ajoutée aux pages statiques, avec son test                                                     | Sitemap test RED puis GREEN (5/5)                                                                                 |
+| Notification de démo jamais transmise à l'API                  | Secret `DEMO_REQUEST_NOTIFY_TO` dans les deux workflows ; script `sync-demo-request-config.sh` | Script testé : remplacement sans doublon, valeur invalide refusée, secret absent sans effet, mode 600             |
+| Sitemap échouant au build (`ECONNREFUSED`, CI)                 | Déjà corrigé dans la branche précédente (`aebedf2d`)                                           | Build local reproduit puis vert                                                                                   |
+
+### 10.6 Public après promotion (13/10/2026, 17:35 UTC)
+
+- `https://sokar.tech/sitemap.xml` : 200, 4 URL (accueil, `/assistant`, `/pricing`, fiche de démonstration).
+  `/demo` absente : corrigée dans #418.
+- Métadonnées : `/`, `/pricing`, `/demo` en `index, follow` avec titres propres ; `/login` et `/register`
+  en `noindex, nofollow`.
+- En-têtes du sitemap : `cache-control: public, max-age=0, must-revalidate`, `cf-cache-status: DYNAMIC`.
+
+### 10.7 VOICE-01 : état et dépendances réelles
+
+- Aucun appel n'a été passé dans cette session. Les dispositifs et leurs niveaux de preuve sont décrits en section 4.
+- **Dépendance réelle 1** : des appels réels avec les fournisseurs réels, depuis un numéro de test, par
+  une personne disposant de l'accès (Hamza ou l'équipe technique). Aucun identifiant de téléphonie n'est
+  accessible ici.
+- **Dépendance réelle 2** : la démonstration en direct de l'onboarding exige un compte restaurateur
+  authentifié (émission d'un ticket soumise à Clerk). Un compte de test doit être créé par Hamza.
+- Scénarios à qualifier (brief, section 7) : demande simple ; changement pendant la conversation ;
+  restaurant complet ; nom ou heure ambigus ; question pratique ; reprise ou répétition ; service dégradé.
+- Preuve attendue : date, environnement, version et commit, transcription expurgée, résultat métier
+  vérifié dans le dashboard autorisé, taux de réussite avec son dénominateur (échecs inclus).
+- Search Console n'est pas une dépendance de VOICE-01.
+
+### 10.8 LAND-01 : préparation et dépendances réelles
+
+**Étude de demande, sans Search Console ni Keyword Planner** (recherche web publique, 13/10/2026). Aucun
+volume ni difficulté n'est donné : ils restent **UNKNOWN**.
+
+Expressions candidates, classées par intention :
+
+| #   | Expression                                        | Intention                 |
+| --- | ------------------------------------------------- | ------------------------- |
+| 1   | assistant téléphonique restaurant                 | Restaurateur (solution)   |
+| 2   | standard téléphonique restaurant                  | Restaurateur              |
+| 3   | standard téléphonique IA restaurant               | Restaurateur              |
+| 4   | assistant vocal restaurant                        | Restaurateur              |
+| 5   | assistant téléphonique IA restaurant              | Restaurateur              |
+| 6   | prise de réservation téléphone restaurant         | Restaurateur              |
+| 7   | réservation téléphonique restaurant logiciel      | Restaurateur (comparatif) |
+| 8   | logiciel réservation restaurant téléphone         | Restaurateur (comparatif) |
+| 9   | gestion des appels restaurant                     | Restaurateur (problème)   |
+| 10  | appels manqués restaurant                         | Restaurateur (problème)   |
+| 11  | répondre aux appels pendant le service restaurant | Restaurateur (problème)   |
+| 12  | répondeur restaurant réservation                  | Restaurateur              |
+| 13  | répondeur automatique restaurant                  | Restaurateur              |
+| 14  | agent IA restaurant réservation                   | Restaurateur              |
+| 15  | logiciel restaurant réservations téléphone        | Restaurateur              |
+| 16  | réservation par téléphone restaurant              | Mixte                     |
+| 17  | réserver une table par téléphone                  | Consommateur              |
+| 18  | appeler un restaurant pour réserver               | Consommateur              |
+
+**Paysage concurrentiel observé** (éditeurs et articles, données non vérifiées) : Allo (withallo.com),
+Famulor (famulor.io), Bookler de Formitable (formitable.com), Assistent.ai, Ainora (ainora.lt), Anolla
+(anolla.com), ClickTable, DineTime, BiteBuddy, aleno, Loman (loman.ai), CloudTalk, Jotform, et l'aide
+Zenchef sur son assistant IA. Les éditeurs annoncent des taux (98 %, 100 %, 59,3 %, 80 à 90 %) ou des délais
+de réponse qui ne sont pas vérifiables : **nous ne les reprenons pas**.
+
+**Dépendances réellement manquantes pour publier la landing** :
+
+- **Preuve de démonstration** : VOICE-01 (ci-dessus). C'est la seule dépendance bloquante.
+- **Promesse** : déjà exacte dans la vitrine (répond aux appels transférés, consulte les disponibilités,
+  enregistre les réservations). Aucune garantie chiffrée, aucune parité avec un concurrent.
+- **Conversion** : `/demo` est en production. Le suivi opérateur existe, reste à le faire tenir (délai de
+  réponse à définir par Hamza).
+- **Technique** : route `/solutions/assistant-telephonique-restaurant` à créer après VOICE-01, avec
+  métadonnées propres, canonical, entrée au sitemap, et maillage depuis l'accueil.
+
+**Non bloquants** : Search Console (la landing peut être publiée sans elle ; l'indexation réelle reste
+UNKNOWN) ; volumes de recherche ; témoignages et gains chiffrés (exclus de la landing tant qu'ils n'ont
+pas leurs preuves).
+
+**Plan proposé de la landing** (à publier après VOICE-01) : cible et problème concret ; fonctionnement
+(répondre, consulter, enregistrer) ; démonstration avec transcription accessible et mention de simulation si
+besoin ; configuration et secours ; limites (pas de synchronisation avec un autre logiciel, pas de gain
+garanti) ; prix HT et engagement ; questions pratiques (FAQ) ; CTA vers `/demo`.
+
+**Sources consultées** (13/10/2026) : [famulor.io/fr/industries/restaurants](https://www.famulor.io/fr/industries/restaurants),
+[withallo.com/fr/industries/restaurants](https://www.withallo.com/fr/industries/restaurants),
+[formitable.com/integrations/bookler](https://formitable.com/integrations/bookler),
+[help.zenchef.com (Assistent AI)](https://help.zenchef.com/hc/en-gb/articles/17866645446301-Assistent-ai),
+[ainora.lt/fr/standard-telephonique-restaurants](https://ainora.lt/fr/standard-telephonique-restaurants),
+[appvizer.fr (logiciels de réservation)](https://www.appvizer.fr/magazine/relation-client/reservation/logiciel-de-reservation-restaurant),
+[anolla.com/fr/logiciel-de-restaurant](https://anolla.com/fr/logiciel-de-restaurant),
+[cloudtalk.io (réceptionniste IA)](https://www.cloudtalk.io/video/automate-restaurant-front-desk-with-ai-receptionist/).
+
+### 10.9 Dépendances restantes (après qualification)
+
+| Dépendance                                                                                        | Responsable               | Action précise                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adresse de test autorisée pour la notification de staging, puis adresse commerciale en production | Hamza                     | Indiquer l'adresse et autoriser la création du secret GitHub `DEMO_REQUEST_NOTIFY_TO` (staging et production)                                                  |
+| Vérification de la liste opérateur                                                                | Hamza                     | Se connecter en opérateur sur staging, ouvrir `/dashboard/admin/demo-requests`, vérifier la ligne « QA test Sokar 13-10-2026 », puis la passer en « Clôturée » |
+| Qualification vocale                                                                              | Hamza ou équipe technique | Passer les scénarios de la section 10.7 avec un numéro de test, archiver les preuves expurgées                                                                 |
+| Compte restaurateur de test                                                                       | Hamza                     | Créer un compte de test pour la démonstration en direct de l'onboarding                                                                                        |
+| Suivi des demandes                                                                                | Hamza                     | Désigner le responsable et fixer le délai de réponse à afficher, ou ne rien afficher                                                                           |
+| Search Console                                                                                    | Hamza                     | Donner l'accès à la propriété `sokar.tech` (non bloquant pour la landing)                                                                                      |
+| Lien de navigation admin                                                                          | Auteur du chantier admin  | Ajouter le lien vers `/dashboard/admin/demo-requests`                                                                                                          |
