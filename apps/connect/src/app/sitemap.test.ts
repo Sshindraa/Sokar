@@ -8,7 +8,7 @@ vi.mock('@/lib/api-client', () => ({
   fetchSitemapSources: api.fetchSitemapSources,
 }));
 
-import sitemap from './sitemap';
+import sitemap, * as route from './sitemap';
 
 const SITE = 'https://sokar.tech';
 
@@ -70,5 +70,9 @@ describe('sitemap', () => {
     expect(byUrl(SITE)?.lastModified).toBeUndefined();
     expect(byUrl(`${SITE}/pricing`)?.lastModified).toBeUndefined();
     expect(byUrl(`${SITE}/restaurants/paris`)?.lastModified).toBeUndefined();
+  });
+
+  it('est rendu à la requête, pour que le build ne dépende pas de la disponibilité de l’API', () => {
+    expect(route.dynamic).toBe('force-dynamic');
   });
 });

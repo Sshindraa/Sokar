@@ -19,9 +19,10 @@ import { fetchSitemapSources } from '@/lib/api-client';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
-// Sitemap dynamique — ISR 5min (Cloudflare cache en edge en plus).
-// Pas de force-dynamic : revalidate=300 suffit pour le cache ISR.
-export const revalidate = 300;
+// Rendu à la requête : le build n'appelle pas l'API (absente en CI). Les données restent en cache
+// 5 min via fetchSitemapSources (next.revalidate). Une panne de l'API fait échouer la requête au
+// lieu de publier un sitemap tronqué.
+export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { restaurants: slugs, cities } = await fetchSitemapSources();
