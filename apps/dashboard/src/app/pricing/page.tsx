@@ -4,6 +4,7 @@ import { ArrowUpRight } from 'lucide-react';
 import MobileNav from '@/components/MobileNav';
 import { cn } from '@/lib/utils';
 import PricingPlans from '@/app/PricingPlans';
+import PricingDetails from '@/app/PricingDetails';
 
 /* ===== COMPONENT ===== */
 
@@ -57,13 +58,23 @@ export default function PricingPage() {
 
       {/* ---- HERO ---- */}
       <section className="pricing-hero">
-        <h1 className="pricing-hero-title">Tarifs</h1>
+        <div className="mx-auto max-w-3xl px-5 text-center">
+          <p className="mb-4 text-sm font-semibold text-pricing-accent">Les formules Sokar</p>
+          <h1 className="text-4xl font-semibold leading-tight md:text-6xl">
+            L’accueil commence avant le premier couvert.
+          </h1>
+          <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+            Le téléphone sonne pendant le service. Une réservation arrive du web ou se prend en
+            salle. Sokar les réunit dans votre planning pour que l’équipe retrouve les bonnes
+            informations au bon moment.
+          </p>
+        </div>
       </section>
 
       {/* ---- CARDS ---- */}
       <section
         className="relative z-[2] mx-auto max-w-[1180px] px-5 pb-28 md:px-8 md:pb-8 md:-mt-7"
-        aria-label="Pricing plans"
+        aria-label="Formules et facturation"
       >
         {/* Ambient glow behind cards */}
         <div
@@ -79,22 +90,7 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* Mobile closing CTA */}
-      <div className="relative z-[2] mx-5 mb-8 flex items-center justify-between gap-4 rounded-3xl border border-border/40 bg-background/80 p-4 shadow-2xl backdrop-blur-lg md:hidden">
-        <div className="flex flex-col">
-          <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--pricing-accent))] font-bold">
-            Sokar AI
-          </span>
-          <span className="text-xs font-semibold text-foreground">Souscription sécurisée</span>
-        </div>
-        <Link
-          href="/register"
-          className="flex-1 max-w-[180px] text-center inline-flex items-center justify-center gap-1.5 rounded-full bg-[hsl(var(--pricing-accent))] text-black px-4 py-2.5 text-xs font-bold shadow-[0_0_15px_hsl(var(--pricing-accent)/0.35)] transition-all duration-150 active:scale-95 active:brightness-90"
-        >
-          Souscrire
-          <ArrowUpRight size={14} />
-        </Link>
-      </div>
+      <PricingDetails />
 
       {/* ---- FOOTER ---- */}
       <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">

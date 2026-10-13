@@ -32,6 +32,8 @@ export interface PricingPlan {
   /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
   sitePrice?: string;
   description: string;
+  promise: string;
+  note?: string;
   features: string[];
   featured?: boolean;
 }
@@ -40,39 +42,46 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
-    description: 'Pour démarrer.',
+    promise: 'Vos appels et vos réservations, au même endroit.',
+    description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
     features: [
-      'Répond à chaque appel, 24h/24',
-      'Réservations prises sans intervention',
-      'Ton adapté à votre établissement',
-      'Rapport quotidien de vos appels',
-      '1 numéro dédié inclus',
+      'Un assistant pour les réservations par téléphone',
+      'Les réservations téléphone, web et en salle dans un planning commun',
+      'Votre page Connect et votre widget de réservation',
+      'Plan de salle et liste d’attente pour organiser les couverts',
+      'Un fichier client et le suivi des absences',
+      'Un numéro dédié, configuré lors de la mise en service',
     ],
   },
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
-    description: 'Pour maximiser chaque service.',
+    promise: 'Préparez la prochaine invitation de vos clients.',
+    description: 'Pour un restaurant qui souhaite préparer ses actions de fidélisation.',
     features: [
-      "Tout l'Essential, sans limite",
-      'Vos clients reconnus à chaque appel',
-      'No-shows gérés, revenus récupérés',
-      'Réservable depuis ChatGPT et Claude',
-      'Support prioritaire 7j/7',
+      'Tout le socle Essential',
+      'Préparation de groupes de clients',
+      'Brouillons de campagnes pour vos invitations',
+      'Aperçu des destinataires avant tout envoi',
+      'Règles pour préparer vos actions de fidélisation',
     ],
-    featured: true,
+    note: 'Aujourd’hui : préparation uniquement. L’envoi des campagnes et les profils clients avancés ne sont pas encore disponibles.',
   },
   {
     label: 'Multi-site',
     price: String(PLAN_PRICES_EUR.PREMIUM),
     sitePrice: '99',
-    description: 'Pour plusieurs établissements.',
+    promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
+    description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
     features: [
-      'Plan Pro sur tous vos établissements',
-      'Un seul dashboard pour tout piloter',
-      'Un numéro et un agent par site',
-      'Une seule facture pour tout le groupe',
+      'Le périmètre actuel de Pro par établissement',
+      'Passage d’une adresse à l’autre dans votre espace',
+      'Planning et fichier client propres à chaque restaurant',
+      'Horaires et règles de réservation par adresse',
+      'Un numéro dédié par établissement',
+      'Une facturation réunie au niveau du groupe',
     ],
+    note: 'Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles. Les accès des équipes sont validés lors de la mise en service.',
   },
 ];
 
@@ -95,7 +104,7 @@ export const FAQS = [
   {
     question: 'Combien coûte Sokar ?',
     answer:
-      'Trois forfaits, sans engagement : Essential à 199€/mois, Pro à 299€/mois (recommandé), et Multi-site à partir de 249€/mois + 99€/site supplémentaire. La facturation annuelle vous fait bénéficier de 20% de réduction. Le détail des fonctionnalités est sur notre page Tarifs.',
+      'Essential à 199 € HT/mois, Pro à 299 € HT/mois et Multi-site à 249 € HT/mois pour le premier établissement, puis 99 € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec 20 % de réduction. Consultez les inclusions actuelles sur la page Tarifs.',
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
@@ -114,7 +123,15 @@ export const FAQS = [
   },
 ];
 
-export const DISPLAY_PRICE = (price: string, yearly: boolean) => {
-  const num = parseInt(price, 10);
-  return yearly ? Math.round(num * 0.8).toString() : price;
-};
+/** Montants en centimes avant formatage, sans arrondir l’équivalent annuel à l’euro. */
+export const billingAmount = (price: string | number, yearly: boolean, annualTotal = false) =>
+  Math.round(Number(price) * 100 * (yearly ? 0.8 : 1) * (annualTotal ? 12 : 1)) / 100;
+
+export const formatPrice = (amount: number) =>
+  amount.toLocaleString('fr-FR', {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+
+export const DISPLAY_PRICE = (price: string, yearly: boolean) =>
+  formatPrice(billingAmount(price, yearly));

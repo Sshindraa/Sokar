@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { PLANS, DISPLAY_PRICE } from '@/app/constants';
+import { PLANS, DISPLAY_PRICE, billingAmount, formatPrice } from '@/app/constants';
 import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
@@ -17,6 +17,7 @@ const euros = (amount: string | number, unit: 'mois' | 'site') => `${amount}\u00
  */
 export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
   const [yearly, setYearly] = useState(true);
+  const [siteCount, setSiteCount] = useState(2);
 
   const toggleBilling = () => {
     if (haptic) triggerHaptic(15);
@@ -70,13 +71,19 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
         </span>
       </div>
 
+      <p className="mb-8 text-center text-sm text-white/70">
+        {yearly
+          ? 'Paiement à l’année, engagement de 12 mois. Réduction de 20 %.'
+          : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
+        Tous les prix sont hors taxes.
+      </p>
       {/*
       Cards Grid. En md+, chaque carte est une sous-grille de 5 lignes
       (en-tête, prix, description, bouton, avantages) : les lignes sont
       partagées entre les cartes, donc les boutons et les listes restent
       alignés quelle que soit la longueur des textes.
     */}
-      <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:gap-y-0">
+      <div className="grid w-full grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-y-0">
         {PLANS.map((plan) => {
           const yearlyPrice = DISPLAY_PRICE(plan.price, yearly);
           const yearlySitePrice = plan.sitePrice ? DISPLAY_PRICE(plan.sitePrice, yearly) : null;
@@ -85,7 +92,7 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 md:row-span-5 md:grid md:grid-rows-subgrid',
+                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 lg:row-span-5 lg:grid lg:grid-rows-subgrid',
                 plan.featured
                   ? 'border-pricing-accent/25 bg-white/[0.08] shadow-[0_0_40px_hsl(var(--pricing-accent)_/_0.15)] hover:shadow-[0_0_60px_hsl(var(--pricing-accent)_/_0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
@@ -131,24 +138,63 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
                     {yearlyPrice}
                   </span>
-                  <span className="text-sm font-semibold text-white/60">€/mois</span>
+                  <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
                   {yearlySitePrice && (
                     <span className="text-sm font-semibold text-white/60">
                       + {euros(yearlySitePrice, 'site')}
                     </span>
                   )}
                 </div>
-              </div>
 
+                {plan.sitePrice && (
+                  <div className="relative z-10 mb-4 text-sm text-white/80">
+                    <label htmlFor="pricing-sites">Nombre d’établissements</label>
+                    <select
+                      id="pricing-sites"
+                      value={siteCount}
+                      onChange={(event) => setSiteCount(Number(event.target.value))}
+                      className="ml-2 rounded-lg border border-white/20 bg-black p-2 text-white transition-all duration-200"
+                    >
+                      {Array.from({ length: 99 }, (_, i) => i + 2).map((count) => (
+                        <option key={count} value={count}>
+                          {count}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2">
+                      Premier établissement inclus, puis {yearlySitePrice} € HT/mois par adresse
+                      supplémentaire.
+                    </p>
+                    <p className="mt-2 font-semibold">
+                      Total pour {siteCount} établissements :{' '}
+                      {formatPrice(
+                        billingAmount(
+                          Number(plan.price) + (siteCount - 1) * Number(plan.sitePrice),
+                          yearly,
+                        ),
+                      )}{' '}
+                      € HT/mois.
+                    </p>
+                  </div>
+                )}
+                <p className="relative z-10 mb-3 text-sm text-white/80">
+                  {yearly
+                    ? `${formatPrice(billingAmount(Number(plan.price) + (plan.sitePrice ? (siteCount - 1) * Number(plan.sitePrice) : 0), true, true))} € HT facturés par an.`
+                    : 'Facturé chaque mois.'}
+                </p>
+              </div>
               {/* 3. Description */}
               <p className="relative z-10 mb-8 text-sm leading-relaxed text-white/50">
+                <strong className="mb-3 block text-lg font-semibold text-white">
+                  {plan.promise}
+                </strong>
                 {plan.description}
               </p>
 
               {/* 4. CTA */}
               <Link
-                href={getPlanSignupHref(plan.label as PublicPlan, yearly)}
-                aria-label={`Souscrire ${plan.label}`}
+                href={getPlanSignupHref(plan.label as PublicPlan, yearly, siteCount)}
+                aria-label={`Choisir ${plan.label}`}
                 className={cn(
                   'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
                   plan.featured
@@ -156,21 +202,28 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                     : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
                 )}
               >
-                Souscrire
+                Choisir {plan.label}
                 <ArrowUpRight size={14} />
               </Link>
 
               {/* 5. Features */}
-              <ul className="relative z-10 mt-8 flex-1 space-y-4">
-                {plan.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
-                      <Check size={12} className="text-pricing-accent" strokeWidth={3} />
-                    </span>
-                    {feat}
-                  </li>
-                ))}
-              </ul>
+              <div className="relative z-10 mt-8">
+                <ul className="space-y-4">
+                  {plan.features.map((feat) => (
+                    <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
+                        <Check size={12} className="text-pricing-accent" strokeWidth={3} />
+                      </span>
+                      {feat}
+                    </li>
+                  ))}
+                </ul>
+                {plan.note && (
+                  <p className="relative z-10 mt-5 text-sm leading-relaxed text-white/70">
+                    {plan.note}
+                  </p>
+                )}
+              </div>
             </div>
           );
         })}
