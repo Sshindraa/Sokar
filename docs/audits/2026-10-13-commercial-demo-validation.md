@@ -37,7 +37,8 @@ Le niveau 2 ne commence qu'une fois le niveau 1 validé.
 | Prérequis                                                                                                                                                                         | Responsable               | Contrôle                                                                    |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------- |
 | Restaurant de test sur staging, sans établissement client ni donnée client                                                                                                        | Équipe technique          | Identifiant opaque consigné dans le journal des essais                      |
-| Numéro de test Telnyx routé vers ce restaurant de test uniquement                                                                                                                 | Équipe technique          | L'appel reçoit la réponse de l'assistant ; aucun renvoi vers un numéro réel |
+| Numéro de test Telnyx rattaché à ce restaurant de test uniquement (`TELNYX_CONNECTION_ID`)                                                                                        | Équipe technique          | L'appel reçoit la réponse de l'assistant ; aucun renvoi vers un numéro réel |
+| Test d'appel sortant du provisioning : `connectionId` transmis, webhook `POST /voice/telnyx`, état `onboarding_test_call` traité (correction de code)                             | Équipe technique          | Test d'appel validé avant `validate-test-call`                              |
 | Appelant disposant du numéro de test                                                                                                                                              | Hamza ou équipe technique | Numéro non publié, ni dans le dépôt ni dans les captures                    |
 | Session opérateur sur staging, nécessaire aux routes de provisioning                                                                                                              | Hamza                     | Connexion opérateur effectuée avant le niveau 1                             |
 | Environnement, commit déployé et valeurs des variables `VOICE_*` relevés au moment de l'essai (noms dans `apps/api/.env.example`)                                                 | Équipe technique          | Ligne complète dans le journal des essais                                   |
@@ -131,12 +132,13 @@ La démonstration est qualifiée lorsque :
 - **Niveau 2 (conversation)** : 0 appel, premier appel de réservation non joué, 0 sur 7 scénarios.
 - **Dépendances réelles** :
 
-| Dépendance                                                                           | Responsable               | Conséquence si elle manque              |
-| ------------------------------------------------------------------------------------ | ------------------------- | --------------------------------------- |
-| Session opérateur sur staging                                                        | Hamza                     | Niveau 1 impossible                     |
-| Restaurant de test sur staging et numéro de test routé vers lui                      | Équipe technique          | Aucun appel possible                    |
-| Appelant disposant du numéro de test                                                 | Hamza ou équipe technique | Aucun scénario joué                     |
-| Compte restaurateur de test (uniquement si la démonstration en direct est qualifiée) | Hamza                     | Démonstration en direct non qualifiable |
+| Dépendance                                                                           | Responsable               | Conséquence si elle manque                                |
+| ------------------------------------------------------------------------------------ | ------------------------- | --------------------------------------------------------- |
+| Session opérateur sur staging                                                        | Hamza                     | Niveau 1 impossible                                       |
+| Correction du test d'appel sortant (code)                                            | Équipe technique          | Niveau 1 impossible : le test d'appel ne peut pas aboutir |
+| Restaurant de test sur staging et numéro de test routé vers lui                      | Équipe technique          | Aucun appel possible                                      |
+| Appelant disposant du numéro de test                                                 | Hamza ou équipe technique | Aucun scénario joué                                       |
+| Compte restaurateur de test (uniquement si la démonstration en direct est qualifiée) | Hamza                     | Démonstration en direct non qualifiable                   |
 
 Search Console n'est pas une dépendance de cette qualification.
 

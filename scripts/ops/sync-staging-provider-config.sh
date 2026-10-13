@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Synchronise les réglages fournisseurs de staging (e-mail, téléphonie) depuis les secrets `*_STAGING`
-# du workflow de staging. Le workflow de production ne transmet pas ces variables : une clé de staging
-# ne peut donc pas atteindre la production.
-# Les valeurs ne sont jamais affichées. Une variable vide ne modifie pas le fichier : sans clé, l'e-mail
-# et la voix restent désactivés en staging.
+# Synchronise les réglages fournisseurs de staging depuis les secrets et variables `*_STAGING` du seul
+# workflow de staging. Le workflow de production ne les transmet pas : une valeur de staging ne peut
+# donc pas atteindre la production.
+#
+# Chaque réglage est lu par un consommateur réel de l'API :
+#   RESEND_API_KEY        shared/email                       envoi des e-mails
+#   EMAIL_FROM            shared/email                       expéditeur (repli sur noreply@sokar.fr sinon)
+#   TELNYX_API_KEY        shared/telnyx/client               API Telnyx
+#   TELNYX_PUBLIC_KEY     voice/telnyx.guard                 vérification de la signature des webhooks
+#   TELNYX_CONNECTION_ID  admin/provisioning.service         rattachement du numéro à l'application d'appel
+#   TELNYX_FROM_NUMBER    shared/telnyx/client               numéro émetteur (appels sortants, SMS)
+# TELNYX_APP_ID et TELNYX_WEBHOOK_SECRET ne sont lus par aucun code : ils ne sont pas synchronisés.
+#
+# Les valeurs ne sont jamais affichées. Une variable vide ne modifie pas le fichier : sans réglage,
+# l'e-mail et la voix restent désactivés en staging.
 
 set -Eeuo pipefail
 umask 077
@@ -11,12 +21,21 @@ umask 077
 TARGET_ENV_FILE="${SOKAR_API_ENV_FILE:-/opt/sokar-staging/apps/api/.env}"
 PROVIDER_KEYS=(
   RESEND_API_KEY
+  EMAIL_FROM
   TELNYX_API_KEY
-  TELNYX_APP_ID
   TELNYX_PUBLIC_KEY
-  TELNYX_WEBHOOK_SECRET
+  TELNYX_CONNECTION_ID
   TELNYX_FROM_NUMBER
 )
+
+# Format attendu par réglage. Une valeur hors format est refusée, sans être affichée.
+is_valid_value() {
+  case "$1" in
+    EMAIL_FROM) [[ "$2" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] ;;
+    TELNYX_FROM_NUMBER) [[ "$2" =~ ^\+[1-9][0-9]{7,14}$ ]] ;;
+    *) [[ "$2" =~ ^[^[:space:]]{8,}$ ]] ;;
+  esac
+}
 
 selected=()
 for key in "${PROVIDER_KEYS[@]}"; do
@@ -24,8 +43,8 @@ for key in "${PROVIDER_KEYS[@]}"; do
   if [[ -z "$value" ]]; then
     continue
   fi
-  if [[ ! "$value" =~ ^[^[:space:]]{8,}$ ]]; then
-    echo "Valeur invalide pour $key (8 caractères minimum, sans espace)" >&2
+  if ! is_valid_value "$key" "$value"; then
+    echo "Valeur invalide pour $key (format attendu : voir docs/runbooks/environment.md)" >&2
     exit 1
   fi
   selected+=("$key")
