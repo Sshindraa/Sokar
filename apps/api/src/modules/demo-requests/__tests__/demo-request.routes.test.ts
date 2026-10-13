@@ -140,7 +140,11 @@ describe('demo-request.routes', () => {
       process.env.DEMO_REQUEST_NOTIFY_TO = 'ops@sokar.test, sales@sokar.test';
       const app = await getApp();
       vi.mocked(db.demoRequest.create).mockResolvedValue(demoRequest() as never);
-      vi.mocked(sendEmail).mockResolvedValue(undefined);
+      vi.mocked(sendEmail).mockResolvedValue({
+        outcome: 'success',
+        provider: 'resend',
+        channel: 'email',
+      } as never);
       vi.mocked(db.demoRequest.update).mockResolvedValue(demoRequest() as never);
 
       const res = await app.inject({
@@ -159,6 +163,27 @@ describe('demo-request.routes', () => {
         where: { id: 'dr_1' },
         data: { notifiedAt: expect.any(Date) },
       });
+    });
+
+    it("ne marque pas la notification quand l'envoi est refusé, et garde la demande", async () => {
+      process.env.DEMO_REQUEST_NOTIFY_TO = 'ops@sokar.test';
+      const app = await getApp();
+      vi.mocked(db.demoRequest.create).mockResolvedValue(demoRequest() as never);
+      vi.mocked(sendEmail).mockResolvedValue({
+        outcome: 'failure_certain',
+        provider: 'resend',
+        channel: 'email',
+      } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/demo-requests',
+        payload: VALID_BODY,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(db.demoRequest.create).toHaveBeenCalledTimes(1);
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
     });
 
     it("garde la demande même si l'envoi de notification échoue, sans marquer l'envoi", async () => {
