@@ -2,7 +2,7 @@
 import { useSearchParams } from 'next/navigation';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MoreHorizontal,
   Copy,
@@ -203,6 +203,11 @@ export default function ExperiencesPage() {
     capacityOverride: '',
   });
 
+  // Sélection que `load` a lui-même choisie et dont il charge les dates. Changer d’expérience, en
+  // créer ou en supprimer une relance un chargement complet ; mais à l’ouverture, la sélection
+  // posée par le premier chargement ne doit pas en relancer un second, identique.
+  const selectionHandledByLoadRef = useRef<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -224,6 +229,7 @@ export default function ExperiencesPage() {
           : (nextExperiences.find((item) => item.status === 'ACTIVE')?.id ??
             nextExperiences[0]?.id ??
             '');
+      selectionHandledByLoadRef.current = nextSelected;
       setExperiences(nextExperiences);
       setReservations(nextReservations);
       setPaymentReadiness(readinessResponse?.data ?? null);
@@ -254,8 +260,9 @@ export default function ExperiencesPage() {
   }, [get, selectedExperienceId]);
 
   useEffect(() => {
+    if (selectionHandledByLoadRef.current === selectedExperienceId) return;
     void load();
-  }, [load]);
+  }, [load, selectedExperienceId]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || loading || !dataLoaded || error || accessBlock) return;
