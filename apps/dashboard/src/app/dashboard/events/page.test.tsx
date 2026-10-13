@@ -12,6 +12,13 @@ vi.mock('@/lib/api', () => ({
   useApi: () => ({ get: apiMocks.get, post: apiMocks.post, patch: apiMocks.patch }),
 }));
 
+// Les boutons d’action n’apparaissent qu’après le chargement de l’événement, et restent désactivés
+// pendant une action : on attend qu’ils soient actifs, sinon React ignore le clic.
+async function clickWhenEnabled(name: string | RegExp) {
+  await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name }));
+}
+
 const event = {
   id: 'event-1',
   key: 'wine-night',
@@ -121,7 +128,7 @@ describe('EventsPage', () => {
     await screen.findByRole('heading', { name: 'Événements' });
     await screen.findByText('Dates ouvertes');
     expect(screen.queryByLabelText('Nom de l’événement')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Créer un événement' }));
+    await clickWhenEnabled('Créer un événement');
     fireEvent.change(await screen.findByLabelText('Nom de l’événement'), {
       target: { value: 'Atelier vins' },
     });
@@ -156,7 +163,7 @@ describe('EventsPage', () => {
   it('convertit le prix du tarif en euros vers les centimes de l’API', async () => {
     render(<EventsPage />);
     await screen.findByRole('heading', { name: 'Événements' });
-    fireEvent.click(screen.getByRole('button', { name: 'Ajouter un tarif' }));
+    await clickWhenEnabled('Ajouter un tarif');
     fireEvent.change(await screen.findByLabelText('Nom du tarif'), {
       target: { value: 'Tarif enfant' },
     });

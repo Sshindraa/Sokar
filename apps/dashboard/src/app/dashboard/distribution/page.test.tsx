@@ -8,6 +8,13 @@ vi.mock('@/lib/api', () => ({
   useApi: () => ({ get: apiMocks.get, post: apiMocks.post }),
 }));
 
+// Le bouton n’apparaît qu’une fois les connexions chargées, et reste désactivé pendant une action :
+// on attend qu’il soit actif, sinon React ignore le clic.
+async function clickWhenEnabled(name: string | RegExp) {
+  await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name }));
+}
+
 const connection = {
   id: 'connection-1',
   provider: 'GOOGLE_RESERVE',
@@ -133,7 +140,7 @@ describe('DistributionPage', () => {
   it('met un run local en file avec une clé d’idempotence', async () => {
     render(<DistributionPage />);
     await screen.findByRole('heading', { name: 'Canaux partenaires' });
-    fireEvent.click(screen.getByRole('button', { name: /Mettre un run local en file/ }));
+    await clickWhenEnabled(/Mettre un run local en file/);
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
         'distribution/connections/connection-1/sync-runs',
