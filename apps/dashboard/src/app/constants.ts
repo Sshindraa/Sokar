@@ -42,7 +42,7 @@ export const PLANS: PricingPlan[] = [
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
     description: 'Pour démarrer.',
     features: [
-      'Répond aux appels transférés, 24h/24',
+      'Répond aux appels transférés',
       "Réservations prises pendant l'appel",
       'Ton adapté à votre établissement',
       'Rapport quotidien de vos appels',
@@ -53,13 +53,7 @@ export const PLANS: PricingPlan[] = [
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
     description: 'Pour maximiser chaque service.',
-    features: [
-      "Tout l'Essential, sans limite",
-      'Vos clients reconnus à chaque appel',
-      'Suivi des no-shows',
-      'Réservable depuis ChatGPT et Claude',
-      'Support prioritaire 7j/7',
-    ],
+    features: ["Tout l'Essential", 'Suivi des no-shows'],
     featured: true,
   },
   {
