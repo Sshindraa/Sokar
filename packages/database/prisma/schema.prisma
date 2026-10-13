@@ -22,6 +22,8 @@ model Restaurant {
   siteStatus                String                 @default("ACTIVE") @map("site_status")
   name                      String
   plan                      Plan                   @default(STARTER)
+  /// Maintien du copilote pour les établissements présents avant la séparation Essential/Pro.
+  serviceCopilotLegacyAccess Boolean                @default(false) @map("service_copilot_legacy_access")
   managerPhone              String                 @map("manager_phone")
   managerEmail              String                 @map("manager_email")
   phoneNumber               String                 @unique @map("phone_number")

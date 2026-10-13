@@ -39,12 +39,32 @@ function sentBodies() {
 
 describe('DemoRequestForm', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/demo');
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('conserve offre, cadence et établissements après la démonstration, y compris après une erreur', async () => {
+    window.history.replaceState({}, '', '/demo?plan=multi-site&billing=annual&sites=3');
+    fetchMock
+      .mockRejectedValueOnce(new Error('réseau'))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: 'demo-test' } }, 201));
+    render(<DemoRequestForm />);
+    fillRequiredFields();
+    fireEvent.click(submitButton());
+    await screen.findByRole('alert');
+    fireEvent.click(submitButton());
+    await screen.findByText('Demande bien enregistrée');
+    expect(screen.getByRole('link', { name: 'Créer votre compte' })).toHaveAttribute(
+      'href',
+      '/register?plan=multi-site&billing=annual&sites=3',
+    );
+    expect(sentBodies()[0].pageVersion).toBe('demo-multi-site-annual-3-2026-10');
+    expect(sentBodies()[0].idempotencyKey).toBe(sentBodies()[1].idempotencyKey);
   });
 
   it("demande seulement l'établissement et un e-mail, sans compte, et renvoie vers la politique de confidentialité", () => {

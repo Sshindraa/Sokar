@@ -62,6 +62,7 @@ function makeRestaurant(
     siteStatus: overrides.siteStatus ?? 'ACTIVE',
     name: overrides.name ?? 'Resto',
     plan: overrides.plan ?? 'STARTER',
+    serviceCopilotLegacyAccess: overrides.serviceCopilotLegacyAccess ?? false,
     managerPhone: overrides.managerPhone ?? '+33100000000',
     managerEmail: overrides.managerEmail ?? 'manager@example.com',
     phoneNumber: overrides.phoneNumber ?? '+33100000000',

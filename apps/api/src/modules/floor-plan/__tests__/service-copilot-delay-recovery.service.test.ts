@@ -410,7 +410,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       operationId: 'delay-report-1',
     });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(6);
-    expect(tx.reservation.update).toHaveBeenNthCalledWith(1, {
+    expect(tx.reservation.update).toHaveBeenNthCalledWith(2, {
       where: { id: 'reservation-1' },
       data: {
         tableId: 'table-12',
@@ -418,7 +418,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
         endsAt: new Date(snapshot.originalEndsAt),
       },
     });
-    expect(tx.reservation.update).toHaveBeenNthCalledWith(2, {
+    expect(tx.reservation.update).toHaveBeenNthCalledWith(1, {
       where: { id: 'promoted-1', restaurantId: 'rest-1' },
       data: { state: 'CANCELLED', status: 'CANCELLED' },
     });

@@ -34,6 +34,7 @@ export interface PricingPlan {
   description: string;
   promise: string;
   note?: string;
+  demoFirst?: boolean;
   features: string[];
   featured?: boolean;
 }
@@ -56,32 +57,36 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
-    promise: 'Préparez la prochaine invitation de vos clients.',
-    description: 'Pour un restaurant qui souhaite préparer ses actions de fidélisation.',
+    promise: 'Gardez la main quand le service change.',
+    description:
+      'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
+    demoFirst: true,
     features: [
       'Tout le socle Essential',
-      'Préparation de groupes de clients',
-      'Brouillons de campagnes pour vos invitations',
-      'Aperçu des destinataires avant tout envoi',
-      'Règles pour préparer vos actions de fidélisation',
+      'Des suggestions pour traiter les retards',
+      'Une estimation des tables bientôt disponibles, avec indication de fiabilité',
+      'Des rapprochements entre tables et clients en attente',
+      'L’analyse d’une réorganisation et l’application d’un plan validé par l’équipe',
+      'L’historique des plans de retard et un retour arrière sous conditions',
     ],
-    note: 'Aujourd’hui : préparation uniquement. L’envoi des campagnes et les profils clients avancés ne sont pas encore disponibles.',
+    note: 'Découvrez le copilote en démonstration avant de choisir. Une estimation ne vaut pas une table libre. En complément : préparation de segments et brouillons marketing, sans envoi.',
   },
   {
     label: 'Multi-site',
     price: String(PLAN_PRICES_EUR.PREMIUM),
     sitePrice: '99',
+    demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
     description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
     features: [
-      'Le périmètre actuel de Pro par établissement',
+      'Essential et le copilote Pro par établissement',
       'Passage d’une adresse à l’autre dans votre espace',
       'Planning et fichier client propres à chaque restaurant',
       'Horaires et règles de réservation par adresse',
       'Un numéro dédié par établissement',
       'Une facturation réunie au niveau du groupe',
     ],
-    note: 'Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles. Les accès des équipes sont validés lors de la mise en service.',
+    note: 'Une présentation précède le choix du copilote pour vos équipes. Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles.',
   },
 ];
 

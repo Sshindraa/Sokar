@@ -1,3 +1,6 @@
+vi.mock('@/lib/use-service-copilot-access', () => ({
+  useServiceCopilotAccess: () => ({ allowed: true, loading: false, error: false, retry: vi.fn() }),
+}));
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CopilotQualityPage from './page';

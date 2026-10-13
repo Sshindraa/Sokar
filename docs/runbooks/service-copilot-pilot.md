@@ -193,3 +193,22 @@ proposition impliquant le mauvais client ou une table occupée suspend le pilote
 3. Vérifier que T4 et T12 n’ont plus d’occupation de test.
 4. Consigner le résultat, les anomalies, les identifiants techniques et l’heure de fin dans le
    journal du projet.
+
+## Qualification ciblée Essential/Pro — 14 octobre 2026
+
+La capacité `floorPlan.copilot` protège les routes avancées côté API et leur interface.
+Le pouls du service, le placement manuel, les disponibilités et les protections de réservation
+restent dans Essential. La migration additive conserve l’ancien accès pour les restaurants déjà
+présents ; les nouveaux Essential n’ont pas ce grant, Pro et Multi-site ont la capacité de plan.
+Aucun fournisseur ou quota n’est modifié.
+
+Les tests `service-copilot-packaging.integration.test.ts` utilisent exclusivement une base locale
+jetable dont le nom se termine par `_test`. Ils exercent analyse sans écriture, acceptation,
+application concurrente, conflits, annulation répétée/refus après installation et migration de
+cohorte. La restauration annule maintenant la promotion avant de remettre la réservation initiale
+sur sa table, pour respecter la contrainte PostgreSQL immédiate de non-chevauchement.
+
+Ces preuves techniques ne ferment pas le pilote en conditions de service décrit plus haut.
+L’appel réel est une preuve distincte ; les tests contrôlés n’appellent aucun fournisseur et ne
+nécessitent aucune coordonnée de client réel. La présentation commerciale propose une démonstration
+avant le choix de Pro et n’annonce aucun déplacement autonome ou gain de temps garanti.

@@ -1,6 +1,5 @@
 import {
   PLAN_ENTITLEMENTS,
-  hasPlanCapability,
   normalizeCommercialPlan,
   type EntitlementCapability,
 } from '@sokar/config';
@@ -31,7 +30,7 @@ export async function getEffectiveEntitlements(
 ): Promise<EffectiveEntitlements> {
   const restaurant = await db.restaurant.findUnique({
     where: { id: restaurantId },
-    select: { plan: true },
+    select: { plan: true, serviceCopilotLegacyAccess: true },
   });
   if (!restaurant) throw new EntitlementRestaurantNotFoundError();
 
@@ -41,6 +40,12 @@ export async function getEffectiveEntitlements(
 
   return {
     ...PLAN_ENTITLEMENTS[commercialPlan],
+    capabilities: {
+      ...PLAN_ENTITLEMENTS[commercialPlan].capabilities,
+      'floorPlan.copilot':
+        PLAN_ENTITLEMENTS[commercialPlan].capabilities['floorPlan.copilot'] ||
+        restaurant.serviceCopilotLegacyAccess === true,
+    },
     restaurantId,
     sourcePlan,
     evaluatedAt: new Date().toISOString(),
@@ -54,7 +59,7 @@ export async function evaluateCapability(
   const entitlements = await getEffectiveEntitlements(restaurantId);
   return {
     capability,
-    allowed: hasPlanCapability(entitlements.id, capability),
+    allowed: entitlements.capabilities[capability],
     plan: entitlements.id,
   };
 }

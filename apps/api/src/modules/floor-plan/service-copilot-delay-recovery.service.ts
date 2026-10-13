@@ -596,14 +596,6 @@ export class ServiceCopilotDelayRecoveryService {
         );
       }
 
-      await tx.reservation.update({
-        where: { id: delayed.id },
-        data: {
-          tableId: snapshot.originalTableId,
-          startsAt: snapshot.originalStartsAt,
-          endsAt: snapshot.originalEndsAt,
-        },
-      });
       lifecycleResult = await this.lifecycle.transitionInTransaction(tx, {
         reservationId: promoted.id,
         restaurantId: args.restaurantId,
@@ -619,6 +611,16 @@ export class ServiceCopilotDelayRecoveryService {
         // The production transaction client re-reads under the row lock. The
         // snapshot keeps the small recovery fakes compatible with the helper.
         snapshot: promoted as Reservation,
+      });
+      // Release the promoted booking first: PostgreSQL enforces active table overlap
+      // immediately, even inside this transaction. Both mutations remain atomic.
+      await tx.reservation.update({
+        where: { id: delayed.id },
+        data: {
+          tableId: snapshot.originalTableId,
+          startsAt: snapshot.originalStartsAt,
+          endsAt: snapshot.originalEndsAt,
+        },
       });
       await tx.waitingListEntry.update({
         where: { id: entry.id },
