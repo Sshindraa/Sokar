@@ -63,6 +63,11 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
+    if (isSignedIn === undefined) {
+      setAllowed(null);
+      return;
+    }
+
     if (!isSignedIn) {
       setAllowed(false);
       const redirect = encodeURIComponent(pathname || '/admin');
