@@ -18,10 +18,22 @@ export const CHANNEL_TRACKS = ['phone', 'online'] as const satisfies readonly On
 /** Écran « Vos canaux » : une vue du parcours, pas une tâche d'onboarding côté API. */
 export const CHANNELS_VIEW = 'canaux';
 
-export type OnboardingView = OnboardingTaskKey | typeof CHANNELS_VIEW;
+/** Écran « Choisissez votre formule », proposé après l'appel test : lui non plus n'est pas une tâche. */
+export const PLAN_VIEW = 'formule';
+
+export type OnboardingView = OnboardingTaskKey | typeof CHANNELS_VIEW | typeof PLAN_VIEW;
 
 export function isChannelsView(view: OnboardingView): view is typeof CHANNELS_VIEW {
   return view === CHANNELS_VIEW;
+}
+
+export function isPlanView(view: OnboardingView): view is typeof PLAN_VIEW {
+  return view === PLAN_VIEW;
+}
+
+/** Une vraie étape d'onboarding, par opposition aux écrans des canaux et de la formule. */
+export function isTaskView(view: OnboardingView): view is OnboardingTaskKey {
+  return !isChannelsView(view) && !isPlanView(view);
 }
 
 export function trackOf(key: OnboardingTaskKey): OnboardingTrack {
@@ -34,6 +46,7 @@ export function trackOf(key: OnboardingTaskKey): OnboardingTrack {
 /** Une étape de l'URL, l'écran des canaux, ou rien si le paramètre est inconnu. */
 export function resolveOnboardingView(value: string | null): OnboardingView | undefined {
   if (value === CHANNELS_VIEW) return CHANNELS_VIEW;
+  if (value === PLAN_VIEW) return PLAN_VIEW;
   return resolveOnboardingTask(value);
 }
 

@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useOnboarding } from './onboarding-provider';
+import { capturePlanChoice } from './pending-plan';
 import { ONBOARDING_TASK_KEYS } from './types';
 
 /** Un parcours reporté ou un état indisponible ne déverrouille jamais le dashboard. */
@@ -27,6 +28,12 @@ export function OnboardingAccessBoundary({
     ONBOARDING_TASK_KEYS.every((key) =>
       state.steps.some((step) => step.key === key && step.status === 'completed'),
     );
+
+  // La formule choisie sur la page Tarifs arrive dans l'adresse, que la redirection ci-dessous
+  // efface : on la garde pour l'écran « Choisissez votre formule » de l'inscription.
+  useEffect(() => {
+    capturePlanChoice(window.location.search);
+  }, []);
 
   useEffect(() => {
     if (!enforceAccess || loading) return;

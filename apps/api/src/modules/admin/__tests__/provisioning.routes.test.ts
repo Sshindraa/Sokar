@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import telnyx from '../../../shared/telnyx/client';
 
 const AUTH = { authorization: 'Bearer fake-token' };
 
@@ -25,6 +26,11 @@ describe('admin provisioning routes', () => {
 
   it('GET /admin/provisioning/available-numbers retourne la liste des numéros', async () => {
     vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([]);
+    (
+      telnyx as unknown as { phoneNumbers: { list: ReturnType<typeof vi.fn> } }
+    ).phoneNumbers.list.mockResolvedValueOnce({
+      data: [{ id: 'tnx-1', phone_number: '+33451221999', status: 'active' }],
+    });
 
     const app = await getApp();
     const res = await app.inject({
@@ -36,9 +42,24 @@ describe('admin provisioning routes', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);
-    expect(Array.isArray(body.numbers)).toBe(true);
-    expect(body.numbers.length).toBeGreaterThan(0);
-    expect(body.numbers[0]).toHaveProperty('phoneNumber');
+    expect(body.source).toBe('telnyx');
+    expect(body.numbers).toEqual([
+      expect.objectContaining({ id: 'tnx-1', phoneNumber: '+33451221999' }),
+    ]);
+  });
+
+  it('GET /admin/provisioning/available-numbers ne remplace jamais un compte Telnyx vide par de faux numéros', async () => {
+    vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([]);
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/provisioning/available-numbers',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, numbers: [], source: 'telnyx' });
   });
 
   it('GET /admin/provisioning/:restaurantId retourne le statut de provisioning', async () => {

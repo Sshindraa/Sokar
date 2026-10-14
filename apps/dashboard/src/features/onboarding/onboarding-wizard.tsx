@@ -7,12 +7,17 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ChoiceSelect } from './choice-select';
 import { OnboardingChannels } from './onboarding-channels';
+import { OnboardingPlan } from './onboarding-plan';
 import { useOnboarding } from './onboarding-provider';
+import { clearStoredPlanChoice, isPlanPromptDismissed } from './pending-plan';
 import { STEP_COMPONENTS } from './steps';
 import {
   CHANNELS_VIEW,
+  PLAN_VIEW,
   TRACK_STEPS,
   isChannelsView,
+  isPlanView,
+  isTaskView,
   resolveOnboardingView,
   resumeView,
   trackOf,
@@ -93,6 +98,12 @@ const CHANNELS_COPY = {
   label: 'Vos canaux',
 };
 
+const PLAN_COPY = {
+  title: 'Choisissez votre formule',
+  body: 'Votre assistant répond au téléphone. Choisissez la formule qui vous convient, ou revenez-y plus tard.',
+  label: 'Votre formule',
+};
+
 const TRACK_COPY: Record<
   OnboardingTrack | typeof CHANNELS_VIEW,
   { eyebrow: string; heading: string; mobile: string; label: string }
@@ -135,6 +146,7 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
   const { state, updateTask, error } = useOnboarding();
   const [selected, setSelected] = useState<OnboardingView | null>(null);
   const [requestedStepLoaded, setRequestedStepLoaded] = useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const visibleSteps = state ? getVisibleOnboardingState(state).steps : [];
@@ -143,10 +155,11 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
   // n'est pas prête, y compris par lien direct ou par le bouton Retour.
   const requested = selected ?? resumeView(visibleSteps);
   const redirected =
-    Boolean(state) && !socle.done && (isChannelsView(requested) || trackOf(requested) !== 'socle');
+    Boolean(state) && !socle.done && (!isTaskView(requested) || trackOf(requested) !== 'socle');
   const view: OnboardingView = redirected ? socle.target : requested;
   const channels = isChannelsView(view);
-  const key: OnboardingTaskKey | null = channels ? null : view;
+  const planView = isPlanView(view);
+  const key: OnboardingTaskKey | null = isTaskView(view) ? view : null;
   const track: OnboardingTrack | null = key ? trackOf(key) : null;
   const phone = trackProgress(visibleSteps, 'phone');
   const online = trackProgress(visibleSteps, 'online');
@@ -160,6 +173,11 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
     const requested = new URLSearchParams(window.location.search).get('step');
     const target = resolveOnboardingView(requested);
     if (target) setSelected(target);
+    // Retour de Stripe après le paiement : on confirme sur l'écran des canaux.
+    if (new URLSearchParams(window.location.search).get('billing') === 'success') {
+      setPaymentConfirmed(true);
+      clearStoredPlanChoice();
+    }
     setRequestedStepLoaded(true);
   }, []);
 
@@ -218,7 +236,10 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
     if (!key || !track) return;
     if (next && trackOf(next) === track) return navigate(next);
     const remaining = groupSteps.find((item) => item.key !== key && item.status !== 'completed');
-    navigate(remaining?.key ?? CHANNELS_VIEW);
+    if (remaining) return navigate(remaining.key);
+    // Le téléphone est prêt : on propose la formule, une fois (« Plus tard » la fait taire).
+    const proposePlan = track === 'phone' && state && !isPlanPromptDismissed(state.restaurant.id);
+    navigate(proposePlan ? PLAN_VIEW : CHANNELS_VIEW);
   }
 
   if (!state) return null;
@@ -250,18 +271,22 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
       ? { view: TRACK_STEPS[track][trackIndex - 1], label: 'Étape précédente' }
       : track && track !== 'socle'
         ? { view: CHANNELS_VIEW, label: 'Vos canaux' }
-        : channels
-          ? { view: 'floor', label: 'Étape précédente' }
-          : null;
+        : planView
+          ? { view: 'phone', label: 'Étape précédente' }
+          : channels
+            ? { view: 'floor', label: 'Étape précédente' }
+            : null;
   const mobileOptions = [
     ...(channels || socle.done ? [{ value: CHANNELS_VIEW, label: CHANNELS_COPY.label }] : []),
+    ...(planView ? [{ value: PLAN_VIEW, label: PLAN_COPY.label }] : []),
     ...navItems.map((item, position) => ({
       value: item.id,
       label: `${track ? `${position + 1}. ` : ''}${item.label}${item.completed ? ' — Terminé' : ''}`,
     })),
   ];
-  const title = key ? COPY[key].title : CHANNELS_COPY.title;
-  const body = key ? COPY[key].body : CHANNELS_COPY.body;
+  const screenCopy = planView ? PLAN_COPY : CHANNELS_COPY;
+  const title = key ? COPY[key].title : screenCopy.title;
+  const body = key ? COPY[key].body : screenCopy.body;
 
   return (
     <div
@@ -434,11 +459,19 @@ export function OnboardingWizard({ footerControls }: { footerControls?: ReactNod
           >
             {Step && key ? (
               <Step key={key} onComplete={finish} onNavigate={navigate} />
+            ) : planView ? (
+              <OnboardingPlan
+                restaurantId={state.restaurant.id}
+                onContinue={() => navigate(CHANNELS_VIEW)}
+              />
             ) : (
               <OnboardingChannels
                 steps={visibleSteps}
                 readiness={state.readiness}
                 phoneAssigned={state.restaurant.phoneAssigned}
+                notice={
+                  paymentConfirmed ? 'Merci, votre paiement a bien été pris en compte.' : undefined
+                }
                 onOpen={navigate}
               />
             )}

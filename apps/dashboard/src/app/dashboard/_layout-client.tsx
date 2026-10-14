@@ -44,7 +44,8 @@ import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
-import { SiteProvider, SiteSwitcher } from '@/features/sites/site-context';
+import { SiteProvider, SiteSwitcher, useSiteSelection } from '@/features/sites/site-context';
+import { SERVICE_STAFF_HOME, canOpenDashboardPath, isServiceStaff } from '@/features/team/roles';
 import { Button } from '@/components/ui/button';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
 
@@ -266,6 +267,9 @@ function ThemeToggle() {
 
 function SettingsButton({ active = false }: { active?: boolean }) {
   const tNav = useTranslations('nav');
+  const { activeSite } = useSiteSelection();
+  // Les réglages sont fermés à l'équipe de service : l'API les refuse, le bouton ne les promet pas.
+  if (isServiceStaff(activeSite?.role)) return null;
 
   return (
     <Link
@@ -557,6 +561,8 @@ function DashboardSidebar({
   const tNav = useTranslations('nav');
   const tOfferChooser = useTranslations('offerChooser');
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
+  const { activeSite } = useSiteSelection();
+  const serviceStaff = isServiceStaff(activeSite?.role);
   const [openGroup, setOpenGroup] = useState<NavGroupId | null>(null);
   const openGroupDefinition = navGroups.find((group) => group.id === openGroup) ?? null;
 
@@ -585,11 +591,28 @@ function DashboardSidebar({
               icon={Radio}
               active={salleView !== 'edit-plan'}
             />
+            {!serviceStaff && (
+              <SidebarNavItem
+                href="/dashboard/floor-plan?view=edit-plan"
+                label="Salle édition"
+                icon={PencilRuler}
+                active={salleView === 'edit-plan'}
+              />
+            )}
+          </>
+        ) : serviceStaff ? (
+          <>
             <SidebarNavItem
-              href="/dashboard/floor-plan?view=edit-plan"
-              label="Salle édition"
-              icon={PencilRuler}
-              active={salleView === 'edit-plan'}
+              href="/dashboard/reservations"
+              label={tNav('reservations')}
+              icon={CalendarCheck}
+              active={pathname.startsWith('/dashboard/reservations')}
+            />
+            <SidebarNavItem
+              href="/dashboard/floor-plan?view=service-live"
+              label={tNav('floorPlan')}
+              icon={Radio}
+              active={false}
             />
           </>
         ) : (
@@ -725,6 +748,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const [createOfferOpen, setCreateOfferOpen] = useState(false);
+  const { activeSite } = useSiteSelection();
+  const siteRole = activeSite?.role;
+  const roleBlocked = !canOpenDashboardPath(siteRole, pathname, searchParams.get('view'));
   const isLegacyOperatorPath =
     pathname === '/dashboard/usage' ||
     pathname === '/dashboard/admin' ||
@@ -759,6 +785,11 @@ function DashboardShell({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [get, isSignedIn]);
+
+  // L'équipe de service arrive sur les réservations, pas sur les chiffres du restaurant.
+  useEffect(() => {
+    if (isServiceStaff(siteRole) && pathname === '/dashboard') router.replace(SERVICE_STAFF_HOME);
+  }, [pathname, router, siteRole]);
 
   useEffect(() => {
     if (!isLegacyOperatorPath || operatorAccess === null) return;
@@ -929,6 +960,21 @@ function DashboardShell({ children }: { children: ReactNode }) {
               aria-busy="true"
             >
               Vérification des accès…
+            </div>
+          ) : roleBlocked ? (
+            <div
+              role="alert"
+              className="flex min-h-[calc(100vh-16rem)] flex-col items-center justify-center gap-3 text-center"
+            >
+              <p className="text-sm text-muted-foreground">
+                Cette page est réservée au responsable de l’établissement.
+              </p>
+              <Link
+                href={SERVICE_STAFF_HOME}
+                className="rounded-full border border-border px-4 py-2 text-sm font-medium transition-all duration-200 hover:bg-accent"
+              >
+                Retour aux réservations
+              </Link>
             </div>
           ) : (
             children
