@@ -893,3 +893,15 @@ Preuves locales : dossier `sokar-qualification` du 14/10 dans les visualisations
 Codex : `operator-cloture.png`, `sitemap-envoye.png`,
 `accueil-google-test-direct.png`, `indexation-rapport-9-octobre.png` et
 `pages-indexees-9-octobre.png`. Réception : `sokar-email-recovery/notification-recue.png`.
+
+### 10.20 — VOICE-01 : préparation autorisée, recette encore ouverte (14 octobre)
+
+Accord explicite : clé séparée temporaire, routage du seul numéro démo vers staging puis restauration production ; consommation plafonnée à 20 minutes et 5 €, sans achat/recharge. Clé staging créée, expiration le 21 octobre 2026 à 23:55 UTC, stockée uniquement dans GitHub et le fichier environnement staging après transit privé supprimé. Application « Sokar VOICE-01 staging » créée avec webhook staging ; numéro encore en production et voix staging encore désactivée.
+
+Blocage corrigé : le seed démo fournit un numéro de gérant fictif. Le contexte vocal le neutralise pour les seuls slugs démo explicites, aussi sur cache existant, afin de conserver le secours par message. Aucun numéro réel modifié, aucun changement de schéma ni de contrat. Deux tests échouaient avant correction ; 80 tests ciblés, typage API et lint ciblé passent.
+
+Aucun appel réel exécuté ni résultat métier qualifié à cette étape. Staging utilise Scribe et production Deepgram : cette différence doit rester visible dans les preuves. Les sept scénarios et la réservation initiale restent à exécuter ; landing noindex et hors sitemap.
+
+Blocage supplémentaire constaté lors de la préparation : la page opérateur staging redirige vers le dashboard parce que requireAuth remplace la session par demo-user. Correction limitée au middleware opérateur : vraie session requise en staging/production, liste autorisée conservée, preview local conservé. Trois régressions reproduites avant correction puis 10 tests du middleware verts. La connexion opérateur et les appels réels restent à vérifier après déploiement.
+
+Le contrôle navigateur de /login a révélé le provider Clerk absent en staging démo. Le complément monte Clerk sur connexion/admin, active la lecture de session middleware et protège les routes opérateur, en gardant le dashboard démo accessible. Le proxy existant peut alors transmettre son jeton serveur. 8 tests ciblés dashboard et 23 tests auth/provisioning API verts ; typage et lint ciblés verts. Aucun changement de la liste opérateur.

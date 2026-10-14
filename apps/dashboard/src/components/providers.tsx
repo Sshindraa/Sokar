@@ -26,9 +26,11 @@ export default function Providers({ children }: { children: ReactNode }) {
     pathname?.startsWith('/admin') ||
     pathname?.startsWith('/onboarding');
 
+  const needsOperatorSession = pathname?.startsWith('/admin') || pathname?.startsWith('/login');
+
   // Public marketing pages must not depend on Clerk. Auth is mounted only
   // where the route actually needs login/session state.
-  if (!needsClerk || !publishableKey || isDemoMode) {
+  if (!needsClerk || !publishableKey || (isDemoMode && !needsOperatorSession)) {
     return <>{children}</>;
   }
 
