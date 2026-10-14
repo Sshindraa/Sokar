@@ -894,7 +894,19 @@ Codex : `operator-cloture.png`, `sitemap-envoye.png`,
 `accueil-google-test-direct.png`, `indexation-rapport-9-octobre.png` et
 `pages-indexees-9-octobre.png`. Réception : `sokar-email-recovery/notification-recue.png`.
 
-### 10.20 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
+### 10.20 — VOICE-01 : préparation autorisée, recette encore ouverte (14 octobre)
+
+Accord explicite : clé séparée temporaire, routage du seul numéro démo vers staging puis restauration production ; consommation plafonnée à 20 minutes et 5 €, sans achat/recharge. Clé staging créée, expiration le 21 octobre 2026 à 23:55 UTC, stockée uniquement dans GitHub et le fichier environnement staging après transit privé supprimé. Application « Sokar VOICE-01 staging » créée avec webhook staging ; numéro encore en production et voix staging encore désactivée.
+
+Blocage corrigé : le seed démo fournit un numéro de gérant fictif. Le contexte vocal le neutralise pour les seuls slugs démo explicites, aussi sur cache existant, afin de conserver le secours par message. Aucun numéro réel modifié, aucun changement de schéma ni de contrat. Deux tests échouaient avant correction ; 80 tests ciblés, typage API et lint ciblé passent.
+
+Aucun appel réel exécuté ni résultat métier qualifié à cette étape. Staging utilise Scribe et production Deepgram : cette différence doit rester visible dans les preuves. Les sept scénarios et la réservation initiale restent à exécuter ; landing noindex et hors sitemap.
+
+Blocage supplémentaire constaté lors de la préparation : la page opérateur staging redirige vers le dashboard parce que requireAuth remplace la session par demo-user. Correction limitée au middleware opérateur : vraie session requise en staging/production, liste autorisée conservée, preview local conservé. Trois régressions reproduites avant correction puis 10 tests du middleware verts. La connexion opérateur et les appels réels restent à vérifier après déploiement.
+
+Le contrôle navigateur de /login a révélé le provider Clerk absent en staging démo. Le complément monte Clerk sur connexion/admin, active la lecture de session middleware et protège les routes opérateur, en gardant le dashboard démo accessible. Le proxy existant peut alors transmettre son jeton serveur. 8 tests ciblés dashboard et 23 tests auth/provisioning API verts ; typage et lint ciblés verts. Aucun changement de la liste opérateur.
+
+### 10.21 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
 
 **Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.
 
@@ -909,9 +921,9 @@ Codex : `operator-cloture.png`, `sitemap-envoye.png`,
 
 **À valider avant publication.** Le statut « disponible » de la synchronisation Google Agenda, de la facturation groupée Multi-site et du suivi des no-shows repose sur le code et la FAQ : à confirmer par le produit. Sont marqués « prévu » : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
 
-### 10.21 Fusion avec le copilote de service de #428 (14/10/2026)
+### 10.22 Fusion avec le copilote de service de #428 (14/10/2026)
 
-Le décompte de la section 10.20 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
+Le décompte de la section 10.21 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
 
 **Ce que la page affiche.** Pro vend le copilote de service : suggestions pour les retards, estimation des tables bientôt disponibles avec indication de fiabilité, rapprochements avec les clients en attente, analyse d'une réorganisation et plan validé par l'équipe, historique des plans et retour arrière sous conditions. Essential garde planning, placement manuel, disponibilités, liste d'attente et pouls ; il n'inclut aucune fonction avancée du copilote, ce que teste un garde-fou. Pro et Multi-site proposent « Découvrir » (démonstration) avant l'inscription. Les textes publics sont ceux de `main` ; le catalogue fournit les statuts et le tableau.
 
@@ -919,13 +931,13 @@ Le décompte de la section 10.20 concerne le catalogue d'avant cette fusion. Le 
 
 - Copilote « disponible » en Pro et Multi-site : l'accès est porté par la capacité de formule, et #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert ; aucun résultat en conditions de service n'est annoncé.
 - Rapport quotidien de vos appels « disponible » en Essential, ajouté au-delà du texte de `main`.
-- Les statuts « disponible » de la section 10.20 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
+- Les statuts « disponible » de la section 10.21 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
 
 **Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
 
-### 10.22 Fusion avec la tarification de #429 (14/10/2026)
+### 10.23 Fusion avec la tarification de #429 (14/10/2026)
 
-La décision de `main` remplace les montants de la section 10.20 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.20 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
+La décision de `main` remplace les montants de la section 10.21 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.21 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
 
 - Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
 - Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.

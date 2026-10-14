@@ -163,11 +163,11 @@ function getRequestedSiteId(req: FastifyRequest): string | undefined {
 /**
  * Middleware qui exige une session utilisateur (login simple sans org).
  */
-export function requireAuth() {
+export function requireAuth(options: { allowDemo?: boolean } = {}) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     // Staging demo mode : voir requireOrg(). DEMO_STAGING isolé à la staging.
     const demoMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_STAGING === '1';
-    if (demoMode && process.env.DEMO_RESTAURANT_ID) {
+    if (options.allowDemo !== false && demoMode && process.env.DEMO_RESTAURANT_ID) {
       req.userId = process.env.DEMO_USER_ID ?? 'demo-user';
       req.log = req.log.child({ user_id: req.userId });
       return;
@@ -195,7 +195,11 @@ export function requireAuth() {
  * operator access through a request body or a Clerk organization role.
  */
 export function requireSokarOperator() {
-  const authenticate = requireAuth();
+  // Les opérations globales exigent une vraie session en staging/production.
+  // Le compte démo reste réservé à la prévisualisation locale.
+  const authenticate = requireAuth({
+    allowDemo: process.env.NODE_ENV !== 'production' && process.env.DEMO_STAGING !== '1',
+  });
 
   return async (req: FastifyRequest, reply: FastifyReply) => {
     await authenticate(req, reply);

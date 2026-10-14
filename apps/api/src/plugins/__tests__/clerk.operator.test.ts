@@ -102,6 +102,30 @@ describe('requireSokarOperator', () => {
     expect(request.userId).toBe('user-operator');
   });
 
+  it.each([
+    ['user-operator', undefined, 'user-operator'],
+    ['user-restaurant', 403, undefined],
+    [null, 401, undefined],
+  ])(
+    'préserve la session opérateur réelle en staging démo : %s',
+    async (userId, status, expectedUser) => {
+      configure(userId);
+      process.env.NODE_ENV = 'production';
+      process.env.DEMO_STAGING = '1';
+      process.env.DEMO_RESTAURANT_ID = 'demo-restaurant';
+      process.env.DEMO_USER_ID = 'demo-user';
+      const request = makeRequest();
+      const reply = makeReply();
+
+      await requireSokarOperator()(request, reply);
+
+      if (status) expect(reply.status).toHaveBeenCalledWith(status);
+      else expect(reply.status).not.toHaveBeenCalled();
+      if (expectedUser) expect(request.userId).toBe(expectedUser);
+      expect(request.userId).not.toBe('demo-user');
+    },
+  );
+
   it('autorise uniquement le compte démo local explicitement configuré', async () => {
     process.env.NODE_ENV = 'development';
     process.env.DEMO_RESTAURANT_ID = 'demo-restaurant';
