@@ -1,56 +1,64 @@
-# Exécution croissance et acquisition — 13 octobre 2026
+# Exécution croissance et acquisition — état courant au 15 octobre 2026
 
-Brief suivi : [seo-acquisition-execution-plan.md](../runbooks/seo-acquisition-execution-plan.md).
-Branche : `codex/growth-execution-2026-10-13` (worktree `sokar-growth`, base `main` = `fd576d7a`).
-Le checkout principal n'a pas été modifié : ses changements non commités (onboarding v2, rôles,
-provisioning, formules) restent intacts et ne sont pas embarqués.
-
-Lecture des statuts : **livré techniquement** = code et tests présents sur la branche ; **vérifié
-staging/production** = aucune vérification à ce jour, le déploiement n'a pas été fait ; **validé
-commercialement** = aucune validation, aucun entretien, aucun paiement ; **en attente terrain** =
-dépend d'une personne ou d'un accès externe.
+Plan suivi : [seo-acquisition-execution-plan.md](../runbooks/seo-acquisition-execution-plan.md).
+La section 2 est la référence des statuts actuels. Les sections 3 à 10 conservent les observations
+historiques datées ; un constat antérieur ne remet pas en TODO une livraison ultérieure.
+La section 10.21 consigne la correction des dépendances décidée par Hamza ; contrôles datés du 14 octobre.
 
 ## 1. Résultat obtenu et périmètre traité
 
-**Résultat** : la vitrine ne présente plus de simulation comme une activité réelle, les prix sont
-affichés hors taxes, les métadonnées de l'accueil et des tarifs sont propres, une demande de
-démonstration sans compte est enregistrée et suivie par l'équipe, le sitemap ne publie plus de liste
-tronquée en silence, et une fiche d'entretien et de pilote est prête. **Rien n'est encore déployé**.
+Vitrine, grille tarifaire v3, demande de démo et administration livrées. Réception Gmail et clôture
+opérateur qualifiées (§10.19). Search Console accessible via le compte personnel existant, sitemap
+renvoyé, accueil sur Google et test direct réussi. Le rapport global d'indexation reste daté du 9 octobre.
 
-**Traité** : TRUST-01, COPY-01, DEMO-01, DEMO-02, METRIC-01 (étape 1), SEO-01 (diagnostic), SEO-02,
-ICP-01, BASE-01.
+#436 et #437 sont fusionnées ; la source `7578dd78` a une CI main, un staging et une production
+réussis (runs `38608402004`, `38609413906`, `38610012139`). Au contrôle en lecture seule du
+14 octobre, les deux API répondent 200/ok. Telnyx staging est configuré et `VOICE_DISABLED=false`.
+Ces contrôles remplacent les anciennes indications « configuration absente » et « voix désactivée ».
 
-**Non traité, avec raison** :
+Deux appels du restaurant démo sont présents le 14 octobre : staging, 23 secondes, puis production
+à 21 h 30, 14 secondes. Tous deux ont `outcome=NO_ACTION` et aucune réservation associée. Ils prouvent
+l'exécution du pipeline, pas la réussite d'un scénario métier complet. Aucune nouvelle conversation,
+mutation, clé ou modification de routage n'a été effectuée pour cette relecture.
 
-- VOICE-01 et OPS-01 : appels réels et installation chez un client, donc dépendance terrain et
-  onboarding v2 non intégré dans `main`.
-- BILL-01 : vérification du catalogue Stripe et des quotas : accès externe non disponible.
-- ICP-02, PILOT-01, ECON-01 : entretiens et pilotes, dépendance humaine.
-- LAND-01 : la landing n'est pas publiée tant que la démonstration vocale n'est pas qualifiée.
-- CONNECT-01, SCALE-01 : P2 conditionnels, critères non remplis.
+La landing répond 200, reste `noindex, follow` et absente du sitemap. La nouvelle décision permet
+sa publication après contrôle des textes, de l'exemple simulé s'il est présenté et de la conversion
+minimale. Elle n'exige plus la clôture de VOICE-01. L'isolation effective de l'exemple public reste
+à vérifier ; cette correction documentaire ne retire pas le noindex ni ne qualifie l'exemple.
 
-## 2. Tickets
+## 2. Tickets — référence actuelle
 
-| ID         | Statut                        | Changement                                                                                                                                                                                                                                                                                       | Preuve                                                                                                                                                     | Prochaine action (responsable)                                                                                                      |
-| ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| BASE-01    | Livré techniquement           | Inventaire et constats datés (section 3)                                                                                                                                                                                                                                                         | Observations HTTP du 13/10/2026 16:35 UTC ; code cité                                                                                                      | Aucune ; à compléter avec Search Console et la base prod (Hamza)                                                                    |
-| TRUST-01   | Livré techniquement           | Mention « Exemple illustratif — données simulées » ; retrait du revenu « 5 420 € », des tendances chiffrées, de « temps réel », « Live » et « Appel client en cours » ; maquette du storyboard corrigée ; compteur « +42 aujourd'hui » retiré                                                    | `DemoSection.test.tsx` (3 tests) ; HTML servi contenant la mention                                                                                         | Relire les chiffres restants (412, 189, 98 %) avec Hamza après déploiement                                                          |
-| COPY-01    | Livré techniquement           | Hero : « Un assistant téléphonique pour vos réservations », paragraphe factuel, CTA « Demander une démonstration » → `/demo` et « Créer votre compte » → `/register` ; HT sur tous les prix ; FAQ intégrations et données réécrites ; métadonnées dédiées accueil, tarifs, démo ; `metadataBase` | `marketing-metadata.test.ts`, `PricingSection.test.tsx` ; titre, description, canonical et `og:locale` vérifiés dans le HTML servi                         | Valider les formulations signalées (section 5, points 3 et 4)                                                                       |
-| VOICE-01   | En attente terrain            | Aucun appel passé. Dispositifs inventoriés (section 4)                                                                                                                                                                                                                                           | Lecture du code uniquement                                                                                                                                 | Qualifier les scénarios de la section 7 du brief avec les fournisseurs réels, en staging (Hamza ou l'équipe technique)              |
-| OPS-01     | Bloqué                        | Non commencé                                                                                                                                                                                                                                                                                     | —                                                                                                                                                          | Intégrer l'onboarding v2 dans `main` (son auteur), puis qualifier numéro, renvoi et secours avec l'opérateur                        |
-| DEMO-01    | Livré techniquement           | Table `demo_requests` et migration `20261013120000_demo_requests` (CREATE seul) ; `POST /public/demo-requests` ; page `/demo` sans compte                                                                                                                                                        | 13 tests API (`demo-request.routes.test.ts`) ; 5 tests UI (`DemoRequestForm.test.tsx`) ; parcours d'erreur vérifié dans le navigateur (API locale arrêtée) | Appliquer la migration en staging ; tester un envoi complet vers un destinataire de test (Hamza)                                    |
-| DEMO-02    | Livré techniquement           | `GET /admin/demo-requests`, `PATCH /admin/demo-requests/:id` (opérateurs Sokar seulement) ; page `/dashboard/admin/demo-requests`                                                                                                                                                                | Tests API (401, 403, filtre, statut horodaté, 404) ; 4 tests UI                                                                                            | Désigner le responsable du suivi et le délai de réponse (Hamza) ; ajouter le lien de navigation après intégration du chantier admin |
-| METRIC-01  | Livré techniquement (étape 1) | `demo_requested` = ligne de `demo_requests` ; `notifiedAt`, `contactedAt`, `demoDoneAt` horodatent les étapes opérateur. Aucun nouvel outil d'analytics                                                                                                                                          | Tests API sur les horodatages                                                                                                                              | Mapper les étapes suivantes sur les sources existantes après BILL-01 (section 6)                                                    |
-| BILL-01    | En attente externe            | Prix publics alignés sur le runbook Stripe (199 / 299 / 249 € HT + 99 € HT par site, annuel −20 %)                                                                                                                                                                                               | Runbook `stripe-billing.md` et `plan.ts`, cohérents entre eux                                                                                              | Lancer `scripts/ops/verify-stripe-catalog.mjs` en lecture seule (opérateur avec accès Stripe) ; confirmer les quotas                |
-| SEO-01     | Diagnostic livré (partiel)    | Constats datés ci-dessous (section 3)                                                                                                                                                                                                                                                            | HTTP et code                                                                                                                                               | Accès Search Console (Hamza) ; comptage des établissements publiables en base (équipe technique)                                    |
-| SEO-02     | Livré techniquement           | Sitemap : erreur au lieu d'une liste tronquée, `/pricing` ajouté, dates inventées retirées, délai d'attente de 5 s ; `noindex` sur `/login`, `/register`, `/widget/[restaurantId]` et `/widget/[slug]/gift-card`                                                                                 | `sitemap.test.ts` (4) ; `transactional-pages.test.ts` (3) ; `page.metadata.test.ts` (1)                                                                    | Vérifier en staging le comportement de Next et Nginx pendant une panne API (non reproduite)                                         |
-| ICP-01     | Livré techniquement           | `docs/runbooks/restaurant-discovery-interview.md` : fiche de qualification, guide, proposition de pilote, brouillon de prospection non envoyé, modèle de suivi sans donnée personnelle                                                                                                           | Relecture du document                                                                                                                                      | Valider le brouillon et choisir les établissements (Hamza)                                                                          |
-| ICP-02     | En attente terrain            | Aucun entretien réalisé                                                                                                                                                                                                                                                                          | —                                                                                                                                                          | Mener 8 à 12 entretiens selon le guide (Hamza)                                                                                      |
-| PILOT-01   | Bloqué                        | Non démarré                                                                                                                                                                                                                                                                                      | —                                                                                                                                                          | Dépend d'OPS-01, de BILL-01 et d'ICP-02                                                                                             |
-| ECON-01    | À faire                       | Non démarré                                                                                                                                                                                                                                                                                      | —                                                                                                                                                          | Dépend des pilotes                                                                                                                  |
-| LAND-01    | Bloqué                        | Landing non publiée                                                                                                                                                                                                                                                                              | —                                                                                                                                                          | Qualifier VOICE-01 ; obtenir l'accès Search Console ou Keyword Planner pour l'étude de demande                                      |
-| CONNECT-01 | À requalifier (P2)            | Non démarré                                                                                                                                                                                                                                                                                      | —                                                                                                                                                          | Condition : inventaire réel de fiches publiées                                                                                      |
-| SCALE-01   | À requalifier (P2)            | Non démarré                                                                                                                                                                                                                                                                                      | —                                                                                                                                                          | Condition : ECON-01 et LAND-01                                                                                                      |
+« Qualifié » précise son périmètre. La livraison de code, une simulation, un appel interrompu et
+un résultat client réel restent des niveaux de preuve différents. Pour les entretiens, pilotes
+et renouvellements, une preuve non archivée reste inconnue.
+
+| ID         | État courant                                           | Preuve ou périmètre                                                                           | Prochaine action                                                                                             |
+| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| BASE-01    | Inventaire livré et actualisé                          | §10.18–10.21 ; contrôles publics et source déployée                                           | Reprendre les inconnues utiles, sans refaire l'inventaire complet                                            |
+| TRUST-01   | Corrections vitrine livrées                            | §10.12 et §10.18 ; simulations identifiées                                                    | Contrôler l'exemple public dans DEMO-SIM                                                                     |
+| COPY-01    | Textes et tarifs livrés ; formulations à valider       | #427–#429 ; Essential 199, Pro 299, Multi-site 299 + 99 par site supplémentaire, annuel −10 % | Vérifier les promesses support/données ; supprimer ou ajuster celles non étayées                             |
+| DEMO-SIM   | À qualifier                                            | Décision du 14/10 : exemple public simulé, sans action client                                 | Vérifier mentions, scénario et isolation effective ; réutiliser l'existant                                   |
+| VOICE-01   | Recette interne incomplète, P0 avant activation client | #436–#437 ; configuration présente ; appels NO_ACTION, aucune réservation liée                | Qualifier les scénarios internes sur données de test ; distinguer pipelines staging/production               |
+| OPS-01     | Installation client à qualifier                        | Onboarding/provisioning livrés partiellement ; intégration locale à préserver                 | Vérifier le parcours réellement déployé, numéro/renvoi et secours du candidat                                |
+| DEMO-01    | Qualifié en production                                 | Demande persistée avec source, notification effectivement reçue (§10.19)                      | Garder la recette ciblée après une modification de ce parcours                                               |
+| DEMO-02    | Réception et traitement technique qualifiés            | Administration accessible, test clôturé après rechargement et relu en base (§10.19)           | Définir l'organisation commerciale et le délai interne ; aucune promesse publique de délai                   |
+| METRIC-01  | Demande/source/statuts disponibles ; suite à compléter | Horodatages persistés ; essais exclus des résultats commerciaux                               | Suivi minimal qualification/démo ; rapprocher activation/paiement avant pilote                               |
+| BILL-01    | Grille v3 livrée ; exploitation pilote à qualifier     | #429–#430, catalogue/runbook actif ; aucune nouvelle preuve client dans ce lot                | Vérifier paiement, plan et droits du candidat ; observer le renouvellement à son échéance                    |
+| SEO-01     | Diagnostic et accès GSC acquis ; inconnues bornées     | §10.19 ; anciens 403 inexpliqués                                                              | Observer les nouveaux rapports et retraits d'URL ; pas de modification réseau sans cause établie             |
+| SEO-02     | Socle technique livré et contrôlé                      | Pages B2B accessibles ; pages fictives noindex/hors sitemap                                   | Distinguer indexabilité et indexation effective ; publication landing dans LAND-01                           |
+| ICP-01     | Supports prêts, tarifs actualisés                      | Guide d'entretien et runbook pilote                                                           | Sélectionner les candidats et faire valider le message avant envoi                                           |
+| ICP-02     | Preuves terrain à documenter                           | Aucun entretien archivé dans ce rapport                                                       | Recueillir les retours ; 8 à 12 est un repère, pas une barrière au premier pilote                            |
+| PILOT-01   | À démarrer sous conditions par candidat                | Runbook limité à deux pilotes initiaux ; aucune fiche complète archivée                       | Premier démarrage indépendant du second ; revue opérationnelle après sept jours                              |
+| ECON-01    | Observation ultérieure                                 | Aucune preuve d'adoption durable ou de renouvellement archivée                                | Mesurer usage, coûts, support et paiement pendant une durée suffisante                                       |
+| LAND-01    | Page livrée, publication SEO à effectuer               | 200/noindex/hors sitemap ; dépendance VOICE-01 retirée du plan                                | Contrôler exactitude, DEMO-SIM si exemple présenté, CTA/source ; ouvrir indexation et maillage après recette |
+| CONNECT-01 | P2 conditionnel                                        | Fiches fictives exclues ; inventaire partenaire à qualifier                                   | Avancer avec des établissements réels et leurs accords                                                       |
+| SCALE-01   | P2 conditionnel                                        | Pas de validation commerciale à grande échelle                                                | Étendre selon les résultats et les coûts observés                                                            |
+
+## Lecture des observations historiques
+
+Les sections suivantes décrivent l'état à leur date de rédaction. Prix, accès, déploiements et
+conditions de publication anciens sont remplacés pour l'exécution courante par les sections 1–2
+et par le plan révisé, sans effacer les preuves d'origine.
 
 ## 3. Observations (BASE-01 et SEO-01)
 
@@ -909,3 +917,26 @@ Le contrôle navigateur de /login a révélé le provider Clerk absent en stagin
 #436 fusionnée (`0b1c134b`), CI main `38604351722` réussie. Déploiement staging `38605304964` : artefacts livrés, promotion bloquée par trois tests simulant un opérateur sans session Clerk. Les remplacer à distance par une preuve réelle de refus sans session, tout en conservant les tests du shell en preview local : 6 tests distants réussis, 3 scénarios locaux non applicables.
 
 Le compte opérateur configuré appartient à Clerk Production et renvoie 404 dans Clerk Development ; le compte personnel connecté est une identité distincte. Accord explicite reçu pour autoriser ce seul compte sur staging via SOKAR_OPERATOR_USER_IDS_STAGING. Aucun ajout en production ; aucun appel à ce stade.
+
+### 10.21 — Dépendances corrigées : simulation, acquisition et pilotes (15 octobre)
+
+Décision explicite de Hamza : la démonstration publique est un exemple simulé, sans parcours de
+réservation client réelle. DEMO-SIM vérifie sa transparence et son isolation. VOICE-01 qualifie
+les opérations réelles sur données de test avant activation client ; OPS-01 qualifie l'installation.
+La landing peut être publiée quand son contenu est exact, son exemple isolé s'il est présenté et
+son CTA/suivi minimal fonctionnel, sans attendre tous les appels, les entretiens ou un renouvellement.
+Le noindex actuellement servi reste inchangé dans ce lot documentaire.
+
+Entretiens, SEO et préparation des pilotes avancent en parallèle. Huit à douze entretiens sont un
+repère, pas un quota. Le premier candidat qualifié peut démarrer sans attendre le second. Essential
+reste le périmètre initial, sous réserve d'adéquation au besoin ; aucune modification automatique
+d'offre. La revue à sept jours vérifie l'exploitation, pas la fidélisation ou la rentabilité durable.
+Le suivi commercial commence avec les sources existantes ; sa complétude future ne bloque pas
+l'acquisition. Les preuves client, paiements et renouvellements restent à constater.
+
+État opérationnel relu le 14 octobre : #437 déployée, CI/staging/production réussis ; santé API 200/ok des deux
+environnements ; variables Telnyx staging présentes et VOICE_DISABLED=false. Deux appels démo
+du jour relus en base, sans coordonnées ni transcript : NO_ACTION et réservation liée absente.
+La landing publique reste 200/noindex et hors sitemap. Aucun test vocal supplémentaire, achat,
+envoi, activation ou changement de droits dans ce lot. La section 2 remplace le tableau initial
+obsolète ; les observations datées sont préservées.

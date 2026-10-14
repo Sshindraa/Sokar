@@ -8,11 +8,11 @@
 
 ## TODOs actifs
 
-- [ ] SEO : #434 déployée ; réception et suivi opérateur qualifiés le 14/10. GSC accessible via le compte personnel, sitemap renvoyé, accueil indexé et test direct réussi ; rapport global daté du 09/10. Landing noindex et hors sitemap jusqu’à VOICE-01 (rapport growth §10.19).
-
-- [ ] Démo : réception et clôture de l’essai vérifiées en production. Aucun délai de réponse affiché. Staging voix : configuration Telnyx manquante, `VOICE_DISABLED=true`. Landing bloquée par VOICE-01 ; démo restaurant noindex et hors sitemap.
-- [ ] Vitrine : faire valider juridiquement la FAQ données (hébergement et sous-traitants voix possiblement hors UE) et « Support prioritaire 7j/7 ».
-- [ ] Croissance : qualifier la démo vocale par appels réels (VOICE-01), puis publier la landing SEO (LAND-01) ; entretiens avec `docs/runbooks/restaurant-discovery-interview.md`.
+- [ ] SEO : landing noindex/hors sitemap ; publier après texte exact, exemple isolé si présenté, CTA et mesure minimale, sans attendre VOICE-01. GSC disponible ; accueil indexé, rapport global du 09/10 (growth §10.21).
+- [ ] Démo : demande/réception/traitement production qualifiés. Vérifier simulation et isolation (DEMO-SIM), sans action client. Aucun délai public annoncé.
+- [ ] Vitrine : valider ou ajuster FAQ données et promesse « Support prioritaire 7j/7 » selon les preuves.
+- [ ] Croissance : entretiens/SEO en parallèle, sans quota. Premier pilote dès candidat/recette interne/installation/facturation prêts ; deux places initiales. Revue opérationnelle à sept jours, adoption/renouvellement plus tard.
+- [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client ; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
