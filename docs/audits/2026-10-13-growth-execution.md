@@ -754,3 +754,81 @@ soumettre le sitemap. Ne pas lancer des pages par ville sans inventaire réel.
 10:00 UTC comparée à l’heure réelle. Horloge Date de cette seule suite figée à son
 NOW historique (14/09), puis restaurée après chaque test ; aucun changement métier.
 Le hook sera rejoué avec ce préalable déterministe, sans ignorer les tests.
+
+### 10.18 Preuves après déploiement du lot SEO (14/10/2026)
+
+- PR [#432](https://github.com/Sshindraa/Sokar/pull/432), fusion automatique le
+  14/10 à 12:42:39 Europe/Paris. Commit squash `bb0759f0e38db6a73690f6e3fe89fb26eed60b5e`
+  (commits de branche `5b67fcdc`, `829cc62a`). Les deux CI de branche sont vertes
+  (38550659680, 38550667826) ; CI main 38551470336 verte, CodeQL vert.
+- Deploy Staging [38552161298](https://github.com/Sshindraa/Sokar/actions/runs/38552161298)
+  et Deploy Production [38552689157](https://github.com/Sshindraa/Sokar/actions/runs/38552689157) :
+  **succès, smoke tests inclus**. Staging snapshot `20261014T105132Z`, commit local
+  `c3b3df7f` intitulé « snapshot bb0759f0… » ; c’est la représentation de source du
+  déploiement staging, pas un autre lot. Le snapshot staging précédent `d1fc99b7`
+  portait de la même façon la source `f2ccffc7`. Production snapshot
+  `20261014T105602Z`, `.latest-hash=bb0759f0…`.
+- Staging a répondu brièvement 502 puis 404 pendant le redémarrage et le test de
+  rollback prévu par le workflow. La release courante a été restaurée, puis la
+  landing contrôlée en 200 après workflow vert. Aucun changement de protection ni
+  réparation manuelle du déploiement.
+- Santé production : `/health` et `/livez` API en 200. Snapshot conservé ; rollback
+  applicatif via `scripts/deploy.sh --env prod rollback`, sans rollback DB par
+  défaut. Aucune migration ni modification d’auth, paiement ou voix dans ce lot.
+
+**Contrôle HTTP/HTML production après déploiement**, 14/10 vers 12:57 Europe/Paris :
+
+| URL                                            | Accessible            | Indexable techniquement                                 | Indexation Google                                |
+| ---------------------------------------------- | --------------------- | ------------------------------------------------------- | ------------------------------------------------ |
+| `/`                                            | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/pricing`                                     | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/demo`                                        | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/assistant`                                   | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/robots.txt`                                  | 200                   | Accès public autorisé, aucun Disallow démo              | Sans objet                                       |
+| `/sitemap.xml`                                 | 200                   | 4 URL B2B/information, aucune démo ni landing brouillon | Ne prouve pas l’indexation                       |
+| `/restaurant/chez-sokar-demo`                  | 200                   | **Non : noindex, follow**, Googlebot idem               | NON VÉRIFIÉE, retrait effectif de Google inconnu |
+| `/solutions/assistant-telephonique-restaurant` | 200                   | **Non : brouillon noindex, follow**                     | NON VÉRIFIÉE                                     |
+
+Titles, descriptions, H1 et canonical toujours présents dans le HTML initial ;
+aucun X-Robots-Tag en production. Chez Sokar : title « Chez Sokar — Démonstration Sokar |
+Sokar », description d’établissement fictif, bandeau d’essai visible, aucun JSON-LD
+Restaurant. La liste publique staging n’annonce plus de restaurant (`total=0`).
+Les tarifs v3 sont inchangés. Landing : title « Assistant téléphonique pour restaurant —
+Sokar », H1 « Un assistant téléphonique pour votre restaurant », canonical absolue propre,
+liens démo avec source et tarifs présents. Hors sitemap et hors maillage entrant, décision
+maintenue tant que VOICE-01 et le parcours opérateur ne sont pas qualifiés.
+
+**Parcours réel depuis le navigateur et vérification de stockage en lecture seule :**
+
+| Environnement | Référence opaque d’essai               | Enregistrement et source                                                  | Notification                                                                    | Traitement        |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------- |
+| Staging       | `9a23707f-a057-4060-86b7-9ee3b86264aa` | Confirmation UI ; en base à 12:53:50, `pageVersion=demo-assistant-tel-v1` | `notifiedAt=null` ; Resend absent, demande conservée                            | `NEW`, non traité |
+| Production    | `f8d822c7-0cb1-4dc7-a421-628473cde0e0` | Confirmation UI ; en base à 12:58:34, même source                         | `notifiedAt=12:58:34` après `outcome=success`, destination autorisée uniquement | `NEW`, non traité |
+
+Les deux demandes sont explicitement marquées essais techniques SEO, sans restaurant
+réel ni prospect commercial. Elles ont été conservées, aucune suppression de données.
+Adresse de notification production et allowlist vérifiées sans afficher de secret :
+uniquement `hamza@sokar.tech`, clé d’envoi présente. L’acceptation du fournisseur suit
+le garde-fou du code déployé ; **réception effective dans la boîte mail non vérifiée**.
+Session opérateur production : redirection vers `/login` ; staging : vers `/dashboard`.
+**Visibilité et traitement réels dans l’interface opérateur non vérifiés**, contrairement
+aux tests UI/API verts et à la persistance/source constatées en base. Aucun droit élargi.
+
+Captures remplacées par celles de production :
+[desktop](assets/seo-2026-10-14/landing-desktop.jpg),
+[iPad](assets/seo-2026-10-14/landing-ipad.jpg),
+[mobile](assets/seo-2026-10-14/landing-mobile.jpg),
+[confirmation production](assets/seo-2026-10-14/demo-production-success.jpg),
+[confirmation staging](assets/seo-2026-10-14/demo-staging-success.jpg).
+Les trois largeurs production ont scrollWidth égal à innerWidth : 1440, 768, 375 px.
+Ces captures prouvent le rendu, pas une conversation vocale ni des Core Web Vitals terrain.
+
+**Blocages précis et prochaine action.** L’accès direct à la propriété GSC
+`sc-domain:sokar.tech` affiche « Désolé, vous n’avez pas accès à cette propriété »
+pour `hamza@sokar.tech` : demander l’accès à un propriétaire ou vérifier la propriété.
+Puis inspecter les URL, canonical Google et sitemap, sans promettre de délai ni de rang.
+Pour rendre la landing indexable : archiver VOICE-01 niveaux 1/2 et scénarios, puis
+consulter et traiter une demande avec une session opérateur autorisée, confirmer sa
+réception. Les clés staging Resend/Telnyx API/connexion restent à fournir ; aucun
+nouveau chantier téléphonie lancé. Cause des anciens 403 toujours non établie :
+obtenir réponse originale/cf-ray et accès aux événements Cloudflare avant toute correction.
