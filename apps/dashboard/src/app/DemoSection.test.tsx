@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import DemoSection from './DemoSection';
 
 beforeAll(() => {
@@ -8,6 +8,25 @@ beforeAll(() => {
 });
 
 describe('DemoSection', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('joue le scénario complet et les réglages sans requête ni média', () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<DemoSection />);
+    fireEvent.change(screen.getByRole('slider', { name: 'Rapidité de parole' }), {
+      target: { value: '2' },
+    });
+    expect(screen.getByText('Dynamique')).toBeInTheDocument();
+    for (let i = 0; i < 25; i++) act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByText(/Réservation simulée, aucun SMS envoyé/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.querySelector('audio, video, iframe, form, a[href^="tel:"]')).toBeNull();
+  });
   it('signale visiblement que la vitrine montre une simulation', () => {
     render(<DemoSection />);
 

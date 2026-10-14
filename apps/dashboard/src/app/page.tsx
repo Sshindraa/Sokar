@@ -336,7 +336,7 @@ export default function HomePage() {
               Mentions Légales
             </a>
             <a
-              href="#"
+              href="/privacy"
               className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
             >
               Confidentialité
