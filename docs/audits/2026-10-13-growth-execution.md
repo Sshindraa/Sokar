@@ -833,7 +833,68 @@ réception. Les clés staging Resend/Telnyx API/connexion restent à fournir ; a
 nouveau chantier téléphonie lancé. Cause des anciens 403 toujours non établie :
 obtenir réponse originale/cf-ray et accès aux événements Cloudflare avant toute correction.
 
-### 10.19 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
+### 10.19 — Réception, suivi opérateur et Search Console qualifiés (14/10/2026)
+
+**Parcours production confirmé.** La notification du test technique
+`f6ff0cb4-bc6a-45b6-8a3e-b1aa451b3ba0` est reçue dans Gmail à 13 h 36
+Europe/Paris après retrait de la seule suppression Resend héritée d’un rejet
+Google `550 5.1.1 NoSuchUser` du 18 septembre. La boîte reçoit désormais ;
+l’acceptation fournisseur seule ne constituait pas une preuve de réception.
+
+Le compte opérateur existant accède à `/admin/demo-requests` après #434
+(`fac259cc2d2b8e193a929bbf43295d03a290f98d`). Le garde client attend désormais
+la résolution de la session Clerk avant toute redirection. Aucun droit élargi.
+Notre seul essai a été passé à **CLOSED** dans l’interface ; état confirmé après
+rechargement et en base, en lecture seule. `contactedAt` et `demoDoneAt` restent
+nuls : aucune prise de contact client ni démonstration commerciale revendiquée.
+L’autre demande technique a été laissée intacte.
+
+Validation : reproduction de l’échec avant correctif, 9 tests ciblés verts,
+619 tests dashboard et 71 shared verts, typage et lint verts. CI main
+`38563729276`, staging `38564475720` et production `38565018595` réussis.
+
+**Search Console accessible sans nouveau droit.** La propriété
+`sc-domain:sokar.tech` est accessible avec le compte Google personnel déjà
+connecté ; le compte Workspace reste sans accès. Le sitemap existant
+`https://sokar.tech/sitemap.xml` a été renvoyé une seule fois le 14 octobre :
+confirmation « Sitemap envoyé ». La dernière lecture affichée reste celle du
+13 octobre ; aucun délai d’exploration ou d’indexation n’est garanti.
+
+L’inspection de l’accueil indique que l’URL est sur Google. Le test direct du
+14 octobre à 14:26:36 réussit : accès smartphone, exploration et indexation
+autorisées, récupération réussie, canonical déclarée `https://sokar.tech/`.
+Le test direct ne détermine pas la canonical choisie par Google à l’indexation.
+Il ne permet pas d’expliquer rétrospectivement les anciens 403.
+
+Le rapport global d’indexation est daté du **9 octobre**, avant les derniers
+changements : 3 pages indexées, 4 non indexées. Exemples indexés alors : accueil,
+ancienne URL HTTP `/login` et ancienne fiche `/restaurant/chez-sokar-tapas-paris`.
+Au contrôle HTTP actuel, `/login` est noindex et l’ancienne fiche renvoie 404 ;
+leur retrait effectif reste à vérifier au prochain rapport. Le HTTP `/login`
+répond encore 200 sans redirection HTTPS, point observé hors de ce lot.
+Aucune modification de protection réseau ou DNS.
+
+Référence acquisition, période affichée du 12 juillet au 11 octobre :
+15 clics, 670 impressions, CTR 2,2 %, position moyenne 16,5. Les requêtes visibles
+sont surtout la marque et ses variantes ; leur liste est partielle et ne
+permet pas d’attribuer tous les clics à la marque.
+
+**Prochaine dépendance : VOICE-01.** En staging, la voix est désactivée et les
+variables Telnyx API, clé publique, connexion et numéro d’émission manquent.
+Le contrôle fournisseur en lecture seule n’a identifié aucune application
+staging/test dédiée. Ne pas copier les secrets de production ni composer le
+numéro fictif du seed. Préparer une ressource de test dédiée, puis qualifier
+une conversation réelle et ses effets dans l’interface : réservation,
+modification, indisponibilité et recours humain selon la matrice VOICE-01.
+Aucun numéro acheté, aucune clé créée, aucun appel fournisseur lancé.
+La landing conserve son noindex et reste hors sitemap jusqu’à cette recette.
+
+Preuves locales : dossier `sokar-qualification` du 14/10 dans les visualisations
+Codex : `operator-cloture.png`, `sitemap-envoye.png`,
+`accueil-google-test-direct.png`, `indexation-rapport-9-octobre.png` et
+`pages-indexees-9-octobre.png`. Réception : `sokar-email-recovery/notification-recue.png`.
+
+### 10.20 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
 
 **Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.
 
@@ -848,9 +909,9 @@ obtenir réponse originale/cf-ray et accès aux événements Cloudflare avant to
 
 **À valider avant publication.** Le statut « disponible » de la synchronisation Google Agenda, de la facturation groupée Multi-site et du suivi des no-shows repose sur le code et la FAQ : à confirmer par le produit. Sont marqués « prévu » : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
 
-### 10.20 Fusion avec le copilote de service de #428 (14/10/2026)
+### 10.21 Fusion avec le copilote de service de #428 (14/10/2026)
 
-Le décompte de la section 10.19 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
+Le décompte de la section 10.20 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
 
 **Ce que la page affiche.** Pro vend le copilote de service : suggestions pour les retards, estimation des tables bientôt disponibles avec indication de fiabilité, rapprochements avec les clients en attente, analyse d'une réorganisation et plan validé par l'équipe, historique des plans et retour arrière sous conditions. Essential garde planning, placement manuel, disponibilités, liste d'attente et pouls ; il n'inclut aucune fonction avancée du copilote, ce que teste un garde-fou. Pro et Multi-site proposent « Découvrir » (démonstration) avant l'inscription. Les textes publics sont ceux de `main` ; le catalogue fournit les statuts et le tableau.
 
@@ -858,13 +919,13 @@ Le décompte de la section 10.19 concerne le catalogue d'avant cette fusion. Le 
 
 - Copilote « disponible » en Pro et Multi-site : l'accès est porté par la capacité de formule, et #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert ; aucun résultat en conditions de service n'est annoncé.
 - Rapport quotidien de vos appels « disponible » en Essential, ajouté au-delà du texte de `main`.
-- Les statuts « disponible » de la section 10.19 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
+- Les statuts « disponible » de la section 10.20 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
 
 **Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
 
-### 10.21 Fusion avec la tarification de #429 (14/10/2026)
+### 10.22 Fusion avec la tarification de #429 (14/10/2026)
 
-La décision de `main` remplace les montants de la section 10.19 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.19 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
+La décision de `main` remplace les montants de la section 10.20 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.20 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
 
 - Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
 - Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.
