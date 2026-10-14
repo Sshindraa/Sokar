@@ -906,6 +906,10 @@ Blocage supplémentaire constaté lors de la préparation : la page opérateur s
 
 Le contrôle navigateur de /login a révélé le provider Clerk absent en staging démo. Le complément monte Clerk sur connexion/admin, active la lecture de session middleware et protège les routes opérateur, en gardant le dashboard démo accessible. Le proxy existant peut alors transmettre son jeton serveur. 8 tests ciblés dashboard et 23 tests auth/provisioning API verts ; typage et lint ciblés verts. Aucun changement de la liste opérateur.
 
+#436 fusionnée (`0b1c134b`), CI main `38604351722` réussie. Déploiement staging `38605304964` : artefacts livrés, promotion bloquée par trois tests simulant un opérateur sans session Clerk. Les remplacer à distance par une preuve réelle de refus sans session, tout en conservant les tests du shell en preview local : 6 tests distants réussis, 3 scénarios locaux non applicables.
+
+Le compte opérateur configuré appartient à Clerk Production et renvoie 404 dans Clerk Development ; le compte personnel connecté est une identité distincte. Accord explicite reçu pour autoriser ce seul compte sur staging via SOKAR_OPERATOR_USER_IDS_STAGING. Aucun ajout en production ; aucun appel à ce stade.
+
 ### 10.21 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
 
 **Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.

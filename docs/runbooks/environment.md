@@ -994,3 +994,7 @@ de test ; à confirmer dans le portail.
 - `GET https://api-staging.sokar.tech/health` : `telnyx` à `ok` (bloc 2).
 - Le bloc 1 se vérifie par un envoi de test vers `hamza@sokar.tech` uniquement.
 - Le bloc 3 se vérifie par un appel de test réel, validé par le gérant (`validate-test-call`).
+
+### Identité opérateur staging
+
+`SOKAR_OPERATOR_USER_IDS_STAGING` est une variable GitHub dédiée aux identités de l’instance Clerk Development. Le workflow staging l’utilise en priorité, avec repli sur `SOKAR_OPERATOR_USER_IDS` pour les installations existantes. La production continue à utiliser uniquement `SOKAR_OPERATOR_USER_IDS`. Un identifiant Clerk de production ne désigne pas automatiquement le même compte en développement ; ne pas ajouter de compte à une liste sans autorisation explicite. Aucun identifiant personnel ne doit être consigné dans le dépôt.
