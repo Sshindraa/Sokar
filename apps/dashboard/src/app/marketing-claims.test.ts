@@ -26,6 +26,7 @@ const UNPROVEN_CLAIMS = [
 
 const PUBLIC_COPY_FILES = [
   './constants.ts',
+  './solutions/assistant-telephonique-restaurant/page.tsx',
   './page.tsx',
   './ScrollStoryboardSection.tsx',
   './register/[[...slug]]/page.tsx',

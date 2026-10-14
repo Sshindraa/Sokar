@@ -92,7 +92,14 @@ export async function demoRequestRoutes(app: FastifyInstance) {
       if (!result.replayed) {
         try {
           const notified = await notifyDemoRequest(result.record);
-          if (notified) await markDemoRequestNotified(result.record.id);
+          if (notified) {
+            await markDemoRequestNotified(result.record.id);
+          } else {
+            request.log.warn(
+              { demoRequestId: result.record.id },
+              'demo_request.notification_not_accepted',
+            );
+          }
         } catch (error) {
           // La demande reste enregistrée ; le suivi opérateur voit qu'aucune notification n'est partie.
           request.log.warn(

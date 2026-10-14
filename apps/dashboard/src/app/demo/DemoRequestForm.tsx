@@ -27,6 +27,12 @@ export default function DemoRequestForm() {
   useEffect(() => {
     setSelection(readPricingSelection(window.location.search));
   }, []);
+  const [fromVoiceSolution, setFromVoiceSolution] = useState(false);
+  useEffect(() => {
+    setFromVoiceSolution(
+      new URLSearchParams(window.location.search).get('source') === 'assistant-telephonique',
+    );
+  }, []);
   const [status, setStatus] = useState<FormStatus>('idle');
   const inFlight = useRef(false);
 
@@ -43,9 +49,11 @@ export default function DemoRequestForm() {
       contactPhone: text('contactPhone') || undefined,
       currentTool: text('currentTool') || undefined,
       mainProblem: text('mainProblem') || undefined,
-      pageVersion: selection
-        ? `demo-${selection.plan.toLowerCase()}-${selection.yearly ? 'annual' : 'monthly'}${selection.plan === 'Multi-site' ? `-${selection.siteCount}` : ''}-2026-10`
-        : PAGE_VERSION,
+      pageVersion: fromVoiceSolution
+        ? 'demo-assistant-tel-v1'
+        : selection
+          ? `demo-${selection.plan.toLowerCase()}-${selection.yearly ? 'annual' : 'monthly'}${selection.plan === 'Multi-site' ? `-${selection.siteCount}` : ''}-2026-10`
+          : PAGE_VERSION,
       website: text('website') || undefined,
     };
 

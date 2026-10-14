@@ -42,6 +42,22 @@ describe('sitemap', () => {
     );
   });
 
+  it('exclut les fixtures explicites même si l’API précédente les retourne, sans filtre par nom', async () => {
+    api.fetchSitemapSources.mockResolvedValue({
+      restaurants: [
+        publishedRestaurant,
+        { ...publishedRestaurant, slug: 'chez-sokar-demo' },
+        { ...publishedRestaurant, slug: 'chez-sokar-bistrot-paris' },
+      ],
+      cities: [],
+    });
+    const urls = (await sitemap()).map((entry) => entry.url);
+    expect(urls).toContain(`${SITE}/restaurant/chez-sokar`);
+    expect(urls).not.toContain(`${SITE}/restaurant/chez-sokar-demo`);
+    expect(urls).not.toContain(`${SITE}/restaurant/chez-sokar-bistrot-paris`);
+    expect(urls).not.toContain(`${SITE}/solutions/assistant-telephonique-restaurant`);
+  });
+
   it('publie les pages de vitrine même quand aucun restaurant n’est publié', async () => {
     api.fetchSitemapSources.mockResolvedValue({ restaurants: [], cities: [] });
 

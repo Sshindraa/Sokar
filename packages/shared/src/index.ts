@@ -24,3 +24,5 @@ export * from './utils/opening-hours';
 export * from './utils/slugify';
 
 export * from './pricing-catalog.cjs';
+
+export * from './connect-demo';

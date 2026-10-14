@@ -11,6 +11,8 @@
  */
 
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
+import { CONNECT_DEMO_SLUGS } from '@sokar/shared';
 
 // ─── Slug (param URL) ─────────────────────────────────────────
 
@@ -115,6 +117,12 @@ export const PUBLIC_CONNECT_WHERE = {
   slug: { not: null },
   agenticOptIn: true,
 } as const;
+
+/** Discovery excludes explicit fixtures; direct pages and test reservations remain available. */
+export const DISCOVERABLE_CONNECT_WHERE = {
+  ...PUBLIC_CONNECT_WHERE,
+  slug: { not: null, notIn: [...CONNECT_DEMO_SLUGS] },
+} satisfies Prisma.RestaurantWhereInput;
 
 export function isPublicConnectPage(restaurant: {
   slug: string | null;
