@@ -748,3 +748,9 @@ aucun déploiement de cette branche n’est encore revendiqué à cette étape.
 suivi opérateur. Ensuite seulement : retirer noindex de la landing, l’ajouter au
 sitemap Connect et au maillage accueil/pages pertinentes, inspecter les URL et
 soumettre le sitemap. Ne pas lancer des pages par ville sans inventaire réel.
+
+**Contrôle obligatoire pre-push.** Le hook a exécuté la suite API et rencontré deux
+échecs existants dans `loyalty.routes.test.ts` : fixture expirant le 14/10/2026 à
+10:00 UTC comparée à l’heure réelle. Horloge Date de cette seule suite figée à son
+NOW historique (14/09), puis restaurée après chaque test ; aucun changement métier.
+Le hook sera rejoué avec ce préalable déterministe, sans ignorer les tests.
