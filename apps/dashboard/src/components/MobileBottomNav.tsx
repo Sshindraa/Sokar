@@ -38,6 +38,8 @@ import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { cn, triggerHaptic } from '@/lib/utils';
 import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
+import { useSiteSelection } from '@/features/sites/site-context';
+import { isServiceStaff } from '@/features/team/roles';
 
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
@@ -48,6 +50,12 @@ const copilotNavItems = [
 const salleNavItems = [
   { href: '/dashboard/floor-plan?view=service-live', key: 'live' as const, icon: Radio },
   { href: '/dashboard/floor-plan?view=edit-plan', key: 'edition' as const, icon: PencilRuler },
+];
+
+/** L'équipe de service n'a que les réservations et le service en salle. */
+const staffNavItems = [
+  { href: '/dashboard/reservations', key: 'reservations' as const, icon: CalendarCheck },
+  { href: '/dashboard/floor-plan?view=service-live', key: 'live' as const, icon: Radio },
 ];
 
 type PrimaryNavItem = (typeof copilotNavItems)[number] | (typeof salleNavItems)[number];
@@ -118,8 +126,10 @@ export default function MobileBottomNav() {
 
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const salleEditMode = searchParams.get('view') === 'edit-plan';
-  const activeNavItems = salleMode ? salleNavItems : copilotNavItems;
-  const hasMoreMenu = !salleMode;
+  const { activeSite } = useSiteSelection();
+  const serviceStaff = isServiceStaff(activeSite?.role);
+  const activeNavItems = serviceStaff ? staffNavItems : salleMode ? salleNavItems : copilotNavItems;
+  const hasMoreMenu = !salleMode && !serviceStaff;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const liquidRef = useRef<HTMLSpanElement>(null);

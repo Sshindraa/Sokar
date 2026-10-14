@@ -10,6 +10,11 @@ const loadFloorStats = vi.hoisted(() =>
 );
 vi.mock('../../../../modules/restaurants/onboarding-floor.service', () => ({ loadFloorStats }));
 
+const resolveAccountOwnerEmail = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+vi.mock('../../../../modules/restaurants/account-email.service', () => ({
+  resolveAccountOwnerEmail,
+}));
+
 type Task =
   | 'restaurant'
   | 'hours'
@@ -72,13 +77,47 @@ describe('processReengagement', () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it('ne relance pas sans adresse e-mail, et ne fait pas échouer le job', async () => {
+  it('sans adresse enregistrée, écrit à l’adresse de connexion du compte', async () => {
+    resolveAccountOwnerEmail.mockResolvedValueOnce('compte@example.com');
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+      restaurant([], { managerEmail: '', accountId: 'acc-1', phoneNumber: '+000chez-sokar' }),
+    );
+
+    const outcome = await processReengagement({ restaurantId: 'rest-1', type: 'stalled' }, '42');
+
+    expect(outcome).toBe('sent');
+    expect(resolveAccountOwnerEmail).toHaveBeenCalledWith('acc-1');
+    expect(sendEmail.mock.calls[0][0].to).toBe('compte@example.com');
+    expect(sendEmail.mock.calls[0][0].subject).toBe(
+      'Chez Sokar : terminez la configuration de votre salle',
+    );
+  });
+
+  it('préfère l’adresse enregistrée à celle de la connexion', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(restaurant(ROOM));
+
+    await processReengagement({ restaurantId: 'rest-1', type: 'stalled' }, '42');
+
+    expect(resolveAccountOwnerEmail).not.toHaveBeenCalled();
+    expect(sendEmail.mock.calls[0][0].to).toBe('gerant@example.com');
+  });
+
+  it('ne relance pas sans aucune adresse, et ne fait pas échouer le job', async () => {
+    resolveAccountOwnerEmail.mockResolvedValueOnce(null);
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(restaurant([], { managerEmail: '' }));
 
     await expect(
       processReengagement({ restaurantId: 'rest-1', type: 'stalled' }, '42'),
     ).resolves.toBe('no-email');
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('ne cherche pas d’adresse quand la relance n’a pas d’objet', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(restaurant(ALL, { managerEmail: '' }));
+
+    await processReengagement({ restaurantId: 'rest-1', type: 'stalled' }, '42');
+
+    expect(resolveAccountOwnerEmail).not.toHaveBeenCalled();
   });
 
   it('ne relance pas quelqu’un revenu depuis moins de 24 h', async () => {

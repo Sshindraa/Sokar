@@ -313,6 +313,8 @@ function normalizeIdempotencyKey(value: string | undefined): string | undefined 
  * tenant or another plan. Without a client key, the 24-hour bucket still
  * absorbs double-clicks and network retries during the purchase window.
  */
+export type CheckoutReturnTo = 'settings' | 'onboarding';
+
 export function buildCheckoutIdempotencyKey(input: {
   restaurantId: string;
   /** Account scope keeps two sites from creating two subscriptions. */
@@ -320,6 +322,8 @@ export function buildCheckoutIdempotencyKey(input: {
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount: number;
+  /** Absent ou `settings` : la clé reste identique à celle d'avant l'option de retour. */
+  returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
   now?: Date;
 }): string {
@@ -330,6 +334,9 @@ export function buildCheckoutIdempotencyKey(input: {
     input.plan,
     input.billing,
     input.siteCount,
+    // Une session déjà créée garde ses adresses de retour : celle de l'inscription ne doit pas
+    // réutiliser une session qui ramènerait vers les Réglages (ni l'inverse).
+    ...(input.returnTo === 'onboarding' ? ['return:onboarding'] : []),
     normalizeIdempotencyKey(input.idempotencyKey) ?? `auto:${bucket}`,
   ].join('|');
   return `sokar-checkout-${createHash('sha256').update(source).digest('hex').slice(0, 48)}`;
@@ -350,6 +357,7 @@ export async function createCheckoutSession(input: {
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount?: number;
+  returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
 }): Promise<{ id: string; url: string }> {
   if (!isBillingCheckoutEnabled()) {
@@ -461,9 +469,15 @@ export async function createCheckoutSession(input: {
           },
         },
         success_url: dashboardUrl(
-          '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
+          input.returnTo === 'onboarding'
+            ? '/onboarding?step=canaux&billing=success&session_id={CHECKOUT_SESSION_ID}'
+            : '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
         ),
-        cancel_url: dashboardUrl('/pricing?billing=cancelled'),
+        cancel_url: dashboardUrl(
+          input.returnTo === 'onboarding'
+            ? '/onboarding?step=formule&billing=cancelled'
+            : '/pricing?billing=cancelled',
+        ),
       },
       { idempotencyKey },
     );

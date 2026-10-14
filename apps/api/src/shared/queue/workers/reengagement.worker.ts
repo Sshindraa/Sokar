@@ -6,6 +6,7 @@ import { setupWorkerListeners, jobLogger } from './helper';
 import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 import { computeOnboardingState } from '../../../modules/restaurants/onboarding.service';
 import { loadFloorStats } from '../../../modules/restaurants/onboarding-floor.service';
+import { resolveAccountOwnerEmail } from '../../../modules/restaurants/account-email.service';
 import {
   buildReminderEmail,
   resolveReminderAction,
@@ -47,9 +48,6 @@ export async function processReengagement(
   });
   if (!restaurant) return 'restaurant-not-found';
 
-  // Un restaurateur bloqué à la première étape n'a pas encore saisi d'adresse e-mail : rien à envoyer.
-  if (!hasEmailAddress(restaurant.managerEmail)) return 'no-email';
-
   // Le restaurateur est revenu de lui-même : on ne le relance pas.
   if (
     restaurant.onboardingLastSeenAt &&
@@ -68,6 +66,13 @@ export async function processReengagement(
     return 'already-complete';
   }
 
+  // Un restaurateur bloqué à la première étape n'a pas encore enregistré d'adresse : on prend celle
+  // de sa connexion.
+  const recipient = hasEmailAddress(restaurant.managerEmail)
+    ? restaurant.managerEmail.trim()
+    : await resolveAccountOwnerEmail(restaurant.accountId);
+  if (!recipient) return 'no-email';
+
   const email = buildReminderEmail({
     kind: data.type,
     action,
@@ -85,7 +90,7 @@ export async function processReengagement(
   };
 
   await sendEmail({
-    to: restaurant.managerEmail.trim(),
+    to: recipient,
     subject: email.subject,
     html: email.html,
     usage: usageContext,

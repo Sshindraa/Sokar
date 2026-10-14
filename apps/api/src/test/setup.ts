@@ -70,8 +70,10 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     };
     restaurantAccountBilling = {
       findUnique: vi.fn(),

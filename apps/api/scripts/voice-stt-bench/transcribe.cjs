@@ -1,7 +1,8 @@
 /**
  * Banc STT vocal — synthèse, dégradation téléphonique et transcription Scribe.
  *
- * Fournir ELEVENLABS_BENCH_API_KEY et CARTESIA_BENCH_API_KEY dans l'environnement.
+ * Fournir ELEVENLABS_API_KEY (clé unique, décision du 14/10/2026) et CARTESIA_BENCH_API_KEY
+ * dans l'environnement.
  * Les clés applicatives de production ne sont jamais utilisées par le banc.
  *
  * Chaque phrase est synthétisée par Cartesia en PCM 8 kHz, dégradée comme un
@@ -103,10 +104,10 @@ async function synthesize(phrase) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-function transcribe(audio, elevenLabsBenchKey) {
+function transcribe(audio, elevenLabsApiKey) {
   return new Promise((resolve) => {
     const url = buildSttUrl(undefined, 'PCMA', undefined, { restaurantName: 'Chez Sokar' });
-    const ws = new WebSocket(url, { headers: { 'xi-api-key': elevenLabsBenchKey } });
+    const ws = new WebSocket(url, { headers: { 'xi-api-key': elevenLabsApiKey } });
     const committed = [];
     const words = [];
     const partials = [];
@@ -162,11 +163,11 @@ function transcribe(audio, elevenLabsBenchKey) {
 }
 
 function requireBenchConfig(phrases) {
-  const elevenLabsBenchKey = process.env.ELEVENLABS_BENCH_API_KEY;
+  const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
   const cartesiaBenchKey = process.env.CARTESIA_BENCH_API_KEY;
   const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
 
-  if (!elevenLabsBenchKey) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
+  if (!elevenLabsApiKey) throw new Error('ELEVENLABS_API_KEY is required');
   if (!cartesiaBenchKey) throw new Error('CARTESIA_BENCH_API_KEY is required');
   if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
     throw new Error('BENCH_MAX_CREDITS must be a positive integer');
@@ -196,7 +197,7 @@ function requireBenchConfig(phrases) {
     throw new Error('Estimated credits exceed BENCH_MAX_CREDITS; no provider request was sent');
   }
 
-  return { elevenLabsBenchKey, cartesiaBenchKey };
+  return { elevenLabsApiKey, cartesiaBenchKey };
 }
 
 async function checkElevenLabsAccess(apiKey) {
@@ -229,11 +230,11 @@ async function checkElevenLabsAccess(apiKey) {
 
 async function main() {
   const phrases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-  const { elevenLabsBenchKey, cartesiaBenchKey } = requireBenchConfig(phrases);
+  const { elevenLabsApiKey, cartesiaBenchKey } = requireBenchConfig(phrases);
   const firstPhrase = { ...phrases[0], cartesiaBenchKey };
   // Each provider receives exactly one access check before any benchmark batch.
   await synthesize(firstPhrase);
-  await checkElevenLabsAccess(elevenLabsBenchKey);
+  await checkElevenLabsAccess(elevenLabsApiKey);
 
   const results = new Array(phrases.length);
   let next = 0;
@@ -243,7 +244,7 @@ async function main() {
       const phrase = phrases[index];
       try {
         const audio = degrade(await synthesize({ ...phrase, cartesiaBenchKey }), phrase);
-        results[index] = { id: phrase.id, ...(await transcribe(audio, elevenLabsBenchKey)) };
+        results[index] = { id: phrase.id, ...(await transcribe(audio, elevenLabsApiKey)) };
       } catch (err) {
         results[index] = { id: phrase.id, transcript: '', error: err.message };
       }

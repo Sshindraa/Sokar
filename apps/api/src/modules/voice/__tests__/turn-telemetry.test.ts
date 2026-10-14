@@ -123,6 +123,17 @@ describe('voice turn telemetry', () => {
     }
   });
 
+  it('étiquette un tour ElevenLabs comme ElevenLabs, et non comme Cartesia', () => {
+    const session = makeSession();
+    startVoiceTurn(session, 'Une table pour deux ?');
+    recordVoiceTurnEvent(session, 'tts_synthesis_started', { source: 'elevenlabs_dialogue' });
+    markVoiceTurnTtsSynthesisFirstByte(session, 'elevenlabs_dialogue');
+    recordVoiceTurnEvent(session, 'tts_completed', { durationMs: 80 });
+
+    const turns = snapshotVoiceTurnTelemetry(session);
+    expect(turns[0]).toMatchObject({ ttsProvider: 'elevenlabs' });
+  });
+
   it('conserve le premier tour LLM quand le tour suivant est déterministe', () => {
     vi.useFakeTimers();
     try {

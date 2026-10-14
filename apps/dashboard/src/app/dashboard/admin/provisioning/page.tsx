@@ -5,6 +5,7 @@ import {
   PhoneForwarded,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   PhoneCall,
   Search,
@@ -28,6 +29,27 @@ interface TelnyxNumberItem {
   assignedToRestaurantName?: string | null;
 }
 
+type NumbersSource = 'telnyx' | 'dev-fallback' | 'unavailable';
+
+type VoiceAppLinkState =
+  | 'linked'
+  | 'failed'
+  | 'skipped_no_connection_id'
+  | 'skipped_manual_number'
+  | 'skipped_no_telnyx';
+
+/** Ce que l'opérateur doit faire quand le numéro n'est pas relié à l'application voix. */
+const VOICE_APP_LINK_WARNING: Record<Exclude<VoiceAppLinkState, 'linked'>, string> = {
+  failed:
+    'Telnyx a refusé de relier ce numéro à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_no_connection_id:
+    'TELNYX_CONNECTION_ID n’est pas défini sur l’API : le numéro n’est pas relié à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_manual_number:
+    'Numéro saisi à la main : il n’a pas été relié à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_no_telnyx:
+    'Telnyx n’est pas configuré sur cette API : aucun lien avec l’application voix.',
+};
+
 interface ProvisioningStatusView {
   restaurantId: string;
   restaurantName: string;
@@ -46,6 +68,8 @@ interface ProvisioningStatusView {
     assignment: {
       completed: boolean;
       phoneNumber: string;
+      /** `null` : numéro attribué avant l'enregistrement du lien (état inconnu). */
+      voiceAppLink: VoiceAppLinkState | null;
     };
     webhook: {
       completed: boolean;
@@ -69,6 +93,7 @@ export default function AdminProvisioningPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [restaurants, setRestaurants] = useState<ProvisioningStatusView[]>([]);
   const [availableNumbers, setAvailableNumbers] = useState<TelnyxNumberItem[]>([]);
+  const [numbersSource, setNumbersSource] = useState<NumbersSource>('telnyx');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -92,10 +117,13 @@ export default function AdminProvisioningPage() {
         get<{ ok: boolean; restaurants: ProvisioningStatusView[] }>(
           'admin/provisioning/restaurants',
         ),
-        get<{ ok: boolean; numbers: TelnyxNumberItem[] }>('admin/provisioning/available-numbers'),
+        get<{ ok: boolean; numbers: TelnyxNumberItem[]; source?: NumbersSource }>(
+          'admin/provisioning/available-numbers',
+        ),
       ]);
       setRestaurants(resList.restaurants ?? []);
       setAvailableNumbers(resNumbers.numbers ?? []);
+      setNumbersSource(resNumbers.source ?? 'telnyx');
 
       // Premier restaurant par défaut, sans écraser un choix déjà fait.
       if (resList.restaurants && resList.restaurants.length > 0) {
@@ -523,6 +551,41 @@ export default function AdminProvisioningPage() {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Associe un numéro E.164 réel du compte Telnyx au restaurant.
                   </p>
+
+                  {selectedStatus.steps.assignment.completed &&
+                    selectedStatus.steps.assignment.voiceAppLink !== 'linked' && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground"
+                      >
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                        <span>
+                          {selectedStatus.steps.assignment.voiceAppLink
+                            ? VOICE_APP_LINK_WARNING[selectedStatus.steps.assignment.voiceAppLink]
+                            : 'Le lien entre ce numéro et l’application voix n’a jamais été vérifié : sans lui, le restaurant ne reçoit aucun appel. Vérifiez-le dans le portail Telnyx.'}
+                        </span>
+                      </div>
+                    )}
+
+                  {numbersSource === 'unavailable' && (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground"
+                    >
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                      <span>
+                        L’inventaire Telnyx est indisponible (clé absente ou erreur Telnyx).
+                        Saisissez le numéro à la main, puis reliez-le à l’application voix dans le
+                        portail.
+                      </span>
+                    </div>
+                  )}
+                  {numbersSource === 'telnyx' && availableNumbers.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Le compte Telnyx ne contient aucun numéro. Commandez-en un dans le portail
+                      Telnyx.
+                    </p>
+                  )}
 
                   <div className="space-y-3 pt-2">
                     {availableNumbers.length > 0 && (

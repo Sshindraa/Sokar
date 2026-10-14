@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 import { SiteManagementCard } from '@/features/sites/site-management-card';
+import { TeamCard } from '@/features/team/team-card';
 import { useSiteSelection } from '@/features/sites/site-context';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
@@ -541,6 +542,7 @@ export default function SettingsPage() {
       </Card>
 
       <SiteManagementCard />
+      <TeamCard />
 
       {canManageCrmPrivacy && (
         <Card id="settings-crm" className="sokar-card scroll-mt-24 transition-all duration-200">

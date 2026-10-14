@@ -14,6 +14,7 @@ import { initGreetingCache } from './modules/voice/stream/greeting-cache';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
+import { teamRoutes } from './modules/restaurants/team.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
 import { customerCrmRoutes } from './modules/customers/customer-crm.routes';
 import { customerSegmentRoutes } from './modules/customers/customer-segment.routes';
@@ -221,6 +222,7 @@ export async function buildApp() {
   await app.register(whatsappWebhookRoutes);
   await app.register(marketingProviderRoutes);
   await app.register(restaurantRoutes);
+  await app.register(teamRoutes);
   await app.register(customerRoutes);
   await app.register(customerCrmRoutes);
   await app.register(customerSegmentRoutes);

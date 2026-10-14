@@ -89,6 +89,21 @@ Git et ne doivent jamais être créés dans le dépôt ou copiés dans le naviga
 La production utilise un secret live séparé ; le workflow de production ne
 réutilise pas la clé staging.
 
+### Numéros Telnyx (admin Provisioning)
+
+L'attribution d'un numéro à un restaurant (`POST /admin/provisioning/:id/assign-phone`) relie
+le numéro à l'application voix Telnyx avec `TELNYX_CONNECTION_ID` (l'identifiant de
+l'application Call Control qui envoie les appels à `/voice/telnyx`). Sans cette variable, ou si
+le numéro est saisi à la main plutôt que choisi dans l'inventaire, le numéro est attribué dans
+Sokar mais ne reçoit aucun appel : la page Provisioning affiche alors un avertissement et il
+faut le relier dans le portail Telnyx. `TELNYX_APP_ID` figure dans les exemples mais n'est lu
+par aucun code ; il désigne probablement le même identifiant, à confirmer dans le portail avant
+de les fusionner.
+
+La liste des numéros vient du compte Telnyx (toutes les pages). Sans `TELNYX_API_KEY`, un jeu de
+numéros fictifs n'est proposé qu'en développement ; ailleurs, la liste est vide et la page
+l'indique.
+
 ### Alerting de production
 
 Les secrets GitHub de l’environnement `production` (et, si souhaité, `staging`)
