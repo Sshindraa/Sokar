@@ -832,3 +832,64 @@ consulter et traiter une demande avec une session opérateur autorisée, confirm
 réception. Les clés staging Resend/Telnyx API/connexion restent à fournir ; aucun
 nouveau chantier téléphonie lancé. Cause des anciens 403 toujours non établie :
 obtenir réponse originale/cf-ray et accès aux événements Cloudflare avant toute correction.
+
+### 10.19 — Réception, suivi opérateur et Search Console qualifiés (14/10/2026)
+
+**Parcours production confirmé.** La notification du test technique
+`f6ff0cb4-bc6a-45b6-8a3e-b1aa451b3ba0` est reçue dans Gmail à 13 h 36
+Europe/Paris après retrait de la seule suppression Resend héritée d’un rejet
+Google `550 5.1.1 NoSuchUser` du 18 septembre. La boîte reçoit désormais ;
+l’acceptation fournisseur seule ne constituait pas une preuve de réception.
+
+Le compte opérateur existant accède à `/admin/demo-requests` après #434
+(`fac259cc2d2b8e193a929bbf43295d03a290f98d`). Le garde client attend désormais
+la résolution de la session Clerk avant toute redirection. Aucun droit élargi.
+Notre seul essai a été passé à **CLOSED** dans l’interface ; état confirmé après
+rechargement et en base, en lecture seule. `contactedAt` et `demoDoneAt` restent
+nuls : aucune prise de contact client ni démonstration commerciale revendiquée.
+L’autre demande technique a été laissée intacte.
+
+Validation : reproduction de l’échec avant correctif, 9 tests ciblés verts,
+619 tests dashboard et 71 shared verts, typage et lint verts. CI main
+`38563729276`, staging `38564475720` et production `38565018595` réussis.
+
+**Search Console accessible sans nouveau droit.** La propriété
+`sc-domain:sokar.tech` est accessible avec le compte Google personnel déjà
+connecté ; le compte Workspace reste sans accès. Le sitemap existant
+`https://sokar.tech/sitemap.xml` a été renvoyé une seule fois le 14 octobre :
+confirmation « Sitemap envoyé ». La dernière lecture affichée reste celle du
+13 octobre ; aucun délai d’exploration ou d’indexation n’est garanti.
+
+L’inspection de l’accueil indique que l’URL est sur Google. Le test direct du
+14 octobre à 14:26:36 réussit : accès smartphone, exploration et indexation
+autorisées, récupération réussie, canonical déclarée `https://sokar.tech/`.
+Le test direct ne détermine pas la canonical choisie par Google à l’indexation.
+Il ne permet pas d’expliquer rétrospectivement les anciens 403.
+
+Le rapport global d’indexation est daté du **9 octobre**, avant les derniers
+changements : 3 pages indexées, 4 non indexées. Exemples indexés alors : accueil,
+ancienne URL HTTP `/login` et ancienne fiche `/restaurant/chez-sokar-tapas-paris`.
+Au contrôle HTTP actuel, `/login` est noindex et l’ancienne fiche renvoie 404 ;
+leur retrait effectif reste à vérifier au prochain rapport. Le HTTP `/login`
+répond encore 200 sans redirection HTTPS, point observé hors de ce lot.
+Aucune modification de protection réseau ou DNS.
+
+Référence acquisition, période affichée du 12 juillet au 11 octobre :
+15 clics, 670 impressions, CTR 2,2 %, position moyenne 16,5. Les requêtes visibles
+sont surtout la marque et ses variantes ; leur liste est partielle et ne
+permet pas d’attribuer tous les clics à la marque.
+
+**Prochaine dépendance : VOICE-01.** En staging, la voix est désactivée et les
+variables Telnyx API, clé publique, connexion et numéro d’émission manquent.
+Le contrôle fournisseur en lecture seule n’a identifié aucune application
+staging/test dédiée. Ne pas copier les secrets de production ni composer le
+numéro fictif du seed. Préparer une ressource de test dédiée, puis qualifier
+une conversation réelle et ses effets dans l’interface : réservation,
+modification, indisponibilité et recours humain selon la matrice VOICE-01.
+Aucun numéro acheté, aucune clé créée, aucun appel fournisseur lancé.
+La landing conserve son noindex et reste hors sitemap jusqu’à cette recette.
+
+Preuves locales : dossier `sokar-qualification` du 14/10 dans les visualisations
+Codex : `operator-cloture.png`, `sitemap-envoye.png`,
+`accueil-google-test-direct.png`, `indexation-rapport-9-octobre.png` et
+`pages-indexees-9-octobre.png`. Réception : `sokar-email-recovery/notification-recue.png`.
