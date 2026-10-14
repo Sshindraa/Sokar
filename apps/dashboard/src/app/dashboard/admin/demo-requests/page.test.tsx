@@ -13,6 +13,7 @@ vi.mock('@/lib/api', () => ({
 
 const notifiedRequest = {
   id: 'dr_1',
+  pageVersion: 'demo-assistant-tel-v1',
   establishmentName: 'Le Bistrot du Coin',
   contactEmail: 'contact@bistrot.example',
   contactPhone: '+33 6 12 34 56 78',
@@ -46,8 +47,9 @@ describe('DemoRequestsPage', () => {
 
     expect(await screen.findByText('Le Bistrot du Coin')).toBeInTheDocument();
     expect(screen.getByText('La Table du Marché')).toBeInTheDocument();
-    expect(screen.getByText('Notifiée')).toBeInTheDocument();
-    expect(screen.getByText('Notification non envoyée')).toBeInTheDocument();
+    expect(screen.getAllByText('Source : assistant téléphonique')).toHaveLength(2);
+    expect(screen.getByText('Envoi accepté')).toBeInTheDocument();
+    expect(screen.getByText('Envoi non confirmé')).toBeInTheDocument();
   });
 
   it("enregistre le nouveau statut d'une demande", async () => {
