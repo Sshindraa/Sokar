@@ -8,9 +8,9 @@
 
 ## TODOs actifs
 
-- [ ] SEO : #432 déployée, démos noindex et hors sitemap ; landing finalisée mais noindex jusqu’aux preuves VOICE-01 et au suivi opérateur. GSC refuse `sokar.tech` à hamza@sokar.tech : obtenir l’accès ; indexation inconnue. Demandes avec source vérifiées, réception/traitement humains à confirmer (rapport growth §10.18).
+- [ ] SEO : #432 déployée, démos noindex et hors sitemap ; landing noindex jusqu’aux preuves VOICE-01 et au suivi opérateur. Réception de notification qualifiée le 14/10 à 13 h 36 après déblocage Resend. Vérifier le suivi opérateur après correction de l’attente de session dans le garde admin. Obtenir l’accès GSC ; indexation inconnue (rapport growth §10.18).
 
-- [ ] Démo (migration appliquée en staging et prod le 13/10) : fournir le destinataire de test `DEMO_REQUEST_NOTIFY_TO` (secret GitHub, #418), vérifier la liste opérateur, fixer le délai de réponse. Landing : bloquée par la preuve vocale (VOICE-01), pas par Search Console.
+- [ ] Démo : destinataire configuré, réception production vérifiée ; qualifier la liste et le traitement opérateur. Aucun délai de réponse affiché. Staging voix : configuration Telnyx manquante, `VOICE_DISABLED=true`. Landing bloquée par VOICE-01 et le suivi opérateur, pas par Search Console.
 - [ ] Vitrine : faire valider juridiquement la FAQ données (hébergement et sous-traitants voix possiblement hors UE) et « Support prioritaire 7j/7 » ; confirmer la fiche publique `chez-sokar-demo` dans le sitemap.
 - [ ] Croissance : qualifier la démo vocale par appels réels (VOICE-01), puis publier la landing SEO (LAND-01) ; entretiens avec `docs/runbooks/restaurant-discovery-interview.md`.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
