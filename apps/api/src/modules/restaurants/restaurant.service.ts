@@ -14,7 +14,10 @@ import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 import { isPublicConnectPage } from '../connect/connect.types';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { normalizeOpeningHours, isConnectDemoSlug } from '@sokar/shared';
+
+// Fixture synthétique de prisma/seed.ts : jamais une destination de transfert réelle.
+const DEMO_SEED_MANAGER_PHONE = '+33601020304';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -141,7 +144,11 @@ function toCachedRestaurantContext(restaurant: {
     agenticOptIn: restaurant.agenticOptIn,
     onlineReservationsActive: isPublicConnectPage(restaurant),
     plan: restaurant.plan,
-    managerPhone: restaurant.managerPhone,
+    managerPhone:
+      isConnectDemoSlug(restaurant.slug ?? '') &&
+      restaurant.managerPhone === DEMO_SEED_MANAGER_PHONE
+        ? ''
+        : restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
     phoneNumber: restaurant.phoneNumber,
     timezone: restaurant.timezone,
@@ -219,7 +226,16 @@ export class RestaurantService {
   static async loadContext(phoneNumberId: string): Promise<CachedRestaurantContext> {
     const cacheKey = `phone:${phoneNumberId}`;
     const cached = await getCachedContext(cacheKey);
-    if (cached) return cached as CachedRestaurantContext;
+    if (cached) {
+      const context = cached as CachedRestaurantContext;
+      if (
+        isConnectDemoSlug(context.slug ?? '') &&
+        context.managerPhone === DEMO_SEED_MANAGER_PHONE
+      ) {
+        return { ...context, managerPhone: '' };
+      }
+      return context;
+    }
 
     // tenant-scoping: global — résolution du tenant lui-même par son numéro Sokar unique (routage
     // d'un appel entrant) : il n'existe pas encore de `restaurantId` à filtrer.

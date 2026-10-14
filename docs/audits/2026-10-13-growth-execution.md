@@ -893,3 +893,11 @@ Preuves locales : dossier `sokar-qualification` du 14/10 dans les visualisations
 Codex : `operator-cloture.png`, `sitemap-envoye.png`,
 `accueil-google-test-direct.png`, `indexation-rapport-9-octobre.png` et
 `pages-indexees-9-octobre.png`. Réception : `sokar-email-recovery/notification-recue.png`.
+
+### 10.20 — VOICE-01 : préparation autorisée, recette encore ouverte (14 octobre)
+
+Accord explicite : clé séparée temporaire, routage du seul numéro démo vers staging puis restauration production ; consommation plafonnée à 20 minutes et 5 €, sans achat/recharge. Clé staging créée, expiration le 21 octobre 2026 à 23:55 UTC, stockée uniquement dans GitHub et le fichier environnement staging après transit privé supprimé. Application « Sokar VOICE-01 staging » créée avec webhook staging ; numéro encore en production et voix staging encore désactivée.
+
+Blocage corrigé : le seed démo fournit un numéro de gérant fictif. Le contexte vocal le neutralise pour les seuls slugs démo explicites, aussi sur cache existant, afin de conserver le secours par message. Aucun numéro réel modifié, aucun changement de schéma ni de contrat. Deux tests échouaient avant correction ; 80 tests ciblés, typage API et lint ciblé passent.
+
+Aucun appel réel exécuté ni résultat métier qualifié à cette étape. Staging utilise Scribe et production Deepgram : cette différence doit rester visible dans les preuves. Les sept scénarios et la réservation initiale restent à exécuter ; landing noindex et hors sitemap.
