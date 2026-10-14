@@ -2,6 +2,11 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse, type NextRequest } from 'next/server';
 
 const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/admin(.*)', '/onboarding(.*)']);
+const isOperatorRoute = createRouteMatcher([
+  '/admin(.*)',
+  '/dashboard/admin(.*)',
+  '/dashboard/usage',
+]);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const legacyOperatorDestinations: Record<string, string> = {
@@ -46,36 +51,35 @@ function rewriteBookToWidget(req: NextRequest): NextResponse | null {
   return NextResponse.rewrite(url);
 }
 
-const middleware =
-  hasClerkKey && !isDemoMode
-    ? clerkMiddleware(async (auth, req) => {
-        const rewrite = rewriteBookToWidget(req);
-        if (rewrite) return rewrite;
+const middleware = hasClerkKey
+  ? clerkMiddleware(async (auth, req) => {
+      const rewrite = rewriteBookToWidget(req);
+      if (rewrite) return rewrite;
 
-        if (isProtectedRoute(req) && !isDemoMode) {
-          const { userId } = await auth();
-          if (!userId) {
-            const signInUrl = new URL('/login', req.url);
-            return NextResponse.redirect(signInUrl);
-          }
-
-          const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
-          if (legacyDestination) {
-            return NextResponse.redirect(new URL(legacyDestination, req.url));
-          }
+      if (isProtectedRoute(req) && (!isDemoMode || isOperatorRoute(req))) {
+        const { userId } = await auth();
+        if (!userId) {
+          const signInUrl = new URL('/login', req.url);
+          return NextResponse.redirect(signInUrl);
         }
-      })
-    : function localPreviewMiddleware(req: NextRequest) {
-        const rewrite = rewriteBookToWidget(req);
-        if (rewrite) return rewrite;
 
         const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
         if (legacyDestination) {
           return NextResponse.redirect(new URL(legacyDestination, req.url));
         }
+      }
+    })
+  : function localPreviewMiddleware(req: NextRequest) {
+      const rewrite = rewriteBookToWidget(req);
+      if (rewrite) return rewrite;
 
-        return NextResponse.next();
-      };
+      const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
+      if (legacyDestination) {
+        return NextResponse.redirect(new URL(legacyDestination, req.url));
+      }
+
+      return NextResponse.next();
+    };
 
 export default middleware;
 

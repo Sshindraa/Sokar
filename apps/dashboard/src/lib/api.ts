@@ -25,14 +25,14 @@ type ApiRequestOptions = {
  * - orgId/siteId automatiques depuis Clerk et le sélecteur multi-site
  * - Gestion d'erreur centralisée
  */
-export function useApi() {
+export function useApi(options: { requireSession?: boolean } = {}) {
   const { activeSiteId } = useSiteSelection();
-  // The environment flag is stable for the whole client bundle. Without Clerk
-  // keys we expose a no-op API client so local UI previews can render.
+  // Les options de session sont fixes pour chaque composant appelant. Sans Clerk
+  // on expose un client de preview local.
   // En staging demo mode (NEXT_PUBLIC_DEMO_RESTAURANT_ID défini), on force le
-  // mode demo même si Clerk est présent — pas de session requise.
+  // mode démo, sauf pour le contrôle opérateur qui exige la vraie session.
   const clerk =
-    hasClerkKey && !demoOrgId
+    hasClerkKey && (!demoOrgId || options.requireSession)
       ? // eslint-disable-next-line react-hooks/rules-of-hooks
         useClerkContext()
       : {

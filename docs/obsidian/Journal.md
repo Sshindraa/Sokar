@@ -2139,3 +2139,5 @@ Le contexte vocal des seuls slugs démo explicites neutralise le managerPhone fi
 
 ## 2026-10-14 — Session opérateur en staging démo
 Le mode démo remplaçait aussi l’identité des routes opérateur par demo-user : une vraie session autorisée était refusée. requireSokarOperator exige désormais l’authentification Clerk réelle en staging/production ; seul le preview local conserve le compte démo. La liste SOKAR_OPERATOR_USER_IDS reste obligatoire et inchangée. Trois régressions reproduites avant correction : opérateur autorisé, membre non autorisé et absence de session. Aucun nouveau droit accordé.
+
+Complément du correctif opérateur : le provider Clerk et le middleware étaient aussi désactivés pour toute la staging démo, provoquant une erreur sur /login et empêchant le proxy de fournir un jeton. Clerk est désormais monté sur connexion/admin, les routes opérateur sont protégées et le gate lit la vraie session ; dashboard public de démo conservé. 8 tests ciblés dashboard, typage et lint ciblé verts ; 23 tests auth/provisioning API verts.
