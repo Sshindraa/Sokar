@@ -319,6 +319,9 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    // Application voix Telnyx à laquelle relier les numéros attribués (sans elle, un numéro attribué
+    // dans Sokar ne reçoit aucun appel). Voir docs/runbooks/environment.md.
+    TELNYX_CONNECTION_ID: z.string().optional(),
     TELNYX_PUBLIC_KEY: z.string().optional(),
     TELNYX_FROM_NUMBER: z.string().optional(),
     // Profil Telnyx utilisé pour les SMS transactionnels et leurs webhooks.

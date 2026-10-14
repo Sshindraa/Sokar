@@ -417,3 +417,109 @@ it('transmet l’attribution du numéro Sokar à l’écran des canaux', () => {
   expect(screen.getByText('Numéro Sokar en cours d’attribution')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Configurer : Téléphone' })).toBeEnabled();
 });
+
+// ─── Formule : proposée une fois, juste après l'appel test ───────────────────────────────────────
+
+const PHONE_DONE: OnboardingTaskKey[] = [...SOCLE, 'knowledge', 'phone'];
+
+function FinishingPhoneStep({
+  onComplete,
+}: {
+  onComplete: (next: OnboardingTaskKey | null) => void;
+}) {
+  return (
+    <button type="button" onClick={() => onComplete(null)}>
+      Terminer l’appel test
+    </button>
+  );
+}
+
+it('propose la formule juste après la fin du téléphone', async () => {
+  mocks.Step = FinishingPhoneStep as unknown as () => null;
+  mocks.state = withCompleted(PHONE_DONE);
+  window.history.replaceState(null, '', '/onboarding?step=phone');
+  render(<OnboardingWizard />);
+  fireEvent.click(screen.getByRole('button', { name: 'Terminer l’appel test' }));
+
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Choisissez votre formule' })).toBeInTheDocument(),
+  );
+  await waitFor(() =>
+    expect(new URLSearchParams(window.location.search).get('step')).toBe('formule'),
+  );
+});
+
+it('ne repropose pas la formule à qui a choisi « Plus tard »', async () => {
+  window.localStorage.setItem('sokar:onboarding:plan-dismissed:restaurant-1', '1');
+  mocks.Step = FinishingPhoneStep as unknown as () => null;
+  mocks.state = withCompleted(PHONE_DONE);
+  window.history.replaceState(null, '', '/onboarding?step=phone');
+  render(<OnboardingWizard />);
+  fireEvent.click(screen.getByRole('button', { name: 'Terminer l’appel test' }));
+
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Choisissez vos canaux' })).toBeInTheDocument(),
+  );
+  window.localStorage.removeItem('sokar:onboarding:plan-dismissed:restaurant-1');
+});
+
+it('ne propose pas la formule à la fin d’une étape qui n’est pas la dernière du téléphone', async () => {
+  mocks.Step = FinishingPhoneStep as unknown as () => null;
+  mocks.state = withCompleted(SOCLE);
+  window.history.replaceState(null, '', '/onboarding?step=knowledge');
+  render(<OnboardingWizard />);
+  fireEvent.click(screen.getByRole('button', { name: 'Terminer l’appel test' }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: 'Choisissez votre formule' }),
+    ).not.toBeInTheDocument(),
+  );
+});
+
+it('ne propose pas la formule à la fin du canal en ligne', async () => {
+  mocks.Step = FinishingPhoneStep as unknown as () => null;
+  mocks.state = withCompleted([...SOCLE, 'connect-activation']);
+  window.history.replaceState(null, '', '/onboarding?step=connect-identity');
+  render(<OnboardingWizard />);
+  fireEvent.click(screen.getByRole('button', { name: 'Terminer l’appel test' }));
+
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Choisissez vos canaux' })).toBeInTheDocument(),
+  );
+});
+
+it('rouvre l’écran de formule par son adresse, mais pas avant que la salle soit prête', async () => {
+  mocks.state = withCompleted(PHONE_DONE);
+  window.history.replaceState(null, '', '/onboarding?step=formule');
+  const { unmount } = render(<OnboardingWizard />);
+  expect(screen.getByRole('heading', { name: 'Choisissez votre formule' })).toBeInTheDocument();
+  unmount();
+
+  mocks.state = createState();
+  window.history.replaceState(null, '', '/onboarding?step=formule');
+  render(<OnboardingWizard />);
+  expect(
+    screen.queryByRole('heading', { name: 'Choisissez votre formule' }),
+  ).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(new URLSearchParams(window.location.search).get('step')).toBe('floor'),
+  );
+});
+
+it('confirme le paiement au retour de Stripe, sur l’écran des canaux', () => {
+  mocks.state = withCompleted(PHONE_DONE);
+  window.history.replaceState(
+    null,
+    '',
+    '/onboarding?step=canaux&billing=success&session_id=cs_test_123',
+  );
+  window.localStorage.setItem(
+    'sokar:onboarding:plan-choice',
+    JSON.stringify({ plan: 'pro', billing: 'annual' }),
+  );
+  render(<OnboardingWizard />);
+
+  expect(screen.getByText('Merci, votre paiement a bien été pris en compte.')).toBeInTheDocument();
+  expect(window.localStorage.getItem('sokar:onboarding:plan-choice')).toBeNull();
+});

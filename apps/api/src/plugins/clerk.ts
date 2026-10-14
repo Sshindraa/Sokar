@@ -3,7 +3,14 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   resolveRestaurantContext,
   RestaurantContextError,
+  type RestaurantContext,
 } from '../modules/restaurants/site-context';
+import { claimInvitedMembership } from '../modules/restaurants/team.service';
+import {
+  evaluateRolePolicy,
+  READ_ONLY_MESSAGE,
+  ROLE_FORBIDDEN_MESSAGE,
+} from '../modules/restaurants/role-policy';
 import { db } from '../shared/db/client';
 
 export function isClerkConfigured() {
@@ -107,7 +114,7 @@ export function requireOrg() {
 
     const requestedSiteId = getRequestedSiteId(req);
     try {
-      const context = await resolveRestaurantContext(db, {
+      const context = await resolveContextForMember({
         organizationId: orgId,
         userId,
         requestedSiteId,
@@ -117,13 +124,16 @@ export function requireOrg() {
       req.accountId = context.accountId;
       req.clerkOrganizationId = context.clerkOrganizationId;
       req.siteRole = context.role;
-      if (
-        context.role === 'READ_ONLY' &&
-        !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase())
-      ) {
+      const decision = evaluateRolePolicy({
+        role: context.role,
+        method: req.method,
+        route: req.routeOptions?.url,
+      });
+      if (!decision.allowed) {
         return reply.status(403).send({
-          error: 'READ_ONLY_ACCESS',
-          message: 'Ce membre dispose d’un accès en lecture seule.',
+          error: decision.code,
+          message:
+            decision.code === 'READ_ONLY_ACCESS' ? READ_ONLY_MESSAGE : ROLE_FORBIDDEN_MESSAGE,
         });
       }
     } catch (error) {
@@ -151,6 +161,33 @@ export function requireOrg() {
       user_id: userId ?? null,
     });
   };
+}
+
+/**
+ * Un invité qui vient d'accepter appartient à l'organisation Clerk mais n'a pas encore de
+ * membership Sokar : on lit le rôle de son invitation, on le rattache, puis on résout de nouveau.
+ */
+async function resolveContextForMember(input: {
+  organizationId: string;
+  userId?: string | null;
+  requestedSiteId?: string;
+}): Promise<RestaurantContext> {
+  try {
+    return await resolveRestaurantContext(db, input);
+  } catch (error) {
+    if (
+      error instanceof RestaurantContextError &&
+      error.code === 'SITE_ACCESS_DENIED' &&
+      input.userId
+    ) {
+      const claimed = await claimInvitedMembership({
+        organizationId: input.organizationId,
+        userId: input.userId,
+      });
+      if (claimed) return resolveRestaurantContext(db, input);
+    }
+    throw error;
+  }
 }
 
 function getRequestedSiteId(req: FastifyRequest): string | undefined {

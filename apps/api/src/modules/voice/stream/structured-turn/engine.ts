@@ -9,7 +9,7 @@ import type { CallSession, DebugSpeechEntry } from '../types';
 import { observeSemanticSignalsShadow } from '../turn-plan-shadow';
 import type { CallSessionManager } from '../manager';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts-handler';
-import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from '../cartesia-context';
+import { createContextTtsTurn } from '../context-tts';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
 import { isVoiceTurnJudgeEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
@@ -467,12 +467,12 @@ export async function runStructuredTurn(
   }
   const historyBefore = [...session.history];
   const ttsPromises: Promise<void>[] = [];
-  // Toutes les phrases d'une réponse partent dans un même contexte Cartesia :
+  // Toutes les phrases d'une réponse partent dans un même contexte TTS (Cartesia ou ElevenLabs) :
   // intonation continue et plus de blanc entre deux phrases (appels 0d49230d,
   // 88921164 : 1,2 à 1,6 s de silence entre « Avec plaisir ! » et la suite, la
   // phrase suivante n'étant synthétisée qu'après la fin de la précédente).
   // Le socket s'ouvre pendant la génération ; repli HTTP sans audio envoyé.
-  const contextTts = isCartesiaContextV2Enabled() ? createCartesiaContextTurn(session, true) : null;
+  const contextTts = createContextTtsTurn(session);
   if (contextTts) {
     session.ttsContext = contextTts;
     // L'appelant reprend la parole avant le premier son : la réponse préparée est jetée comme
@@ -495,7 +495,7 @@ export async function runStructuredTurn(
       } catch (err) {
         logger.warn(
           { err: err instanceof Error ? err.message : String(err), callId: session.callControlId },
-          '[structured-turn] Cartesia context failed',
+          '[structured-turn] TTS context failed',
         );
         if (!contextTts.hasAudioOutput && isSessionActiveForTts(session)) {
           await speakTtsStreamed(session, spokenPhrases.join(' ')).catch(() => undefined);

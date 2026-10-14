@@ -226,6 +226,72 @@ describe('billing.routes - checkout, portail et statut', () => {
     });
   });
 
+  describe('retour vers l’inscription (returnTo)', () => {
+    type CheckoutCreate = { mock: { calls: unknown[][] } };
+    const checkoutCreate = () =>
+      (globalThis as unknown as { __sokarStripeCheckoutSessionCreate: CheckoutCreate })
+        .__sokarStripeCheckoutSessionCreate;
+
+    async function checkout(payload: Record<string, unknown>) {
+      process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'test-rest-1',
+        name: 'Bistrot du Coin',
+        managerEmail: 'manager@example.com',
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+      const app = await getApp();
+      return app.inject({
+        method: 'POST',
+        url: '/billing/checkout-session',
+        headers: { authorization: 'Bearer test' },
+        payload: { plan: 'pro', billing: 'monthly', ...payload },
+      });
+    }
+
+    it('ramène vers l’inscription, pas vers les Réglages qui sont derrière la barrière', async () => {
+      const response = await checkout({ returnTo: 'onboarding' });
+
+      expect(response.statusCode).toBe(200);
+      const params = checkoutCreate().mock.calls.at(-1)?.[0] as {
+        success_url: string;
+        cancel_url: string;
+      };
+      expect(params.success_url).toMatch(/\/onboarding\?step=canaux&billing=success&session_id=/);
+      expect(params.success_url).not.toContain('/dashboard/settings');
+      expect(params.cancel_url).toMatch(/\/onboarding\?step=formule&billing=cancelled$/);
+    });
+
+    it('sans returnTo, les adresses de retour restent celles d’avant', async () => {
+      const response = await checkout({});
+
+      expect(response.statusCode).toBe(200);
+      const params = checkoutCreate().mock.calls.at(-1)?.[0] as {
+        success_url: string;
+        cancel_url: string;
+      };
+      expect(params.success_url).toMatch(/\/dashboard\/settings\?billing=success&session_id=/);
+      expect(params.cancel_url).toMatch(/\/pricing\?billing=cancelled$/);
+    });
+
+    it('refuse une valeur de retour inconnue', async () => {
+      expect((await checkout({ returnTo: 'https://exemple.test' })).statusCode).toBe(400);
+    });
+
+    it('ne réutilise pas une session créée avec d’autres adresses de retour', () => {
+      const base = {
+        restaurantId: 'test-rest-1',
+        plan: 'pro' as const,
+        billing: 'monthly' as const,
+        siteCount: 1,
+        idempotencyKey: 'fixe',
+      };
+      const settings = buildCheckoutIdempotencyKey(base);
+      expect(buildCheckoutIdempotencyKey({ ...base, returnTo: 'settings' })).toBe(settings);
+      expect(buildCheckoutIdempotencyKey({ ...base, returnTo: 'onboarding' })).not.toBe(settings);
+    });
+  });
+
   it('sélectionne le prix annuel et transmet la cadence à Stripe', async () => {
     process.env.STRIPE_PRICE_PRO_ANNUAL = 'price_pro_annual_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({

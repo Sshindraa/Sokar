@@ -19,6 +19,9 @@ const CheckoutSchema = z.object({
   plan: z.enum(PUBLIC_BILLING_PLANS),
   billing: z.enum(BILLING_INTERVALS),
   siteCount: z.number().int().min(1).max(100).optional(),
+  // Où Stripe ramène le restaurateur : les Réglages (défaut) ou l'inscription en cours, dont
+  // l'espace n'est pas encore ouvert.
+  returnTo: z.enum(['settings', 'onboarding']).optional(),
 });
 
 export async function billingRoutes(app: FastifyInstance) {
@@ -68,6 +71,7 @@ export async function billingRoutes(app: FastifyInstance) {
         plan: input.plan,
         billing: input.billing,
         siteCount: input.siteCount,
+        returnTo: input.returnTo,
         idempotencyKey,
       });
       return reply.send(session);

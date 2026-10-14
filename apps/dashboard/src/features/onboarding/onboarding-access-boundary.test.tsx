@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { OnboardingAccessBoundary } from './onboarding-access-boundary';
 import { ONBOARDING_TASK_KEYS, type OnboardingState, type OnboardingStatus } from './types';
+import { readStoredPlanChoice } from './pending-plan';
 
 const mocks = vi.hoisted(() => ({
   state: null as OnboardingState | null,
@@ -98,4 +99,16 @@ it('retourne au dashboard une fois toutes les étapes validées', async () => {
   mocks.pathname = '/onboarding';
   mount();
   await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/dashboard'));
+});
+
+it('garde la formule choisie sur la page Tarifs avant de renvoyer vers l’inscription', () => {
+  window.localStorage.clear();
+  window.history.replaceState(null, '', '/dashboard?subscribe_plan=essential&billing=monthly');
+  mocks.state = stateWith('pending');
+  mount();
+
+  expect(mocks.replace).toHaveBeenCalledWith('/onboarding');
+  expect(readStoredPlanChoice()).toEqual({ plan: 'essential', billing: 'monthly' });
+  window.history.replaceState(null, '', '/');
+  window.localStorage.clear();
 });
