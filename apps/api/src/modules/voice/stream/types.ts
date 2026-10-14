@@ -237,7 +237,7 @@ export interface ConversationState {
   closing: boolean;
 }
 
-/** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
+/** Contrat minimal du contexte TTS actif (Cartesia ou ElevenLabs), sans coupler le manager au transport. */
 export interface ActiveTtsContext {
   cancel(): void;
   /** Met la lecture en pause (l'appelant a pris la parole) ; `resume` la reprend là où elle en était. */
@@ -257,6 +257,7 @@ export interface VoiceUsageLlmCounter {
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
   cartesiaTtsCharacters: number;
+  elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
   finalization?: Promise<void>;
 }
@@ -632,7 +633,7 @@ export interface CallSession {
   agentAudioSpans?: { startedAt: number; endedAt?: number }[];
   /** Répliques récentes de l'agent, avec l'instant où elles ont été demandées. */
   agentSpeechLog?: { text: string; at: number }[];
-  /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
+  /** Contexte TTS optionnel (Cartesia ou ElevenLabs) pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
   /** Dernière réponse coupée par l'appelant, jusqu'au prochain tour traité. */
   interruptedReply?: InterruptedReply;

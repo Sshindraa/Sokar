@@ -71,6 +71,13 @@ export type VoiceTurnEvent =
 
 export type VoiceTurnEventFields = Record<string, boolean | number | string | null | undefined>;
 
+/** Fournisseur TTS d'un tour, d'après la source remontée par le pipeline de synthèse. */
+function ttsProviderLabel(source: unknown): string {
+  if (source === 'native_fallback') return 'telnyx-native';
+  if (source === 'elevenlabs_dialogue') return 'elevenlabs';
+  return 'cartesia';
+}
+
 function transcriptFingerprint(transcript: string): string {
   return createHash('sha256').update(transcript).digest('hex').slice(0, 12);
 }
@@ -488,7 +495,7 @@ export function recordVoiceTurnEvent(
       case 'tts_synthesis_started':
         if (fields.source === 'native_fallback') setVoiceTurnPath(session, 'fallback');
         else if (currentPath(session) === 'unknown') setVoiceTurnPath(session, 'deterministic');
-        turn.ttsProvider = fields.source === 'native_fallback' ? 'telnyx-native' : 'cartesia';
+        turn.ttsProvider = ttsProviderLabel(fields.source);
         trace.ttsSynthesisStartedAt ??= eventAt;
         break;
       case 'llm_interrupted':
@@ -499,7 +506,7 @@ export function recordVoiceTurnEvent(
           typeof fields.durationMs === 'number' ? fields.durationMs : elapsedMs;
         break;
       case 'tts_synthesis_first_byte':
-        turn.ttsProvider = fields.source === 'native_fallback' ? 'telnyx-native' : 'cartesia';
+        turn.ttsProvider = ttsProviderLabel(fields.source);
         break;
       case 'tts_synthesis_completed':
       case 'tts_completed':
