@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] SEO : #432 déployée, démos noindex et hors sitemap ; landing noindex jusqu’aux preuves VOICE-01 et au suivi opérateur. Réception de notification qualifiée le 14/10 à 13 h 36 après déblocage Resend. Vérifier le suivi opérateur après correction de l’attente de session dans le garde admin. Obtenir l’accès GSC ; indexation inconnue (rapport growth §10.18).
+- [ ] SEO : #432 déployée, démos noindex et hors sitemap ; landing noindex jusqu’à VOICE-01 et au suivi opérateur. Réception qualifiée le 14/10 à 13 h 36 après déblocage Resend. Vérifier le suivi après correction de l’attente de session admin. Obtenir l’accès GSC ; indexation inconnue (rapport growth §10.18).
 
 - [ ] Démo : destinataire configuré, réception production vérifiée ; qualifier la liste et le traitement opérateur. Aucun délai de réponse affiché. Staging voix : configuration Telnyx manquante, `VOICE_DISABLED=true`. Landing bloquée par VOICE-01 et le suivi opérateur, pas par Search Console.
 - [ ] Vitrine : faire valider juridiquement la FAQ données (hébergement et sous-traitants voix possiblement hors UE) et « Support prioritaire 7j/7 » ; confirmer la fiche publique `chez-sokar-demo` dans le sitemap.
