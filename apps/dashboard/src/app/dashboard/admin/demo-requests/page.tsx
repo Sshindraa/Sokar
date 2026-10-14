@@ -18,6 +18,7 @@ interface DemoRequestRow {
   mainProblem: string | null;
   status: DemoRequestStatus;
   notifiedAt: string | null;
+  pageVersion?: string;
   createdAt: string;
 }
 
@@ -146,6 +147,9 @@ export default function DemoRequestsPage() {
             >
               <div className="flex min-w-0 flex-col gap-1">
                 <p className="font-semibold text-foreground">{row.establishmentName}</p>
+                {row.pageVersion === 'demo-assistant-tel-v1' && (
+                  <p className="text-xs text-muted-foreground">Source : assistant téléphonique</p>
+                )}
                 <p className="break-all text-sm text-muted-foreground">
                   {row.contactEmail}
                   {row.contactPhone ? ` · ${row.contactPhone}` : ''}
@@ -159,7 +163,7 @@ export default function DemoRequestsPage() {
                 <p className="text-xs text-muted-foreground">
                   Reçue le {formatDate(row.createdAt)} ·{' '}
                   <span className={cn(row.notifiedAt ? 'text-foreground' : 'text-destructive')}>
-                    {row.notifiedAt ? 'Notifiée' : 'Notification non envoyée'}
+                    {row.notifiedAt ? 'Envoi accepté' : 'Envoi non confirmé'}
                   </span>
                 </p>
               </div>

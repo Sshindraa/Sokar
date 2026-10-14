@@ -627,3 +627,124 @@ Impact : le test d'appel et `validate-test-call` (niveau 1 de VOICE-01) sont blo
 | Appel de test sortant     | `TELNYX_FROM_NUMBER` (numéro E.164 de staging) ; profil vocal sortant de l'application à confirmer                                                                                                   | secret `TELNYX_FROM_NUMBER_STAGING` ; portail Telnyx |
 | Démo                      | session opérateur sur staging dans le navigateur intégré                                                                                                                                             | navigateur intégré                                   |
 | Abonnements en production | clé Stripe de lecture, mode live, non fournie                                                                                                                                                        | non fournie                                          |
+
+### 10.17 Premier lot SEO restaurateurs — contrôle du 14/10/2026
+
+**État de départ.** Dernier main `f2ccffc7` (#430), production sur ce commit (SSH et
+Deploy Production 38483758248 réussi). Deploy Staging 38483246357 réussi ; le checkout
+staging observé par SSH est `d1fc99b7` : le SHA du checkout ne suffit pas à identifier
+les artefacts servis. Travaux locaux du checkout principal préservés ; branche dédiée
+`codex/seo-acquisition-2026-10-14`, worktree propre issu d’origin/main.
+Les corrections #417/#418/#420 sont intégrées : métadonnées B2B, sitemap réellement
+servi par Connect et formulaire sans compte. #422 et #426 sont ouvertes : diff
+examiné contre main, reprise de la landing et du seul correctif de notification.
+Aucun changement des tarifs, catalogue v3 conservé ; la landing renvoie vers `/pricing`
+sans dupliquer montants, quotas ni calcul d’arrondi.
+
+**HTTP et HTML réellement servis avant ce lot**, curl depuis le poste le 14/10 à
+12:26 Europe/Paris, sans authentification. Aucun X-Robots-Tag sur les URL ci-dessous.
+Le contenu et les H1 sont présents dans le HTML initial, sans exécution JavaScript.
+Les canonical pointent sur leur URL production, sans redirection sur les pages 200.
+
+| URL                                            | HTTP | Indexabilité avant ce lot                                | Sitemap           | Indexation réelle          |
+| ---------------------------------------------- | ---- | -------------------------------------------------------- | ----------------- | -------------------------- |
+| `/`                                            | 200  | index, follow ; canonical racine                         | Oui               | NON VÉRIFIÉE               |
+| `/pricing`                                     | 200  | index, follow ; canonical propre                         | Oui               | NON VÉRIFIÉE               |
+| `/demo`                                        | 200  | index, follow ; formulaire dans HTML                     | Oui               | NON VÉRIFIÉE               |
+| `/assistant`                                   | 200  | index, follow ; canonical propre, intention consommateur | Oui               | NON VÉRIFIÉE               |
+| `/robots.txt`                                  | 200  | Allow / ; seuls espaces privés interdits                 | Référence sitemap | Sans objet                 |
+| `/sitemap.xml`                                 | 200  | XML valide, quatre pages publiques et Chez Sokar         | Sans objet        | Ne prouve pas l’indexation |
+| `/restaurant/chez-sokar-demo`                  | 200  | **Anomalie : index, follow, fiche fictive**              | **Oui**           | NON VÉRIFIÉE               |
+| `/restaurant/chez-sokar-bistrot-paris`         | 404  | Non indexable par statut                                 | Non               | NON VÉRIFIÉE               |
+| `/solutions/assistant-telephonique-restaurant` | 404  | Brouillon #422 absent du main                            | Non               | NON VÉRIFIÉE               |
+
+Titles/H1 vérifiés : accueil « Sokar — Assistant téléphonique pour restaurants » /
+« Un assistant téléphonique pour vos réservations » ; tarifs « Tarifs — Sokar » /
+« L’accueil commence avant le premier couvert. » ; démo « Demander une démonstration —
+Sokar » / « Demander une démonstration » ; assistant « Réserver avec votre assistant IA |
+Sokar » / « Réservez avec votre assistant IA ». Descriptions françaises, canonical et
+liens internes présents. Accueil comporte 13 liens internes, tarifs 9, démo 6, assistant 2.
+La description tarifs servie utilise Multi-site 299 € et remise annuelle 10 %, cohérente
+avec main actuel ; aucun retour aux anciens montants de #426.
+
+**Démonstrations.** L’API sitemap ne renvoie que `chez-sokar-demo`, `/public/cities`
+renvoie `[]`. Les neuf autres slugs explicites du script historique
+`packages/database/scripts/unpublish-demo-restaurants.ts` répondent tous 404 sur
+`/public/r/:slug`. Aucun établissement réel n’est disponible pour un échantillon de
+fiches réelles : ne pas inventer un inventaire. Liste exacte portée par
+`@sokar/shared/connect-demo` ; aucun filtre par nom ou préfixe. Ce lot applique
+`noindex, follow` (robots et Googlebot), titre/description de démonstration et bandeau
+visible sur les fiches explicites ; retire leurs données structurées Restaurant/FAQ
+et leur présence dans le sitemap, les listes paginées et les comptes/pages locales.
+Accès direct et réservations d’essai conservés. Robots.txt reste ouvert pour lire
+noindex. Aucune écriture sur les restaurants ni suppression de données.
+
+**403 : cause non établie.** Aucun refus reproduit depuis ce poste : curl ordinaire
+et User-Agent OAI-SearchBot répondent 200 sur l’accueil ; origine dashboard, origine
+Connect sitemap et origine API répondent 200 via SSH. L’outil web retourne « Internal
+Error » sur l’ouverture de l’accueil, sans statut HTTP ni cf-ray exploitable.
+Les journaux Nginx ne sont pas lisibles par deploy. Sans réponse originale du 403
+(horodatage, cf-ray) ni événements de sécurité Cloudflare, on ne peut attribuer le
+refus au WAF, à l’origine ou au relais de l’outil. Aucune protection modifiée.
+Un User-Agent déclaré n’authentifie pas un robot ; accès du vrai Googlebot inconnu.
+Prochaine action : corréler un refus réel avec Cloudflare Security Events, sans
+ouvrir globalement les protections ni déduire un blocage Googlebot.
+
+**Search Console.** Session Brave connectée à `hamza@sokar.tech`, écran
+`https://search.google.com/search-console/welcome` « Ajouter un site Web ».
+Aucune propriété Sokar accessible. Manque : propriété domaine `sokar.tech` validée
+ou accès à sa propriété existante pour ce compte. Pas de sitemap inspecté dans GSC,
+pas de test en direct ni canonical retenue par Google vérifiés. Indexation réelle
+**NON VÉRIFIÉE**. Aucune soumission d’indexation prétendue.
+
+**Intention française.** Recherche web « assistant téléphonique pour restaurant
+réservation France », 14/10/2026 ; lecture des résultats primaires
+[Resadine](https://www.resadine.com/), [Phonalia](https://phonalia.com/restaurants) et
+[Replybot](https://www.replybot.org/fr/use-cases/restaurant). Questions observables :
+appels pendant le service, réservation et informations pratiques, intégration au
+carnet/logiciel existant, renvoi du numéro, configuration et reprise humaine.
+Aucun volume ni classement déduit. La landing répond à ces questions ; commandes,
+allergènes, synchronisation tierce et reprise instantanée ne sont pas promis.
+
+**LAND-01 finalisé en brouillon.** Route de #422 réutilisée, title/H1 précis,
+canonical propre, FAQ, configuration, CTA `/demo?source=assistant-telephonique` et
+lien tarifs. Emplacement audio vide retiré ; lien vers la simulation existante de
+l’accueil `/#demo`, explicitement qualifiée comme illustration d’interface, sans
+appel réel ni résultat client. Pas d’audio, témoignage ou gain inventé. Maintien
+`noindex, follow`, hors sitemap et hors navigation ; aucun lien SEO entrant tant
+que les conditions documentées de publication ne sont pas satisfaites.
+La page est un Server Component sans fetch ni nouveau JS client ; le layout racine
+lit déjà cookies pour la langue, empêchant le rendu statique global. Pas de refonte
+locale/auth pour ce lot ; Core Web Vitals terrain inconnus.
+
+**Conditions encore manquantes.** VOICE-01 reste non exécuté dans sa fiche : manque
+preuve du provisioning/renvoi/appel de test, premier appel créant la réservation
+exacte dans le carnet, puis les scénarios et limites qualifiés. Au contrôle SSH,
+staging : RESEND_API_KEY, TELNYX_API_KEY et TELNYX_CONNECTION_ID absentes ;
+TELNYX_PUBLIC_KEY, ElevenLabs et LLM présents (valeurs jamais affichées).
+La session staging `/admin/demo-requests` redirige vers `/dashboard` : manque une
+session opérateur autorisée. Hamza est responsable ; destination autorisée
+`hamza@sokar.tech`, sans engagement de délai. Les affirmations hébergement précis,
+ton et rapport quotidien ont été omises de la landing, pas validées artificiellement.
+
+**Parcours démo.** CTA ouvre le formulaire dans le navigateur. La source connue
+uniquement devient `pageVersion=demo-assistant-tel-v1`, champ existant conservé par
+l’API et visible dans le suivi opérateur ; aucune query arbitraire ni PII envoyée en
+analytics, aucun nouvel outil. Tests : source, persistance API, idempotence, erreur
+réseau, validation, refus/exception fournisseur. Correctif #426 : tous les destinataires
+sont tentés ; `notifiedAt` n’est renseigné que si chaque résultat est explicitement
+`success`. Demande enregistrée même après échec. Libellé opérateur « Envoi accepté »
+vs « Envoi non confirmé » ; acceptation fournisseur, réception effective et traitement
+restent trois preuves différentes. Réception et traitement humains non vérifiés.
+
+**Recette locale.** Node 22.23.2 ; API 51 tests ciblés, Connect 14, dashboard 24,
+typage API/Connect/dashboard sans erreur. Mobile 375×812, iPad 768×1024,
+desktop 1440×900 : scrollWidth égal à la largeur, pas de débordement ; inspection
+visuelle et FAQ ouverte. Captures dans `assets/seo-2026-10-14/`.
+Publication technique, CI et contrôles post-déploiement à suivre dans la PR de ce lot ;
+aucun déploiement de cette branche n’est encore revendiqué à cette étape.
+
+**Prochaine action SEO.** Donner accès à la propriété GSC et qualifier VOICE-01 +
+suivi opérateur. Ensuite seulement : retirer noindex de la landing, l’ajouter au
+sitemap Connect et au maillage accueil/pages pertinentes, inspecter les URL et
+soumettre le sitemap. Ne pas lancer des pages par ville sans inventaire réel.

@@ -62,7 +62,9 @@ function escapeHtml(value: string): string {
 
 /**
  * Notifie l'équipe commerciale via DEMO_REQUEST_NOTIFY_TO. Sans destinataire configuré, rien n'est
- * envoyé et la fonction retourne false. Retourne true seulement si chaque envoi a réussi.
+ * envoyé et la fonction retourne false. Chaque destinataire est tenté, même si le précédent a échoué.
+ * Retourne true seulement si chaque envoi a été accepté explicitement (`outcome` = 'success') : un refus
+ * (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne sont pas une notification.
  */
 export async function notifyDemoRequest(
   record: Pick<DemoRequest, 'id' | 'establishmentName' | 'contactEmail' | 'contactPhone'>,
@@ -77,10 +79,21 @@ export async function notifyDemoRequest(
     `<p>Téléphone : ${escapeHtml(record.contactPhone ?? 'non renseigné')}</p>`,
   ].join('');
 
+  let allAccepted = true;
   for (const to of recipients) {
-    await sendEmail({ to, subject: 'Nouvelle demande de démonstration Sokar', html });
+    try {
+      const result = await sendEmail({
+        to,
+        subject: 'Nouvelle demande de démonstration Sokar',
+        html,
+      });
+      // Un retour vide ou sans `success` n'est pas une acceptation : on ne renseigne jamais notifiedAt sans preuve.
+      if (result?.outcome !== 'success') allAccepted = false;
+    } catch {
+      allAccepted = false;
+    }
   }
-  return true;
+  return allAccepted;
 }
 
 export async function markDemoRequestNotified(id: string): Promise<void> {

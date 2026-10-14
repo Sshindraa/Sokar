@@ -19,6 +19,7 @@ import {
   type OpeningHoursDay,
   type OpeningHoursSpec,
   PUBLIC_CONNECT_WHERE,
+  DISCOVERABLE_CONNECT_WHERE,
   type PublicRestaurantDto,
   isPublicConnectPage,
   priceRangeToSymbol,
@@ -147,7 +148,7 @@ export class ConnectService {
     page: number;
     limit: number;
   }> {
-    const where = PUBLIC_CONNECT_WHERE;
+    const where = DISCOVERABLE_CONNECT_WHERE;
 
     const [total, rows] = await Promise.all([
       this.prisma.restaurant.count({ where }),

@@ -17,6 +17,7 @@
  */
 
 import type { Metadata } from 'next';
+import { isConnectDemoSlug } from '@sokar/shared';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -86,25 +87,32 @@ export async function generateMetadata({
 
   const cuisine = restaurant.cuisineTypes[0] ?? 'Restaurant';
   const canonical = `${SITE_URL}/restaurant/${restaurant.slug}`;
+  const isDemo = isConnectDemoSlug(restaurant.slug);
+  const title = isDemo
+    ? `${restaurant.name} — Démonstration Sokar`
+    : `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`;
+  const description = isDemo
+    ? 'Établissement fictif de démonstration Sokar. Les réservations servent uniquement aux essais.'
+    : `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`;
 
   return {
     // La marque est ajoutée par le template du layout (`%s | Sokar`) : la
     // répéter ici produisait « … | Sokar | Sokar » sur chaque fiche.
-    title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`,
-    description: `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`,
+    title,
+    description,
     alternates: { canonical },
     openGraph: {
       type: 'website',
-      title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`,
-      description: `Réservez une table chez ${restaurant.name} via Sokar.`,
+      title,
+      description,
       url: canonical,
       images: restaurant.images.cover ? [{ url: restaurant.images.cover }] : [],
     },
     robots: {
-      index: !isPreview,
+      index: !isPreview && !isConnectDemoSlug(restaurant.slug),
       follow: true,
       googleBot: {
-        index: !isPreview,
+        index: !isPreview && !isConnectDemoSlug(restaurant.slug),
         follow: true,
         'max-snippet': -1,
         'max-image-preview': 'large',
@@ -252,12 +260,14 @@ export default async function RestaurantPage({
 
   return (
     <>
-      <ReservationJsonLd jsonLd={jsonLd} />
-      <script
-        type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
+      {!isConnectDemoSlug(restaurant.slug) && <ReservationJsonLd jsonLd={jsonLd} />}
+      {!isConnectDemoSlug(restaurant.slug) && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      )}
 
       <main id="main-content" className="mx-auto max-w-4xl px-6 py-12">
         <PageViewTracker
@@ -269,6 +279,12 @@ export default async function RestaurantPage({
           utmMedium={sp.utm_medium}
           utmCampaign={sp.utm_campaign}
         />
+        {isConnectDemoSlug(restaurant.slug) && (
+          <p className="mb-6 rounded-xl border border-border bg-muted p-6 text-foreground">
+            Établissement de démonstration — les réservations servent uniquement aux essais. Cette
+            fiche ne correspond pas à un restaurant réel.
+          </p>
+        )}
         <article>
           <header className="mb-8">
             <h1 className="text-3xl font-bold text-ink sm:text-4xl">

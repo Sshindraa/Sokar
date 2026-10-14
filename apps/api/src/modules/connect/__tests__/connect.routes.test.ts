@@ -25,7 +25,10 @@ import type { PublicRestaurantDto } from '../connect.types';
 const EXPECTED_PUBLIC_PREDICATE = {
   exposureSettings: { connectPublished: true },
   publishedAt: { not: null },
-  slug: { not: null },
+  slug: {
+    not: null,
+    notIn: expect.arrayContaining(['chez-sokar-demo', 'chez-sokar-bistrot-paris']),
+  },
   agenticOptIn: true,
 };
 
