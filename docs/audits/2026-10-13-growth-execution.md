@@ -755,7 +755,85 @@ soumettre le sitemap. Ne pas lancer des pages par ville sans inventaire réel.
 NOW historique (14/09), puis restaurée après chaque test ; aucun changement métier.
 Le hook sera rejoué avec ce préalable déterministe, sans ignorer les tests.
 
-### 10.18 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
+### 10.18 Preuves après déploiement du lot SEO (14/10/2026)
+
+- PR [#432](https://github.com/Sshindraa/Sokar/pull/432), fusion automatique le
+  14/10 à 12:42:39 Europe/Paris. Commit squash `bb0759f0e38db6a73690f6e3fe89fb26eed60b5e`
+  (commits de branche `5b67fcdc`, `829cc62a`). Les deux CI de branche sont vertes
+  (38550659680, 38550667826) ; CI main 38551470336 verte, CodeQL vert.
+- Deploy Staging [38552161298](https://github.com/Sshindraa/Sokar/actions/runs/38552161298)
+  et Deploy Production [38552689157](https://github.com/Sshindraa/Sokar/actions/runs/38552689157) :
+  **succès, smoke tests inclus**. Staging snapshot `20261014T105132Z`, commit local
+  `c3b3df7f` intitulé « snapshot bb0759f0… » ; c’est la représentation de source du
+  déploiement staging, pas un autre lot. Le snapshot staging précédent `d1fc99b7`
+  portait de la même façon la source `f2ccffc7`. Production snapshot
+  `20261014T105602Z`, `.latest-hash=bb0759f0…`.
+- Staging a répondu brièvement 502 puis 404 pendant le redémarrage et le test de
+  rollback prévu par le workflow. La release courante a été restaurée, puis la
+  landing contrôlée en 200 après workflow vert. Aucun changement de protection ni
+  réparation manuelle du déploiement.
+- Santé production : `/health` et `/livez` API en 200. Snapshot conservé ; rollback
+  applicatif via `scripts/deploy.sh --env prod rollback`, sans rollback DB par
+  défaut. Aucune migration ni modification d’auth, paiement ou voix dans ce lot.
+
+**Contrôle HTTP/HTML production après déploiement**, 14/10 vers 12:57 Europe/Paris :
+
+| URL                                            | Accessible            | Indexable techniquement                                 | Indexation Google                                |
+| ---------------------------------------------- | --------------------- | ------------------------------------------------------- | ------------------------------------------------ |
+| `/`                                            | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/pricing`                                     | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/demo`                                        | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/assistant`                                   | 200, sans redirection | Oui, canonical propre                                   | NON VÉRIFIÉE                                     |
+| `/robots.txt`                                  | 200                   | Accès public autorisé, aucun Disallow démo              | Sans objet                                       |
+| `/sitemap.xml`                                 | 200                   | 4 URL B2B/information, aucune démo ni landing brouillon | Ne prouve pas l’indexation                       |
+| `/restaurant/chez-sokar-demo`                  | 200                   | **Non : noindex, follow**, Googlebot idem               | NON VÉRIFIÉE, retrait effectif de Google inconnu |
+| `/solutions/assistant-telephonique-restaurant` | 200                   | **Non : brouillon noindex, follow**                     | NON VÉRIFIÉE                                     |
+
+Titles, descriptions, H1 et canonical toujours présents dans le HTML initial ;
+aucun X-Robots-Tag en production. Chez Sokar : title « Chez Sokar — Démonstration Sokar |
+Sokar », description d’établissement fictif, bandeau d’essai visible, aucun JSON-LD
+Restaurant. La liste publique staging n’annonce plus de restaurant (`total=0`).
+Les tarifs v3 sont inchangés. Landing : title « Assistant téléphonique pour restaurant —
+Sokar », H1 « Un assistant téléphonique pour votre restaurant », canonical absolue propre,
+liens démo avec source et tarifs présents. Hors sitemap et hors maillage entrant, décision
+maintenue tant que VOICE-01 et le parcours opérateur ne sont pas qualifiés.
+
+**Parcours réel depuis le navigateur et vérification de stockage en lecture seule :**
+
+| Environnement | Référence opaque d’essai               | Enregistrement et source                                                  | Notification                                                                    | Traitement        |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------- |
+| Staging       | `9a23707f-a057-4060-86b7-9ee3b86264aa` | Confirmation UI ; en base à 12:53:50, `pageVersion=demo-assistant-tel-v1` | `notifiedAt=null` ; Resend absent, demande conservée                            | `NEW`, non traité |
+| Production    | `f8d822c7-0cb1-4dc7-a421-628473cde0e0` | Confirmation UI ; en base à 12:58:34, même source                         | `notifiedAt=12:58:34` après `outcome=success`, destination autorisée uniquement | `NEW`, non traité |
+
+Les deux demandes sont explicitement marquées essais techniques SEO, sans restaurant
+réel ni prospect commercial. Elles ont été conservées, aucune suppression de données.
+Adresse de notification production et allowlist vérifiées sans afficher de secret :
+uniquement `hamza@sokar.tech`, clé d’envoi présente. L’acceptation du fournisseur suit
+le garde-fou du code déployé ; **réception effective dans la boîte mail non vérifiée**.
+Session opérateur production : redirection vers `/login` ; staging : vers `/dashboard`.
+**Visibilité et traitement réels dans l’interface opérateur non vérifiés**, contrairement
+aux tests UI/API verts et à la persistance/source constatées en base. Aucun droit élargi.
+
+Captures remplacées par celles de production :
+[desktop](assets/seo-2026-10-14/landing-desktop.jpg),
+[iPad](assets/seo-2026-10-14/landing-ipad.jpg),
+[mobile](assets/seo-2026-10-14/landing-mobile.jpg),
+[confirmation production](assets/seo-2026-10-14/demo-production-success.jpg),
+[confirmation staging](assets/seo-2026-10-14/demo-staging-success.jpg).
+Les trois largeurs production ont scrollWidth égal à innerWidth : 1440, 768, 375 px.
+Ces captures prouvent le rendu, pas une conversation vocale ni des Core Web Vitals terrain.
+
+**Blocages précis et prochaine action.** L’accès direct à la propriété GSC
+`sc-domain:sokar.tech` affiche « Désolé, vous n’avez pas accès à cette propriété »
+pour `hamza@sokar.tech` : demander l’accès à un propriétaire ou vérifier la propriété.
+Puis inspecter les URL, canonical Google et sitemap, sans promettre de délai ni de rang.
+Pour rendre la landing indexable : archiver VOICE-01 niveaux 1/2 et scénarios, puis
+consulter et traiter une demande avec une session opérateur autorisée, confirmer sa
+réception. Les clés staging Resend/Telnyx API/connexion restent à fournir ; aucun
+nouveau chantier téléphonie lancé. Cause des anciens 403 toujours non établie :
+obtenir réponse originale/cf-ray et accès aux événements Cloudflare avant toute correction.
+
+### 10.19 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
 
 **Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.
 
@@ -770,9 +848,9 @@ Le hook sera rejoué avec ce préalable déterministe, sans ignorer les tests.
 
 **À valider avant publication.** Le statut « disponible » de la synchronisation Google Agenda, de la facturation groupée Multi-site et du suivi des no-shows repose sur le code et la FAQ : à confirmer par le produit. Sont marqués « prévu » : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
 
-### 10.19 Fusion avec le copilote de service de #428 (14/10/2026)
+### 10.20 Fusion avec le copilote de service de #428 (14/10/2026)
 
-Le décompte de la section 10.18 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
+Le décompte de la section 10.19 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
 
 **Ce que la page affiche.** Pro vend le copilote de service : suggestions pour les retards, estimation des tables bientôt disponibles avec indication de fiabilité, rapprochements avec les clients en attente, analyse d'une réorganisation et plan validé par l'équipe, historique des plans et retour arrière sous conditions. Essential garde planning, placement manuel, disponibilités, liste d'attente et pouls ; il n'inclut aucune fonction avancée du copilote, ce que teste un garde-fou. Pro et Multi-site proposent « Découvrir » (démonstration) avant l'inscription. Les textes publics sont ceux de `main` ; le catalogue fournit les statuts et le tableau.
 
@@ -780,13 +858,13 @@ Le décompte de la section 10.18 concerne le catalogue d'avant cette fusion. Le 
 
 - Copilote « disponible » en Pro et Multi-site : l'accès est porté par la capacité de formule, et #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert ; aucun résultat en conditions de service n'est annoncé.
 - Rapport quotidien de vos appels « disponible » en Essential, ajouté au-delà du texte de `main`.
-- Les statuts « disponible » de la section 10.18 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
+- Les statuts « disponible » de la section 10.19 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
 
 **Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
 
-### 10.20 Fusion avec la tarification de #429 (14/10/2026)
+### 10.21 Fusion avec la tarification de #429 (14/10/2026)
 
-La décision de `main` remplace les montants de la section 10.18 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.18 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
+La décision de `main` remplace les montants de la section 10.19 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.19 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
 
 - Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
 - Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.

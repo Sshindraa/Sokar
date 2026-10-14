@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] SEO : landing assistant téléphonique finalisée mais noindex ; publication après preuves VOICE-01 et suivi démo opérateur. Donner au compte hamza@sokar.tech accès à la propriété Search Console Sokar (écran d’ajout de site au 14/10) ; indexation réelle non vérifiée. Démonstrations explicites exclues de la découverte, fiches d’essai conservées (rapport growth §10.17).
+- [ ] SEO : #432 déployée, démos noindex et hors sitemap ; landing finalisée mais noindex jusqu’aux preuves VOICE-01 et au suivi opérateur. GSC refuse `sokar.tech` à hamza@sokar.tech : obtenir l’accès ; indexation inconnue. Demandes avec source vérifiées, réception/traitement humains à confirmer (rapport growth §10.18).
 
 - [ ] Démo (migration appliquée en staging et prod le 13/10) : fournir le destinataire de test `DEMO_REQUEST_NOTIFY_TO` (secret GitHub, #418), vérifier la liste opérateur, fixer le délai de réponse. Landing : bloquée par la preuve vocale (VOICE-01), pas par Search Console.
 - [ ] Vitrine : faire valider juridiquement la FAQ données (hébergement et sous-traitants voix possiblement hors UE) et « Support prioritaire 7j/7 » ; confirmer la fiche publique `chez-sokar-demo` dans le sitemap.
