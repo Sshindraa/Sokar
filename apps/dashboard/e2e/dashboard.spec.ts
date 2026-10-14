@@ -78,7 +78,10 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
   });
 });
 
-test.describe('Espace administration Sokar', () => {
+const isRemoteTarget = Boolean(process.env.PLAYWRIGHT_BASE_URL);
+
+test.describe('Espace administration Sokar — preview local', () => {
+  test.skip(isRemoteTarget, 'Le mock API ne crée pas de session Clerk sur un serveur distant.');
   async function mockOperatorAccess(page: Page, allowed: boolean) {
     await page.route('**/api/proxy/admin/access', async (route) => {
       if (allowed) {
@@ -131,4 +134,25 @@ test.describe('Espace administration Sokar', () => {
     await expect(page.getByRole('heading', { name: 'Pilotage' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Admin Sokar' })).toHaveCount(0);
   });
+});
+
+test.describe('Accès opérateur distant sans session', () => {
+  test.skip(!isRemoteTarget, 'Ce contrôle exige le middleware Clerk réellement déployé.');
+
+  for (const path of ['/admin', '/admin/provisioning', '/dashboard/admin/margin']) {
+    test(`protège ${path} malgré un faux résultat API côté navigateur`, async ({ page }) => {
+      await page.route('**/api/proxy/admin/access', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ allowed: true }),
+        }),
+      );
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(/\/login(?:\?|$)/);
+      await expect(page.getByRole('heading', { name: 'Ravis de vous revoir' })).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Email address', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Espace administration' })).toHaveCount(0);
+    });
+  }
 });
