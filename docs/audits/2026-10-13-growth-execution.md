@@ -4,6 +4,7 @@ Plan suivi : [seo-acquisition-execution-plan.md](../runbooks/seo-acquisition-exe
 La section 2 est la référence des statuts actuels. Les sections 3 à 10 conservent les observations
 historiques datées ; un constat antérieur ne remet pas en TODO une livraison ultérieure.
 La section 10.21 consigne la correction des dépendances décidée par Hamza ; contrôles datés du 14 octobre.
+La section 10.22 documente le lot local du 15 octobre : préparé et vérifié localement, non commité, non déployé.
 
 ## 1. Résultat obtenu et périmètre traité
 
@@ -21,10 +22,11 @@ Deux appels du restaurant démo sont présents le 14 octobre : staging, 23 secon
 l'exécution du pipeline, pas la réussite d'un scénario métier complet. Aucune nouvelle conversation,
 mutation, clé ou modification de routage n'a été effectuée pour cette relecture.
 
-La landing répond 200, reste `noindex, follow` et absente du sitemap. La nouvelle décision permet
-sa publication après contrôle des textes, de l'exemple simulé s'il est présenté et de la conversion
-minimale. Elle n'exige plus la clôture de VOICE-01. L'isolation effective de l'exemple public reste
-à vérifier ; cette correction documentaire ne retire pas le noindex ni ne qualifie l'exemple.
+Décision du 15 octobre : concentrer l’acquisition sur l’accueil `sokar.tech`, sans refonte UI.
+La landing dédiée est retirée du lot ; sa route devient une redirection permanente vers `/` en
+local et reste hors sitemap. Les précisions utiles rejoignent les sept réponses de la FAQ existante.
+Le hero, les sections, polices, couleurs, animations, tarifs et CTA de l’accueil sont conservés.
+Préparé localement, non commité, non déployé ; production inchangée par cette décision.
 
 ## 2. Tickets — référence actuelle
 
@@ -32,27 +34,27 @@ minimale. Elle n'exige plus la clôture de VOICE-01. L'isolation effective de l'
 un résultat client réel restent des niveaux de preuve différents. Pour les entretiens, pilotes
 et renouvellements, une preuve non archivée reste inconnue.
 
-| ID         | État courant                                           | Preuve ou périmètre                                                                           | Prochaine action                                                                                             |
-| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| BASE-01    | Inventaire livré et actualisé                          | §10.18–10.21 ; contrôles publics et source déployée                                           | Reprendre les inconnues utiles, sans refaire l'inventaire complet                                            |
-| TRUST-01   | Corrections vitrine livrées                            | §10.12 et §10.18 ; simulations identifiées                                                    | Contrôler l'exemple public dans DEMO-SIM                                                                     |
-| COPY-01    | Textes et tarifs livrés ; formulations à valider       | #427–#429 ; Essential 199, Pro 299, Multi-site 299 + 99 par site supplémentaire, annuel −10 % | Vérifier les promesses support/données ; supprimer ou ajuster celles non étayées                             |
-| DEMO-SIM   | À qualifier                                            | Décision du 14/10 : exemple public simulé, sans action client                                 | Vérifier mentions, scénario et isolation effective ; réutiliser l'existant                                   |
-| VOICE-01   | Recette interne incomplète, P0 avant activation client | #436–#437 ; configuration présente ; appels NO_ACTION, aucune réservation liée                | Qualifier les scénarios internes sur données de test ; distinguer pipelines staging/production               |
-| OPS-01     | Installation client à qualifier                        | Onboarding/provisioning livrés partiellement ; intégration locale à préserver                 | Vérifier le parcours réellement déployé, numéro/renvoi et secours du candidat                                |
-| DEMO-01    | Qualifié en production                                 | Demande persistée avec source, notification effectivement reçue (§10.19)                      | Garder la recette ciblée après une modification de ce parcours                                               |
-| DEMO-02    | Réception et traitement technique qualifiés            | Administration accessible, test clôturé après rechargement et relu en base (§10.19)           | Définir l'organisation commerciale et le délai interne ; aucune promesse publique de délai                   |
-| METRIC-01  | Demande/source/statuts disponibles ; suite à compléter | Horodatages persistés ; essais exclus des résultats commerciaux                               | Suivi minimal qualification/démo ; rapprocher activation/paiement avant pilote                               |
-| BILL-01    | Grille v3 livrée ; exploitation pilote à qualifier     | #429–#430, catalogue/runbook actif ; aucune nouvelle preuve client dans ce lot                | Vérifier paiement, plan et droits du candidat ; observer le renouvellement à son échéance                    |
-| SEO-01     | Diagnostic et accès GSC acquis ; inconnues bornées     | §10.19 ; anciens 403 inexpliqués                                                              | Observer les nouveaux rapports et retraits d'URL ; pas de modification réseau sans cause établie             |
-| SEO-02     | Socle technique livré et contrôlé                      | Pages B2B accessibles ; pages fictives noindex/hors sitemap                                   | Distinguer indexabilité et indexation effective ; publication landing dans LAND-01                           |
-| ICP-01     | Supports prêts, tarifs actualisés                      | Guide d'entretien et runbook pilote                                                           | Sélectionner les candidats et faire valider le message avant envoi                                           |
-| ICP-02     | Preuves terrain à documenter                           | Aucun entretien archivé dans ce rapport                                                       | Recueillir les retours ; 8 à 12 est un repère, pas une barrière au premier pilote                            |
-| PILOT-01   | À démarrer sous conditions par candidat                | Runbook limité à deux pilotes initiaux ; aucune fiche complète archivée                       | Premier démarrage indépendant du second ; revue opérationnelle après sept jours                              |
-| ECON-01    | Observation ultérieure                                 | Aucune preuve d'adoption durable ou de renouvellement archivée                                | Mesurer usage, coûts, support et paiement pendant une durée suffisante                                       |
-| LAND-01    | Page livrée, publication SEO à effectuer               | 200/noindex/hors sitemap ; dépendance VOICE-01 retirée du plan                                | Contrôler exactitude, DEMO-SIM si exemple présenté, CTA/source ; ouvrir indexation et maillage après recette |
-| CONNECT-01 | P2 conditionnel                                        | Fiches fictives exclues ; inventaire partenaire à qualifier                                   | Avancer avec des établissements réels et leurs accords                                                       |
-| SCALE-01   | P2 conditionnel                                        | Pas de validation commerciale à grande échelle                                                | Étendre selon les résultats et les coûts observés                                                            |
+| ID         | État courant                                           | Preuve ou périmètre                                                                           | Prochaine action                                                                                 |
+| ---------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| BASE-01    | Inventaire livré et actualisé                          | §10.18–10.21 ; contrôles publics et source déployée                                           | Reprendre les inconnues utiles, sans refaire l'inventaire complet                                |
+| TRUST-01   | Corrections vitrine livrées                            | §10.12 et §10.18 ; simulations identifiées                                                    | Contrôler l'exemple public dans DEMO-SIM                                                         |
+| COPY-01    | Textes et tarifs livrés ; formulations à valider       | #427–#429 ; Essential 199, Pro 299, Multi-site 299 + 99 par site supplémentaire, annuel −10 % | Vérifier les promesses support/données ; supprimer ou ajuster celles non étayées                 |
+| DEMO-SIM   | Qualifié localement (§10.22)                           | Décision du 14/10 : exemple public simulé, sans action client                                 | Recontrôler après livraison groupée ; animation sans effet métier                                |
+| VOICE-01   | Recette interne incomplète, P0 avant activation client | #436–#437 ; configuration présente ; appels NO_ACTION, aucune réservation liée                | Qualifier les scénarios internes sur données de test ; distinguer pipelines staging/production   |
+| OPS-01     | Installation client à qualifier                        | Onboarding/provisioning livrés partiellement ; intégration locale à préserver                 | Vérifier le parcours réellement déployé, numéro/renvoi et secours du candidat                    |
+| DEMO-01    | Qualifié en production                                 | Demande persistée avec source, notification effectivement reçue (§10.19)                      | Garder la recette ciblée après une modification de ce parcours                                   |
+| DEMO-02    | Réception et traitement technique qualifiés            | Administration accessible, test clôturé après rechargement et relu en base (§10.19)           | Définir l'organisation commerciale et le délai interne ; aucune promesse publique de délai       |
+| METRIC-01  | Suivi minimal prêt localement (§10.23)                 | Horodatages persistés ; essais exclus des résultats commerciaux                               | Tenir le relevé restreint ; premier rapprochement réel à vérifier avant bilan                    |
+| BILL-01    | Grille v3 livrée ; exploitation pilote à qualifier     | #429–#430, catalogue/runbook actif ; aucune nouvelle preuve client dans ce lot                | Vérifier paiement, plan et droits du candidat ; observer le renouvellement à son échéance        |
+| SEO-01     | Diagnostic et accès GSC acquis ; inconnues bornées     | §10.19 ; anciens 403 inexpliqués                                                              | Observer les nouveaux rapports et retraits d'URL ; pas de modification réseau sans cause établie |
+| SEO-02     | Socle technique livré et contrôlé                      | Pages B2B accessibles ; pages fictives noindex/hors sitemap                                   | Distinguer indexabilité et indexation effective ; consolidation accueil dans LAND-01             |
+| ICP-01     | Supports finalisés localement (§10.23)                 | Guide d'entretien et runbook pilote                                                           | Hamza sélectionne les contacts et autorise explicitement tout envoi                              |
+| ICP-02     | Preuves terrain à documenter                           | Aucun entretien archivé dans ce rapport                                                       | Recueillir les retours ; 8 à 12 est un repère, pas une barrière au premier pilote                |
+| PILOT-01   | À démarrer sous conditions par candidat                | Runbook limité à deux pilotes initiaux ; aucune fiche complète archivée                       | Premier démarrage indépendant du second ; revue opérationnelle après sept jours                  |
+| ECON-01    | Observation ultérieure                                 | Aucune preuve d'adoption durable ou de renouvellement archivée                                | Mesurer usage, coûts, support et paiement pendant une durée suffisante                           |
+| LAND-01    | Accueil préparé et vérifié localement (§10.27)         | UI conservée ; ancienne route redirigée, aucun ajout sitemap                                  | Livraison groupée sur instruction Hamza ; recette locale actualisée                              |
+| CONNECT-01 | P2 conditionnel                                        | Fiches fictives exclues ; inventaire partenaire à qualifier                                   | Avancer avec des établissements réels et leurs accords                                           |
+| SCALE-01   | P2 conditionnel                                        | Pas de validation commerciale à grande échelle                                                | Étendre selon les résultats et les coûts observés                                                |
 
 ## Lecture des observations historiques
 
@@ -450,13 +452,13 @@ Le texte de `scripts/ops/sync-demo-request-config.sh` apparaît dans les journau
 
 **Dépendances restantes** :
 
-| Débloque                              | Entrée attendue                                                                                                                  | Responsable               |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| Notifications staging puis production | Adresse de test, adresse commerciale                                                                                             | Hamza                     |
-| Visibilité, traitement, DEMO-02       | Connexion opérateur sur staging dans le navigateur intégré ; nom du responsable ; délai de réponse                               | Hamza                     |
-| VOICE-01                              | Restaurant de test provisionné sur staging, numéro et webhook vérifiés, personne pour l'appel, confirmation `validate-test-call` | Hamza ou équipe technique |
-| COPY-01                               | Validation des affirmations signalées                                                                                            | Hamza                     |
-| LAND-01                               | VOICE-01 qualifiée, DEMO-02 et COPY-01 satisfaits                                                                                | Hamza, puis livraison     |
+| Débloque                              | Entrée attendue                                                                                                                  | Responsable                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Notifications staging puis production | Adresse de test, adresse commerciale                                                                                             | Hamza                                                        |
+| Visibilité, traitement, DEMO-02       | Connexion opérateur sur staging dans le navigateur intégré ; nom du responsable ; délai de réponse                               | Hamza                                                        |
+| VOICE-01                              | Restaurant de test provisionné sur staging, numéro et webhook vérifiés, personne pour l'appel, confirmation `validate-test-call` | Hamza ou équipe technique                                    |
+| COPY-01                               | Validation des affirmations signalées                                                                                            | Hamza                                                        |
+| LAND-01                               | Accueil préparé et vérifié localement (§10.27)                                                                                   | UI conservée ; ancienne route redirigée, aucun ajout sitemap | Livraison groupée sur instruction Hamza ; recette locale actualisée |
 
 ### 10.12 Livraison : affirmations retirées, demande traitable, VOICE-01 et LAND-01
 
@@ -516,15 +518,15 @@ Search Console n'est pas une condition.
 
 **Dépendances restantes**
 
-| Débloque                               | Entrée attendue                                                                                                    | Responsable               |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------- |
-| Notifications, staging puis production | Adresse de test autorisée et adresse commerciale : non fournies (gabarits)                                         | Hamza                     |
-| Visibilité et traitement en staging    | Session opérateur sur staging : à organiser                                                                        | Hamza                     |
-| DEMO-02                                | Responsable des demandes : non fourni (gabarit). Délai affiché : aucun, décision enregistrée                       | Hamza                     |
-| VOICE-01, niveau 1                     | Restaurant de test (référence non fournie), numéro de test et personne disponible (non fournis), session opérateur | Hamza ou équipe technique |
-| VOICE-01, niveau 2                     | Premier appel de réservation exact, puis sept scénarios                                                            | Hamza ou équipe technique |
-| Affirmations restantes                 | Validation de l'hébergement, du ton, du rapport quotidien                                                          | Hamza                     |
-| LAND-01                                | Conditions de publication ci-dessus                                                                                | Hamza, puis livraison     |
+| Débloque                               | Entrée attendue                                                                                                    | Responsable                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Notifications, staging puis production | Adresse de test autorisée et adresse commerciale : non fournies (gabarits)                                         | Hamza                                                        |
+| Visibilité et traitement en staging    | Session opérateur sur staging : à organiser                                                                        | Hamza                                                        |
+| DEMO-02                                | Responsable des demandes : non fourni (gabarit). Délai affiché : aucun, décision enregistrée                       | Hamza                                                        |
+| VOICE-01, niveau 1                     | Restaurant de test (référence non fournie), numéro de test et personne disponible (non fournis), session opérateur | Hamza ou équipe technique                                    |
+| VOICE-01, niveau 2                     | Premier appel de réservation exact, puis sept scénarios                                                            | Hamza ou équipe technique                                    |
+| Affirmations restantes                 | Validation de l'hébergement, du ton, du rapport quotidien                                                          | Hamza                                                        |
+| LAND-01                                | Accueil préparé et vérifié localement (§10.27)                                                                     | UI conservée ; ancienne route redirigée, aucun ajout sitemap | Livraison groupée sur instruction Hamza ; recette locale actualisée |
 
 ### 10.13 Notifications, téléphonie staging et landing : diagnostic et préparation (13/10/2026)
 
@@ -940,3 +942,276 @@ du jour relus en base, sans coordonnées ni transcript : NO_ACTION et réservati
 La landing publique reste 200/noindex et hors sitemap. Aucun test vocal supplémentaire, achat,
 envoi, activation ou changement de droits dans ce lot. La section 2 remplace le tableau initial
 obsolète ; les observations datées sont préservées.
+
+### 10.22 — Simulation publique et landing : recette locale du 15 octobre 2026
+
+**Préparé et vérifié localement, non commité, non déployé.** Roadmap corrigée #439 consultée
+par son diff et reprise dans les documents locaux sans fusion ni changement de branche. Les
+observations distantes de §10.21 proviennent de cette roadmap ; elles n’ont pas été rejouées ici.
+Les changements préexistants des bancs voix et d’environnement sont conservés.
+
+**DEMO-SIM : qualifié localement pour l’animation existante.** La landing renvoie uniquement à
+`/#demo` : `DemoSection` déroule `SIMULATOR_STEPS` par timers et état React. Les curseurs changent
+seulement leur état visuel. Aucun fetch, WebSocket, microphone, lecteur audio, outil de réservation,
+notification, paiement, transfert ni événement analytique métier dans ce chemin. Les nombres sont
+codés dans la maquette ; ils n’alimentent aucun résultat commercial. Le storyboard de l’accueil
+est lui aussi illustratif, sans action métier. Aucun lien de ce parcours ne mène à un restaurant
+client. Le formulaire `/demo` est une demande commerciale distincte ; ses envois ont été mockés.
+
+Restaurant explicitement fictif (« Bistrot Exemple »), disponibilités et résultat simulés, retrait
+de l’annonce de SMS envoyé. Nature sans audio et limites de preuve visibles, réglages explicitement
+visuels. Pas de conversation interactive ni d’enregistrement à transcrire ; les chemins de secours
+vocaux ne sont donc pas exercés par cet exemple. VOICE-01 reste une recette réelle séparée avant
+activation client, sans qualification supplémentaire revendiquée.
+
+**LAND-01 : critères locaux satisfaits, livraison en attente.** Cible, demandes prises en charge,
+préparation dans l’établissement, limites et recours humain, demande de démonstration et tarifs
+explicites. Retrait local du seul noindex de cette landing, canonical absolue vérifiée dans le HTML,
+ajout au sitemap Connect et liens depuis accueil et tarifs. Les restaurants fictifs conservent
+leur noindex et leur exclusion du sitemap ; tests de métadonnées et fixtures réussis. Aucun tarif,
+calcul, abonnement, fournisseur, secret ou droit modifié. Aucun sitemap soumis ni indexation demandée.
+
+**Recette.** 48 tests ciblés uniques dashboard et Connect, typage dashboard, build production dashboard et lint ciblé réussis. Navigateur
+Chromium aux dimensions 1440×900, 390×844 et 768×1024 : canonical, absence de noindex, ouverture FAQ,
+aucun débordement horizontal, aucun pageerror. CTA vers `/demo?source=assistant-telephonique` puis
+`pageVersion=demo-assistant-tel-v1` conservés. Envoi 503 puis reprise 201 simulés localement sur les
+trois formats. Toutes les requêtes hors localhost étaient bloquées ; aucune n’a été observée.
+Le test de l’animation déroule le scénario et manipule un curseur sans requête ni média.
+
+Prévisualisation : http://localhost:3100/solutions/assistant-telephonique-restaurant . Captures :
+`/Users/hamza/.codex/visualizations/2026/10/15/sokar-demo-landing/` (`landing-desktop.png`,
+`landing-mobile.png`, `landing-ipad.png`, variantes `simulation-*` et `form-error-*`).
+Le script de recette local est conservé dans ce dossier. Le build confirme `ƒ` sur la landing. Le layout racine lit déjà `cookies()`
+pour la langue : le rendu dynamique préexistant reste une limite, sans refonte de l’i18n dans ce lot.
+
+**Livraison restante.** À la demande de Hamza : revue du diff groupé, commit/PR/CI puis recette staging
+et livraison selon le runbook, vérification HTTP des métadonnées, sitemap et CTA. Pas de publication
+production revendiquée pour ces changements locaux ; VOICE-01 et OPS-01 restent ouverts.
+
+Fichiers applicatifs de ce lot :
+
+- `apps/dashboard/src/app/DemoSection.tsx` et `DemoSection.test.tsx` ;
+- `apps/dashboard/src/app/constants.ts` (scénario seulement) ;
+- `apps/dashboard/src/app/solutions/assistant-telephonique-restaurant/page.tsx` et `page.test.tsx` ;
+- `apps/dashboard/src/app/page.tsx` et `pricing/page.tsx` (liens) ;
+- `apps/connect/src/app/sitemap.ts` et `sitemap.test.ts`.
+
+Documents : ce rapport, `docs/obsidian/Context.md`, `docs/obsidian/Journal.md` et reprise de #439
+dans `docs/runbooks/seo-acquisition-execution-plan.md`, `essential-pilot-7-day.md`,
+`restaurant-discovery-interview.md`. Les fichiers générés par Next ont été restaurés à leur contenu
+initial ; les sorties de compilation sont exclues localement de Git.
+
+### 10.23 — METRIC-01 et ICP-01 : supports locaux du 15 octobre 2026
+
+**Préparé et vérifié localement, non commité, non déployé.** Lot démo/landing et autres changements
+préexistants conservés. Aucun nouveau dashboard, changement d'API, schéma, événement analytique,
+onboarding, rôle ou droit. Aucun contact envoyé, aucune lecture/mutation distante ni paiement déclenché.
+
+**METRIC-01, périmètre minimal prêt.** Le [mode opératoire](../runbooks/commercial-follow-up.md)
+relie les sources existantes et fournit le modèle de relevé à copier dans l'espace commercial restreint.
+Les manques constatés sont explicites : `DemoRequest` n'a ni lien Clerk/compte ni marqueur test ;
+`pageVersion` identifie un parcours client, pas une acquisition SEO prouvée ; les projections billing
+ne prouvent pas l'encaissement et le journal de webhook ne conserve pas la facture complète.
+
+Le rapprochement demande → identité → compte/restaurant est donc manuel, confirmé et documenté ;
+pas de jointure automatique par e-mail ni de conversion attribuée si identité ambiguë. Les dates de
+création du restaurant ou d'adhésion ne sont pas une inscription Clerk. Les comptes préexistants et
+invitations ne sont pas de nouvelles acquisitions. Activation technique et mise en service qualifiée
+VOICE-01/OPS-01 restent distinctes ; `firstCallAt` peut être un appel d'essai.
+
+Le relevé exclut tests, fixtures, doublons, spam et inconnus des conversions et dénominateurs ; les
+trois demandes techniques déjà documentées sont référencées explicitement. Un vrai refus commercial
+reste dans la population. La cohorte d'onboarding agrège des essais : elle ne devient pas un bilan
+commercial. Premier paiement = facture d'abonnement live réellement encaissée et reliée, dédupliquée
+par facture, sans inférence depuis `active` ou le retour navigateur. Remboursements et crédits restent
+séparés. Aucun rapprochement réel prospect/compte/facture qualifié dans ce lot ; le premier devra
+être confirmé dans le relevé restreint avant un bilan. Aucun espace externe créé ni donnée personnelle
+ajoutée au dépôt. Ce dispositif manuel compense les manques pour les premiers contacts ; il ne prétend
+pas automatiser l'attribution ni filtrer les vues opérateur existantes.
+
+**ICP-01, supports finalisés.** [Guide existant](../runbooks/restaurant-discovery-interview.md)
+complété : cible indépendants mono-site, priorité bistrots/brasseries avec service à table et carnet
+commun possible ; exclusions métier, décideur, budget/cadence, preuve et prochaine action datée.
+Entretien aligné sur l'invitation de vingt minutes ; distinction candidat commercial/prêt à activer.
+Message de prise de contact explicite sur Sokar, invitation à une démo et proposition écrite de
+pilote préparés, tous non envoyés. Essential 199 € HT/mois ; annuel −10 %, 2 149,20 € HT/an, équivalent
+exact 179,10 € HT/mois. Aucun nouveau quota, remise, délai ou engagement de support inventé.
+Absence actuelle de quota client voix/SMS recoupée avec les inclusions publiques ; frais de renvoi
+distincts. Sept jours = observation opérationnelle, pas gratuité ni modification de l'abonnement.
+Les entretiens peuvent commencer en parallèle de VOICE-01, le premier pilote n'attend pas le second.
+Le [runbook pilote](../runbooks/essential-pilot-7-day.md) renvoie au relevé et distingue usages/tests.
+
+**Vérifications.** 31 tests ciblés réussis : catalogue partagé (10), formulaire/source/reprise (7),
+routes demandes et statuts avec DB/e-mail mockés (14). Montants Essential mensuel/annuel et remise
+recalculés depuis le catalogue local ; 28 liens des quatre runbooks résolus. Cas synthétiques du
+relevé revus : test en production, doublons, compte ambigu/préexistant, sandbox, montant nul,
+paiement avant activation. Prettier, diff sans erreur et taille du vault contrôlés. Pas de nouvelle
+recette navigateur nécessaire : seuls des documents ont changé dans cette continuation.
+
+**Fichiers de cette continuation.** Nouveau `docs/runbooks/commercial-follow-up.md` ; enrichissement
+`restaurant-discovery-interview.md`, `essential-pilot-7-day.md`, `seo-acquisition-execution-plan.md`,
+ce rapport, `docs/obsidian/Context.md` et `Journal.md`. Tous les fichiers applicatifs du lot précédent
+sont conservés. Suite humaine : choisir les premiers contacts et l'espace restreint, autoriser un
+éventuel envoi, puis tenir les preuves réelles. Livraison groupée uniquement sur instruction Hamza.
+
+### 10.24 — Revue finale locale du lot cumulé (15 octobre 2026)
+
+[Revue et manifeste précis de livraison](2026-10-15-growth-final-review.md) : 17 fichiers du lot.
+Corrections limitées : conditions d’usage au lieu de minutes incluses sur la landing ; checklist
+pilote VOICE-01/OPS-01, secours, facture encaissée et droits ; ouverture d’entretien cohérente avec
+le message. 82 tests ciblés, typage, lint, recette desktop/mobile/iPad avec mocks, format/liens/vault
+et scan de secrets du diff livrable réussis. Aucun blocage applicatif restant identifié sur ce
+périmètre. Terrain, recette vocale, installation et preuves client restent ouverts selon la revue.
+Dix sources préexistantes des bancs/environnement exclues ; pendant la revue, deux fichiers de
+prototype vocal sont apparus et environment.md a reçu un ajout concurrent, tous conservés hors lot.
+390 autres fichiers préexistants inchangés par empreinte. Recontrôler l’inventaire avant livraison.
+Statut : préparé et vérifié localement, non commité, non déployé. Livraison toujours suspendue
+à l’instruction de Hamza ; aucun envoi, commit, push, PR ou déploiement exécuté.
+
+### 10.25 — Accueil prioritaire, UI conservée et landing retirée du lot (15 octobre)
+
+Décision Hamza : concentrer l’acquisition sur l’accueil `sokar.tech` sans changement de design.
+Les ajouts de liens vers la landing et sa présence dans le sitemap sont retirés localement.
+L’ancienne route devient une redirection permanente vers `/` (HTTP 308 local). Les précisions utiles
+sont intégrées aux sept réponses de la FAQ existante, sans ajouter de section ni modifier ses styles.
+Hero, accueil, page Tarifs, sitemap et composant FAQ identiques à HEAD ; simulation et supports
+METRIC-01/ICP-01 du lot précédent conservés. Le CTA accueil générique reste inchangé, aucune
+attribution automatique à l’accueil ou au SEO n’est ajoutée. LAND-01 désigne désormais l’accueil.
+
+Manifeste actualisé de 13 fichiers dans la revue finale. Suites dashboard 692 et Connect 141 vertes,
+typage/lint ciblés verts ; HTTP 308, canonical accueil, absence de liens vers l’ancienne landing et
+absence de débordement vérifiés localement. Les 13 fichiers hors lot sont inchangés par empreinte.
+Les anciennes captures et observations de landing restent historiques. Préparé localement,
+non commité, non déployé ; aucun appel, envoi, paiement ou effet distant.
+
+### 10.26 — Écarts SEO accueil : contrôles locaux du 15 octobre 2026
+
+**Statut : Préparé localement, vérification partielle. Non commité, non déployé.**
+
+État repris sans nouvel audit complet :
+
+| Classe       | Preuve et décision                                                                                                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Acquis       | Étude d’intention du 13/10 (§10.8), indexation accueil/test direct GSC du 14/10 (§10.19), simulation/FAQ/redirection locales du 15/10 (§10.22 et §10.25). Ces preuves antérieures ne sont pas des contrôles de ce lot. |
+| Ouvert       | Performance représentative en production locale ; qualification du contenu légal ; retrait effectif des anciennes URL indexées ; recette après future publication.                                                     |
+| Obsolète     | Création/maillage/indexation d’une landing séparée, anciennes indications d’accès GSC absent. Aucun nouveau bloc ni nouvelle route.                                                                                    |
+| À revérifier | FAQ et lien confidentialité après correction ci-dessous ; redirection et sitemap après livraison groupée.                                                                                                              |
+
+**Intention conservée.** Cible France entière : restaurateurs recherchant un assistant téléphonique pour leurs réservations. Secondaires compatibles : gestion des appels pendant le service, disponibilités du carnet, réservations téléphone/web/salle. « Réserver une table » seul vise le consommateur et ne devient pas la cible de l’accueil. Les recherches du §10.8 suffisent à ce cadrage ; aucune étude exhaustive ni nouveau volume nécessaire. Volumes, difficulté et potentiel restent inconnus. Title « Sokar — Assistant téléphonique pour restaurants », description, H1 et hero conservés : cible, tâche et fonctionnement explicites, sans gain chiffré. Open Graph et Twitter cohérents dans le HTML ; aucune image sociale ajoutée pour produire un changement. Un H1 ; sections en H2, détails en H3/H4. Les titres H4 du pied de page sont conservés : aucune ambiguïté commerciale démontrée justifiant une modification de structure.
+
+**Deux corrections fondées sur des défauts observés.**
+
+- `apps/dashboard/src/app/page.tsx` : « Confidentialité » avait `href="#"`, retour au haut de page. Destination remplacée par `/privacy`, route existante. Même élément, texte et classes. Le routage versionné sert `/privacy` depuis Connect ; cette page répond 200 sur son serveur local. La page dashboard homonyme contient des champs à remplir : elle ne prouve pas le contenu servi en production.
+- `apps/dashboard/src/app/constants.ts` : la FAQ disait que la politique détaillait les sous-traitants et leur localisation. La page Connect réellement routée ne les détaille pas. Réponse limitée aux données traitées, droits et possibilité de contact. Aucun nouveau engagement juridique, tarif ou abonnement.
+
+**Contrôles exécutés pendant ce lot.**
+
+- Dashboard développement existant `:3100` conservé : GET accueil 200 ; un H1, hero et réponses FAQ présents dans le HTML initial ; canonical `https://sokar.tech` (équivalent racine avec slash), robots `index, follow`, pas d’en-tête X-Robots-Tag bloquant observé. Title/description/OG/Twitter métier présents.
+- Ancienne route : 308 avec `Location: /`. Aucun lien de l’accueil vers cette route dans le DOM aux trois formats.
+- Connect distinct `:4311`, `SITE_URL=https://sokar.tech`, API mock locale `:4312` : sitemap XML avec accueil, assistant, tarifs, démo et une fiche témoin ; deux fixtures explicites exclues, landing/book/widget absents. Robots autorise `/` et référence le sitemap de production. Le mock prouve génération/filtrage, **pas** disponibilité ni inventaire de l’API réelle. Premier essai avec SITE_URL local a produit localhost : configuration de recette corrigée, aucune configuration applicative modifiée.
+- Lecture de `infra/nginx/sokar.conf` : accueil/ancienne route vers dashboard, sitemap/robots/privacy vers Connect. Aucun Nginx exécuté ni modifié ; assemblage distant à requalifier après livraison.
+- Vitest dashboard ciblé : 3 fichiers, 10 tests verts (métadonnées, simulation, redirection), puis Connect sitemap : 6 tests verts. ESLint `page.tsx`/`constants.ts` et typecheck dashboard réussis. Tests ciblés dashboard rejoués après les deux corrections ; pas de nouvelle suite complète.
+- Recette navigateur 1440×900, 390×844 et 768×1024 : pas de débordement horizontal, même H1, canonical et lien corrigé, sept questions conservées. FAQ données ouverte et lisible sur mobile ; pas de changement de styles, disposition, composants ou animations. Console navigateur : aucun message de niveau erreur recueilli. Captures avant issues du checkout local actuel, après issues de ce même serveur ; animations non figées, pas de promesse d’identité pixel.
+
+**Performance : limite explicite.** Build dashboard isolé `.next-seo-local` réussi avant les deux corrections de texte/lien, typage inclus. Serveur de production isolé `:4310` en HTTP 500 : middleware refuse l’absence de `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` au build. Aucune protection contournée, aucun secret ajouté. Pas de Lighthouse, LCP/CLS/INP, mesure laboratoire représentative ni comparaison performance avant/après. Les captures développement ne sont pas des mesures de performance. Les deux corrections finales ne disposent donc pas d’un nouveau build production exécutable vérifié. Aucun correctif performance spéculatif appliqué. GSC vue d’ensemble : aucune donnée Core Web Vitals mobile/ordinateur.
+
+**GSC relu en lecture seule ce lot.** Propriété `sc-domain:sokar.tech`, compte personnel existant. Performances trois mois : 13 juillet–12 octobre, mise à jour indiquée il y a 10 heures, 15 clics, 671 impressions, CTR 2,2 %, position 16,3. Dix premières lignes sur 19 surtout marque/variantes (`sokar` : 4 clics, 328 impressions). Liste partielle : aucun total hors marque déduit ; ces chiffres ne sont pas des volumes de marché. Vue d’ensemble : 3 pages indexées, 4 non indexées. Ni inspection URL actuelle, ni canonical choisie, ni retrait des anciennes URL vérifiés dans ce lot. Aucune soumission sitemap/demande d’indexation.
+
+**Restes précis.** « Mentions Légales » et réseaux sociaux du footer pointent toujours vers `#` : aucune destination réelle trouvée, aucun lien inventé ni bloc/design changé. À fournir/qualifier séparément. La politique Connect reste limitée aux parcours de réservation ; revue de son exhaustivité hors lot. Promesse support 7j/7 non ajoutée, catalogue/prix inchangés. Après publication autorisée : vérifier HTTP/routage/sitemap réels, inspection accueil et retrait anciennes URL, suivre requêtes pertinentes et impressions/clics hors marque. Une demande n’est SEO que si son origine est réellement établie : `/demo` générique et `pageVersion` n’y suffisent pas ; conserver le rapprochement manuel confirmé de METRIC-01.
+
+**Preuves de ce lot :** `/Users/hamza/.codex/visualizations/2026/10/15/sokar-home-seo/` : `before-{desktop,mobile,ipad}.png`, `after-{desktop,mobile,ipad}.png`, `after-faq-mobile.png`, `before.html`, `after.html`, `responsive.json`, `http-checks.json`, `connect-sitemap.xml`, `connect-robots.txt`, `redirect.headers`, `gsc-performance.txt`, `gsc-performance.png`. Les captures `after-faq-desktop/ipad` prises trop tôt montrent le haut de page et ne constituent pas une preuve de FAQ ouverte. Build/logs temporaires : `/tmp/sokar-home-seo-build.log`, `/tmp/sokar-home-seo-start.log`. Répertoires de build et adaptations automatiques TypeScript retirés après recette, serveur initial préservé.
+
+### 10.27 — Production locale et performances accueil qualifiées (15 octobre 2026)
+
+**Préparé et vérifié localement, non commité, non déployé.** Cette section lève la limite de build/serveur/mesure locale du §10.26 ; ses autres limites (routage distant, indexation, destinations légales) restent applicables. Aucun changement applicatif supplémentaire.
+
+**Configuration existante, sans secret distant.** Vérification sans affichage des valeurs : aucune clé Clerk dans les fichiers dashboard/root ; une paire de test déjà présente dans `apps/api/.env`. Seules `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` et `CLERK_SECRET_KEY` sont transmises en mémoire aux processus temporaires, sans copie vers un fichier d’environnement ni lecture de production. Build final dashboard réussi avec `.next-seo-perf`, typage inclus, puis Next en mode production sur `:4310`. Un premier lancement lié uniquement à IPv4 échouait sur la réécriture Clerk vers localhost ; lancement standard double pile : HTTP 200, sans changement de middleware ni contournement CI/demo. Le serveur de développement `:3100` est préservé.
+
+**Contrôles sur le build final.** Accueil 200, hero/FAQ corrigée/lien `/privacy` dans le HTML initial, un H1, canonical racine production, `index, follow`. Ancienne route : 308 vers `/`. Preuve `performance/production-http.json`. Pas de nouveau changement visuel : recette responsive du §10.26 réutilisée, sans prétendre la réexécuter. Sources/API hors lot non éditées ; comparaison des 1 423 fichiers API présents au départ : seuls trois logs ont varié, tous les autres fichiers comparés inchangés. Adaptations automatiques TypeScript restaurées depuis la sauvegarde initiale ; build temporaire et profil navigateur retirés après mesure.
+
+**Laboratoire : Lighthouse 13.5.0 via Brave headless, URL localhost, build optimisé.** Exécution des mesures en série, aucune télémétrie Lighthouse activée, aucune action métier. Mobile : réseau simulé RTT 150 ms, débit 1 638,4 kbit/s et ralentissement CPU ×4 ; desktop : preset Lighthouse desktop. Résultats ponctuels sur ce Mac, pas des données terrain, pas une garantie de production.
+
+| Scénario                                               | Performance | FCP       | LCP   | TBT   | CLS |
+| ------------------------------------------------------ | ----------- | --------- | ----- | ----- | --- |
+| Mobile première visite, stockage réinitialisé          | 79/100      | 2,3 s     | 5,0 s | 60 ms | 0   |
+| Desktop première visite, stockage réinitialisé         | 97/100      | 0,8 s     | 1,2 s | 0 ms  | 0   |
+| Mobile nouveau profil conservé, passage initial        | 78/100      | voir JSON | 5,0 s | 80 ms | 0   |
+| Mobile passage suivant, même profil/stockage conservés | 100/100     | 0,8 s     | 0,8 s | 10 ms | 0   |
+
+Aucune erreur de collecte ni avertissement Lighthouse. Les trois premières mesures comportent la négociation/redirection vers Clerk **de test**, avec quatre entrées dans l’audit redirects ; le dernier passage n’a aucune redirection. Celui-ci conserve aussi le cache : **il ne mesure pas un chargement à froid sans Clerk et n’isole pas causalement le coût Clerk du cache**. Ce n’est pas un avant/après correctif, aucun gain applicatif revendiqué. L’élément LCP est le H1 déjà rendu serveur. Les scores à froid incluent un service extérieur de développement : ils ne doivent pas être transposés à l’authentification de production.
+
+**Décision : code conservé.** CLS nul sur tous les relevés et TBT de 0 à 80 ms ; aucune image lourde bloquante identifiée. Lighthouse suggère environ 4 Kio sur le logo (fichier entier 4,4 Kio), 20 Kio de CSS et 242 Kio de JS inutilisés dans le premier viewport. Ces estimations ne justifient ni migration du rendu, ni refonte CSS/i18n, ni retrait des animations ; les parties non utilisées à l’ouverture servent aussi les sections suivantes. Aucun correctif limité avec bénéfice établi dans les contraintes de ce lot n’est démontré. Le LCP mobile initial de 5 s reste signalé, sans maquillage du score ni désactivation de protection. L’impact réel des redirections sur l’instance de production et les Core Web Vitals terrain restent inconnus.
+
+**Preuves persistées hors Git.** Dossier `/Users/hamza/.codex/visualizations/2026/10/15/sokar-home-seo/performance/` : `summary.json`, `production-http.json`, rapports HTML/JSON `mobile`, `desktop`, `mobile-profile-repeat`, JSON `mobile-profile-initial.json`. Paramètres, conditions et métriques exactes dans les JSON ; paramètres temporaires de handshake expurgés des rapports. Logs build/serveur dans `/tmp/sokar-seo-perf-{build,server}.log`, non livrables. Aucun secret dans les documents de ce lot.
+
+**Suite inchangée.** Destinations légales/réseaux à fournir réellement. Après livraison autorisée seulement : routage public, inspection/indexation Google et mesure froide avec configuration de production déjà déployée, puis suivi pertinent hors marque et origine des demandes réellement prouvée. Aucun commit, push, PR, déploiement, soumission Google ou modification distante.
+
+### 10.28 — Préparation de livraison groupée, sans publication (15 octobre 2026)
+
+**Verdict : prêt à livrer techniquement après nouvelle autorisation ; aucune publication exécutée.**
+[Manifeste et procédure actuels](2026-10-15-growth-final-review.md) remplacent les anciennes listes.
+14 chemins vérifiés à partir du delta réel : 6 sources/tests, 8 documents dont 2 nouveaux ; Context
+et Journal exigent une sélection par sections. Ce n’est pas une autorisation de livrer le checkout.
+
+**Risque d’intégration identifié et borné.** HEAD `d62f7d65` sur
+`feat/onboarding-v2-equipe-roles` contient cinq commits absents de main, dont deux merges, avec
+72 chemins onboarding/voix. `origin/main=54d18e0b` concorde avec la tête distante lue sans fetch.
+Les six sources/tests SEO ont la même base dans HEAD et main ; les documents suivis aussi, sauf
+Context/Journal. `environment.md` est hors lot. Ne pas soumettre la branche actuelle : branche
+future propre `codex/seo-accueil` depuis main, transférer seulement le delta préparé, conserver
+l’original. Les deux entrées locales ElevenLabs et les entrées onboarding/voix uniquement dans
+HEAD restent dans l’original et hors sélection SEO. #439 déjà dans main : ne pas rejouer sa roadmap.
+Les deux nouveaux documents relus sont le manifeste et `commercial-follow-up.md` ; aucune nouvelle
+source applicative. Les quatre liens restants `#` sont listés avec leur rôle dans le manifeste :
+Mentions Légales = réserve d’information/conformité à qualifier, réseaux sociaux = liens facultatifs ;
+aucune URL inventée ni blocage technique SEO inféré automatiquement. Aucun avis juridique de
+conformité publique donné.
+
+**Diagnostic complémentaire réutilisant les rapports, sans nouvelle mesure.** Les fichiers conservés
+sont des rapports Lighthouse et audits dérivés ; pas de trace Chrome brute/devtools log séparé.
+Sur mobile première visite : audit redirects, quatre entrées dont la destination finale à zéro
+(trois redirections, pas quatre sauts), estimations 602,8 + 954,9 + 302,8 ms ≈ 1 860,5 ms ; service
+Clerk Development dans la chaîne. L’insight document mesure **353 ms de redirections observées** et
+29 ms de réponse serveur, sur une autre base que les estimations simulées. La ressource Document
+est observée de 353,7 à 389,4 ms. Insight LCP observé : TTFB 383,3 ms et délai de rendu 709,2 ms,
+soit environ 1,09 s ; métrique LCP **simulée** 5,0 s. Ces valeurs ne s’additionnent ni ne se
+soustraient pour expliquer causalement les 5 s.
+
+Élément LCP : H1 « Un assistant téléphonique pour vos réservations », pas une image. Polices locales
+WOFF2 (transferts ~27,6 et 32,6 Ko) et deux CSS (~26,2 et 1,1 Ko) terminent vers 410–414 ms observées.
+Le logo de 4,4 Kio n’est pas l’image LCP. Desktop : TTFB/délai de rendu observés 255,6/169,7 ms,
+LCP simulé 1,2 s. Profil mobile conservé : aucune redirection, document 0,5–17,3 ms, polices/CSS
+vers 25 ms et zéro octet transféré (cache), TTFB/délai LCP 12,8/44,6 ms observés, LCP simulé 0,8 s.
+Confirmation du double changement auth/cache, **aucune isolation causale ni gain applicatif**.
+Extraction sans paramètres de handshake : `performance/delivery-diagnostic.json`. Mesures acquises
+97/79/100, CLS nul, conservées ; aucun correctif de design/authentification ni nouveau Lighthouse.
+
+**Préparation concrète.** Snapshot du delta retenu hors Git dans `sokar-home-seo/delivery/`, base
+et empreintes avec patch applicable aux seuls chemins retenus ; aucune sélection dans l’index du
+checkout. Procédure future documentée : sélection → commit sur branche propre → `pnpm pr:submit`
+(qui pousse/crée PR/active auto-merge) → CI → staging et smoke → production selon autorisations.
+La chaîne de workflows peut promouvoir automatiquement ; une autorisation limitée à préparer une
+PR ne suffit pas pour appeler ce script. Build : Node >=20 <23, pnpm 10.33.3 du packageManager,
+workspace/shared compilés, variables de chaque environnement avant build ; aucun secret recopié.
+CI de la future branche isolée reste requise, build acquis réalisé sur le checkout actuel.
+Snapshots serveur/META et choix de release saine à relever seulement lors de la livraison ;
+rollback artefacts explicite, sans DB. Checklist staging/production, performances et GSC dans le
+manifeste, **non exécutée sur des modifications non déployées**.
+
+Contrôles propres à cette préparation : branche/base/delta, cohérence des fichiers et nouveaux
+ajouts, patch en vérification d’application seulement, empreintes hors lot, liens et format/diff.
+Tests acquis non répétés car aucune source modifiée. Aucun commit, push, PR, merge, déploiement,
+mutation distante ni démarchage ; sources et travaux concurrents conservés.
+
+**État final de la revue : dérive Git concurrente constatée.** Pendant les contrôles documentaires,
+HEAD est passé de `d62f7d65` à `0f4151b1` : commit des seuls six fichiers applicatifs SEO, sans
+variation de contenu (empreintes vérifiées). Aucun commit effectué par cette préparation. Main
+distant reste `54d18e0b`. La branche mélangée compte désormais six commits/78 chemins contre main :
+cinq commits hors lot et ce commit SEO. Le manifeste reste 14 chemins contre main, mais seuls les
+documents demeurent non committés ; la sélection future part toujours de main propre, pas de HEAD.
+Ne pas confondre disparition du diff applicatif contre HEAD et présence dans la branche cible.
+Aucun reset ni soumission de cette branche. Paquet régénéré avec état final consigné.
+
+### 10.29 — Livraison groupée autorisée, base actualisée (15 octobre 2026)
+
+Hamza autorise la chaîne complète (« ok go ») après réserve Mentions légales explicitée. Main a avancé à a428b373 (#438) et inclut déjà les six sources SEO identiques : pas de réapplication ni de nouveau changement applicatif. Branche codex/seo-accueil isolée ; huit documents restants sélectionnés, Context/Journal par sections, checkout d’origine conservé. Les workflows/recettes et snapshots seront consignés après observation ; aucune réussite de déploiement encore revendiquée dans cette entrée.

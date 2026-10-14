@@ -8,10 +8,10 @@
 
 ## TODOs actifs
 
-- [ ] SEO : landing noindex/hors sitemap ; publier après texte exact, exemple isolé si présenté, CTA et mesure minimale, sans attendre VOICE-01. GSC disponible ; accueil indexé, rapport global du 09/10 (growth §10.21).
-- [ ] Démo : demande/réception/traitement production qualifiés. Vérifier simulation et isolation (DEMO-SIM), sans action client. Aucun délai public annoncé.
+- [ ] SEO : accueil prioritaire, UI conservée ; ancienne landing → `/`, hors sitemap. Code intégré via #438 ; livraison documentaire autorisée, recette publique en cours (§10.29).
+- [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
 - [ ] Vitrine : valider ou ajuster FAQ données et promesse « Support prioritaire 7j/7 » selon les preuves.
-- [ ] Croissance : entretiens/SEO en parallèle, sans quota. Premier pilote dès candidat/recette interne/installation/facturation prêts ; deux places initiales. Revue opérationnelle à sept jours, adoption/renouvellement plus tard.
+- [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.
 - [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client ; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
