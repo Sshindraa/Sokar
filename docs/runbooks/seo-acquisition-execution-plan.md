@@ -1,31 +1,36 @@
 # Sokar — Plan d'exécution commercial et SEO pour l'agent
 
-Date : **13 octobre 2026 — Europe/Paris**.
+Date initiale : **13 octobre 2026 — Europe/Paris**. Dépendances révisées le **15 octobre 2026**.
 
-Statut : **brief d'exécution demandé par Hamza ; travail à réaliser**. Les hypothèses commerciales
+Statut : **brief d'exécution révisé ; état des livraisons dans le rapport growth**. Les hypothèses commerciales
 ci-dessous sont proposées pour le premier test. Ce document ne certifie ni la production actuelle,
 ni la réalisation des pilotes, ni l'efficacité du canal SEO.
 
 ## 1. Mission et résultat attendu
 
 Faire progresser Sokar vers des clients restaurateurs qui paient, utilisent réellement le produit
-et renouvellent, puis développer l'acquisition organique à partir de cette preuve.
+et renouvellent. Développer en parallèle une acquisition organique fondée sur une description
+exacte du produit ; réserver les témoignages et gains chiffrés aux résultats prouvés.
 
 L'agent doit livrer des modifications concrètes, vérifiées et documentées. Pour les étapes qui
 dépendent de restaurateurs, il prépare le protocole et les supports, indique précisément la
 dépendance humaine et poursuit les travaux indépendants. Il ne remplace jamais une preuve terrain
 par une simulation ou un avis supposé.
 
-Résultats attendus, dans cet ordre :
+Résultats attendus, selon les dépendances de la section 4, sans imposer une exécution séquentielle :
 
 1. Une vitrine compréhensible, dont les simulations et les chiffres illustratifs sont identifiés.
-2. Une démonstration vocale représentative, avec un résultat métier vérifié.
+2. Un exemple public clairement simulé, distinct de la recette interne et des opérations clients.
 3. Un parcours demande de démonstration → suivi → inscription → activation → paiement mesurable.
 4. Un diagnostic de production SEO et des corrections proportionnées aux problèmes constatés.
 5. Un segment testé par des entretiens et des décisions d'achat réelles.
-6. Deux pilotes payants documentés selon le runbook existant.
+6. Une qualification interne du parcours réel avant activation des pilotes payants documentés.
 7. Une décision commerciale fondée sur le renouvellement, l'usage et le coût de service.
-8. Une première page commerciale SEO forte, puis une expansion conditionnelle de Connect et des contenus.
+8. Une première page commerciale SEO publiée dès que ses critères sont remplis, puis une expansion
+   conditionnelle de Connect et des contenus.
+
+L'état courant est tenu dans la section 2 du [rapport growth](../audits/2026-10-13-growth-execution.md).
+Ses observations historiques gardent leur date ; elles ne constituent pas des TODOs à réexécuter.
 
 Le but n'est pas de livrer une nouvelle stratégie abstraite ou de produire un nombre prédéfini de pages.
 
@@ -130,29 +135,37 @@ La centralisation et l'IA vocale ne sont pas, à elles seules, des avantages con
 | Offre commerciale       | Paiement réel, bénéfice reconnu, renouvellement et coût de service acceptable                        | Performance du SEO                                                       |
 | Acquisition organique   | Pages découvertes/indexées, prospects pertinents et conversions attribuables avec limites explicites | Demande nationale ou acquisition à grande échelle après quelques visites |
 
+La simulation publique illustre une expérience : elle ne certifie aucune de ces trois validations.
+Elle peut être un exemple enregistré ou interactif avec résultats simulés. Sa nature doit être
+visible ; elle ne doit produire aucune réservation client, facturation client ou notification à un client.
+L'existence d'un restaurant fictif ne suffit pas à démontrer cette isolation.
+
 ## 4. Priorités, ordre et dépendances
 
 **P0** : bloque la crédibilité, une conversion importante, l'exploitation du pilote ou sa mesure.
 **P1** : construit la première preuve commerciale et l'acquisition ciblée.
 **P2** : amélioration ou expansion, après justification par les données.
 
-| Phase | Priorité                                 | Travail                                            | Dépendance pour avancer                                          |
-| ----- | ---------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| 0     | P0                                       | État initial et inventaire des preuves             | Aucune                                                           |
-| 1     | P0                                       | Crédibilité de la vitrine et promesse              | Phase 0                                                          |
-| 2     | P0 avant pilote                          | Démonstration réelle et préparation opérationnelle | Phase 0 ; corrections nécessaires de voix/onboarding             |
-| 3     | P0                                       | Demande de démo, suivi et instrumentation minimale | Phase 0 ; promesse cohérente de phase 1                          |
-| 4     | P0 diagnostic ; corrections selon impact | Santé SEO de production                            | Phase 0 ; indépendante du pilote                                 |
-| 5     | P1                                       | Entretiens et sélection du segment                 | Supports préparés ; interlocuteurs disponibles                   |
-| 6     | P0 avant extension                       | Deux pilotes Essential payants sur sept jours      | Phases 2, 3 et 5 ; conditions du runbook                         |
-| 7     | P1                                       | Renouvellement, adoption et économie de service    | Pilotes démarrés ; durée d'observation suffisante                |
-| 8     | P1                                       | Première landing SEO et étude de demande           | Promesse, preuve et conversion prêtes ; préparation en parallèle |
-| 9     | P2 conditionnel                          | Qualité et croissance Connect                      | Inventaire réel et technique publique qualifiés                  |
-| 10    | P2 conditionnel                          | Expansion contenus et distribution                 | Signaux commerciaux et acquisition documentés                    |
+| Phase | Priorité                                 | Travail                                                | Dépendance pour avancer                                                                |
+| ----- | ---------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| 0     | P0                                       | État initial et inventaire des preuves                 | Aucune                                                                                 |
+| 1     | P0                                       | Crédibilité de la vitrine et promesse                  | Phase 0                                                                                |
+| 2     | P0 simulation ; P0 avant pilote          | Exemple public isolé ; recette interne et installation | Simulation avant publication de l'exemple ; recette réelle avant activation client     |
+| 3     | P0                                       | Demande de démo, suivi et instrumentation minimale     | Phase 0 ; promesse cohérente de phase 1                                                |
+| 4     | P0 diagnostic ; corrections selon impact | Santé SEO de production                                | Phase 0 ; indépendante du pilote                                                       |
+| 5     | P1                                       | Entretiens et sélection du segment                     | Supports préparés ; interlocuteurs disponibles, sans quota bloquant                    |
+| 6     | P0 avant extension                       | Première revue opérationnelle des pilotes              | Candidat qualifié, recette interne, installation, suivi minimal et facturation prêts   |
+| 7     | P1                                       | Renouvellement, adoption et économie de service        | Pilotes démarrés ; durée d'observation suffisante                                      |
+| 8     | P1                                       | Première landing SEO et étude de demande               | Texte exact, exemple isolé s'il est présenté, demande de démo et mesure minimale prêts |
+| 9     | P2 conditionnel                          | Qualité et croissance Connect                          | Inventaire réel et technique publique qualifiés                                        |
+| 10    | P2 conditionnel                          | Expansion contenus et distribution                     | Signaux commerciaux et acquisition documentés                                          |
 
 Après la phase 0, les phases 1, 2, 3, 4 et la préparation de 5/8 peuvent avancer en parallèle au
 sens de chantiers indépendants. Une dépendance humaine ne bloque pas tout le programme. Le traitement
 du sitemap Connect n'est pas une condition générale de publication de la landing B2B.
+VOICE-01, le nombre d'entretiens, la fin des deux pilotes et un renouvellement ne sont pas des
+conditions générales de publication SEO. Une capacité non qualifiée reste présentée avec ses
+limites ; ne pas la déclarer validée en retirant simplement le noindex.
 
 Repères de calendrier, à adapter à l'accès aux outils et aux disponibilités humaines :
 
@@ -214,7 +227,28 @@ Repères de calendrier, à adapter à l'accès aux outils et aux disponibilités
 - Le HTML livré expose le sujet et les métadonnées attendus sur l'accueil et les tarifs.
 - Vérification visuelle desktop, mobile et iPad, et contrôle pertinent du build/typecheck.
 
-## 7. Phase 2 — Qualifier la preuve vocale et l'installation
+## 7. Phase 2 — Distinguer simulation publique, recette interne et installation
+
+### Exemple public (DEMO-SIM)
+
+- Réutiliser le dispositif existant ; aucune nouvelle fonctionnalité imposée par ce plan.
+- Annoncer « Exemple de démonstration — réservation simulée » à proximité de l'exemple.
+- Montrer un restaurant fictif et un scénario compréhensible, sans demander une vraie réservation.
+- Vérifier l'isolation des actions : aucune écriture client, facturation client, notification client ou
+  transfert vers un numéro réel. Les éventuelles données techniques de test sont identifiées,
+  isolées et exclues des métriques commerciales.
+- Pour un exemple interactif, vérifier les chemins d'erreur et le secours simulé. Pour un exemple
+  enregistré, indiquer sa nature et fournir la transcription si l'audio est proposé.
+- Documenter ce que l'exemple illustre et ce qu'il ne démontre pas. Son contrôle ne nécessite ni
+  abonnement, ni compte opérateur public, ni recette complète de réservation réelle.
+
+Critère de sortie : nature simulée explicite, résultat d'exemple cohérent et effets isolés.
+Si l'isolation est inconnue, ne pas présenter l'exemple comme un bac à sable sûr.
+
+### Recette interne du produit (VOICE-01), avant activation client
+
+Cette recette exerce les vraies opérations métier sur des données de test contrôlées. Elle reste
+distincte de l'exemple montré au visiteur et ne doit pas lui être imposée.
 
 ### Réutiliser l'existant
 
@@ -223,7 +257,7 @@ Inspecter le parcours d'appel test et les routes de démonstration dans le modul
 Une animation, une lecture TTS d'un script et une conversation live avec écritures simulées sont
 trois dispositifs différents. Documenter pour chacun le niveau de preuve réellement apporté.
 
-### Scénarios minimaux
+### Scénarios minimaux de recette interne
 
 | Scénario                           | Vérification métier                                                          |
 | ---------------------------------- | ---------------------------------------------------------------------------- |
@@ -244,15 +278,18 @@ cet usage ou correctement anonymisés ; aucune donnée de client réel dans le d
 - Vérifier le résultat par lecture du dashboard et des traces métier autorisées, pas uniquement par l'audio.
 - Qualifier numéro, renvoi, absence de boucle et secours humain avant routage d'appels clients.
 - Traiter les blocages de voix/onboarding nécessaires au pilote avec changements ciblés et rollback.
-- Produire un exemple audio, une transcription accessible et un résultat métier expliqué, avec
-  mention de la nature réelle/simulée et des limites. Dater la preuve.
+- Conserver une preuve interne du résultat métier et de ses limites. Un artefact montré au public
+  suit les critères DEMO-SIM ; ne pas utiliser une simulation comme preuve de fiabilité réelle.
+- Préciser les différences de fournisseurs/configuration entre staging et production ; une recette
+  staging ne qualifie pas automatiquement un pipeline de production différent.
 - Définir un protocole de mise à jour : rejouer la preuve après une évolution significative du pipeline.
 - Documenter la qualification dans `docs/audits/YYYY-MM-DD-commercial-demo-validation.md`.
 
-### Critère de sortie
+### Critère de sortie de la recette interne
 
 Le scénario annoncé est reproductible, la réservation finale est exacte, les limites et le secours
-sont compris. Aucun défaut bloquant ouvert selon le runbook pilote. Le taux de réussite se calcule
+sont compris avant activation client. Ce critère n'est pas le critère de publication SEO.
+Aucun défaut bloquant ouvert selon le runbook pilote. Le taux de réussite se calcule
 avec le nombre d'essais, leur périmètre et les échecs inclus ; ne pas sélectionner uniquement les succès.
 
 ## 8. Phase 3 — Livrer une demande de démo et un suivi cohérents
@@ -274,7 +311,8 @@ qu'un créneau est réservé lorsqu'il recueille seulement une demande.
 - Prévenir les doublons de requête, distinguer succès serveur et simple clic, éviter les demandes
   perdues lors d'un échec de notification. Réutiliser les composants/infrastructures existants.
 - Prévoir un stockage restreint, un accès opérateur, un responsable et une règle de délai de réponse
-  approuvée. Afficher uniquement une promesse de réponse réellement tenue.
+  interne adaptée. L'absence de délai commercial annoncé ne bloque pas la publication ; afficher
+  uniquement une promesse de réponse réellement tenue.
 - Afficher l'information relative à l'utilisation des données et identifier toute dépendance de
   validation juridique ; ne pas ajouter un opt-in marketing obligatoire à une demande de démo.
 - Préparer le mécanisme de notification interne. Pour un test, utiliser un destinataire contrôlé ;
@@ -284,6 +322,11 @@ qu'un créneau est réservé lorsqu'il recueille seulement une demande.
 - Conserver un lien secondaire **Créer votre compte** vers `/register`.
 
 ### Instrumentation
+
+Pour démarrer l'acquisition, réutiliser les demandes persistées, leur source et leurs statuts ;
+tenir le suivi qualification/démo dans l'outil existant ou un relevé restreint. Ne pas construire
+un nouveau dashboard ni attendre tout le funnel. Avant un pilote, vérifier les liens entre
+restaurant, activation, usage et paiement. Renouvellement et rétention deviennent observables plus tard.
 
 Les noms ci-dessous sont **des propositions**. Mapper d'abord les événements existants. Si de nouveaux
 événements sont nécessaires, les ajouter sans renommer ceux consommés ailleurs.
@@ -373,7 +416,8 @@ en échec. Aucun incident ni nombre de restaurants ne doit être déduit sans in
 ### Préparation par l'agent
 
 - Préparer une fiche de qualification et un guide d'entretien ; contacts dans un outil restreint.
-- Cibler environ 8 à 12 retours disponibles, sans faire de ce nombre une preuve statistique.
+- Cibler environ 8 à 12 retours comme repère de recherche, sans quota préalable au premier pilote
+  ni prétention statistique. Continuer les entretiens pendant les pilotes.
 - Préparer un message de prospection et une proposition de pilote payant transparents, à faire
   valider par le responsable avant envoi. Aucun paiement/engagement supposé à partir d'un avis positif.
 - Comparer les alternatives réellement utilisées : cahier, salarié, renvoi, messagerie, autres logiciels.
@@ -396,8 +440,10 @@ exceptionnelle doit être identifié comme tel dans l'analyse anonymisée.
 
 ### Critère de sortie
 
-Deux candidats peuvent être retenus lorsque besoin, organisation, décideur, préparation technique,
-prix et conditions sont explicitement qualifiés. Sinon documenter pourquoi : segment inadapté,
+Chaque candidat peut avancer lorsque besoin, organisation, décideur, préparation technique,
+prix et conditions sont explicitement qualifiés. Le premier n'attend pas le second ni la fin des
+entretiens. Vérifier l'adéquation de la formule à son besoin ; Essential reste le périmètre initial,
+toute autre formule ou condition commerciale exige une décision explicite. Sinon documenter pourquoi : segment inadapté,
 offre, fiabilité, budget, installation ou changement d'habitude. Ne pas lancer de nouvelles fonctions
 sur la base d'une seule objection ; rechercher la répétition du besoin et sa valeur.
 
@@ -405,6 +451,8 @@ sur la base d'une seule objection ; rechercher la répétition du besoin et sa v
 
 Appliquer [essential-pilot-7-day.md](essential-pilot-7-day.md), avec ses conditions d'entrée et ses
 critères d'arrêt. Aucun troisième pilote avant la revue prévue dans ce runbook.
+Ce plafond initial maîtrise la charge opérationnelle ; il ne prouve pas la validité du segment.
+Le premier pilote peut commencer dès que ses propres conditions sont satisfaites.
 
 ### Avant démarrage
 
@@ -433,6 +481,8 @@ restaurant. Ne pas exposer les endpoints d'exploitation au public.
 Deux fiches datées, sept jours complets chacune, statut facturation, incidents, feedback et décision
 explicite **GO / NO-GO / prolonger sous contrôle**, avec les noms prévus par le runbook.
 L'agent ne marque pas la porte commerciale fermée tant que les preuves requises manquent.
+La revue à sept jours est opérationnelle. Elle ne prouve ni fidélisation, ni renouvellement,
+ni rentabilité durable ; ces conclusions relèvent de la phase 7 et du temps d'observation réel.
 
 ## 12. Phase 7 — Vérifier adoption durable et rentabilité
 
@@ -480,8 +530,11 @@ limites de l'échantillon, observations à 30 jours et décision d'investissemen
 
 ## 13. Phase 8 — Publier et mesurer une première landing commerciale
 
-Préparer cette phase dès le démarrage. Publier dès que promesse, preuve et conversion sont prêtes ;
-le premier renouvellement n'est pas nécessaire pour publier une description produit exacte.
+Préparer cette phase dès le démarrage. Publier dès que les textes sont exacts, l'exemple public
+est clairement simulé et isolé s'il est présenté, et la demande de démo et son suivi fonctionnent.
+La recette interne VOICE-01, le premier pilote et le renouvellement ne sont pas des prérequis
+généraux. Une fonctionnalité non qualifiée ne doit pas être annoncée comme prouvée ou disponible
+sans réserve ; ajuster la promesse ou retirer l'affirmation concernée.
 Les témoignages et les gains chiffrés attendent leurs propres preuves.
 
 ### Étude de demande proportionnée
@@ -499,7 +552,7 @@ Les témoignages et les gains chiffrés attendent leurs propres preuves.
 
 `/solutions/assistant-telephonique-restaurant`, à confirmer après recherche des routes existantes.
 
-Contenu : cible, problème concret, fonctionnement, démonstration/transcription, résultat métier,
+Contenu : cible, problème concret, fonctionnement, exemple simulé/transcription et résultat illustré,
 configuration et secours, limites, installation, prix/quotas vérifiés, questions pratiques et CTA.
 Les intentions proches « appels manqués » et « réservation téléphonique » peuvent rester des sections.
 
@@ -587,29 +640,31 @@ Les captures/audios doivent être **expurgés** avant archivage public.
 
 ## 17. Backlog prêt à reprendre
 
-Tous les tickets commencent en **TODO / à requalifier**. Créer les issues GitHub si demandé ou
-si le workflow utilisé le requiert ; ce tableau suffit pour commencer l'exécution locale.
+Ce tableau décrit les critères, pas l'état courant. Lire d'abord la section 2 du rapport growth
+et ses preuves datées ; ne pas remettre en TODO un travail déjà qualifié. Créer les issues GitHub
+si demandé ou si le workflow utilisé le requiert.
 
-| ID         | Priorité            | Livrable                                 | Dépendance                             | Critère de fin                                            |
-| ---------- | ------------------- | ---------------------------------------- | -------------------------------------- | --------------------------------------------------------- |
-| BASE-01    | P0                  | État initial et preuves disponibles      | Aucune                                 | Local/staging/prod/terrain distingués ; inconnues listées |
-| TRUST-01   | P0                  | Simulation et chiffres transparents      | BASE-01                                | Aucun chiffre illustratif présenté comme preuve réelle    |
-| COPY-01    | P0                  | Accueil/tarifs/CTA/métadonnées cohérents | BASE-01                                | Produit et prix explicites ; HTML vérifié                 |
-| VOICE-01   | P0 avant pilote     | Démo vocale qualifiée                    | BASE-01                                | Résultat métier correct et limites documentées            |
-| OPS-01     | P0 avant pilote     | Installation et secours                  | BASE-01, VOICE-01                      | Onboarding normal, renvoi et référence commune qualifiés  |
-| DEMO-01    | P0                  | Demande de démo sans compte              | BASE-01, COPY-01                       | Lead persistant, erreurs/retry traités                    |
-| DEMO-02    | P0                  | Suivi opérateur de la demande            | DEMO-01                                | Responsable, accès et délai de réponse opérationnels      |
-| METRIC-01  | P0                  | Mesure du funnel et mapping existant     | BASE-01, DEMO-01                       | Étapes distinctes, sans PII ni événements cassants        |
-| BILL-01    | P0 avant pilote     | Paiement et renouvellement vérifiables   | BASE-01                                | Sources Stripe et entitlements réconciliées               |
-| SEO-01     | P0 diagnostic       | Inventaire/API/sitemap de production     | BASE-01                                | Cause établie ou inconnue précisément bornée              |
-| SEO-02     | P0 si blocage avéré | Indexabilité et pages B2B découvertes    | SEO-01, COPY-01                        | URL importantes et HTML/robots/canonical cohérents        |
-| ICP-01     | P1                  | Qualification et supports d'entretien    | BASE-01                                | Cible, exclusions et protocole prêts                      |
-| ICP-02     | P1                  | Synthèse des retours terrain             | ICP-01, interlocuteurs                 | Faits/refus/actions séparés ; choix argumenté             |
-| PILOT-01   | P0 avant extension  | Deux pilotes sept jours                  | OPS-01, METRIC-01, BILL-01, ICP-02     | Deux fiches et GO/NO-GO selon runbook                     |
-| ECON-01    | P1                  | Adoption, coût et renouvellement         | PILOT-01, temps écoulé                 | Usage, paiement et contribution documentés                |
-| LAND-01    | P1                  | Recherche de demande et landing          | COPY-01, VOICE-01, DEMO-01/02          | Page utile/indexable et conversion qualifiée              |
-| CONNECT-01 | P2 conditionnel     | Qualité et réservation partenaires       | SEO-01/02, inventaire réel             | Fiches fiables et confirmations mesurées                  |
-| SCALE-01   | P2 conditionnel     | Décision de réinvestissement             | ECON-01, LAND-01 ; CONNECT-01 si local | Coût, preuves et objectif de l'extension explicites       |
+| ID         | Priorité                | Livrable                                                 | Dépendance                                                          | Critère de fin                                                               |
+| ---------- | ----------------------- | -------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| BASE-01    | P0                      | État initial et preuves disponibles                      | Aucune                                                              | Local/staging/prod/terrain distingués ; inconnues listées                    |
+| TRUST-01   | P0                      | Simulation et chiffres transparents                      | BASE-01                                                             | Aucun chiffre illustratif présenté comme preuve réelle                       |
+| COPY-01    | P0                      | Accueil/tarifs/CTA/métadonnées cohérents                 | BASE-01                                                             | Produit et prix explicites ; HTML vérifié                                    |
+| DEMO-SIM   | P0 avant exemple public | Simulation transparente et isolée                        | BASE-01, TRUST-01                                                   | Exemple cohérent, aucune action client, nature simulée visible               |
+| VOICE-01   | P0 avant pilote         | Recette interne du parcours vocal                        | BASE-01                                                             | Opérations réelles sur données de test correctes, limites documentées        |
+| OPS-01     | P0 avant pilote         | Installation et secours                                  | BASE-01, VOICE-01                                                   | Onboarding normal, renvoi et référence commune qualifiés                     |
+| DEMO-01    | P0                      | Demande de démo sans compte                              | BASE-01, COPY-01                                                    | Lead persistant, erreurs/retry traités                                       |
+| DEMO-02    | P0                      | Suivi opérateur de la demande                            | DEMO-01                                                             | Responsable et accès opérationnels ; délai public uniquement si tenu         |
+| METRIC-01  | P0 minimal ; suite P1   | Suivi demande/démo puis activation/paiement              | BASE-01, DEMO-01                                                    | Acquisition mesurable sans nouveau dashboard ; suite selon usage observable  |
+| BILL-01    | P0 avant pilote         | Paiement et droits ; renouvellement observé plus tard    | BASE-01                                                             | Catalogue, paiement et entitlements réconciliés ; renouvellement non inventé |
+| SEO-01     | P0 diagnostic           | Inventaire/API/sitemap de production                     | BASE-01                                                             | Cause établie ou inconnue précisément bornée                                 |
+| SEO-02     | P0 si blocage avéré     | Indexabilité et pages B2B découvertes                    | SEO-01, COPY-01                                                     | URL importantes et HTML/robots/canonical cohérents                           |
+| ICP-01     | P1                      | Qualification et supports d'entretien                    | BASE-01                                                             | Cible, exclusions et protocole prêts                                         |
+| ICP-02     | P1                      | Synthèse des retours terrain                             | ICP-01, interlocuteurs                                              | Faits/refus/actions séparés ; choix argumenté                                |
+| PILOT-01   | P0 avant extension      | Revue opérationnelle à sept jours, deux pilotes initiaux | OPS-01, mesure minimale, BILL-01, candidat qualifié                 | Fiche par pilote ; premier démarrage indépendant du second                   |
+| ECON-01    | P1                      | Adoption, coût et renouvellement                         | PILOT-01, temps écoulé                                              | Usage, paiement et contribution documentés                                   |
+| LAND-01    | P1                      | Recherche de demande et landing                          | COPY-01, DEMO-01/02, mesure minimale ; DEMO-SIM si exemple présenté | Texte exact, exemple isolé, CTA fonctionnel et indexabilité vérifiée         |
+| CONNECT-01 | P2 conditionnel         | Qualité et réservation partenaires                       | SEO-01/02, inventaire réel                                          | Fiches fiables et confirmations mesurées                                     |
+| SCALE-01   | P2 conditionnel         | Décision de réinvestissement                             | ECON-01, LAND-01 ; CONNECT-01 si local                              | Coût, preuves et objectif de l'extension explicites                          |
 
 ## 18. Format de suivi pour l'autre agent
 
@@ -653,12 +708,14 @@ publication d'un comparatif ou arbitrage dépendant d'une offre actuelle.
 
 ## 20. Instruction de démarrage à copier à l'agent
 
-> Travaillez sur `docs/runbooks/seo-acquisition-execution-plan.md`. Commencez par BASE-01, puis
-> livrez les corrections de crédibilité TRUST-01 et COPY-01. Préparez et avancez les chantiers
+> Travaillez sur `docs/runbooks/seo-acquisition-execution-plan.md`. Lisez d'abord l'état courant
+> dans la section 2 du rapport growth ; reprenez uniquement les points non qualifiés. Avancez les chantiers
 > indépendants de démonstration, parcours de demande, mesure et SEO. Réutilisez l'existant et
 > préservez les changements locaux. Livrez des modifications vérifiées et des preuves, avec
 > les PR/déploiements selon AGENTS.md. Préparez les supports terrain et rendez explicites les
 > interventions nécessaires de Hamza sans inventer entretiens, accords, paiements ni renouvellements.
-> Publiez la première landing dès que sa promesse, sa preuve et sa conversion sont qualifiées.
+> Distinguez simulation publique et recette interne. Publiez la première landing dès que ses textes
+> sont exacts, son exemple isolé s'il est présenté et sa demande de démo fonctionnelle. Ne bloquez
+> pas ce travail sur VOICE-01, le nombre d'entretiens ou un renouvellement.
 > Suivez ensuite les deux pilotes, la validation commerciale et les phases d'expansion selon leurs
 > critères. Continuez les tâches indépendantes lorsqu'une étape attend un retour externe.

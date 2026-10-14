@@ -94,10 +94,13 @@ Conserver aussi les refus et les absences de réponse.
 
 ## 6. Proposition de pilote (à valider par le responsable avant tout envoi)
 
-- **Formule** : Essential, 199 € HT par mois sans engagement en mensuel. En annuel, 20 % de réduction
-  (soit 159 € HT par mois, facturé 1 910,40 € HT par an) avec un engagement de 12 mois. Montants à
-  confirmer dans le catalogue Stripe actif avant toute proposition ferme.
-- **Durée** : sept jours complets d'observation, selon [essential-pilot-7-day.md](essential-pilot-7-day.md).
+- **Formule initiale** : Essential, 199 € HT par mois sans engagement en mensuel. En annuel,
+  réduction de 10 %, soit 2 149,20 € HT facturés par an avec engagement de 12 mois ; équivalent
+  mensuel exact 179,10 € HT, affiché arrondi à 179 €. Vérifier le catalogue actif avant une offre
+  ferme et préciser la cadence acceptée. Une autre formule exige une décision commerciale explicite.
+- **Observation** : sept jours complets selon [essential-pilot-7-day.md](essential-pilot-7-day.md).
+  Cette période ne modifie pas l'abonnement et ne prouve pas un renouvellement ou une rentabilité durable.
+  Un candidat qualifié peut avancer pendant que les entretiens continuent, sans quota préalable.
 - **Conditions d'entrée** : onboarding terminé, numéro et renvoi qualifiés, secours humain,
   référence commune des réservations, responsable identifié.
 - **Ce que le pilote ne garantit pas** : un gain de réservations, un revenu récupéré, une

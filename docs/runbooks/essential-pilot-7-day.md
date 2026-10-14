@@ -5,13 +5,24 @@
 > pour deux restaurants ; il ne constitue pas une preuve tant que les fiches de pilote et les
 > métriques réelles ne sont pas jointes. Voir [`../release/evidence/essential-checkout-opening-2026-09-22.md`](../release/evidence/essential-checkout-opening-2026-09-22.md).
 
-Ce pilote valide la boucle commerciale et l'exploitation quotidienne d'Essential à 199 €/mois. Il
+Ce pilote observe le premier paiement, les usages et l'exploitation quotidienne d'Essential à 199 €/mois. Il
 porte sur deux restaurants consentants pendant sept jours consécutifs. Il ne doit pas être élargi à
 un troisième restaurant avant la revue GO/NO-GO des deux premiers.
 
+Ces deux places limitent la charge du lancement. Le premier restaurant peut démarrer dès que
+ses conditions d'entrée sont satisfaites, sans attendre le second ni un quota d'entretiens.
+Vérifier que son besoin correspond à Essential ; une autre formule exige une décision commerciale
+explicite, sans changement automatique de prix ou de droits.
+
+Les sept jours constituent une première observation opérationnelle. Ils ne sont ni une période
+d'essai gratuite, ni une nouvelle durée contractuelle, ni une preuve de fidélisation ou de
+rentabilité durable. Présenter séparément période d'observation et conditions d'abonnement.
+La démonstration publique reste un exemple simulé ; la recette interne et l'installation réelle
+sont nécessaires avant les appels clients. Les entretiens et la landing peuvent avancer en parallèle.
+
 ## Conditions d'entrée
 
-- [ ] Deux restaurants ont accepté le pilote et désigné un responsable joignable pendant le service.
+- [ ] Le restaurant concerné a accepté le pilote et désigné un responsable joignable pendant le service.
 - [ ] L'accord et la date de début sont conservés dans la fiche d'audit interne, sans téléphone,
       nom de client ou transcript brut dans le dépôt.
 - [ ] Chaque restaurant a terminé l'onboarding : identité, horaires, numéro, renvoi/webhook et
@@ -70,7 +81,8 @@ coordonnées client restent hors du dépôt.
 - **J1 à J6** : relever les cinq sources chaque jour, noter les incidents et conserver le lien vers
   l'alerte ou le ticket interne. Une donnée manquante est `UNKNOWN`, jamais zéro.
 - **J7** : prendre le snapshot final, vérifier la facture et le portail, recueillir l'avis du
-  responsable, puis rédiger la décision GO/NO-GO.
+  responsable, puis rédiger la décision opérationnelle GO/NO-GO. Poursuivre séparément l'observation
+  d'usage et des coûts ; vérifier le renouvellement lorsqu'une échéance suivante est réellement encaissée.
 
 ## Arrêt immédiat et reprise
 
