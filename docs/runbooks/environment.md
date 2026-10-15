@@ -394,8 +394,8 @@ arrière se font par ces seules variables, sans nouveau déploiement de code.
 # cartesia (défaut) | elevenlabs
 VOICE_TTS_PROVIDER="cartesia"
 # Obligatoires seulement avec VOICE_TTS_PROVIDER=elevenlabs (en production : clé ≥20 caractères et voix).
-ELEVENLABS_API_KEY=""
-ELEVENLABS_TTS_VOICE_ID=""
+# ELEVENLABS_API_KEY : clé de production, fournie par l'environnement, jamais écrite dans le dépôt.
+# ELEVENLABS_TTS_VOICE_ID : identifiant de la voix ElevenLabs, à fournir au déploiement.
 # Défaut eleven_v4_turbo, le modèle mesuré au banc.
 ELEVENLABS_TTS_MODEL="eleven_v4_turbo"
 # Chemin WebSocket des tours en contexte (latence de dialogue), distinct et désactivé par défaut.
