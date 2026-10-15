@@ -25,6 +25,7 @@ import {
   buildElevenLabsCacheVariant,
   buildElevenLabsTtsRequest,
   elevenLabsTtsModel,
+  elevenLabsTtsStreamingEnabled,
   elevenLabsTtsVoiceId,
   telephonyTtsProvider,
 } from './elevenlabs-tts';
@@ -453,6 +454,7 @@ async function speakTtsFragment(
               text: trimmed,
               locale,
               codec: codecProfile.label,
+              streaming: elevenLabsTtsStreamingEnabled(),
             })
           : {
               url: 'https://api.cartesia.ai/tts/bytes',

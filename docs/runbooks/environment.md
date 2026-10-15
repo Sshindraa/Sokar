@@ -407,6 +407,9 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 - `/health` contrôle ElevenLabs (clé et voix, par `GET /v1/voices/{id}`, sans audio) seulement avec
   `VOICE_TTS_PROVIDER=elevenlabs` ; hors bascule, le check est `skipped`. Une panne passe `status` à
   `degraded` sans 503, comme Telnyx et Cartesia.
+- `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
+  octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
+  arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur
