@@ -55,6 +55,11 @@ export function middleware(request: NextRequest) {
   // Server Components read it via headers() from 'next/headers'.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
+  // Next extracts its script nonce from the request CSP, not x-nonce. Privacy
+  // renders per request so its inline bootstrap matches the response policy.
+  if (request.nextUrl.pathname === '/privacy') {
+    requestHeaders.set('Content-Security-Policy', `script-src 'nonce-${nonce}'`);
+  }
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';
 
   // URL de réservation courte : /book/[slug] sert le même widget que /widget/[slug].

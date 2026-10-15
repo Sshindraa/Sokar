@@ -9,6 +9,7 @@ import {
   formatPriceCents,
   formatMonthlyEquivalent,
 } from '@sokar/shared';
+import { featuresIntroducedIn, type FeatureStatus, type PlanLabel } from '@/app/pricing-catalog';
 
 export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
@@ -35,19 +36,30 @@ export const SIMULATOR_STEPS = [
   { sender: 'assistant', text: 'Merci à vous, au revoir et bon appétit !' },
 ];
 
+export interface PlanFeatureLine {
+  label: string;
+  status: FeatureStatus;
+}
+
 export interface PricingPlan {
-  label: 'Essential' | 'Pro' | 'Multi-site';
+  label: PlanLabel;
   /** Prix mensuel sans engagement, en euros. */
   price: string;
   /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
   sitePrice?: string;
   description: string;
   promise: string;
+  /** Formule précédente incluse en entier, affichée en tête de liste. */
+  inherits?: string;
   note?: string;
   demoFirst?: boolean;
-  features: string[];
+  /** Fonctionnalités introduites par cette formule, avec leur statut. */
+  features: PlanFeatureLine[];
   featured?: boolean;
 }
+
+const toFeatureLines = (plan: PlanLabel): PlanFeatureLine[] =>
+  featuresIntroducedIn(plan).map(({ label, status }) => ({ label, status }));
 
 export const PLANS: PricingPlan[] = [
   {
@@ -55,14 +67,7 @@ export const PLANS: PricingPlan[] = [
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
     promise: 'Vos appels et vos réservations, au même endroit.',
     description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
-    features: [
-      'Un assistant pour les réservations par téléphone',
-      'Les réservations téléphone, web et en salle dans un planning commun',
-      'Votre page Connect et votre widget de réservation',
-      'Plan de salle et liste d’attente pour organiser les couverts',
-      'Un fichier client et le suivi des absences',
-      'Un numéro dédié, configuré lors de la mise en service',
-    ],
+    features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
@@ -71,14 +76,8 @@ export const PLANS: PricingPlan[] = [
     description:
       'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
     demoFirst: true,
-    features: [
-      'Tout le socle Essential',
-      'Des suggestions pour traiter les retards',
-      'Une estimation des tables bientôt disponibles, avec indication de fiabilité',
-      'Des rapprochements entre tables et clients en attente',
-      'L’analyse d’une réorganisation et l’application d’un plan validé par l’équipe',
-      'L’historique des plans de retard et un retour arrière sous conditions',
-    ],
+    inherits: 'Tout le socle Essential',
+    features: toFeatureLines('Pro'),
     note: 'Découvrez le copilote en démonstration avant de choisir. Une estimation ne vaut pas une table libre. En complément : préparation de segments et brouillons marketing, sans envoi.',
   },
   {
@@ -88,14 +87,8 @@ export const PLANS: PricingPlan[] = [
     demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
     description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
-    features: [
-      'Essential et le copilote Pro par établissement',
-      'Passage d’une adresse à l’autre dans votre espace',
-      'Planning et fichier client propres à chaque restaurant',
-      'Horaires et règles de réservation par adresse',
-      'Un numéro dédié par établissement',
-      'Une facturation réunie au niveau du groupe',
-    ],
+    inherits: 'Essential et le copilote Pro par établissement',
+    features: toFeatureLines('Multi-site'),
     note: 'Une présentation précède le choix du copilote pour vos équipes. Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles.',
   },
 ];

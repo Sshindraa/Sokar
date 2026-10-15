@@ -17,6 +17,11 @@ dépendent de restaurateurs, il prépare le protocole et les supports, indique p
 dépendance humaine et poursuit les travaux indépendants. Il ne remplace jamais une preuve terrain
 par une simulation ou un avis supposé.
 
+Décision du 15 octobre : l’accueil `https://sokar.tech/` est la page commerciale et SEO prioritaire.
+Conserver son UI ; retirer la landing dédiée du lot et rediriger son ancienne adresse vers `/`.
+LAND-01 conserve son identifiant de suivi, mais désigne désormais la consolidation de l’accueil.
+Aucune nouvelle landing n’est à créer dans ce lot.
+
 Résultats attendus, selon les dépendances de la section 4, sans imposer une exécution séquentielle :
 
 1. Une vitrine compréhensible, dont les simulations et les chiffres illustratifs sont identifiés.
@@ -26,7 +31,7 @@ Résultats attendus, selon les dépendances de la section 4, sans imposer une ex
 5. Un segment testé par des entretiens et des décisions d'achat réelles.
 6. Une qualification interne du parcours réel avant activation des pilotes payants documentés.
 7. Une décision commerciale fondée sur le renouvellement, l'usage et le coût de service.
-8. Une première page commerciale SEO publiée dès que ses critères sont remplis, puis une expansion
+8. Un accueil commercial consolidé dès que ses critères sont remplis, puis une expansion
    conditionnelle de Connect et des contenus.
 
 L'état courant est tenu dans la section 2 du [rapport growth](../audits/2026-10-13-growth-execution.md).
@@ -156,13 +161,13 @@ L'existence d'un restaurant fictif ne suffit pas à démontrer cette isolation.
 | 5     | P1                                       | Entretiens et sélection du segment                     | Supports préparés ; interlocuteurs disponibles, sans quota bloquant                    |
 | 6     | P0 avant extension                       | Première revue opérationnelle des pilotes              | Candidat qualifié, recette interne, installation, suivi minimal et facturation prêts   |
 | 7     | P1                                       | Renouvellement, adoption et économie de service        | Pilotes démarrés ; durée d'observation suffisante                                      |
-| 8     | P1                                       | Première landing SEO et étude de demande               | Texte exact, exemple isolé s'il est présenté, demande de démo et mesure minimale prêts |
+| 8     | P1                                       | Accueil commercial et étude de demande                 | Texte exact, exemple isolé s'il est présenté, demande de démo et mesure minimale prêts |
 | 9     | P2 conditionnel                          | Qualité et croissance Connect                          | Inventaire réel et technique publique qualifiés                                        |
 | 10    | P2 conditionnel                          | Expansion contenus et distribution                     | Signaux commerciaux et acquisition documentés                                          |
 
 Après la phase 0, les phases 1, 2, 3, 4 et la préparation de 5/8 peuvent avancer en parallèle au
 sens de chantiers indépendants. Une dépendance humaine ne bloque pas tout le programme. Le traitement
-du sitemap Connect n'est pas une condition générale de publication de la landing B2B.
+du sitemap Connect n'est pas une condition générale de publication de l’accueil B2B.
 VOICE-01, le nombre d'entretiens, la fin des deux pilotes et un renouvellement ne sont pas des
 conditions générales de publication SEO. Une capacité non qualifiée reste présentée avec ses
 limites ; ne pas la déclarer validée en retirant simplement le noindex.
@@ -171,7 +176,7 @@ Repères de calendrier, à adapter à l'accès aux outils et aux disponibilités
 
 - **J1–J3** : état initial, crédibilité, préparation démo et parcours, diagnostic SEO.
 - **J4–J14** : entretiens disponibles, démos qualifiées, premières demandes et sélection des pilotes ;
-  publier la landing dès qu'elle respecte ses critères, sans attendre une date arbitraire.
+  consolider l’accueil dès qu’il respecte ses critères, sans attendre une date arbitraire.
 - **Deux périodes de sept jours** : observer les pilotes selon le runbook ; elles peuvent se chevaucher.
 - **Premier renouvellement** : décision commerciale, avec suivi d'usage ; un paiement annuel ne
   fournit pas une preuve de renouvellement mensuel.
@@ -322,6 +327,9 @@ qu'un créneau est réservé lorsqu'il recueille seulement une demande.
 - Conserver un lien secondaire **Créer votre compte** vers `/register`.
 
 ### Instrumentation
+
+Mode opératoire local : [suivi commercial minimal](commercial-follow-up.md), rapprochement manuel
+vérifié et exclusion explicite des essais, sans nouveau dashboard.
 
 Pour démarrer l'acquisition, réutiliser les demandes persistées, leur source et leurs statuts ;
 tenir le suivi qualification/démo dans l'outil existant ou un relevé restreint. Ne pas construire
@@ -528,7 +536,7 @@ constitue pas un LTV robuste.
 Livrable : `docs/audits/YYYY-MM-DD-essential-commercial-review.md`, avec tableau par pilote,
 limites de l'échantillon, observations à 30 jours et décision d'investissement suivante.
 
-## 13. Phase 8 — Publier et mesurer une première landing commerciale
+## 13. Phase 8 — Consolider et mesurer l’accueil commercial
 
 Préparer cette phase dès le démarrage. Publier dès que les textes sont exacts, l'exemple public
 est clairement simulé et isolé s'il est présenté, et la demande de démo et son suivi fonctionnent.
@@ -548,9 +556,12 @@ Les témoignages et les gains chiffrés attendent leurs propres preuves.
 - Séparer adéquation commerciale, demande observable et difficulté SEO. Éviter une moyenne qui
   masquerait un besoin d'intégration ou une preuve produit manquante.
 
-### Page proposée
+### Page retenue
 
-`/solutions/assistant-telephonique-restaurant`, à confirmer après recherche des routes existantes.
+`/`, canonical `https://sokar.tech/`. Conserver les sections, styles, polices, animations et CTA
+existants. Réutiliser la FAQ pour les précisions utiles, sans ajouter de bloc ni refaire le hero.
+L’ancienne route `/solutions/assistant-telephonique-restaurant` redirige définitivement vers `/`
+et reste hors sitemap. Les mentions de sa préparation dans le rapport sont historiques.
 
 Contenu : cible, problème concret, fonctionnement, exemple simulé/transcription et résultat illustré,
 configuration et secours, limites, installation, prix/quotas vérifiés, questions pratiques et CTA.
@@ -662,7 +673,7 @@ si demandé ou si le workflow utilisé le requiert.
 | ICP-02     | P1                      | Synthèse des retours terrain                             | ICP-01, interlocuteurs                                              | Faits/refus/actions séparés ; choix argumenté                                |
 | PILOT-01   | P0 avant extension      | Revue opérationnelle à sept jours, deux pilotes initiaux | OPS-01, mesure minimale, BILL-01, candidat qualifié                 | Fiche par pilote ; premier démarrage indépendant du second                   |
 | ECON-01    | P1                      | Adoption, coût et renouvellement                         | PILOT-01, temps écoulé                                              | Usage, paiement et contribution documentés                                   |
-| LAND-01    | P1                      | Recherche de demande et landing                          | COPY-01, DEMO-01/02, mesure minimale ; DEMO-SIM si exemple présenté | Texte exact, exemple isolé, CTA fonctionnel et indexabilité vérifiée         |
+| LAND-01    | P1                      | Recherche de demande et accueil                          | COPY-01, DEMO-01/02, mesure minimale ; DEMO-SIM si exemple présenté | Texte exact, exemple isolé, CTA fonctionnel et indexabilité vérifiée         |
 | CONNECT-01 | P2 conditionnel         | Qualité et réservation partenaires                       | SEO-01/02, inventaire réel                                          | Fiches fiables et confirmations mesurées                                     |
 | SCALE-01   | P2 conditionnel         | Décision de réinvestissement                             | ECON-01, LAND-01 ; CONNECT-01 si local                              | Coût, preuves et objectif de l'extension explicites                          |
 
@@ -714,7 +725,7 @@ publication d'un comparatif ou arbitrage dépendant d'une offre actuelle.
 > préservez les changements locaux. Livrez des modifications vérifiées et des preuves, avec
 > les PR/déploiements selon AGENTS.md. Préparez les supports terrain et rendez explicites les
 > interventions nécessaires de Hamza sans inventer entretiens, accords, paiements ni renouvellements.
-> Distinguez simulation publique et recette interne. Publiez la première landing dès que ses textes
+> Distinguez simulation publique et recette interne. Consolidez l’accueil existant, sans modifier son UI, dès que ses textes
 > sont exacts, son exemple isolé s'il est présenté et sa demande de démo fonctionnelle. Ne bloquez
 > pas ce travail sur VOICE-01, le nombre d'entretiens ou un renouvellement.
 > Suivez ensuite les deux pilotes, la validation commerciale et les phases d'expansion selon leurs
