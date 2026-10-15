@@ -404,6 +404,9 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 
 - Le téléphone (tours HTTP, message d'accueil en cache) suit `VOICE_TTS_PROVIDER`. Le format de sortie est le G.711
   natif de Telnyx (`alaw_8000` ou `ulaw_8000`) : aucun transcodage. La clé de cache commence par `elevenlabs|`.
+- `/health` contrôle ElevenLabs (clé et voix, par `GET /v1/voices/{id}`, sans audio) seulement avec
+  `VOICE_TTS_PROVIDER=elevenlabs` ; hors bascule, le check est `skipped`. Une panne passe `status` à
+  `degraded` sans 503, comme Telnyx et Cartesia.
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur

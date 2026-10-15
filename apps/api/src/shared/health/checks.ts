@@ -1,7 +1,7 @@
 /**
  * Health checks for Sokar API.
  *
- * Five independent checks: db, redis, queues, telnyx, cartesia.
+ * Six independent checks: db, redis, queues, telnyx, cartesia, elevenlabs.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
  * block another. Core dependencies have a slightly longer timeout to avoid
@@ -28,6 +28,8 @@
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
+ *    - ElevenLabs: `GET /v1/voices/{id}` — read the phone voice, no audio generated
+ *                  (only when ElevenLabs synthesises the phone; otherwise `skipped`)
  *
  * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
  *    down but DB/Redis/queues are ok, the API can still answer
@@ -39,8 +41,13 @@ import { db } from '../db/client';
 import { redisCache } from '../redis/client';
 import { queues } from '../queue/queues';
 import telnyx from '../telnyx/client';
+import {
+  elevenLabsTtsVoiceId,
+  telephonyTtsProvider,
+} from '../../modules/voice/stream/elevenlabs-tts';
 
-export type CheckStatus = 'ok' | 'error';
+/** `skipped`: the check does not apply to the current configuration. It is not a failure. */
+export type CheckStatus = 'ok' | 'error' | 'skipped';
 
 export interface CheckResult {
   status: CheckStatus;
@@ -175,19 +182,50 @@ async function checkCartesia(): Promise<CheckResult> {
   );
 }
 
+async function checkElevenLabs(): Promise<CheckResult> {
+  // Only relevant when ElevenLabs synthesises the phone voice. While the switch
+  // is off, the check is skipped: no network call, no effect on the status.
+  if (telephonyTtsProvider() !== 'elevenlabs') {
+    return { status: 'skipped', latency_ms: 0 };
+  }
+  // GET on the voice validates the key AND the voice ID, and generates no audio.
+  return withTimeout(
+    'elevenlabs',
+    (async () => {
+      const apiKey = process.env.ELEVENLABS_API_KEY;
+      if (!apiKey) {
+        throw new Error('ELEVENLABS_API_KEY not configured');
+      }
+      const voiceId = elevenLabsTtsVoiceId();
+      if (!voiceId) {
+        throw new Error('ELEVENLABS_TTS_VOICE_ID not configured');
+      }
+      const res = await fetch(
+        `https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}`,
+        { method: 'GET', headers: { 'xi-api-key': apiKey } },
+      );
+      if (!res.ok) {
+        throw new Error(`ElevenLabs API ${res.status}: ${res.statusText}`);
+      }
+    })(),
+    VOICE_TIMEOUT_MS,
+  );
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
-const VOICE_CHECKS = ['telnyx', 'cartesia'] as const;
+const VOICE_CHECKS = ['telnyx', 'cartesia', 'elevenlabs'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, cartesia] = await Promise.all([
+  const [db, redis, queues, telnyx, cartesia, elevenlabs] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
     checkCartesia(),
+    checkElevenLabs(),
   ]);
 
   const checks: Record<string, CheckResult> = {
@@ -196,6 +234,7 @@ export async function checkHealth(): Promise<HealthReport> {
     queues,
     telnyx,
     cartesia,
+    elevenlabs,
   };
 
   // Core failure = 503 (API can't serve anything).
