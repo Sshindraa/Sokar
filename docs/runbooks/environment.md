@@ -385,6 +385,30 @@ VOICE_RECOVERY_MAX_WAIT_MS="2000"
 CARTESIA_VOICE_GENDER=""
 ```
 
+#### Synthèse vocale du téléphone : Cartesia ou ElevenLabs
+
+Le choix du fournisseur de synthèse des appels est une variable. Cartesia reste le défaut ; la bascule et le retour
+arrière se font par ces seules variables, sans nouveau déploiement de code.
+
+```bash
+# cartesia (défaut) | elevenlabs
+VOICE_TTS_PROVIDER="cartesia"
+# Obligatoires seulement avec VOICE_TTS_PROVIDER=elevenlabs (en production : clé ≥20 caractères et voix).
+ELEVENLABS_API_KEY=""
+ELEVENLABS_TTS_VOICE_ID=""
+# Défaut eleven_v4_turbo, le modèle mesuré au banc.
+ELEVENLABS_TTS_MODEL="eleven_v4_turbo"
+# Chemin WebSocket des tours en contexte (latence de dialogue), distinct et désactivé par défaut.
+VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+```
+
+- Le téléphone (tours HTTP, message d'accueil en cache) suit `VOICE_TTS_PROVIDER`. Le format de sortie est le G.711
+  natif de Telnyx (`alaw_8000` ou `ulaw_8000`) : aucun transcodage. La clé de cache commence par `elevenlabs|`.
+- `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
+  utilisent encore Cartesia.
+- Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur
+  `elevenlabs` ; le modèle indiqué dans cette comptabilité reste `ELEVENLABS_DIALOGUE_MODEL`.
+
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
 fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
 refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx
