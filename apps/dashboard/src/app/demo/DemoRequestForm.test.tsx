@@ -5,7 +5,7 @@ import DemoRequestForm from './DemoRequestForm';
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: { children: ReactNode; href: string }) => (
-    <a href={href} {...props}>
+    <a data-next-link="" href={href} {...props}>
       {children}
     </a>
   ),
@@ -80,6 +80,10 @@ describe('DemoRequestForm', () => {
     expect(screen.getByRole('link', { name: 'politique de confidentialité' })).toHaveAttribute(
       'href',
       '/privacy',
+    );
+    // /privacy belongs to Connect: use a document navigation, never the dashboard RSC router.
+    expect(screen.getByRole('link', { name: 'politique de confidentialité' })).not.toHaveAttribute(
+      'data-next-link',
     );
   });
 

@@ -1255,3 +1255,63 @@ La décision de `main` remplace les montants de la section 10.30 : remise annuel
 - Statuts et tableau comparatif : inchangés.
 
 **Vérifié.** Typage du dashboard et de l'API (après reconstruction de `@sokar/shared`), Prettier ; dashboard 83 fichiers et 621 tests verts ; paquet partagé 71 tests verts ; captures `/pricing` régénérées, 3/3 verts. Dans le navigateur (port 3107) : 179, 269 et 358 € s'affichent, « Découvrir Pro » et « Découvrir Multi-site » sont présents, console sans erreur.
+
+### 10.33 Réserves après livraison SEO : staging et confidentialité (15/10/2026)
+
+Le lot accueil a été livré via #438/#440 ; production source `629f857d`, release
+`20261014T235908Z`, après CI et staging verts. Laboratoire public Lighthouse 13.5.0 :
+desktop première visite 100/LCP 0,6 s ; mobile première visite 92/LCP 3,3 s ; mobile
+profil conservé 100/LCP 1,0 s ; CLS nul. Ces mesures ne sont pas des données terrain
+et ne démontrent pas un gain causal. Le test Google en direct autorise exploration et
+indexation ; l’indexation de cette version et le canonical retenu restent à observer.
+
+**Réserve légale ouverte.** L’utilisateur refuse la publication de son identité légale.
+Aucune page limitée au nom commercial Sokar n’est présentée comme conforme ; aucun
+nom, adresse, document source ni coordonnées personnelles ajoutés au dépôt. OVHcloud
+est confirmé par l’utilisateur comme hébergeur. Le lien Mentions légales reste à résoudre,
+les liens sociaux restent facultatifs. Référence :
+[Service Public — mentions obligatoires](https://entreprendre.service-public.gouv.fr/vosdroits/F31228).
+
+**Corrections indépendantes, branche `codex/seo-reserves`, base `75f447e0`.**
+
+- Démo : navigation documentaire native vers `/privacy`, même libellé et classes ;
+  évite le préchargement RSC du dashboard vers une page servie par Connect.
+- Staging : `X-Robots-Tag: noindex, nofollow` avec `always` répété dans les sept
+  locations redéfinissant des en-têtes ; les autres héritent du serveur. Route exacte
+  `/privacy` vers Connect alignée sur production. Configuration production inchangée.
+  Staging reste publiquement accessible : cette exclusion d’indexation n’est pas un
+  contrôle d’accès. Ne pas bloquer l’exploration empêchant Google de lire `noindex`.
+  Sources : [Nginx](https://nginx.org/en/docs/http/ngx_http_headers_module.html),
+  [Google](https://developers.google.com/search/docs/crawling-indexing/block-indexing).
+
+Manifeste exact de ce correctif :
+
+1. `apps/dashboard/src/app/demo/DemoRequestForm.tsx`
+2. `apps/dashboard/src/app/demo/DemoRequestForm.test.tsx`
+3. `apps/dashboard/src/__tests__/staging-noindex.test.ts`
+4. `infra/nginx/sokar-staging.conf`
+5. `docs/audits/2026-10-13-growth-execution.md`
+6. `docs/obsidian/Context.md`
+7. `docs/obsidian/Journal.md`
+
+Contrôles : 11 tests Vitest ciblés réussis, ESLint ciblé et Prettier réussis.
+Typecheck dashboard après compilation du package partagé ; aucun secret de production
+nécessaire au diagnostic. Dépendances de build : pnpm/Node du dépôt, workspace partagé
+compilé et variables applicatives habituelles fournies par la chaîne de livraison.
+Test isolé sur Nginx 1.24.0 réel du VPS, serveur temporaire en boucle locale, réponses
+amont simulées 200/308/503 : baseline 30 échecs/39, candidat 0/39. Aucun vhost actif
+modifié par ce test. Preuves locales `~/.codex/visualizations/2026/10/15/sokar-seo-reserves/`.
+Le test isolé ne remplace pas la recette après déploiement.
+
+Livraison : sélection des sept chemins → commit de branche → `pnpm pr:submit` → CI →
+staging et smoke → production selon AGENTS.md. Conserver les releases/META et leur
+prédécesseur. Retour applicatif : `scripts/deploy.sh --env prod|staging rollback`, sans
+restauration DB ; pour Nginx staging, restaurer la version précédente via le wrapper
+privilégié et vérifier `nginx -t` avant rechargement (le rollback applicatif seul ne
+constitue pas une preuve de restauration du vhost). Aucun changement DB/auth/voix/paiement.
+
+Recette restante : vérifier les en-têtes sur accueil/démo/privacy/assets/widget/erreurs
+staging, absence de noindex ajoutée sur l’accueil production, `/privacy` servi par Connect,
+navigation depuis la démo sans requête RSC vers cette page ; conserver UI et navigation
+sans soumettre de formulaire. Puis lire Search Console séparément : indexabilité,
+indexation, canonical retenu, requêtes et clics hors marque, sans délai garanti.

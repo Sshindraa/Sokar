@@ -2206,3 +2206,12 @@ Accord explicite Hamza reçu (« ok go ») pour commit/pr:submit/auto-merge/stag
 
 ## 2026-10-15 — Statuts décidés et PR #426 soumise en squash auto-merge
 Décisions produit : copilote « Disponible » en Pro et Multi-site ; fonctionnalités prévues affichées avec le statut « Prévu » ; deux tableaux comparatifs conservés. Google Agenda, facturation groupée Multi-site, suivi des absences (`NO_SHOW`) et rapport quotidien restent « Disponible », vérifiés dans le code sans contrôle par formule. Rapport growth §10.30 et §10.31 mis à jour. Soumission par `pnpm pr:submit` : squash auto-merge une fois la CI verte.
+
+
+## 2026-10-15 — Réserves SEO : staging et confidentialité
+Branche isolée `codex/seo-reserves` depuis main `75f447e0`, checkout original conservé.
+Correction de l’héritage noindex Nginx staging, routage privacy Connect et navigation
+native depuis la démo. 11 tests ciblés réussis ; Nginx 1.24 isolé : 39/39 contre 9/39
+avant correction. Aucun vhost actif modifié pendant le diagnostic. Mentions légales
+non finalisées : refus de publication de l’identité légale, aucune donnée personnelle
+ajoutée ; OVHcloud confirmé. Livraison indépendante selon la chaîne AGENTS, détails §10.33.
