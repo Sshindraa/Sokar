@@ -1215,3 +1215,43 @@ Aucun reset ni soumission de cette branche. Paquet régénéré avec état final
 ### 10.29 — Livraison groupée autorisée, base actualisée (15 octobre 2026)
 
 Hamza autorise la chaîne complète (« ok go ») après réserve Mentions légales explicitée. Main a avancé à a428b373 (#438) et inclut déjà les six sources SEO identiques : pas de réapplication ni de nouveau changement applicatif. Branche codex/seo-accueil isolée ; huit documents restants sélectionnés, Context/Journal par sections, checkout d’origine conservé. Les workflows/recettes et snapshots seront consignés après observation ; aucune réussite de déploiement encore revendiquée dans cette entrée.
+
+### 10.30 Notifications de démo et abonnements : résultats vérifiés (13/10/2026)
+
+**Notifications de démo.** `notifyDemoRequest` tente chaque destinataire, même après un échec, et ne retourne `true` que si chaque envoi a le résultat `success`. Un refus (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne renseigne jamais `notifiedAt` : la demande reste enregistrée et visible comme non notifiée. Tests : quatre cas au niveau du service (accepté, bloqué sans appel à Resend, échec d'un destinataire parmi deux, exception sans interruption) et un cas au niveau de la route. Un test existant renvoyait un retour vide et attendait `notifiedAt` : il renvoie désormais un résultat `success` explicite.
+
+**Abonnements.**
+
+- Un catalogue unique (`apps/dashboard/src/app/pricing-catalog.ts`) : chaque fonctionnalité porte un statut, « disponible » ou « prévu », et la formule qui l'introduit. Les cartes et le tableau comparatif en dérivent.
+- Prix annuels exacts, sans arrondi : Essential 159,20 € HT par mois (1 910,40 € HT par an), Pro 239,20 € (2 870,40 €), Multi-site 199,20 € (2 390,40 €), site supplémentaire 79,20 € (950,40 €). Les anciens tests figeaient l'arrondi (159, 239, 199 et +79) : ils sont mis à jour pour les montants exacts.
+- Tableau comparatif sur `/pricing` : 12 fonctionnalités, 3 formules. Vérifié dans le navigateur : 20 cellules « Disponible », 7 « Prévu », 9 « Non inclus ».
+- Contrôle préalable du catalogue Stripe de staging, en lecture seule avec une clé de test : 8 lignes sur 8 conformes. Ce contrôle n'est pas le livrable du chantier.
+
+**Vérifié dans le navigateur** (worktree, port 3107) : `/pricing` sans erreur de console. À 375 px, la page ne déborde pas ; le tableau défile dans son conteneur.
+
+**Statuts décidés le 15/10/2026.** Google Agenda, facturation groupée Multi-site et suivi des absences (statut `NO_SHOW` des réservations) restent « disponibles » : le code les expose (client Google Agenda, total de groupe calculé par l'API, statut `NO_SHOW`), sans contrôle par formule. Restent « prévus » et affichés comme tels sur `/pricing` : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
+
+### 10.31 Fusion avec le copilote de service de #428 (14/10/2026)
+
+Le décompte de la section 10.30 concerne le catalogue d'avant cette fusion. Le catalogue fusionné compte 21 fonctionnalités ; le tableau comparatif affiche 39 cellules « Disponible », 7 « Prévu » et 17 « Non inclus » (décompte calculé depuis `pricing-catalog.ts`).
+
+**Ce que la page affiche.** Pro vend le copilote de service : suggestions pour les retards, estimation des tables bientôt disponibles avec indication de fiabilité, rapprochements avec les clients en attente, analyse d'une réorganisation et plan validé par l'équipe, historique des plans et retour arrière sous conditions. Essential garde planning, placement manuel, disponibilités, liste d'attente et pouls ; il n'inclut aucune fonction avancée du copilote, ce que teste un garde-fou. Pro et Multi-site proposent « Découvrir » (démonstration) avant l'inscription. Les textes publics sont ceux de `main` ; le catalogue fournit les statuts et le tableau.
+
+**Statuts décidés le 15/10/2026.**
+
+- Copilote « disponible » en Pro et Multi-site : décision du produit. L'accès est porté par la capacité de formule ; #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert, et aucun résultat en conditions de service n'est annoncé.
+- Rapport quotidien de vos appels « disponible » en Essential : le module de résumé quotidien existe et n'est soumis à aucun contrôle par formule.
+- Les autres statuts « disponible » (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) sont confirmés, voir la section 10.30.
+
+**Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
+
+### 10.32 Fusion avec la tarification de #429 (14/10/2026)
+
+La décision de `main` remplace les montants de la section 10.30 : remise annuelle de 10 % (et non 20 %), base Multi-site de 299 € HT/mois, établissement supplémentaire inchangé à 99 € HT/mois. Les montants de la section 10.30 (20 %, 249 €, centimes sur les mensualités) ne sont plus valables.
+
+- Source unique : le calcul local de la branche est retiré. `@sokar/shared` fournit le catalogue, les montants exacts et l'arrondi d'affichage.
+- Affichage public : mensualités arrondies à l'euro (annuel : 179 € Essential, 269 € Pro et Multi-site de base, 89 € par établissement supplémentaire). La carte n'affiche plus de total annuel : « Facturé annuellement ». Le montant exact est indiqué avant paiement.
+- Montants exacts (inscription et Stripe) : 2 149,20 € HT par an pour Essential ; 3 229,20 € pour Pro et Multi-site de base ; Multi-site à 2 établissements 4 298,40 € HT par an, à 3 établissements 5 367,60 € HT par an.
+- Statuts et tableau comparatif : inchangés.
+
+**Vérifié.** Typage du dashboard et de l'API (après reconstruction de `@sokar/shared`), Prettier ; dashboard 83 fichiers et 621 tests verts ; paquet partagé 71 tests verts ; captures `/pricing` régénérées, 3/3 verts. Dans le navigateur (port 3107) : 179, 269 et 358 € s'affichent, « Découvrir Pro » et « Découvrir Multi-site » sont présents, console sans erreur.

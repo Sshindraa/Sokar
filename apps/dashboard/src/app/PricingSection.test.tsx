@@ -88,4 +88,10 @@ describe('PricingSection', () => {
     expect(text).not.toContain('Économisez');
     expect(text).not.toContain('-10% annuel');
   });
+
+  it('ne présente aucune formule comme « Recommandé »', () => {
+    render(<PricingSection />);
+
+    expect(screen.queryByText('Recommandé')).not.toBeInTheDocument();
+  });
 });

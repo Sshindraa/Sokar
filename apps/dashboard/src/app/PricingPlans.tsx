@@ -3,8 +3,10 @@
 import { ANNUAL_DISCOUNT_PERCENT, pricingTotalCents, formatMonthlyEquivalent } from '@sokar/shared';
 import { useState } from 'react';
 import Link from 'next/link';
-import { PLANS, DISPLAY_PRICE } from '@/app/constants';
+import { PLANS, DISPLAY_PRICE, type PlanFeatureLine } from '@/app/constants';
 import { getPlanSignupHref, getPlanDemoHref, type PublicPlan } from '@/app/pricing-links';
+import type { FeatureStatus } from '@/app/pricing-catalog';
+import PlanComparison from '@/app/PlanComparison';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
@@ -12,12 +14,60 @@ import { cn, triggerHaptic } from '@/lib/utils';
 const euros = (amount: string | number, unit: 'mois' | 'site') =>
   `${amount}\u00a0€\u00a0HT/${unit}`;
 
+function StatusBadge({ status }: { status: FeatureStatus }) {
+  const available = status === 'disponible';
+  return (
+    <span
+      className={cn(
+        'ml-2 inline-block rounded-full border px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider',
+        available
+          ? 'border-pricing-accent/30 bg-pricing-accent/10 text-pricing-accent'
+          : 'border-white/15 text-white/50',
+      )}
+    >
+      {available ? 'Disponible' : 'Prévu'}
+    </span>
+  );
+}
+
+function FeatureItem({ feature }: { feature: PlanFeatureLine }) {
+  const available = feature.status === 'disponible';
+  return (
+    <li className="flex items-start gap-3 text-sm text-white/70">
+      <span
+        className={cn(
+          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+          available
+            ? 'border-pricing-accent/40 bg-pricing-accent/10'
+            : 'border-white/15 bg-white/[0.04]',
+        )}
+      >
+        <Check
+          size={12}
+          className={available ? 'text-pricing-accent' : 'text-white/40'}
+          strokeWidth={3}
+        />
+      </span>
+      <span>
+        {feature.label}
+        <StatusBadge status={feature.status} />
+      </span>
+    </li>
+  );
+}
+
 /**
  * Interrupteur Mensuel/Annuel et cartes des formules, partagés par la section
  * « Tarifs » de l'accueil et la page /pricing : une seule mise en page, une
  * seule source de prix (`PLANS`).
  */
-export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
+export default function PricingPlans({
+  haptic = false,
+  showComparison = false,
+}: {
+  haptic?: boolean;
+  showComparison?: boolean;
+}) {
   const [yearly, setYearly] = useState(true);
   const [siteCount, setSiteCount] = useState(2);
 
@@ -209,16 +259,19 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
                 <ArrowUpRight size={14} />
               </Link>
 
-              {/* 5. Features */}
+              {/* 5. Features : formule précédente, puis fonctionnalités introduites ici, avec leur statut */}
               <div className="relative z-10 mt-8">
                 <ul className="space-y-4">
-                  {plan.features.map((feat) => (
-                    <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
+                  {plan.inherits && (
+                    <li className="flex items-start gap-3 text-sm text-white/70">
                       <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
                         <Check size={12} className="text-pricing-accent" strokeWidth={3} />
                       </span>
-                      {feat}
+                      {plan.inherits}
                     </li>
+                  )}
+                  {plan.features.map((feature) => (
+                    <FeatureItem key={feature.label} feature={feature} />
                   ))}
                 </ul>
                 {plan.note && (
@@ -231,6 +284,12 @@ export default function PricingPlans({ haptic = false }: { haptic?: boolean }) {
           );
         })}
       </div>
+
+      {showComparison && (
+        <div className="mt-20 w-full">
+          <PlanComparison />
+        </div>
+      )}
     </>
   );
 }

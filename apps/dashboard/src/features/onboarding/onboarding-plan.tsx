@@ -21,6 +21,17 @@ const SLUG_BY_LABEL: Record<(typeof PLANS)[number]['label'], PlanSlug> = {
   'Multi-site': 'multi-site',
 };
 
+/**
+ * Trois points forts par carte : la formule précédente, puis les fonctionnalités disponibles. Une fonctionnalité
+ * prévue n'est jamais présentée comme incluse dans un parcours d'achat.
+ */
+function planHighlights(item: (typeof PLANS)[number]): string[] {
+  const available = item.features
+    .filter((feature) => feature.status === 'disponible')
+    .map((feature) => feature.label);
+  return [...(item.inherits ? [item.inherits] : []), ...available].slice(0, 3);
+}
+
 const ACTIVE_STATUSES = ['active', 'trialing', 'past_due'];
 const DEFAULT_PLAN: PlanSlug = 'pro';
 
@@ -213,7 +224,7 @@ export function OnboardingPlan({
                 )}
               </span>
               <ul className="space-y-2 text-sm text-foreground/80">
-                {item.features.slice(0, 3).map((feature) => (
+                {planHighlights(item).map((feature) => (
                   <li key={feature} className="flex items-start gap-2">
                     <Check
                       size={14}
