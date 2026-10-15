@@ -169,7 +169,8 @@ export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'
       .replace(/€/g, ' euros')
       .replace(/%/g, ' pour cent')
       .replace(/\bMme\.?\s/gi, 'Madame ')
-      .replace(/\bM\.\s/g, 'Monsieur ');
+      // Pas après « , » : dans une relecture épelée (« A, S, S, A, M, M. »), le M final est une lettre.
+      .replace(/(?<!,\s?)\bM\.\s/g, 'Monsieur ');
   }
 
   // 4. Rend un numéro français lisible en groupes. Les virgules laissent une
