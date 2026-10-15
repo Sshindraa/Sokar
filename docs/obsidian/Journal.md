@@ -2203,3 +2203,6 @@ Manifeste recalculé sur le diff : 14 chemins dont deux nouveaux documents, sél
 
 ## 2026-10-15 — Livraison SEO autorisée, branche propre sur main actualisée
 Accord explicite Hamza reçu (« ok go ») pour commit/pr:submit/auto-merge/staging/production et contrôles publics, réserve Mentions légales maintenue. Main a428b373 (#438) contient déjà les six sources SEO identiques ; livraison documentaire complémentaire depuis codex/seo-accueil isolée, huit documents, sans réapplication du code ni modification voix/onboarding. Checkout d’origine conservé ; contrôles de déploiement à consigner après observation.
+
+## 2026-10-15 — Statuts décidés et PR #426 soumise en squash auto-merge
+Décisions produit : copilote « Disponible » en Pro et Multi-site ; fonctionnalités prévues affichées avec le statut « Prévu » ; deux tableaux comparatifs conservés. Google Agenda, facturation groupée Multi-site, suivi des absences (`NO_SHOW`) et rapport quotidien restent « Disponible », vérifiés dans le code sans contrôle par formule. Rapport growth §10.30 et §10.31 mis à jour. Soumission par `pnpm pr:submit` : squash auto-merge une fois la CI verte.
