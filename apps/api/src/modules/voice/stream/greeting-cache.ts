@@ -134,7 +134,8 @@ export async function initGreetingCache(restaurantNames?: string[]): Promise<voi
       ? elevenLabsTtsVoiceId()
       : (process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID);
   if (!voiceId) {
-    logger.warn('[greetings] No ELEVENLABS_TTS_VOICE_ID — greetings will not be pre-cached');
+    const voiceEnv = provider === 'elevenlabs' ? 'ELEVENLABS_TTS_VOICE_ID' : 'CARTESIA_VOICE_ID';
+    logger.warn(`[greetings] No ${voiceEnv} — greetings will not be pre-cached`);
     return;
   }
   // Clé de cache identique à celle utilisée par speakTtsStreamed (même fournisseur, même

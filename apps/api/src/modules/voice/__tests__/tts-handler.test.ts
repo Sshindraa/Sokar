@@ -16,11 +16,16 @@ vi.mock('../../../shared/sentry/client', () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock('../../../shared/telnyx/http-agent', () => ({
+  telnyxFetch: vi.fn(async () => new Response('{}', { status: 200 })),
+}));
+
 vi.mock('../stream/session-persistence', () => ({
   persistLatencyTrace: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { getTtsCached } from '../tts-cache';
+import { captureException } from '../../../shared/sentry/client';
 import { cleanTextForTts, getInterSentencePauseMs, speakTtsStreamed } from '../stream/tts-handler';
 import { TTS_FRAME_BYTES } from '../stream/constants';
 
@@ -258,6 +263,29 @@ describe('speakTtsStreamed — fournisseur ElevenLabs', () => {
     expect(String(vi.mocked(getTtsCached).mock.calls[0]?.[1])).toBe(
       'elevenlabs|voix-test|eleven_v4_turbo|fr|alaw8k',
     );
+    fetchMock.mockRestore();
+  });
+});
+
+describe('speakTtsStreamed — libellés du chemin Cartesia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setEnv('CARTESIA_API_KEY', ['test', 'key'].join('-'));
+    setEnv('CARTESIA_VOICE_ID', ['test', 'voice'].join('-'));
+  });
+
+  it('garde le libellé « Cartesia » dans l’erreur remontée à Sentry', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('', { status: 500 }));
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession(), 'Bonjour, je vous écoute.');
+
+    const messages = vi
+      .mocked(captureException)
+      .mock.calls.map(([error]) => (error as Error).message);
+    expect(messages).toContain('Cartesia stream failed with status 500');
     fetchMock.mockRestore();
   });
 });

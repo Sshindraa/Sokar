@@ -330,6 +330,8 @@ async function speakTtsFragment(
   writeDebugLog('[speakTtsStreamed] Synthesizing one prosodic segment');
 
   const provider = telephonyTtsProvider();
+  // Libellés de logs et de Sentry : identiques à ceux d'avant la bascule pour Cartesia.
+  const providerLabel = provider === 'elevenlabs' ? 'ElevenLabs' : 'Cartesia';
   const apiKey =
     provider === 'elevenlabs' ? process.env.ELEVENLABS_API_KEY : process.env.CARTESIA_API_KEY;
   const voiceId = provider === 'elevenlabs' ? elevenLabsTtsVoiceId() : getCartesiaVoiceId(session);
@@ -474,7 +476,7 @@ async function speakTtsFragment(
             VOICE_PROVIDER_TIMEOUT_MS,
           );
         } catch {
-          writeDebugLog(`[speakTtsStreamed] ${provider} timeout (tentative ${attempt + 1})`);
+          writeDebugLog(`[speakTtsStreamed] ${providerLabel} timeout (tentative ${attempt + 1})`);
           voiceProviderErrorsTotal.inc({ provider, type: 'timeout' });
           response = null;
           if (attempt === 0) {
@@ -496,16 +498,16 @@ async function speakTtsFragment(
 
       if (!response || !response.ok) {
         const status = response?.status ?? 0;
-        writeDebugLog(`[speakTtsStreamed] ${provider} stream failed after retry: ${status}`);
+        writeDebugLog(`[speakTtsStreamed] ${providerLabel} stream failed after retry: ${status}`);
         logger.error(
           { callId: session.callControlId, status, provider },
-          `[speakTtsStreamed] ${provider} stream failed after retry`,
+          `[speakTtsStreamed] ${providerLabel} stream failed after retry`,
         );
         voiceProviderErrorsTotal.inc({
           provider,
           type: status === 429 ? '429' : '5xx',
         });
-        const err = new Error(`${provider} stream failed with status ${status}`);
+        const err = new Error(`${providerLabel} stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
           extra: { callId: session.callControlId, status, ...describeTranscript(trimmed) },
