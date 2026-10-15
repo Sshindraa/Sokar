@@ -20,7 +20,7 @@ import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { partySizeCorrectionFact } from '../stream/structured-turn/fact-guards';
 import { speakTtsStreamed } from '../stream/tts-handler';
-import { __resetMetrics } from '../../../shared/observability/metrics';
+import { __resetMetrics, voiceTtsContextFailureTotal } from '../../../shared/observability/metrics';
 import { logger } from '../../../shared/logger/pino';
 
 vi.mock('../stream/tts-handler', () => ({
@@ -33,8 +33,10 @@ const contextTurn: {
   finish: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
   hasAudioOutput: boolean;
+  provider: 'cartesia';
   onHoldCancelled?: () => void;
 } = {
+  provider: 'cartesia',
   push: vi.fn(),
   finish: vi.fn().mockResolvedValue(undefined),
   cancel: vi.fn(),
@@ -1713,13 +1715,33 @@ describe('tour structuré (canary)', () => {
       expect(session.ttsContext).toBeNull();
     });
 
-    it('repasse par HTTP si le contexte échoue avant tout audio', async () => {
+    it('repasse par HTTP si le contexte échoue avant tout audio, et le compte', async () => {
+      voiceTtsContextFailureTotal.reset();
       contextTurn.finish.mockRejectedValueOnce(new Error('socket closed'));
       const { session, mgr, outputs } = fixture();
       outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
       await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
 
       expect(spoken()).toEqual(['Bien sûr. Pour quel jour ?']);
+      const { values } = await voiceTtsContextFailureTotal.get();
+      expect(values).toEqual([
+        { labels: { provider: 'cartesia', outcome: 'http_fallback' }, value: 1 },
+      ]);
+    });
+
+    it('compte une réponse coupée en cours de route, sans la répéter en HTTP', async () => {
+      voiceTtsContextFailureTotal.reset();
+      contextTurn.finish.mockRejectedValueOnce(new Error('socket closed'));
+      contextTurn.hasAudioOutput = true;
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+      const { values } = await voiceTtsContextFailureTotal.get();
+      expect(values).toEqual([
+        { labels: { provider: 'cartesia', outcome: 'audio_cut' }, value: 1 },
+      ]);
     });
 
     it('ferme sans audio le contexte d’un tour où l’agent se tait', async () => {

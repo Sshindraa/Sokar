@@ -9,6 +9,8 @@ import { isElevenLabsDialogueEnabled } from './elevenlabs-dialogue-context';
  * l'implémentent, le moteur de tour structuré ne connaît que cette interface.
  */
 export interface ContextTtsTurn {
+  /** Fournisseur du tour, pour les métriques. */
+  readonly provider: 'elevenlabs' | 'cartesia';
   /** Appelé quand l'appelant reprend la parole avant le premier son : la réponse préparée est jetée. */
   onHoldCancelled?: () => void;
   readonly hasAudioOutput: boolean;
