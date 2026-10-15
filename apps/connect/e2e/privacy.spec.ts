@@ -9,8 +9,8 @@ test('privacy renders with the request CSP nonce after hydration', async ({ page
   const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
   expect(nonce).toBeTruthy();
   const html = await response!.text();
-  const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)].filter(
-    ([, attributes]) => !/\bsrc=/.test(attributes),
+  const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
+    ([, attributes]) => !/\bsrc=/i.test(attributes),
   );
   expect(inlineScripts.length).toBeGreaterThan(0);
   for (const [, attributes] of inlineScripts) {
