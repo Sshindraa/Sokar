@@ -2215,3 +2215,11 @@ native depuis la démo. 11 tests ciblés réussis ; Nginx 1.24 isolé : 39/39 co
 avant correction. Aucun vhost actif modifié pendant le diagnostic. Mentions légales
 non finalisées : refus de publication de l’identité légale, aucune donnée personnelle
 ajoutée ; OVHcloud confirmé. Livraison indépendante selon la chaîne AGENTS, détails §10.33.
+
+
+## 2026-10-15 — Privacy : défaut de rendu CSP constaté après #441
+#441 fusionnée, CI et staging verts. Recette HTTP noindex réussie ; navigateur :
+privacy devient blanche sur staging et prod, scripts inline sans nonce CSP.
+Correctif isolé : rendu par requête et nonce transmis à Next uniquement sur privacy,
+sans assouplissement CSP. Build production local, typage, lint, 16 tests middleware
+et un E2E production local réussis. Réserve légale inchangée. Détails growth §10.34.
