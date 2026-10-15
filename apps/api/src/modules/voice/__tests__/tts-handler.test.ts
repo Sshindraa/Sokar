@@ -289,3 +289,35 @@ describe('speakTtsStreamed — libellés du chemin Cartesia', () => {
     fetchMock.mockRestore();
   });
 });
+
+describe('speakTtsStreamed — ElevenLabs en flux', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+    vi.stubEnv('ELEVENLABS_TTS_MODEL', '');
+    vi.stubEnv('ELEVENLABS_TTS_STREAMING', 'true');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('synthétise via /stream quand le drapeau est activé, avec le même format natif', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(
+        async () => new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 }),
+      );
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession('PCMA'), 'Bonjour, je vous écoute.');
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe(
+      'https://api.elevenlabs.io/v1/text-to-speech/voix-test/stream?output_format=alaw_8000',
+    );
+    fetchMock.mockRestore();
+  });
+});
