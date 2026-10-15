@@ -28,7 +28,7 @@
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
- *    - ElevenLabs: `GET /v1/voices/{id}` — read the phone voice, no audio generated
+ *    - ElevenLabs: `GET /v1/user/subscription` — validates the key, no audio, no characters billed
  *                  (only when ElevenLabs synthesises the phone; otherwise `skipped`)
  *
  * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
@@ -188,7 +188,8 @@ async function checkElevenLabs(): Promise<CheckResult> {
   if (telephonyTtsProvider() !== 'elevenlabs') {
     return { status: 'skipped', latency_ms: 0 };
   }
-  // GET on the voice validates the key AND the voice ID, and generates no audio.
+  // GET on the account validates the key and reports the plan: no audio, no characters billed. The voice is not
+  // looked up, because a voice can synthesise without being readable through the metadata endpoint.
   return withTimeout(
     'elevenlabs',
     (async () => {
@@ -200,10 +201,10 @@ async function checkElevenLabs(): Promise<CheckResult> {
       if (!voiceId) {
         throw new Error('ELEVENLABS_TTS_VOICE_ID not configured');
       }
-      const res = await fetch(
-        `https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}`,
-        { method: 'GET', headers: { 'xi-api-key': apiKey } },
-      );
+      const res = await fetch('https://api.elevenlabs.io/v1/user/subscription', {
+        method: 'GET',
+        headers: { 'xi-api-key': apiKey },
+      });
       if (!res.ok) {
         throw new Error(`ElevenLabs API ${res.status}: ${res.statusText}`);
       }
