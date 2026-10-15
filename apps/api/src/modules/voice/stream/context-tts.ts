@@ -1,3 +1,4 @@
+import type { SpokenAlignment } from './interrupted-reply';
 import type { CallSession } from './types';
 import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from './cartesia-context';
 import { createElevenLabsContextTurn } from './elevenlabs-context';
@@ -14,7 +15,12 @@ export interface ContextTtsTurn {
   readonly framesSent: number;
   pause(): void;
   resume(): void;
-  interruptionSnapshot(): { text: string; playedMs: number; totalMs: number | null };
+  interruptionSnapshot(): {
+    text: string;
+    playedMs: number;
+    totalMs: number | null;
+    alignment?: SpokenAlignment;
+  };
   push(transcript: string): void;
   finish(): Promise<void>;
   cancel(reason?: 'barge_in' | 'unused'): void;
