@@ -11,12 +11,14 @@ import type { CallSession } from '../stream/types';
 
 const ENV_KEYS = [
   'VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED',
+  'VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS',
   'VOICE_TTS_CONTEXT_V2_ENABLED',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_TTS_VOICE_ID',
   'VOICE_FIRST_AUDIO_SILENCE_MS',
 ] as const;
 
+const ELEVENLABS_TEST_KEY = ['test', 'elevenlabs', 'api', 'key'].join('-');
 const savedEnv = new Map<string, string | undefined>();
 const servers: WebSocketServer[] = [];
 
@@ -104,6 +106,14 @@ describe('ElevenLabs context TTS : fabrique', () => {
     process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = 'true';
     process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
     delete process.env.ELEVENLABS_API_KEY;
+    expect(createContextTtsTurn(makeSession().session)).toBeNull();
+  });
+
+  it('la liste de restaurants ne crée pas de tour pour un restaurant absent', () => {
+    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
+    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS = 'autre-restaurant';
+    process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+    process.env.ELEVENLABS_API_KEY = ELEVENLABS_TEST_KEY;
     expect(createContextTtsTurn(makeSession().session)).toBeNull();
   });
 });

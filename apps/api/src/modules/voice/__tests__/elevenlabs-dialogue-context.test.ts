@@ -88,19 +88,22 @@ describe('elevenlabs-dialogue-context : lecture des messages serveur', () => {
 });
 
 describe('elevenlabs-dialogue-context : drapeau', () => {
-  const previous = process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-  afterEach(() => {
-    if (previous === undefined) delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    else process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = previous;
+  it('est désactivé par défaut et ne s’active globalement qu’avec la valeur « true »', () => {
+    expect(isElevenLabsDialogueEnabled('resto-a', {})).toBe(false);
+    expect(
+      isElevenLabsDialogueEnabled('resto-a', { VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true' }),
+    ).toBe(true);
+    expect(
+      isElevenLabsDialogueEnabled('resto-a', { VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: '1' }),
+    ).toBe(false);
   });
 
-  it('est désactivé par défaut et ne s’active qu’avec la valeur « true »', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    expect(isElevenLabsDialogueEnabled()).toBe(false);
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = 'true';
-    expect(isElevenLabsDialogueEnabled()).toBe(true);
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = '1';
-    expect(isElevenLabsDialogueEnabled()).toBe(false);
+  it('s’active seulement pour les restaurants listés', () => {
+    const env = { VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS: ' resto-a , resto-b ' };
+    expect(isElevenLabsDialogueEnabled('resto-a', env)).toBe(true);
+    expect(isElevenLabsDialogueEnabled('resto-b', env)).toBe(true);
+    expect(isElevenLabsDialogueEnabled('resto-c', env)).toBe(false);
+    expect(isElevenLabsDialogueEnabled(undefined, env)).toBe(false);
   });
 });
 
