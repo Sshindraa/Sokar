@@ -2218,3 +2218,10 @@ ajoutée ; OVHcloud confirmé. Livraison indépendante selon la chaîne AGENTS, 
 
 ## 2026-10-15 — Bascule technique du téléphone vers ElevenLabs v4 Turbo, derrière VOICE_TTS_PROVIDER
 Décision produit du 14/10 : la synthèse des appels passe de Cartesia sonic-3.6 à ElevenLabs `eleven_v4_turbo`. Elle remplace la décision du 02/10 (ne plus travailler avec ElevenLabs). Implémentation derrière `VOICE_TTS_PROVIDER`, dont le défaut reste `cartesia` : aucun changement de comportement tant que la variable n'est pas positionnée. Adaptateur `stream/elevenlabs-tts.ts` (format G.711 natif Telnyx, code langue, clé de cache `elevenlabs|…`), branché dans `tts-handler` et `greeting-cache` ; caractères comptés sous `elevenlabs`. Validation production : clé et voix ElevenLabs requises si le fournisseur est ElevenLabs. Hors bascule : aperçus de voix du restaurant et démo de l'onboarding (encore Cartesia), contrôle de santé. Approvisionnement (Hamza) : clé de production, `ELEVENLABS_TTS_VOICE_ID`, plan adapté au volume. Avant bascule : écoute d'appels en staging.
+
+## 2026-10-15 — Privacy : défaut de rendu CSP constaté après #441
+#441 fusionnée, CI et staging verts. Recette HTTP noindex réussie ; navigateur :
+privacy devient blanche sur staging et prod, scripts inline sans nonce CSP.
+Correctif isolé : rendu par requête et nonce transmis à Next uniquement sur privacy,
+sans assouplissement CSP. Build production local, typage, lint, 16 tests middleware
+et un E2E production local réussis. Réserve légale inchangée. Détails growth §10.34.

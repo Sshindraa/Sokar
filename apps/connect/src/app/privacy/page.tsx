@@ -1,12 +1,15 @@
 /**
  * Sokar Connect — Politique de confidentialité.
  *
- * Page statique (○, pas de ƒ) — aucun fetch, aucun state.
+ * Rendu par requête pour que les scripts Next reçoivent le nonce CSP courant.
  * RGPD : Sokar est un SaaS B2F (business-to-food) traitant des données
  * de réservation pour le compte de restaurants clients.
  */
 
 import type { Metadata } from 'next';
+
+// A per-request nonce cannot be attached to a prerendered HTML document.
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Politique de confidentialité',
