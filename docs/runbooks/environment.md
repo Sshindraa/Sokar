@@ -400,6 +400,8 @@ VOICE_TTS_PROVIDER="cartesia"
 ELEVENLABS_TTS_MODEL="eleven_v4_turbo"
 # Chemin WebSocket des tours en contexte (latence de dialogue), distinct et désactivé par défaut.
 VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+# Restaurants autorisés sur ce chemin (identifiants séparés par des virgules). Vide : aucun restaurant.
+VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
 ```
 
 - Le téléphone (tours HTTP, message d'accueil en cache) suit `VOICE_TTS_PROVIDER`. Le format de sortie est le G.711
@@ -410,6 +412,9 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 - `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
   octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
   arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
+- Le chemin WebSocket (`VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true`) ne s'applique qu'aux restaurants listés dans
+  `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS` : le drapeau global seul ne bascule personne. Pour l'arrêter ou
+  retirer un restaurant, modifier la variable puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur

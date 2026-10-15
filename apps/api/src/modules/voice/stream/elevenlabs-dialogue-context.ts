@@ -1,8 +1,9 @@
 import { WebSocket, type RawData } from 'ws';
+import { parseRestaurantIdList } from './feature-flags';
 
 /**
  * Client WebSocket ElevenLabs Text to Dialogue, utilisé par `elevenlabs-context.ts` pour le tour de parole.
- * Actif seulement si `isElevenLabsDialogueEnabled()` (faux par défaut).
+ * Actif seulement si `isElevenLabsDialogueEnabledFor(restaurantId)` : drapeau global et restaurant listé (faux par défaut).
  *
  * Protocole vérifié en banc (14/10/2026) : la voix est enregistrée dans le premier message, le texte passe dans
  * `inputs` avec `flush: true`, puis `close_socket` termine la session. Le serveur envoie des chunks `audio` en
@@ -16,9 +17,24 @@ export const ELEVENLABS_DIALOGUE_MODEL = 'eleven_v4_turbo';
 const KEEP_ALIVE_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 
-/** Drapeau d'activation. Faux par défaut : tant qu'il n'est pas branché, aucun comportement ne change. */
-export function isElevenLabsDialogueEnabled(): boolean {
-  return process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED === 'true';
+/** Drapeau global, faux par défaut. Seul, il n'active rien : voir `isElevenLabsDialogueEnabledFor`. */
+export function isElevenLabsDialogueEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED === 'true';
+}
+
+/**
+ * Chemin WebSocket pour les restaurants listés dans `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`
+ * (identifiants séparés par des virgules). Liste vide : aucun restaurant, même drapeau global allumé.
+ */
+export function isElevenLabsDialogueEnabledFor(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    isElevenLabsDialogueEnabled(env) &&
+    parseRestaurantIdList(env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS).includes(restaurantId),
+  );
 }
 
 export interface ElevenLabsDialogueUrlOptions {
