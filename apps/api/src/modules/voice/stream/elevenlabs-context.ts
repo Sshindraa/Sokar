@@ -96,6 +96,7 @@ function wait(ms: number): Promise<void> {
  * du LLM, comme Cartesia.
  */
 export class ElevenLabsContextTurn implements ContextTtsTurn {
+  readonly provider = 'elevenlabs' as const;
   private ws: WebSocket | null = null;
   private socketOpen = false;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
