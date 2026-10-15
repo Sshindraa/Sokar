@@ -2225,3 +2225,6 @@ privacy devient blanche sur staging et prod, scripts inline sans nonce CSP.
 Correctif isolé : rendu par requête et nonce transmis à Next uniquement sur privacy,
 sans assouplissement CSP. Build production local, typage, lint, 16 tests middleware
 et un E2E production local réussis. Réserve légale inchangée. Détails growth §10.34.
+
+## 2026-10-15 — /health contrôle ElevenLabs quand la bascule est active
+Ajout du check `elevenlabs` à `GET /health`, sur le modèle de Cartesia. Hors bascule (`VOICE_TTS_PROVIDER` différent de `elevenlabs`), le check renvoie `skipped` : aucun appel réseau, statut global inchangé. Avec la bascule, la clé et la voix sont vérifiées par `GET https://api.elevenlabs.io/v1/voices/{voice_id}` (en-tête `xi-api-key`), sans génération audio. La documentation ElevenLabs ne précise pas le coût de cette lecture : à vérifier sur le compteur du compte de production. Une panne passe `status` à `degraded`, sans 503, comme Telnyx et Cartesia. Changement additif du contrat de `/health` : check `elevenlabs` et statut `skipped`. Non couvert : le chemin dialogue WebSocket (`VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED`), dont la voix retombe sur une valeur de repli.
