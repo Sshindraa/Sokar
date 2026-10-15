@@ -25,7 +25,7 @@ export interface ContextTtsTurn {
  * retombe sur Cartesia. Sans aucun drapeau, le résultat est `null` : le chemin HTTP habituel reste en place.
  */
 export function createContextTtsTurn(session: CallSession): ContextTtsTurn | null {
-  if (isElevenLabsDialogueEnabled()) {
+  if (isElevenLabsDialogueEnabled(session.restaurantId)) {
     const elevenLabsTurn = createElevenLabsContextTurn(session);
     if (elevenLabsTurn) return elevenLabsTurn;
   }
