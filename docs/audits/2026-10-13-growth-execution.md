@@ -1229,7 +1229,7 @@ Hamza autorise la chaîne complète (« ok go ») après réserve Mentions léga
 
 **Vérifié dans le navigateur** (worktree, port 3107) : `/pricing` sans erreur de console. À 375 px, la page ne déborde pas ; le tableau défile dans son conteneur.
 
-**À valider avant publication.** Le statut « disponible » de la synchronisation Google Agenda, de la facturation groupée Multi-site et du suivi des no-shows repose sur le code et la FAQ : à confirmer par le produit. Sont marqués « prévu » : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
+**Statuts décidés le 15/10/2026.** Google Agenda, facturation groupée Multi-site et suivi des absences (statut `NO_SHOW` des réservations) restent « disponibles » : le code les expose (client Google Agenda, total de groupe calculé par l'API, statut `NO_SHOW`), sans contrôle par formule. Restent « prévus » et affichés comme tels sur `/pricing` : le ton adapté, la réservation depuis ChatGPT et Claude, la synchronisation ZenChef, TheFork et Lightspeed.
 
 ### 10.31 Fusion avec le copilote de service de #428 (14/10/2026)
 
@@ -1237,11 +1237,11 @@ Le décompte de la section 10.30 concerne le catalogue d'avant cette fusion. Le 
 
 **Ce que la page affiche.** Pro vend le copilote de service : suggestions pour les retards, estimation des tables bientôt disponibles avec indication de fiabilité, rapprochements avec les clients en attente, analyse d'une réorganisation et plan validé par l'équipe, historique des plans et retour arrière sous conditions. Essential garde planning, placement manuel, disponibilités, liste d'attente et pouls ; il n'inclut aucune fonction avancée du copilote, ce que teste un garde-fou. Pro et Multi-site proposent « Découvrir » (démonstration) avant l'inscription. Les textes publics sont ceux de `main` ; le catalogue fournit les statuts et le tableau.
 
-**Statuts à valider par le produit.**
+**Statuts décidés le 15/10/2026.**
 
-- Copilote « disponible » en Pro et Multi-site : l'accès est porté par la capacité de formule, et #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert ; aucun résultat en conditions de service n'est annoncé.
-- Rapport quotidien de vos appels « disponible » en Essential, ajouté au-delà du texte de `main`.
-- Les statuts « disponible » de la section 10.30 (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) restent à confirmer.
+- Copilote « disponible » en Pro et Multi-site : décision du produit. L'accès est porté par la capacité de formule ; #428 présente ces fonctions comme incluses. Le pilote terrain reste ouvert, et aucun résultat en conditions de service n'est annoncé.
+- Rapport quotidien de vos appels « disponible » en Essential : le module de résumé quotidien existe et n'est soumis à aucun contrôle par formule.
+- Les autres statuts « disponible » (Google Agenda, facturation groupée Multi-site, suivi des absences en Essential) sont confirmés, voir la section 10.30.
 
 **Vérifié avant publication.** Typage et Prettier OK ; 620 tests du dashboard verts ; captures `/pricing` régénérées, 3/3 verts après régénération. Dans le navigateur (port 3107) : « Découvrir Pro » pointe vers `/demo?plan=pro&billing=annual`, aucun « Choisir Pro » n'apparaît, le copilote figure dans la carte Pro, console sans erreur.
 
