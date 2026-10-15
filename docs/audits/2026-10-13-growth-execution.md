@@ -1315,3 +1315,46 @@ staging, absence de noindex ajoutée sur l’accueil production, `/privacy` serv
 navigation depuis la démo sans requête RSC vers cette page ; conserver UI et navigation
 sans soumettre de formulaire. Puis lire Search Console séparément : indexabilité,
 indexation, canonical retenu, requêtes et clics hors marque, sans délai garanti.
+
+### 10.34 Confidentialité : rendu navigateur et nonce CSP (15/10/2026)
+
+#441 fusionnée (`22fb08b3`), CI main `38729949554` et staging `38730708031` verts.
+Staging release `20261015T115647Z` (snapshot `22b99f76`, source #441) : en-tête
+noindex présent sur accueil, démo, privacy, embed, assets, widget, book, erreurs 404
+et santé API. La production reste indexable. Le test HTTP ne suffit pas : une
+page privacy HTTP 200 devient blanche après hydratation sur les deux environnements.
+Les scripts inline du HTML statique ne portent pas le nonce de la CSP courante ;
+le navigateur rapporte « Connection closed ». Le correctif du préchargement #441
+reste utile mais ne suffit donc pas à clore la recette privacy.
+
+Correctif séparé `codex/privacy-csp`, base `22fb08b3` : seul `/privacy` passe en
+rendu par requête, et reçoit le nonce via la CSP de requête analysée par Next.js.
+La CSP de réponse et ses restrictions restent identiques ; aucun `unsafe-inline`
+ajouté pour les scripts. Aucune généralisation du rendu dynamique aux autres pages,
+aucune modification auth, design, contenu légal, DB ou voix. Exception au rendu
+statique justifiée par le nonce par requête :
+[documentation Next.js](https://nextjs.org/docs/app/guides/content-security-policy).
+
+Manifeste exact : `apps/connect/src/app/privacy/page.tsx`,
+`apps/connect/src/middleware.ts`, `apps/connect/src/middleware.test.ts`,
+`apps/connect/e2e/privacy.spec.ts`, ce rapport, `docs/obsidian/Context.md`,
+`docs/obsidian/Journal.md`. Génération Next temporaire hors sélection ; aucun
+fichier de configuration TypeScript généré conservé dans le patch.
+
+Validation : Vitest 4.1.5, 16 tests middleware ; typage et ESLint Connect verts.
+Build Next 15.5.21 local de production réussi, `/privacy` dynamique attendu.
+Test Playwright ciblé sur le serveur de production local : scripts inline tous
+porteurs du nonce de réponse, contenu visible après hydratation, aucune pageerror.
+Aucune clé Clerk requise pour Connect. Recette publique à refaire après livraison.
+
+Livraison selon AGENTS : commit de branche → `pnpm pr:submit` → CI → staging/smoke
+→ production. Changement sécurité signalé : transmission du nonce, sans élargir les
+sources CSP. Snapshots applicatifs et META conservés par la chaîne ; retour arrière
+applicatif vers la release précédente, sans restauration DB. Pas de changement Nginx
+supplémentaire. Mentions légales toujours ouvertes, aucune identité personnelle publiée.
+
+Point de départ GSC lu le 15/10 : période 13/07–12/10, 15 clics, 671 impressions,
+CTR 2,2 %, position moyenne 16,3 ; les 19 requêtes détaillées n’indiquent aucun clic
+hors marque pertinent. Les totaux incluent des clics non détaillés : ne pas affirmer
+un total hors marque nul. Données antérieures à la livraison, aucune attribution de gain.
+Sitemap lu le 14/10, succès, quatre URLs : aucune nouvelle soumission nécessaire.
