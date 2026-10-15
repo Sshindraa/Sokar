@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] SEO : accueil prioritaire, UI conservée ; ancienne landing → `/`, hors sitemap. Code intégré via #438 ; livraison documentaire autorisée, recette publique en cours (§10.29).
+- [ ] SEO : accueil livré (#438/#440), recette publique satisfaisante ; indexation GSC à suivre. Staging noindex et démo/privacy en livraison (§10.33). Mentions légales bloquées : identité non autorisée à publier ; liens sociaux facultatifs.
 - [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
 - [ ] Vitrine : valider ou ajuster FAQ données et promesse « Support prioritaire 7j/7 » selon les preuves.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.

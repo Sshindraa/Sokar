@@ -207,9 +207,9 @@ export default function DemoRequestForm() {
       <p className="text-xs leading-5 text-muted-foreground">
         Nous utilisons ces informations uniquement pour vous recontacter au sujet de la
         démonstration. Consultez notre{' '}
-        <Link href="/privacy" className="underline underline-offset-4">
+        <a href="/privacy" className="underline underline-offset-4">
           politique de confidentialité
-        </Link>
+        </a>
         .
       </p>
 
