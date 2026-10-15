@@ -37,6 +37,7 @@ describe('internal usage summary', () => {
         category: 'SMS_SEGMENTS',
         quantity: '3.000000',
         estimatedCostEur: '0.120000',
+        pricedCostEur: '0.120000',
         costStatus: 'MIXED',
         pricedEvents: 1,
         unpricedEvents: 1,
