@@ -285,7 +285,9 @@ export default function AdminMarginPage() {
             </Button>
           )}
           <Button asChild variant="outline">
-            <a href={`/api/proxy/admin/usage/accounting-export.csv?month=${month}`}>
+            <a
+              href={`/api/proxy/admin/usage/accounting-export.csv?month=${encodeURIComponent(month)}`}
+            >
               <Download aria-hidden="true" />
               Télécharger le suivi interne
             </a>
