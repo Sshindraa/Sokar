@@ -621,7 +621,7 @@ export class CallSessionManager {
     // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
     const snapshot = session.ttsContext?.interruptionSnapshot?.();
     session.interruptedReply = snapshot?.text.trim()
-      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs)
+      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs, snapshot.alignment)
       : undefined;
     session.ttsContext?.cancel();
     session.ttsContext = null;

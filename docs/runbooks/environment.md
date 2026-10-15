@@ -363,6 +363,12 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
 # Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
 # ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
+# Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait
+# refuser la connexion (code 1008) : chaque tour retombe alors sur le repli. Vérifier avant de poser.
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=""
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=""
+# La langue de l'appel (`language_code`) et l'alignement par caractère (`sync_alignment`) sont toujours
+# envoyés : ils n'ont pas de variable.
 ```
 
 Relance quand l'appelant n'est pas entendu (appel c5d6b07d du 28 septembre : « euh…
