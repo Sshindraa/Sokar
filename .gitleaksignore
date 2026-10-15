@@ -1,0 +1,3 @@
+# Faux positif vérifié (PR #443) : noms de variables ElevenLabs suivis de guillemets vides, lus comme une
+# valeur de clé par generic-api-key. Aucune clé dans ce commit. Empreinte exacte, aucune règle élargie.
+fbeabf54c8f33cfe601fe1aacba4c51ea76f271b:docs/runbooks/environment.md:generic-api-key:397
