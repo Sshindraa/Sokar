@@ -5,9 +5,9 @@ Statut : plan directeur, blueprint technique et registre d'exécution local
 Horizon indicatif : 6 à 9 mois pour une suite solide destinée aux indépendants ; 12 à 18 mois pour approcher la largeur fonctionnelle de SevenRooms
 Hypothèse de capacité : un développeur principal à temps plein, Hamza disponible pour les décisions produit, les pilotes et les validations terrain
 
-> Le catalogue local affiche désormais Essential à 199 € et Pro à 299 €. Les identifiants et
-> montants Stripe actifs restent ceux de l'ancien catalogue jusqu'à une migration externe
-> contrôlée ; ces offres ne sont donc pas encore annoncées ou facturées comme 199/299 €. Le
+> Le catalogue local et Stripe (test et live) facturent Essential 199 € et Pro 299 € HT/mois
+> (contrôle du 16 octobre 2026, voir [`runbooks/stripe-billing.md`](./runbooks/stripe-billing.md)).
+> L'ouverture commerciale complète reste soumise aux portes ci-dessous. Le
 > profil scoped `core-operator-foundations` a toutefois été promu pour les fondations sûres ;
 > le gel de l'offre complète reste actif. La réconciliation des audits et le statut consolidé
 > de la documentation se trouvent dans [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)
@@ -99,11 +99,9 @@ visite → ticket de caisse → dépense client → segment de valeur → campag
 - Le multi-site possède désormais un socle de groupes client explicite (consentement, liens
   idempotents, clé compte/client unique et masquage du téléphone), mais l'isolation avec plusieurs
   identités Clerk réelles, l'effacement inter-sites et les campagnes consolidées restent à valider.
-- Le catalogue local Essential/Pro est maintenant 199/299 € sur les constantes, l'interface,
-  l'inscription, le calcul ROI et les alias historiques. Le Multi-site reste 249 € + 99 €/site
-  jusqu'à une décision de packaging groupe. Les prix Stripe actifs, les `priceId`, les contrats et
-  la preuve de checkout restent à migrer et à rejouer ensemble ; aucune synchronisation externe n'a
-  été exécutée.
+- Le catalogue Essential 199 €, Pro 299 € et Multi-site 299 € + 99 €/site (remise annuelle 10 %)
+  est aligné entre le code et les huit prix Stripe test et live depuis la grille du 14 octobre 2026 ;
+  Checkout et facture test rejoués le 16 octobre. Les contrats restent à aligner.
 
 ## 3. Périmètre commercial cible
 
