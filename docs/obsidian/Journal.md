@@ -2237,3 +2237,19 @@ Choix explicite de Hamza : bascule en production alors que la décision sous-tra
 
 ## 2026-10-15 — Voix ElevenLabs du téléphone : Lucie (YxrwjAKoUKULGd0g8K9Y)
 Voix remplacée par `YxrwjAKoUKULGd0g8K9Y` (Lucie, française, féminine, catégorie professionnelle), en production et en staging (`ELEVENLABS_TTS_VOICE_ID`). Sauvegardes des `.env` avant changement : `.env.bak-voice-20261015T225442` (staging) et `.env.bak-voice-20261015T225452` (production). Pré-génération des salutations au redémarrage : staging 13 générées, 0 échec ; production 16 générées, 0 échec. `/health` : `elevenlabs` ok en production (149 ms). Une lecture des métadonnées de la voix a renvoyé 400 juste avant la bascule, puis 200 ensuite : le check sur la voix n'était donc pas en cause. La PR #446 (check sur la clé et le quota) reste ouverte, auto-merge désarmé, faute de nécessité.
+
+2026-10-16 00:40 — [voice, elevenlabs, tts, feature-flag] **ElevenLabs Dialogue activable restaurant par restaurant** — Nouveau `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS` (vide = aucun) ; `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` reste l'activation globale. Banc WebSocket Text to Dialogue : médiane 97 ms, p95 109 ms ; formats A-law, µ-law et PCM acceptés. Tarif WebSocket non réconcilié ; écoute d'appels réels encore nécessaire.
+
+2026-10-16 — Suivi des coûts admin amélioré localement : période/export synchronisés, coûts tarifés séparés des usages non tarifés, détail par établissement et corrections avec preuve/décision motivée. Réponses obsolètes ignorées ; navigation plafonnée au mois courant. Tests ciblés, typechecks API/dashboard et contrôle visuel mobile réussis.
+
+2026-10-16 00:51 — [voice, elevenlabs, prod, feature-flag] **ElevenLabs Dialogue activé pour Chez Sokar en production** via PR #448 (`6fa362e`, CI/staging/prod verts). Drapeau limité au restaurant ; santé 200. Appels réels et consommation de caractères restent à vérifier.
+
+2026-10-16 — Vue générale admin transformée localement en cockpit opérateur : file d'actions priorisées, raccourcis, fraîcheur des données et résumé API protégé ne renvoyant que des compteurs. Tests UI/API, typechecks et rendu mobile vérifiés.
+
+2026-10-16 — Revue de la vue admin : cartes KPI et liens redondants retirés au profit d'une file concise ; états partiels et panne complète distingués d'une file vide. Tests ciblés et typecheck dashboard réussis.
+
+2026-10-16 01:30 — [voice, elevenlabs, tts] **Options ElevenLabs v4 Turbo** livrées via PR #450 : langue par tour, alignement synchronisé pour le barge-in, dictionnaire optionnel. L'alignement API a été testé ; dictionnaire de prononciation encore à créer.
+
+2026-10-16 — Diagnostic DLQ local : colonne nullable `demo_requests.last_interaction_at` ajoutée au schéma local par la migration dédiée ; aucun rattrapage global de l'historique Prisma. Les 2 080 entrées dead-letter restent intactes, sans rejeu ni suppression.
+
+2026-10-16 02:05 — [voice, elevenlabs, banc, écoute] **Banc d'écoute à l'aveugle des balises v4 prêt**. Risque ouvert : le fallback Cartesia peut prononcer les balises ; leur retrait hors ElevenLabs reste à traiter avant une activation plus large.

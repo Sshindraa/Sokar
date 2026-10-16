@@ -1,4 +1,4 @@
-import type { InterruptedReply } from './interrupted-reply';
+import type { InterruptedReply, SpokenAlignment } from './interrupted-reply';
 import type { CallerVoiceActivity } from './caller-voice-activity';
 import type { FastBargeInState } from './fast-barge-in';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
@@ -244,7 +244,12 @@ export interface ActiveTtsContext {
   pause?(): void;
   resume?(): void;
   /** Texte poussé et audio joué, à lire avant `cancel` : de quoi estimer ce que l'appelant a entendu. */
-  interruptionSnapshot?(): { text: string; playedMs: number; totalMs: number | null };
+  interruptionSnapshot?(): {
+    text: string;
+    playedMs: number;
+    totalMs: number | null;
+    alignment?: SpokenAlignment;
+  };
 }
 
 /** Compteurs internes de consommation des providers d'un appel. */

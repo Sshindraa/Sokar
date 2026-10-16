@@ -354,6 +354,21 @@ VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
 VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
+# Contexte Cartesia (une connexion par réponse) : faux par défaut, le chemin HTTP reste la référence.
+VOICE_TTS_CONTEXT_V2_ENABLED="false"
+# Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : faux en production, ne pas activer sans
+# écoute validée. Prioritaire sur le contexte Cartesia ; sans ELEVENLABS_API_KEY, repli automatique.
+VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+# Même adaptateur, restaurant par restaurant (ids séparés par des virgules). Vide = aucun.
+VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
+# Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
+# ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
+# Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait
+# refuser la connexion (code 1008) : chaque tour retombe alors sur le repli. Vérifier avant de poser.
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=""
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=""
+# La langue de l'appel (`language_code`) et l'alignement par caractère (`sync_alignment`) sont toujours
+# envoyés : ils n'ont pas de variable.
 ```
 
 Relance quand l'appelant n'est pas entendu (appel c5d6b07d du 28 septembre : « euh…
@@ -407,6 +422,9 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 - `/health` contrôle ElevenLabs (clé et voix, par `GET /v1/voices/{id}`, sans audio) seulement avec
   `VOICE_TTS_PROVIDER=elevenlabs` ; hors bascule, le check est `skipped`. Une panne passe `status` à
   `degraded` sans 503, comme Telnyx et Cartesia.
+- `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
+  octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
+  arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur
@@ -834,11 +852,12 @@ envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAl
 Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
 dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
 
-Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
+Les bancs utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du 14/10/2026,
+partagée prod, dev, staging et banc). Les autres clés de banc restent dédiées :
 
 | Variable                     | Usage                                                                                        |
 | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| **ELEVENLABS_BENCH_API_KEY** | Clé dédiée du banc STT, différente de ELEVENLABS_API_KEY                                     |
+| **ELEVENLABS_API_KEY**       | Clé unique : prod, dev, staging et bancs STT/TTS (décision du 14/10/2026)                    |
 | **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
 | **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
 | **CEREBRAS_BENCH_API_KEY**   | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                        |

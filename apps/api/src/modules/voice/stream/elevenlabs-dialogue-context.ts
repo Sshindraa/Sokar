@@ -1,8 +1,9 @@
 import { WebSocket, type RawData } from 'ws';
+import { parseRestaurantIdList } from './feature-flags';
 
 /**
  * Client WebSocket ElevenLabs Text to Dialogue, utilisé par `elevenlabs-context.ts` pour le tour de parole.
- * Actif seulement si `isElevenLabsDialogueEnabled()` (faux par défaut).
+ * Actif seulement si `isElevenLabsDialogueEnabled(restaurantId)` (faux par défaut).
  *
  * Protocole vérifié en banc (14/10/2026) : la voix est enregistrée dans le premier message, le texte passe dans
  * `inputs` avec `flush: true`, puis `close_socket` termine la session. Le serveur envoie des chunks `audio` en
@@ -16,27 +17,66 @@ export const ELEVENLABS_DIALOGUE_MODEL = 'eleven_v4_turbo';
 const KEEP_ALIVE_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 5_000;
 
-/** Drapeau d'activation. Faux par défaut : tant qu'il n'est pas branché, aucun comportement ne change. */
-export function isElevenLabsDialogueEnabled(): boolean {
-  return process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED === 'true';
+/**
+ * Drapeau d'activation. `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` l'active pour tous les restaurants ;
+ * sinon seulement pour ceux de `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`. Vide = aucun.
+ */
+export function isElevenLabsDialogueEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED === 'true') return true;
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS).includes(restaurantId),
+  );
 }
 
 export interface ElevenLabsDialogueUrlOptions {
   model?: string;
-  /** Format de sortie. `pcm_16000` par défaut ; les formats téléphoniques (`ulaw_8000`, `alaw_8000`) sont à valider. */
+  /** Format de sortie. `pcm_16000` par défaut ; `ulaw_8000` et `alaw_8000` vérifiés en banc (16/10/2026). */
   outputFormat?: string;
+  /** Langue imposée (ISO 639-1), sans détection automatique. Absente : le modèle détecte. */
+  languageCode?: string;
+  /** `sync_alignment` : chaque chunk audio porte l'instant de chaque caractère prononcé. */
+  syncAlignment?: boolean;
 }
 
 export function buildElevenLabsDialogueUrl(options: ElevenLabsDialogueUrlOptions = {}): string {
   const url = new URL(ELEVENLABS_DIALOGUE_WS_URL);
   url.searchParams.set('model_id', options.model ?? ELEVENLABS_DIALOGUE_MODEL);
   url.searchParams.set('output_format', options.outputFormat ?? 'pcm_16000');
+  if (options.languageCode) url.searchParams.set('language_code', options.languageCode);
+  if (options.syncAlignment) url.searchParams.set('sync_alignment', 'true');
   return url.toString();
 }
 
-/** Premier message : enregistre la voix. v4 Turbo accepte une seule voix par connexion. */
-export function buildOpeningMessage(voiceId: string): { voices: string[] } {
-  return { voices: [voiceId] };
+export interface PronunciationDictionaryLocator {
+  pronunciation_dictionary_id: string;
+  version_id: string;
+}
+
+/**
+ * Dictionnaire de prononciation ElevenLabs (`ELEVENLABS_PRONUNCIATION_DICTIONARY_ID` et `_VERSION_ID`), ou `null`.
+ * Les deux sont requis : un identifiant inconnu fait fermer la connexion par le serveur (code 1008).
+ */
+export function getPronunciationDictionaryLocator(
+  env: NodeJS.ProcessEnv = process.env,
+): PronunciationDictionaryLocator | null {
+  const id = env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID?.trim();
+  const version = env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID?.trim();
+  if (!id || !version) return null;
+  return { pronunciation_dictionary_id: id, version_id: version };
+}
+
+/** Premier message : enregistre la voix (v4 Turbo en accepte une seule par connexion) et le dictionnaire éventuel. */
+export function buildOpeningMessage(
+  voiceId: string,
+  dictionary: PronunciationDictionaryLocator | null = null,
+): { voices: string[]; pronunciation_dictionary_locators?: PronunciationDictionaryLocator[] } {
+  return dictionary
+    ? { voices: [voiceId], pronunciation_dictionary_locators: [dictionary] }
+    : { voices: [voiceId] };
 }
 
 /** Message de texte. `flush` force la génération sans attendre le seuil de tampon (texte court). */
@@ -59,8 +99,14 @@ export function buildKeepAliveMessage(): { keep_alive: true } {
   return { keep_alive: true };
 }
 
+/** Alignement d'un chunk : caractères prononcés et leur début, en ms depuis le début du chunk. */
+export interface ElevenLabsChunkAlignment {
+  chars: string[];
+  startMs: number[];
+}
+
 export type ElevenLabsDialogueEvent =
-  | { kind: 'audio'; pcm: Buffer }
+  | { kind: 'audio'; pcm: Buffer; alignment?: ElevenLabsChunkAlignment }
   | { kind: 'turn_end' }
   | { kind: 'final' }
   | { kind: 'error'; message: string }
@@ -68,10 +114,22 @@ export type ElevenLabsDialogueEvent =
 
 interface ServerMessage {
   audio?: string | null;
+  alignment?: { chars?: unknown; char_start_times_ms?: unknown } | null;
   is_final_audio_for_turn?: boolean;
   is_final?: boolean;
   error?: string;
   message?: string;
+}
+
+function parseAlignment(raw: ServerMessage['alignment']): ElevenLabsChunkAlignment | null {
+  if (!raw || !Array.isArray(raw.chars) || !Array.isArray(raw.char_start_times_ms)) return null;
+  const chars = raw.chars;
+  const startMs = raw.char_start_times_ms;
+  if (chars.length === 0 || chars.length !== startMs.length) return null;
+  if (!chars.every((c) => typeof c === 'string') || !startMs.every((t) => typeof t === 'number')) {
+    return null;
+  }
+  return { chars: chars as string[], startMs: startMs as number[] };
 }
 
 /** Lit un message serveur. Tout ce qui n'est pas reconnu est ignoré, sans exception. */
@@ -86,7 +144,9 @@ export function parseElevenLabsDialogueMessage(raw: string): ElevenLabsDialogueE
     return { kind: 'error', message: msg.message ? `${msg.error} : ${msg.message}` : msg.error };
   }
   if (typeof msg.audio === 'string' && msg.audio.length > 0) {
-    return { kind: 'audio', pcm: Buffer.from(msg.audio, 'base64') };
+    const pcm = Buffer.from(msg.audio, 'base64');
+    const alignment = parseAlignment(msg.alignment);
+    return alignment ? { kind: 'audio', pcm, alignment } : { kind: 'audio', pcm };
   }
   if (msg.is_final_audio_for_turn === true) return { kind: 'turn_end' };
   if (msg.is_final === true) return { kind: 'final' };

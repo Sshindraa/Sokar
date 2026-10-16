@@ -162,6 +162,78 @@ describe('usage routes', () => {
     expect(authorized.json()).toEqual({ allowed: true });
   });
 
+  it('pagine la file des corrections avec un curseur stable', async () => {
+    const createdAt = new Date('2026-09-14T12:00:00.000Z');
+    const adjustment = {
+      id: 'adjustment-1',
+      idempotencyKey: 'b'.repeat(64),
+      reportHash: 'a'.repeat(64),
+      evidenceRef: 'vault://invoice.json',
+      scopeKey: 'global',
+      restaurantId: null,
+      category: 'SMS_SEGMENTS',
+      provider: 'telnyx',
+      unit: 'segments',
+      periodStart: new Date('2026-09-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      quantityDelta: new Prisma.Decimal('-2'),
+      costDeltaEur: new Prisma.Decimal('0.015'),
+      status: UsageAdjustmentStatus.OPEN,
+      reason: 'Invoice correction',
+      decisionReason: null,
+      createdByHash: 'c'.repeat(64),
+      decidedByHash: null,
+      decidedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    vi.mocked(db.usageReconciliationAdjustment.findMany).mockResolvedValue([
+      adjustment,
+      { ...adjustment, id: 'adjustment-2', createdAt: new Date(createdAt.getTime() - 1000) },
+    ] as never);
+
+    const app = await getApp();
+    const firstPage = await app.inject({
+      method: 'GET',
+      url: '/admin/usage/reconciliation-adjustments?limit=1&status=OPEN',
+      headers: AUTH,
+    });
+
+    expect(firstPage.statusCode).toBe(200);
+    expect(firstPage.json()).toMatchObject({
+      data: [{ id: 'adjustment-1', status: 'OPEN' }],
+      hasMore: true,
+      nextCursor: 'adjustment-1',
+    });
+    expect(db.usageReconciliationAdjustment.findMany).toHaveBeenLastCalledWith({
+      where: { status: 'OPEN' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 2,
+    });
+
+    vi.mocked(db.usageReconciliationAdjustment.findMany).mockResolvedValueOnce([
+      { ...adjustment, id: 'adjustment-2' },
+    ] as never);
+    const secondPage = await app.inject({
+      method: 'GET',
+      url: '/admin/usage/reconciliation-adjustments?limit=1&cursor=adjustment-1',
+      headers: AUTH,
+    });
+
+    expect(secondPage.json()).toMatchObject({
+      data: [{ id: 'adjustment-2' }],
+      hasMore: false,
+      nextCursor: null,
+    });
+    expect(db.usageReconciliationAdjustment.findMany).toHaveBeenLastCalledWith({
+      where: {},
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 2,
+      cursor: { id: 'adjustment-1' },
+      skip: 1,
+    });
+  });
+
   it('expose un export comptable CSV réservé à un opérateur', async () => {
     vi.mocked(db.usageEvent.findMany).mockResolvedValue([
       {

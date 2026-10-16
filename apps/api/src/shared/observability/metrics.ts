@@ -278,6 +278,18 @@ export const voiceNoiseSuppressionTotal = new Counter({
   labelNames: ['engine', 'outcome'] as const,
   registers: [getRegistry()],
 });
+/**
+ * Échecs d'un tour TTS en contexte (WebSocket). `outcome` : `http_fallback` (aucun son encore envoyé,
+ * la réponse repart par le chemin HTTP), `audio_cut` (la réponse s'arrête en cours de route, sans repli),
+ * `skipped` (l'appel n'attendait plus de voix). Le repli HTTP ne se supprime qu'au vu de ce compteur.
+ */
+export const voiceTtsContextFailureTotal = new Counter({
+  name: 'sokar_voice_tts_context_failure_total',
+  help: 'Échecs du TTS en contexte (WebSocket) par fournisseur et issue',
+  labelNames: ['provider', 'outcome'] as const,
+  registers: [getRegistry()],
+});
+
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.
@@ -944,6 +956,7 @@ export function __resetMetrics(): void {
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  voiceTtsContextFailureTotal.reset();
   voiceSttAudioMessagesTotal.reset();
   voiceSttChunkBytes.reset();
   voiceSttProviderAudioMessagesTotal.reset();
