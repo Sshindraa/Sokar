@@ -950,11 +950,24 @@ function subscriptionUpdateData(subscription: SubscriptionObject, deleted: boole
     subscriptionStatus: deleted ? 'canceled' : subscription.status,
     subscriptionPriceId: priceId ?? undefined,
     ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
-    subscriptionCurrentPeriodEnd: subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000)
-      : null,
+    subscriptionCurrentPeriodEnd: subscriptionPeriodEnd(subscription),
     subscriptionCancelAtPeriodEnd: deleted ? false : subscription.cancel_at_period_end,
   };
+}
+
+/**
+ * Stripe API versions from 2025-03 moved `current_period_end` from the subscription to each
+ * item. Reading only the old field wiped the stored date, so the dashboard lost the trial
+ * countdown. During a trial the period ends with the trial.
+ */
+function subscriptionPeriodEnd(subscription: SubscriptionObject): Date | null {
+  const legacy = (subscription as { current_period_end?: number | null }).current_period_end;
+  const item = subscription.items.data[0] as { current_period_end?: number | null } | undefined;
+  const seconds =
+    legacy ??
+    item?.current_period_end ??
+    (subscription.status === 'trialing' ? subscription.trial_end : null);
+  return typeof seconds === 'number' && seconds > 0 ? new Date(seconds * 1000) : null;
 }
 
 function metadataSiteCount(metadata: Record<string, string>): number {
@@ -1259,10 +1272,18 @@ function invoiceBillingInterval(invoice: InvoiceObject): BillingInterval | null 
   return billingIntervalFromStripePrice(invoicePrice(invoice));
 }
 
+/**
+ * End of the service period the invoice bills. `invoice.period_end` is the end of the usage
+ * window that just closed (the invoice date for a subscription invoice), not the end of the
+ * paid period: a trial start invoice would otherwise end the trial on day one.
+ */
 function invoicePeriodEnd(invoice: InvoiceObject): Date | undefined {
-  return Number.isInteger(invoice.period_end) && invoice.period_end > 0
-    ? new Date(invoice.period_end * 1000)
-    : undefined;
+  const lineEnd = invoice.lines?.data
+    ?.map((line) => line.period?.end)
+    .filter((end): end is number => Number.isInteger(end) && end > 0)
+    .sort((a, b) => b - a)[0];
+  const seconds = lineEnd ?? invoice.period_end;
+  return Number.isInteger(seconds) && seconds > 0 ? new Date(seconds * 1000) : undefined;
 }
 
 async function findBillingForInvoice(
