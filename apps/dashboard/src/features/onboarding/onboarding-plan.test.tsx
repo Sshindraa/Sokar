@@ -107,8 +107,8 @@ it('transmet le nombre d’établissements du Multi-site, borné entre 2 et 100'
   );
 });
 
-it('affiche l’erreur du paiement et laisse continuer sans payer', async () => {
-  mocks.post.mockRejectedValue(new Error('La souscription en ligne sera bientôt disponible.'));
+it('affiche l’erreur du paiement et laisse démarrer l’essai autrement', async () => {
+  mocks.post.mockRejectedValueOnce(new Error('La souscription en ligne sera bientôt disponible.'));
   const onContinue = renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
@@ -121,19 +121,44 @@ it('affiche l’erreur du paiement et laisse continuer sans payer', async () => 
   expect(
     screen.getByRole('button', { name: /Commencer l’essai gratuit de 14 jours/ }),
   ).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
-  expect(onContinue).toHaveBeenCalledTimes(1);
+  mocks.post.mockResolvedValueOnce({ status: 'trialing' });
+  fireEvent.click(screen.getByRole('button', { name: /Choisir plus tard/ }));
+  await vi.waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
 });
 
-it('« Plus tard » continue et retient le choix pour ne pas reproposer l’écran', async () => {
+it('« Choisir plus tard » démarre l’essai, continue et retient le choix', async () => {
+  mocks.post.mockResolvedValueOnce({ status: 'trialing' });
   const onContinue = renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
+  fireEvent.click(screen.getByRole('button', { name: /Choisir plus tard/ }));
 
-  expect(onContinue).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+  expect(mocks.post).toHaveBeenCalledWith('billing/trial');
   expect(window.localStorage.getItem('sokar:onboarding:plan-dismissed:restaurant-1')).toBe('1');
-  expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('continue quand un essai ou un abonnement existe déjà', async () => {
+  mocks.post.mockRejectedValueOnce(Object.assign(new Error('déjà'), { status: 409 }));
+  const onContinue = renderPlan();
+  await screen.findByRole('radiogroup', { name: 'Formule' });
+
+  fireEvent.click(screen.getByRole('button', { name: /Choisir plus tard/ }));
+
+  await vi.waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+});
+
+it('reste sur l’écran si l’essai ne peut pas démarrer', async () => {
+  mocks.post.mockRejectedValueOnce(
+    Object.assign(new Error('Impossible de démarrer l’essai.'), { status: 502 }),
+  );
+  const onContinue = renderPlan();
+  await screen.findByRole('radiogroup', { name: 'Formule' });
+
+  fireEvent.click(screen.getByRole('button', { name: /Choisir plus tard/ }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de démarrer l’essai.');
+  expect(onContinue).not.toHaveBeenCalled();
 });
 
 it('annonce qu’un abonnement actif est déjà en place, sans proposer de repayer', async () => {

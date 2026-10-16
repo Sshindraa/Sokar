@@ -45,7 +45,8 @@ const euros = (amount: string | number, unit: string) => `${amount} €/${unit}
 /**
  * Écran « Choisissez votre formule », proposé juste après la validation de l'appel test. Il reprend
  * la formule choisie sur la page Tarifs (gardée pendant l'inscription), mène à Stripe, qui ramène
- * ici. Le paiement n'est pas imposé : « Plus tard » mène à l'écran des canaux.
+ * ici. « Choisir plus tard » démarre quand même l'essai gratuit sur Essential (sans carte) puis
+ * mène à l'écran des canaux : aucun compte n'utilise Sokar hors essai ou abonnement.
  */
 export function OnboardingPlan({
   restaurantId,
@@ -62,6 +63,7 @@ export function OnboardingPlan({
   const [statusLoading, setStatusLoading] = useState(true);
   const [cancelled, setCancelled] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Le choix de la page Tarifs (adresse, sinon mémoire du navigateur) préremplit l'écran.
@@ -119,7 +121,25 @@ export function OnboardingPlan({
     }
   }
 
-  function handleLater() {
+  async function handleLater() {
+    if (startingTrial || paying) return;
+    setStartingTrial(true);
+    setError(null);
+    try {
+      await post('billing/trial');
+    } catch (reason: unknown) {
+      const status = (reason as { status?: number }).status;
+      // 409 : un abonnement ou un essai existe déjà. Rien à démarrer, on continue.
+      if (status !== 409) {
+        setError(
+          reason instanceof Error && reason.message
+            ? reason.message
+            : 'Impossible de démarrer l’essai. Réessayez dans un instant.',
+        );
+        setStartingTrial(false);
+        return;
+      }
+    }
     dismissPlanPrompt(restaurantId);
     onContinue();
   }
@@ -290,15 +310,16 @@ export function OnboardingPlan({
         <Button
           type="button"
           variant="ghost"
-          onClick={handleLater}
-          disabled={paying}
+          onClick={() => void handleLater()}
+          disabled={paying || startingTrial}
           className="h-11 rounded-full text-muted-foreground transition-all duration-200"
         >
-          Plus tard
+          {startingTrial ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
+          Choisir plus tard
         </Button>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Lock size={12} aria-hidden="true" />
-          Paiement sécurisé par Stripe. Formule modifiable à tout moment dans vos réglages.
+          <Lock size={12} aria-hidden="true" />« Choisir plus tard » démarre votre essai sur
+          Essential, sans carte. Formule modifiable à tout moment dans vos réglages.
         </p>
       </div>
     </div>
