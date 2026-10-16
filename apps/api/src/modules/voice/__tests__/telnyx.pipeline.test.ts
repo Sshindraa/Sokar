@@ -362,7 +362,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
   });
 
-  it('drops the call when the restaurant subscription has ended (billing suspended)', async () => {
+  it('plays a short message instead of a voice session when the subscription has ended', async () => {
     mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
@@ -377,7 +377,13 @@ describe('POST /voice/telnyx — call.initiated', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ result: 'ok' });
     expect(mockIsBillingSuspended).toHaveBeenCalledWith('rest-1');
-    expect(mockTelnyxFetch).not.toHaveBeenCalled();
+    expect(mockTelnyxFetch).toHaveBeenCalledTimes(1);
+    const [path, init] = mockTelnyxFetch.mock.calls[0] as [string, { body: string }];
+    expect(path).toBe('/v2/calls/cc-1/actions/answer');
+    const state = JSON.parse(
+      Buffer.from(JSON.parse(init.body).client_state, 'base64').toString('utf8'),
+    );
+    expect(state).toEqual({ kind: 'billing_suspended_call', name: 'Le Bistrot' });
     expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
   });
 

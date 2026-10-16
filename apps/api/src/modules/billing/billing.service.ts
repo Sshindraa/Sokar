@@ -469,18 +469,28 @@ export class BillingTrialAlreadyUsedError extends Error {
 }
 
 /**
- * Starts the free trial on Essential (monthly) without Stripe Checkout: the « Plus tard » path of
- * the onboarding. No card is asked; the restaurant picks its plan (or adds a card) from the
+ * Starts the free trial on the chosen plan without Stripe Checkout (onboarding). No card is asked,
+ * so Checkout would only be a detour: the restaurant adds a card, or changes plan, from the
  * customer portal before the end. Same Stripe settings as a Checkout trial, so the reminder,
  * suspension and portal flows apply unchanged.
  */
 export async function startTrial(input: {
   restaurantId: string;
   accountId?: string;
+  plan?: PublicBillingPlan;
+  billing?: BillingInterval;
+  siteCount?: number;
 }): Promise<{ status: 'trialing'; trialEndsAt: string }> {
   if (!isBillingCheckoutEnabled()) throw new BillingNotConfiguredError();
-  const priceId = resolvePriceId('essential', 'monthly');
-  if (!priceId) throw new BillingNotConfiguredError();
+  const plan = input.plan ?? 'essential';
+  const interval = input.billing ?? 'monthly';
+  const siteCount = normalizeSiteCount(plan, input.siteCount);
+  const priceId = resolvePriceId(plan, interval);
+  const addonPriceId =
+    plan === 'multi-site' && siteCount > 1 ? resolveMultiSiteAddonPriceId(interval) : null;
+  if (!priceId || (plan === 'multi-site' && siteCount > 1 && !addonPriceId)) {
+    throw new BillingNotConfiguredError();
+  }
 
   const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
   if (!restaurant) throw new BillingRestaurantNotFoundError();
@@ -517,25 +527,28 @@ export async function startTrial(input: {
   const metadata = {
     restaurantId: restaurant.id,
     ...(accountId ? { accountId } : {}),
-    plan: 'essential',
-    billing: 'monthly',
-    siteCount: '1',
+    plan,
+    billing: interval,
+    siteCount: String(siteCount),
     trial: 'true',
-    source: 'onboarding-later',
+    source: 'onboarding',
   };
   let subscription: Stripe.Subscription;
   try {
     subscription = await getStripe().subscriptions.create(
       {
         customer: customerId,
-        items: [{ price: priceId }],
+        items: [
+          { price: priceId },
+          ...(addonPriceId ? [{ price: addonPriceId, quantity: siteCount - 1 }] : []),
+        ],
         trial_period_days: TRIAL_DAYS,
         // No card at the end of the trial: Stripe cancels, and the deletion webhook suspends.
         trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
         payment_settings: { save_default_payment_method: 'on_subscription' },
         metadata,
       },
-      { idempotencyKey: `sokar-trial-${customerId}` },
+      { idempotencyKey: `sokar-trial-${customerId}-${plan}-${interval}-${siteCount}` },
     );
   } catch (error) {
     logger.error(
@@ -552,19 +565,19 @@ export async function startTrial(input: {
     stripeSubscriptionId: subscription.id,
     subscriptionStatus: 'trialing',
     subscriptionPriceId: priceId,
-    subscriptionBillingInterval: 'monthly' as const,
+    subscriptionBillingInterval: interval,
     subscriptionCurrentPeriodEnd: trialEnd,
     subscriptionCancelAtPeriodEnd: false,
   };
   // Scoped to the account as well: the anchor always belongs to the caller's account.
   await db.restaurant.updateMany({
     where: { id: billingAnchor.id, ...(accountId ? { accountId } : {}) },
-    data: { plan: PLAN_TO_DATABASE.essential },
+    data: { plan: PLAN_TO_DATABASE[plan] },
   });
   await projectAccountBilling(billingAnchor.id, {
     ...projection,
-    plan: PLAN_TO_DATABASE.essential,
-    entitledSiteCount: 1,
+    plan: PLAN_TO_DATABASE[plan],
+    entitledSiteCount: siteCount,
     // Older than any webhook about this subscription: the webhooks still apply after this.
     lastStripeEventCreated: subscription.created - 1,
     lastStripeEventId: '',

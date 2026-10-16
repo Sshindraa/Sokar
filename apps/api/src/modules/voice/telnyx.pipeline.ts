@@ -28,6 +28,7 @@ import { callFinalizationDependencies } from './call-finalization.dependencies';
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { isBillingSuspended } from '../billing/billing.service';
+import { answerSuspendedCall, handleSuspendedCallEvent, isSuspendedCall } from './suspended-call';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
@@ -118,6 +119,24 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       }
     }
 
+    // Appel d'un restaurant suspendu : message court puis raccroché (voir suspended-call.ts).
+    if (isSuspendedCall(clientState)) {
+      try {
+        const outcome = await handleSuspendedCallEvent(
+          eventType,
+          payload.call_control_id,
+          clientState as Record<string, unknown>,
+        );
+        return reply.send({ result: outcome });
+      } catch (err) {
+        app.log.error(
+          { err: err instanceof Error ? err.message : String(err), eventType },
+          'Suspended call action failed',
+        );
+        return reply.send({ result: 'failed' });
+      }
+    }
+
     switch (eventType) {
       case 'call.recording.saved': {
         const recordingId = payload.recording_id;
@@ -194,13 +213,22 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           return reply.send({ result: 'ok' });
         }
 
-        // Ended subscription (trial without a card, cancellation, unpaid): same path as the
-        // kill switch, the call is not answered and goes to Telnyx's fallback.
+        // Ended subscription (trial without a card, cancellation, unpaid): no voice session.
+        // The restaurant may still forward its line here, so the caller hears a short message in
+        // the restaurant's name instead of silence, then Sokar hangs up.
         if (billingSuspended) {
           app.log.warn(
             { restaurantId: ctx.id, callId: payload.call_control_id },
-            'Billing suspended — dropping call',
+            'Billing suspended — short message then hang up',
           );
+          try {
+            await answerSuspendedCall(payload.call_control_id, ctx.name);
+          } catch (err) {
+            app.log.error(
+              { err: err instanceof Error ? err.message : String(err), restaurantId: ctx.id },
+              'Suspended call answer failed',
+            );
+          }
           return reply.send({ result: 'ok' });
         }
 

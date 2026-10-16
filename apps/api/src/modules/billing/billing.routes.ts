@@ -17,6 +17,14 @@ import {
   startTrial,
 } from './billing.service';
 
+const TrialSchema = z
+  .object({
+    plan: z.enum(PUBLIC_BILLING_PLANS).optional(),
+    billing: z.enum(BILLING_INTERVALS).optional(),
+    siteCount: z.number().int().min(1).max(100).optional(),
+  })
+  .default({});
+
 const CheckoutSchema = z.object({
   plan: z.enum(PUBLIC_BILLING_PLANS),
   billing: z.enum(BILLING_INTERVALS),
@@ -120,7 +128,7 @@ export async function billingRoutes(app: FastifyInstance) {
     }
   });
 
-  // « Plus tard » de l'onboarding : essai gratuit sur Essential, sans passer par Stripe Checkout.
+  // Onboarding : essai gratuit sur la formule choisie, sans passer par Stripe Checkout.
   app.post('/billing/trial', { preHandler: requireOrg() }, async (req, reply) => {
     if (req.accountId && req.siteRole !== 'OWNER') {
       return reply.status(403).send({
@@ -130,7 +138,11 @@ export async function billingRoutes(app: FastifyInstance) {
     }
     try {
       return reply.send(
-        await startTrial({ restaurantId: req.restaurantId!, accountId: req.accountId }),
+        await startTrial({
+          restaurantId: req.restaurantId!,
+          accountId: req.accountId,
+          ...TrialSchema.parse(req.body ?? {}),
+        }),
       );
     } catch (error) {
       if (error instanceof BillingNotConfiguredError) {
@@ -148,6 +160,12 @@ export async function billingRoutes(app: FastifyInstance) {
         return reply.status(409).send({
           error: 'BILLING_ALREADY_SUBSCRIBED',
           message: 'Une souscription est déjà active pour ce restaurant.',
+        });
+      }
+      if (error instanceof BillingInvalidSiteCountError) {
+        return reply.status(400).send({
+          error: 'INVALID_SITE_COUNT',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
         });
       }
       if (error instanceof BillingTrialAlreadyUsedError) {

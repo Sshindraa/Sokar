@@ -680,7 +680,9 @@ export default function SettingsPage() {
                   Votre abonnement est terminé : l’assistant téléphonique ne répond plus aux appels.{' '}
                   {canManageBilling
                     ? 'Choisissez une formule pour le réactiver.'
-                    : 'Le propriétaire du compte doit choisir une formule pour le réactiver.'}
+                    : 'Le propriétaire du compte doit choisir une formule pour le réactiver.'}{' '}
+                  Si votre ligne est encore renvoyée vers Sokar, désactivez ce renvoi chez votre
+                  opérateur pour que vos clients vous joignent directement.
                 </p>
               )}
               {billingStatus?.subscriptionStatus === 'past_due' && (

@@ -521,6 +521,35 @@ describe('billing.routes - checkout, portail et statut', () => {
       );
     });
 
+    it('démarre l’essai sur la formule et la cadence choisies', async () => {
+      process.env.STRIPE_PRICE_MULTI_SITE_ANNUAL = 'price_multi_annual_test';
+      process.env.STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL = 'price_addon_annual_test';
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/billing/trial',
+        headers: { authorization: 'Bearer test' },
+        payload: { plan: 'multi-site', billing: 'annual', siteCount: 3 },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(subscriptionCreate().mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({
+          items: [
+            { price: 'price_multi_annual_test' },
+            { price: 'price_addon_annual_test', quantity: 2 },
+          ],
+          metadata: expect.objectContaining({
+            plan: 'multi-site',
+            billing: 'annual',
+            siteCount: '3',
+          }),
+        }),
+      );
+    });
+
     it('refuse un second essai sur le même compte', async () => {
       vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
         restaurantId: 'test-rest-1',

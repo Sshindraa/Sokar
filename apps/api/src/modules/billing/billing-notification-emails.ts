@@ -332,7 +332,7 @@ export function buildTrialEndingEmail(args: {
         sectionLabel('Ce que Sokar a fait pour vous'),
         recapPanel(args.recap),
         cta,
-        `<p style="margin:22px 0 0;padding-top:20px;border-top:1px solid ${LINE};font-family:${FONT};font-size:13px;line-height:1.6;color:${MUTED};text-align:center">Sans carte, l’assistant cessera de décrocher le ${endsOnShort}. Vos réglages restent conservés.</p>`,
+        `<p style="margin:22px 0 0;padding-top:20px;border-top:1px solid ${LINE};font-family:${FONT};font-size:13px;line-height:1.6;color:${MUTED};text-align:center">Sans carte, l’assistant cessera de décrocher le ${endsOnShort} : pensez alors à désactiver le renvoi de votre ligne vers Sokar. Vos réglages restent conservés.</p>`,
       ].join(''),
     }),
   };
@@ -379,6 +379,12 @@ export function buildServiceSuspendedEmail(args: {
               '<div style="height:16px;line-height:16px;font-size:0">&nbsp;</div>',
             ]
           : []),
+        note({
+          title: 'Votre ligne est-elle encore renvoyée vers Sokar ?',
+          text: 'Si oui, vos clients entendent désormais un court message leur demandant de rappeler. Pour qu’ils vous joignent directement, désactivez ce renvoi chez votre opérateur, ou réactivez l’assistant.',
+          accent: ALERT,
+        }),
+        '<div style="height:12px;line-height:12px;font-size:0">&nbsp;</div>',
         note({
           title: 'Tout est conservé',
           text: 'Vos réglages, votre salle et votre fichier client restent en place. Choisissez une formule et l’assistant reprend immédiatement, sans rien reconfigurer.',

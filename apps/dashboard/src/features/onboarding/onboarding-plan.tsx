@@ -44,9 +44,9 @@ const euros = (amount: string | number, unit: string) => `${amount} €/${unit}
 
 /**
  * Écran « Choisissez votre formule », proposé juste après la validation de l'appel test. Il reprend
- * la formule choisie sur la page Tarifs (gardée pendant l'inscription), mène à Stripe, qui ramène
- * ici. « Choisir plus tard » démarre quand même l'essai gratuit sur Essential (sans carte) puis
- * mène à l'écran des canaux : aucun compte n'utilise Sokar hors essai ou abonnement.
+ * la formule choisie sur la page Tarifs (gardée pendant l'inscription). Un seul bouton démarre
+ * l'essai gratuit sur cette formule, sans carte et sans passer par Stripe : la carte s'ajoute plus
+ * tard depuis le dashboard. Aucun compte n'utilise donc Sokar hors essai ou abonnement.
  */
 export function OnboardingPlan({
   restaurantId,
@@ -61,8 +61,6 @@ export function OnboardingPlan({
   const [siteCount, setSiteCount] = useState(2);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
-  const [cancelled, setCancelled] = useState(false);
-  const [paying, setPaying] = useState(false);
   const [startingTrial, setStartingTrial] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +72,6 @@ export function OnboardingPlan({
       setBilling(choice.billing);
       if (choice.siteCount) setSiteCount(choice.siteCount);
     }
-    setCancelled(new URLSearchParams(window.location.search).get('billing') === 'cancelled');
   }, []);
 
   useEffect(() => {
@@ -97,36 +94,16 @@ export function OnboardingPlan({
   const subscribed = ACTIVE_STATUSES.includes(status?.subscriptionStatus ?? '');
   const yearly = billing === 'annual';
 
-  async function handlePay() {
-    if (paying) return;
-    setPaying(true);
-    setError(null);
-    try {
-      const session = await post<{ url?: string }>('billing/checkout-session', {
-        plan,
-        billing,
-        returnTo: 'onboarding',
-        ...(plan === 'multi-site' ? { siteCount } : {}),
-      });
-      if (!session.url) throw new Error('La page de paiement est indisponible.');
-      clearStoredPlanChoice();
-      window.location.assign(session.url);
-    } catch (reason: unknown) {
-      setError(
-        reason instanceof Error && reason.message
-          ? reason.message
-          : 'Impossible de préparer le paiement. Réessayez ou continuez, vous pourrez payer plus tard.',
-      );
-      setPaying(false);
-    }
-  }
-
-  async function handleLater() {
-    if (startingTrial || paying) return;
+  async function handleStartTrial() {
+    if (startingTrial) return;
     setStartingTrial(true);
     setError(null);
     try {
-      await post('billing/trial');
+      await post('billing/trial', {
+        plan,
+        billing,
+        ...(plan === 'multi-site' ? { siteCount } : {}),
+      });
     } catch (reason: unknown) {
       const status = (reason as { status?: number }).status;
       // 409 : un abonnement ou un essai existe déjà. Rien à démarrer, on continue.
@@ -140,6 +117,7 @@ export function OnboardingPlan({
         return;
       }
     }
+    clearStoredPlanChoice();
     dismissPlanPrompt(restaurantId);
     onContinue();
   }
@@ -180,15 +158,6 @@ export function OnboardingPlan({
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6">
-      {cancelled && (
-        <p
-          role="status"
-          className="rounded-2xl bg-muted/50 px-5 py-3 text-sm text-muted-foreground"
-        >
-          Le paiement a été annulé : rien n’a été débité. Vous pouvez réessayer ou continuer.
-        </p>
-      )}
-
       <div
         role="group"
         aria-label="Cadence de facturation"
@@ -296,30 +265,20 @@ export function OnboardingPlan({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button
           type="button"
-          onClick={() => void handlePay()}
-          disabled={paying}
-          className="h-11 rounded-full transition-all duration-200"
-        >
-          {paying ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-          {paying ? 'Redirection…' : `Commencer l’essai gratuit de ${TRIAL_DAYS} jours`}
-          {!paying && <ArrowRight size={15} aria-hidden="true" />}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => void handleLater()}
-          disabled={paying || startingTrial}
-          className="h-11 rounded-full text-muted-foreground transition-all duration-200"
+          onClick={() => void handleStartTrial()}
+          disabled={startingTrial}
+          className="h-11 rounded-full px-6 transition-all duration-200"
         >
           {startingTrial ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-          Choisir plus tard
+          {startingTrial ? 'Démarrage de l’essai…' : 'Démarrer mon essai gratuit'}
+          {!startingTrial && <ArrowRight size={15} aria-hidden="true" />}
         </Button>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Lock size={12} aria-hidden="true" />« Choisir plus tard » démarre votre essai sur
-          Essential, sans carte. Formule modifiable à tout moment dans vos réglages.
+          <Lock size={12} aria-hidden="true" />
+          Sans carte bancaire. Formule modifiable à tout moment pendant l’essai.
         </p>
       </div>
     </div>
