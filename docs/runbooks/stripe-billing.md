@@ -151,6 +151,21 @@ sans paiement ni création d’abonnement.
   désormais en premier, la metadata ne sert plus qu'aux prix historiques. Test unitaire ajouté.
   Client et abonnement de test supprimés. Le correctif doit être déployé en staging avant de
   rejouer le parcours depuis le dashboard, puis avant toute activation live.
+- Portail **live** (accord de Hamza, après déploiement de #460 en staging et production sur
+  `b73075bc`) : le compte live n'avait aucune configuration de portail. Configuration créée par
+  appel Stripe et devenue la configuration par défaut du compte :
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`, repérée par sa metadata `sokar_key` = `portal-v1`. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
+  annuel, `create_prorations`), Multi-site exclu, pas de `quantity` ; mise à jour carte et
+  coordonnées, historique des factures, résiliation en fin de période avec motif. Retour arrière :
+  `subscription_update.enabled: false` sur cette configuration. Aucun abonné live à ce jour : pas de
+  rejeu de bout en bout en live.
+- Contrôle live sans paiement (client jetable, `invoices.createPreview`, aucun moyen de paiement ni
+  abonnement, client supprimé) : Essential 199,00 € / 2 149,20 €, Pro 299,00 € / 3 229,20 €,
+  Multi-site 3 sites 497,00 € / 5 367,60 € (mensuel / annuel). Session de portail live créée sur
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`. Aucune TVA n'est calculée, volontairement : Sokar est en franchise
+  en base de TVA (décision du 16 octobre 2026). Les factures portent « TVA non applicable, art. 293 B
+  du CGI » via `invoice_settings.footer` du client Stripe (`VAT_MENTION`, PR #462 ; clients
+  existants mis à jour en live et en test). À revoir si le statut TVA change.
 - Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
   `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
   migrer ni archiver un ancien prix sans décision explicite.
