@@ -360,9 +360,9 @@ export default function McpPage() {
             <Link href="/pricing" className="hover:text-foreground transition-all duration-200">
               Tarifs
             </Link>
-            <Link href="/privacy" className="hover:text-foreground transition-all duration-200">
+            <a href="/privacy" className="hover:text-foreground transition-all duration-200">
               Confidentialité
-            </Link>
+            </a>
             <Link href="/login" className="hover:text-foreground transition-all duration-200">
               Connexion
             </Link>

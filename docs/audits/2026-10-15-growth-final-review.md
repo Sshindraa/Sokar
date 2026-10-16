@@ -1,6 +1,7 @@
-# Préparation de livraison groupée — accueil Sokar
+# Livraison groupée — accueil Sokar
 
-15 octobre 2026. **Prêt à livrer techniquement après nouvelle autorisation de Hamza.**
+15 octobre 2026. **Livré en staging et production, recette publique exécutée avec réserves (§10.30).**
+Le texte de préparation ci-dessous est historique ; Hamza a ensuite autorisé la livraison par « ok go ».
 Aucune publication autorisée par cette préparation. Aucun commit, index Git, push, PR, merge,
 déploiement ou contact commercial effectué par cette préparation. Sources applicatives conservées telles que vérifiées
 aux §10.26–10.27 du [rapport growth](2026-10-13-growth-execution.md).
@@ -184,14 +185,8 @@ selon la chaîne existante, avec recette et retour arrière applicatif si néces
 préparation ne vaut pas cette autorisation. Aucun nouveau démarchage, appel fournisseur, paiement
 ou fonctionnalité n’est inclus.
 
-## Livraison autorisée — état au lancement du 15 octobre
+## Résultat final observé après publication
 
-Hamza a autorisé explicitement la chaîne de livraison (« ok go »), après précision du lien
-Mentions légales restant sans destination. Le checkout original est conservé. Branche isolée
-`codex/seo-accueil` créée depuis `a428b373` : main a intégré #438 pendant l’intervalle, dont les six
-sources/tests SEO déjà identiques par empreinte. Ils ne sont pas réappliqués. Le manifeste historique
-contre `54d18e0b` reste 14 chemins ; **delta réel de cette livraison contre `a428b373` : huit documents**,
-soit tous les chemins documentaires du tableau, avec sélection partielle Context/Journal. Les
-entrées voix/onboarding désormais dans main sont préservées, sans nouvelle modification de leur code.
-Cette livraison complète les preuves et le suivi du code déjà fusionné ; son état public sera
-contrôlé après les workflows. Aucun secret, tarif, fonctionnalité ni nouveau démarchage inclus.
+#438 avait déjà intégré les six fichiers applicatifs ; #440 a livré les huit documents restants depuis une branche propre. Fusion 629f857d, CI main/staging/production et smoke tests verts ; production active confirmée. HTTP/HTML/canonical/robots/308/sitemap/privacy/CTA et trois formats contrôlés. Lighthouse public : desktop 100/LCP 0,6 s ; mobile premier passage 92/LCP 3,3 s ; profil conservé 100/LCP 1,0 s ; CLS 0. Google test actif 15/10 13:03 réussi, canonical racine ; index enregistré du 6 octobre distinct de cette version. Sitemap existant réussi, aucune nouvelle soumission.
+
+Mentions légales/social sans destination, indexabilité de l’accueil staging et préchargement RSC /privacy via démo restent des réserves ; navigation privacy classique vérifiée fonctionnelle. Détails, runs, snapshots/rollback et preuves au rapport growth §10.30. Résultats ajoutés localement après publication, sans nouvelle livraison de documentation ni modification applicative.
