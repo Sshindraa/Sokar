@@ -39,6 +39,18 @@ export const STRUCTURED_TURN_AWAITING = [
  */
 export const STRUCTURED_TURN_UNDERSTANDING = ['clear', 'doubtful'] as const;
 
+/**
+ * Ton de la phrase pour la voix (balise d'expression ElevenLabs v4). `none` par défaut. Liste courte et sobre :
+ * `warm` a perdu les deux paires où il figurait à l'écoute à l'aveugle du 16/10/2026.
+ */
+export const STRUCTURED_TURN_TONES = [
+  'none',
+  'cheerful',
+  'apologetic',
+  'amused',
+  'reassuring',
+] as const;
+
 export const STRUCTURED_TURN_ACTIONS = [
   'none',
   'check_availability',
@@ -52,6 +64,7 @@ export type StructuredTurnInterpretation = (typeof STRUCTURED_TURN_INTERPRETATIO
 export type StructuredTurnAwaiting = (typeof STRUCTURED_TURN_AWAITING)[number];
 export type StructuredTurnAction = (typeof STRUCTURED_TURN_ACTIONS)[number];
 export type StructuredTurnUnderstanding = (typeof STRUCTURED_TURN_UNDERSTANDING)[number];
+export type StructuredTurnTone = (typeof STRUCTURED_TURN_TONES)[number];
 
 /** Brouillon tenu par le modèle ; chaîne vide ou 0 = inconnu. */
 export interface StructuredTurnDraft {
@@ -73,6 +86,8 @@ export interface StructuredTurnOutput {
   action: StructuredTurnAction;
   message: string;
   confidence: 'high' | 'medium' | 'low';
+  /** Ton de la voix pour `say` (seulement avec le ton d'expression activé). */
+  tone?: StructuredTurnTone;
   say: string;
 }
 
@@ -84,8 +99,10 @@ export const STRUCTURED_TURN_SCHEMA_NAME = 'voice_turn';
  */
 export function buildStructuredTurnJsonSchema(
   actions: readonly StructuredTurnAction[] = STRUCTURED_TURN_ACTIONS,
-  options: { turnCompleteOnly?: boolean; understanding?: boolean } = {},
+  options: { turnCompleteOnly?: boolean; understanding?: boolean; tone?: boolean } = {},
 ) {
+  // `tone` juste avant `say` : il est connu quand la phrase commence.
+  const tone = options.tone ? { tone: { type: 'string', enum: [...STRUCTURED_TURN_TONES] } } : {};
   // `reading` puis `understanding` avant le brouillon : le modèle lit avant de décider.
   const understanding = options.understanding
     ? {
@@ -118,6 +135,7 @@ export function buildStructuredTurnJsonSchema(
       action: { type: 'string', enum: [...actions] },
       message: { type: 'string' },
       confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+      ...tone,
       say: { type: 'string' },
     },
     required: [
@@ -129,6 +147,7 @@ export function buildStructuredTurnJsonSchema(
       'action',
       'message',
       'confidence',
+      ...(options.tone ? ['tone'] : []),
       'say',
     ],
   } as const;
@@ -184,6 +203,7 @@ export function parseStructuredTurnOutput(raw: string): StructuredTurnOutput | n
     action: record.action,
     message: record.message,
     confidence: record.confidence,
+    ...(isOneOf(STRUCTURED_TURN_TONES, record.tone) ? { tone: record.tone } : {}),
     say: record.say,
   };
 }

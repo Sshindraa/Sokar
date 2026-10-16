@@ -23,7 +23,8 @@ export interface ContextTtsTurn {
     totalMs: number | null;
     alignment?: SpokenAlignment;
   };
-  push(transcript: string): void;
+  /** `tone` : balise d'expression à placer avant ce texte (ElevenLabs seulement ; ignorée ailleurs). */
+  push(transcript: string, options?: { tone?: string }): void;
   finish(): Promise<void>;
   cancel(reason?: 'barge_in' | 'unused'): void;
 }
