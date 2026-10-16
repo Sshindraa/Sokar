@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, Lock } from 'lucide-react';
 import { TRIAL_DAYS } from '@sokar/shared';
+import { TrialStartTimeline } from '@/features/billing/trial';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
@@ -259,6 +260,13 @@ export function OnboardingPlan({
         </label>
       )}
 
+      <div className="max-w-xl rounded-2xl border border-border bg-card p-5">
+        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          Comment se passe l’essai
+        </p>
+        <TrialStartTimeline totalDays={TRIAL_DAYS} />
+      </div>
+
       {error && (
         <p
           role="alert"
@@ -290,8 +298,7 @@ export function OnboardingPlan({
         </Button>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Sans carte bancaire pendant l’essai. Paiement sécurisé par Stripe ensuite ; vous pourrez
-          modifier votre formule dans vos réglages.
+          Paiement sécurisé par Stripe. Formule modifiable à tout moment dans vos réglages.
         </p>
       </div>
     </div>

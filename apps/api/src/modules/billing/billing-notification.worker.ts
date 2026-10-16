@@ -8,10 +8,10 @@ import { resolveAccountOwnerEmail } from '../restaurants/account-email.service';
 import {
   buildServiceSuspendedEmail,
   buildTrialEndingEmail,
-  type ActivityRecap,
   type BillingNotificationKind,
 } from './billing-notification-emails';
 import { getBillingStatus, subscriptionHasPaymentMethod } from './billing.service';
+import { loadActivityRecap } from './billing-activity';
 
 export interface BillingNotificationJobData {
   kind: BillingNotificationKind;
@@ -35,28 +35,6 @@ export type BillingNotificationOutcome =
 
 function hasEmailAddress(value: string | null | undefined): value is string {
   return Boolean(value && /^\S+@\S+\.\S+$/.test(value.trim()));
-}
-
-/** Activité du restaurant depuis `since` : appels reçus et réservations prises (hors annulées). */
-export async function loadActivityRecap(restaurantId: string, since: Date): Promise<ActivityRecap> {
-  const createdAt = { gte: since };
-  const [calls, reservations, phoneReservations] = await Promise.all([
-    db.call.count({ where: { restaurantId, createdAt } }),
-    db.reservation.aggregate({
-      where: { restaurantId, createdAt, status: { not: 'CANCELLED' } },
-      _count: { _all: true },
-      _sum: { partySize: true },
-    }),
-    db.reservation.count({
-      where: { restaurantId, createdAt, status: { not: 'CANCELLED' }, channel: 'PHONE' },
-    }),
-  ]);
-  return {
-    calls,
-    reservations: reservations._count._all,
-    covers: reservations._sum.partySize ?? 0,
-    phoneReservations,
-  };
 }
 
 /**

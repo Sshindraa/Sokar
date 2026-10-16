@@ -24,6 +24,22 @@ export interface BillingStatus {
   accountScoped: boolean;
   /** True once a subscription ended: the phone assistant no longer answers. */
   suspended?: boolean;
+  /** Present while the subscription is in its free trial. */
+  trial?: BillingTrial;
+}
+
+export interface BillingTrial {
+  startedAt: string;
+  endsAt: string;
+  totalDays: number;
+  /** Whole days left, rounded up; 0 on the last day. */
+  daysLeft: number;
+  recap?: {
+    calls: number;
+    reservations: number;
+    covers: number;
+    phoneReservations: number;
+  };
 }
 
 export type OpeningHours = {

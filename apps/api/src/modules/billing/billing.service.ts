@@ -7,6 +7,8 @@ import { logger } from '../../shared/logger/pino';
 import { queues } from '../../shared/queue/queues';
 import { buildBillingNotificationJobId } from '../../shared/queue/job-options';
 import type { BillingNotificationJobData } from './billing-notification.worker';
+import type { ActivityRecap } from './billing-notification-emails';
+import { loadActivityRecap } from './billing-activity';
 
 export const PUBLIC_BILLING_PLANS = ['essential', 'pro', 'multi-site'] as const;
 export type PublicBillingPlan = (typeof PUBLIC_BILLING_PLANS)[number];
@@ -235,6 +237,18 @@ export interface BillingStatus {
   accountScoped: boolean;
   /** True once a subscription existed and ended: the voice agent no longer answers. */
   suspended: boolean;
+  /** Present while the subscription is in its free trial. */
+  trial?: BillingTrial;
+}
+
+export interface BillingTrial {
+  startedAt: string;
+  endsAt: string;
+  totalDays: number;
+  /** Whole days left, rounded up; 0 on the last day. */
+  daysLeft: number;
+  /** What Sokar did during the trial; only when requested (dashboard), never on the call path. */
+  recap?: ActivityRecap;
 }
 
 type BillingStatusProjection = {
@@ -255,6 +269,8 @@ type BillingStatusProjection = {
 export async function getBillingStatus(input: {
   restaurantId: string;
   accountId?: string;
+  /** Adds the trial activity recap (three counts): for the dashboard only. */
+  includeTrialRecap?: boolean;
 }): Promise<BillingStatus> {
   const restaurant = await db.restaurant.findUnique({
     where: { id: input.restaurantId },
@@ -303,6 +319,28 @@ export async function getBillingStatus(input: {
         : 1,
     accountScoped: Boolean(accountId && accountBilling),
     suspended: isSuspendedProjection(projection),
+    ...(projection?.subscriptionStatus === 'trialing' && periodEnd instanceof Date
+      ? {
+          trial: await buildTrial(billingAnchorId, periodEnd, input.includeTrialRecap === true),
+        }
+      : {}),
+  };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function buildTrial(
+  restaurantId: string,
+  endsAt: Date,
+  includeRecap: boolean,
+): Promise<BillingTrial> {
+  const startedAt = new Date(endsAt.getTime() - TRIAL_DAYS * DAY_MS);
+  return {
+    startedAt: startedAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    totalDays: TRIAL_DAYS,
+    daysLeft: Math.max(0, Math.ceil((endsAt.getTime() - Date.now()) / DAY_MS)),
+    ...(includeRecap ? { recap: await loadActivityRecap(restaurantId, startedAt) } : {}),
   };
 }
 
