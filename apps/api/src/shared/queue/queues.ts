@@ -43,6 +43,10 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  billingNotifications: new Queue('billing-notifications', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   reconciliation: new Queue('reconciliation', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,

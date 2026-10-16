@@ -53,6 +53,16 @@ Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours off
   compte `active` et l'agent décroche à nouveau.
 - Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause
   d'une erreur de base de données.
+- E-mails (file `billing-notifications`, une fois par abonnement et par type) :
+  - **J-3** sur `customer.subscription.trial_will_end` : bilan de l'essai (appels décrochés,
+    réservations, couverts) et lien « Ajouter ma carte ». Sans appel reçu, l'e-mail signale un renvoi
+    de ligne probablement absent. Rien n'est envoyé si une carte est déjà enregistrée ou si l'essai
+    est déjà converti.
+  - **Coupure** sur `customer.subscription.deleted` : l'assistant ne répond plus, bilan, lien
+    « Réactiver mon assistant » (`/pricing`). Rien n'est envoyé si le compte a été réactivé entre-temps.
+  - Destinataire : `managerEmail`, sinon l'adresse du propriétaire du compte. Aucune adresse dans les
+    journaux ; coût suivi en `billing_notification`.
+  - Le point de réception Stripe de l'abonnement doit écouter `customer.subscription.trial_will_end`.
 
 ## Configuration
 
