@@ -3,7 +3,7 @@
  *
  * Canaux (tous optionnels, configurés par env) :
  *   - logs Pino + Sentry    : toujours actifs (Sentry no-op si SENTRY_DSN absent)
- *   - ALERT_EMAIL_TO        : email(s) via le transport SMTP existant (virgules)
+ *   - ALERT_EMAIL_TO        : email(s) via le transport Resend existant (virgules)
  *   - ALERT_WEBHOOK_URL     : webhook Slack/Discord ({ "text": "..." })
  *   - ALERT_SMS_TO          : SMS Telnyx — réservé aux alertes critiques
  *
@@ -36,6 +36,8 @@ export interface AlertPayload {
    * Défaut : SMS uniquement si severity === 'critical'.
    */
   sms?: boolean;
+  /** Email can be grouped separately while retaining the other incident channels. */
+  email?: boolean;
 }
 
 export interface ChannelResult {
@@ -69,11 +71,25 @@ async function tryEmail(payload: AlertPayload, recipients: string): Promise<Chan
       `<pre style="font-family:monospace;white-space:pre-wrap">${escapeHtml(payload.detail)}</pre>`,
       `<p style="color:#666;font-size:12px">Alerte ${payload.kind} — monitoring Sokar</p>`,
     ].join('');
-    await sendEmail({ to: recipients, subject, html });
+    const result = await sendEmail({ to: recipients, subject, html });
+    if (result?.outcome !== 'success') {
+      return { channel: 'email', ok: false, error: 'Email non accepté par le transport' };
+    }
     return { channel: 'email', ok: true };
   } catch (err) {
     return { channel: 'email', ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export async function dispatchAlertEmail(
+  payload: AlertPayload,
+): Promise<ChannelResult | undefined> {
+  const recipients = process.env.ALERT_EMAIL_TO;
+  if (!recipients) return undefined;
+  const result = await tryEmail(payload, recipients);
+  track(payload.kind, 'email', result.ok);
+  if (!result.ok) logger.error({ alert: payload.kind }, 'Grouped alert email was not accepted');
+  return result;
 }
 
 async function tryWebhook(payload: AlertPayload, url: string): Promise<ChannelResult> {
@@ -146,9 +162,9 @@ export async function dispatchAlert(payload: AlertPayload): Promise<ChannelResul
     results.push(result);
   }
 
-  // 3. Email SMTP (destinataires séparés par des virgules).
+  // 3. Email Resend (destinataires séparés par des virgules).
   const emailTo = process.env.ALERT_EMAIL_TO;
-  if (emailTo) {
+  if (emailTo && payload.email !== false) {
     const result = await tryEmail(payload, emailTo);
     track(payload.kind, 'email', result.ok);
     results.push(result);
@@ -163,7 +179,7 @@ export async function dispatchAlert(payload: AlertPayload): Promise<ChannelResul
     results.push(result);
   }
 
-  if (results.length === 0) {
+  if (results.length === 0 && !(emailTo && payload.email === false)) {
     logger.warn(
       { alert: payload.kind },
       "Aucun canal d'alerte configuré (ALERT_EMAIL_TO / ALERT_WEBHOOK_URL / ALERT_SMS_TO) — alerte limitée aux logs et Sentry",
