@@ -51,6 +51,9 @@ describe('e-mail de fin d’essai', () => {
     );
     expect(email.html).toContain('Chez &lt;Léa&gt; &amp; Co');
     expect(email.html).not.toContain('<Léa>');
+    expect(email.html).toContain(
+      '<title>Chez &lt;Léa&gt; &amp; Co : votre essai Sokar se termine vendredi 30 octobre</title>',
+    );
   });
 });
 

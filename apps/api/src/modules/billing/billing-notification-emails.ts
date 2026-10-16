@@ -143,6 +143,8 @@ function button(label: string, href: string): string {
 }
 
 function layout(args: {
+  /** Plain-text document title (the subject): escaped once, never derived from HTML. */
+  documentTitle: string;
   preheader: string;
   eyebrow: string;
   title: string;
@@ -158,7 +160,7 @@ function layout(args: {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
-  <title>${escapeHtml(args.title.replace(/<[^>]+>/g, ''))}</title>
+  <title>${escapeHtml(args.documentTitle)}</title>
 </head>
 <body style="margin:0;padding:0;background:${PAGE}">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(args.preheader)}&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>
@@ -229,6 +231,7 @@ export function buildTrialEndingEmail(args: {
     return {
       subject,
       html: layout({
+        documentTitle: subject,
         preheader: `Votre numéro Sokar n’a encore reçu aucun appel : vérifions ensemble le renvoi de votre ligne.`,
         eyebrow: 'Votre essai gratuit',
         title: `${name}, votre assistant attend son premier appel`,
@@ -252,6 +255,7 @@ export function buildTrialEndingEmail(args: {
   return {
     subject,
     html: layout({
+      documentTitle: subject,
       preheader: `${recap} Ajoutez une carte pour que l’assistant continue après le ${endsOnShort}.`,
       eyebrow: 'Votre essai gratuit',
       title,
@@ -282,9 +286,11 @@ export function buildServiceSuspendedEmail(args: {
     : 'Votre abonnement Sokar est terminé';
   const period = args.endedFromTrial ? 'votre essai' : 'votre abonnement';
 
+  const subject = `${args.restaurantName} : votre assistant Sokar ne répond plus`;
   return {
-    subject: `${args.restaurantName} : votre assistant Sokar ne répond plus`,
+    subject,
     html: layout({
+      documentTitle: subject,
       preheader: `${ended}. Vos réglages sont conservés : réactivez l’assistant en deux minutes.`,
       eyebrow: args.endedFromTrial ? 'Fin de votre essai' : 'Fin de votre abonnement',
       title: `${name}, votre assistant ne répond plus aux appels`,
