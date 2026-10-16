@@ -26,6 +26,8 @@ describe('dashboard.routes tenant isolation', () => {
         status: 'CONFIRMED',
         state: 'CONFIRMED',
         createdAt: new Date(),
+        channel: 'PHONE',
+        source: null,
       },
       {
         partySize: 4,
@@ -34,6 +36,8 @@ describe('dashboard.routes tenant isolation', () => {
         status: 'CONFIRMED',
         state: 'CONFIRMED',
         createdAt: new Date(),
+        channel: 'WEB',
+        source: 'chatgpt',
       },
       {
         partySize: 6,
@@ -42,6 +46,8 @@ describe('dashboard.routes tenant isolation', () => {
         status: 'CANCELLED',
         state: 'CANCELLED',
         createdAt: new Date(),
+        channel: 'WEB',
+        source: 'google',
       },
     ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
@@ -62,6 +68,13 @@ describe('dashboard.routes tenant isolation', () => {
       estimated_revenue: 290,
       // 2 confirmed reservations × 290/2 = 145 avg × 3 recoverable = 435
       revenue_recovered: 435,
+      by_channel: [
+        { channel: 'phone', reservations: 1, covers: 2 },
+        { channel: 'website', reservations: 0, covers: 0 },
+        { channel: 'google', reservations: 0, covers: 0 },
+        { channel: 'ai', reservations: 1, covers: 4 },
+        { channel: 'team', reservations: 0, covers: 0 },
+      ],
     });
     expect(db.call.count).toHaveBeenNthCalledWith(1, {
       where: {
@@ -80,6 +93,8 @@ describe('dashboard.routes tenant isolation', () => {
         confirmedRevenue: true,
         state: true,
         createdAt: true,
+        channel: true,
+        source: true,
       },
     });
     expect(db.call.count).toHaveBeenNthCalledWith(2, {
