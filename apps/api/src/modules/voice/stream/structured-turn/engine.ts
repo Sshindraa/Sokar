@@ -68,7 +68,11 @@ import {
   isSlotVerified,
 } from './fact-guards';
 import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
-import { startTurnEndJudge } from './turn-end-judge';
+import {
+  awaitCallerAfterJudgeDisagreement,
+  startTurnEndJudge,
+  type JudgeDisagreementOutcome,
+} from './turn-end-judge';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import {
@@ -165,6 +169,10 @@ interface PassResult {
   correctionFact?: string;
   /** Verdict du juge de fin de tour pour ce passage (absent : juge non actif sur ce passage). */
   judge?: 'complete' | 'incomplete' | 'unavailable';
+  /** `turnComplete` du modèle avant le verdict du juge (présent quand le juge est actif). */
+  modelComplete?: boolean;
+  /** Issue d'un désaccord juge « inachevé » / modèle « fini » (absent : pas de désaccord). */
+  disagreement?: JudgeDisagreementOutcome;
 }
 
 /**
@@ -804,6 +812,18 @@ export async function runStructuredTurn(
     await judgeSettled;
     drainSaid();
     const modelComplete = output.turnComplete;
+    // Désaccord (le juge attend la suite, le modèle a fini) : le silence réel de l'appelant tranche (voir
+    // turnJudgeDisagreementSilenceMs). La réponse déjà prête part sans nouvelle requête au modèle.
+    // Verdict brut du juge, pour les journaux : une réponse partie au silence reste un désaccord « inachevé ».
+    const judgeVerdict = judged;
+    let disagreement: JudgeDisagreementOutcome | undefined;
+    if (judged === false && modelComplete && !finished) {
+      disagreement = await awaitCallerAfterJudgeDisagreement(session, startedAt, isLive);
+      if (disagreement === 'silent') {
+        judged = true;
+        drainSaid();
+      }
+    }
     if (typeof judged === 'boolean') output = { ...output, turnComplete: judged };
     if (judged === true && !modelComplete && spokenPhrases.length === 0 && !slotConflict) {
       // Le modèle jugeait l'appelant inachevé (say vide, par consigne) mais le juge dit qu'il a fini : réponse à refaire.
@@ -847,11 +867,13 @@ export async function runStructuredTurn(
       ...(judging
         ? {
             judge:
-              typeof judged !== 'boolean'
+              typeof judgeVerdict !== 'boolean'
                 ? ('unavailable' as const)
-                : judged
+                : judgeVerdict
                   ? ('complete' as const)
                   : ('incomplete' as const),
+            modelComplete,
+            ...(disagreement ? { disagreement } : {}),
           }
         : {}),
     };
@@ -968,7 +990,13 @@ export async function runStructuredTurn(
         turnComplete: false,
         interpretation: first.output.interpretation,
         confidence: first.output.confidence,
-        ...(first.judge ? { judge: first.judge } : {}),
+        ...(first.judge
+          ? {
+              judge: first.judge,
+              modelComplete: first.modelComplete,
+              ...(first.disagreement ? { judgeDisagreement: first.disagreement } : {}),
+            }
+          : {}),
       });
       mgr.transition(session, 'LISTENING');
       armIncompleteTurnTimer(session, mgr, transcript, startedAt);
@@ -1028,7 +1056,13 @@ export async function runStructuredTurn(
           : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
       speculated: speculationUsed,
-      ...(first.judge ? { judge: first.judge } : {}),
+      ...(first.judge
+        ? {
+            judge: first.judge,
+            modelComplete: first.modelComplete,
+            ...(first.disagreement ? { judgeDisagreement: first.disagreement } : {}),
+          }
+        : {}),
     });
     // Texte reçu et sortie brute du modèle, pour comprendre une erreur de compréhension (appel de test
     // du 30/09 : « vous êtes 20 demain » enregistré comme 20 h). Restaurants de test uniquement.
