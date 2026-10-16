@@ -1744,6 +1744,43 @@ describe('tour structuré (canary)', () => {
       ]);
     });
 
+    it('envoie le ton choisi avec la première phrase seulement, sous les deux drapeaux', async () => {
+      vi.stubEnv('VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS', RESTAURANT_ID);
+      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
+      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', RESTAURANT_ID);
+      // Sans clé ElevenLabs, la fabrique retombe sur le contexte simulé : seul le ton est observé ici.
+      vi.stubEnv('ELEVENLABS_API_KEY', '');
+      const { session, mgr, outputs } = fixture();
+      // `tone` avant `say`, comme dans le schéma.
+      const { say, ...rest } = turn({
+        awaiting: 'partySize',
+        say: 'Oh, quarante ans. Vous serez combien ?',
+      });
+      outputs.push({ ...rest, tone: 'cheerful', say });
+      await processTranscriptStreaming(session, "c'est pour les quarante ans de ma femme", mgr);
+
+      expect(contextTurn.push.mock.calls).toEqual([
+        ['Oh, quarante ans.', { tone: 'cheerful' }],
+        ['Vous serez combien ?', {}],
+      ]);
+      const format = vi.mocked(mgr.streamStructuredCompletion).mock.calls[0][2] as {
+        json_schema: { schema: { properties: Record<string, unknown> } };
+      };
+      expect(format.json_schema.schema.properties).toHaveProperty('tone');
+    });
+
+    it('n’ajoute aucun ton sans le drapeau, ni pour none', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(contextTurn.push.mock.calls.map(([, options]) => options)).toEqual([{}, {}]);
+      const format = vi.mocked(mgr.streamStructuredCompletion).mock.calls[0][2] as {
+        json_schema: { schema: { properties: Record<string, unknown> } };
+      };
+      expect(format.json_schema.schema.properties).not.toHaveProperty('tone');
+    });
+
     it('ferme sans audio le contexte d’un tour où l’agent se tait', async () => {
       const { session, mgr, outputs } = fixture();
       outputs.push(turn({ turnComplete: false, interpretation: 'unclear' }));

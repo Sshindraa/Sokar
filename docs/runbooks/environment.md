@@ -362,6 +362,9 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 # Restaurants autorisés (ids séparés par des virgules). Il faut le drapeau ci-dessus à true ET le
 # restaurant dans cette liste : la liste seule ne suffit pas, le drapeau seul non plus. Vide = aucun.
 VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
+# Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique),
+# restaurant par restaurant. Sans effet hors ElevenLabs Dialogue. Vide = aucun.
+VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
 # Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
 # ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
 # Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait

@@ -6,7 +6,10 @@ import {
   type StructuredTurnOutput,
 } from '../stream/structured-turn/schema';
 import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
-import { isVoiceUnderstandingCheckEnabled } from '../stream/feature-flags';
+import {
+  isVoiceExpressionToneEnabled,
+  isVoiceUnderstandingCheckEnabled,
+} from '../stream/feature-flags';
 import {
   applyProposedDraft,
   authorizeStructuredAction,
@@ -161,6 +164,55 @@ describe('vérification de compréhension', () => {
     expect(isVoiceUnderstandingCheckEnabled('c', env)).toBe(false);
     expect(isVoiceUnderstandingCheckEnabled(undefined, env)).toBe(false);
     expect(isVoiceUnderstandingCheckEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+describe('ton de voix (balise d’expression ElevenLabs)', () => {
+  it('schéma : tone vient juste avant say, seulement avec le drapeau, dans une liste courte', () => {
+    const on = buildStructuredTurnJsonSchema(undefined, { tone: true });
+    const keys = Object.keys(on.properties);
+    expect(keys.indexOf('tone')).toBe(keys.indexOf('say') - 1);
+    expect(on.required).toContain('tone');
+    expect((on.properties as unknown as Record<string, { enum?: string[] }>).tone.enum).toEqual([
+      'none',
+      'cheerful',
+      'apologetic',
+      'amused',
+      'reassuring',
+    ]);
+    const off = buildStructuredTurnJsonSchema();
+    expect(Object.keys(off.properties)).not.toContain('tone');
+    expect(off.required).not.toContain('tone');
+  });
+
+  it('parse : garde un ton de la liste, ignore les autres', () => {
+    const withTone = output({ tone: 'apologetic' });
+    expect(parseStructuredTurnOutput(JSON.stringify(withTone))).toEqual(withTone);
+    const bad = { ...output(), tone: 'warm' };
+    expect(parseStructuredTurnOutput(JSON.stringify(bad))).not.toHaveProperty('tone');
+  });
+
+  it("le prompt n'ajoute les consignes de ton que sous le drapeau, sans phrase à imiter", () => {
+    const input = {
+      systemPrompt: 'Tu es un agent.',
+      history: [],
+      transcript: 'bonjour',
+      state: createStructuredTurnState(),
+    };
+    const off = buildStructuredTurnMessages(input)[0].content as string;
+    const on = buildStructuredTurnMessages({ ...input, tone: true })[0].content as string;
+    expect(off).not.toContain('TON DE VOIX');
+    expect(on).toContain('TON DE VOIX');
+    const block = on.slice(on.indexOf('TON DE VOIX'), on.indexOf('ÉTAT VÉRIFIÉ'));
+    expect(block).not.toMatch(/[«»]/);
+  });
+
+  it('drapeau par restaurant : vide = aucun', () => {
+    const env = { VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS: 'a, b' } as NodeJS.ProcessEnv;
+    expect(isVoiceExpressionToneEnabled('a', env)).toBe(true);
+    expect(isVoiceExpressionToneEnabled('c', env)).toBe(false);
+    expect(isVoiceExpressionToneEnabled(undefined, env)).toBe(false);
+    expect(isVoiceExpressionToneEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 
