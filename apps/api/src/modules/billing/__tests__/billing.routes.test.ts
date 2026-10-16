@@ -91,6 +91,7 @@ describe('billing.routes - checkout, portail et statut', () => {
       cancelAtPeriodEnd: true,
       entitledSiteCount: 1,
       accountScoped: true,
+      suspended: false,
     });
     expect(JSON.stringify(response.json())).not.toContain('cus_private');
     expect(JSON.stringify(response.json())).not.toContain('sub_private');
@@ -327,11 +328,125 @@ describe('billing.routes - checkout, portail et statut', () => {
       expect.objectContaining({
         line_items: [{ price: 'price_pro_annual_test', quantity: 1 }],
         metadata: expect.objectContaining({ billing: 'annual' }),
-        subscription_data: {
+        subscription_data: expect.objectContaining({
           metadata: expect.objectContaining({ billing: 'annual' }),
-        },
+        }),
       }),
     );
+  });
+
+  it('offre 14 jours d’essai sans carte sur un premier abonnement', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-trial',
+      name: 'Bistrot Essai',
+      managerEmail: 'essai@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        payment_method_collection: 'if_required',
+        subscription_data: expect.objectContaining({
+          trial_period_days: 14,
+          trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        }),
+      }),
+    );
+  });
+
+  it('ne réoffre pas d’essai à un compte qui a déjà eu un abonnement', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-returning',
+      name: 'Bistrot de Retour',
+      managerEmail: 'retour@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-returning',
+      stripeCustomerId: 'cus_returning',
+      stripeSubscriptionId: 'sub_ended',
+      subscriptionStatus: 'canceled',
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    const params = checkoutCreate.mock.calls.at(-1)?.[0] as {
+      payment_method_collection?: string;
+      subscription_data: Record<string, unknown>;
+    };
+    expect(params.payment_method_collection).toBeUndefined();
+    expect(params.subscription_data.trial_period_days).toBeUndefined();
+  });
+
+  it('signale un compte suspendu après la fin de son abonnement', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_ended',
+      subscriptionStatus: 'canceled',
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({ subscriptionStatus: 'canceled', suspended: true }),
+    );
+  });
+
+  it('ne suspend pas un compte qui n’a jamais eu d’abonnement', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(expect.objectContaining({ suspended: false }));
   });
 
   it('ancre le Checkout secondaire sur le compte et le site principal', async () => {

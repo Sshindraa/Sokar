@@ -29,6 +29,31 @@ période.
 
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
+## Essai gratuit et suspension
+
+Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours offerts, sans carte**
+(`TRIAL_DAYS`, `packages/shared/src/plan.ts`).
+
+- Checkout : `payment_method_collection: if_required`, `subscription_data.trial_period_days` et
+  `trial_settings.end_behavior.missing_payment_method: cancel`. Un compte qui a déjà eu un abonnement
+  (`stripeSubscriptionId` présent) paie dès le premier jour : un seul essai par compte.
+- La session porte `metadata.trial=true` : le webhook `checkout.session.completed` enregistre
+  `trialing`, pas `active`.
+- Pendant l'essai, le restaurateur ajoute sa carte depuis le portail (« Gérer l'abonnement »). Le
+  dashboard affiche un bandeau les 5 derniers jours.
+- Sans carte au jour 15, Stripe supprime l'abonnement (`customer.subscription.deleted`) : le compte
+  passe `canceled`. **Suspension** : un compte dont l'abonnement a existé puis s'est terminé
+  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. L'agent vocal ne décroche plus (même
+  chemin que l'interrupteur `voice_pipeline_enabled` : l'appel part vers le repli Telnyx) et le
+  dashboard affiche un bandeau « Choisir une formule ». `past_due` ne suspend pas : Stripe retente
+  le paiement.
+- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, onboarding passé avec « Plus
+  tard ») ne sont pas suspendus.
+- Réactivation : un nouveau Checkout depuis `/pricing`, sans nouvel essai. Le webhook repasse le
+  compte `active` et l'agent décroche à nouveau.
+- Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause
+  d'une erreur de base de données.
+
 ## Configuration
 
 Créer les huit prix récurrents dans le compte Stripe correspondant à l'environnement (six prix de base et deux add-ons Multi-site), puis renseigner dans `apps/api/.env` :

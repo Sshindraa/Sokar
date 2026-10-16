@@ -112,6 +112,36 @@ describe('billing.service - Stripe subscription webhooks', () => {
     );
   });
 
+  it('enregistre un Checkout d’essai comme période d’essai, pas comme abonnement actif', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    const handled = await handleBillingWebhook({
+      type: 'checkout.session.completed',
+      id: 'evt_checkout_trial',
+      created: 100,
+      data: {
+        object: {
+          mode: 'subscription',
+          id: 'cs_trial',
+          client_reference_id: 'test-rest-1',
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          payment_status: 'no_payment_required',
+          metadata: { restaurantId: 'test-rest-1', plan: 'pro', billing: 'monthly', trial: 'true' },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+        update: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+      }),
+    );
+  });
+
   it('projette le quota multi-site au niveau du compte', async () => {
     process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
     vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);

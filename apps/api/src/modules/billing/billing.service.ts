@@ -1,4 +1,4 @@
-import { PRICING_CATALOG_VERSION, VAT_MENTION } from '@sokar/shared';
+import { PRICING_CATALOG_VERSION, TRIAL_DAYS, VAT_MENTION } from '@sokar/shared';
 import { createHash } from 'node:crypto';
 import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';
@@ -45,6 +45,12 @@ const MIN_MULTI_SITE_COUNT = 1;
 const MAX_MULTI_SITE_COUNT = 100;
 const CHECKOUT_IDEMPOTENCY_BUCKET_MS = 24 * 60 * 60 * 1000;
 const STRIPE_EVENT_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Statuses of an ended subscription. A restaurant whose subscription reached one of them is
+ * suspended: the voice agent stops answering until a new subscription starts. `past_due` is not
+ * here: Stripe retries the payment and the service keeps running meanwhile.
+ */
+const SUSPENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired', 'unpaid'];
 
 /**
  * Checkout is deliberately opt-in in production. Local development and tests
@@ -224,9 +230,12 @@ export interface BillingStatus {
   cancelAtPeriodEnd: boolean;
   entitledSiteCount: number;
   accountScoped: boolean;
+  /** True once a subscription existed and ended: the voice agent no longer answers. */
+  suspended: boolean;
 }
 
 type BillingStatusProjection = {
+  stripeSubscriptionId?: string | null;
   subscriptionStatus?: string | null;
   subscriptionPriceId?: string | null;
   subscriptionBillingInterval?: string | null;
@@ -290,7 +299,33 @@ export async function getBillingStatus(input: {
         ? projection.entitledSiteCount
         : 1,
     accountScoped: Boolean(accountId && accountBilling),
+    suspended: isSuspendedProjection(projection),
   };
+}
+
+function isSuspendedProjection(projection: BillingStatusProjection | null): boolean {
+  // Only a subscription that existed and ended suspends the service: accounts that never
+  // subscribed (pilots, demo restaurant, legacy) keep their current behaviour.
+  return Boolean(
+    projection?.stripeSubscriptionId &&
+    SUSPENDED_SUBSCRIPTION_STATUSES.includes(projection.subscriptionStatus ?? ''),
+  );
+}
+
+/**
+ * Whether the restaurant's service is suspended for billing reasons. Fails open: a billing
+ * lookup error must never drop a paying restaurant's calls.
+ */
+export async function isBillingSuspended(restaurantId: string): Promise<boolean> {
+  try {
+    return (await getBillingStatus({ restaurantId })).suspended;
+  } catch (error) {
+    logger.warn(
+      { err: error instanceof Error ? error.message : String(error), restaurantId },
+      '[billing] Suspension check failed, service kept running',
+    );
+    return false;
+  }
 }
 
 function stripeObjectId(value: string | { id: string } | null | undefined): string | null {
@@ -443,6 +478,9 @@ export async function createCheckoutSession(input: {
     });
   }
 
+  // One free trial per account: an account that already had a subscription pays from day one.
+  const trialEligible = !accountBilling?.stripeSubscriptionId && !billing?.stripeSubscriptionId;
+
   try {
     const lineItems = [
       { price: priceId, quantity: 1 },
@@ -454,14 +492,25 @@ export async function createCheckoutSession(input: {
         customer: customerId,
         client_reference_id: restaurant.id,
         line_items: lineItems,
+        // The trial starts without a card; Stripe still asks for one when a payment is due.
+        ...(trialEligible ? { payment_method_collection: 'if_required' as const } : {}),
         metadata: {
           restaurantId: restaurant.id,
           ...(accountId ? { accountId } : {}),
           plan: input.plan,
           billing: input.billing,
           siteCount: String(siteCount),
+          ...(trialEligible ? { trial: 'true' } : {}),
         },
         subscription_data: {
+          ...(trialEligible
+            ? {
+                trial_period_days: TRIAL_DAYS,
+                // No card at the end of the trial: Stripe cancels the subscription, and the
+                // `customer.subscription.deleted` webhook suspends the service.
+                trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } },
+              }
+            : {}),
           metadata: {
             restaurantId: restaurant.id,
             ...(accountId ? { accountId } : {}),
@@ -821,6 +870,8 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   const billingInterval =
     metadata.billing && isBillingInterval(metadata.billing) ? metadata.billing : 'monthly';
   const siteCount = metadataSiteCount(metadata);
+  // A trial Checkout completes without payment: the subscription is `trialing`, not `active`.
+  const subscriptionStatus = metadata.trial === 'true' ? 'trialing' : 'active';
   await db.restaurant.update({
     where: { id: restaurantId },
     data: { plan: PLAN_TO_DATABASE[plan] },
@@ -831,7 +882,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   await projectAccountBilling(restaurantId, {
     stripeCustomerId: customerId,
     stripeSubscriptionId: subscriptionId,
-    subscriptionStatus: 'active',
+    subscriptionStatus,
     subscriptionPriceId: resolvePriceId(plan, billingInterval),
     subscriptionBillingInterval: billingInterval,
     plan: PLAN_TO_DATABASE[plan],
@@ -845,7 +896,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
       restaurantId,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
-      subscriptionStatus: 'active',
+      subscriptionStatus,
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
       subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),
@@ -854,7 +905,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
     update: {
       stripeCustomerId: customerId ?? undefined,
       stripeSubscriptionId: subscriptionId ?? undefined,
-      subscriptionStatus: 'active',
+      subscriptionStatus,
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
       subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),

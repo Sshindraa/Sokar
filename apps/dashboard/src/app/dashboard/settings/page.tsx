@@ -663,6 +663,22 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
+              {billingStatus?.subscriptionStatus === 'trialing' && billingPeriodEnd && (
+                <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+                  Essai gratuit jusqu’au {billingPeriodEnd}.{' '}
+                  {canManageBilling
+                    ? 'Ajoutez une carte bancaire depuis la gestion de l’abonnement avant cette date pour que l’assistant continue de répondre.'
+                    : 'Le propriétaire du compte doit ajouter une carte bancaire avant cette date.'}
+                </p>
+              )}
+              {billingStatus?.suspended && (
+                <p role="alert" className="mt-3 max-w-xl text-sm text-destructive">
+                  Votre abonnement est terminé : l’assistant téléphonique ne répond plus aux appels.{' '}
+                  {canManageBilling
+                    ? 'Choisissez une formule pour le réactiver.'
+                    : 'Le propriétaire du compte doit choisir une formule pour le réactiver.'}
+                </p>
+              )}
               {billingStatus?.subscriptionStatus === 'past_due' && (
                 <p role="alert" className="mt-3 max-w-xl text-sm text-warning">
                   Le dernier paiement n’a pas abouti.{' '}
@@ -679,6 +695,7 @@ export default function SettingsPage() {
               )}
               {billingStatus?.subscriptionStatus &&
                 billingStatus.subscriptionStatus !== 'canceled' &&
+                billingStatus.subscriptionStatus !== 'trialing' &&
                 !billingStatus.cancelAtPeriodEnd &&
                 billingPeriodEnd && (
                   <p className="mt-2 text-sm text-muted-foreground">

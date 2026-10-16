@@ -22,6 +22,8 @@ export interface BillingStatus {
   cancelAtPeriodEnd: boolean;
   entitledSiteCount: number;
   accountScoped: boolean;
+  /** True once a subscription ended: the phone assistant no longer answers. */
+  suspended?: boolean;
 }
 
 export type OpeningHours = {

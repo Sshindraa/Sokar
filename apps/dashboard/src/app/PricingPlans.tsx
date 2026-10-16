@@ -2,6 +2,7 @@
 
 import {
   ANNUAL_DISCOUNT_PERCENT,
+  TRIAL_DAYS,
   VAT_MENTION,
   pricingTotalCents,
   formatMonthlyEquivalent,
@@ -129,6 +130,7 @@ export default function PricingPlans({
       </div>
 
       <p className="mb-8 text-center text-sm text-white/70">
+        {TRIAL_DAYS} jours offerts, sans carte bancaire.{' '}
         {yearly
           ? 'Équivalents mensuels arrondis. Facturation annuelle, engagement de 12 mois. Montant exact indiqué avant paiement.'
           : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
