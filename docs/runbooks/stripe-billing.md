@@ -162,9 +162,10 @@ sans paiement ni création d’abonnement.
 - Contrôle live sans paiement (client jetable, `invoices.createPreview`, aucun moyen de paiement ni
   abonnement, client supprimé) : Essential 199,00 € / 2 149,20 €, Pro 299,00 € / 3 229,20 €,
   Multi-site 3 sites 497,00 € / 5 367,60 € (mensuel / annuel). Session de portail live créée sur
-  `bpc_1URDivH4TS0ZYIJntZnMNCxw`. Point ouvert : aucune TVA n'est calculée (ni `automatic_tax` ni
-  taux de taxe dans le Checkout) ; les montants facturés sont donc les montants « HT » affichés.
-  Décision à prendre selon le régime de TVA de l'entreprise avant le premier client.
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`. Aucune TVA n'est calculée, volontairement : Sokar est en franchise
+  en base de TVA (décision du 16 octobre 2026). Les factures portent « TVA non applicable, art. 293 B
+  du CGI » via `invoice_settings.footer` du client Stripe (`VAT_MENTION`, PR #462 ; clients
+  existants mis à jour en live et en test). À revoir si le statut TVA change.
 - Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
   `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
   migrer ni archiver un ancien prix sans décision explicite.
