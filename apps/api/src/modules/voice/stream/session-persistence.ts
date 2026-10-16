@@ -7,7 +7,7 @@
 
 import type { CallSession, VoiceTurnLatencyTrace, VoiceTurnTelemetry } from './types';
 import { snapshotVoiceTurnTelemetry } from './turn-telemetry';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { telephonyTtsProvider, ttsProviderWithModel } from './elevenlabs-tts';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
@@ -103,7 +103,7 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
       // dans la télémétrie de cette session.
       llmProvider: getVoiceLlmProvider(),
       llmModel: getVoiceLlmModel(),
-      ttsProvider: callRecord.ttsProvider ?? `cartesia-${CARTESIA_MODEL}`,
+      ttsProvider: callRecord.ttsProvider ?? ttsProviderWithModel(telephonyTtsProvider()),
     };
 
     const persistedTurns =

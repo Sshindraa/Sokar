@@ -111,6 +111,28 @@ export async function listDemoRequests(filter: {
   });
 }
 
+export async function getDemoRequestSummary() {
+  const [statusGroups, notificationUnconfirmed] = await Promise.all([
+    db.demoRequest.groupBy({ by: ['status'], _count: { _all: true } }),
+    db.demoRequest.count({ where: { notifiedAt: null } }),
+  ]);
+
+  const byStatus: Record<DemoRequestStatus, number> = {
+    [DemoRequestStatus.NEW]: 0,
+    [DemoRequestStatus.CONTACTED]: 0,
+    [DemoRequestStatus.DEMO_DONE]: 0,
+    [DemoRequestStatus.CLOSED]: 0,
+  };
+
+  for (const group of statusGroups) byStatus[group.status] = group._count._all;
+
+  return {
+    total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
+    byStatus,
+    notificationUnconfirmed,
+  };
+}
+
 /** Le premier passage à CONTACTED ou DEMO_DONE horodate l'étape ; les passages suivants la conservent. */
 export async function updateDemoRequestStatus(
   id: string,
@@ -125,4 +147,15 @@ export async function updateDemoRequestStatus(
   if (status === 'DEMO_DONE' && !current.demoDoneAt) timestamps.demoDoneAt = now;
 
   return db.demoRequest.update({ where: { id }, data: { status, ...timestamps } });
+}
+
+/** Enregistre la date de l'échange réellement constaté par un opérateur. */
+export async function recordDemoRequestInteraction(
+  id: string,
+  occurredAt = new Date(),
+): Promise<DemoRequest | null> {
+  const current = await db.demoRequest.findUnique({ where: { id } });
+  if (!current) return null;
+
+  return db.demoRequest.update({ where: { id }, data: { lastInteractionAt: occurredAt } });
 }

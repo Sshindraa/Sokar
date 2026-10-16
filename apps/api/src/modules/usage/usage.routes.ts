@@ -68,6 +68,7 @@ const AdjustmentQuerySchema = z.object({
   status: z.nativeEnum(UsageAdjustmentStatus).optional(),
   scopeKey: z.string().trim().min(1).max(191).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
+  cursor: z.string().trim().min(1).max(128).optional(),
 });
 const AdjustmentIdParamsSchema = z.object({ id: z.string().trim().min(1).max(128) });
 
@@ -261,10 +262,17 @@ export async function usageRoutes(app: FastifyInstance) {
           ...(query.status ? { status: query.status } : {}),
           ...(query.scopeKey ? { scopeKey: query.scopeKey } : {}),
         },
-        orderBy: { createdAt: 'desc' },
-        take: query.limit,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       });
-      return reply.send({ data: adjustments.map(serializeAdjustment) });
+      const hasMore = adjustments.length > query.limit;
+      const page = hasMore ? adjustments.slice(0, query.limit) : adjustments;
+      return reply.send({
+        data: page.map(serializeAdjustment),
+        hasMore,
+        nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
+      });
     },
   );
 

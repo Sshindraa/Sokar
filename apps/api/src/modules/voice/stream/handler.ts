@@ -41,6 +41,7 @@ import { startTestCallRecording } from '../call-recording.service';
 import { startNoiseSuppression } from '../noise-suppression';
 import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
 import { finalizeVoiceCall } from '../call-finalization.service';
+import { observedTtsProvider } from './turn-telemetry';
 import { callFinalizationDependencies } from '../call-finalization.dependencies';
 import { getVoiceLlmRuntimeInfo } from '../llm-provider';
 import { voiceWidebandDetectedTotal } from '../../../shared/observability/metrics';
@@ -73,6 +74,7 @@ function finalizeSessionCall(
           session.currentTurn?.llmProvider ??
           session.voiceTurnHistory?.find((turn) => turn.llmProvider)?.llmProvider ??
           null,
+        ttsProvider: observedTtsProvider(session),
         to: session.to,
         customerPhone: session.from,
       },

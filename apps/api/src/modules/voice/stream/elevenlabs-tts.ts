@@ -1,3 +1,5 @@
+import { CARTESIA_MODEL } from '@sokar/config';
+
 /**
  * Synthèse vocale ElevenLabs pour le téléphone (chemin HTTP, un segment par requête).
  *
@@ -18,6 +20,16 @@ export type TelephonyTtsProvider = 'cartesia' | 'elevenlabs';
 /** Fournisseur TTS du téléphone. Cartesia tant que la variable n'est pas `elevenlabs`. */
 export function telephonyTtsProvider(): TelephonyTtsProvider {
   return process.env.VOICE_TTS_PROVIDER === 'elevenlabs' ? 'elevenlabs' : 'cartesia';
+}
+
+/**
+ * Étiquette fournisseur + modèle écrite sur l'appel (`calls.tts_provider`), par ex. `elevenlabs-eleven_v4_turbo`.
+ * Toute autre valeur (`telnyx-native`) est rendue telle quelle.
+ */
+export function ttsProviderWithModel(provider: string): string {
+  if (provider === 'elevenlabs') return `elevenlabs-${elevenLabsTtsModel()}`;
+  if (provider === 'cartesia') return `cartesia-${CARTESIA_MODEL}`;
+  return provider;
 }
 
 /** Synthèse en flux (`/stream`) pour le téléphone. Désactivée tant que la variable n'est pas exactement `true`. */

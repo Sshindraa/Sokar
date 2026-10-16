@@ -359,7 +359,8 @@ VOICE_TTS_CONTEXT_V2_ENABLED="false"
 # Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : faux en production, ne pas activer sans
 # écoute validée. Prioritaire sur le contexte Cartesia ; sans ELEVENLABS_API_KEY, repli automatique.
 VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
-# Même adaptateur, restaurant par restaurant (ids séparés par des virgules). Vide = aucun.
+# Restaurants autorisés (ids séparés par des virgules). Il faut le drapeau ci-dessus à true ET le
+# restaurant dans cette liste : la liste seule ne suffit pas, le drapeau seul non plus. Vide = aucun.
 VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
 # Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
 # ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
@@ -425,6 +426,10 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 - `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
   octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
   arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
+- Le chemin WebSocket exige deux conditions : `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` ET le restaurant dans
+  `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`. Le drapeau seul ne bascule personne, et la liste seule non plus :
+  sans le drapeau, le restaurant reste sur la voix HTTP. Pour l'arrêter ou retirer un restaurant, modifier la
+  variable puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur

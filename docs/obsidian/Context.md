@@ -8,16 +8,16 @@
 
 ## TODOs actifs
 
-- [ ] SEO : accueil livré (#438/#440) ; indexation GSC à suivre. Staging noindex et lien démo livrés (#441) ; rendu privacy/CSP en livraison (§10.34). Mentions légales bloquées : identité non autorisée à publier ; réseaux facultatifs.
+- [ ] SEO : accueil/privacy livrés (#438–#442) ; GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Mentions légales bloquées : identité non autorisée à publier ; réseaux facultatifs.
 - [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
-- [ ] Vitrine : valider ou ajuster FAQ données et promesse « Support prioritaire 7j/7 » selon les preuves.
+- [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation ; valider la promesse « Support prioritaire 7j/7 ».
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.
 - [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client ; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
 
-- [ ] Onboarding v2 : parcours unique `/onboarding`, socle « Votre salle » (3 étapes) puis écran « Vos canaux » : Téléphone et En ligne, dans l’ordre choisi, **tous deux obligatoires** pour ouvrir l’espace ; l’attribution du numéro Sokar (manuelle, opérateur, `assign-phone`) est le prérequis du canal Téléphone (carte « en cours d’attribution »). En salle (clients sans réservation) **livré** (#411, en production le 12/10) : durée de repas du restaurant, placement avec nombre de personnes, guide du premier service, carte d’inscription en 3 étapes ; la gestion de l’équipe reste hors périmètre. Livré : #404 à #411 ; l’équipe voit les restaurants sans numéro dans la section « En attente de numéro » de la page admin Provisioning (plus d’e-mail, plus de variable à poser). Local, non commité : formule proposée après l’appel test, équipe et rôles (à valider avec un vrai compte Clerk). Reste la décision d’attribution automatique, en attente de l’audit phase 1.6 : le paiement n’est accessible qu’après l’onboarding, attribuer après `checkout.session.completed` serait circulaire. Anciennes étapes adresse/cuisine redirigées, enrichissements facultatifs ; direction UI sphères et capsules (référence Giza) en local, à valider ; décider numéro Telnyx automatique et compte Stripe unique avant les phases 2-3 (canaux, croissance).
+- [ ] Onboarding v2 : #404–#411 livrés ; téléphone et en ligne restent requis, attribution du numéro manuelle avant ouverture. En local : proposition de formule après appel test, équipe/rôles à valider avec un compte Clerk. Décider l'attribution Telnyx automatique et le compte Stripe unique après l'audit phase 1.6 ; paiement après onboarding. UI locale à valider.
 - [ ] Onboarding en ligne : bouton « Annuler la réservation test » dans l’étape Règles et diffusion (aujourd’hui le restaurateur réserve sur sa vraie page puis annule à la main).
 - [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).

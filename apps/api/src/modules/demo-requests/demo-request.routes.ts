@@ -4,9 +4,11 @@ import { requireSokarOperator } from '../../plugins/clerk';
 import { RATE_LIMIT_PUBLIC_WRITE } from '../../plugins/rate-limit.policy';
 import {
   createDemoRequest,
+  getDemoRequestSummary,
   listDemoRequests,
   markDemoRequestNotified,
   notifyDemoRequest,
+  recordDemoRequestInteraction,
   updateDemoRequestStatus,
 } from './demo-request.service';
 
@@ -46,6 +48,10 @@ const OperatorListQuery = z.object({
 const OperatorStatusBody = z.object({
   status: z.enum(DEMO_REQUEST_STATUSES),
 });
+
+const OperatorInteractionBody = z
+  .object({ occurredAt: z.string().datetime({ offset: true }).optional() })
+  .strict();
 
 const DemoRequestParams = z.object({
   id: z.string().min(1).max(64),
@@ -134,6 +140,14 @@ export async function demoRequestRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get(
+    '/admin/demo-requests/summary',
+    { preHandler: requireSokarOperator() },
+    async (_request, reply) => {
+      return reply.send(await getDemoRequestSummary());
+    },
+  );
+
   app.patch(
     '/admin/demo-requests/:id',
     { preHandler: requireSokarOperator() },
@@ -145,6 +159,29 @@ export async function demoRequestRoutes(app: FastifyInstance) {
       }
 
       const updated = await updateDemoRequestStatus(params.data.id, body.data.status);
+      if (!updated) {
+        return reply.status(404).send({ error: 'DEMO_REQUEST_NOT_FOUND' });
+      }
+      return reply.send({ data: updated });
+    },
+  );
+
+  app.post(
+    '/admin/demo-requests/:id/interaction',
+    { preHandler: requireSokarOperator() },
+    async (request, reply) => {
+      const params = DemoRequestParams.safeParse(request.params);
+      const body = OperatorInteractionBody.safeParse(request.body ?? {});
+      if (!params.success || !body.success) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR' });
+      }
+
+      const occurredAt = body.data.occurredAt ? new Date(body.data.occurredAt) : new Date();
+      if (occurredAt.getTime() > Date.now()) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR' });
+      }
+
+      const updated = await recordDemoRequestInteraction(params.data.id, occurredAt);
       if (!updated) {
         return reply.status(404).send({ error: 'DEMO_REQUEST_NOT_FOUND' });
       }
