@@ -140,6 +140,15 @@ describe('prosodie TTS', () => {
     );
   });
 
+  it('ne lit pas « Monsieur » pour un M épelé en fin de relecture', () => {
+    // Audit de lecture du 16/10/2026 : « A, S, S, A, M, M. C'est bien ça ? » devenait « M, Monsieur C'est… ».
+    expect(cleanTextForTts("Je note A, S, S, A, M, M. C'est bien ça ?")).toBe(
+      "Je note A, S, S, A, M, M. C'est bien ça ?",
+    );
+    expect(cleanTextForTts('M. Dupont, à samedi.')).toBe('Monsieur Dupont, à samedi.');
+    expect(cleanTextForTts('Bonjour M. Dupont.')).toBe('Bonjour Monsieur Dupont.');
+  });
+
   it('laisse Cartesia piloter la pause selon la ponctuation', () => {
     expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(0);
     expect(getInterSentencePauseMs('Très bien.')).toBe(0);
