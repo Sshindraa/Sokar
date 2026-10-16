@@ -153,8 +153,8 @@ sans paiement ni création d’abonnement.
   rejouer le parcours depuis le dashboard, puis avant toute activation live.
 - Portail **live** (accord de Hamza, après déploiement de #460 en staging et production sur
   `b73075bc`) : le compte live n'avait aucune configuration de portail. Configuration créée par
-  l'API, `bpc_1URDivH4TS0ZYIJntZnMNCxw` (`metadata.sokar_key=portal-v1`), devenue la configuration
-  par défaut du compte. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
+  appel Stripe et devenue la configuration par défaut du compte :
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`, repérée par sa metadata `sokar_key` = `portal-v1`. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
   annuel, `create_prorations`), Multi-site exclu, pas de `quantity` ; mise à jour carte et
   coordonnées, historique des factures, résiliation en fin de période avec motif. Retour arrière :
   `subscription_update.enabled: false` sur cette configuration. Aucun abonné live à ce jour : pas de
