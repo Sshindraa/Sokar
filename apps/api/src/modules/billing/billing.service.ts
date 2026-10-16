@@ -884,7 +884,9 @@ async function handleSubscriptionEvent(
   const priceId = subscription.items.data[0]?.price?.id;
   const planFromMetadata =
     metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
-  const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
+  // The current price wins: a Stripe portal plan switch changes the price but keeps the
+  // Checkout metadata. Metadata only covers historical prices absent from the catalogue.
+  const plan = (priceId ? getPublicPlanFromPriceId(priceId) : null) ?? planFromMetadata;
   const deleted = eventType === 'customer.subscription.deleted';
   const billingData = subscriptionUpdateData(subscription, deleted);
   const siteCount = deleted ? 1 : metadataSiteCount(metadata);

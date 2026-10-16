@@ -126,6 +126,35 @@ sans paiement ni création d’abonnement.
 | MULTI_SITE_ADDON_MONTHLY         | `price_1UI9zGHCZZuqZF0hC3xNNmsW` | `price_1UICseH4TS0ZYIJn0z9WoP0d` |
 | MULTI_SITE_ADDON_ANNUAL          | `price_1UQELdHCZZuqZF0hBBUgrRNS` | `price_1UQELxH4TS0ZYIJnof7S3O3p` |
 
+### Contrôle du 16 octobre 2026
+
+- `verify-stripe-catalog.mjs` exécuté sur le VPS avec le `.env` staging (`sk_test_`) puis prod
+  (`sk_live_`, lecture seule) : 8/8 conformes dans chaque environnement. Les `priceId` déployés
+  sont exactement ceux du tableau ci-dessus.
+- Rejeu sandbox mensuel sur un client test jetable : Checkout et aperçu de facture
+  (`invoices.createPreview`) donnent Essential 199,00 €, Pro 299,00 €, Multi-site 3 sites 497,00 €
+  (299 + 2 × 99). Sessions expirées sans paiement, client supprimé, aucun abonnement créé.
+- Portail, **compte test uniquement** (accord de Hamza : « Oui, active le changement de formule
+  dans le portail client Stripe, en test d'abord. ») : la configuration par défaut
+  `bpc_1UD3ilHCZZuqZF0hp2KK2EqF` a maintenant `subscription_update` activé avec
+  `default_allowed_updates: ["price"]`, `proration_behavior: create_prorations` et les produits
+  Essential et Pro (mensuel + annuel). Multi-site est exclu : un abonnement à deux lignes (base +
+  addon) ne passe pas par le portail, et `siteCount` vient de la metadata Checkout ; pas de
+  `quantity` pour la même raison. Retour arrière : `enabled: false`,
+  `default_allowed_updates: []`, `proration_behavior: none`. Le live n'est pas modifié.
+- Correctif requis avant toute ouverture en live : `handleSubscriptionEvent` donnait la priorité à
+  `metadata.plan` (posée par Checkout) sur le prix. Un changement Essential → Pro dans le portail
+  change le prix sans toucher la metadata, et le compte restait en Essential. Rejeu sandbox
+  Essential → Pro sur un client jetable : l'événement réel `customer.subscription.updated` porte le
+  prix Pro et `metadata.plan=essential` ; prochaine facture −199 € (prorata) + 299 € + 299 €.
+  Rejoué contre le handler local : `STARTER` sans correctif, `PRO` avec. Le prix résolu passe
+  désormais en premier, la metadata ne sert plus qu'aux prix historiques. Test unitaire ajouté.
+  Client et abonnement de test supprimés. Le correctif doit être déployé en staging avant de
+  rejouer le parcours depuis le dashboard, puis avant toute activation live.
+- Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
+  `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
+  migrer ni archiver un ancien prix sans décision explicite.
+
 ### Rollback de cette grille
 
 Le rollback applicatif ne restaure pas les variables Stripe. Avant de revenir à la release

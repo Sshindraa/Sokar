@@ -224,6 +224,35 @@ describe('billing.service - Stripe subscription webhooks', () => {
     expect(db.stripeWebhookEvent.update).not.toHaveBeenCalled();
   });
 
+  it('suit le prix après un changement de formule depuis le portail Stripe', async () => {
+    // Le portail change le prix mais laisse la metadata posée par Checkout.
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    const handled = await handleBillingWebhook({
+      type: 'customer.subscription.updated',
+      id: 'evt_portal_upgrade',
+      created: 600,
+      data: {
+        object: {
+          id: 'sub_test',
+          customer: 'cus_test',
+          metadata: { restaurantId: 'test-rest-1', plan: 'essential', billing: 'monthly' },
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_end: 1_800_000_000,
+          items: { data: [{ price: { id: 'price_pro_monthly_test' } }] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: 'test-rest-1' },
+      data: { plan: 'PRO' },
+    });
+  });
+
   it('ignore un événement plus ancien que le dernier checkpoint de facturation', async () => {
     vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
     vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
