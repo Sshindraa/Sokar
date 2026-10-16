@@ -23,6 +23,7 @@ import '../shared/queue/workers/outbox-delivery.worker';
 import '../shared/queue/workers/usage-rollup.worker';
 import '../shared/queue/workers/usage-alerts.worker';
 import '../shared/queue/workers/reengagement.worker';
+import '../modules/billing/billing-notification.worker';
 import '../shared/queue/workers/reconciliation.worker';
 import '../shared/queue/workers/telnyx-webhook.worker';
 import '../shared/queue/workers/call-recovery.worker';

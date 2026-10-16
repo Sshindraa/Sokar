@@ -4,6 +4,9 @@ import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
+import { queues } from '../../shared/queue/queues';
+import { buildBillingNotificationJobId } from '../../shared/queue/job-options';
+import type { BillingNotificationJobData } from './billing-notification.worker';
 
 export const PUBLIC_BILLING_PLANS = ['essential', 'pro', 'multi-site'] as const;
 export type PublicBillingPlan = (typeof PUBLIC_BILLING_PLANS)[number];
@@ -622,6 +625,7 @@ type SupportedBillingEvent =
   | 'customer.subscription.created'
   | 'customer.subscription.updated'
   | 'customer.subscription.deleted'
+  | 'customer.subscription.trial_will_end'
   | 'invoice.paid'
   | 'invoice.payment_failed'
   | 'invoice.payment_succeeded';
@@ -920,7 +924,8 @@ async function handleSubscriptionEvent(
   eventType:
     | 'customer.subscription.created'
     | 'customer.subscription.updated'
-    | 'customer.subscription.deleted',
+    | 'customer.subscription.deleted'
+    | 'customer.subscription.trial_will_end',
   subscription: SubscriptionObject,
 ): Promise<boolean> {
   const metadata = subscription.metadata ?? {};
@@ -970,7 +975,71 @@ async function handleSubscriptionEvent(
     },
     update: { ...billingData, ...clearCheckoutAttempt(), ...eventCheckpoint(event) },
   });
+  await enqueueBillingNotification(eventType, restaurantId, subscription);
   return true;
+}
+
+function stripeDate(seconds: number | null | undefined): Date | null {
+  return typeof seconds === 'number' ? new Date(seconds * 1000) : null;
+}
+
+/**
+ * Trial ending (Stripe sends `trial_will_end` three days before) and service suspended (the
+ * subscription was deleted): one e-mail each per subscription, sent by the billing-notifications
+ * worker, which checks again that it still applies at send time.
+ */
+async function enqueueBillingNotification(
+  eventType: string,
+  restaurantId: string,
+  subscription: SubscriptionObject,
+): Promise<void> {
+  const since =
+    stripeDate(subscription.trial_start) ??
+    stripeDate(subscription.start_date) ??
+    stripeDate(subscription.created) ??
+    new Date();
+  let data: BillingNotificationJobData | null = null;
+  if (eventType === 'customer.subscription.trial_will_end') {
+    const trialEnd = stripeDate(subscription.trial_end);
+    if (!trialEnd) return;
+    data = {
+      kind: 'trial-ending',
+      restaurantId,
+      subscriptionId: subscription.id,
+      since: since.toISOString(),
+      trialEndsAt: trialEnd.toISOString(),
+    };
+  } else if (eventType === 'customer.subscription.deleted') {
+    const trialEnd = stripeDate(subscription.trial_end);
+    const endedAt =
+      stripeDate(subscription.ended_at) ?? stripeDate(subscription.canceled_at) ?? new Date();
+    // Ended within a day of the trial end: the trial expired without a card.
+    const endedFromTrial = Boolean(
+      trialEnd && Math.abs(endedAt.getTime() - trialEnd.getTime()) <= 24 * 60 * 60 * 1000,
+    );
+    data = {
+      kind: 'service-suspended',
+      restaurantId,
+      subscriptionId: subscription.id,
+      since: since.toISOString(),
+      endedFromTrial,
+    };
+  }
+  if (!data) return;
+  await queues.billingNotifications.add(data.kind, data, {
+    jobId: buildBillingNotificationJobId(data.kind, subscription.id),
+  });
+}
+
+/** Whether a card (or other payment method) will pay this subscription at the end of the trial. */
+export async function subscriptionHasPaymentMethod(subscriptionId: string): Promise<boolean> {
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId, {
+    expand: ['customer'],
+  });
+  if (subscription.default_payment_method || subscription.default_source) return true;
+  const customer = subscription.customer;
+  if (typeof customer === 'string' || customer.deleted) return false;
+  return Boolean(customer.invoice_settings?.default_payment_method || customer.default_source);
 }
 
 type InvoiceObject = Stripe.Invoice & {
@@ -1150,6 +1219,7 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<boolean
     'customer.subscription.created',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+    'customer.subscription.trial_will_end',
     'invoice.paid',
     'invoice.payment_failed',
     'invoice.payment_succeeded',
