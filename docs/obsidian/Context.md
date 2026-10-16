@@ -13,7 +13,7 @@
 - [ ] SEO : accueil/privacy livrés (#438–#442) ; GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Mentions légales bloquées : identité non autorisée à publier ; réseaux facultatifs.
 - [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
 - [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation ; valider la promesse « Support prioritaire 7j/7 ».
-- [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.
+- [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23) ; essai gratuit 14 jours sans carte, suspension automatique à la fin (16/10). France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.
 - [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client ; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.

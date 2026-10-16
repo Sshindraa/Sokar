@@ -1,6 +1,12 @@
 'use client';
 
-import { PRICING_CATALOG, VAT_MENTION, pricingTotalCents, formatPriceCents } from '@sokar/shared';
+import {
+  PRICING_CATALOG,
+  TRIAL_DAYS,
+  VAT_MENTION,
+  pricingTotalCents,
+  formatPriceCents,
+} from '@sokar/shared';
 
 import { SignUp, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -264,6 +270,7 @@ export default function RegisterPage() {
               className="mx-auto mb-5 max-w-sm text-center text-sm text-foreground"
               aria-label="Récapitulatif de facturation"
             >
+              {TRIAL_DAYS} jours offerts, sans carte bancaire, puis{' '}
               {formatPriceCents(
                 pricingTotalCents(
                   selectedPlan.slug,

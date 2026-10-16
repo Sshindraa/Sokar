@@ -38,6 +38,7 @@ import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { AccountMenu } from '@/components/AccountMenu';
+import { BillingBanner } from '@/features/billing/billing-banner';
 import { OnboardingWizard } from '@/features/onboarding/onboarding-wizard';
 import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-access-boundary';
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
@@ -977,7 +978,10 @@ function DashboardShell({ children }: { children: ReactNode }) {
               </Link>
             </div>
           ) : (
-            children
+            <>
+              <BillingBanner />
+              {children}
+            </>
           )}
         </main>
       </div>

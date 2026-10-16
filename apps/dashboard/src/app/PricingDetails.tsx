@@ -1,4 +1,4 @@
-import { ANNUAL_DISCOUNT_PERCENT, PRICING_CATALOG, VAT_MENTION } from '@sokar/shared';
+import { ANNUAL_DISCOUNT_PERCENT, PRICING_CATALOG, TRIAL_DAYS, VAT_MENTION } from '@sokar/shared';
 
 const groups = [
   {
@@ -134,7 +134,7 @@ const questions = [
   ],
   [
     'Quand suis-je débité et puis-je résilier ?',
-    `Le paiement est effectué par carte via Stripe après le parcours de mise en service. En mensuel, vous payez chaque mois et une résiliation prend effet à la fin de la période payée. En annuel, vous payez douze mois à l’avance avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. La résiliation conserve l’accès jusqu’à l’échéance ; aucun remboursement automatique en cours de période n’est prévu. ${VAT_MENTION} : les prix affichés sont les montants payés.`,
+    `Les ${TRIAL_DAYS} premiers jours sont offerts, sans carte bancaire. Pour continuer ensuite, ajoutez une carte avant la fin de l’essai : sans carte, l’assistant téléphonique cesse de répondre. Le paiement est effectué par carte via Stripe. En mensuel, vous payez chaque mois et une résiliation prend effet à la fin de la période payée. En annuel, vous payez douze mois à l’avance avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. La résiliation conserve l’accès jusqu’à l’échéance ; aucun remboursement automatique en cours de période n’est prévu. ${VAT_MENTION} : les prix affichés sont les montants payés.`,
   ],
   [
     'Combien coûte un groupe de restaurants ?',

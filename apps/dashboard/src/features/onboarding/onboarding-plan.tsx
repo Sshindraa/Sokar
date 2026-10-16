@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, Lock } from 'lucide-react';
+import { TRIAL_DAYS } from '@sokar/shared';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
@@ -275,7 +276,7 @@ export function OnboardingPlan({
           className="h-11 rounded-full transition-all duration-200"
         >
           {paying ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-          {paying ? 'Redirection…' : 'Payer et continuer'}
+          {paying ? 'Redirection…' : `Commencer l’essai gratuit de ${TRIAL_DAYS} jours`}
           {!paying && <ArrowRight size={15} aria-hidden="true" />}
         </Button>
         <Button
@@ -289,7 +290,8 @@ export function OnboardingPlan({
         </Button>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Paiement sécurisé par Stripe. Vous pourrez modifier votre formule dans vos réglages.
+          Sans carte bancaire pendant l’essai. Paiement sécurisé par Stripe ensuite ; vous pourrez
+          modifier votre formule dans vos réglages.
         </p>
       </div>
     </div>

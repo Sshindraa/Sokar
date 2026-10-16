@@ -27,6 +27,7 @@ import { callFinalizationDependencies } from './call-finalization.dependencies';
 
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
+import { isBillingSuspended } from '../billing/billing.service';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
@@ -168,9 +169,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // Avant : checkMarginHealth → isVoicePipelineEnabled → lookupOrCreate
         //         (3 awaits séquentiels = ~50-150ms cumulés)
         // Après : Promise.all des 3 en parallèle = max(3) au lieu de sum(3)
-        const [safe, voiceEnabled, customer] = await Promise.all([
+        const [safe, voiceEnabled, billingSuspended, customer] = await Promise.all([
           RestaurantService.checkMarginHealth(ctx.id),
           isVoicePipelineEnabled(ctx.id),
+          isBillingSuspended(ctx.id),
           payload.from
             ? CustomerService.lookupOrCreate(ctx.id, payload.from)
             : Promise.resolve(null),
@@ -188,6 +190,16 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           app.log.warn(
             { restaurantId: ctx.id, callId: payload.call_control_id },
             'Voice pipeline killed by feature flag — dropping call',
+          );
+          return reply.send({ result: 'ok' });
+        }
+
+        // Ended subscription (trial without a card, cancellation, unpaid): same path as the
+        // kill switch, the call is not answered and goes to Telnyx's fallback.
+        if (billingSuspended) {
+          app.log.warn(
+            { restaurantId: ctx.id, callId: payload.call_control_id },
+            'Billing suspended — dropping call',
           );
           return reply.send({ result: 'ok' });
         }

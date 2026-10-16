@@ -77,7 +77,7 @@ it('envoie le choix à Stripe en demandant le retour vers l’inscription', asyn
   renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Commencer l’essai gratuit de 14 jours/ }));
 
   await waitFor(() => expect(assign).toHaveBeenCalledWith('https://checkout.stripe.test/cs_1'));
   expect(mocks.post).toHaveBeenCalledWith('billing/checkout-session', {
@@ -98,7 +98,7 @@ it('transmet le nombre d’établissements du Multi-site, borné entre 2 et 100'
   expect(input).toHaveValue(100);
   fireEvent.change(input, { target: { value: '6' } });
 
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Commencer l’essai gratuit de 14 jours/ }));
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalled());
   expect(mocks.post).toHaveBeenCalledWith(
@@ -112,13 +112,15 @@ it('affiche l’erreur du paiement et laisse continuer sans payer', async () => 
   const onContinue = renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Commencer l’essai gratuit de 14 jours/ }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'La souscription en ligne sera bientôt disponible.',
   );
   expect(assign).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: /Payer et continuer/ })).toBeEnabled();
+  expect(
+    screen.getByRole('button', { name: /Commencer l’essai gratuit de 14 jours/ }),
+  ).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
   expect(onContinue).toHaveBeenCalledTimes(1);
 });

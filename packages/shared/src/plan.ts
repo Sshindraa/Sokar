@@ -35,6 +35,9 @@ export const PLAN_LABELS: Record<Plan, string> = {
  */
 export const VAT_MENTION = 'TVA non applicable, art. 293 B du CGI';
 
+/** Free trial on a first subscription, without a payment method (Stripe Checkout). */
+export const TRIAL_DAYS = 14;
+
 /**
  * Public monthly price in EUR, charged as is (no VAT, see `VAT_MENTION`). `null` = "sur devis" / enterprise.
  * Use this for pricing pages, upgrade CTAs, invoices.
