@@ -336,6 +336,21 @@ async function checkOauthRate(
   return count <= config.max;
 }
 
+/**
+ * Page publique d'usage du connecteur (installation, données, outils). Elle vit sur le site public
+ * de l'environnement : api.sokar.tech → sokar.tech, api-staging.sokar.tech → staging.sokar.tech.
+ */
+export function mcpDocumentationUrl(
+  issuer: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  const configured = environment.MCP_DOCUMENTATION_URL?.trim();
+  if (configured) return configured;
+  const url = new URL(issuer);
+  url.hostname = url.hostname.replace(/^api[.-]/, '');
+  return `${url.origin}/assistants-ia`;
+}
+
 // ─── Routes ────────────────────────────────────────────
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
@@ -352,7 +367,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         authorization_servers: [issuer],
         bearer_methods_supported: ['header'],
         scopes_supported: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
-        resource_documentation: `${issuer}/docs`,
+        resource_documentation: mcpDocumentationUrl(issuer),
       });
     },
   );

@@ -39,3 +39,9 @@ export const DEMO_METADATA = pageMetadata(
   'Demander une démonstration — Sokar',
   "Demandez une démonstration de Sokar pour votre restaurant. Nous vous recontactons par e-mail pour convenir d'un créneau.",
 );
+
+export const AI_ASSISTANTS_METADATA = pageMetadata(
+  '/assistants-ia',
+  'Réserver depuis Claude, ChatGPT ou Le Chat — Sokar',
+  'Connectez Sokar à votre assistant IA pour trouver un restaurant, vérifier les places et réserver dans la conversation. Instructions, données et référence technique.',
+);
