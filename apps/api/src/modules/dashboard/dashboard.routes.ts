@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { normalizeOpeningHours } from '@sokar/shared';
+import { summarizeReservationChannels } from './reservation-channels';
 
 const PeriodSchema = z.enum(['today', '7d', '30d']).default('7d');
 
@@ -98,6 +99,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
           confirmedRevenue: true,
           state: true,
           createdAt: true,
+          channel: true,
+          source: true,
         },
       }),
       db.call.count({ where: { ...where, outcome: { not: null } } }),
@@ -145,6 +148,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       answered_rate: answeredRate,
       estimated_revenue: Math.round(estimatedRevenue),
       revenue_recovered: revenueRecovered,
+      by_channel: summarizeReservationChannels(confirmedReservations),
     });
   });
 

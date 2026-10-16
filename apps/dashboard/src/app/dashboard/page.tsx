@@ -17,6 +17,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
+import ReservationChannels, {
+  demoReservationChannels,
+  type ReservationChannelStat,
+} from './ReservationChannels';
 
 // recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
 // bloquer le First Load JS du dashboard. Les KPIs et le header s'affichent
@@ -69,6 +73,7 @@ interface DashboardStatsResponse {
   conversion_rate?: number;
   answered_rate?: number;
   estimated_revenue?: number;
+  by_channel?: ReservationChannelStat[];
 }
 
 export interface AnalyticsPoint {
@@ -159,6 +164,7 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<Period>('7d');
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [analytics, setAnalytics] = useState<AnalyticsPoint[]>([]);
+  const [channels, setChannels] = useState<ReservationChannelStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -169,7 +175,9 @@ export default function DashboardPage() {
     // dashboard reste utilisable sans session réelle.
     if (!orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) {
       const demoAnalytics = DEMO_ANALYTICS_BY_PERIOD[period];
-      setStats(summarizeAnalytics(demoAnalytics));
+      const demoStats = summarizeAnalytics(demoAnalytics);
+      setStats(demoStats);
+      setChannels(demoReservationChannels(demoStats.totalReservations, demoStats.covers));
       setAnalytics(demoAnalytics);
       setError('');
       setIsLoading(false);
@@ -199,6 +207,7 @@ export default function DashboardPage() {
           estimatedRevenue: statsResponse.estimated_revenue ?? 0,
         });
         setAnalytics(analyticsResponse.data ?? []);
+        setChannels(statsResponse.by_channel ?? []);
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof Error ? err.message : 'Impossible de charger les analytics');
@@ -323,6 +332,8 @@ export default function DashboardPage() {
       )}
 
       {!error && !hasData && <EmptyDashboardState />}
+
+      {!error && hasData && <ReservationChannels stats={channels} />}
 
       {!error && hasData && <DashboardCharts analytics={analytics} />}
 
