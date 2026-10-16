@@ -68,7 +68,20 @@ export function hasInterruptionEvidence(
   return evidence.minConfidence >= threshold;
 }
 
-/** Un tour fait d'un seul mot sans preuve est du bruit : l'agent continue d'écouter. */
-export function isNoiseTurn(evidence: InterruptionEvidence): boolean {
+/**
+ * Un tour fait d'un seul mot sans preuve est du bruit : l'agent continue d'écouter. Sauf une lettre seule quand
+ * l'agent attend une épellation : c'est une lettre du nom (appel bb50c0d3 : le A d'« Afflelou », transcrit « a »
+ * à 0,2 de confiance, jeté comme bruit).
+ */
+export function isNoiseTurn(
+  evidence: InterruptionEvidence,
+  options: { letterExpected?: boolean; transcript?: string } = {},
+): boolean {
+  if (options.letterExpected && isSingleLetter(options.transcript ?? '')) return false;
   return !hasInterruptionEvidence(evidence, { greeting: false });
+}
+
+function isSingleLetter(transcript: string): boolean {
+  const tokens = transcript.match(/\p{L}+/gu) ?? [];
+  return tokens.length === 1 && [...tokens[0]].length === 1;
 }

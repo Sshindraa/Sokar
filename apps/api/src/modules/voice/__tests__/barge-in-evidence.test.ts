@@ -67,6 +67,19 @@ describe('preuve minimale pour interrompre', () => {
     expect(isNoiseTurn(evidence)).toBe(true);
   });
 
+  it('garde une lettre seule, même peu sûre, quand l’agent attend une épellation (appel bb50c0d3)', () => {
+    const evidence = evidenceOf('a', 0.2);
+    expect(isNoiseTurn(evidence)).toBe(true);
+    expect(isNoiseTurn(evidence, { letterExpected: true, transcript: 'a' })).toBe(false);
+    expect(isNoiseTurn(evidenceOf('à', 0.2), { letterExpected: true, transcript: 'à.' })).toBe(
+      false,
+    );
+    // Un mot, même pendant l'épellation, reste un bruit sans preuve.
+    expect(
+      isNoiseTurn(evidenceOf('rouge', 0.2), { letterExpected: true, transcript: 'rouge' }),
+    ).toBe(true);
+  });
+
   it('accepte plusieurs mots, même peu sûrs', () => {
     const evidence = evidenceOf('je voudrais réserver', 0.2);
     expect(hasInterruptionEvidence(evidence, { greeting: true })).toBe(true);
