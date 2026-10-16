@@ -427,6 +427,172 @@ function dashboardUrl(path: string): string {
   return `${base}${path}`;
 }
 
+/** Returns the account's Stripe customer, creating it (with the VAT mention) on first use. */
+async function ensureStripeCustomer(input: {
+  restaurantId: string;
+  accountId?: string | null;
+  billingAnchor: { id: string; name: string; managerEmail: string | null };
+  existingCustomerId: string | null;
+}): Promise<string> {
+  if (input.existingCustomerId) return input.existingCustomerId;
+  const customer = await getStripe().customers.create(
+    {
+      name: input.billingAnchor.name,
+      email: normalizeEmail(input.billingAnchor.managerEmail),
+      // VAT franchise: every invoice of this customer carries the legal mention.
+      invoice_settings: { footer: VAT_MENTION },
+      metadata: {
+        restaurantId: input.restaurantId,
+        ...(input.accountId ? { accountId: input.accountId } : {}),
+      },
+    },
+    {
+      idempotencyKey: `sokar-customer-${createHash('sha256')
+        .update(input.accountId ?? input.billingAnchor.id)
+        .digest('hex')
+        .slice(0, 48)}`,
+    },
+  );
+  await db.restaurantBilling.upsert({
+    where: { restaurantId: input.billingAnchor.id },
+    create: { restaurantId: input.billingAnchor.id, stripeCustomerId: customer.id },
+    update: { stripeCustomerId: customer.id },
+  });
+  return customer.id;
+}
+
+export class BillingTrialAlreadyUsedError extends Error {
+  constructor() {
+    super('Free trial already used for this account');
+    this.name = 'BillingTrialAlreadyUsedError';
+  }
+}
+
+/**
+ * Starts the free trial on the chosen plan without Stripe Checkout (onboarding). No card is asked,
+ * so Checkout would only be a detour: the restaurant adds a card, or changes plan, from the
+ * customer portal before the end. Same Stripe settings as a Checkout trial, so the reminder,
+ * suspension and portal flows apply unchanged.
+ */
+export async function startTrial(input: {
+  restaurantId: string;
+  accountId?: string;
+  plan?: PublicBillingPlan;
+  billing?: BillingInterval;
+  siteCount?: number;
+}): Promise<{ status: 'trialing'; trialEndsAt: string }> {
+  if (!isBillingCheckoutEnabled()) throw new BillingNotConfiguredError();
+  const plan = input.plan ?? 'essential';
+  const interval = input.billing ?? 'monthly';
+  const siteCount = normalizeSiteCount(plan, input.siteCount);
+  const priceId = resolvePriceId(plan, interval);
+  const addonPriceId =
+    plan === 'multi-site' && siteCount > 1 ? resolveMultiSiteAddonPriceId(interval) : null;
+  if (!priceId || (plan === 'multi-site' && siteCount > 1 && !addonPriceId)) {
+    throw new BillingNotConfiguredError();
+  }
+
+  const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
+  if (!restaurant) throw new BillingRestaurantNotFoundError();
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
+    : null;
+  const billingAnchor = accountId
+    ? ((await db.restaurant.findFirst({
+        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      })) ?? restaurant)
+    : restaurant;
+  const billing = await db.restaurantBilling.findUnique({
+    where: { restaurantId: billingAnchor.id },
+  });
+  const current = accountBilling?.stripeSubscriptionId ? accountBilling : billing;
+  if (
+    current?.stripeSubscriptionId &&
+    ['active', 'trialing', 'past_due'].includes(current.subscriptionStatus ?? '')
+  ) {
+    throw new BillingAlreadySubscribedError();
+  }
+  // One free trial per account, as for Checkout.
+  if (accountBilling?.stripeSubscriptionId || billing?.stripeSubscriptionId) {
+    throw new BillingTrialAlreadyUsedError();
+  }
+
+  const customerId = await ensureStripeCustomer({
+    restaurantId: restaurant.id,
+    accountId,
+    billingAnchor,
+    existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
+  const metadata = {
+    restaurantId: restaurant.id,
+    ...(accountId ? { accountId } : {}),
+    plan,
+    billing: interval,
+    siteCount: String(siteCount),
+    trial: 'true',
+    source: 'onboarding',
+  };
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await getStripe().subscriptions.create(
+      {
+        customer: customerId,
+        items: [
+          { price: priceId },
+          ...(addonPriceId ? [{ price: addonPriceId, quantity: siteCount - 1 }] : []),
+        ],
+        trial_period_days: TRIAL_DAYS,
+        // No card at the end of the trial: Stripe cancels, and the deletion webhook suspends.
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        payment_settings: { save_default_payment_method: 'on_subscription' },
+        metadata,
+      },
+      { idempotencyKey: `sokar-trial-${customerId}-${plan}-${interval}-${siteCount}` },
+    );
+  } catch (error) {
+    logger.error(
+      { err: error instanceof Error ? error.message : String(error), accountId: accountId ?? null },
+      '[billing] Stripe trial subscription creation failed',
+    );
+    throw new BillingCheckoutError();
+  }
+
+  // Project now so the dashboard shows the trial at once; the webhooks confirm it afterwards.
+  const trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
+  const projection = {
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscription.id,
+    subscriptionStatus: 'trialing',
+    subscriptionPriceId: priceId,
+    subscriptionBillingInterval: interval,
+    subscriptionCurrentPeriodEnd: trialEnd,
+    subscriptionCancelAtPeriodEnd: false,
+  };
+  // Scoped to the account as well: the anchor always belongs to the caller's account.
+  await db.restaurant.updateMany({
+    where: { id: billingAnchor.id, ...(accountId ? { accountId } : {}) },
+    data: { plan: PLAN_TO_DATABASE[plan] },
+  });
+  await projectAccountBilling(billingAnchor.id, {
+    ...projection,
+    plan: PLAN_TO_DATABASE[plan],
+    entitledSiteCount: siteCount,
+    // Older than any webhook about this subscription: the webhooks still apply after this.
+    lastStripeEventCreated: subscription.created - 1,
+    lastStripeEventId: '',
+  });
+  await db.restaurantBilling.upsert({
+    where: { restaurantId: billingAnchor.id },
+    create: { restaurantId: billingAnchor.id, ...projection },
+    update: projection,
+  });
+  return {
+    status: 'trialing',
+    trialEndsAt: (trialEnd ?? new Date(Date.now() + TRIAL_DAYS * 86_400_000)).toISOString(),
+  };
+}
+
 export async function createCheckoutSession(input: {
   restaurantId: string;
   accountId?: string;
@@ -489,35 +655,13 @@ export async function createCheckoutSession(input: {
   ) {
     return { id: billing.checkoutSessionId, url: billing.checkoutSessionUrl };
   }
-  let customerId = accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null;
   const stripe = getStripe();
-
-  if (!customerId) {
-    const customer = await stripe.customers.create(
-      {
-        name: billingAnchor.name,
-        email: normalizeEmail(billingAnchor.managerEmail),
-        // VAT franchise: every invoice of this customer carries the legal mention.
-        invoice_settings: { footer: VAT_MENTION },
-        metadata: {
-          restaurantId: restaurant.id,
-          ...(accountId ? { accountId } : {}),
-        },
-      },
-      {
-        idempotencyKey: `sokar-customer-${createHash('sha256')
-          .update(accountId ?? billingAnchor.id)
-          .digest('hex')
-          .slice(0, 48)}`,
-      },
-    );
-    customerId = customer.id;
-    await db.restaurantBilling.upsert({
-      where: { restaurantId: billingAnchor.id },
-      create: { restaurantId: billingAnchor.id, stripeCustomerId: customerId },
-      update: { stripeCustomerId: customerId },
-    });
-  }
+  const customerId = await ensureStripeCustomer({
+    restaurantId: restaurant.id,
+    accountId,
+    billingAnchor,
+    existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
 
   // One free trial per account: an account that already had a subscription pays from day one.
   const trialEligible = !accountBilling?.stripeSubscriptionId && !billing?.stripeSubscriptionId;

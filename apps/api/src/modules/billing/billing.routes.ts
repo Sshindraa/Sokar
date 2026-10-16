@@ -9,11 +9,21 @@ import {
   BillingNotConfiguredError,
   BillingCustomerNotFoundError,
   BillingRestaurantNotFoundError,
+  BillingTrialAlreadyUsedError,
   PUBLIC_BILLING_PLANS,
   createBillingPortalSession,
   createCheckoutSession,
   getBillingStatus,
+  startTrial,
 } from './billing.service';
+
+const TrialSchema = z
+  .object({
+    plan: z.enum(PUBLIC_BILLING_PLANS).optional(),
+    billing: z.enum(BILLING_INTERVALS).optional(),
+    siteCount: z.number().int().min(1).max(100).optional(),
+  })
+  .default({});
 
 const CheckoutSchema = z.object({
   plan: z.enum(PUBLIC_BILLING_PLANS),
@@ -114,6 +124,63 @@ export async function billingRoutes(app: FastifyInstance) {
       return reply.status(502).send({
         error: 'BILLING_CHECKOUT_FAILED',
         message: 'Impossible de préparer la souscription. Réessayez dans un instant.',
+      });
+    }
+  });
+
+  // Onboarding : essai gratuit sur la formule choisie, sans passer par Stripe Checkout.
+  app.post('/billing/trial', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.accountId && req.siteRole !== 'OWNER') {
+      return reply.status(403).send({
+        error: 'BILLING_OWNER_REQUIRED',
+        message: 'Seul le propriétaire du compte peut gérer la facturation.',
+      });
+    }
+    try {
+      return reply.send(
+        await startTrial({
+          restaurantId: req.restaurantId!,
+          accountId: req.accountId,
+          ...TrialSchema.parse(req.body ?? {}),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof BillingNotConfiguredError) {
+        return reply.status(503).send({
+          error: 'BILLING_NOT_CONFIGURED',
+          message: 'La souscription en ligne sera bientôt disponible.',
+        });
+      }
+      if (error instanceof BillingRestaurantNotFoundError) {
+        return reply
+          .status(404)
+          .send({ error: 'RESTAURANT_NOT_FOUND', message: 'Restaurant introuvable.' });
+      }
+      if (error instanceof BillingAlreadySubscribedError) {
+        return reply.status(409).send({
+          error: 'BILLING_ALREADY_SUBSCRIBED',
+          message: 'Une souscription est déjà active pour ce restaurant.',
+        });
+      }
+      if (error instanceof BillingInvalidSiteCountError) {
+        return reply.status(400).send({
+          error: 'INVALID_SITE_COUNT',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
+        });
+      }
+      if (error instanceof BillingTrialAlreadyUsedError) {
+        return reply.status(409).send({
+          error: 'BILLING_TRIAL_ALREADY_USED',
+          message: 'L’essai gratuit a déjà été utilisé : choisissez une formule pour continuer.',
+        });
+      }
+      req.log.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        '[billing] Unexpected trial error',
+      );
+      return reply.status(502).send({
+        error: 'BILLING_TRIAL_FAILED',
+        message: 'Impossible de démarrer l’essai. Réessayez dans un instant.',
       });
     }
   });

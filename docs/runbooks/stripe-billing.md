@@ -39,16 +39,23 @@ Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours off
   (`stripeSubscriptionId` présent) paie dès le premier jour : un seul essai par compte.
 - La session porte `metadata.trial=true` : le webhook `checkout.session.completed` enregistre
   `trialing`, pas `active`.
+- Onboarding : un seul bouton, « Démarrer mon essai gratuit » (`POST /billing/trial`), démarre
+  l'essai sur la formule choisie (formule, cadence, nombre d'établissements) sans passer par
+  Checkout, puisqu'aucune carte n'est demandée (abonnement Stripe créé par l'API, mêmes réglages,
+  metadata `source=onboarding`). Aucun compte n'utilise donc Sokar hors essai ou abonnement. 409 si
+  un abonnement est en cours ou si l'essai a déjà servi.
 - Pendant l'essai, le restaurateur ajoute sa carte depuis le portail (« Gérer l'abonnement »). Le
   dashboard affiche un bandeau les 5 derniers jours.
 - Sans carte au jour 15, Stripe supprime l'abonnement (`customer.subscription.deleted`) : le compte
   passe `canceled`. **Suspension** : un compte dont l'abonnement a existé puis s'est terminé
-  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. L'agent vocal ne décroche plus (même
-  chemin que l'interrupteur `voice_pipeline_enabled` : l'appel part vers le repli Telnyx) et le
-  dashboard affiche un bandeau « Choisir une formule ». `past_due` ne suspend pas : Stripe retente
-  le paiement.
-- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, onboarding passé avec « Plus
-  tard ») ne sont pas suspendus.
+  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. Aucune session vocale : la ligne du
+  restaurant pouvant encore être renvoyée vers Sokar, Sokar décroche, lit « Bonjour, vous êtes bien
+  chez … Nous ne pouvons pas prendre votre appel pour le moment… » puis raccroche
+  (`voice/suspended-call.ts`). Le dashboard affiche « Réactiver mon assistant » ; e-mail de coupure,
+  dashboard et réglages rappellent de désactiver le renvoi. `past_due` ne suspend pas : Stripe
+  retente le paiement.
+- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, comptes antérieurs à l'essai
+  direct) ne sont pas suspendus.
 - Réactivation : un nouveau Checkout depuis `/pricing`, sans nouvel essai. Le webhook repasse le
   compte `active` et l'agent décroche à nouveau.
 - Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause

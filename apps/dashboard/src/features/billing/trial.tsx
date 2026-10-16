@@ -292,7 +292,7 @@ export function TrialTimeline({ endsAt }: { endsAt: string }) {
     {
       icon: CreditCard,
       when: formatDay(end),
-      text: 'Fin de l’essai. Avec une carte enregistrée, votre formule démarre sans interruption. Sans carte, l’assistant cesse de décrocher.',
+      text: 'Fin de l’essai. Avec une carte enregistrée, votre formule démarre sans interruption. Sans carte, l’assistant cesse de décrocher : pensez alors à désactiver le renvoi de votre ligne.',
       past: false,
     },
   ];
@@ -512,6 +512,11 @@ export function BillingNotice({ canManageBilling }: { canManageBilling: boolean 
             <p className="mt-1 text-sm text-muted-foreground">
               Votre abonnement est terminé. Vos réglages, votre salle et votre fichier client sont
               conservés : choisissez une formule et l’assistant reprend immédiatement.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Votre ligne est encore renvoyée vers Sokar ? Vos clients entendent un court message
+              leur demandant de rappeler. Désactivez ce renvoi chez votre opérateur pour qu’ils vous
+              joignent directement.
             </p>
           </div>
         </div>
