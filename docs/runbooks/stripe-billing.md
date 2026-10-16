@@ -151,6 +151,14 @@ sans paiement ni création d’abonnement.
   désormais en premier, la metadata ne sert plus qu'aux prix historiques. Test unitaire ajouté.
   Client et abonnement de test supprimés. Le correctif doit être déployé en staging avant de
   rejouer le parcours depuis le dashboard, puis avant toute activation live.
+- Portail **live** (accord de Hamza, après déploiement de #460 en staging et production sur
+  `b73075bc`) : le compte live n'avait aucune configuration de portail. Configuration créée par
+  l'API, `bpc_1URDivH4TS0ZYIJntZnMNCxw` (`metadata.sokar_key=portal-v1`), devenue la configuration
+  par défaut du compte. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
+  annuel, `create_prorations`), Multi-site exclu, pas de `quantity` ; mise à jour carte et
+  coordonnées, historique des factures, résiliation en fin de période avec motif. Retour arrière :
+  `subscription_update.enabled: false` sur cette configuration. Aucun abonné live à ce jour : pas de
+  rejeu de bout en bout en live.
 - Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
   `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
   migrer ni archiver un ancien prix sans décision explicite.
