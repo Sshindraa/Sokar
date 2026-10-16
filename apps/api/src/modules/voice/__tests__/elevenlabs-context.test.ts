@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { createContextTtsTurn } from '../stream/context-tts';
 import {
   ElevenLabsContextTurn,
+  elevenLabsLanguageCode,
   elevenLabsOutputFormat,
   getElevenLabsTtsVoiceId,
 } from '../stream/elevenlabs-context';
@@ -11,12 +12,16 @@ import type { CallSession } from '../stream/types';
 
 const ENV_KEYS = [
   'VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED',
+  'VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS',
   'VOICE_TTS_CONTEXT_V2_ENABLED',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_TTS_VOICE_ID',
+  'ELEVENLABS_PRONUNCIATION_DICTIONARY_ID',
+  'ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID',
   'VOICE_FIRST_AUDIO_SILENCE_MS',
 ] as const;
 
+const ELEVENLABS_TEST_KEY = ['test', 'elevenlabs', 'api', 'key'].join('-');
 const savedEnv = new Map<string, string | undefined>();
 const servers: WebSocketServer[] = [];
 
@@ -106,6 +111,14 @@ describe('ElevenLabs context TTS : fabrique', () => {
     delete process.env.ELEVENLABS_API_KEY;
     expect(createContextTtsTurn(makeSession().session)).toBeNull();
   });
+
+  it('la liste de restaurants ne crée pas de tour pour un restaurant absent', () => {
+    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
+    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS = 'autre-restaurant';
+    process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+    process.env.ELEVENLABS_API_KEY = ELEVENLABS_TEST_KEY;
+    expect(createContextTtsTurn(makeSession().session)).toBeNull();
+  });
 });
 
 describe('ElevenLabs context TTS : protocole et relais audio', () => {
@@ -144,6 +157,69 @@ describe('ElevenLabs context TTS : protocole et relais audio', () => {
     ]);
     expect(turn.framesSent).toBe(1);
     expect(turn.hasAudioOutput).toBe(true);
+  });
+
+  it('envoie le dictionnaire de prononciation configuré dans le premier message', async () => {
+    process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_ID = 'dico';
+    process.env.ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID = 'v1';
+    const received: Array<Record<string, unknown>> = [];
+    const url = startServer((message, socket) => {
+      received.push(message);
+      if (message.close_socket === true) socket.send(JSON.stringify({ is_final: true }));
+    });
+    const { session } = makeSession('PCMA');
+    const turn = new ElevenLabsContextTurn(session, 1, 'cle-test', 'voix-test', url);
+
+    turn.push('Bonjour.');
+    await turn.finish();
+
+    expect(received[0]).toEqual({
+      voices: ['voix-test'],
+      pronunciation_dictionary_locators: [
+        { pronunciation_dictionary_id: 'dico', version_id: 'v1' },
+      ],
+    });
+  });
+
+  it('place l’alignement de chaque chunk sur l’axe de lecture', async () => {
+    const chunk = Buffer.alloc(800, 0x2a).toString('base64'); // 100 ms en A-law
+    const url = startServer((message, socket) => {
+      if (message.close_socket === true) {
+        socket.send(
+          JSON.stringify({
+            audio: chunk,
+            alignment: { chars: ['B', 'o', 'n'], char_start_times_ms: [0, 30, 60] },
+          }),
+        );
+        socket.send(JSON.stringify({ audio: chunk }));
+        socket.send(
+          JSON.stringify({
+            audio: chunk,
+            alignment: {
+              chars: ['j', 'o', 'u', 'r', '.'],
+              char_start_times_ms: [0, 20, 40, 60, 80],
+            },
+          }),
+        );
+        socket.send(JSON.stringify({ is_final: true }));
+      }
+    });
+    const { session } = makeSession('PCMA');
+    const turn = new ElevenLabsContextTurn(session, 1, 'cle-test', 'voix-test', url);
+
+    turn.push('Bonjour.');
+    await turn.finish();
+
+    expect(turn.interruptionSnapshot().alignment).toEqual({
+      text: 'Bonjour.',
+      startMs: [0, 30, 60, 200, 220, 240, 260, 280],
+    });
+  });
+
+  it('passe la langue de l’appel à ElevenLabs, le filipino en ISO 639-3', () => {
+    expect(elevenLabsLanguageCode('fr')).toBe('fr');
+    expect(elevenLabsLanguageCode('en')).toBe('en');
+    expect(elevenLabsLanguageCode('tl')).toBe('fil');
   });
 
   it('échange les octets du PCM 16 kHz pour le L16 Telnyx, comme Cartesia', async () => {

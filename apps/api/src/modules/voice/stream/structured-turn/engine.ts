@@ -32,6 +32,7 @@ import {
   settleDebugSpeech,
 } from '../debug-dialogue';
 import { logger } from '../../../../shared/logger/pino';
+import { voiceTtsContextFailureTotal } from '../../../../shared/observability/metrics';
 import {
   STRUCTURED_TURN_SCHEMA_NAME,
   buildStructuredTurnJsonSchema,
@@ -493,11 +494,22 @@ export async function runStructuredTurn(
         await contextTts.finish();
         settleDebugSpeech(contextDebugEntry, contextTts.framesSent, true);
       } catch (err) {
+        const outcome = !isSessionActiveForTts(session)
+          ? 'skipped'
+          : contextTts.hasAudioOutput
+            ? 'audio_cut'
+            : 'http_fallback';
+        voiceTtsContextFailureTotal.inc({ provider: contextTts.provider, outcome });
         logger.warn(
-          { err: err instanceof Error ? err.message : String(err), callId: session.callControlId },
+          {
+            err: err instanceof Error ? err.message : String(err),
+            callId: session.callControlId,
+            provider: contextTts.provider,
+            outcome,
+          },
           '[structured-turn] TTS context failed',
         );
-        if (!contextTts.hasAudioOutput && isSessionActiveForTts(session)) {
+        if (outcome === 'http_fallback') {
           await speakTtsStreamed(session, spokenPhrases.join(' ')).catch(() => undefined);
         }
       }

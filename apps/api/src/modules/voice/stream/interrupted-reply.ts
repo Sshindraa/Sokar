@@ -17,19 +17,48 @@ export interface InterruptedReply {
   unheard: string;
 }
 
+/**
+ * Instant de début de chaque caractère dans l'audio de la réponse (ms depuis le premier son), quand la voix le
+ * fournit (alignement ElevenLabs). `text` est la concaténation des caractères alignés, dans l'ordre.
+ */
+export interface SpokenAlignment {
+  text: string;
+  startMs: number[];
+}
+
+/** Nombre de caractères de `said` déjà prononcés à `playedMs`, ou `null` si l'alignement ne correspond pas au texte. */
+function alignedHeardChars(
+  said: string,
+  playedMs: number,
+  alignment: SpokenAlignment,
+): number | null {
+  if (!alignment.text || !said.startsWith(alignment.text)) return null;
+  const heardUntil = Math.max(0, playedMs - PLAYBACK_LAG_MS);
+  let count = 0;
+  while (count < alignment.startMs.length && alignment.startMs[count] <= heardUntil) count++;
+  return count;
+}
+
 export function splitHeardReply(
   said: string,
   playedMs: number,
   totalMs: number | null,
+  alignment?: SpokenAlignment,
 ): InterruptedReply {
+  // Les espaces de tête sont retirés de `said` et de l'alignement de la même façon : les index restent alignés.
+  const leading = said.length - said.trimStart().length;
   const text = said.trim();
   // Toutes les trames sont parties : au plus le tampon Telnyx restait à jouer, l'appelant a tout entendu.
   if (totalMs !== null && playedMs >= totalMs) return { said: text, heard: text, unheard: '' };
+  const fromAlignment = alignment ? alignedHeardChars(said, playedMs, alignment) : null;
   const charsPerSecond = totalMs && totalMs > 0 ? (text.length / totalMs) * 1000 : null;
-  const heardChars = Math.floor(
-    (Math.max(0, playedMs - PLAYBACK_LAG_MS) / 1000) *
-      (charsPerSecond ?? FALLBACK_CHARS_PER_SECOND),
-  );
+  const heardChars =
+    fromAlignment !== null
+      ? Math.max(0, fromAlignment - leading)
+      : Math.floor(
+          (Math.max(0, playedMs - PLAYBACK_LAG_MS) / 1000) *
+            (charsPerSecond ?? FALLBACK_CHARS_PER_SECOND),
+        );
   if (heardChars >= text.length) return { said: text, heard: text, unheard: '' };
   // Coupe sur une frontière de mot : « entendu » ne contient jamais la moitié d'un mot.
   const cut = heardChars <= 0 ? 0 : Math.max(0, text.lastIndexOf(' ', heardChars));

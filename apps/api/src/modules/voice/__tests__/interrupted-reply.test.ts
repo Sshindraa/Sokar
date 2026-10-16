@@ -10,6 +10,27 @@ import type { StructuredTurnOutput } from '../stream/structured-turn/schema';
 const RECAP = "Donc, jeudi 1er octobre à 18 h 30, pour 5 personnes, au nom de HOUET. C'est bon ?";
 
 describe('splitHeardReply', () => {
+  it('uses the per-character alignment when the voice provides it', () => {
+    const said = 'Bonjour, une table pour deux ?';
+    // « Bonjour, » de 0 à 450 ms, puis un caractère toutes les 60 ms.
+    const startMs = [...said].map((_, index) => (index < 9 ? index * 50 : 450 + (index - 9) * 60));
+    const alignment = { text: said, startMs };
+    // 200 ms de tampon : à 900 ms joués, l'appelant a entendu jusqu'à 700 ms.
+    const reply = splitHeardReply(said, 900, null, alignment);
+    expect(reply.heard).toBe('Bonjour, une');
+    expect(reply.unheard).toBe('table pour deux ?');
+  });
+
+  it('falls back to the pace estimate when the alignment does not match the text', () => {
+    const alignment = {
+      text: 'Autre texte',
+      startMs: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+    };
+    expect(splitHeardReply(RECAP, 3_200, 6_000, alignment)).toEqual(
+      splitHeardReply(RECAP, 3_200, 6_000),
+    );
+  });
+
   it('keeps everything once the audio has fully played', () => {
     const reply = splitHeardReply(RECAP, 6_000, 6_000);
     expect(reply.unheard).toBe('');

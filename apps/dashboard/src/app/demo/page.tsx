@@ -1,3 +1,4 @@
+import { Mail } from 'lucide-react';
 import DemoRequestForm from '@/app/demo/DemoRequestForm';
 import { DEMO_METADATA } from '@/app/marketing-metadata';
 
@@ -19,6 +20,16 @@ export default function DemoPage() {
       <div className="mt-8 rounded-2xl border border-border bg-card p-6 sm:p-8">
         <DemoRequestForm />
       </div>
+      <p className="mt-6 text-center text-sm leading-6 text-muted-foreground">
+        Vous préférez nous écrire ?{' '}
+        <a
+          href="mailto:hello@sokar.tech"
+          className="inline-flex min-h-[44px] items-center gap-1.5 text-foreground underline underline-offset-4 transition-all duration-200 hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Mail size={14} aria-hidden="true" />
+          hello@sokar.tech
+        </a>
+      </p>
     </main>
   );
 }

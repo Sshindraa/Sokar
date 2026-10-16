@@ -18,9 +18,13 @@ import {
   buildKeepAliveMessage,
   buildOpeningMessage,
   buildTextMessage,
+  getPronunciationDictionaryLocator,
   parseElevenLabsDialogueMessage,
+  type ElevenLabsChunkAlignment,
 } from './elevenlabs-dialogue-context';
 import { holdFirstAudioForCallerSilence } from './first-audio-hold';
+import type { SpokenAlignment } from './interrupted-reply';
+import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import { persistLatencyTrace } from './session-persistence';
 import {
   encodeTelnyxFromPcm16,
@@ -49,6 +53,14 @@ export type ElevenLabsOutputFormat = 'alaw_8000' | 'ulaw_8000' | 'pcm_16000';
 /** Voix du tour : `ELEVENLABS_TTS_VOICE_ID` si elle est posée, sinon la voix du banc. */
 export function getElevenLabsTtsVoiceId(): string {
   return process.env.ELEVENLABS_TTS_VOICE_ID?.trim() || DEFAULT_ELEVENLABS_TTS_VOICE_ID;
+}
+
+/**
+ * Langue imposée à ElevenLabs : celle de l'appel, évaluée à chaque tour (elle peut changer en cours d'appel).
+ * Codes ISO 639-1, sauf le filipino, qu'ElevenLabs attend en ISO 639-3 (`fil`).
+ */
+export function elevenLabsLanguageCode(language: VoiceLanguageCode): string {
+  return language === 'tl' ? 'fil' : language;
 }
 
 /** Format ElevenLabs égal au codec Telnyx : le G.711 reste G.711, le L16 reste du PCM 16 kHz. */
@@ -85,6 +97,7 @@ function wait(ms: number): Promise<void> {
  * du LLM, comme Cartesia.
  */
 export class ElevenLabsContextTurn implements ContextTtsTurn {
+  readonly provider = 'elevenlabs' as const;
   private ws: WebSocket | null = null;
   private socketOpen = false;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -107,6 +120,10 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
   private sentFrames = 0;
   private lastTranscript = '';
   private pushedText = '';
+  /** Durée de l'audio reçu, pour placer l'alignement de chaque chunk sur l'axe de lecture. */
+  private receivedAudioMs = 0;
+  private alignedText = '';
+  private readonly alignedStartMs: number[] = [];
   private resolveCompletion!: () => void;
   private rejectCompletion!: (error: Error) => void;
   private readonly completion = new Promise<void>((resolve, reject) => {
@@ -151,13 +168,24 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
     return this.sentFrames;
   }
 
-  /** Texte poussé et audio joué ; la durée totale n'est connue qu'une fois la synthèse terminée. */
-  interruptionSnapshot(): { text: string; playedMs: number; totalMs: number | null } {
+  /**
+   * Texte poussé et audio joué ; la durée totale n'est connue qu'une fois la synthèse terminée. L'alignement
+   * (instant de chaque caractère) permet de dire au mot près ce que l'appelant a entendu.
+   */
+  interruptionSnapshot(): {
+    text: string;
+    playedMs: number;
+    totalMs: number | null;
+    alignment?: SpokenAlignment;
+  } {
     const queuedFrames = this.audioFrames.length + (this.remainder.length > 0 ? 1 : 0);
     return {
       text: this.pushedText,
       playedMs: this.sentFrames * TTS_FRAME_DURATION_MS,
       totalMs: this.outputDone ? (this.sentFrames + queuedFrames) * TTS_FRAME_DURATION_MS : null,
+      ...(this.alignedText
+        ? { alignment: { text: this.alignedText, startMs: [...this.alignedStartMs] } }
+        : {}),
     };
   }
 
@@ -215,7 +243,7 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
         if (this.openTimeout) clearTimeout(this.openTimeout);
         if (this.cancelled) return;
         this.socketOpen = true;
-        this.sendRaw(buildOpeningMessage(this.voiceId));
+        this.sendRaw(buildOpeningMessage(this.voiceId, getPronunciationDictionaryLocator()));
         for (const input of this.pendingInputs.splice(0)) this.sendInput(input);
         this.keepAliveTimer = setInterval(
           () => this.sendRaw(buildKeepAliveMessage()),
@@ -284,6 +312,7 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
   private handleMessage(raw: string): void {
     const event = parseElevenLabsDialogueMessage(raw);
     if (event.kind === 'audio') {
+      this.recordAlignment(event.pcm.length, event.alignment);
       this.enqueueAudio(event.pcm);
     } else if (event.kind === 'error') {
       this.fail(new Error(event.message));
@@ -294,6 +323,19 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
         this.fail(err instanceof Error ? err : new Error(String(err))),
       );
     }
+  }
+
+  /** Place les caractères du chunk sur l'axe de lecture : début du chunk + décalage donné par ElevenLabs. */
+  private recordAlignment(
+    chunkBytes: number,
+    alignment: ElevenLabsChunkAlignment | undefined,
+  ): void {
+    const chunkStartMs = this.receivedAudioMs;
+    const bytesPerMs = telnyxFrameBytes(this.session.codec) / TTS_FRAME_DURATION_MS;
+    this.receivedAudioMs += chunkBytes / bytesPerMs;
+    if (!alignment) return;
+    this.alignedText += alignment.chars.join('');
+    for (const offset of alignment.startMs) this.alignedStartMs.push(chunkStartMs + offset);
   }
 
   private enqueueAudio(chunk: Buffer): void {
@@ -450,6 +492,10 @@ export function createElevenLabsContextTurn(session: CallSession): ElevenLabsCon
     session.ttsGeneration,
     apiKey,
     getElevenLabsTtsVoiceId(),
-    buildElevenLabsDialogueUrl({ outputFormat: elevenLabsOutputFormat(session.codec) }),
+    buildElevenLabsDialogueUrl({
+      outputFormat: elevenLabsOutputFormat(session.codec),
+      languageCode: elevenLabsLanguageCode(effectiveVoiceLanguage(session)),
+      syncAlignment: true,
+    }),
   );
 }

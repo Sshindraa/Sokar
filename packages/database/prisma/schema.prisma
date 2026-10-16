@@ -3048,6 +3048,7 @@ model DemoRequest {
   status            DemoRequestStatus @default(NEW)
   notifiedAt        DateTime?         @map("notified_at")
   contactedAt       DateTime?         @map("contacted_at")
+  lastInteractionAt DateTime?         @map("last_interaction_at")
   demoDoneAt        DateTime?         @map("demo_done_at")
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
