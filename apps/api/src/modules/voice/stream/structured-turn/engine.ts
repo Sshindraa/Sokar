@@ -241,6 +241,29 @@ function armIncompleteTurnTimer(
   const timer = setTimeout(fire, remaining);
   timer.unref?.();
   incompleteTurnTimers.set(session, timer);
+  precomputeSilentCallerReply(session, mgr, fragment);
+}
+
+/**
+ * Prépare pendant l'attente la réponse que le minuteur demandera si l'appelant se tait : même requête,
+ * lancée tout de suite par la spéculation. Si l'appelant se tait, `runPass` la reprend (clé identique) et
+ * la réponse part sans nouvel appel au modèle ; s'il reprend la parole, une nouvelle spéculation ou le tour
+ * suivant l'abandonne. Rien n'est dit ni exécuté ici. Appel bb50c0d3 du 16/10/2026 : environ 1 s d'attente
+ * puis un passage complet (jusqu'à 1,5 s) après chaque phrase finie jugée inachevée.
+ */
+function precomputeSilentCallerReply(
+  session: CallSession,
+  mgr: CallSessionManager,
+  fragment: string,
+): void {
+  if (!isStructuredSpeculationEnabled()) return;
+  const state = session.structuredTurn;
+  if (!state) return;
+  const today = todayInTimezone(session.timezone || 'Europe/Paris');
+  const { messages, format } = passRequest(session, state, fragment, [...session.history], today, {
+    callerFinished: true,
+  });
+  startSpeculation(session, mgr, messages, format);
 }
 
 /** Attente maximale d'une lecture de créneaux en cours au début d'un tour. */
@@ -738,10 +761,10 @@ export async function runStructuredTurn(
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
     // si elle est identique ; sinon (ou en cas d'échec) appel normal.
     let text: string | null = null;
-    const speculative =
-      !actionResult && !finished
-        ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
-        : null;
+    // Aussi pour la relance après un silence : sa réponse a pu être préparée pendant l'attente.
+    const speculative = !actionResult
+      ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
+      : null;
     if (speculative) {
       speculationUsed = true;
       text = await speculative.catch(() => null);
