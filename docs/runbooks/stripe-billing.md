@@ -48,12 +48,14 @@ Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours off
   dashboard affiche un bandeau les 5 derniers jours.
 - Sans carte au jour 15, Stripe supprime l'abonnement (`customer.subscription.deleted`) : le compte
   passe `canceled`. **Suspension** : un compte dont l'abonnement a existé puis s'est terminé
-  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. L'agent vocal ne décroche plus (même
-  chemin que l'interrupteur `voice_pipeline_enabled` : l'appel part vers le repli Telnyx) et le
-  dashboard affiche un bandeau « Choisir une formule ». `past_due` ne suspend pas : Stripe retente
-  le paiement.
-- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, onboarding passé avec « Plus
-  tard ») ne sont pas suspendus.
+  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. Aucune session vocale : la ligne du
+  restaurant pouvant encore être renvoyée vers Sokar, Sokar décroche, lit « Bonjour, vous êtes bien
+  chez … Nous ne pouvons pas prendre votre appel pour le moment… » puis raccroche
+  (`voice/suspended-call.ts`). Le dashboard affiche « Réactiver mon assistant » ; e-mail de coupure,
+  dashboard et réglages rappellent de désactiver le renvoi. `past_due` ne suspend pas : Stripe
+  retente le paiement.
+- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, comptes antérieurs à l'essai
+  direct) ne sont pas suspendus.
 - Réactivation : un nouveau Checkout depuis `/pricing`, sans nouvel essai. Le webhook repasse le
   compte `active` et l'agent décroche à nouveau.
 - Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause
