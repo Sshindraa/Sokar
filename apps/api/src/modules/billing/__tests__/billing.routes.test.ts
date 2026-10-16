@@ -430,6 +430,42 @@ describe('billing.routes - checkout, portail et statut', () => {
     );
   });
 
+  it('expose le déroulé et le bilan de l’essai', async () => {
+    const endsAt = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000 - 60_000);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_trial',
+      subscriptionStatus: 'trialing',
+      subscriptionCurrentPeriodEnd: endsAt,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+    vi.mocked(db.call.count).mockResolvedValueOnce(47);
+    (db.reservation as unknown as { aggregate: unknown }).aggregate = vi
+      .fn()
+      .mockResolvedValue({ _count: { _all: 18 }, _sum: { partySize: 52 } });
+    vi.mocked(db.reservation.count).mockResolvedValueOnce(15);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().trial).toEqual({
+      startedAt: new Date(endsAt.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      endsAt: endsAt.toISOString(),
+      totalDays: 14,
+      daysLeft: 9,
+      recap: { calls: 47, reservations: 18, covers: 52, phoneReservations: 15 },
+    });
+  });
+
   it('ne suspend pas un compte qui n’a jamais eu d’abonnement', async () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',

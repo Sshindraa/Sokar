@@ -31,6 +31,7 @@ export async function billingRoutes(app: FastifyInstance) {
         await getBillingStatus({
           restaurantId: req.restaurantId!,
           accountId: req.accountId,
+          includeTrialRecap: true,
         }),
       );
     } catch (error) {

@@ -35,6 +35,7 @@ import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 import { SiteManagementCard } from '@/features/sites/site-management-card';
 import { TeamCard } from '@/features/team/team-card';
 import { useSiteSelection } from '@/features/sites/site-context';
+import { TrialRecap, TrialTrack } from '@/features/billing/trial';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
   STARTER: { label: 'Essential', calls: '1 500 appels / mois' },
@@ -663,13 +664,16 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
-              {billingStatus?.subscriptionStatus === 'trialing' && billingPeriodEnd && (
-                <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-                  Essai gratuit jusqu’au {billingPeriodEnd}.{' '}
-                  {canManageBilling
-                    ? 'Ajoutez une carte bancaire depuis la gestion de l’abonnement avant cette date pour que l’assistant continue de répondre.'
-                    : 'Le propriétaire du compte doit ajouter une carte bancaire avant cette date.'}
-                </p>
+              {billingStatus?.subscriptionStatus === 'trialing' && billingStatus.trial && (
+                <div className="mt-5 max-w-xl space-y-4">
+                  <TrialTrack trial={billingStatus.trial} />
+                  <TrialRecap trial={billingStatus.trial} />
+                  <p className="text-sm text-muted-foreground">
+                    {canManageBilling
+                      ? `Ajoutez une carte avant le ${billingPeriodEnd} pour que l’assistant continue de répondre. Aucun prélèvement avant cette date.`
+                      : `Le propriétaire du compte doit ajouter une carte avant le ${billingPeriodEnd}.`}
+                  </p>
+                </div>
               )}
               {billingStatus?.suspended && (
                 <p role="alert" className="mt-3 max-w-xl text-sm text-destructive">
@@ -706,11 +710,20 @@ export default function SettingsPage() {
             <div className="flex flex-wrap gap-2">
               {canManageBilling && (
                 <Button
-                  variant="outline"
+                  variant={billingStatus?.subscriptionStatus === 'trialing' ? 'default' : 'outline'}
                   onClick={handleOpenBillingPortal}
                   disabled={openingBillingPortal}
+                  className={
+                    billingStatus?.subscriptionStatus === 'trialing'
+                      ? 'rounded-full px-5'
+                      : undefined
+                  }
                 >
-                  {openingBillingPortal ? 'Ouverture...' : 'Gérer l’abonnement'}
+                  {openingBillingPortal
+                    ? 'Ouverture...'
+                    : billingStatus?.subscriptionStatus === 'trialing'
+                      ? 'Ajouter une carte'
+                      : 'Gérer l’abonnement'}
                 </Button>
               )}
               <Button variant="outline" asChild>
