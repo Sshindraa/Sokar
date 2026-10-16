@@ -19,12 +19,12 @@
  */
 
 import { Prisma, type CallIntent, type CallOutcome } from '@prisma/client';
-import { CARTESIA_MODEL } from '@sokar/config';
 import { db } from '../../shared/db/client';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { logger } from '../../shared/logger/pino';
 import { captureException } from '../../shared/sentry/client';
 import { hadReservationIntent } from './outcome';
+import { telephonyTtsProvider, ttsProviderWithModel } from './stream/elevenlabs-tts';
 
 export type VoiceFinalizationSource =
   | 'hangup'
@@ -99,8 +99,9 @@ const INFO_TRANSCRIPT_RE = /horaire|ouvert|ferm[eé]|menus?|carte|prix/i;
 
 const DEFAULT_STT_PROVIDER = 'elevenlabs-scribe-v2-realtime';
 
+/** Fournisseur TTS configuré, quand aucun tour n'en a observé un (appel sans réponse vocale). */
 export function defaultTtsProvider(): string {
-  return `cartesia-${CARTESIA_MODEL}`;
+  return ttsProviderWithModel(telephonyTtsProvider());
 }
 
 /**

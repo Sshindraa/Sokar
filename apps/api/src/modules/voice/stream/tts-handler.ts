@@ -602,7 +602,7 @@ async function speakTtsFragment(
         if (!firstByteReceived) {
           firstByteReceived = true;
           writeDebugLog(`[speakTtsStreamed] First Cartesia byte received for sentence ${i}`);
-          markVoiceTurnTtsSynthesisFirstByte(session, 'cartesia_http', turnId);
+          markVoiceTurnTtsSynthesisFirstByte(session, `${provider}_http`, turnId);
         }
 
         const rawChunk = Buffer.from(value);
@@ -631,11 +631,11 @@ async function speakTtsFragment(
       streamFinished = true;
       await playPromise; // Attendre la fin de la lecture progressive
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
 
