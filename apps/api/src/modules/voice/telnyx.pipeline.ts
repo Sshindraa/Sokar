@@ -22,6 +22,7 @@ import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
+import { observedTtsProvider } from './stream/turn-telemetry';
 import { callFinalizationDependencies } from './call-finalization.dependencies';
 
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
@@ -545,6 +546,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               durationSec,
               handoffConclusion: session?.handoffConclusion,
               conversationIntent: session?.conversation?.intent ?? null,
+              ttsProvider: session ? observedTtsProvider(session) : null,
               to: payload.to,
               customerPhone: payload.from,
             },

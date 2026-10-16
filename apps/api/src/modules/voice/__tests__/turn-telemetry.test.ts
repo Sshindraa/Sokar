@@ -12,6 +12,7 @@ import {
   completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
   markVoiceTurnTtsSynthesisFirstByte,
+  observedTtsProvider,
   recordVoiceTurnEvent,
   snapshotVoiceTurnTelemetry,
   startVoiceTurn,
@@ -132,6 +133,34 @@ describe('voice turn telemetry', () => {
 
     const turns = snapshotVoiceTurnTelemetry(session);
     expect(turns[0]).toMatchObject({ ttsProvider: 'elevenlabs' });
+  });
+
+  it('étiquette le chemin HTTP et le cache selon le fournisseur configuré', () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    try {
+      for (const source of ['elevenlabs_http', 'cache', 'http_stream']) {
+        const session = makeSession();
+        startVoiceTurn(session, 'Une table pour deux ?');
+        recordVoiceTurnEvent(session, 'tts_synthesis_started', { source });
+        expect(snapshotVoiceTurnTelemetry(session)[0]).toMatchObject({ ttsProvider: 'elevenlabs' });
+      }
+      const native = makeSession();
+      startVoiceTurn(native, 'Une table ?');
+      recordVoiceTurnEvent(native, 'tts_synthesis_started', { source: 'native_fallback' });
+      expect(snapshotVoiceTurnTelemetry(native)[0]).toMatchObject({ ttsProvider: 'telnyx-native' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('donne à l’appel le fournisseur TTS le plus utilisé par ses tours, avec le modèle', () => {
+    const session = makeSession();
+    expect(observedTtsProvider(session)).toBeNull();
+    for (const source of ['elevenlabs_dialogue', 'elevenlabs_dialogue', 'native_fallback']) {
+      startVoiceTurn(session, 'Une table ?');
+      recordVoiceTurnEvent(session, 'tts_synthesis_started', { source });
+    }
+    expect(observedTtsProvider(session)).toBe('elevenlabs-eleven_v4_turbo');
   });
 
   it('conserve le premier tour LLM quand le tour suivant est déterministe', () => {
