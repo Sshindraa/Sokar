@@ -2245,18 +2245,5 @@ Ajout du check `elevenlabs` à `GET /health`, sur le modèle de Cartesia. Hors b
 
 2026-10-16 02:05 — [voice, elevenlabs, banc, écoute] **Banc d'écoute à l'aveugle des balises v4 prêt**. Risque ouvert : le fallback Cartesia peut prononcer les balises ; leur retrait hors ElevenLabs reste à traiter avant une activation plus large.
 
-2026-10-16 00:40 — [voice, elevenlabs, tts, feature-flag] **ElevenLabs Dialogue activable restaurant par restaurant** — Nouveau `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS` (vide = aucun) ; `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` reste l'activation globale. Banc WebSocket Text to Dialogue : médiane 97 ms, p95 109 ms ; formats A-law, µ-law et PCM acceptés. Tarif WebSocket non réconcilié ; écoute d'appels réels encore nécessaire.
-
-2026-10-16 — Suivi des coûts admin amélioré localement : période/export synchronisés, coûts tarifés séparés des usages non tarifés, détail par établissement et corrections avec preuve/décision motivée. Réponses obsolètes ignorées ; navigation plafonnée au mois courant. Tests ciblés, typechecks API/dashboard et contrôle visuel mobile réussis.
-
-2026-10-16 00:51 — [voice, elevenlabs, prod, feature-flag] **ElevenLabs Dialogue activé pour Chez Sokar en production** via PR #448 (`6fa362e`, CI/staging/prod verts). Drapeau limité au restaurant ; santé 200. Appels réels et consommation de caractères restent à vérifier.
-
-2026-10-16 — Vue générale admin transformée localement en cockpit opérateur : file d'actions priorisées, raccourcis, fraîcheur des données et résumé API protégé ne renvoyant que des compteurs. Tests UI/API, typechecks et rendu mobile vérifiés.
-
-2026-10-16 — Revue de la vue admin : cartes KPI et liens redondants retirés au profit d'une file concise ; états partiels et panne complète distingués d'une file vide. Tests ciblés et typecheck dashboard réussis.
-
-2026-10-16 01:30 — [voice, elevenlabs, tts] **Options ElevenLabs v4 Turbo** livrées via PR #450 : langue par tour, alignement synchronisé pour le barge-in, dictionnaire optionnel. L'alignement API a été testé ; dictionnaire de prononciation encore à créer.
-
-2026-10-16 — Diagnostic DLQ local : colonne nullable `demo_requests.last_interaction_at` ajoutée au schéma local par la migration dédiée ; aucun rattrapage global de l'historique Prisma. Les 2 080 entrées dead-letter restent intactes, sans rejeu ni suppression.
-
-2026-10-16 02:05 — [voice, elevenlabs, banc, écoute] **Banc d'écoute à l'aveugle des balises v4 prêt**. Risque ouvert : le fallback Cartesia peut prononcer les balises ; leur retrait hors ElevenLabs reste à traiter avant une activation plus large.
+## 2026-10-16 — ElevenLabs Dialogue : la liste de restaurants devient obligatoire (remplace la règle de #448)
+Le drapeau `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` ne bascule plus tous les restaurants : `isElevenLabsDialogueEnabledFor(restaurantId)` exige le drapeau ET le restaurant dans `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS` (liste vide : aucun). Cela remplace la règle de #448, où le drapeau seul ouvrait le WebSocket à tous les restaurants, pour respecter la consigne de ne pas basculer tous les restaurants avant le changement de forfait ElevenLabs. Attention au déploiement : la production n'a que la liste (drapeau absent). Au déploiement de cette PR, Chez Sokar repasse sur la voix HTTP ElevenLabs tant que `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` n'est pas posé en production, puis `sokar-api` redémarré. Tests mis à jour, documentation dans `docs/runbooks/environment.md`.

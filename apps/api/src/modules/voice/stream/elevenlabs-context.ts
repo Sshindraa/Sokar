@@ -88,7 +88,8 @@ function wait(ms: number): Promise<void> {
 
 /**
  * Tour TTS ElevenLabs en contexte, même contrat que `CartesiaContextTurn` (voir `context-tts.ts`).
- * Actif seulement pour les restaurants où `isElevenLabsDialogueEnabled` est vrai : le chemin par défaut ne le touche pas.
+ * Actif seulement pour les restaurants listés dans `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`, avec
+ * `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` : le chemin par défaut ne le touche pas.
  *
  * Chaque phrase part dans `inputs`. `flush` vaut vrai quand la phrase se termine par une ponctuation
  * forte, pour qu'elle soit générée tout de suite ; le reste attend la phrase suivante ou `close_socket`,
