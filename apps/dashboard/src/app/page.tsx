@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { ArrowRight, Bot, CalendarCheck, Mail, Mic, PhoneCall, Utensils } from 'lucide-react';
+import { ArrowRight, Mail } from 'lucide-react';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
@@ -114,58 +114,8 @@ export default function HomePage() {
               <div className="pointer-events-none absolute bottom-0 left-[47%] h-48 w-px bg-gradient-to-b from-white/28 via-white/10 to-transparent" />
               <div className="pointer-events-none absolute bottom-0 left-[53%] h-64 w-px bg-gradient-to-b from-white/36 via-white/10 to-transparent" />
 
-              <div className="absolute left-4 top-24 hidden w-56 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
-                  <PhoneCall size={14} />
-                </span>
-                <span className="h-px flex-1 bg-gradient-to-r from-white/20 to-transparent" />
-                <span>
-                  <span className="block text-xs font-semibold text-white">Appels entrants</span>
-                  <span className="text-[10px] text-white/40">Pris en charge par Sokar</span>
-                </span>
-              </div>
-
-              <div className="absolute right-5 top-28 hidden w-56 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="h-px flex-1 bg-gradient-to-l from-white/20 to-transparent" />
-                <span>
-                  <span className="block text-xs font-semibold text-white">Réservations</span>
-                  <span className="text-[10px] text-white/40">Confirmées par SMS</span>
-                </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
-                  <CalendarCheck size={14} />
-                </span>
-              </div>
-
-              <div className="absolute bottom-32 left-6 hidden w-64 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
-                  <Utensils size={14} />
-                </span>
-                <span className="h-px flex-1 bg-gradient-to-r from-white/20 to-transparent" />
-                <span>
-                  <span className="block text-xs font-semibold text-white">Service fluide</span>
-                  <span className="text-[10px] text-white/40">Salle et cuisine alignées</span>
-                </span>
-              </div>
-
-              <div className="absolute bottom-32 right-6 hidden w-64 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="h-px flex-1 bg-gradient-to-l from-white/20 to-transparent" />
-                <span>
-                  <span className="block text-xs font-semibold text-white">Assistant vocal</span>
-                  <span className="text-[10px] text-white/40">Répond aux appels transférés</span>
-                </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
-                  <Bot size={14} />
-                </span>
-              </div>
-
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20">
-                  <Mic size={13} />
-                  Sokar active votre standard
-                  <ArrowRight size={12} />
-                </p>
-
-                <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
+                <h1 className="max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
                   {BRAND_TITLE}
                 </h1>
 
@@ -173,11 +123,8 @@ export default function HomePage() {
                   {BRAND_SLOGAN}
                 </p>
 
-                <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
-                  Assistant téléphonique, réservation en ligne et plan de salle réunis : Sokar
-                  décroche les appels de votre restaurant, enregistre les réservations et vous aide
-                  pendant le service. Vous gardez votre numéro : seuls les appels que vous
-                  transférez passent par Sokar.
+                <p className="mx-auto mt-3 max-w-2xl text-sm text-white/[0.55] md:text-base">
+                  Téléphone, réservation en ligne et plan de salle, réunis.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
@@ -192,7 +139,7 @@ export default function HomePage() {
                     href="/register"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
-                    Créer votre compte
+                    Essayer 14 jours gratuits
                     <ArrowRight size={14} />
                   </Link>
                 </div>
@@ -251,8 +198,7 @@ export default function HomePage() {
               <span className="text-lg font-bold text-white font-display">Sokar</span>
             </Link>
             <p className="text-xs text-white/40 leading-relaxed font-sans max-w-xs">
-              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la
-              gestion des appels de votre restaurant.
+              {BRAND_TITLE}. {BRAND_SLOGAN}
             </p>
             <a
               href="mailto:hello@sokar.tech"

@@ -499,6 +499,60 @@ describe('billing.service - e-mails de fin d’essai et de coupure', () => {
     return vi.mocked(queues.billingNotifications.add);
   }
 
+  it('garde la fin d’essai quand Stripe ne la porte plus que sur l’article (API 2025-03+)', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.created', {
+        current_period_end: undefined,
+        items: { data: [{ price: { id: 'price_unknown' }, current_period_end: trialEnd }] },
+      }),
+    );
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          subscriptionStatus: 'trialing',
+          subscriptionCurrentPeriodEnd: new Date(trialEnd * 1000),
+        }),
+      }),
+    );
+  });
+
+  it('prend la fin de période de la ligne facturée, pas la date de la facture d’essai', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_trial',
+    } as never);
+
+    await handleBillingWebhook({
+      type: 'invoice.paid',
+      id: 'evt_trial_invoice',
+      created: trialStart,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          billing_reason: 'subscription_create',
+          amount_paid: 0,
+          metadata: {},
+          period_end: trialStart,
+          lines: { data: [{ period: { start: trialStart, end: trialEnd } }] },
+        },
+      },
+    } as never);
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          subscriptionStatus: 'trialing',
+          subscriptionCurrentPeriodEnd: new Date(trialEnd * 1000),
+        }),
+      }),
+    );
+  });
+
   it('programme le rappel de fin d’essai à réception de trial_will_end', async () => {
     vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
     const add = await addCalls();
