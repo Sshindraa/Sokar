@@ -16,7 +16,10 @@ describe('e-mail de fin d’essai', () => {
       trialEndsAt,
       recap: busy,
       dashboardUrl: 'https://sokar.tech/',
+      now: new Date('2026-10-27T10:00:00.000Z'),
     });
+    expect(email.html).toContain('plus que 3 jours d’essai');
+    expect(email.html).toContain('>52<');
     expect(email.subject).toBe('Le Bistrot : votre essai Sokar se termine vendredi 30 octobre');
     expect(email.html).toContain(
       'Sokar a décroché 47 appels et pris 18 réservations pour vous (52 couverts).',
@@ -60,7 +63,8 @@ describe('e-mail de service suspendu', () => {
       dashboardUrl: 'https://sokar.tech',
     });
     expect(email.subject).toBe('Le Bistrot : votre assistant Sokar ne répond plus');
-    expect(email.html).toContain('Pendant votre essai, Sokar a décroché 47 appels');
+    expect(email.html).toContain('Pendant votre essai, voici ce qu’il a fait pour vous');
+    expect(email.html).toContain('>47<');
     expect(email.html).toContain('Votre essai gratuit est terminé');
     expect(email.html).toContain('href="https://sokar.tech/pricing"');
   });
