@@ -1820,6 +1820,44 @@ describe('tour structuré (canary)', () => {
       expect(spoken()).toEqual(['Pour quel jour ?']);
     });
 
+    it('prépare la réponse dès qu’un tour est jugé inachevé, et la dit sans nouvel appel si l’appelant se tait', async () => {
+      // Appel bb50c0d3 du 16/10/2026 : phrase finie jugée inachevée, puis attente, puis passage complet.
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ turnComplete: false, interpretation: 'new_request' }),
+        turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'je vous appelle pour faire une réservation', mgr);
+      // La réponse est déjà demandée, mais rien n'est dit pendant l'attente.
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(2_100);
+      vi.useRealTimers();
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual(['Bien sûr.', 'Pour quel jour ?']);
+    });
+
+    it('jette la réponse préparée quand l’appelant reprend la parole', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ turnComplete: false, interpretation: 'new_request' }),
+        turn({ awaiting: 'date', say: 'Réponse préparée.' }),
+        turn({ awaiting: 'time', say: 'Pour samedi. Vers quelle heure ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'je vous appelle pour', mgr);
+      await processTranscriptStreaming(session, 'réserver samedi', mgr);
+      await vi.advanceTimersByTimeAsync(2_100);
+      vi.useRealTimers();
+
+      expect(spoken()).toEqual(['Pour samedi.', 'Vers quelle heure ?']);
+    });
+
     it('ne spécule pas pendant que l’agent parle', () => {
       const { session, mgr } = fixture();
       session.state = 'SPEAKING';
