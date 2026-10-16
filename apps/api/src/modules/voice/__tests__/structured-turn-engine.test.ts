@@ -1611,6 +1611,43 @@ describe('tour structuré (canary)', () => {
     ]);
   });
 
+  it('rend le début de phrase au tour suivant quand la relance après silence est dépassée (appel bb50c0d3)', async () => {
+    // Épellation : « c'est au nom de à » (la lettre A) retenu, relance après silence, puis l'appelant
+    // continue « f l e l o u » avant que la relance ait parlé. Le A ne doit pas disparaître.
+    vi.useFakeTimers();
+    const { session, mgr, outputs } = fixture();
+    const stream = vi.mocked(mgr.streamStructuredCompletion);
+    const scripted = stream.getMockImplementation()!;
+    stream
+      .mockImplementationOnce(scripted)
+      // La relance reste en cours : le modèle n'a pas encore répondu quand l'appelant reprend.
+      .mockImplementationOnce(() => new Promise<string>(() => undefined))
+      .mockImplementation(scripted);
+    outputs.push(
+      turn({ turnComplete: false, interpretation: 'unclear' }),
+      turn({
+        awaiting: 'customerNameConfirmation',
+        draft: { date: '', time: '', partySize: 0, customerName: 'AFLELOU' },
+        say: 'A, F, L, E, L, O, U. C’est bien ça ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, "c'est au nom de à", mgr);
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    await processTranscriptStreaming(session, 'f l e l o u', mgr);
+    vi.useRealTimers();
+
+    const lastMessages = stream.mock.calls.at(-1)?.[1] as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(lastMessages.at(-1)?.content).toContain("c'est au nom de à f l e l o u");
+    expect(session.history.filter((m) => m.role === 'user').map((m) => m.content)).toEqual([
+      "c'est au nom de à f l e l o u",
+    ]);
+  });
+
   describe('minuteur après un tour inachevé (appel 1b3f85e9)', () => {
     const scripted = (outputs: StructuredTurnOutput[]) =>
       outputs.push(
