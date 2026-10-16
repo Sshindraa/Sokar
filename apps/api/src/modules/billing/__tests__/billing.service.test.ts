@@ -429,4 +429,41 @@ describe('billing.service - Stripe subscription webhooks', () => {
       }),
     );
   });
+
+  it('garde la période d’essai sur la facture à 0 € qui ouvre l’essai', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: 'sub_trial',
+      subscriptionStatus: 'trialing',
+      lastStripeEventCreated: null,
+      lastStripeEventId: null,
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: null } as never);
+
+    const handled = await handleBillingWebhook({
+      type: 'invoice.paid',
+      id: 'evt_invoice_trial',
+      created: 600,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          billing_reason: 'subscription_create',
+          amount_paid: 0,
+          metadata: {},
+          lines: { data: [{ price: { id: 'price_pro_monthly_test' } }] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+      }),
+    );
+  });
 });

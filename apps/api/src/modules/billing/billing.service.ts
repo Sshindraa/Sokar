@@ -1078,7 +1078,10 @@ async function handleInvoiceEvent(
   const siteCount =
     metadataSiteCountOrUndefined(metadata) ?? accountBilling?.entitledSiteCount ?? 1;
   const paid = eventType !== 'invoice.payment_failed';
-  const status = paid ? 'active' : 'past_due';
+  // A trial opens with a zero invoice marked paid: the subscription is still `trialing`.
+  const trialStartInvoice =
+    paid && invoice.billing_reason === 'subscription_create' && invoice.amount_paid === 0;
+  const status = trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
   const periodEnd = invoicePeriodEnd(invoice) ?? billing?.subscriptionCurrentPeriodEnd ?? null;
   const cancelAtPeriodEnd = billing?.subscriptionCancelAtPeriodEnd ?? false;
 
