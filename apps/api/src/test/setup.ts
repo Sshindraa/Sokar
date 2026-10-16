@@ -605,6 +605,10 @@ const notificationProviderMocks = vi.hoisted(() => ({
   notificationProviderMocks;
 
 // ── Mock Resend (HTTP API email, remplace nodemailer) ──
+vi.mock('../shared/email/rate-limit', () => ({
+  waitForResendSlot: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('resend', () => ({
   Resend: class MockResend {
     emails = {

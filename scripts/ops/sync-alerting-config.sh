@@ -12,7 +12,7 @@ case "$DEPLOY_ENV" in
   *) echo "Usage: $0 staging|prod" >&2; exit 2 ;;
 esac
 
-ALERT_NAMES=(SENTRY_DSN ALERT_EMAIL_TO ALERT_WEBHOOK_URL ALERT_SMS_TO)
+ALERT_NAMES=(SENTRY_DSN ALERT_EMAIL_TO ALERT_WEBHOOK_URL ALERT_SMS_TO RESEND_RATE_LIMIT_REDIS_URL)
 
 if [[ ! -f "$TARGET_ENV_FILE" ]]; then
   echo "Fichier .env absent: $TARGET_ENV_FILE" >&2
@@ -23,6 +23,16 @@ valid_value() {
   local name="$1"
   local value="$2"
   case "$name" in
+    RESEND_RATE_LIMIT_REDIS_URL)
+      SOKAR_REDIS_CANDIDATE="$value" node -e '
+        try {
+          const raw = process.env.SOKAR_REDIS_CANDIDATE;
+          const url = new URL(raw);
+          const unsafe = /\s/.test(raw) || [...raw].some(c => [34, 39, 92, 36, 96, 35].includes(c.charCodeAt(0)));
+          if (unsafe || !["redis:", "rediss:"].includes(url.protocol) || !url.hostname ||
+              !/^\/[0-9]+$/.test(url.pathname) || url.search || url.hash) process.exit(1);
+        } catch { process.exit(1); }
+      ' ;;
     SENTRY_DSN|ALERT_WEBHOOK_URL)
       [[ "$value" =~ ^https://[^[:space:]]+$ ]] ;;
     ALERT_EMAIL_TO)

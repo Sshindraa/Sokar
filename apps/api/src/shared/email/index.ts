@@ -11,6 +11,7 @@ import {
 } from '../../modules/usage/messaging-usage.service';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, withTimeout } from '../resilience';
 import { logger } from '../logger/pino';
+import { waitForResendSlot } from './rate-limit';
 
 // Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
 // L'API HTTP de Resend utilise le port 443 (HTTPS).
@@ -135,6 +136,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté
   // appelant pour qu'un envoi bloqué ne retienne pas le worker indéfiniment ;
   // la requête HTTP peut continuer côté SDK, mais l'appel métier est rendu.
+  await waitForResendSlot();
   const response = await withTimeout(
     getResend().emails.send({
       from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
@@ -198,6 +200,7 @@ export async function lookupResendEmail(
   providerMessageId: string,
 ): Promise<NotificationProviderResult> {
   try {
+    await waitForResendSlot();
     const response = await getResend().emails.get(providerMessageId);
     return classifyResendEmailResponse(response);
   } catch {

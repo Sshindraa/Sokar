@@ -18,7 +18,11 @@ const ALERT_VARS = ['ALERT_EMAIL_TO', 'ALERT_WEBHOOK_URL', 'ALERT_SMS_TO'] as co
 
 describe('dispatchAlert', () => {
   beforeEach(() => {
-    vi.mocked(sendEmail).mockReset().mockResolvedValue(undefined);
+    vi.mocked(sendEmail).mockReset().mockResolvedValue({
+      outcome: 'success',
+      provider: 'resend',
+      channel: 'email',
+    });
     vi.mocked(sendSms).mockReset().mockResolvedValue(undefined);
     alertsSentTotal.reset();
     for (const key of ALERT_VARS) delete process.env[key];
@@ -61,6 +65,39 @@ describe('dispatchAlert', () => {
     expect(call.html).toContain('file sms-client');
     expect(results).toEqual([{ channel: 'email', ok: true }]);
   });
+
+  it.each(['refused', 'unknown'] as const)(
+    'ne compte pas un transport %s comme un envoi accepté et conserve les autres canaux',
+    async (outcome) => {
+      process.env.ALERT_EMAIL_TO = 'ops@example.test';
+      process.env.ALERT_WEBHOOK_URL = 'https://hooks.example.test/alerts';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+      vi.mocked(sendEmail).mockResolvedValue(
+        outcome === 'refused'
+          ? { outcome: 'failure_certain', provider: 'resend', channel: 'email' }
+          : undefined,
+      );
+
+      const results = await dispatchAlert({
+        kind: 'failed_jobs',
+        severity: 'critical',
+        summary: 'Test',
+        detail: 'Test sans données personnelles',
+      });
+
+      expect(results).toEqual([
+        { channel: 'webhook', ok: true },
+        { channel: 'email', ok: false, error: 'Email non accepté par le transport' },
+      ]);
+      const metrics = await renderMetrics();
+      expect(metrics).toMatch(
+        /sokar_alerts_sent_total\{[^}]*channel="email"[^}]*result="error"[^}]*\} 1/,
+      );
+      expect(metrics).not.toMatch(
+        /sokar_alerts_sent_total\{[^}]*channel="email"[^}]*result="ok"[^}]*\} 1/,
+      );
+    },
+  );
 
   it('envoie un webhook Slack-format quand ALERT_WEBHOOK_URL est défini', async () => {
     process.env.ALERT_WEBHOOK_URL = 'https://hooks.slack.com/test';

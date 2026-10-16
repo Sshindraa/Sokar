@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Ops Resend : correctif isole `codex/resend-alert-regulation` (debit Redis commun, e-mails system-health groupes). Coordination serveur/GitHub configuree ; cle staging dediee Sending access/sokar.tech autorisee et configuree, envoi technique fournisseur accepte. Livrer par CI/staging/smoke avant production ; aucune migration. Voir `docs/runbooks/resend-alert-regulation.md`.
+
 - [ ] SEO : accueil/privacy livrés (#438–#442) ; GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Mentions légales bloquées : identité non autorisée à publier ; réseaux facultatifs.
 - [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
 - [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation ; valider la promesse « Support prioritaire 7j/7 ».
