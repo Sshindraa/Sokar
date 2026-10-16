@@ -37,13 +37,13 @@ describe('catalogue des fonctionnalités', () => {
 
     expect(labels).toEqual(
       expect.arrayContaining([
-        'Synchronisation ZenChef, TheFork ou Lightspeed',
+        'Synchronisation ZenChef, TheFork, Lightspeed',
         'Réservation depuis ChatGPT et Claude',
       ]),
     );
     expect(
       CATALOG_FEATURES.filter((feature) => feature.status === 'disponible').map((f) => f.label),
-    ).not.toEqual(expect.arrayContaining(['Synchronisation ZenChef, TheFork ou Lightspeed']));
+    ).not.toEqual(expect.arrayContaining(['Synchronisation ZenChef, TheFork, Lightspeed']));
   });
 
   it('ne présente comme disponible ni la comparaison consolidée ni le partage des profils clients', () => {
@@ -56,7 +56,7 @@ describe('catalogue des fonctionnalités', () => {
 
   it('garde le suivi des absences dans la formule Essential, comme la page Tarifs', () => {
     expect(featuresIntroducedIn('Essential').map((feature) => feature.label)).toContain(
-      'Un fichier client et le suivi des absences',
+      'Fichier client et suivi des absences',
     );
   });
 
