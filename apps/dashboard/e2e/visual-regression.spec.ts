@@ -85,9 +85,9 @@ const PAGES: VisualPage[] = [
   {
     name: 'homepage',
     url: '/',
-    // Le hero de la homepage contient le h1 "L'IA devient le nouveau levier".
+    // Le hero de la homepage contient le h1 "Un assistant téléphonique pour vos réservations".
     // On attend ce heading pour s'assurer que le hero est rendu.
-    waitFor: 'h1:has-text("nouveau levier")',
+    waitFor: 'h1:has-text("assistant téléphonique")',
     settleMs: 2000,
   },
   {
