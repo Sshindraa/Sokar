@@ -14,6 +14,7 @@ import {
   createStructuredTurnState,
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
+import { turnJudgeDisagreementSilenceMs } from '../stream/structured-turn/turn-end-judge';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
@@ -294,5 +295,101 @@ describe('juge de fin de tour séparé : clôture sémantique (partielle stable)
 
     expect(onVerdict).toHaveBeenCalledTimes(1);
     expect(onVerdict).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('juge de fin de tour séparé : désaccord avec le modèle', () => {
+  // Le juge attend la suite, le modèle a fini et sa réponse est prête : seul le silence réel de l'appelant tranche.
+  const withVoice = (session: CallSession, silentForMs: number) => {
+    session.callerVoice = {
+      noiseFloor: 0,
+      trackedMs: 10_000,
+      voiceRun: 0,
+      lastVoiceAt: Date.now() - silentForMs,
+    };
+  };
+
+  it('dit la réponse déjà prête quand l’appelant reste silencieux, sans second appel du modèle', async () => {
+    const { session, mgr, outputs, judgeScript } = fixture();
+    judgeScript.next = verdict(false);
+    withVoice(session, 2_000);
+    outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+
+    await processTranscriptStreaming(session, 'bonjour je voudrais faire vous êtes ouvert', mgr);
+
+    expect(spoken()).toEqual(['Bien sûr.', 'Pour quel jour ?']);
+    expect(modelCalls(mgr)).toHaveLength(1);
+    expect(session.structuredTurn?.pendingFragment ?? null).toBeNull();
+  });
+
+  it('attend que le silence atteigne le seuil avant de parler', async () => {
+    vi.stubEnv('VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS', '1000');
+    const { session, mgr, outputs, judgeScript } = fixture();
+    judgeScript.next = verdict(false);
+    withVoice(session, 700);
+    outputs.push(turn({ awaiting: 'date', say: 'Pour quel jour ?' }));
+
+    const startedAt = Date.now();
+    await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(250);
+    expect(spoken()).toEqual(['Pour quel jour ?']);
+  });
+
+  it('se tait et garde le fragment quand l’appelant reprend la parole pendant l’attente', async () => {
+    const { session, mgr, outputs, judgeScript } = fixture();
+    judgeScript.next = verdict(false);
+    withVoice(session, 100);
+    outputs.push(turn({ awaiting: 'time', say: 'Très bien, vers quelle heure ?' }));
+
+    const done = processTranscriptStreaming(session, 'demain à 14 heures non', mgr);
+    setTimeout(() => {
+      if (session.callerVoice) session.callerVoice.lastVoiceAt = Date.now();
+    }, 150);
+    await done;
+
+    expect(spoken()).toEqual([]);
+    expect(session.structuredTurn?.pendingFragment).toBe('demain à 14 heures non');
+  });
+
+  it('garde le verdict du juge quand la règle est désactivée (0)', async () => {
+    vi.stubEnv('VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS', '0');
+    const { session, mgr, outputs, judgeScript } = fixture();
+    judgeScript.next = verdict(false);
+    withVoice(session, 2_000);
+    outputs.push(turn({ awaiting: 'date', say: 'Pour quel jour ?' }));
+
+    await processTranscriptStreaming(session, 'je voudrais bien venir', mgr);
+
+    expect(spoken()).toEqual([]);
+    expect(session.structuredTurn?.pendingFragment).toBe('je voudrais bien venir');
+  });
+
+  it('ne change rien quand le juge et le modèle disent tous deux inachevé', async () => {
+    const { session, mgr, outputs, judgeScript } = fixture();
+    judgeScript.next = verdict(false);
+    withVoice(session, 2_000);
+    outputs.push(turn({ turnComplete: false, interpretation: 'unclear', confidence: 'low' }));
+
+    await processTranscriptStreaming(session, 'non h o u e', mgr);
+
+    expect(spoken()).toEqual([]);
+    expect(session.structuredTurn?.pendingFragment).toBe('non h o u e');
+  });
+
+  it('borne le seuil de silence (0 désactive)', () => {
+    expect(turnJudgeDisagreementSilenceMs({})).toBe(1_200);
+    expect(turnJudgeDisagreementSilenceMs({ VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS: '0' })).toBe(
+      0,
+    );
+    expect(
+      turnJudgeDisagreementSilenceMs({ VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS: '900' }),
+    ).toBe(900);
+    expect(
+      turnJudgeDisagreementSilenceMs({ VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS: '100' }),
+    ).toBe(1_200);
+    expect(
+      turnJudgeDisagreementSilenceMs({ VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS: '9000' }),
+    ).toBe(1_200);
   });
 });
