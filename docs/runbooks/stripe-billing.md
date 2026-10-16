@@ -301,6 +301,7 @@ Essential 1 430,40 €/an, Pro 3 229,20 €/an, Multi-site 3 229,20 €/an et ad
 1 069,20 €/an par établissement supplémentaire. Cette preuve historique ne valide pas la nouvelle
 grille 199/299 ; elle doit être remplacée après création des nouveaux prix, synchronisation des
 `priceId`, Checkout, facture, taxes, prorata, période de grâce et renouvellement en sandbox.
+Remplacée par le contrôle du 16 octobre 2026 ci-dessus pour les prix, le Checkout et la facture.
 
 ## Test sans paiement
 
