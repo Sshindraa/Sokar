@@ -9,6 +9,8 @@
  * messageries n'affichent pas le SVG).
  */
 
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
+
 export type BillingNotificationKind = 'trial-ending' | 'service-suspended';
 
 /** Activité de Sokar pour le restaurant depuis le début de l'essai ou de l'abonnement. */
@@ -227,7 +229,8 @@ function layout(args: {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
         <tr><td align="center" style="padding:28px 16px 0">
           <img src="${escapeHtml(args.logoUrl)}" width="24" height="24" alt="" style="display:block;width:24px;height:24px;border-radius:7px;margin:0 auto 12px">
-          <p style="margin:0 0 6px;font-family:${FONT};font-size:13px;font-weight:600;color:${INK}">Sokar, l’assistant téléphonique des restaurants</p>
+          <p style="margin:0 0 2px;font-family:${FONT};font-size:13px;font-weight:600;color:${INK}">Sokar, ${BRAND_TITLE.charAt(0).toLowerCase()}${BRAND_TITLE.slice(1)}</p>
+          <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;font-style:italic;color:${MUTED}">${BRAND_SLOGAN}</p>
           <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${MUTED}">Vous recevez cet e-mail parce que vous avez un compte Sokar pour ${name}.</p>
           <p style="margin:0;font-family:${FONT};font-size:12px;color:${MUTED}">
             <a href="${escapeHtml(args.dashboardUrl)}/dashboard" style="color:${MUTED};text-decoration:underline">Mon espace</a>

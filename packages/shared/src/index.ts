@@ -11,6 +11,7 @@
  */
 
 export * from './plan';
+export * from './brand';
 export * from './reservation';
 export * from './call';
 export * from './agent';
