@@ -224,6 +224,14 @@ describe('billing.routes - checkout, portail et statut', () => {
       create: { restaurantId: 'test-rest-1', stripeCustomerId: 'cus_test' },
       update: { stripeCustomerId: 'cus_test' },
     });
+    const customerCreate = (
+      globalThis as unknown as { __sokarStripeCustomerCreate: { mock: { calls: unknown[][] } } }
+    ).__sokarStripeCustomerCreate;
+    expect(customerCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        invoice_settings: { footer: 'TVA non applicable, art. 293 B du CGI' },
+      }),
+    );
   });
 
   describe('retour vers l’inscription (returnTo)', () => {

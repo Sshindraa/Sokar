@@ -1,6 +1,11 @@
 'use client';
 
-import { ANNUAL_DISCOUNT_PERCENT, pricingTotalCents, formatMonthlyEquivalent } from '@sokar/shared';
+import {
+  ANNUAL_DISCOUNT_PERCENT,
+  VAT_MENTION,
+  pricingTotalCents,
+  formatMonthlyEquivalent,
+} from '@sokar/shared';
 import { useState } from 'react';
 import Link from 'next/link';
 import { PLANS, DISPLAY_PRICE, type PlanFeatureLine } from '@/app/constants';
@@ -127,7 +132,7 @@ export default function PricingPlans({
         {yearly
           ? 'Équivalents mensuels arrondis. Facturation annuelle, engagement de 12 mois. Montant exact indiqué avant paiement.'
           : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
-        Tous les prix sont hors taxes.
+        {VAT_MENTION}.
       </p>
       {/*
       Cards Grid. En md+, chaque carte est une sous-grille de 5 lignes
@@ -190,7 +195,7 @@ export default function PricingPlans({
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
                     {yearlyPrice}
                   </span>
-                  <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
+                  <span className="text-sm font-semibold text-white/60">€/mois</span>
                   {yearlySitePrice && (
                     <span className="text-sm font-semibold text-white/60">
                       + {euros(yearlySitePrice, 'site')}
@@ -214,7 +219,7 @@ export default function PricingPlans({
                       ))}
                     </select>
                     <p className="mt-2">
-                      Premier établissement inclus, puis {yearlySitePrice} € HT/mois par adresse
+                      Premier établissement inclus, puis {yearlySitePrice} €/mois par adresse
                       supplémentaire.
                     </p>
                     <p className="mt-2 font-semibold">
@@ -224,7 +229,7 @@ export default function PricingPlans({
                         pricingTotalCents('multi-site', yearly, siteCount),
                         yearly,
                       )}{' '}
-                      € HT/mois.
+                      €/mois.
                     </p>
                   </div>
                 )}
