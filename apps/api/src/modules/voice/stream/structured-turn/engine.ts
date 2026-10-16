@@ -194,6 +194,25 @@ const INCOMPLETE_TURN_MAX_DEFERRALS = 5;
 /** Dite si la relance après un silence ne produit toujours aucune phrase. */
 export const CALLER_FINISHED_FALLBACK = 'Oui, je vous écoute ?';
 
+/**
+ * Début de phrase d'une relance après silence qui n'a pas encore parlé : il revient au tour qui la dépasse, et
+ * l'entrée d'historique que la relance avait ajoutée (sans réponse) est retirée pour ne pas la compter deux fois.
+ */
+function reclaimUnansweredFragment(
+  session: CallSession,
+  state: StructuredTurnState,
+): string | null {
+  const fragment = state.unansweredFragment ?? null;
+  state.unansweredFragment = null;
+  if (!fragment) return null;
+  const last = session.history.at(-1);
+  if (last?.role === 'user' && last.content === fragment) {
+    session.history.pop();
+    session.turnCount--;
+  }
+  return fragment;
+}
+
 const incompleteTurnTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
 function clearIncompleteTurnTimer(session: CallSession): void {
@@ -450,13 +469,16 @@ export async function runStructuredTurn(
 ): Promise<void> {
   const state = (session.structuredTurn ??= createStructuredTurnState());
   clearIncompleteTurnTimer(session);
-  // Un début de phrase retenu au tour précédent est la même prise de parole.
-  const transcript = [state.pendingFragment, rawTranscript]
+  // Un début de phrase retenu au tour précédent est la même prise de parole. S'il était parti avec une
+  // relance après silence restée muette (l'appelant a repris avant elle), il revient ici.
+  const carried = state.pendingFragment ?? reclaimUnansweredFragment(session, state);
+  const transcript = [carried, rawTranscript]
     .filter((part): part is string => Boolean(part?.trim()))
     .join(' ')
     .trim();
   state.pendingFragment = null;
   if (!transcript) return;
+  if (options.callerFinished) state.unansweredFragment = transcript;
   const turnId = session.currentTurn?.id;
   const abortController = new AbortController();
   session.abortController = abortController;
@@ -552,6 +574,8 @@ export async function runStructuredTurn(
   const speakPhrase = (phrase: string) => {
     if (!isLive()) return;
     if (!firstPhraseSpoken) {
+      // La relance a parlé : son début de phrase a reçu sa réponse.
+      if (options.callerFinished) state.unansweredFragment = null;
       firstPhraseSpoken = true;
       markVoiceTurnLlmFirstPhrase(session, turnId);
       mgr.transition(session, 'SPEAKING');
@@ -1205,5 +1229,7 @@ export async function runStructuredTurn(
     // Réponse coupée ou échouée : ce qui n'a pas été fixé l'est ici.
     settleDebugSpeech(contextDebugEntry, contextTts?.framesSent ?? 0, false);
     if (session.ttsContext === contextTts) session.ttsContext = null;
+    // Relance terminée sans être dépassée : son début de phrase est traité, même si elle s'est tue.
+    if (options.callerFinished && isCurrentResponse()) state.unansweredFragment = null;
   }
 }
