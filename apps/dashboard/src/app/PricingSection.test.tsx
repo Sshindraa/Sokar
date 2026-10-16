@@ -74,7 +74,7 @@ describe('PricingSection', () => {
     );
     fireEvent.click(screen.getByRole('switch'));
     expect(screen.getByText(/Total pour 3 établissements : 447/)).toBeInTheDocument();
-    expect(screen.queryByText(/,\d{2}.*€ HT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/,\d{2}.*€\/mois/)).not.toBeInTheDocument();
   });
 
   it('masque le prix barré et les économies en mensuel', () => {

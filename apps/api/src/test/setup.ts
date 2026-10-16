@@ -634,6 +634,7 @@ vi.mock('../../shared/telnyx/client', () => ({
 
 // ── Mock Stripe (SDK non nécessaire en tests unitaires) ──
 const stripeMocks = vi.hoisted(() => ({
+  customerCreate: vi.fn().mockResolvedValue({ id: 'cus_test' }),
   checkoutSessionCreate: vi
     .fn()
     .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
@@ -645,11 +646,12 @@ const stripeMocks = vi.hoisted(() => ({
   stripeMocks.checkoutSessionCreate;
 (globalThis as Record<string, unknown>).__sokarStripeBillingPortalSessionCreate =
   stripeMocks.billingPortalSessionCreate;
+(globalThis as Record<string, unknown>).__sokarStripeCustomerCreate = stripeMocks.customerCreate;
 
 vi.mock('stripe', () => {
   class Stripe {
     customers = {
-      create: vi.fn().mockResolvedValue({ id: 'cus_test' }),
+      create: stripeMocks.customerCreate,
     };
     checkout = {
       sessions: {

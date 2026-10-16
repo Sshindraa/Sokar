@@ -25,12 +25,12 @@ describe('métadonnées de la vitrine', () => {
     },
   );
 
-  it('annonce les tarifs hors taxes, comme le catalogue Stripe', () => {
+  it('annonce les tarifs payés, sans TVA, comme le catalogue Stripe', () => {
     const description =
       typeof PRICING_METADATA.description === 'string' ? PRICING_METADATA.description : '';
 
-    expect(description).toContain(`${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois`);
-    expect(description).toContain(`${PLAN_PRICES_EUR.PRO} € HT/mois`);
-    expect(description).toContain(`${PLAN_PRICES_EUR.PREMIUM} € HT/mois`);
+    expect(description).toContain(`${PLAN_PRICES_EUR.ESSENTIAL} €/mois`);
+    expect(description).toContain(`${PLAN_PRICES_EUR.PRO} €/mois`);
+    expect(description).toContain(`${PLAN_PRICES_EUR.PREMIUM} €/mois`);
   });
 });

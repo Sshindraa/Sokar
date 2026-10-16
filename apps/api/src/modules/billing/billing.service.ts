@@ -1,4 +1,4 @@
-import { PRICING_CATALOG_VERSION } from '@sokar/shared';
+import { PRICING_CATALOG_VERSION, VAT_MENTION } from '@sokar/shared';
 import { createHash } from 'node:crypto';
 import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';
@@ -421,6 +421,8 @@ export async function createCheckoutSession(input: {
       {
         name: billingAnchor.name,
         email: normalizeEmail(billingAnchor.managerEmail),
+        // VAT franchise: every invoice of this customer carries the legal mention.
+        invoice_settings: { footer: VAT_MENTION },
         metadata: {
           restaurantId: restaurant.id,
           ...(accountId ? { accountId } : {}),
