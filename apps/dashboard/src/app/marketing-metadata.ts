@@ -26,8 +26,10 @@ function pageMetadata(path: string, title: string, description: string): Metadat
 
 export const HOME_METADATA = pageMetadata(
   '/',
-  'Sokar — Assistant téléphonique pour restaurants',
-  'Sokar répond aux appels de votre restaurant, consulte vos disponibilités et enregistre les réservations. Démonstration sur demande.',
+  // Titre court pour Google (≈ 55 caractères) ; les mots-clés « assistant téléphonique » et
+  // « réservation en ligne » restent dans la description et l'accroche de la page.
+  'Sokar — Chef de rang numérique : réservations restaurant',
+  'Le chef de rang numérique de votre restaurant : assistant téléphonique qui répond aux appels, réservation en ligne et plan de salle. Démonstration sur demande.',
 );
 
 export const PRICING_METADATA = pageMetadata('/pricing', 'Tarifs — Sokar', PRICING_DESCRIPTION);

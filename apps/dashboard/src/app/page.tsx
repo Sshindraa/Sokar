@@ -9,6 +9,7 @@ import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
 import { HOME_METADATA } from '@/app/marketing-metadata';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
 
 export const metadata = HOME_METADATA;
 
@@ -165,12 +166,17 @@ export default function HomePage() {
                 </p>
 
                 <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  Un assistant téléphonique pour vos réservations
+                  {BRAND_TITLE}
                 </h1>
 
-                <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
-                  Sokar répond aux appels de votre restaurant, consulte vos disponibilités et
-                  enregistre les réservations. Vous gardez votre numéro : seuls les appels que vous
+                <p className="mx-auto mt-5 max-w-2xl text-lg font-medium leading-7 text-white/[0.86] md:text-xl">
+                  {BRAND_SLOGAN}
+                </p>
+
+                <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
+                  Assistant téléphonique, réservation en ligne et plan de salle réunis : Sokar
+                  décroche les appels de votre restaurant, enregistre les réservations et vous aide
+                  pendant le service. Vous gardez votre numéro : seuls les appels que vous
                   transférez passent par Sokar.
                 </p>
 

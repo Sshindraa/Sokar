@@ -45,6 +45,7 @@
 
 ## Décisions récentes
 
+- 2026-10-17 — [Marque] Sokar = « Le chef de rang numérique de votre restaurant », slogan « Il répond, il réserve, il organise votre salle. » (`packages/shared/src/brand.ts`). Ne plus présenter Sokar comme « assistant téléphonique ».
 - 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.
 - 2026-10-06 — [Onboarding audio] Réponses de démonstration alignées sur les phrases du client ; le cache inclut le texte pour invalider les anciens audios après une modification du script.
 - 2026-10-11 — [Onboarding/horaires] Dernières arrivées réglées une fois par service et propagées automatiquement aux jours ouverts ; si une fermeture plus tôt rend l’heure invalide, retenir le dernier créneau valide avant cette limite.
