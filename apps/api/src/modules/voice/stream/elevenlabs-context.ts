@@ -189,17 +189,19 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
     };
   }
 
-  push(transcript: string): void {
+  push(transcript: string, options: { tone?: string } = {}): void {
     if (this.finishedInput || this.finishedOutput || this.cancelled || !transcript) return;
     // Les segments se concatènent sans séparateur implicite : on en ajoute un entre deux mots.
     const needsSpace =
       this.lastTranscript && !/\s$/.test(this.lastTranscript) && !/^[,.;:!?]/.test(transcript);
     const joinedTranscript = `${needsSpace ? ' ' : ''}${transcript}`;
     this.lastTranscript = joinedTranscript;
+    // La balise ne part qu'à la voix : le texte relevé (interruption, historique) reste celui de say.
     this.pushedText += joinedTranscript;
+    const tag = options.tone && /^[a-z]+$/.test(options.tone) ? `[${options.tone}] ` : '';
     this.sendOrQueue({
       kind: 'text',
-      text: joinedTranscript,
+      text: `${tag}${joinedTranscript}`,
       flush: SENTENCE_END.test(joinedTranscript),
     });
   }

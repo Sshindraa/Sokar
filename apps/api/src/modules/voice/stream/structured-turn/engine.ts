@@ -12,7 +12,12 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createContextTtsTurn } from '../context-tts';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { isVoiceTurnJudgeEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
+import {
+  isVoiceExpressionToneEnabled,
+  isVoiceTurnJudgeEnabled,
+  isVoiceUnderstandingCheckEnabled,
+} from '../feature-flags';
+import { isElevenLabsDialogueEnabledFor } from '../elevenlabs-dialogue-context';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -76,7 +81,7 @@ import { PhraseSplitter, SayStreamExtractor } from './say-stream';
 
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
-  options: { turnCompleteOnly?: boolean; understanding?: boolean } = {},
+  options: { turnCompleteOnly?: boolean; understanding?: boolean; tone?: boolean } = {},
 ) {
   return {
     type: 'json_schema' as const,
@@ -331,6 +336,10 @@ function passRequest(
   } = {},
 ) {
   const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
+  // Le ton n'a d'effet que sur la voix ElevenLabs Dialogue : ailleurs, le modèle ne le choisit pas.
+  const tone =
+    isVoiceExpressionToneEnabled(session.restaurantId) &&
+    isElevenLabsDialogueEnabledFor(session.restaurantId);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
     history,
@@ -340,6 +349,7 @@ function passRequest(
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
     ...(understanding ? { understanding } : {}),
+    ...(tone ? { tone } : {}),
     ...extra,
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
@@ -349,6 +359,7 @@ function passRequest(
     {
       turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
       ...(understanding ? { understanding } : {}),
+      ...(tone ? { tone } : {}),
     },
   );
   return { messages, format };
@@ -487,6 +498,15 @@ export async function runStructuredTurn(
     };
   }
   const spokenPhrases: string[] = [];
+  // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
+  // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
+  let replyTone: string | null = null;
+  let toneSent = false;
+  const toneForNextPhrase = (): { tone?: string } => {
+    if (toneSent || !replyTone || replyTone === 'none') return {};
+    toneSent = true;
+    return { tone: replyTone };
+  };
   let contextDebugEntry: DebugSpeechEntry | null = null;
   const flushSpeech = async () => {
     if (contextTts && spokenPhrases.length) {
@@ -549,7 +569,10 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)));
+      contextTts.push(
+        cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)),
+        toneForNextPhrase(),
+      );
       return;
     }
     ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
@@ -637,6 +660,7 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      replyTone ??= /"tone"\s*:\s*"([a-z]+)"/.exec(extractor.raw)?.[1] ?? null;
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
       if (!actionResult && !slotConflict && action === 'none') {

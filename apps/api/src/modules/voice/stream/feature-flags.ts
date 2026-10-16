@@ -57,6 +57,21 @@ export function isVoiceTurnJudgeEnabled(
 }
 
 /**
+ * Ton de voix ElevenLabs v4 (balise d'expression) choisi par le modèle dans une courte liste, au plus un par
+ * réponse. Seulement pour les restaurants listés (`VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS`), vide = aucun.
+ * Sans effet hors ElevenLabs Dialogue : seul ce chemin reçoit la balise.
+ */
+export function isVoiceExpressionToneEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
  * Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires…) donnés à
  * l'assistant pour qu'il réponde aux questions des appelants au lieu de botter en touche. Seulement
  * pour les restaurants listés (`VOICE_PRACTICAL_INFO_RESTAURANT_IDS`), vide = aucun.
