@@ -443,30 +443,31 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                   </section>
                 )}
                 <section className={styles.contactGroup}>
-                  {demo ? (
-                    <button
-                      type="button"
-                      disabled
-                      title="Indisponible dans la démonstration"
-                      className={styles.manageLink}
-                    >
-                      {reservation.cancellation
-                        ? 'Demander une modification'
-                        : 'Modifier ou annuler'}
-                    </button>
-                  ) : reservation.restaurantPhone ? (
-                    <a
-                      href={`tel:${reservation.restaurantPhone.replace(/[^+0-9]/g, '')}`}
-                      title="Contacter le restaurant par téléphone pour modifier ou annuler"
-                      className={cn(styles.manageLink, 'transition-all duration-200')}
-                    >
-                      {reservation.cancellation
-                        ? 'Demander une modification'
-                        : 'Modifier ou annuler'}
-                    </a>
-                  ) : (
-                    <span className={styles.manageLabel}>Modifier ou annuler</span>
-                  )}
+                  {!reservation.modification?.available &&
+                    (demo ? (
+                      <button
+                        type="button"
+                        disabled
+                        title="Indisponible dans la démonstration"
+                        className={styles.manageLink}
+                      >
+                        {reservation.cancellation
+                          ? 'Demander une modification'
+                          : 'Modifier ou annuler'}
+                      </button>
+                    ) : reservation.restaurantPhone ? (
+                      <a
+                        href={`tel:${reservation.restaurantPhone.replace(/[^+0-9]/g, '')}`}
+                        title="Contacter le restaurant par téléphone pour modifier ou annuler"
+                        className={cn(styles.manageLink, 'transition-all duration-200')}
+                      >
+                        {reservation.cancellation
+                          ? 'Demander une modification'
+                          : 'Modifier ou annuler'}
+                      </a>
+                    ) : (
+                      <span className={styles.manageLabel}>Modifier ou annuler</span>
+                    ))}
                   {demo ? (
                     <Button
                       disabled

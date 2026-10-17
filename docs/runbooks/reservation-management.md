@@ -181,7 +181,7 @@ personnel n’est pas modifie a distance.
 
 La modification respecte la limite gratuite de la reservation initiale et de la
 cible. Paiement, garantie, carte cadeau, experience, evenement, distribution,
-ancien snapshot non fiable, absence de table et validation manuelle renvoient au
+ancien snapshot non fiable, absence de table, politique financiere active au restaurant et validation manuelle renvoient au
 restaurant. Il n’y a aucun nouveau SMS ni changement du parcours financier.
 Desactiver le drapeau restaure le contact restaurant sans annuler les changements
 confirmes. Qualification locale PostgreSQL :

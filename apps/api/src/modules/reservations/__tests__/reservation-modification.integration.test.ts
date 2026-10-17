@@ -306,4 +306,36 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
       await app.close();
     }
   });
+  it('does not let a larger party bypass a newly applicable deposit policy', async () => {
+    const { row, app, post } = await fixture();
+    try {
+      const choices = await post({ action: 'modification_options', partySize: 3 });
+      const selected = choices.json().slots[0];
+      expect(selected).toBeTruthy();
+      await db.reservationPaymentPolicy.create({
+        data: {
+          restaurantId,
+          version: 1,
+          type: 'DEPOSIT',
+          amountMode: 'PER_PERSON',
+          amount: 10,
+          minPartySize: 3,
+          activeFrom: new Date(0),
+        },
+      });
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: selected.proposalToken }))
+          .statusCode,
+      ).toBe(409);
+      expect(await db.reservation.findUnique({ where: { id: row.id } })).toMatchObject({
+        startsAt: original,
+        partySize: 2,
+        tableId: small,
+      });
+      expect(await db.reservationPayment.count({ where: { reservationId: row.id } })).toBe(0);
+      expect(await db.reservationAuditLog.count({ where: { reservationId: row.id } })).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
 });

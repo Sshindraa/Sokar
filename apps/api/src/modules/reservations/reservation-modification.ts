@@ -121,6 +121,18 @@ async function context(
     restaurant.exposureSettings?.requireManualValidation
   )
     throw new ModificationConflict(contact);
+  // A larger party can newly qualify for a deposit/guarantee even without an
+  // existing payment record. Financial-policy restaurants stay with staff.
+  const now = new Date();
+  const financialPolicy = await db.reservationPaymentPolicy.findFirst({
+    where: {
+      restaurantId: row.restaurantId,
+      activeFrom: { lte: now },
+      OR: [{ activeUntil: null }, { activeUntil: { gt: now } }],
+    },
+    select: { id: true },
+  });
+  if (financialPolicy) throw new ModificationConflict(contact);
   const settings = restaurant.exposureSettings;
   return {
     restaurant,

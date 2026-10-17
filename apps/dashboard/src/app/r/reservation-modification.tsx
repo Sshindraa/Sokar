@@ -21,6 +21,8 @@ type Booking = {
   state: string;
   modification?: { available: boolean; message: string };
 };
+class ReservationRequestError extends Error {}
+
 type Slot = { time: string; proposalToken: string };
 type Options = {
   date: string;
@@ -66,7 +68,7 @@ export function ReservationModification<T extends Booking>({
     });
     const data = await response.json();
     if (!response.ok)
-      throw new Error(
+      throw new ReservationRequestError(
         typeof data.error === 'string' ? data.error : 'La demande n’a pas pu être confirmée.',
       );
     return data as R;
@@ -94,7 +96,11 @@ export function ReservationModification<T extends Booking>({
       if (current === sequence.current) setOptions(result);
     } catch (e) {
       if (current === sequence.current)
-        setError(e instanceof Error ? e.message : 'Disponibilités indisponibles.');
+        setError(
+          e instanceof ReservationRequestError
+            ? e.message
+            : 'Les disponibilités ne sont pas accessibles. Vérifiez votre connexion puis réessayez.',
+        );
     } finally {
       if (current === sequence.current) setLoading(false);
     }
@@ -138,7 +144,9 @@ export function ReservationModification<T extends Booking>({
           setOpen(false);
         } else {
           setError(
-            e instanceof Error ? e.message : 'Veuillez vérifier les disponibilités à nouveau.',
+            e instanceof ReservationRequestError
+              ? e.message
+              : 'La modification n’a pas pu être confirmée. Consultez les disponibilités à nouveau.',
           );
           setOptions(null);
           setSelected(null);

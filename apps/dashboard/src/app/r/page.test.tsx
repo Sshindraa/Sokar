@@ -259,6 +259,39 @@ describe('Ma reservation', () => {
       fetch.mock.calls.filter((call) => JSON.parse(call[1].body).action === 'modify'),
     ).toHaveLength(1);
   });
+  it('keeps an unconfirmed change visible as an error in French after a network failure', async () => {
+    const initial = { ...data, modification: { available: true, message: 'Conservée' } };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(initial))
+      .mockResolvedValueOnce(Response.json(initial))
+      .mockResolvedValueOnce(
+        Response.json({
+          date: data.date,
+          partySize: 2,
+          maxPartySize: 4,
+          slots: [{ time: '20:00', proposalToken: 'offer' }],
+          message: 'Conservée',
+        }),
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(Response.json(initial));
+    vi.stubGlobal('fetch', fetch);
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la réservation' }));
+    fireEvent.click(await screen.findByRole('radio', { name: '20:00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vérifier ce changement' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer la modification' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'La modification n’a pas pu être confirmée',
+    );
+    expect(screen.getByText('19:00')).toBeInTheDocument();
+    expect(
+      fetch.mock.calls.filter((call) => JSON.parse(call[1].body).action === 'modify'),
+    ).toHaveLength(1);
+  });
   it('shows an expired link without disclosing stale details', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     render(<Page />);
