@@ -60,8 +60,10 @@ export function formatOpeningHours(hours: unknown): string {
 }
 
 /**
- * Genre de la voix de l'agent. La voix par défaut est un réglage (`CARTESIA_VOICE_GENDER`, son genre est dans les
- * métadonnées Cartesia de `CARTESIA_VOICE_ID`) ; une voix propre au restaurant (`voiceIdCa`) a un genre inconnu ici :
+ * Genre de la voix de l'agent. La voix par défaut est un réglage (`VOICE_GENDER`), valable quel que soit le
+ * fournisseur de synthèse : son genre se lit dans les métadonnées de la voix chez le fournisseur (chez
+ * ElevenLabs, `labels.gender` de `ELEVENLABS_TTS_VOICE_ID`). L'ancien nom `CARTESIA_VOICE_GENDER` reste lu
+ * tant que le nouveau n'est pas défini. Une voix propre au restaurant (`voiceIdCa`) a un genre inconnu ici :
  * rien n'est dit, le prompt reste neutre.
  */
 export function agentVoiceGender(
@@ -69,7 +71,7 @@ export function agentVoiceGender(
   env: NodeJS.ProcessEnv = process.env,
 ): 'masculine' | 'feminine' | undefined {
   if (personality?.voiceIdCa) return undefined;
-  const value = env.CARTESIA_VOICE_GENDER?.trim().toLowerCase();
+  const value = (env.VOICE_GENDER?.trim() || env.CARTESIA_VOICE_GENDER?.trim() || '').toLowerCase();
   return value === 'masculine' || value === 'feminine' ? value : undefined;
 }
 
