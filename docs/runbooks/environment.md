@@ -398,10 +398,13 @@ VOICE_RECOVERY_BY_MODEL="true"
 # Mesuré : médiane 430 ms, un pic à 2,98 s sur 10 relances ; le hedge à 700 ms et la bascule à 2,5 s de première
 # réponse existaient déjà, mais aucune borne ne couvrait la relance entière. Journal : source=fixed_timeout.
 VOICE_RECOVERY_MAX_WAIT_MS="2000"
-# Genre de la voix par défaut (masculine | feminine), à lire dans les métadonnées Cartesia de CARTESIA_VOICE_ID.
+# Genre de la voix par défaut (masculine | feminine), à lire dans les métadonnées de la voix chez le fournisseur
+# (ElevenLabs : champ labels.gender de ELEVENLABS_TTS_VOICE_ID). Quel que soit le fournisseur de synthèse.
 # Le prompt dit alors au modèle « Ta voix est … » pour qu'il accorde ce qui le qualifie (« Désolé » ou « Désolée »).
 # Vide : rien n'est dit. Ignoré pour un restaurant qui a sa propre voix (genre inconnu).
-CARTESIA_VOICE_GENDER=""
+# À changer avec la voix : un genre qui ne correspond plus à la voix fait accorder au mauvais genre.
+# Ancien nom CARTESIA_VOICE_GENDER : encore lu si VOICE_GENDER est absent ou vide.
+VOICE_GENDER=""
 ```
 
 #### Synthèse vocale du téléphone : Cartesia ou ElevenLabs
