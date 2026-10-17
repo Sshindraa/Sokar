@@ -45,6 +45,18 @@ const telnyx = new Proxy({} as TelnyxClient, {
 
 export default telnyx;
 
+/**
+ * Expéditeur des SMS. `TELNYX_SMS_FROM` accepte un numéro rattaché à un profil de messagerie ou un
+ * identifiant alphanumérique (« SOKAR », envoi sans réponse possible) ; à défaut, le numéro d'appel.
+ * Un numéro fixe sans profil de messagerie ne peut pas envoyer de SMS : c'est l'état constaté en
+ * production le 17/10/2026, d'où cette variable distincte de `TELNYX_FROM_NUMBER`.
+ */
+export function smsSender(environment: NodeJS.ProcessEnv = process.env): string {
+  const from = environment.TELNYX_SMS_FROM?.trim() || environment.TELNYX_FROM_NUMBER?.trim();
+  if (!from) throw new Error('TELNYX_SMS_FROM or TELNYX_FROM_NUMBER is required for SMS');
+  return from;
+}
+
 export async function sendSms(
   to: string,
   text: string,
@@ -53,7 +65,7 @@ export async function sendSms(
   const t = getTelnyx();
   const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
   const response = await t.messages.create({
-    from: process.env.TELNYX_FROM_NUMBER!,
+    from: smsSender(),
     to,
     text,
     ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
