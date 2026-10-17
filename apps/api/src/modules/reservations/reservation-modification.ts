@@ -24,7 +24,7 @@ import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-stor
 
 type ManagedRow = Reservation & CancellationReservation;
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const revision = (row: ManagedRow) =>
+const revision = (row: ManagedRow, auditCount: number) =>
   digest([
     row.id,
     row.restaurantId,
@@ -38,6 +38,7 @@ const revision = (row: ManagedRow) =>
     row.cancellationPolicySnap,
     row.giftCardRedemptionSnap,
     row._count,
+    auditCount,
   ]);
 export class ModificationConflict extends Error {}
 const contact = 'Pour modifier cette réservation, veuillez contacter le restaurant.';
@@ -174,6 +175,9 @@ export async function modificationOptions(
     defaultFloorOnly: true,
     minLeadTimeMinutes: ctx.minLeadTimeMinutes,
   });
+  // The append-only audit count detects later changes even if all fields return
+  // to their previous values. A stale confirmation must not overwrite them.
+  const auditCount = await db.reservationAuditLog.count({ where: { reservationId: row.id } });
   const slots = availability.slots.flatMap((slot) => {
     if (!slot.available) return [];
     const startsAt = zonedTimeToUtc(date, slot.time, ctx.restaurant.timezone);
@@ -191,7 +195,7 @@ export async function modificationOptions(
     if (!terms.available || !terms.deadline) return [];
     const current = reservationSelfServiceConditions(row, bearer, ctx.restaurant.timezone);
     const proposal: Proposal = {
-      revision: revision(row),
+      revision: revision(row, auditCount),
       settings: ctx.settingsHash,
       date,
       time: slot.time,
@@ -266,9 +270,12 @@ export async function confirmModification(
           include: cancellationRelations,
         });
         const ctx = await context(tx, fresh, bearer);
+        const auditCount = await tx.reservationAuditLog.count({
+          where: { reservationId: fresh.id },
+        });
         if (
           Date.now() >= proposal.expires * 1000 ||
-          revision(fresh) !== proposal.revision ||
+          revision(fresh, auditCount) !== proposal.revision ||
           ctx.settingsHash !== proposal.settings ||
           proposal.partySize > ctx.maxPartySize
         )
