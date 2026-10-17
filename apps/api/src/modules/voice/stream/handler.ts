@@ -88,7 +88,7 @@ function finalizeSessionCall(
 }
 
 export function buildInitialGreeting(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return `Bonjour, ici ${restaurantName}, je suis l'assistant virtuel du restaurant. Je vous écoute.`;
 }
 
 /**
