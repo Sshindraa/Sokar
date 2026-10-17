@@ -329,7 +329,8 @@ async function start() {
   }
 
   // Pré-génération des greetings audio par restaurant au boot.
-  // Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+  // Le greeting "Bonjour, ici {restaurant}, je suis l'assistant virtuel du restaurant. Je vous
+  // écoute." est la première
   // chose que le client entend. Sans cache, il faut ~400-800ms pour le
   // synthétiser via Cartesia. Pré-généré → cache hit instantané au runtime.
   // Fire-and-forget : ne bloque pas l'API.

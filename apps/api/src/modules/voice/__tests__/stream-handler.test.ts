@@ -101,8 +101,10 @@ import { buildInitialGreeting, registerMediaStreamRoutes } from '../stream/handl
 import { sendAudioToStt, closeStt } from '../stream/stt-bridge';
 
 describe('buildInitialGreeting', () => {
-  it('accueille naturellement sans identité virtuelle ni notice d’enregistrement', () => {
-    expect(buildInitialGreeting('Chez Michel')).toBe('Bonjour, ici Chez Michel. Je vous écoute.');
+  it('annonce l’assistant virtuel dès le décroché (règlement européen sur l’IA, article 50)', () => {
+    expect(buildInitialGreeting('Chez Michel')).toBe(
+      "Bonjour, ici Chez Michel, je suis l'assistant virtuel du restaurant. Je vous écoute.",
+    );
   });
 });
 

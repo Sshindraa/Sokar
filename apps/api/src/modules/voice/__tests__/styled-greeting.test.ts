@@ -23,10 +23,12 @@ function memoryStore(initial: Record<string, string> = {}) {
 
 const NAME = 'Little Italy';
 const FORMAL = { profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' };
-const NO_NAME = 'Bonsoir, je vous écoute.';
-const WITH_DIGIT = 'Little Italy, 20 couverts ce soir.';
-const OK_SHORT = 'Little Italy, bonsoir. Je vous écoute.';
-const OK_LONG = 'Little Italy vous souhaite la bienvenue. Je vous écoute.';
+const NO_NAME = 'Bonsoir, ici l’assistant virtuel. Je vous écoute.';
+const WITH_DIGIT = 'Little Italy, assistant virtuel, 20 couverts ce soir.';
+const OK_SHORT = 'Little Italy, bonsoir, je suis l’assistant virtuel. Je vous écoute.';
+const OK_LONG =
+  'Little Italy vous souhaite la bienvenue, ici l’assistante virtuelle de la maison. Je vous écoute.';
+const NO_DISCLOSURE = 'Little Italy, bonsoir. Je vous écoute.';
 
 describe('hasStyledGreeting', () => {
   it('le réglage par défaut garde l’accueil fixe', () => {
@@ -44,16 +46,31 @@ describe('isValidGreeting', () => {
     expect(isValidGreeting(OK_SHORT, NAME)).toBe(true);
     expect(isValidGreeting(NO_NAME, NAME)).toBe(false);
     expect(isValidGreeting(WITH_DIGIT, NAME)).toBe(false);
-    expect(isValidGreeting('Little Italy, bonsoir ! Je vous écoute.', NAME)).toBe(false);
+    expect(
+      isValidGreeting('Little Italy, assistant virtuel, bonsoir ! Je vous écoute.', NAME),
+    ).toBe(false);
     expect(isValidGreeting(`Little Italy ${'bonsoir '.repeat(30)}`, NAME)).toBe(false);
+  });
+
+  it('exige l’annonce de l’assistant virtuel (règlement européen sur l’IA)', () => {
+    expect(isValidGreeting(NO_DISCLOSURE, NAME)).toBe(false);
+    expect(isValidGreeting('Little Italy, ici l’Assistante Virtuelle. Je vous écoute.', NAME)).toBe(
+      true,
+    );
   });
 
   it('ignore la casse et les accents du nom', () => {
     expect(
-      isValidGreeting('Bonsoir, ici LE CAFÉ de Paris. Je vous écoute.', 'Le Café de Paris'),
+      isValidGreeting(
+        'Bonsoir, ici LE CAFÉ de Paris, votre assistant virtuel. Je vous écoute.',
+        'Le Café de Paris',
+      ),
     ).toBe(true);
     expect(
-      isValidGreeting('Bonsoir, ici le cafe de paris. Je vous écoute.', 'Le Café de Paris'),
+      isValidGreeting(
+        'Bonsoir, ici le cafe de paris, votre assistant virtuel. Je vous écoute.',
+        'Le Café de Paris',
+      ),
     ).toBe(true);
   });
 });
@@ -174,6 +191,6 @@ describe('greetingCacheKey', () => {
       greetingCacheKey(NAME, { profileType: 'GASTRONOMIQUE', fillerStyle: 'WARM' }),
     );
     expect(greetingCacheKey(NAME, FORMAL)).not.toBe(greetingCacheKey('Chez Marcel', FORMAL));
-    expect(greetingCacheKey(NAME, FORMAL).startsWith('greeting:v2:')).toBe(true);
+    expect(greetingCacheKey(NAME, FORMAL).startsWith('greeting:v3:')).toBe(true);
   });
 });
