@@ -11,6 +11,7 @@ import { voiceConfig } from '../../../env';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
 import { personalityStyleLines } from '../prompts';
+import { AGENT_NAME, AGENT_TITLE } from '../agent-identity';
 
 export interface GreetingStyle {
   profileType?: string;
@@ -62,20 +63,22 @@ export function greetingCacheKey(restaurantName: string, style: GreetingStyle): 
     personalityStyleLines(style).join('\n'),
   ].join('|');
   const digest = crypto.createHash('sha256').update(material).digest('hex').slice(0, 24);
-  return `greeting:v3:${digest}`;
+  return `greeting:v4:${digest}`;
 }
 
 /**
- * Contrôles de structure : le nom y est, l'accueil annonce l'assistant virtuel (règlement européen
- * sur l'IA, article 50 : l'appelant doit savoir qu'il parle à une IA), la phrase reste courte, sans
- * chiffre ni point d'exclamation. Sans l'annonce, l'accueil fixe est utilisé.
+ * Contrôles de structure : le nom y est, l'accueil présente l'assistante et dit qu'elle est une IA
+ * (règlement européen sur l'IA, article 50 : l'appelant doit savoir qu'il parle à une IA), la phrase
+ * reste courte, sans chiffre ni point d'exclamation. Sans l'annonce, l'accueil fixe est utilisé.
  */
 export function isValidGreeting(text: string, restaurantName: string): boolean {
   const trimmed = text.trim();
-  if (trimmed.length < 12 || trimmed.length > 180) return false;
+  if (trimmed.length < 12 || trimmed.length > 150) return false;
   if (/[\d!\n]/.test(trimmed)) return false;
   if ((trimmed.match(/[.?]/g) ?? []).length > 3) return false;
-  if (!/assistante? virtuel(?:le)?/.test(fold(trimmed))) return false;
+  const folded = fold(trimmed);
+  if (!/\bassistante? (?:ia|virtuel(?:le)?)\b/.test(folded)) return false;
+  if (!folded.includes(fold(AGENT_NAME))) return false;
   return fold(trimmed).includes(fold(restaurantName));
 }
 
@@ -121,8 +124,8 @@ const GREETING_FORMAT = {
 
 export function greetingInstructions(style: GreetingStyle): string {
   return [
-    "Tu écris l'accueil téléphonique d'un restaurant : la phrase que l'assistant virtuel de la maison prononce au décroché, avant que l'appelant ne parle.",
-    "Elle nomme le restaurant exactement tel qu'il s'appelle, sans rien y ajouter, et dit que c'est l'assistant virtuel qui répond, avec les mots « assistant virtuel » : l'appelant doit savoir qu'il parle à une IA. Elle est naturelle et dans le registre de la maison décrit ci-dessous. Elle ne donne aucune information (horaire, prix) et n'indique aucune procédure à l'appelant. Une ou deux phrases courtes, toujours au vouvoiement.",
+    `Tu écris l'accueil téléphonique d'un restaurant : la phrase que ${AGENT_NAME}, ${AGENT_TITLE} de la maison, prononce au décroché, avant que l'appelant ne parle.`,
+    `Elle nomme le restaurant exactement tel qu'il s'appelle, sans rien y ajouter, et ${AGENT_NAME} s'y présente comme ${AGENT_TITLE}, avec les mots « assistante IA » : l'appelant doit savoir qu'il parle à une IA. Elle est naturelle, courte et dans le registre de la maison décrit ci-dessous. Elle ne donne aucune information (horaire, prix) et n'indique aucune procédure à l'appelant. Une ou deux phrases courtes, toujours au vouvoiement.`,
     'Le registre de la maison :',
     ...personalityStyleLines(style).map((line) => `- ${line}`),
     "Produis trois variantes réellement différentes entre elles, puis donne le numéro (1, 2 ou 3) de celle qui sonnerait le mieux au téléphone pour cette maison. Réponds uniquement par l'objet demandé.",

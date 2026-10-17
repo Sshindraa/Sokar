@@ -21,6 +21,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import { buildFixedGreeting } from '../agent-identity';
 import '@fastify/websocket';
 import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
@@ -88,7 +89,7 @@ function finalizeSessionCall(
 }
 
 export function buildInitialGreeting(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}, je suis l'assistant virtuel du restaurant. Je vous écoute.`;
+  return buildFixedGreeting(restaurantName);
 }
 
 /**
