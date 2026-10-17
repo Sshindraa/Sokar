@@ -238,6 +238,15 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Solde Telnyx et quota ElevenLabs : à zéro, plus de ligne ou plus de voix. Lecture horaire.
+  await register('provider-balance/hourly', () =>
+    queues.providerBalance.upsertJobScheduler(
+      'provider-balance-hourly',
+      { pattern: '25 * * * *', tz: 'Europe/Paris' },
+      { name: 'check-balances' },
+    ),
+  );
+
   // Les enregistrements sont privés et temporaires : purge quotidienne
   // des objets dont la rétention applicative est arrivée à échéance.
   await register('telnyx-webhooks/recordings-purge', () =>

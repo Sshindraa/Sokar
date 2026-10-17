@@ -145,6 +145,15 @@ export const queues = {
       removeOnFail: 100,
     },
   }),
+  providerBalance: new Queue('provider-balance', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 24,
+      removeOnFail: 100,
+    },
+  }),
   openrouterCredit: new Queue('openrouter-credit', {
     connection: redisQueue,
     defaultJobOptions: {
