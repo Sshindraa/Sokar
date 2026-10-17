@@ -1,3 +1,9 @@
+import {
+  modificationAccess,
+  modificationOptions,
+  confirmModification,
+  ModificationConflict,
+} from './reservation-modification';
 import { CustomerService } from '../customers/customer.service';
 import { deactivateMarketingConversions } from '../marketing/marketing-attribution.service';
 import { Prisma } from '@prisma/client';
@@ -38,9 +44,11 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
       const input = z
         .object({
           token: z.string().max(100),
-          action: z.enum(['view', 'withdraw_whatsapp', 'cancel']),
+          action: z.enum(['view', 'withdraw_whatsapp', 'cancel', 'modification_options', 'modify']),
           confirmed: z.boolean().optional(),
           confirmationToken: z.string().max(80).optional(),
+          proposalToken: z.string().max(1500).optional(),
+          partySize: z.number().int().min(1).max(50).optional(),
         })
         .strict()
         .safeParse(req.body);
@@ -50,6 +58,13 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
         (input.data.confirmed !== true || !input.data.confirmationToken)
       )
         return reply.code(400).send({ error: 'Veuillez confirmer explicitement l’annulation.' });
+      if (
+        input.data.action === 'modify' &&
+        (input.data.confirmed !== true || !input.data.proposalToken)
+      )
+        return reply.code(400).send({ error: 'Veuillez confirmer explicitement la modification.' });
+      if (input.data.action === 'modification_options' && !input.data.partySize)
+        return reply.code(400).send({ error: 'Veuillez choisir le nombre de personnes.' });
       const parsed = parseReservationManagementToken(input.data.token);
       if (!parsed) return reply.code(404).send({ error: 'Lien invalide ou expiré.' });
       try {
@@ -58,12 +73,40 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
           include: {
             ...cancellationRelations,
             restaurant: {
-              select: { name: true, timezone: true, phoneNumber: true, formattedAddress: true },
+              select: {
+                name: true,
+                timezone: true,
+                phoneNumber: true,
+                formattedAddress: true,
+                exposureSettings: { select: { requireManualValidation: true } },
+              },
             },
           },
         });
         if (!row || !verifyReservationManagementToken(input.data.token, row))
           return reply.code(404).send({ error: 'Lien invalide ou expiré.' });
+        if (input.data.action === 'modification_options')
+          return reply.send(
+            await modificationOptions(db, row, input.data.token, input.data.partySize!),
+          );
+        if (input.data.action === 'modify') {
+          await confirmModification(db, row, input.data.token, input.data.proposalToken!);
+          row = await db.reservation.findUniqueOrThrow({
+            where: { id: row.id, restaurantId: row.restaurantId },
+            include: {
+              ...cancellationRelations,
+              restaurant: {
+                select: {
+                  name: true,
+                  timezone: true,
+                  phoneNumber: true,
+                  formattedAddress: true,
+                  exposureSettings: { select: { requireManualValidation: true } },
+                },
+              },
+            },
+          });
+        }
         if (input.data.action === 'cancel') {
           const initial = row;
           const lifecycle = new ReservationLifecycleService(db);
@@ -77,7 +120,13 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
               include: {
                 ...cancellationRelations,
                 restaurant: {
-                  select: { name: true, timezone: true, phoneNumber: true, formattedAddress: true },
+                  select: {
+                    name: true,
+                    timezone: true,
+                    phoneNumber: true,
+                    formattedAddress: true,
+                    exposureSettings: { select: { requireManualValidation: true } },
+                  },
                 },
               },
             });
@@ -175,13 +224,19 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
           partySize: row.partySize,
           state: row.state,
           cancellation: cancellationOffer(row, input.data.token, row.restaurant.timezone),
+          modification: modificationAccess(
+            row,
+            input.data.token,
+            row.restaurant.timezone,
+            row.restaurant.exposureSettings?.requireManualValidation,
+          ),
           whatsappReminder: {
             visible: row.channel === 'WEB' && (whatsapp || 'whatsappConsentProof' in consents),
             enabled: input.data.action === 'withdraw_whatsapp' ? false : whatsapp,
           },
         });
       } catch (error) {
-        if (error instanceof CancellationConflict)
+        if (error instanceof CancellationConflict || error instanceof ModificationConflict)
           return reply.code(409).send({ error: error.message });
         return reply.code(503).send({ error: 'Service indisponible. Veuillez réessayer.' });
       }

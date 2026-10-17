@@ -43,6 +43,38 @@ describe('reservation management proxy', () => {
     );
   });
 
+  it('forwards confirmed modifications and bounded availability searches without identity', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ state: 'CONFIRMED' }));
+    vi.stubGlobal('fetch', fetchMock);
+    for (const body of [
+      { token: 'fixture', action: 'modification_options', partySize: 3 },
+      { token: 'fixture', action: 'modify', confirmed: true, proposalToken: 'offer' },
+    ]) {
+      expect(
+        (await POST(request(JSON.stringify({ ...body, customerName: 'discarded' })))).status,
+      ).toBe(200);
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ body: JSON.stringify(body) }),
+      );
+    }
+    expect(
+      (
+        await POST(
+          request(JSON.stringify({ token: 'fixture', action: 'modify', proposalToken: 'offer' })),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await POST(
+          request(
+            JSON.stringify({ token: 'fixture', action: 'modification_options', partySize: 51 }),
+          ),
+        )
+      ).status,
+    ).toBe(400);
+  });
   it('does not expose upstream errors or the token', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('private credential')));
     const response = await POST(request(JSON.stringify({ token: 'fixture', action: 'view' })));

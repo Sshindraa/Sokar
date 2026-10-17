@@ -146,3 +146,44 @@ Le carton affiche l’etat serveur, y compris apres rechargement ; le calendrier
 n’est plus propose. Un evenement deja importe dans un calendrier personnel ne
 peut pas etre supprime a distance. Apres une reponse perdue, le client relit
 l’etat avant d’annoncer le resultat. Aucun nouveau SMS n’est envoye par ce flux.
+
+## Modification autonome (drapeau distinct, desactive par defaut)
+
+`RESERVATION_SELF_MODIFICATION_ENABLED=true` expose « Modifier la reservation »
+dans le panneau existant. Choisir un nombre de personnes, puis une heure
+**le meme jour**, verifier l’ancien et le nouveau choix, confirmer explicitement.
+Aucun changement de date dans cette premiere version. Aucune modification ni
+hold temporaire n’est cree pendant la consultation ou la fermeture du dialogue.
+
+Le POST `modification_options` demande un nombre de personnes borne (1..50,
+limite du restaurant appliquee). Les heures proviennent du moteur de disponibilite
+existant, des horaires/fuseau, duree, delai minimum en ligne, tables physiques et
+holds actifs. Seule la reservation porteuse est exclue des conflits ; cette lecture
+ignore le cache public et ne peut pas y publier une disponibilite personnelle.
+Une heure identique reste proposable pour un autre nombre de personnes.
+
+Chaque choix porte une proposition HMAC de 10 minutes maximum, sans PII, liee
+au porteur, aux details initiaux, aux reglages et au nouveau creneau/groupe.
+Le POST `modify` exige `confirmed=true` et cette proposition. Le service de
+modification existant verrouille la capacite du restaurant puis la reservation,
+reverifie la proposition et les conditions, les horaires et la capacite reelle,
+alloue une table compatible puis remplace les champs dans la meme transaction.
+Une place prise entre-temps produit un conflit : l’ancienne reservation/table
+reste intacte. L’audit `reservation_fields_changed` conserve un digest de la
+proposition pour reconnaitre un replay ; jamais le lien, le token ou l’identite.
+
+L’identifiant et le lien initial restent valables. Le statut et les conditions
+figees sont conserves ; le cache de disponibilite est invalide. La synchronisation
+Google Calendar du writer existant est conservee. Le carton est actualise apres
+reponse serveur ; une reponse perdue declenche une relecture, jamais un second
+envoi aveugle. Un evenement deja importe manuellement dans un calendrier
+personnel n’est pas modifie a distance.
+
+La modification respecte la limite gratuite de la reservation initiale et de la
+cible. Paiement, garantie, carte cadeau, experience, evenement, distribution,
+ancien snapshot non fiable, absence de table et validation manuelle renvoient au
+restaurant. Il n’y a aucun nouveau SMS ni changement du parcours financier.
+Desactiver le drapeau restaure le contact restaurant sans annuler les changements
+confirmes. Qualification locale PostgreSQL :
+`RESERVATION_MODIFICATION_INT_TESTS=1` (base loopback obligatoire) ; les memes
+tests font partie de `AGENTIC_INT_TESTS=1` en CI.

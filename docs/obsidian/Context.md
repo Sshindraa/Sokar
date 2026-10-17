@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] Annulation autonome : conditions onboarding figees, confirmation et capacite qualifiees en local ; flag off. Livrer puis qualifier staging. Apres delai : contact, aucun frais automatique.
+- [ ] Gestion client : annulation #485 active/qualifiee staging ; modification en cours (choix reels, remplacement atomique). Apres delai/contact ; liens off prod.
 
 - [ ] Ops Resend : correctif isole `codex/resend-alert-regulation` (debit Redis commun, e-mails system-health groupes). Coordination serveur/GitHub configuree ; cle staging dediee Sending access/sokar.tech autorisee et configuree, envoi technique fournisseur accepte. Livrer par CI/staging/smoke avant production ; aucune migration. Voir `docs/runbooks/resend-alert-regulation.md`.
 

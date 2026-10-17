@@ -65,9 +65,9 @@ function signature(row: CancellationReservation, bearer: string, expires: string
     .digest();
 }
 
-export function cancellationOffer(
+export function reservationSelfServiceConditions(
   row: CancellationReservation,
-  bearer: string,
+  _bearer: string,
   timezone: string,
   now = new Date(),
 ): CancellationOffer {
@@ -81,8 +81,6 @@ export function cancellationOffer(
   if (row.state === 'CANCELLED') return unavailable('Votre réservation est annulée.');
   if (!['CONFIRMED', 'PENDING'].includes(row.state))
     return unavailable('Pour cette réservation, veuillez contacter le restaurant.');
-  if (process.env.RESERVATION_SELF_CANCELLATION_ENABLED !== 'true')
-    return unavailable('Pour annuler, veuillez contacter le restaurant.');
   if (
     !row._count ||
     Object.values(row._count).some((count) => count > 0) ||
@@ -114,14 +112,34 @@ export function cancellationOffer(
     timeStyle: 'short',
     timeZone: timezone,
   }).format(cutoff);
-  const expires = String(
-    Math.floor(Math.min(now.getTime() + 10 * 60_000, cutoff.getTime()) / 1000),
-  );
   return {
     available: true,
     deadline,
     terms: policy.data.terms,
     message: `Annulation gratuite possible jusqu’au ${label}. Après cette limite, veuillez contacter le restaurant.`,
+  };
+}
+
+export function cancellationOffer(
+  row: CancellationReservation,
+  bearer: string,
+  timezone: string,
+  now = new Date(),
+): CancellationOffer {
+  const offer = reservationSelfServiceConditions(row, bearer, timezone, now);
+  if (!['PENDING', 'CONFIRMED'].includes(row.state)) return offer;
+  if (process.env.RESERVATION_SELF_CANCELLATION_ENABLED !== 'true')
+    return {
+      ...offer,
+      available: false,
+      message: 'Pour annuler, veuillez contacter le restaurant.',
+    };
+  if (!offer.available || !offer.deadline) return offer;
+  const expires = String(
+    Math.floor(Math.min(now.getTime() + 10 * 60_000, Date.parse(offer.deadline)) / 1000),
+  );
+  return {
+    ...offer,
     confirmationToken: `${expires}.${signature(row, bearer, expires).toString('base64url')}`,
   };
 }

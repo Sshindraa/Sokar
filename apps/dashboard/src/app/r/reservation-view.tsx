@@ -24,6 +24,7 @@ import {
 import { SokarLogo } from '@/components/SokarLogo';
 import { cn } from '@/lib/utils';
 import styles from './reservation-view.module.css';
+import { ReservationModification } from './reservation-modification';
 
 type Reservation = {
   restaurantName: string;
@@ -42,6 +43,7 @@ type Reservation = {
     terms?: string;
     confirmationToken?: string;
   };
+  modification?: { available: boolean; message: string };
   whatsappReminder: { visible: boolean; enabled: boolean };
 };
 const STATES: Record<string, string> = {
@@ -233,6 +235,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
 
   const bookingDate = reservation ? new Date(`${reservation.date}T12:00:00Z`) : null;
   const confirmed = reservation?.state === 'CONFIRMED';
+  const renderedToken = token.current;
   const terminal = ['CANCELLED', 'EXPIRED', 'FAILED', 'NO_SHOW'].includes(reservation?.state ?? '');
   const StatusIcon = confirmed ? Check : terminal ? CircleX : CircleDashed;
 
@@ -408,6 +411,17 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                       </p>
                     )}
                   </details>
+                )}
+                {reservation.modification?.available && !terminal && (
+                  <ReservationModification
+                    booking={reservation}
+                    token={renderedToken}
+                    disabled={busy}
+                    terms={reservation.cancellation?.terms}
+                    onUpdated={(updated) => {
+                      if (token.current === renderedToken) setReservation(updated);
+                    }}
+                  />
                 )}
                 {reservation.cancellation && !terminal && (
                   <section aria-label="Conditions d’annulation" className="space-y-3 text-sm">

@@ -57,6 +57,27 @@ function makeService(blocker = false) {
 }
 
 describe('MCP reservation modification', () => {
+  it('checks adapter authorization under locks before any mutation', async () => {
+    const { service, tx } = makeService();
+    const beforeModify = vi.fn(async () => {
+      throw new Error('Stale proposal');
+    });
+    await expect(
+      service.modifyReservation({
+        reservationId,
+        restaurantId,
+        actor: 'customer:personal-link',
+        publicClient: false,
+        partySize: 3,
+        beforeModify,
+      }),
+    ).rejects.toThrow('Stale proposal');
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(beforeModify).toHaveBeenCalledWith(tx, expect.objectContaining({ id: reservationId }));
+    expect(tx.reservation.update).not.toHaveBeenCalled();
+    expect(tx.reservationAuditLog.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a different client before writing', async () => {
     const { service, tx } = makeService();
     await expect(
