@@ -168,12 +168,13 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Mode demo local/staging : sans Clerk, NEXT_PUBLIC_DEMO_RESTAURANT_ID
+  // agit comme un orgId forcé. On affiche les données de démo pour que le
+  // dashboard reste utilisable sans session réelle ; les widgets qui appellent l'API restent masqués.
+  const isDemo = !orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID;
 
   useEffect(() => {
-    // Mode demo local/staging : sans Clerk, NEXT_PUBLIC_DEMO_RESTAURANT_ID
-    // agit comme un orgId forcé. On affiche les données de démo pour que le
-    // dashboard reste utilisable sans session réelle.
-    if (!orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) {
+    if (isDemo) {
       const demoAnalytics = DEMO_ANALYTICS_BY_PERIOD[period];
       const demoStats = summarizeAnalytics(demoAnalytics);
       setStats(demoStats);
@@ -221,7 +222,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [get, orgId, period, refreshNonce]);
+  }, [get, isDemo, orgId, period, refreshNonce]);
 
   const hasData = useMemo(
     () =>
@@ -308,7 +309,7 @@ export default function DashboardPage() {
         <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
       )}
 
-      {!error && <EmptySlotsWidget />}
+      {!error && !isDemo && <EmptySlotsWidget />}
 
       {!error && hasData && (
         <section
@@ -343,7 +344,7 @@ export default function DashboardPage() {
 
       {!error && hasData && <DashboardCharts analytics={analytics} />}
 
-      <NoShowWidget />
+      {!isDemo && <NoShowWidget />}
     </div>
   );
 }
