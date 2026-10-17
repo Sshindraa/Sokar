@@ -157,4 +157,23 @@ describe('CustomerDuplicatesPage', () => {
     );
     expect(screen.queryByText('CUSTOMER_NOT_ACTIVE')).toBeNull();
   });
+
+  it('amène à l’aperçu de fusion quand il s’affiche sous la liste (petits écrans)', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi
+      .fn()
+      .mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
+    try {
+      render(<CustomerDuplicatesPage />);
+      await screen.findByText('Deux profils qui se ressemblent');
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
+
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
 });

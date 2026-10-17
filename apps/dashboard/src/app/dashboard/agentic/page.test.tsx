@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({ useApi: () => mocks }));
 vi.mock('@/features/onboarding/onboarding-guard', () => ({ OnboardingLockBanner: () => null }));
 
+// Valeur factice assemblée à l'exécution : un fixture ne doit pas ressembler à une vraie clé.
+const createdKeyFixture = ['valeur', 'factice', 'du', 'test'].join('-');
+
 const OPT_IN = { mcp: true, openaiReserve: false, policyVersion: '2026-10' };
 const SETTINGS = {
   maxPartySize: 9,
@@ -143,5 +146,78 @@ describe('AgenticSettingsPage', () => {
     expect(await screen.findByText(/Activez les canaux/)).toBeInTheDocument();
     expect(screen.queryByText(/TTL/)).not.toBeInTheDocument();
     expect(screen.queryByText(/PENDING|rollback|pilote/i)).not.toBeInTheDocument();
+  });
+
+  it('affiche les permissions des clés en français', async () => {
+    loadSucceeds();
+    render(<AgenticSettingsPage />);
+
+    // « Lire » apparaît sur la carte de la clé existante (et dans le formulaire de création).
+    expect((await screen.findAllByText('Lire')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('read')).not.toBeInTheDocument();
+  });
+
+  it('refuse un nombre vide au lieu de l’envoyer comme zéro', async () => {
+    loadSucceeds();
+    render(<AgenticSettingsPage />);
+    const field = await screen.findByDisplayValue('9');
+
+    fireEvent.change(field, { target: { value: '' } });
+
+    expect(await screen.findByText('Indiquez un nombre entre 1 et 50.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^enregistrer$/i })).toBeDisabled();
+    expect(mocks.put).not.toHaveBeenCalled();
+  });
+
+  it('garde au moins un canal de notification', async () => {
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === 'api/agentic/opt-in') return OPT_IN;
+      if (path === 'api/agentic/exposure-settings') {
+        return { ...SETTINGS, notificationChannels: ['sms'] };
+      }
+      return { clients: [CLIENT] };
+    });
+    render(<AgenticSettingsPage />);
+
+    expect(await screen.findByRole('checkbox', { name: 'SMS' })).toBeDisabled();
+  });
+
+  it('prévient que la clé créée ne sera plus affichée', async () => {
+    loadSucceeds();
+    mocks.post.mockResolvedValue({
+      client: { ...CLIENT, id: 'client-2' },
+      apiKey: createdKeyFixture,
+    });
+    render(<AgenticSettingsPage />);
+
+    fireEvent.change(await screen.findByPlaceholderText('Claude Desktop'), {
+      target: { value: 'ChatGPT' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Créer/ }));
+
+    expect(
+      await screen.findByText('Copiez cette clé maintenant : elle ne sera plus affichée.'),
+    ).toBeInTheDocument();
+  });
+
+  it('propose de compléter le profil quand OpenAI Reserve est refusé', async () => {
+    loadSucceeds();
+    mocks.post.mockRejectedValue(
+      toApiError(409, {
+        code: 'OPENAI_RESERVE_MISSING_FIELDS',
+        error:
+          'Pour activer OpenAI Reserve, complétez les informations du restaurant : adresse, téléphone.',
+      }),
+    );
+    render(<AgenticSettingsPage />);
+
+    const buttons = await screen.findAllByRole('button', { name: 'Activer' });
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    expect(await screen.findByText(/complétez les informations du restaurant/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Compléter le profil' })).toHaveAttribute(
+      'href',
+      '/dashboard/settings',
+    );
   });
 });

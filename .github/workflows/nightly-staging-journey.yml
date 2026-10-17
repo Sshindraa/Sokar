@@ -1,0 +1,29 @@
+name: Nightly staging journey
+
+# Parcours réel sur le site de test chaque nuit, hors déploiement : santé (workers compris),
+# disponibilités, créneau gardé (expire seul), facturation, MCP et pages publiques. Un échec
+# signale une dérive de configuration ou de fournisseur avant qu'un client ne la rencontre.
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-staging-journey
+  cancel-in-progress: false
+
+jobs:
+  journey:
+    name: Parcours staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Parcours de bout en bout
+        run: node scripts/quality/staging-journey.mjs
