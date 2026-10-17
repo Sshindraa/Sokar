@@ -35,6 +35,7 @@ import '../shared/queue/workers/alert-evaluation.worker';
 import '../shared/queue/workers/system-health.worker';
 import '../shared/queue/workers/elevenlabs-subscription.worker';
 import '../shared/queue/workers/openrouter-credit.worker';
+import '../shared/queue/workers/provider-balance.worker';
 import '../modules/marketing/marketing-campaign.worker';
 import '../modules/marketing/marketing-automation.worker';
 import '../modules/marketing/marketing-provider-reconciliation.worker';
