@@ -8,8 +8,8 @@ telephone desactive. Le retrait est simule en memoire et recharger reinitialise
 la demonstration. Route refusee hors NODE_ENV=development (404 en production).
 
 Parcours unique `/r#JETON` : consulter la reservation et retirer l'accord de
-rappel WhatsApp, sans compte. Modifier/annuler utilise le telephone public du
-restaurant, pas une mutation automatique de reservation. Telephone : aucune
+rappel WhatsApp, sans compte. La modification utilise le telephone public du restaurant. L’annulation autonome
+est disponible sous un drapeau distinct, selon les conditions ci-dessous. Telephone : aucune
 nouvelle question WhatsApp, aucun rappel SMS supplementaire.
 
 Le lot de qualification ajoute le lien au SMS de confirmation existant.
@@ -111,3 +111,38 @@ jamais le contenu, le lien ou les numeros. Ne jamais renvoyer un SMS sur la seul
 absence d’accuse. Un statut `delivery_failed` ne libere pas le claim d’envoi.
 La preuve finale ajoute la reception rapportee par la personne, puis l’ouverture
 du carton, l’import calendrier et l’itineraire sur son telephone.
+
+## Annulation autonome (drapeau desactive par defaut)
+
+`RESERVATION_SELF_CANCELLATION_ENABLED=true` ajoute une offre d’annulation au
+DTO public et le bouton « Annuler la reservation » dans « Modifier ou annuler ».
+Le client voit les conditions puis confirme explicitement dans un dialogue.
+La fermeture du dialogue et la lecture du lien ne modifient rien.
+
+L’onboarding stocke actuellement `capacitySpecials.cancellationPolicy` en texte.
+Les nouveaux snapshots de reservation figent les presets exacts 2/24/48 heures,
+leur texte et la version (`source=onboarding-v1`). Les creations voix et agentic/
+Connect les enregistrent. Le delai fixe historique de deux heures ne doit pas
+servir a autoriser une annulation : anciens snapshots sans source fiable,
+conditions absentes/libres, absence d’annulation gratuite, acomptes/garanties,
+cartes cadeaux, experiences, evenements et distribution externe renvoient au
+restaurant. Aucune condition actuelle n’est retroactive sur une ancienne resa.
+
+Avant le delai : annulation gratuite. A la limite exacte ou apres : contact
+restaurant ; aucune perception de frais ni remboursement automatique. Le texte
+« gratuite jusqu’a » ne definit pas de montant ni une instruction de paiement.
+Le parcours financier d’annulation tardive reste a definir avant activation.
+
+Le POST `cancel` exige `confirmed=true` et un `confirmationToken` HMAC emis a la
+lecture (10 minutes maximum, jamais au-dela du delai). Sous verrou PostgreSQL,
+le serveur reverifie le porteur, le restaurant, l’etat, le creneau, les couverts,
+les conditions et les liens financiers. Puis le writer canonique enregistre
+CANCELLED pour state/status et un audit sans PII. La capacite derivee exclut la
+reservation annulee et le cache de disponibilite est invalide. Le tableId reste
+une trace historique. Les projections CRM/marketing sont rejouables.
+
+Un replay d’annulation deja terminee ne fait pas de seconde mutation/audit.
+Le carton affiche l’etat serveur, y compris apres rechargement ; le calendrier
+n’est plus propose. Un evenement deja importe dans un calendrier personnel ne
+peut pas etre supprime a distance. Apres une reponse perdue, le client relit
+l’etat avant d’annoncer le resultat. Aucun nouveau SMS n’est envoye par ce flux.

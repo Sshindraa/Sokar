@@ -447,7 +447,7 @@ export class ReservationService {
             createdByClient: input.actor,
             cancellationPolicySnap: input.cancellationPolicySnap
               ? (input.cancellationPolicySnap as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+              : (input.policy.cancellation as Prisma.InputJsonValue),
             noShowPolicySnap: input.noShowPolicySnap
               ? (input.noShowPolicySnap as Prisma.InputJsonValue)
               : Prisma.JsonNull,

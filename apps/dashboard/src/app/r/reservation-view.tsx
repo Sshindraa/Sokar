@@ -13,6 +13,14 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { SokarLogo } from '@/components/SokarLogo';
 import { cn } from '@/lib/utils';
 import styles from './reservation-view.module.css';
@@ -27,6 +35,13 @@ type Reservation = {
   time: string;
   partySize: number;
   state: string;
+  cancellation?: {
+    available: boolean;
+    deadline: string | null;
+    message: string;
+    terms?: string;
+    confirmationToken?: string;
+  };
   whatsappReminder: { visible: boolean; enabled: boolean };
 };
 const STATES: Record<string, string> = {
@@ -47,10 +62,13 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [withdrawn, setWithdrawn] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const cancelInFlight = useRef(false);
 
   const demoEnabled = useRef(true);
   const request = useCallback(
-    async (action: 'view' | 'withdraw_whatsapp') => {
+    async (action: 'view' | 'withdraw_whatsapp' | 'cancel', confirmationToken?: string) => {
       if (demo) {
         if (action === 'withdraw_whatsapp') demoEnabled.current = false;
         return {
@@ -69,7 +87,11 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
       const response = await fetch('/api/reservation-management', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.current, action }),
+        body: JSON.stringify({
+          token: token.current,
+          action,
+          ...(action === 'cancel' ? { confirmed: true, confirmationToken } : {}),
+        }),
         cache: 'no-store',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
@@ -91,6 +113,8 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
     setError('');
     setReservation(null);
     setWithdrawn(false);
+    setCancelOpen(false);
+    setCancelError('');
     setBusy(false);
     token.current = window.location.hash.slice(1);
     const currentToken = token.current;
@@ -131,6 +155,43 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
       if (currentToken === token.current)
         setError('Le retrait n’a pas pu être confirmé. Veuillez réessayer.');
     } finally {
+      if (currentToken === token.current) setBusy(false);
+    }
+  }
+
+  async function cancelReservation() {
+    const offer = reservation?.cancellation;
+    if (cancelInFlight.current || busy || !offer?.available || !offer.confirmationToken) return;
+    cancelInFlight.current = true;
+    setBusy(true);
+    setCancelError('');
+    const currentToken = token.current;
+    try {
+      const current = await request('cancel', offer.confirmationToken);
+      if (currentToken === token.current) {
+        setReservation(current);
+        setCancelOpen(false);
+      }
+    } catch {
+      // A timeout can happen after the commit: read the actual state before offering a retry.
+      try {
+        const current = await request('view');
+        if (currentToken === token.current) {
+          setReservation(current);
+          if (current.state === 'CANCELLED') setCancelOpen(false);
+          else
+            setCancelError(
+              'L’annulation n’a pas été confirmée. Vérifiez les conditions puis réessayez.',
+            );
+        }
+      } catch {
+        if (currentToken === token.current)
+          setCancelError(
+            'Impossible de vérifier l’annulation. Vérifiez votre connexion puis rouvrez ce lien avant de réessayer.',
+          );
+      }
+    } finally {
+      cancelInFlight.current = false;
       if (currentToken === token.current) setBusy(false);
     }
   }
@@ -348,6 +409,25 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                     )}
                   </details>
                 )}
+                {reservation.cancellation && !terminal && (
+                  <section aria-label="Conditions d’annulation" className="space-y-3 text-sm">
+                    {reservation.cancellation.terms && <p>{reservation.cancellation.terms}</p>}
+                    <p className="text-muted-foreground">{reservation.cancellation.message}</p>
+                    {reservation.cancellation.available && (
+                      <Button
+                        variant="link"
+                        disabled={busy}
+                        onClick={() => {
+                          setCancelError('');
+                          setCancelOpen(true);
+                        }}
+                        className="min-h-11 px-0 transition-all duration-200"
+                      >
+                        Annuler la réservation
+                      </Button>
+                    )}
+                  </section>
+                )}
                 <section className={styles.contactGroup}>
                   {demo ? (
                     <button
@@ -356,7 +436,9 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                       title="Indisponible dans la démonstration"
                       className={styles.manageLink}
                     >
-                      Modifier ou annuler
+                      {reservation.cancellation
+                        ? 'Demander une modification'
+                        : 'Modifier ou annuler'}
                     </button>
                   ) : reservation.restaurantPhone ? (
                     <a
@@ -364,7 +446,9 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                       title="Contacter le restaurant par téléphone pour modifier ou annuler"
                       className={cn(styles.manageLink, 'transition-all duration-200')}
                     >
-                      Modifier ou annuler
+                      {reservation.cancellation
+                        ? 'Demander une modification'
+                        : 'Modifier ou annuler'}
                     </a>
                   ) : (
                     <span className={styles.manageLabel}>Modifier ou annuler</span>
@@ -413,6 +497,54 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
           </div>
         )}
       </div>
+      <Dialog
+        open={cancelOpen}
+        onOpenChange={(open) => {
+          if (!cancelInFlight.current) setCancelOpen(open);
+        }}
+      >
+        <DialogContent
+          showCloseButton={!busy}
+          className={cn(styles.page, 'max-w-sm bg-background text-foreground')}
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (busy) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Annuler votre réservation ?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {reservation?.restaurantName} · {reservation?.date} à {reservation?.time} ·{' '}
+              {reservation?.partySize} personnes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {reservation?.cancellation?.terms && <p>{reservation.cancellation.terms}</p>}
+            <p>{reservation?.cancellation?.message}</p>
+            <p>Votre table sera libérée. Cette action est définitive.</p>
+            {cancelError && <p role="alert">{cancelError}</p>}
+          </div>
+          <DialogFooter className="gap-2 sm:flex-col sm:space-x-0">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setCancelOpen(false)}
+              className="transition-all duration-200"
+            >
+              Conserver ma réservation
+            </Button>
+            <Button
+              disabled={busy || !reservation?.cancellation?.available}
+              onClick={() => void cancelReservation()}
+              className="transition-all duration-200"
+            >
+              {busy ? 'Annulation en cours…' : 'Confirmer l’annulation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

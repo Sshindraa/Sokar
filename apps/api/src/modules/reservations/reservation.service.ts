@@ -1,3 +1,4 @@
+import { snapshotCancellationPolicy } from '../../shared/reservations/cancellation-policy';
 import { db } from '../../shared/db/client';
 import {
   Prisma,
@@ -345,6 +346,10 @@ export class ReservationService {
             ...creationProjection('CONFIRMED'),
             tableId: table.id,
             estimatedRevenue: input.partySize * 35,
+            cancellationPolicySnap: snapshotCancellationPolicy(
+              restaurant.exposureSettings?.capacitySpecials,
+              'onboarding-v1',
+            ),
           },
         });
 

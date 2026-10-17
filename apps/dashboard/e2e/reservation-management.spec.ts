@@ -304,3 +304,67 @@ test('long restaurant name wraps without overlapping booking details or actions'
     });
   }
 });
+
+test('cancellation requires a second deliberate action and survives reload', async ({ page }) => {
+  test.skip(
+    !!process.env.PLAYWRIGHT_BASE_URL &&
+      !new URL(process.env.PLAYWRIGHT_BASE_URL).hostname.match(/^(localhost|127\.0\.0\.1)$/),
+    'Local mocked qualification only',
+  );
+  let cancelled = false;
+  let writes = 0;
+  await page.route('**/api/reservation-management', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === 'cancel') {
+      expect(body.confirmed).toBe(true);
+      expect(body.confirmationToken).toBe('offer');
+      writes++;
+      cancelled = true;
+    }
+    await route.fulfill({
+      json: {
+        restaurantName: 'Le Très Long Nom du Restaurant et de sa Belle Terrasse',
+        restaurantPhone: '+33100000000',
+        date: '2026-10-20',
+        time: '19:30',
+        partySize: 2,
+        startsAt: '2026-10-20T17:30:00Z',
+        endsAt: null,
+        state: cancelled ? 'CANCELLED' : 'CONFIRMED',
+        whatsappReminder: { visible: false, enabled: false },
+        cancellation: {
+          available: !cancelled,
+          deadline: '2026-10-19T17:30:00Z',
+          confirmationToken: 'offer',
+          terms: 'Annulation gratuite jusqu’à 24 heures avant le service.',
+          message: 'Après cette limite, veuillez contacter le restaurant.',
+        },
+      },
+    });
+  });
+  await page.goto(`/r#${'a'.repeat(27)}.${'b'.repeat(43)}`);
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Modifier ou annuler$/ })
+    .click();
+  await page.getByRole('button', { name: 'Annuler la réservation' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  expect(writes).toBe(0);
+  await expect(dialog).toContainText('24 heures');
+  await page.getByRole('button', { name: 'Conserver ma réservation' }).click();
+  expect(writes).toBe(0);
+  await page.getByRole('button', { name: 'Annuler la réservation' }).click();
+  await expect(dialog).toBeInViewport();
+  await expect(page.locator('body')).toHaveJSProperty(
+    'scrollWidth',
+    await page.locator('body').evaluate((node) => node.clientWidth),
+  );
+  await page.getByRole('button', { name: 'Confirmer l’annulation' }).click();
+  await expect(page.getByRole('status')).toHaveText('Annulée');
+  expect(writes).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('status')).toHaveText('Annulée');
+  expect(writes).toBe(1);
+  await expect(page.getByRole('button', { name: 'Ajouter au calendrier' })).toHaveCount(0);
+});

@@ -1075,3 +1075,8 @@ de test ; à confirmer dans le portail.
 `RESERVATION_MANAGEMENT_ENABLED` defaults to false. `RESERVATION_MANAGEMENT_SECRET` is a stable key_env secret of 32 random bytes encoded as 64 hex characters, shared by API/workers. `TELNYX_SMS_FROM` optionally selects a dedicated SMS sender (for example the alphanumeric sender already configured in the messaging profile); when unset, the historical `TELNYX_FROM_NUMBER` is preserved. Voice always keeps its existing sender. See `reservation-management.md`.
 
 `TELNYX_SMS_WEBHOOK_URL` optionally overrides delivery callbacks per SMS with `use_profile_webhooks=false`, so a staging test does not report to the shared production profile webhook. It must point to the signed `/sms/telnyx/inbound` route on the intended environment. An accepted request/message ID is not proof of handset delivery; require the matching signed `message.finalized` receipt with `delivered` status and the tester’s reception report.
+
+`RESERVATION_SELF_CANCELLATION_ENABLED` defaults to false and requires personal
+reservation management to be enabled. Enable on staging only after qualification.
+This enables free cancellation before the frozen onboarding deadline, not payment
+collection or refunds. No migration is required. Turn it off to restore phone contact.
