@@ -8,7 +8,7 @@ telephone desactive. Le retrait est simule en memoire et recharger reinitialise
 la demonstration. Route refusee hors NODE_ENV=development (404 en production).
 
 Parcours unique `/r#JETON` : consulter la reservation et retirer l'accord de
-rappel WhatsApp, sans compte. La modification utilise le telephone public du restaurant. L’annulation autonome
+rappel WhatsApp, sans compte. La modification autonome, sous son indicateur dédié, conserve la réservation initiale jusqu’à la confirmation explicite du nouveau choix ; le téléphone reste le recours hors conditions applicables. L’annulation autonome
 est disponible sous un drapeau distinct, selon les conditions ci-dessous. Telephone : aucune
 nouvelle question WhatsApp, aucun rappel SMS supplementaire.
 
@@ -50,13 +50,12 @@ La page ne promet aucun envoi SMS/e-mail dont elle n'a pas la preuve.
 
 - Jeton HMAC-SHA256, lie a la reservation, au restaurant, a sa creation et au
   telephone actuel. Aucun jeton brut ni nouvelle table en base.
-- Expiration : le plus proche entre creation + 90 jours et reservation + 7 jours. Apres un report confirme, le lien
-  initial signe suit la nouvelle echeance de reservation (toujours borne a creation
-
-* 90 jours). Le decodage differe peut resoudre un ancien jeton mais ne donne aucun
-  acces avant verification HMAC du destinataire/restaurant et de cette echeance.
-  Un changement de telephone ou une rotation de cle invalide les anciens liens.
-  Un report ne prolonge pas un lien deja distribue.
+- Expiration : le plus proche entre création + 90 jours et réservation + 7 jours.
+  Après un report confirmé, le lien initial signé suit la nouvelle échéance de
+  réservation, toujours bornée à création + 90 jours. Le décodage différé permet
+  de retrouver la réservation, sans donner accès avant la vérification HMAC du
+  destinataire, du restaurant et de cette échéance. Un changement de téléphone
+  ou une rotation de clé invalide les anciens liens.
 
 - URL reproductible, egalement retournee par Connect sur une reponse rejouee.
   Conserver le SMS donne l'acces apres fermeture de la confirmation web.
