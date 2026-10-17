@@ -27,11 +27,12 @@ type HeartbeatStore = {
 
 /** Appelé par le process workers : écrit l'heure courante chaque minute. */
 export function startWorkerHeartbeat(store: HeartbeatStore = redisCache): () => void {
-  const beat = () =>
+  const beat = (): void => {
     store.set(WORKER_HEARTBEAT_KEY, String(Date.now()), 'EX', 600).catch((error: unknown) => {
       logger.warn({ err: error }, '[watchtower] Worker heartbeat write failed');
     });
-  void beat();
+  };
+  beat();
   const timer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
   timer.unref();
   return () => clearInterval(timer);
@@ -200,10 +201,11 @@ export async function runWatchtower(
 
 /** Démarre la surveillance dans l'API ; premier passage après une période de grâce. */
 export function startWatchtower(): () => void {
-  const run = () =>
+  const run = (): void => {
     runWatchtower().catch((error: unknown) => {
       logger.warn({ err: error }, '[watchtower] Run failed');
     });
+  };
   const timer = setInterval(run, WATCH_INTERVAL_MS);
   timer.unref();
   return () => clearInterval(timer);
