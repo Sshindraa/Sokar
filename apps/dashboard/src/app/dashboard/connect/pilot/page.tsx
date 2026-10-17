@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/lib/api';
+import { ApiError } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 
 // ── Types (mirrors apps/api connect-kpis.service.ts ConnectKpis) ────────────
@@ -129,6 +130,9 @@ export default function ConnectPilotPage() {
   const [kpis, setKpis] = useState<ConnectKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Page interne : un compte restaurateur reçoit un refus. On le dit une fois, sans réessayer toutes les minutes.
+  const [forbidden, setForbidden] = useState(false);
+  const forbiddenRef = useRef(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const fetchKpis = useCallback(async () => {
@@ -139,6 +143,10 @@ export default function ConnectPilotPage() {
       setKpis(data);
     } catch (err: unknown) {
       setKpis(null);
+      if (err instanceof ApiError && (err.kind === 'forbidden' || err.kind === 'session')) {
+        forbiddenRef.current = true;
+        setForbidden(true);
+      }
       setError(
         err instanceof Error ? err.message : 'Impossible de charger les KPIs du pilote Connect.',
       );
@@ -149,7 +157,9 @@ export default function ConnectPilotPage() {
 
   useEffect(() => {
     fetchKpis();
-    const id = setInterval(fetchKpis, POLL_INTERVAL_MS);
+    const id = setInterval(() => {
+      if (!forbiddenRef.current) fetchKpis();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchKpis, refreshNonce]);
 
@@ -186,7 +196,20 @@ export default function ConnectPilotPage() {
       {/* ── Health global ───────────────────────────────────────────────── */}
       {loading && !kpis && <PilotSkeleton />}
 
-      {!loading && error && (
+      {!loading && forbidden && (
+        <section className="rounded-2xl border border-border bg-card p-6 md:p-8">
+          <h2 className="font-bold text-foreground">Page réservée à l’équipe Sokar</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ces indicateurs servent à piloter le déploiement de Connect. Vos propres statistiques de
+            réservation sont sur la page Pilotage.
+          </p>
+          <Button asChild variant="outline" size="sm" className="mt-4 transition-all duration-200">
+            <Link href="/dashboard">Aller au Pilotage</Link>
+          </Button>
+        </section>
+      )}
+
+      {!loading && error && !forbidden && (
         <section className="flex flex-col gap-4 rounded-2xl border border-destructive/25 bg-destructive/[0.04] p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 shrink-0 text-destructive" size={20} />

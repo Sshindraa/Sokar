@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useApi } from '@/lib/api';
+import { ApiError } from '@/lib/api-error';
+import { DataFetchError } from '@/components/DataFetchError';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -125,11 +127,29 @@ export default function ConnectDashboardPage() {
   const [saving, setSaving] = useState<'connectPublished' | 'connectAgentic' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // La page des KPIs du pilote est réservée à l'équipe Sokar : le lien n'existe que pour elle.
+  const [isOperator, setIsOperator] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void get<{ allowed?: boolean }>('admin/access')
+      .then((response) => {
+        if (!cancelled) setIsOperator(response.allowed === true);
+      })
+      .catch(() => {
+        // Par défaut fermé : un contrôle indisponible ne doit jamais révéler une page interne.
+        if (!cancelled) setIsOperator(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [get]);
 
   // Charge settings + score en parallèle
   const loadData = useCallback(() => {
     if (!orgId) return;
     setLoading(true);
+    setError(null);
     Promise.all([
       get<ConnectSettings>(`restaurants/${orgId}/connect`),
       get<ConnectScore>(`restaurants/${orgId}/connect/score`),
@@ -168,7 +188,14 @@ export default function ConnectDashboardPage() {
       // Recharge le score après un toggle (l'activation peut changer le contexte)
       setTimeout(() => loadData(), 500);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
+      // Publier sans adresse publique (slug) : l'API répond 409 sans texte, on dit quoi faire.
+      if (err instanceof ApiError && err.code === 'CONNECT_SLUG_REQUIRED') {
+        setError(
+          'Choisissez d’abord l’adresse publique de votre page : complétez le profil de votre restaurant dans les paramètres, puis activez Connect.',
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Erreur lors de la mise à jour');
+      }
     } finally {
       setSaving(null);
     }
@@ -217,19 +244,24 @@ export default function ConnectDashboardPage() {
               </div>
             </div>
           )}
-          <Link
-            href="/dashboard/connect/pilot"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
-          >
-            <Gauge className="h-3.5 w-3.5" />
-            KPIs pilote P1
-          </Link>
+          {isOperator && (
+            <Link
+              href="/dashboard/connect/pilot"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
+            >
+              <Gauge className="h-3.5 w-3.5" />
+              KPIs pilote P1
+            </Link>
+          )}
         </div>
       </div>
 
       {/* ── Messages ──────────────────────────────────── */}
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      {error && settings && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
@@ -378,19 +410,20 @@ export default function ConnectDashboardPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Sous-domaine gratuit (zéro configuration) */}
+              <SubdomainCard slug={settings.slug} connectPublished={settings.connectPublished} />
+
+              {/* Domaine personnalisé (P2 premium) */}
+              <CustomDomainCard
+                restaurantId={settings.restaurantId}
+                customDomain={settings.customDomain ?? null}
+                customDomainStatus={
+                  (settings.customDomainStatus as CustomDomainCardProps['customDomainStatus']) ??
+                  null
+                }
+              />
             </div>
-
-            {/* Subdomain gratuit (zero config) */}
-            <SubdomainCard slug={settings.slug} connectPublished={settings.connectPublished} />
-
-            {/* Domaine personnalisé (P2 premium) */}
-            <CustomDomainCard
-              restaurantId={settings.restaurantId}
-              customDomain={settings.customDomain ?? null}
-              customDomainStatus={
-                (settings.customDomainStatus as CustomDomainCardProps['customDomainStatus']) ?? null
-              }
-            />
 
             {/* Colonne droite : Aperçu live */}
             <Card>
@@ -516,14 +549,11 @@ export default function ConnectDashboardPage() {
           )}
         </>
       ) : (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <AlertCircle className="mx-auto h-8 w-8 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              Impossible de charger les paramètres Connect.
-            </p>
-          </CardContent>
-        </Card>
+        <DataFetchError
+          message={error || 'Impossible de charger les paramètres Connect.'}
+          onRetry={loadData}
+          retrying={loading}
+        />
       )}
     </div>
   );

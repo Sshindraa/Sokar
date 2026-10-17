@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { normalizePhone } from '@sokar/shared';
 import { useApi } from '../../../lib/api';
 import {
   getErrorMessage,
@@ -17,6 +18,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
+import { isValidPhoneInput } from '@/features/onboarding/phone-format';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import {
   Save,
@@ -93,6 +96,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const errorRef = useRef<HTMLDivElement>(null);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [openingBillingPortal, setOpeningBillingPortal] = useState(false);
@@ -134,6 +139,9 @@ export default function SettingsPage() {
   const [crmPrivacyRoles, setCrmPrivacyRoles] = useState<string[]>(['OWNER', 'MANAGER']);
   const [crmPrivacySource, setCrmPrivacySource] = useState<'SITE' | 'ENVIRONMENT'>('ENVIRONMENT');
   const [loadingCrmPrivacy, setLoadingCrmPrivacy] = useState(false);
+  // Le réglage n'existe que si le CRM avancé est ouvert pour ce compte : sinon l'API le refuse et la carte
+  // ne doit pas s'afficher (elle montrerait une case « enregistrée » qui ne l'est jamais).
+  const [crmPrivacyUnavailable, setCrmPrivacyUnavailable] = useState(false);
   const [savingCrmPrivacy, setSavingCrmPrivacy] = useState(false);
   const [savedCrmPrivacy, setSavedCrmPrivacy] = useState(false);
 
@@ -161,9 +169,11 @@ export default function SettingsPage() {
     }
   }, []);
 
-  useEffect(() => {
+  const loadSettings = useCallback(async () => {
     if (!orgId) return;
-    (async () => {
+    setLoading(true);
+    setLoadError('');
+    {
       try {
         const [data, pers, billing] = await Promise.all([
           get<Restaurant>(`restaurants/${orgId}`),
@@ -197,13 +207,22 @@ export default function SettingsPage() {
             : 10,
         );
         setGiftCardEnabled(data.giftCardEnabled === true);
-      } catch {
-        setError('Impossible de charger les paramètres');
+      } catch (err: unknown) {
+        setLoadError(getErrorMessage(err, 'Impossible de charger vos paramètres.'));
       } finally {
         setLoading(false);
       }
-    })();
+    }
   }, [orgId, get]);
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  // Une erreur d'enregistrement s'affiche en haut d'une page très longue : on l'amène sous les yeux.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  }, [error]);
 
   useEffect(() => {
     const canManage = !accountId || activeSite?.role === 'OWNER';
@@ -220,7 +239,8 @@ export default function SettingsPage() {
         setCrmPrivacySource(response.data?.source === 'SITE' ? 'SITE' : 'ENVIRONMENT');
       })
       .catch(() => {
-        // La carte reste discrète si la politique n'est pas disponible pour ce compte.
+        // Politique indisponible pour ce compte (CRM avancé fermé, ou hors formule) : pas de carte.
+        if (!cancelled) setCrmPrivacyUnavailable(true);
       })
       .finally(() => {
         if (!cancelled) setLoadingCrmPrivacy(false);
@@ -248,14 +268,40 @@ export default function SettingsPage() {
     );
   }
 
+  // Sans paramètres chargés, aucun formulaire : il afficherait une formule, une file d'attente et une
+  // personnalité par défaut, et « Enregistrer » écraserait les vrais réglages avec ces valeurs.
+  if (!restaurant) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Paramètres</h1>
+        <DataFetchError
+          message={`${loadError || 'Impossible de charger vos paramètres.'} Vos réglages n’ont pas été modifiés.`}
+          onRetry={() => void loadSettings()}
+          retrying={loading}
+        />
+      </div>
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
     setError('');
 
+    if (managerPhone.trim() && !isValidPhoneInput(managerPhone)) {
+      setError('Numéro de téléphone invalide. Exemple : 06 12 34 56 78 ou +33 6 12 34 56 78.');
+      setSaving(false);
+      return;
+    }
+
     try {
-      const payload: Record<string, unknown> = { name, managerPhone, managerEmail };
+      // L'API attend un numéro international : « 06 12 34 56 78 » devient « +33612345678 ».
+      const payload: Record<string, unknown> = {
+        name,
+        managerPhone: managerPhone.trim() ? normalizePhone(managerPhone) : managerPhone,
+        managerEmail,
+      };
       await patch(`restaurants/${orgId}`, payload);
       setSaved(true);
     } catch (err: unknown) {
@@ -435,7 +481,8 @@ export default function SettingsPage() {
   const plan = restaurant?.plan ?? 'STARTER';
   const planInfo = PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
-  const canManageCrmPrivacy = !accountId || activeSite?.role === 'OWNER';
+  const canManageCrmPrivacy =
+    (!accountId || activeSite?.role === 'OWNER') && !crmPrivacyUnavailable;
   const billingStatusLabel =
     billingStatus?.subscriptionStatus === 'past_due'
       ? 'Paiement en attente'
@@ -486,7 +533,7 @@ export default function SettingsPage() {
       </nav>
 
       {error && (
-        <div className="sokar-error">
+        <div ref={errorRef} role="alert" className="sokar-error">
           <AlertCircle size={18} />
           {error}
         </div>
@@ -510,23 +557,40 @@ export default function SettingsPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="max-w-full sm:max-w-lg space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Nom du restaurant</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} required />
+              <label htmlFor="restaurant-name" className="text-sm font-medium">
+                Nom du restaurant
+              </label>
+              <Input
+                id="restaurant-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Téléphone du gérant</label>
+              <label htmlFor="manager-phone" className="text-sm font-medium">
+                Téléphone du gérant
+              </label>
               <Input
+                id="manager-phone"
                 type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="06 12 34 56 78"
                 value={managerPhone}
                 onChange={(e) => setManagerPhone(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email du gérant</label>
+              <label htmlFor="manager-email" className="text-sm font-medium">
+                Email du gérant
+              </label>
               <Input
+                id="manager-email"
                 type="email"
+                autoComplete="email"
                 value={managerEmail}
                 onChange={(e) => setManagerEmail(e.target.value)}
               />
@@ -951,7 +1015,7 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot size={18} />
-            Personnalité de l&apos;agent vocal
+            Personnalité de l&apos;assistant
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -986,85 +1050,12 @@ export default function SettingsPage() {
               </select>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Vitesse de parole : {speakingRate.toFixed(2)}x
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.05"
-                value={speakingRate}
-                onChange={(e) => setSpeakingRate(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Lent (0.5x)</span>
-                <span>Normal (1.0x)</span>
-                <span>Rapide (2.0x)</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Volume : {volume.toFixed(2)}x</label>
-              <input
-                type="range"
-                min="0.5"
-                max="2.0"
-                step="0.05"
-                value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Doux (0.5x)</span>
-                <span>Normal (1.0x)</span>
-                <span>Fort (2.0x)</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                ID voix Cartesia
-                <span className="ml-1 text-xs text-muted-foreground">
-                  (laisser vide pour la voix par défaut)
-                </span>
-              </label>
-              <Input
-                value={voiceIdCa}
-                onChange={(e) => setVoiceIdCa(e.target.value)}
-                placeholder="90358bc7-3328-4b93-a942-d0447d7d4b5c"
-                className="font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Dictionnaire de prononciation Cartesia
-                <span className="ml-1 text-xs text-muted-foreground">(optionnel)</span>
-              </label>
-              <Input
-                value={pronunciationDictId}
-                onChange={(e) => setPronunciationDictId(e.target.value)}
-                placeholder="dict_..."
-                className="font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Émotion Cartesia
-                <span className="ml-1 text-xs text-muted-foreground">
-                  (optionnelle, surtout validée en anglais)
-                </span>
-              </label>
-              <Input
-                value={emotion}
-                onChange={(e) => setEmotion(e.target.value)}
-                placeholder="positivity"
-              />
-            </div>
+            {/*
+              Vitesse, volume, voix propre, dictionnaire de prononciation et émotion ne réglaient que l'ancienne
+              synthèse Cartesia : la voix des appels (ElevenLabs) les ignore, et le champ « ID voix Cartesia »
+              n'a plus de sens pour un restaurateur. Les valeurs déjà enregistrées sont conservées et renvoyées
+              telles quelles à l'enregistrement ; les commandes reviendront avec un réglage ElevenLabs réel.
+            */}
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
@@ -1078,7 +1069,7 @@ export default function SettingsPage() {
                 onChange={(e) => setSystemPromptExtra(e.target.value)}
                 maxLength={SYSTEM_PROMPT_EXTRA_MAX_LENGTH}
                 rows={4}
-                placeholder="Ex: Nous avons une offre spéciale le mercredi soir. Propose-la si le client demande."
+                placeholder="Ex : nous avons une offre spéciale le mercredi soir. Proposez-la si le client le demande."
                 className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
               <p className="text-right text-xs text-muted-foreground">
