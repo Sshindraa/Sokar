@@ -113,7 +113,7 @@ export async function processOutboundConfirmJob(
   }
 
   try {
-    const message = `Reservation confirmee - ${data.restaurantName} ${data.date} ${data.time} ${data.partySize}pers. Annulation: appelez le restaurant.`;
+    const message = `Réservation confirmée chez ${data.restaurantName} : ${data.date} à ${data.time}, ${data.partySize} pers. Pour annuler, appelez le restaurant.`;
     const usageContext: MessagingUsageContext | undefined = reservation.restaurantId
       ? {
           restaurantId: reservation.restaurantId,

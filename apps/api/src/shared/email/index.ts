@@ -126,6 +126,24 @@ function isRecipientAllowed(to: string): boolean {
   return allowed.includes(to.trim().toLowerCase());
 }
 
+const DEFAULT_EMAIL_FROM = 'Sokar <noreply@sokar.tech>';
+const DEFAULT_EMAIL_REPLY_TO = 'hello@sokar.tech';
+
+/**
+ * Expéditeur affiché « Sokar » : une adresse nue s'affiche « noreply » dans la boîte de réception,
+ * ce qui coûte en confiance et en ouverture. `EMAIL_FROM` peut fournir l'adresse seule ou complète.
+ */
+export function emailSender(environment: NodeJS.ProcessEnv = process.env): string {
+  const configured = environment.EMAIL_FROM?.trim();
+  if (!configured) return DEFAULT_EMAIL_FROM;
+  return configured.includes('<') ? configured : `Sokar <${configured}>`;
+}
+
+/** Les réponses arrivent à une boîte lue par un humain, jamais à `noreply`. */
+export function emailReplyTo(environment: NodeJS.ProcessEnv = process.env): string {
+  return environment.EMAIL_REPLY_TO?.trim() || DEFAULT_EMAIL_REPLY_TO;
+}
+
 export async function sendEmail(opts: SendEmailOptions): Promise<void | NotificationSendResult> {
   if (!isRecipientAllowed(opts.to)) {
     // Refus certain : Resend n'est pas appelé, l'appelant ne relance pas, et l'adresse n'est jamais journalisée.
@@ -139,7 +157,8 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
   await waitForResendSlot();
   const response = await withTimeout(
     getResend().emails.send({
-      from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
+      from: emailSender(),
+      replyTo: emailReplyTo(),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,

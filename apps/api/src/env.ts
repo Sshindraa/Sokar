@@ -341,6 +341,7 @@ const EnvSchema = z
     TELNYX_CONNECTION_ID: z.string().optional(),
     TELNYX_PUBLIC_KEY: z.string().optional(),
     TELNYX_FROM_NUMBER: z.string().optional(),
+    TELNYX_SMS_FROM: z.string().optional(),
     // Profil Telnyx utilisé pour les SMS transactionnels et leurs webhooks.
     // Le numéro expéditeur doit aussi être affecté à ce profil côté Telnyx.
     TELNYX_MESSAGING_PROFILE_ID: z.string().optional(),
@@ -443,6 +444,7 @@ const EnvSchema = z
     // Il reste optionnel tant que les envois marketing sont gelés.
     RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
+    EMAIL_REPLY_TO: z.string().optional(),
     // Les rapports récurrents envoient un email aux gestionnaires. Staging les
     // désactive explicitement tant qu'il n'existe pas de canal d'envoi isolé.
     EVENING_REPORTS_ENABLED: z
