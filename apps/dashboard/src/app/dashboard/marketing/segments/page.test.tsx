@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import MarketingSegmentsPage from './page';
 
 const apiMocks = vi.hoisted(() => ({
@@ -108,10 +109,62 @@ describe('MarketingSegmentsPage', () => {
   });
 
   it('explique le refus Essential', async () => {
-    apiMocks.get.mockRejectedValue(new Error('CAPABILITY_NOT_INCLUDED'));
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<MarketingSegmentsPage />);
 
-    expect(await screen.findByText('CAPABILITY_NOT_INCLUDED')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Cette fonctionnalité n’est pas incluse dans votre formule.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('CAPABILITY_NOT_INCLUDED')).toBeNull();
     expect(screen.getByText('Les segments sont inclus dans la formule Pro.')).toBeInTheDocument();
+  });
+
+  it('demande confirmation avant de supprimer un segment', async () => {
+    render(<MarketingSegmentsPage />);
+    await screen.findByText('Habitués');
+
+    fireEvent.click(screen.getByRole('button', { name: /Supprimer$/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Supprimer le segment « Habitués » ?');
+    expect(dialog).toHaveTextContent('Vos clients ne sont pas supprimés');
+    expect(apiMocks.del).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+    await waitFor(() => expect(apiMocks.del).toHaveBeenCalledWith('marketing/segments/segment-1'));
+  });
+
+  it('affiche les opérateurs en français', async () => {
+    render(<MarketingSegmentsPage />);
+    await screen.findByText('Habitués');
+
+    expect(screen.getAllByText('Toutes (ET)').some((element) => element.tagName !== 'OPTION')).toBe(
+      true,
+    );
+    expect(screen.queryByText('AND')).toBeNull();
+  });
+
+  it('nomme la préférence « Langue préférée » plutôt que sa clé technique', async () => {
+    apiMocks.get.mockResolvedValue({
+      data: [
+        {
+          ...segment,
+          id: 'segment-2',
+          name: 'Langue renseignée',
+          definition: {
+            version: 1,
+            operator: 'OR',
+            conditions: [{ field: 'preference', op: 'EXISTS', value: 'preferred_language' }],
+          },
+        },
+      ],
+    });
+    render(<MarketingSegmentsPage />);
+
+    expect(await screen.findByText(/Préférence existe Langue préférée/)).toBeInTheDocument();
+    expect(screen.queryByText(/preferred_language/)).toBeNull();
+    expect(
+      screen.getAllByText('Au moins une (OU)').some((element) => element.tagName !== 'OPTION'),
+    ).toBe(true);
   });
 });

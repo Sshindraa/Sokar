@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 
@@ -196,6 +197,11 @@ function operatorsFor(field: SegmentField): SegmentOperator[] {
   return ['EQ'];
 }
 
+/** Préférences client connues, avec le libellé affiché à la place de la clé technique. */
+const PREFERENCE_LABELS: Record<string, string> = {
+  preferred_language: 'Langue préférée',
+};
+
 function defaultValue(field: SegmentField): string {
   if (field === 'isVip') return 'true';
   if (field === 'tag') return 'vip';
@@ -254,6 +260,9 @@ function formatConditionValue(condition: {
   if (condition.op === 'IS_NULL') return '';
   if (condition.field === 'isVip') return condition.value === true ? 'VIP' : 'hors VIP';
   if (DATE_FIELDS.has(condition.field)) return `${condition.value ?? 0} j`;
+  if (condition.field === 'preference') {
+    return PREFERENCE_LABELS[String(condition.value)] ?? String(condition.value ?? '');
+  }
   return String(condition.value ?? '');
 }
 
@@ -292,6 +301,7 @@ export default function MarketingSegmentsPage() {
   const [action, setAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [segmentToDelete, setSegmentToDelete] = useState<Segment | null>(null);
 
   const loadSegments = useCallback(async () => {
     if (!orgId) {
@@ -415,7 +425,9 @@ export default function MarketingSegmentsPage() {
     try {
       await del(`marketing/segments/${segment.id}`);
       setSegments((current) => current.filter((item) => item.id !== segment.id));
+      setSegmentToDelete(null);
     } catch (err: unknown) {
+      setSegmentToDelete(null);
       setError(getErrorMessage(err, 'Impossible de supprimer ce segment'));
     } finally {
       setAction('');
@@ -609,6 +621,21 @@ export default function MarketingSegmentsPage() {
                           <option value="true">VIP</option>
                           <option value="false">Hors VIP</option>
                         </select>
+                      ) : condition.field === 'preference' ? (
+                        <select
+                          aria-label={`Valeur condition ${index + 1}`}
+                          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                          value={condition.value}
+                          onChange={(event) =>
+                            updateCondition(condition.id, { value: event.target.value })
+                          }
+                        >
+                          {Object.entries(PREFERENCE_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <Input
                           aria-label={`Valeur condition ${index + 1}`}
@@ -714,7 +741,11 @@ export default function MarketingSegmentsPage() {
                       <div className="flex shrink-0 items-center gap-1">
                         {segment.isSystem ? <Badge variant="outline">Système</Badge> : null}
                         {segment.definition?.operator ? (
-                          <Badge variant="secondary">{segment.definition.operator}</Badge>
+                          <Badge variant="secondary">
+                            {segment.definition.operator === 'AND'
+                              ? 'Toutes (ET)'
+                              : 'Au moins une (OU)'}
+                          </Badge>
                         ) : null}
                       </div>
                     </div>
@@ -735,7 +766,7 @@ export default function MarketingSegmentsPage() {
                           variant="ghost"
                           size="sm"
                           disabled={Boolean(action)}
-                          onClick={() => void deleteSegment(segment)}
+                          onClick={() => setSegmentToDelete(segment)}
                         >
                           <Trash2 size={14} />
                           Supprimer
@@ -749,6 +780,17 @@ export default function MarketingSegmentsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={segmentToDelete !== null}
+        title={`Supprimer le segment « ${segmentToDelete?.name ?? ''} » ?`}
+        description="Cette action est définitive : les règles de ce segment seront perdues. Vos clients ne sont pas supprimés."
+        confirmLabel="Supprimer"
+        variant="destructive"
+        pending={segmentToDelete !== null && action === `delete:${segmentToDelete.id}`}
+        onConfirm={() => segmentToDelete && void deleteSegment(segmentToDelete)}
+        onCancel={() => setSegmentToDelete(null)}
+      />
     </div>
   );
 }

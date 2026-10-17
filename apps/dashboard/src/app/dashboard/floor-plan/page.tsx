@@ -73,6 +73,8 @@ export default function FloorPlanPage() {
   const [createName, setCreateName] = useState('');
   const [createIsDefault, setCreateIsDefault] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  // Erreur de création : affichée dans la fenêtre elle-même, pas derrière son voile.
+  const [createError, setCreateError] = useState('');
   const [walkInModalOpen, setWalkInModalOpen] = useState(false);
 
   const clearReportedDelay = useCallback(() => {
@@ -125,7 +127,7 @@ export default function FloorPlanPage() {
     e.preventDefault();
     if (!orgId || !createName.trim()) return;
     setCreateLoading(true);
-    setListError('');
+    setCreateError('');
     try {
       const created = await post<FloorPlan>(`restaurants/${orgId}/floor-plans`, {
         name: createName.trim(),
@@ -146,7 +148,7 @@ export default function FloorPlanPage() {
       setCreateName('');
       setCreateIsDefault(false);
     } catch (err) {
-      setListError(getErrorMessage(err, 'Impossible de créer le plan de salle'));
+      setCreateError(getErrorMessage(err, 'Impossible de créer le plan de salle.'));
     } finally {
       setCreateLoading(false);
     }
@@ -325,13 +327,19 @@ export default function FloorPlanPage() {
         </div>
       )}
 
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open);
+          if (!open) setCreateError('');
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleCreateFloorPlan}>
             <DialogHeader>
               <DialogTitle>Créer un plan de salle</DialogTitle>
               <DialogDescription>
-                Crée un plan de salle supplémentaire. Le plan ouvert reste inchangé. Vous pouvez le
+                Créez un plan de salle supplémentaire. Le plan ouvert reste inchangé. Vous pouvez le
                 définir comme plan par défaut.
               </DialogDescription>
             </DialogHeader>
@@ -341,7 +349,10 @@ export default function FloorPlanPage() {
                 <Input
                   id="floor-plan-name"
                   value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
+                  onChange={(e) => {
+                    setCreateName(e.target.value);
+                    setCreateError('');
+                  }}
                   placeholder="Ex. : Terrasse"
                   disabled={createLoading}
                   className="bg-card border-border"
@@ -361,12 +372,20 @@ export default function FloorPlanPage() {
                   aria-label="Définir comme plan par défaut"
                 />
               </div>
+              {createError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {createError}
+                </p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setCreateDialogOpen(false)}
+                onClick={() => {
+                  setCreateDialogOpen(false);
+                  setCreateError('');
+                }}
                 disabled={createLoading}
               >
                 Annuler

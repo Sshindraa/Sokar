@@ -55,6 +55,8 @@ export function extractApiCode(data: Record<string, unknown>): string | null {
 }
 
 export function classifyApiError(status: number, code: string | null): ApiErrorKind {
+  // Le jeton de vérification d'identité (export RGPD) n'est pas la session : ne pas renvoyer vers la connexion.
+  if (code === 'IDENTITY_REQUIRED') return 'other';
   if (status === 401) return 'session';
   if (code === 'CAPABILITY_NOT_INCLUDED') return 'not-included';
   if (code && (code.endsWith('_DISABLED') || code.endsWith('_NOT_CONFIGURED'))) return 'not-ready';
@@ -73,6 +75,37 @@ const CODE_MESSAGES: Record<string, string> = {
   MARKETING_SENDS_DISABLED: 'L’envoi de messages n’est pas encore ouvert sur votre compte.',
   RESERVATION_PAYMENTS_DISABLED:
     'Le paiement des réservations n’est pas encore ouvert sur votre compte.',
+  REACTIVATION_AUTOMATION_ACTIVE:
+    'La relance automatique des clients dormants est déjà active dans Marketing : ces clients y sont déjà pris en charge.',
+  REACTIVATION_AUDIENCE_EMPTY: 'Aucun de ces clients n’a accepté de recevoir des SMS.',
+  REACTIVATION_AUDIENCE_TOO_LARGE:
+    'Cette liste est trop longue pour un envoi direct : passez par Marketing.',
+  MARKETING_QUEUE_ENQUEUE_UNKNOWN:
+    'L’envoi n’a pas pu être programmé. Réessayez dans quelques minutes.',
+  AUDIENCE_TOO_LARGE:
+    'Cette audience dépasse la taille maximale d’une campagne. Choisissez un segment plus restreint.',
+  SEGMENT_NOT_FOUND: 'Ce segment n’existe plus. Choisissez-en un autre.',
+  CAMPAIGN_NOT_FOUND: 'Cette campagne n’existe plus. Actualisez la page.',
+  // Vérification d'identité (export RGPD d'un client)
+  EXPIRED: 'Le code a expiré. Demandez-en un nouveau.',
+  INVALID_CODE: 'Le code saisi est incorrect.',
+  MAX_ATTEMPTS: 'Trop d’essais. Demandez un nouveau code.',
+  RATE_LIMITED: 'Trop de demandes de code. Réessayez dans un instant.',
+  INVALID_CAPTCHA: 'La vérification anti-robot a échoué. Réessayez.',
+  SUBJECT_MISMATCH: 'Le code ne correspond pas à ce client.',
+  SUBJECT_NOT_FOUND: 'Aucune donnée trouvée pour ce client.',
+  // Fiche client et fusion de doublons
+  CUSTOMER_NOT_FOUND: 'Ce client n’existe plus ou a été fusionné avec un autre profil.',
+  CRM_TENANT_MISMATCH: 'Ce profil est introuvable. Actualisez la liste.',
+  CUSTOMER_NOT_ACTIVE: 'Ce profil a déjà été fusionné ou archivé. Actualisez la liste.',
+  TAG_ASSIGNMENT_NOT_FOUND: 'Ce tag a déjà été retiré de la fiche.',
+  PREFERENCE_NOT_FOUND: 'Cette préférence a déjà été supprimée.',
+  MERGE_IDENTITY_CONFLICT:
+    'Ces profils partagent une coordonnée incompatible. La fusion n’est pas possible automatiquement.',
+  MERGE_PREFERENCE_RESOLUTION_REQUIRED:
+    'Les préférences ont changé. Relancez l’aperçu et choisissez une résolution pour chaque conflit.',
+  MERGE_IDEMPOTENCY_KEY_REUSED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
+  MERGE_SERIALIZATION_RETRY_EXHAUSTED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
 };
 
 const KIND_MESSAGES: Record<ApiErrorKind, string> = {

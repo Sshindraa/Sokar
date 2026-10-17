@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApi } from '../../../lib/api';
+import { ApiError } from '@/lib/api-error';
 import { getErrorMessage, type Customer } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import {
@@ -151,6 +152,10 @@ export default function CustomersPage() {
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [error, setError] = useState('');
+  // Le premier chargement affiche des squelettes ; une recherche garde la page et le champ en place.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  // « CRM Pro » n'est proposé que s'il est ouvert (ou à débloquer par la formule), jamais quand il est fermé.
+  const [crmEntry, setCrmEntry] = useState(false);
 
   const customersUrl = useCallback((search: string, offset: number) => {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
@@ -175,6 +180,7 @@ export default function CustomersPage() {
             : list.length,
         );
         setAppliedSearch(search);
+        setLoadedOnce(true);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger les clients'));
       }
@@ -210,6 +216,17 @@ export default function CustomersPage() {
     void fetchCustomers();
   }, [orgId, fetchCustomers]);
 
+  // Une seule sonde, une fois la liste chargée : elle ne doit ni ralentir ni perturber le chargement des clients.
+  const crmProbed = useRef(false);
+  useEffect(() => {
+    if (!orgId || !loadedOnce || crmProbed.current) return;
+    crmProbed.current = true;
+    Promise.resolve(get('crm/customers?limit=1'))
+      .then(() => setCrmEntry(true))
+      // Hors formule : on montre le bouton, la page CRM explique la formule. Fermé ou en panne : on le cache.
+      .catch((err: unknown) => setCrmEntry(err instanceof ApiError && err.kind === 'not-included'));
+  }, [orgId, get, loadedOnce]);
+
   async function toggleVip(id: string, current: boolean) {
     try {
       await post(`customers/${id}/vip`, { isVip: !current });
@@ -219,7 +236,7 @@ export default function CustomersPage() {
     }
   }
 
-  if (loading) {
+  if (loading && !loadedOnce) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -250,12 +267,14 @@ export default function CustomersPage() {
           <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
             {total} client{total > 1 ? 's' : ''}
           </span>
-          <Button asChild variant="outline" size="sm" className="px-2.5 sm:px-3">
-            <Link href="/dashboard/customers/crm">
-              <Sparkles size={14} />
-              CRM Pro
-            </Link>
-          </Button>
+          {crmEntry ? (
+            <Button asChild variant="outline" size="sm" className="px-2.5 sm:px-3">
+              <Link href="/dashboard/customers/crm">
+                <Sparkles size={14} />
+                CRM Pro
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </div>
 

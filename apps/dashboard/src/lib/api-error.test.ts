@@ -116,6 +116,50 @@ describe('describeApiError', () => {
   });
 });
 
+describe('messages par code', () => {
+  it('traduit les refus de la vérification d’identité sans renvoyer vers la connexion', () => {
+    const identity = toApiError(401, {
+      code: 'IDENTITY_REQUIRED',
+      error: 'X-Identity-Token header required. Call /api/rgpd/request-verification first.',
+    });
+    expect(identity.message).toBe('La vérification d’identité a expiré. Demandez un nouveau code.');
+    expect(identity.kind).not.toBe('session');
+    expect(toApiError(400, { code: 'INVALID_CODE', error: 'Invalid code' }).message).toBe(
+      'Le code saisi est incorrect.',
+    );
+    expect(toApiError(429, { code: 'RATE_LIMITED', error: 'Too many' }).message).toBe(
+      'Trop de demandes de code. Réessayez dans un instant.',
+    );
+  });
+
+  it('traduit les refus de la fiche client et de la fusion', () => {
+    expect(toApiError(404, { error: 'CUSTOMER_NOT_FOUND' }).message).toBe(
+      'Ce client n’existe plus ou a été fusionné avec un autre profil.',
+    );
+    expect(toApiError(409, { error: 'MERGE_IDENTITY_CONFLICT' }).message).toMatch(
+      /coordonnée incompatible/,
+    );
+    expect(toApiError(409, { error: 'CUSTOMER_NOT_ACTIVE' }).message).toMatch(
+      /déjà été fusionné ou archivé/,
+    );
+  });
+
+  it('traduit les refus de la relance VIP et des campagnes', () => {
+    expect(toApiError(409, { error: 'REACTIVATION_AUTOMATION_ACTIVE' }).message).toMatch(
+      /déjà active dans Marketing/,
+    );
+    expect(toApiError(503, { error: 'MARKETING_SENDS_DISABLED' }).message).toMatch(
+      /pas encore ouvert/,
+    );
+  });
+
+  it('remplace une phrase anglaise par un message français', () => {
+    expect(
+      toApiError(409, { error: 'Cannot seat a reservation that has already ended' }).message,
+    ).toMatch(/n’est plus possible/);
+  });
+});
+
 describe('toApiError', () => {
   it('porte le statut, le code et la nature de l’erreur', () => {
     const error = toApiError(403, {

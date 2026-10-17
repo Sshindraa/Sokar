@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, Check, LayoutGrid, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
 
 type Section = {
   id: string;
@@ -58,25 +59,26 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
   const [confirmSectionOpen, setConfirmSectionOpen] = useState(false);
   const [pendingDeleteSectionId, setPendingDeleteSectionId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchFloorPlan = useCallback(async () => {
     if (!orgId) return;
-
-    async function fetchFloorPlan() {
-      try {
-        const path = floorPlanId
-          ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
-          : `restaurants/${orgId}/floor-plan`;
-        const data = await get<FloorPlan>(path);
-        setFloorPlan(data);
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    setError('');
+    try {
+      const path = floorPlanId
+        ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
+        : `restaurants/${orgId}/floor-plan`;
+      const data = await get<FloorPlan>(path);
+      setFloorPlan(data);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger le plan de salle.'));
+    } finally {
+      setLoading(false);
     }
-
-    fetchFloorPlan();
   }, [orgId, get, floorPlanId]);
+
+  useEffect(() => {
+    void fetchFloorPlan();
+  }, [fetchFloorPlan]);
 
   async function toggleTable(tableId: string, isActive: boolean) {
     if (!orgId) return;
@@ -277,6 +279,17 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
           ))}
         </div>
       </div>
+    );
+  }
+
+  // Sans plan chargé, ni formulaire « Nouvelle section » (la section créée n'apparaîtrait pas) ni grille.
+  if (!floorPlan) {
+    return (
+      <DataFetchError
+        message={error || 'Impossible de charger le plan de salle.'}
+        onRetry={() => void fetchFloorPlan()}
+        retrying={loading}
+      />
     );
   }
 

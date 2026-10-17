@@ -1,23 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock3,
-  Link2,
-  RefreshCw,
-  Share2,
-  ShieldAlert,
-  Webhook,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, Link2, RefreshCw, Share2, Webhook } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DataFetchError } from '@/components/DataFetchError';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type Provider = 'GOOGLE_RESERVE' | 'META_RESERVE' | 'PUBLIC_API';
@@ -122,6 +116,29 @@ const statusLabels: Record<ConnectionStatus | SyncStatus | LinkStatus | WebhookS
   IGNORED: 'Ignorée',
 };
 
+const directionLabels: Record<SyncDirection, string> = {
+  BIDIRECTIONAL: 'Dans les deux sens',
+  PUSH: 'Vers le partenaire',
+  PULL: 'Depuis le partenaire',
+};
+
+/** Code d'erreur de synchronisation → phrase lisible ; un code inconnu ne fuite jamais à l'écran. */
+function syncErrorLabel(code: string | null): string {
+  if (!code) return '';
+  return 'Synchronisation interrompue';
+}
+
+const webhookEventLabels: Record<string, string> = {
+  'reservation.created': 'Nouvelle réservation',
+  'reservation.updated': 'Réservation modifiée',
+  'reservation.cancelled': 'Annulation',
+  'reservation.canceled': 'Annulation',
+};
+
+function webhookEventLabel(eventType: string): string {
+  return webhookEventLabels[eventType] ?? 'Événement partenaire';
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -160,6 +177,9 @@ export default function DistributionPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Échec du chargement (ou module fermé) : on n'affiche ni formulaire ni listes vides.
+  const [loadError, setLoadError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
   const [connectionForm, setConnectionForm] = useState({
     provider: 'GOOGLE_RESERVE' as Provider,
     externalAccountId: '',
@@ -170,6 +190,8 @@ export default function DistributionPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setLoadError('');
+    setLock(null);
     try {
       const [connectionResponse, runResponse, linkResponse, webhookResponse] = await Promise.all([
         get<ListResponse<Connection>>('distribution/connections?limit=100'),
@@ -196,7 +218,8 @@ export default function DistributionPage() {
         setAvailability([]);
       }
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les canaux partenaires'));
+      setLock(featureLockFromError(err));
+      setLoadError(getErrorMessage(err, 'Impossible de charger les canaux partenaires.'));
       setConnections([]);
       setRuns([]);
       setAvailability([]);
@@ -215,8 +238,6 @@ export default function DistributionPage() {
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
     [connections, selectedConnectionId],
   );
-  const locked =
-    error.includes('DISTRIBUTION_DISABLED') || error.includes('CAPABILITY_NOT_INCLUDED');
   const selectedRuns = runs.filter((run) => run.connectionId === selectedConnectionId);
   const selectedLinks = links.filter((link) => link.connectionId === selectedConnectionId);
   const selectedWebhooks = webhooks.filter(
@@ -244,9 +265,7 @@ export default function DistributionPage() {
         externalAccountId: '',
         credentialReference: '',
       });
-      setNotice(
-        'Connexion enregistrée en qualification locale. Aucun fournisseur externe n’a été appelé.',
-      );
+      setNotice('Connexion enregistrée. Aucun partenaire n’a été contacté pour le moment.');
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible d’enregistrer la connexion'));
     } finally {
@@ -261,7 +280,7 @@ export default function DistributionPage() {
     setNotice('');
     try {
       await post(`distribution/connections/${selectedConnection.id}/disconnect`);
-      setNotice('Connexion déconnectée. Les snapshots et runs restent consultables.');
+      setNotice('Connexion déconnectée. L’historique reste consultable.');
       await load();
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de déconnecter la connexion'));
@@ -281,12 +300,10 @@ export default function DistributionPage() {
         { direction },
         { headers: { 'Idempotency-Key': `dashboard-distribution-${Date.now()}` } },
       );
-      setNotice(
-        'Run local mis en file. Un adaptateur fournisseur devra encore être validé par pilote.',
-      );
+      setNotice('Synchronisation programmée.');
       await load();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de mettre le run en file'));
+      setError(getErrorMessage(err, 'Impossible de lancer la synchronisation.'));
     } finally {
       setBusy(false);
     }
@@ -302,8 +319,8 @@ export default function DistributionPage() {
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Préparez vos canaux partenaires avec des données contrôlées. Les appels fournisseurs
-            restent désactivés.
+            Préparez la diffusion de vos disponibilités chez vos partenaires. Aucun partenaire n’est
+            contacté tant que le canal n’est pas ouvert sur votre compte.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
@@ -328,19 +345,10 @@ export default function DistributionPage() {
         </div>
       )}
 
-      {locked ? (
-        <Card>
-          <CardContent className="flex items-start gap-3 p-6 text-sm text-muted-foreground">
-            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <div>
-              <p className="font-medium text-foreground">Canaux partenaires verrouillés</p>
-              <p className="mt-1">
-                Activez le module après validation du pilote. Aucun compte externe n’est utilisé en
-                attendant.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {lock ? (
+        <FeatureLockCard lock={lock} feature="Canaux partenaires" />
+      ) : loadError ? (
+        <DataFetchError message={loadError} onRetry={() => void load()} retrying={loading} />
       ) : (
         <>
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -348,8 +356,8 @@ export default function DistributionPage() {
               <CardHeader>
                 <CardTitle>Connexions</CardTitle>
                 <CardDescription>
-                  Une connexion par fournisseur et par établissement. Seuls le hash du compte, les
-                  quatre derniers caractères et la référence opaque du secret sont conservés.
+                  Une connexion par partenaire et par établissement. Vos identifiants ne sont jamais
+                  affichés en entier.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -359,7 +367,7 @@ export default function DistributionPage() {
                 >
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div>
-                      <Label htmlFor="distribution-provider">Fournisseur</Label>
+                      <Label htmlFor="distribution-provider">Partenaire</Label>
                       <select
                         id="distribution-provider"
                         value={connectionForm.provider}
@@ -379,7 +387,7 @@ export default function DistributionPage() {
                       </select>
                     </div>
                     <div>
-                      <Label htmlFor="distribution-account">Identifiant externe</Label>
+                      <Label htmlFor="distribution-account">Identifiant chez le partenaire</Label>
                       <Input
                         id="distribution-account"
                         value={connectionForm.externalAccountId}
@@ -389,11 +397,11 @@ export default function DistributionPage() {
                             externalAccountId: event.target.value,
                           })
                         }
-                        placeholder="location-1234"
+                        placeholder="Fourni par le partenaire"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="distribution-credential">Référence du secret</Label>
+                      <Label htmlFor="distribution-credential">Référence d’accès</Label>
                       <Input
                         id="distribution-credential"
                         value={connectionForm.credentialReference}
@@ -403,12 +411,12 @@ export default function DistributionPage() {
                             credentialReference: event.target.value,
                           })
                         }
-                        placeholder="vault/distribution/google"
+                        placeholder="Fournie par l’équipe Sokar"
                       />
                     </div>
                   </div>
                   <Button type="submit" disabled={busy}>
-                    Enregistrer en qualification
+                    Enregistrer la connexion
                   </Button>
                 </form>
 
@@ -438,8 +446,8 @@ export default function DistributionPage() {
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Compte •••• {connection.externalAccountLast4 ?? '—'} · secret{' '}
-                          {connection.credentialReferencePresent ? 'référencé' : 'absent'} ·
+                          Compte •••• {connection.externalAccountLast4 ?? '—'} · accès{' '}
+                          {connection.credentialReferencePresent ? 'configuré' : 'manquant'} ·
                           dernière activité {formatDate(connection.lastSyncAt)}
                         </p>
                       </button>
@@ -451,10 +459,10 @@ export default function DistributionPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Run de synchronisation</CardTitle>
+                <CardTitle>Synchronisation</CardTitle>
                 <CardDescription>
-                  Le run est une trace idempotente et rejouable. Tant qu’un adaptateur n’est pas
-                  qualifié, il reste une opération locale sans appel réseau.
+                  Chaque synchronisation est enregistrée dans l’historique. Tant que le canal n’est
+                  pas ouvert, elle reste interne : aucun partenaire n’est contacté.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -469,10 +477,6 @@ export default function DistributionPage() {
                           {statusLabels[selectedConnection.status]}
                         </Badge>
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Curseur {selectedConnection.cursorPresent ? 'présent' : 'absent'} · hash de
-                        configuration {selectedConnection.configHash.slice(0, 12)}…
-                      </p>
                       <Button
                         variant="outline"
                         className="mt-3"
@@ -483,16 +487,16 @@ export default function DistributionPage() {
                       </Button>
                     </div>
                     <div>
-                      <Label htmlFor="distribution-direction">Direction</Label>
+                      <Label htmlFor="distribution-direction">Sens</Label>
                       <select
                         id="distribution-direction"
                         value={direction}
                         onChange={(event) => setDirection(event.target.value as SyncDirection)}
                         className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       >
-                        <option value="BIDIRECTIONAL">Bidirectionnelle</option>
-                        <option value="PUSH">Vers le canal</option>
-                        <option value="PULL">Depuis le canal</option>
+                        <option value="BIDIRECTIONAL">{directionLabels.BIDIRECTIONAL}</option>
+                        <option value="PUSH">{directionLabels.PUSH}</option>
+                        <option value="PULL">{directionLabels.PULL}</option>
                       </select>
                     </div>
                     <Button
@@ -500,12 +504,12 @@ export default function DistributionPage() {
                       disabled={busy || selectedConnection.status === 'DISCONNECTED'}
                     >
                       <RefreshCw className="mr-2 h-4 w-4" />
-                      Mettre un run local en file
+                      Lancer une synchronisation
                     </Button>
                   </>
                 ) : (
                   <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                    Sélectionnez une connexion pour préparer un run.
+                    Sélectionnez une connexion pour lancer une synchronisation.
                   </p>
                 )}
               </CardContent>
@@ -515,10 +519,9 @@ export default function DistributionPage() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Snapshots de disponibilité</CardTitle>
+                <CardTitle>Disponibilités reçues</CardTitle>
                 <CardDescription>
-                  Données bornées et non autoritaires, utiles pour vérifier le mapping avant de
-                  publier une disponibilité.
+                  Les créneaux vus chez le partenaire, à titre indicatif : Sokar reste la référence.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -526,7 +529,7 @@ export default function DistributionPage() {
                   <LoadingRows />
                 ) : availability.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    Aucun snapshot pour cette connexion.
+                    Aucune disponibilité reçue pour cette connexion.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -541,8 +544,7 @@ export default function DistributionPage() {
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {slot.slotKey} · source {slot.sourceRevision ?? '—'} · observé{' '}
-                          {formatDate(slot.observedAt)}
+                          Observé {formatDate(slot.observedAt)}
                         </p>
                       </div>
                     ))}
@@ -553,30 +555,34 @@ export default function DistributionPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Historique de runs</CardTitle>
+                <CardTitle>Historique des synchronisations</CardTitle>
                 <CardDescription>
-                  Les compteurs et erreurs sont conservés pour la revue du pilote.
+                  Les échanges avec ce partenaire, du plus récent au plus ancien.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {selectedRuns.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun run pour cette connexion.</p>
+                {loading ? (
+                  <LoadingRows />
+                ) : selectedRuns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Aucune synchronisation pour cette connexion.
+                  </p>
                 ) : (
                   <div className="space-y-2">
                     {selectedRuns.slice(0, 12).map((run) => (
                       <div key={run.id} className="rounded-xl border border-border p-3 text-sm">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium">
-                            {run.direction} · {formatDate(run.createdAt)}
+                            {directionLabels[run.direction]} · {formatDate(run.createdAt)}
                           </span>
                           <Badge variant={statusVariant(run.status)}>
                             {statusLabels[run.status]}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          poussés {run.pushedCount} · reçus {run.pulledCount} · erreurs{' '}
+                          envoyés {run.pushedCount} · reçus {run.pulledCount} · erreurs{' '}
                           {run.failedCount}
-                          {run.errorCode ? ` · ${run.errorCode}` : ''}
+                          {run.errorCode ? ` · ${syncErrorLabel(run.errorCode)}` : ''}
                         </p>
                       </div>
                     ))}
@@ -591,11 +597,13 @@ export default function DistributionPage() {
                   <Link2 className="h-4 w-4" /> Liens de réservations
                 </CardTitle>
                 <CardDescription>
-                  Une association explicite entre une réservation Sokar et une référence partenaire.
+                  Les réservations reçues par ce partenaire et rattachées à une réservation Sokar.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {selectedLinks.length === 0 ? (
+                {loading ? (
+                  <LoadingRows />
+                ) : selectedLinks.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Aucun lien associé.</p>
                 ) : (
                   <div className="space-y-2">
@@ -604,9 +612,7 @@ export default function DistributionPage() {
                         key={link.id}
                         className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm"
                       >
-                        <span>
-                          Réservation {link.reservationId} · partenaire •••• {link.externalIdLast4}
-                        </span>
+                        <span>Réservation liée · réf. partenaire •••• {link.externalIdLast4}</span>
                         <Badge variant={statusVariant(link.status)}>
                           {statusLabels[link.status]}
                         </Badge>
@@ -623,26 +629,29 @@ export default function DistributionPage() {
                   <Webhook className="h-4 w-4" /> Webhooks
                 </CardTitle>
                 <CardDescription>
-                  Enveloppes hachées reçues pour préparer un contrat signé. Les callbacks publics ne
-                  sont pas encore exposés.
+                  Les notifications envoyées par ce partenaire. Les réceptions automatiques ne sont
+                  pas encore ouvertes.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {selectedWebhooks.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun webhook reçu.</p>
+                {loading ? (
+                  <LoadingRows />
+                ) : selectedWebhooks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucune notification reçue.</p>
                 ) : (
                   <div className="space-y-2">
                     {selectedWebhooks.slice(0, 12).map((webhook) => (
                       <div key={webhook.id} className="rounded-xl border border-border p-3 text-sm">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{webhook.eventType}</span>
+                          <span className="font-medium">
+                            {webhookEventLabel(webhook.eventType)}
+                          </span>
                           <Badge variant={statusVariant(webhook.status)}>
                             {statusLabels[webhook.status]}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          reçu {formatDate(webhook.receivedAt)} · payload{' '}
-                          {webhook.payloadHash.slice(0, 12)}…
+                          Reçu {formatDate(webhook.receivedAt)}
                         </p>
                       </div>
                     ))}
@@ -656,9 +665,8 @@ export default function DistributionPage() {
             <CardContent className="flex items-start gap-3 p-5 text-sm text-muted-foreground">
               <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <p>
-                État de la preuve : fondation locale livrée. Il manque encore l’adaptateur choisi,
-                l’authentification signée, le mapping de disponibilité et un pilote observé avant
-                toute ouverture du canal en production.
+                Ce canal est en phase pilote : il sera ouvert à tous les établissements après
+                validation.
               </p>
             </CardContent>
           </Card>

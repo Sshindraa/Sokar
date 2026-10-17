@@ -2,13 +2,24 @@
 
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Check, Eye, Info, Loader2, Megaphone } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Eye,
+  Info,
+  Loader2,
+  Megaphone,
+  RefreshCw,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type MarketingChannel = 'SMS' | 'EMAIL' | 'WHATSAPP';
@@ -115,6 +126,45 @@ function channelUsageLabel(category: CampaignPreview['usage']['category']): stri
   return 'emails';
 }
 
+/** Motifs d'exclusion de l'aperçu d'audience, en français. */
+const EXCLUSION_LABELS: Record<string, string> = {
+  NO_CONTACT: 'Sans coordonnées pour ce canal',
+  NO_CONSENT: 'Consentement non recueilli',
+  OPTED_OUT: 'Désinscrits',
+  FREQUENCY_CAP: 'Déjà contactés récemment',
+};
+
+function exclusionLabel(reason: string): string {
+  if (reason.startsWith('SUPPRESSED:')) return 'Liste d’opposition';
+  return EXCLUSION_LABELS[reason] ?? 'Autre motif';
+}
+
+function encodingLabel(encoding: CampaignPreview['usage']['encoding']): string {
+  if (encoding === 'gsm7') return 'SMS standard';
+  if (encoding === 'ucs2') return 'SMS avec caractères spéciaux';
+  return '1 message par destinataire';
+}
+
+const MAX_BODY_LENGTH: Record<MarketingChannel, number> = {
+  SMS: 918,
+  WHATSAPP: 918,
+  EMAIL: 10_000,
+};
+
+const TIMEZONES: Array<[string, string]> = [
+  ['Europe/Paris', 'Paris (métropole)'],
+  ['Europe/Brussels', 'Bruxelles'],
+  ['Europe/Zurich', 'Zurich'],
+  ['Europe/London', 'Londres'],
+  ['America/Martinique', 'Martinique'],
+  ['America/Guadeloupe', 'Guadeloupe'],
+  ['America/Cayenne', 'Guyane'],
+  ['Indian/Reunion', 'La Réunion'],
+  ['Indian/Mayotte', 'Mayotte'],
+  ['Pacific/Tahiti', 'Polynésie française'],
+  ['Pacific/Noumea', 'Nouvelle-Calédonie'],
+];
+
 function initialDraft(): Draft {
   return {
     name: '',
@@ -126,6 +176,33 @@ function initialDraft(): Draft {
     timezone: 'Europe/Paris',
     scheduledAt: '',
   };
+}
+
+/** Contrôles avant l'appel API : on dit quoi corriger plutôt que d'attendre un refus en anglais. */
+function draftProblem(draft: Draft): string | null {
+  if (!draft.name.trim() || !draft.objective.trim() || !draft.segmentId) {
+    return 'Renseignez le nom, l’objectif et le segment de la campagne.';
+  }
+  if (draft.channel === 'EMAIL' && !draft.subject.trim()) return 'Ajoutez un objet à votre e-mail.';
+  if (!draft.bodyTemplate.trim()) return 'Rédigez le message de la campagne.';
+  if (!draft.bodyTemplate.includes('{{unsubscribeUrl}}')) {
+    return 'Gardez {{unsubscribeUrl}} dans le message : le lien de désinscription est obligatoire.';
+  }
+  if (draft.bodyTemplate.length > MAX_BODY_LENGTH[draft.channel]) {
+    return 'Votre message dépasse la longueur autorisée pour ce canal. Raccourcissez-le.';
+  }
+  return null;
+}
+
+const CAMPAIGN_ERRORS: Record<string, string> = {
+  SEGMENT_NOT_FOUND: 'Ce segment n’existe plus. Choisissez-en un autre.',
+  AUDIENCE_TOO_LARGE:
+    'Cette audience dépasse la taille maximale d’une campagne. Choisissez un segment plus restreint.',
+};
+
+function campaignErrorMessage(err: unknown, fallback: string): string {
+  const message = getErrorMessage(err, fallback);
+  return CAMPAIGN_ERRORS[message] ?? message;
 }
 
 export default function NewMarketingCampaignPage() {
@@ -140,6 +217,10 @@ export default function NewMarketingCampaignPage() {
   const [action, setAction] = useState<'audience' | 'create' | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Échec du chargement des segments : séparé de `error` (actions) pour rester affiché avec son « Réessayer ».
+  const [segmentsError, setSegmentsError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
 
   const loadSegments = useCallback(async () => {
     if (!orgId) {
@@ -147,7 +228,8 @@ export default function NewMarketingCampaignPage() {
       return;
     }
     setLoading(true);
-    setError('');
+    setSegmentsError('');
+    setLock(null);
     try {
       const response = await get<{ data: Segment[] }>('marketing/segments');
       const loaded = Array.isArray(response.data) ? response.data : [];
@@ -157,7 +239,8 @@ export default function NewMarketingCampaignPage() {
         segmentId: previous.segmentId || loaded[0]?.id || '',
       }));
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les segments marketing'));
+      setLock(featureLockFromError(err));
+      setSegmentsError(getErrorMessage(err, 'Impossible de charger les segments marketing.'));
     } finally {
       setLoading(false);
     }
@@ -178,11 +261,16 @@ export default function NewMarketingCampaignPage() {
   }
 
   function updateChannel(channel: MarketingChannel) {
-    updateDraft({
+    setDraft((previous) => ({
+      ...previous,
       channel,
-      bodyTemplate: DEFAULT_BODY[channel],
-      subject: channel === 'EMAIL' ? draft.subject : '',
-    });
+      // Le message rédigé par le gérant est conservé ; seul le texte par défaut suit le canal.
+      bodyTemplate:
+        !previous.bodyTemplate.trim() || previous.bodyTemplate === DEFAULT_BODY[previous.channel]
+          ? DEFAULT_BODY[channel]
+          : previous.bodyTemplate,
+    }));
+    setNotice('');
     setAudience(null);
     setCampaignPreview(null);
     setTestPreview(null);
@@ -204,8 +292,27 @@ export default function NewMarketingCampaignPage() {
       });
       setAudience(response);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de calculer cette audience'));
+      setError(campaignErrorMessage(err, 'Impossible de calculer cette audience.'));
       setAudience(null);
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function generatePreview(id: string) {
+    setAction('create');
+    setPreviewFailed(false);
+    try {
+      const previewResponse = await post<{ data: CampaignPreview }>(
+        `marketing/campaigns/${id}/preview`,
+      );
+      setCampaignPreview(previewResponse.data ?? null);
+      setTestPreview(null);
+      setNotice('Brouillon enregistré. Vérifiez le rendu ci-contre.');
+    } catch {
+      // Le brouillon existe déjà : on ne refait jamais « Créer », on propose de relancer l'aperçu.
+      setPreviewFailed(true);
+      setNotice('');
     } finally {
       setAction(null);
     }
@@ -213,13 +320,16 @@ export default function NewMarketingCampaignPage() {
 
   async function createCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.objective.trim() || !draft.segmentId) {
-      setError('Renseignez le nom, l’objectif et le segment de la campagne.');
+    if (createdCampaignId) return;
+    const problem = draftProblem(draft);
+    if (problem) {
+      setError(problem);
       return;
     }
     setAction('create');
     setError('');
     setNotice('');
+    let id: string | undefined;
     try {
       const response = await post<{ data: { id: string } }>('marketing/campaigns', {
         name: draft.name.trim(),
@@ -231,20 +341,15 @@ export default function NewMarketingCampaignPage() {
         timezone: draft.timezone.trim() || 'Europe/Paris',
         scheduledAt: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : null,
       });
-      const id = response.data?.id;
+      id = response.data?.id;
       if (!id) throw new Error('La campagne créée ne possède pas d’identifiant.');
       setCreatedCampaignId(id);
-      const previewResponse = await post<{ data: CampaignPreview }>(
-        `marketing/campaigns/${id}/preview`,
-      );
-      setCampaignPreview(previewResponse.data ?? null);
-      setTestPreview(null);
-      setNotice('Brouillon enregistré et rendu de contrôle généré.');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de créer cette campagne'));
-    } finally {
+      setError(campaignErrorMessage(err, 'Impossible de créer cette campagne.'));
       setAction(null);
+      return;
     }
+    await generatePreview(id);
   }
 
   async function testForManager() {
@@ -257,7 +362,6 @@ export default function NewMarketingCampaignPage() {
         `marketing/campaigns/${createdCampaignId}/test`,
       );
       setTestPreview(response.data ?? null);
-      setNotice('Rendu de test gérant généré en mode dry-run.');
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de générer le test gérant'));
     } finally {
@@ -274,8 +378,7 @@ export default function NewMarketingCampaignPage() {
     );
   }
 
-  const forbidden =
-    error.includes('CAPABILITY_NOT_INCLUDED') || error.toLowerCase().includes('formule');
+  const frozen = createdCampaignId !== null;
 
   return (
     <div className="space-y-6">
@@ -306,17 +409,34 @@ export default function NewMarketingCampaignPage() {
         </p>
       </div>
 
-      {error && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
-          <div>
-            <p>{error}</p>
-            {forbidden && (
-              <p className="mt-1 text-muted-foreground">
-                Les campagnes et le contrôle d’audience sont inclus dans la formule Pro.
-              </p>
-            )}
+      {lock && <FeatureLockCard lock={lock} feature="Campagnes" />}
+      {!lock && segmentsError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+            <p>{segmentsError}</p>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="transition-all duration-200"
+            onClick={() => void loadSegments()}
+          >
+            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Réessayer
+          </Button>
+        </div>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+          <p>{error}</p>
         </div>
       )}
       {notice && (
@@ -334,145 +454,168 @@ export default function NewMarketingCampaignPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-1 text-sm font-medium">
-                Nom interne
+            {frozen && (
+              <p className="rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                Brouillon enregistré : les modifications se font depuis la liste des campagnes.
+              </p>
+            )}
+            <fieldset disabled={frozen} className="space-y-4 border-0 p-0">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1 text-sm font-medium">
+                  Nom interne
+                  <Input
+                    value={draft.name}
+                    onChange={(event) => updateDraft({ name: event.target.value })}
+                    placeholder="Relance déjeuner de septembre"
+                    maxLength={100}
+                  />
+                </label>
+                <label className="space-y-1 text-sm font-medium">
+                  Canal
+                  <select
+                    aria-label="Canal"
+                    value={draft.channel}
+                    onChange={(event) => updateChannel(event.target.value as MarketingChannel)}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                  >
+                    {Object.entries(CHANNEL_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block space-y-1 text-sm font-medium">
+                Objectif
                 <Input
-                  value={draft.name}
-                  onChange={(event) => updateDraft({ name: event.target.value })}
-                  placeholder="Relance déjeuner de septembre"
-                  maxLength={100}
+                  value={draft.objective}
+                  onChange={(event) => updateDraft({ objective: event.target.value })}
+                  placeholder="Remplir le service du midi"
+                  maxLength={120}
                 />
               </label>
-              <label className="space-y-1 text-sm font-medium">
-                Canal
+
+              <label className="block space-y-1 text-sm font-medium">
+                Segment
                 <select
-                  aria-label="Canal"
-                  value={draft.channel}
-                  onChange={(event) => updateChannel(event.target.value as MarketingChannel)}
+                  aria-label="Segment"
+                  value={draft.segmentId}
+                  onChange={(event) => {
+                    updateDraft({ segmentId: event.target.value });
+                    setAudience(null);
+                    setCampaignPreview(null);
+                    setTestPreview(null);
+                  }}
                   className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                 >
-                  {Object.entries(CHANNEL_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
+                  <option value="">
+                    {segmentsError ? 'Segments indisponibles' : 'Sélectionner un segment'}
+                  </option>
+                  {segments.map((segment) => (
+                    <option key={segment.id} value={segment.id}>
+                      {segment.name}
+                      {segment.isSystem ? ' · système' : ''}
                     </option>
                   ))}
                 </select>
+                {selectedSegment?.systemDescription && (
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {selectedSegment.systemDescription}
+                  </span>
+                )}
               </label>
-            </div>
 
-            <label className="block space-y-1 text-sm font-medium">
-              Objectif
-              <Input
-                value={draft.objective}
-                onChange={(event) => updateDraft({ objective: event.target.value })}
-                placeholder="Remplir le service du midi"
-                maxLength={120}
-              />
-            </label>
-
-            <label className="block space-y-1 text-sm font-medium">
-              Segment
-              <select
-                aria-label="Segment"
-                value={draft.segmentId}
-                onChange={(event) => {
-                  updateDraft({ segmentId: event.target.value });
-                  setAudience(null);
-                  setCampaignPreview(null);
-                  setTestPreview(null);
-                }}
-                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Sélectionner un segment</option>
-                {segments.map((segment) => (
-                  <option key={segment.id} value={segment.id}>
-                    {segment.name}
-                    {segment.isSystem ? ' · système' : ''}
-                  </option>
-                ))}
-              </select>
-              {selectedSegment?.systemDescription && (
-                <span className="block text-xs font-normal text-muted-foreground">
-                  {selectedSegment.systemDescription}
-                </span>
+              {draft.channel === 'EMAIL' && (
+                <label className="block space-y-1 text-sm font-medium">
+                  Objet email
+                  <Input
+                    value={draft.subject}
+                    onChange={(event) => updateDraft({ subject: event.target.value })}
+                    placeholder="Une attention pour votre prochaine visite"
+                    maxLength={200}
+                  />
+                </label>
               )}
-            </label>
 
-            {draft.channel === 'EMAIL' && (
               <label className="block space-y-1 text-sm font-medium">
-                Objet email
-                <Input
-                  value={draft.subject}
-                  onChange={(event) => updateDraft({ subject: event.target.value })}
-                  placeholder="Une attention pour votre prochaine visite"
-                  maxLength={200}
+                Message
+                <textarea
+                  value={draft.bodyTemplate}
+                  onChange={(event) => updateDraft({ bodyTemplate: event.target.value })}
+                  rows={9}
+                  maxLength={MAX_BODY_LENGTH[draft.channel]}
+                  className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                 />
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Variables : {'{{customer.firstName}}'}, {'{{customer.name}}'},
+                  {' {{restaurant.name}}'}, {' {{reservationLink}}'}, {' {{unsubscribeUrl}}'}.
+                </span>
               </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1 text-sm font-medium">
+                  Fuseau horaire
+                  <select
+                    value={draft.timezone}
+                    onChange={(event) => updateDraft({ timezone: event.target.value })}
+                    className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                  >
+                    {TIMEZONES.some(([value]) => value === draft.timezone) ? null : (
+                      <option value={draft.timezone}>{draft.timezone}</option>
+                    )}
+                    {TIMEZONES.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm font-medium">
+                  Date indicative (facultative)
+                  <Input
+                    type="datetime-local"
+                    value={draft.scheduledAt}
+                    onChange={(event) => updateDraft({ scheduledAt: event.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void previewAudience()}
+                  disabled={action !== null || !draft.segmentId || frozen}
+                  className="transition-all duration-200"
+                >
+                  {action === 'audience' ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Eye className="mr-1 h-4 w-4" />
+                  )}
+                  Prévisualiser l’audience
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={action !== null || frozen || segmentsError !== ''}
+                  className="transition-all duration-200"
+                >
+                  {action === 'create' ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="mr-1 h-4 w-4" />
+                  )}
+                  Créer et prévisualiser
+                </Button>
+              </div>
+            </fieldset>
+            {frozen && (
+              <Button asChild variant="outline" className="transition-all duration-200">
+                <Link href="/dashboard/marketing">Voir dans Marketing</Link>
+              </Button>
             )}
-
-            <label className="block space-y-1 text-sm font-medium">
-              Message
-              <textarea
-                value={draft.bodyTemplate}
-                onChange={(event) => updateDraft({ bodyTemplate: event.target.value })}
-                rows={9}
-                maxLength={draft.channel === 'EMAIL' ? 10_000 : 918}
-                className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
-              />
-              <span className="block text-xs font-normal text-muted-foreground">
-                Variables : {'{{customer.firstName}}'}, {'{{customer.name}}'},
-                {' {{restaurant.name}}'}, {' {{reservationLink}}'}, {' {{unsubscribeUrl}}'}.
-              </span>
-            </label>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-1 text-sm font-medium">
-                Fuseau IANA
-                <Input
-                  value={draft.timezone}
-                  onChange={(event) => updateDraft({ timezone: event.target.value })}
-                  placeholder="Europe/Paris"
-                />
-              </label>
-              <label className="space-y-1 text-sm font-medium">
-                Date indicative (facultative)
-                <Input
-                  type="datetime-local"
-                  value={draft.scheduledAt}
-                  onChange={(event) => updateDraft({ scheduledAt: event.target.value })}
-                />
-              </label>
-            </div>
-
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void previewAudience()}
-                disabled={action !== null || !draft.segmentId}
-                className="transition-all duration-200"
-              >
-                {action === 'audience' ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : (
-                  <Eye className="mr-1 h-4 w-4" />
-                )}
-                Prévisualiser l’audience
-              </Button>
-              <Button
-                type="submit"
-                disabled={action !== null}
-                className="transition-all duration-200"
-              >
-                {action === 'create' ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : (
-                  <Check className="mr-1 h-4 w-4" />
-                )}
-                Créer et prévisualiser
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
@@ -481,8 +624,8 @@ export default function NewMarketingCampaignPage() {
             <CardHeader>
               <CardTitle className="text-base">Audience calculée</CardTitle>
               <CardDescription>
-                Le consentement, les suppressions et le plafond de fréquence sont appliqués côté
-                API.
+                Seuls les clients ayant donné leur consentement sont retenus ; les désinscrits et
+                les clients déjà sollicités récemment sont écartés.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -503,7 +646,7 @@ export default function NewMarketingCampaignPage() {
                       <p className="font-medium text-foreground">Exclusions</p>
                       {Object.entries(audience.excludedByReason).map(([reason, count]) => (
                         <p key={reason} className="flex justify-between gap-2">
-                          <span>{reason}</span>
+                          <span>{exclusionLabel(reason)}</span>
                           <strong>{count}</strong>
                         </p>
                       ))}
@@ -531,9 +674,9 @@ export default function NewMarketingCampaignPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Rendu serveur</CardTitle>
+              <CardTitle className="text-base">Aperçu du message</CardTitle>
               <CardDescription>
-                Le preview utilise un membre du snapshot après création, sans envoi externe.
+                L’aperçu utilise un client de votre audience, sans aucun envoi.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -554,23 +697,21 @@ export default function NewMarketingCampaignPage() {
                       {channelUsageLabel(campaignPreview.usage.category)}
                     </Badge>
                     <Badge variant="secondary">
-                      {campaignPreview.usage.encoding === 'message'
-                        ? 'unité message'
-                        : campaignPreview.usage.encoding.toUpperCase()}
+                      {encodingLabel(campaignPreview.usage.encoding)}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {campaignPreview.costEstimate.amount === null
-                      ? `Coût : non rapproché (${campaignPreview.costEstimate.reason}).`
+                      ? 'Coût : estimation indisponible pour le moment.'
                       : `Coût fournisseur estimé : ${formatEur(campaignPreview.costEstimate.amount)} (${campaignPreview.costEstimate.pricePerUnit ?? 'tarif versionné'} / unité).`}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {campaignPreview.render.usedFallbackCustomer
-                      ? 'Le rendu utilise un client de démonstration faute de membre dans le snapshot.'
-                      : `Exemple basé sur ${campaignPreview.audience.sampleCustomer ?? 'un client du snapshot'}.`}
+                      ? 'L’aperçu utilise un client fictif, faute de client dans l’audience.'
+                      : `Exemple basé sur ${campaignPreview.audience.sampleCustomer ?? 'un client de l’audience'}.`}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Brouillon {createdCampaignId ? `· ${createdCampaignId}` : ''} · prévu{' '}
+                    Brouillon enregistré · prévu le{' '}
                     {formatDate(campaignPreview.campaign.scheduledAt)}
                   </p>
                   {createdCampaignId && (
@@ -587,18 +728,34 @@ export default function NewMarketingCampaignPage() {
                       ) : (
                         <Eye className="mr-1 h-3.5 w-3.5" />
                       )}
-                      Tester le rendu gérant
+                      Tester l’aperçu
                     </Button>
                   )}
                   {testPreview && (
                     <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                      Dry-run confirmé : aucun fournisseur contacté ({testPreview.reason}).
+                      Test effectué : aucun message n’a été envoyé.
                     </p>
                   )}
                 </div>
+              ) : previewFailed && createdCampaignId ? (
+                <div className="space-y-3 text-sm">
+                  <p className="text-muted-foreground">
+                    Brouillon créé, mais l’aperçu n’a pas pu être généré.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void generatePreview(createdCampaignId)}
+                    disabled={action !== null}
+                    className="transition-all duration-200"
+                  >
+                    <RefreshCw className="mr-1 h-3.5 w-3.5" /> Réessayer l’aperçu
+                  </Button>
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Le rendu apparaîtra après la création du brouillon.
+                  L’aperçu apparaîtra après la création du brouillon.
                 </p>
               )}
             </CardContent>

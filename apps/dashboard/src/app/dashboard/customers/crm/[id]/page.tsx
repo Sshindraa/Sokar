@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Download,
+  Loader2,
   Mail,
   Plus,
   Phone,
@@ -25,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/lib/api';
+import { ApiError } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type CustomerIdentity = {
@@ -143,12 +145,85 @@ function formatNumber(value: number | string | null | undefined): string {
 function displayValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === null || value === undefined) return '—';
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value.join(', ');
+  }
   try {
     return JSON.stringify(value);
   } catch {
     return '—';
   }
 }
+
+/** Libellés des préférences structurées ; les clés techniques ne sont jamais montrées. */
+const PREFERENCE_LABELS: Record<string, string> = {
+  preferred_section: 'Zone préférée',
+  preferred_table: 'Table préférée',
+  dietary_restrictions: 'Régimes alimentaires',
+  accessibility_needs: 'Accessibilité',
+  preferred_language: 'Langue préférée',
+  occasion_type: 'Occasion habituelle',
+  service_preference: 'Service préféré',
+  group_pattern: 'Taille de groupe habituelle',
+};
+const LIST_PREFERENCES = new Set(['dietary_restrictions', 'accessibility_needs']);
+
+function preferenceLabel(key: string): string {
+  return PREFERENCE_LABELS[key] ?? 'Autre préférence';
+}
+
+/** Texte saisi → valeur envoyée à l'API : liste séparée par des virgules, ou texte simple. */
+function preferenceValueFromInput(key: string, text: string): string | string[] {
+  const trimmed = text.trim();
+  if (!LIST_PREFERENCES.has(key)) return trimmed;
+  return trimmed
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function preferenceInputFromValue(value: unknown): string {
+  return value === null || value === undefined ? '' : displayValue(value);
+}
+
+/** Clé technique d'un tag, déduite de son nom : « VIP régulier » → « vip_regulier ». */
+function tagKeyFromLabel(label: string): string {
+  const slug = label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/^[0-9]+/, '')
+    .slice(0, 60);
+  return slug.length >= 2 ? slug : `tag_${slug || 'client'}`;
+}
+
+/** Événements de la chronologie, en français. Un code inconnu ne s'affiche jamais. */
+const TIMELINE_LABELS: Record<string, string> = {
+  'reservation.created': 'Réservation créée',
+  'reservation.cancelled': 'Réservation annulée',
+  'reservation.honored': 'Visite honorée',
+  'reservation.no_show': 'Client absent (no-show)',
+  'call.received': 'Appel reçu',
+  'customer.tag_assigned': 'Tag ajouté',
+  'customer.tag_removed': 'Tag retiré',
+  'customer.preference_updated': 'Préférence enregistrée',
+  'customer.preference_removed': 'Préférence supprimée',
+  'customer.merged': 'Profils fusionnés',
+  'customer.metrics_repaired': 'Chiffres du client recalculés',
+  'marketing.permission_updated': 'Consentement marketing mis à jour',
+};
+
+function timelineLabel(code: string): string {
+  return TIMELINE_LABELS[code] ?? 'Événement';
+}
+
+const IDENTITY_LABELS: Record<string, string> = {
+  PHONE: 'Téléphone',
+  EMAIL: 'E-mail',
+  POS: 'Caisse',
+};
 
 export default function CrmCustomerPage() {
   const params = useParams<{ id: string }>();
@@ -157,12 +232,15 @@ export default function CrmCustomerPage() {
   const [customer, setCustomer] = useState<CrmCustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // La fiche n'existe plus (fusion, effacement) : inutile de proposer « Réessayer ».
+  const [notFound, setNotFound] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportCode, setExportCode] = useState('');
   const [exportStep, setExportStep] = useState<'idle' | 'requesting' | 'confirming' | 'done'>(
     'idle',
   );
   const [exportError, setExportError] = useState('');
+  const [exportSubmitting, setExportSubmitting] = useState(false);
   const [exportRequest, setExportRequest] = useState<ExportVerificationResponse | null>(null);
   const [exportPayload, setExportPayload] = useState<ExportPayload | null>(null);
   const [repairPreview, setRepairPreview] = useState<ProjectionRepairPreview | null>(null);
@@ -171,9 +249,8 @@ export default function CrmCustomerPage() {
   const [repairNotice, setRepairNotice] = useState('');
   const [preferenceFormOpen, setPreferenceFormOpen] = useState(false);
   const [preferenceKey, setPreferenceKey] = useState('preferred_language');
-  const [preferenceValue, setPreferenceValue] = useState('""');
+  const [preferenceValue, setPreferenceValue] = useState('');
   const [editingPreferenceId, setEditingPreferenceId] = useState<string | null>(null);
-  const [tagKey, setTagKey] = useState('');
   const [tagLabel, setTagLabel] = useState('');
   const [crmMutationLoading, setCrmMutationLoading] = useState(false);
   const [crmMutationError, setCrmMutationError] = useState('');
@@ -186,11 +263,13 @@ export default function CrmCustomerPage() {
     }
     setLoading(true);
     setError('');
+    setNotFound(false);
     try {
       const response = await get<{ data: CrmCustomerDetail }>(`crm/customers/${customerId}`);
       setCustomer(response.data ?? null);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger la fiche CRM'));
+      setNotFound(err instanceof ApiError && err.kind === 'not-found');
+      setError(getErrorMessage(err, 'Impossible de charger la fiche CRM.'));
       setCustomer(null);
     } finally {
       setLoading(false);
@@ -231,15 +310,23 @@ export default function CrmCustomerPage() {
   }
 
   async function confirmExport(): Promise<void> {
-    if (!customer?.phone || !exportCode.trim()) return;
-    setExportStep('confirming');
+    if (!customer?.phone || !exportCode.trim() || exportSubmitting) return;
+    setExportSubmitting(true);
     setExportError('');
+    let confirmation: ExportConfirmationResponse;
     try {
-      const confirmation = await post<ExportConfirmationResponse>('api/rgpd/confirm-verification', {
+      confirmation = await post<ExportConfirmationResponse>('api/rgpd/confirm-verification', {
         subject: customer.phone,
         intent: 'export',
         code: exportCode.trim(),
       });
+    } catch (err: unknown) {
+      // Code refusé : il reste saisissable, le restaurateur peut corriger ou demander un nouveau code.
+      setExportError(getErrorMessage(err, 'Le code n’a pas pu être vérifié.'));
+      setExportSubmitting(false);
+      return;
+    }
+    try {
       const payload = await post<ExportPayload>(
         'api/rgpd/export',
         { subject: customer.phone },
@@ -249,8 +336,11 @@ export default function CrmCustomerPage() {
       setExportStep('done');
       downloadExport(payload);
     } catch (err: unknown) {
-      setExportError(getErrorMessage(err, "Le code n'a pas permis de générer l'export"));
-      setExportStep('confirming');
+      // Le code est à usage unique et vient d'être consommé : il faut en demander un nouveau.
+      setExportError(getErrorMessage(err, 'L’export n’a pas pu être généré.'));
+      setExportStep('idle');
+    } finally {
+      setExportSubmitting(false);
     }
   }
 
@@ -265,7 +355,7 @@ export default function CrmCustomerPage() {
       );
       setRepairPreview(response.data ?? null);
     } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'Impossible de vérifier la projection CRM'));
+      setRepairError(getErrorMessage(err, 'Impossible de vérifier les chiffres de ce client.'));
       setRepairPreview(null);
     } finally {
       setRepairLoading(false);
@@ -287,10 +377,10 @@ export default function CrmCustomerPage() {
       setRepairNotice(
         response.data?.replayed
           ? 'La réparation a déjà été appliquée pour cette demande.'
-          : 'Projection CRM recalculée depuis les réservations.',
+          : 'Chiffres recalculés depuis les réservations.',
       );
     } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'La réparation de la projection a échoué'));
+      setRepairError(getErrorMessage(err, 'Le recalcul a échoué.'));
     } finally {
       setRepairLoading(false);
     }
@@ -300,11 +390,7 @@ export default function CrmCustomerPage() {
     setPreferenceFormOpen(true);
     setEditingPreferenceId(preference.id);
     setPreferenceKey(preference.key);
-    try {
-      setPreferenceValue(JSON.stringify(preference.value));
-    } catch {
-      setPreferenceValue('""');
-    }
+    setPreferenceValue(preferenceInputFromValue(preference.value));
     setCrmMutationError('');
     setCrmMutationNotice('');
   }
@@ -313,16 +399,14 @@ export default function CrmCustomerPage() {
     setPreferenceFormOpen(false);
     setEditingPreferenceId(null);
     setPreferenceKey('preferred_language');
-    setPreferenceValue('""');
+    setPreferenceValue('');
   }
 
   async function savePreference(): Promise<void> {
     if (!customerId) return;
-    let value: unknown;
-    try {
-      value = JSON.parse(preferenceValue);
-    } catch {
-      setCrmMutationError('La valeur doit être un JSON valide, par exemple "fr" ou ["terrasse"].');
+    const value = preferenceValueFromInput(preferenceKey, preferenceValue);
+    if (Array.isArray(value) ? value.length === 0 : !value) {
+      setCrmMutationError('Indiquez une valeur pour cette préférence.');
       return;
     }
     setCrmMutationLoading(true);
@@ -347,10 +431,10 @@ export default function CrmCustomerPage() {
         ].sort((left, right) => left.key.localeCompare(right.key));
         return { ...current, preferences };
       });
-      setCrmMutationNotice('Préférence enregistrée dans le CRM.');
+      setCrmMutationNotice('Préférence enregistrée.');
       resetPreferenceForm();
     } catch (err: unknown) {
-      setCrmMutationError(getErrorMessage(err, 'Impossible d’enregistrer la préférence'));
+      setCrmMutationError(getErrorMessage(err, 'Impossible d’enregistrer la préférence.'));
     } finally {
       setCrmMutationLoading(false);
     }
@@ -374,14 +458,19 @@ export default function CrmCustomerPage() {
       if (editingPreferenceId === preference.id) resetPreferenceForm();
       setCrmMutationNotice('Préférence supprimée.');
     } catch (err: unknown) {
-      setCrmMutationError(getErrorMessage(err, 'Impossible de supprimer la préférence'));
+      if (err instanceof ApiError && err.kind === 'not-found') {
+        // Déjà supprimée ailleurs : on recharge la fiche plutôt que d'afficher une erreur.
+        await load();
+        return;
+      }
+      setCrmMutationError(getErrorMessage(err, 'Impossible de supprimer la préférence.'));
     } finally {
       setCrmMutationLoading(false);
     }
   }
 
   async function saveTag(): Promise<void> {
-    if (!customerId || !tagKey.trim() || !tagLabel.trim()) return;
+    if (!customerId || !tagLabel.trim()) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
     setCrmMutationNotice('');
@@ -389,7 +478,7 @@ export default function CrmCustomerPage() {
       const response = await post<{
         data: { tag: CustomerTag; assignment: CustomerTagAssignment };
       }>(`crm/customers/${customerId}/tags`, {
-        key: tagKey.trim(),
+        key: tagKeyFromLabel(tagLabel),
         label: tagLabel.trim(),
         source: 'MANUAL',
       });
@@ -405,11 +494,10 @@ export default function CrmCustomerPage() {
         ];
         return { ...current, tags, tagAssignments };
       });
-      setTagKey('');
       setTagLabel('');
-      setCrmMutationNotice('Tag ajouté au profil CRM.');
+      setCrmMutationNotice('Tag ajouté.');
     } catch (err: unknown) {
-      setCrmMutationError(getErrorMessage(err, 'Impossible d’ajouter le tag'));
+      setCrmMutationError(getErrorMessage(err, 'Impossible d’ajouter le tag.'));
     } finally {
       setCrmMutationLoading(false);
     }
@@ -431,9 +519,13 @@ export default function CrmCustomerPage() {
             }
           : current,
       );
-      setCrmMutationNotice('Tag retiré du profil CRM.');
+      setCrmMutationNotice('Tag retiré.');
     } catch (err: unknown) {
-      setCrmMutationError(getErrorMessage(err, 'Impossible de retirer le tag'));
+      if (err instanceof ApiError && err.kind === 'not-found') {
+        await load();
+        return;
+      }
+      setCrmMutationError(getErrorMessage(err, 'Impossible de retirer le tag.'));
     } finally {
       setCrmMutationLoading(false);
     }
@@ -465,11 +557,19 @@ export default function CrmCustomerPage() {
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-destructive">
             <AlertCircle className="mt-0.5 shrink-0" size={18} />
             <div className="space-y-3">
-              <p>{error || 'Client introuvable.'}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
-                <RefreshCw size={14} />
-                Réessayer
-              </Button>
+              <p role="alert">{error || 'Client introuvable.'}</p>
+              {notFound ? null : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="transition-all duration-200"
+                  onClick={() => void load()}
+                >
+                  <RefreshCw size={14} />
+                  Réessayer
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -497,7 +597,7 @@ export default function CrmCustomerPage() {
             {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
           </div>
           <p className="text-sm text-muted-foreground">
-            Profil CRM · {customer.visitCount} visite(s)
+            Fiche client · {customer.visitCount} visite(s)
           </p>
         </div>
         <Button asChild variant="outline">
@@ -513,8 +613,8 @@ export default function CrmCustomerPage() {
               Export RGPD
             </CardTitle>
             <CardDescription>
-              Export JSON des réservations, du profil CRM et des preuves marketing après
-              vérification par SMS.
+              Fichier des données de ce client (réservations, profil, consentements marketing),
+              téléchargeable après vérification par SMS.
             </CardDescription>
           </div>
           <Button
@@ -551,8 +651,8 @@ export default function CrmCustomerPage() {
             {exportStep === 'confirming' && exportRequest ? (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'email'}. Saisissez-le
-                  pour télécharger le fichier sans exposer le token de vérification.
+                  Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'e-mail'}. Saisissez-le
+                  pour télécharger le fichier.
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Input
@@ -565,15 +665,30 @@ export default function CrmCustomerPage() {
                     placeholder="123456"
                     aria-label="Code d’export RGPD"
                     className="sm:max-w-40"
+                    disabled={exportSubmitting}
                   />
                   <Button
                     type="button"
+                    className="transition-all duration-200"
                     onClick={() => void confirmExport()}
-                    disabled={exportCode.length !== 6}
+                    disabled={exportCode.length !== 6 || exportSubmitting}
                   >
-                    Télécharger l’export
+                    {exportSubmitting ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" />
+                        Vérification…
+                      </>
+                    ) : (
+                      'Télécharger l’export'
+                    )}
                   </Button>
-                  <Button type="button" variant="ghost" onClick={() => void requestExportCode()}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="transition-all duration-200"
+                    disabled={exportSubmitting}
+                    onClick={() => void requestExportCode()}
+                  >
                     Renvoyer
                   </Button>
                 </div>
@@ -585,7 +700,7 @@ export default function CrmCustomerPage() {
                 <div>
                   <p className="font-medium text-success">Export téléchargé.</p>
                   <p className="text-muted-foreground">
-                    Généré le {formatDate(exportPayload.exportedAt)} · données JSON portables.
+                    Généré le {formatDate(exportPayload.exportedAt)}.
                   </p>
                 </div>
                 <Button
@@ -608,7 +723,7 @@ export default function CrmCustomerPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Coordonnées et identités</CardTitle>
-            <CardDescription>Les identités sont conservées avec leur provenance.</CardDescription>
+            <CardDescription>Les autres coordonnées connues de ce client.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="flex items-start gap-3">
@@ -635,7 +750,7 @@ export default function CrmCustomerPage() {
                 <div className="flex flex-wrap gap-2">
                   {customer.identities.map((identity) => (
                     <Badge key={identity.id} variant="secondary">
-                      {identity.type} · {identity.value}
+                      {IDENTITY_LABELS[identity.type] ?? 'Autre coordonnée'} · {identity.value}
                     </Badge>
                   ))}
                 </div>
@@ -647,7 +762,7 @@ export default function CrmCustomerPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Valeur et récence</CardTitle>
-            <CardDescription>Projection recalculable, dépense caisse séparée.</CardDescription>
+            <CardDescription>Calculées à partir des réservations.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between gap-4">
@@ -678,10 +793,10 @@ export default function CrmCustomerPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Projection CRM
+                    Exactitude des chiffres
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Comparaison déterministe avec les réservations sources.
+                    Compare ces chiffres avec les réservations.
                   </p>
                 </div>
                 <Button
@@ -699,7 +814,7 @@ export default function CrmCustomerPage() {
                   <p className={repairPreview.changed ? 'text-warning' : 'text-success'}>
                     {repairPreview.changed
                       ? `Écart détecté sur ${repairPreview.reservationCount} réservation(s).`
-                      : 'Projection à jour.'}
+                      : 'Chiffres à jour.'}
                   </p>
                   {repairPreview.changed ? (
                     <Button
@@ -708,7 +823,7 @@ export default function CrmCustomerPage() {
                       onClick={() => void repairProjection()}
                       disabled={repairLoading}
                     >
-                      Recalculer la projection
+                      Recalculer les chiffres
                     </Button>
                   ) : null}
                 </div>
@@ -733,7 +848,7 @@ export default function CrmCustomerPage() {
             <div>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Tags</p>
-                <span className="text-xs text-muted-foreground">Owner/Manager</span>
+                <span className="text-xs text-muted-foreground">Réservé aux responsables</span>
               </div>
               {customer.tags.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Aucun tag.</p>
@@ -765,24 +880,17 @@ export default function CrmCustomerPage() {
                 }}
               >
                 <Input
-                  value={tagKey}
-                  onChange={(event) => setTagKey(event.target.value)}
-                  placeholder="vip_regulier"
-                  aria-label="Clé du tag"
-                  className="sm:max-w-44"
-                  disabled={crmMutationLoading}
-                />
-                <Input
                   value={tagLabel}
                   onChange={(event) => setTagLabel(event.target.value)}
-                  placeholder="VIP régulier"
-                  aria-label="Libellé du tag"
+                  placeholder="Nom du tag, par exemple « VIP régulier »"
+                  aria-label="Nom du tag"
+                  maxLength={80}
                   disabled={crmMutationLoading}
                 />
                 <Button
                   type="submit"
                   variant="outline"
-                  disabled={crmMutationLoading || !tagKey.trim() || !tagLabel.trim()}
+                  disabled={crmMutationLoading || !tagLabel.trim()}
                 >
                   <Plus size={14} />
                   Ajouter
@@ -818,7 +926,7 @@ export default function CrmCustomerPage() {
                       className="flex items-center justify-between gap-3 py-2 first:pt-0"
                     >
                       <div className="min-w-0">
-                        <dt className="text-muted-foreground">{preference.key}</dt>
+                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
                         <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
                       </div>
                       <div className="flex shrink-0 gap-1">
@@ -836,7 +944,7 @@ export default function CrmCustomerPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          aria-label={`Supprimer la préférence ${preference.key}`}
+                          aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
                           onClick={() => void removePreference(preference)}
                           disabled={crmMutationLoading}
                         >
@@ -868,36 +976,28 @@ export default function CrmCustomerPage() {
                     <select
                       value={preferenceKey}
                       onChange={(event) => setPreferenceKey(event.target.value)}
-                      aria-label="Clé de préférence"
+                      aria-label="Type de préférence"
                       className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                       disabled={crmMutationLoading || Boolean(editingPreferenceId)}
                     >
-                      {[
-                        'preferred_section',
-                        'preferred_table',
-                        'dietary_restrictions',
-                        'accessibility_needs',
-                        'preferred_language',
-                        'occasion_type',
-                        'service_preference',
-                        'group_pattern',
-                      ].map((key) => (
+                      {Object.entries(PREFERENCE_LABELS).map(([key, label]) => (
                         <option key={key} value={key}>
-                          {key}
+                          {label}
                         </option>
                       ))}
                     </select>
                     <Input
                       value={preferenceValue}
                       onChange={(event) => setPreferenceValue(event.target.value)}
-                      placeholder='"terrasse" ou ["sans gluten"]'
-                      aria-label="Valeur JSON de préférence"
+                      placeholder={
+                        LIST_PREFERENCES.has(preferenceKey)
+                          ? 'Séparez par des virgules : sans gluten, végétarien'
+                          : 'Par exemple : terrasse'
+                      }
+                      aria-label="Valeur de la préférence"
                       disabled={crmMutationLoading}
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    La valeur est envoyée en JSON et contrôlée par l’API avant écriture.
-                  </p>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -925,7 +1025,7 @@ export default function CrmCustomerPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Chronologie récente</CardTitle>
-            <CardDescription>Événements métier dédupliqués par le serveur.</CardDescription>
+            <CardDescription>Réservations, appels et modifications de la fiche.</CardDescription>
           </CardHeader>
           <CardContent>
             {customer.timeline.length === 0 ? (
@@ -936,7 +1036,7 @@ export default function CrmCustomerPage() {
                   <li key={event.id} className="flex gap-3">
                     <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium">{event.summaryCode}</p>
+                      <p className="text-sm font-medium">{timelineLabel(event.summaryCode)}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatDate(event.occurredAt)}
                       </p>

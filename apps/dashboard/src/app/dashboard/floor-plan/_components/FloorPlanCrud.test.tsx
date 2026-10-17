@@ -288,12 +288,23 @@ describe('FloorPlanCrud', () => {
     });
   });
 
-  it('affiche une erreur si le chargement échoue', async () => {
-    apiMocks.get.mockRejectedValue(new Error('network error'));
+  it('affiche une erreur avec « Réessayer » si le chargement échoue, sans formulaire', async () => {
+    apiMocks.get.mockRejectedValueOnce(new Error('network error'));
 
     render(<FloorPlanCrud />);
 
     expect(await screen.findByText('network error')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nouvelle section')).not.toBeInTheDocument();
+
+    apiMocks.get.mockResolvedValueOnce({
+      id: 'plan-1',
+      name: 'Plan',
+      sections: [{ id: 'section-1', name: 'Salle', position: 0, tables: [] }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+    expect(await screen.findByText('Salle')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nouvelle section')).toBeInTheDocument();
   });
 
   it('affiche une erreur si la création de section échoue', async () => {

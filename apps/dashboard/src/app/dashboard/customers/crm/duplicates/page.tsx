@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   GitMerge,
+  Loader2,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
@@ -14,7 +15,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type DuplicateCustomer = {
@@ -98,6 +101,30 @@ function displayValue(value: unknown): string {
   }
 }
 
+/** Préférences en conflit : libellé français plutôt que clé technique. */
+const PREFERENCE_LABELS: Record<string, string> = {
+  preferred_section: 'Zone préférée',
+  preferred_table: 'Table préférée',
+  dietary_restrictions: 'Régimes alimentaires',
+  accessibility_needs: 'Accessibilité',
+  preferred_language: 'Langue préférée',
+  occasion_type: 'Occasion habituelle',
+  service_preference: 'Service préféré',
+  group_pattern: 'Taille de groupe habituelle',
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+  SMS: 'SMS',
+  EMAIL: 'e-mail',
+  WHATSAPP: 'WhatsApp',
+};
+const PERMISSION_LABELS: Record<string, string> = {
+  OPT_IN: 'accepté',
+  OPT_OUT: 'refusé',
+  WITHDRAWN: 'retiré',
+  UNKNOWN: 'non renseigné',
+};
+
 function LoadingCandidates() {
   return (
     <div className="space-y-3">
@@ -123,6 +150,9 @@ export default function CustomerDuplicatesPage() {
   const [action, setAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
+  // Échec du chargement de la liste (≠ erreur d'aperçu ou de fusion, où la liste reste affichée).
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const loadCandidates = useCallback(async () => {
     if (!orgId) {
@@ -131,13 +161,17 @@ export default function CustomerDuplicatesPage() {
     }
     setLoading(true);
     setError('');
+    setLock(null);
+    setLoadFailed(false);
     try {
       const response = await get<{ data: DuplicateCandidate[] }>(
         'crm/duplicates?minScore=60&limit=50',
       );
       setCandidates(Array.isArray(response.data) ? response.data : []);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les doublons CRM'));
+      setLock(featureLockFromError(err));
+      setLoadFailed(true);
+      setError(getErrorMessage(err, 'Impossible de charger les doublons.'));
       setCandidates([]);
     } finally {
       setLoading(false);
@@ -171,7 +205,7 @@ export default function CustomerDuplicatesPage() {
       );
       setPreview(response.data ?? null);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de préparer la fusion'));
+      setError(getErrorMessage(err, 'Impossible de préparer la fusion.'));
     } finally {
       setAction('');
     }
@@ -183,7 +217,7 @@ export default function CustomerDuplicatesPage() {
       (conflict) => !resolutions[conflict.key],
     );
     if (unresolved.length > 0) {
-      setError('Choisissez une résolution pour chaque préférence en conflit.');
+      setError('Choisissez la valeur à garder pour chaque préférence en conflit.');
       return;
     }
     setAction('merge');
@@ -201,21 +235,26 @@ export default function CustomerDuplicatesPage() {
       const result = response.data;
       setNotice(
         result?.replayed
-          ? 'La demande de fusion a été rejouée sans nouvelle mutation.'
-          : 'Fusion confirmée. Les profils sources sont archivés et l’audit est conservé.',
+          ? 'Cette fusion avait déjà été effectuée : rien n’a été modifié.'
+          : 'Fusion effectuée. L’autre profil est archivé et l’historique est conservé.',
       );
       setSelected(null);
       setPreview(null);
       setResolutions({});
       await loadCandidates();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'La fusion n’a pas été confirmée'));
+      setError(getErrorMessage(err, 'La fusion n’a pas été effectuée.'));
     } finally {
       setAction('');
     }
   }
 
-  const forbidden = error.toLowerCase().includes('formule') || error.includes('CAPABILITY');
+  const sourceCustomerName = (customerId: string): string => {
+    if (!selected) return 'Profil';
+    const all = [selected.candidate.left, selected.candidate.right];
+    const match = all.find((customer) => customer.id === customerId);
+    return match ? customerLabel(match) : 'Profil';
+  };
 
   return (
     <div className="space-y-6">
@@ -229,11 +268,11 @@ export default function CustomerDuplicatesPage() {
           </Button>
           <div className="flex items-center gap-2">
             <GitMerge className="text-primary" size={20} />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Doublons CRM</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Doublons</h1>
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Les suggestions utilisent le téléphone ou l’email normalisé. Le nom seul ne déclenche
-            jamais une fusion.
+            Les suggestions s’appuient sur le téléphone ou l’e-mail. Le nom seul ne déclenche jamais
+            une fusion.
           </p>
         </div>
         <Button
@@ -256,17 +295,25 @@ export default function CustomerDuplicatesPage() {
         </Card>
       ) : null}
 
-      {error ? (
+      {lock ? (
+        <FeatureLockCard lock={lock} feature="Doublons" />
+      ) : error ? (
         <Card className="border-destructive/40">
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-destructive">
             <AlertCircle className="mt-0.5 shrink-0" size={18} />
             <div className="space-y-2">
-              <p>{error}</p>
-              {forbidden ? (
-                <p className="text-muted-foreground">
-                  La détection et la fusion sont incluses dans le CRM Pro. Le fichier client de base
-                  reste disponible dans l’espace Clients.
-                </p>
+              <p role="alert">{error}</p>
+              {loadFailed ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="transition-all duration-200"
+                  onClick={() => void loadCandidates()}
+                >
+                  <RefreshCw size={14} />
+                  Réessayer
+                </Button>
               ) : null}
             </div>
           </CardContent>
@@ -275,7 +322,7 @@ export default function CustomerDuplicatesPage() {
 
       {loading ? (
         <LoadingCandidates />
-      ) : candidates.length === 0 && !error ? (
+      ) : loadFailed || lock ? null : candidates.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
             <ShieldCheck className="text-success" size={36} />
@@ -295,14 +342,13 @@ export default function CustomerDuplicatesPage() {
               >
                 <CardHeader className="flex-row items-start justify-between gap-4 pb-3">
                   <div>
-                    <CardTitle className="text-base">Deux profils rapprochés</CardTitle>
+                    <CardTitle className="text-base">Deux profils qui se ressemblent</CardTitle>
                     <CardDescription>
-                      Score {candidate.score}/100 ·{' '}
                       {candidate.reasons.map((reason) => reason.label).join(' · ')}
                     </CardDescription>
                   </div>
                   <Badge variant={candidate.score >= 90 ? 'default' : 'secondary'}>
-                    {candidate.score}/100
+                    {candidate.score >= 90 ? 'Très probable' : 'Probable'}
                   </Badge>
                 </CardHeader>
                 <CardContent>
@@ -323,7 +369,7 @@ export default function CustomerDuplicatesPage() {
                           </p>
                         ) : null}
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {customer.visitCount} visite(s) · ID {customer.id}
+                          {customer.visitCount} visite(s)
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button
@@ -350,14 +396,25 @@ export default function CustomerDuplicatesPage() {
               <CardDescription>
                 {selected
                   ? `Cible : ${customerLabel(selected.candidate.left.id === selected.targetCustomerId ? selected.candidate.left : selected.candidate.right)}`
-                  : 'Sélectionnez le profil à conserver.'}
+                  : 'Choisissez « Garder ce profil » sur l’un des deux.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {!selected || !preview ? (
+              {!selected ? (
                 <p className="text-sm text-muted-foreground">
-                  Le serveur calculera les impacts avant toute écriture.
+                  Vous verrez ce qui sera regroupé avant toute modification.
                 </p>
+              ) : !preview ? (
+                error ? (
+                  <p className="text-sm text-muted-foreground">
+                    L’aperçu n’a pas pu être calculé. Choisissez de nouveau le profil à garder.
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 size={15} className="animate-spin" />
+                    Calcul de l’aperçu…
+                  </p>
+                )
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-2 text-center text-sm">
@@ -371,7 +428,7 @@ export default function CustomerDuplicatesPage() {
                     </div>
                     <div className="rounded-lg bg-muted/40 p-3">
                       <strong className="block text-lg">{preview.impact.permissions}</strong>
-                      <span className="text-xs text-muted-foreground">permissions</span>
+                      <span className="text-xs text-muted-foreground">consentements</span>
                     </div>
                     <div className="rounded-lg bg-muted/40 p-3">
                       <strong className="block text-lg">{preview.impact.conversions}</strong>
@@ -381,9 +438,9 @@ export default function CustomerDuplicatesPage() {
 
                   {preview.conflicts.identities.length > 0 ? (
                     <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-                      <p className="font-medium">Identités communes</p>
+                      <p className="font-medium">Coordonnées en commun</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Les identités identiques seront dédupliquées dans la transaction.
+                        Les coordonnées identiques ne seront gardées qu’une fois.
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {preview.conflicts.identities.map((identity) => (
@@ -391,7 +448,11 @@ export default function CustomerDuplicatesPage() {
                             key={`${identity.type}:${identity.normalizedValue}`}
                             variant="secondary"
                           >
-                            {identity.type}
+                            {identity.type === 'PHONE'
+                              ? 'Téléphone'
+                              : identity.type === 'EMAIL'
+                                ? 'E-mail'
+                                : 'Autre coordonnée'}
                           </Badge>
                         ))}
                       </div>
@@ -403,14 +464,17 @@ export default function CustomerDuplicatesPage() {
                       <div>
                         <p className="text-sm font-medium">Préférences en conflit</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Une résolution explicite protège les informations saisies par l’équipe.
+                          Choisissez quelle valeur garder : cela protège les informations saisies
+                          par votre équipe.
                         </p>
                       </div>
                       {preview.conflicts.preferences.map((conflict) => (
                         <label key={conflict.key} className="block text-sm">
-                          <span className="font-medium">{conflict.key}</span>
+                          <span className="font-medium">
+                            {PREFERENCE_LABELS[conflict.key] ?? 'Autre préférence'}
+                          </span>
                           <select
-                            aria-label={`Résolution ${conflict.key}`}
+                            aria-label={`Valeur à garder : ${PREFERENCE_LABELS[conflict.key] ?? 'préférence'}`}
                             className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
                             value={resolutions[conflict.key] ?? ''}
                             onChange={(event) =>
@@ -426,13 +490,16 @@ export default function CustomerDuplicatesPage() {
                             <option value="" disabled>
                               Choisir une valeur
                             </option>
-                            <option value="target">Conserver la cible</option>
-                            <option value="source">Conserver la source</option>
-                            <option value="latest">Valeur la plus récente</option>
+                            <option value="target">Garder celle du profil conservé</option>
+                            <option value="source">Garder celle de l’autre profil</option>
+                            <option value="latest">Garder la plus récente</option>
                           </select>
                           <span className="mt-1 block text-xs text-muted-foreground">
                             {conflict.values
-                              .map((value) => `${value.customerId}: ${displayValue(value.value)}`)
+                              .map(
+                                (value) =>
+                                  `${sourceCustomerName(value.customerId)} : ${displayValue(value.value)}`,
+                              )
                               .join(' · ')}
                           </span>
                         </label>
@@ -444,11 +511,11 @@ export default function CustomerDuplicatesPage() {
                     <div className="rounded-lg border border-border p-3 text-sm">
                       <p className="font-medium">Consentements</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        L’état le plus restrictif est conservé par canal :{' '}
+                        Le choix le plus protecteur est gardé pour chaque canal :{' '}
                         {preview.conflicts.permissions
                           .map(
                             (permission) =>
-                              `${permission.channel} → ${permission.restrictiveStatus}`,
+                              `${CHANNEL_LABELS[permission.channel] ?? 'canal'} ${PERMISSION_LABELS[permission.restrictiveStatus] ?? 'non renseigné'}`,
                           )
                           .join(' · ')}
                       </p>
@@ -458,6 +525,7 @@ export default function CustomerDuplicatesPage() {
                   <div className="flex flex-col gap-2 border-t border-border pt-4">
                     <Button
                       type="button"
+                      className="transition-all duration-200"
                       disabled={action === 'merge'}
                       onClick={() => void confirmMerge()}
                     >
@@ -465,7 +533,7 @@ export default function CustomerDuplicatesPage() {
                       {action === 'merge' ? 'Fusion en cours…' : 'Confirmer la fusion'}
                     </Button>
                     <p className="text-center text-xs text-muted-foreground">
-                      Confirmation réservée au propriétaire du site · audit idempotent conservé
+                      Réservé au propriétaire du compte · l’historique de la fusion est conservé
                     </p>
                   </div>
                 </>
