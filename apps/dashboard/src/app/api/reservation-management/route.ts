@@ -7,6 +7,8 @@ export async function POST(req: NextRequest) {
     action?: unknown;
     confirmed?: unknown;
     confirmationToken?: unknown;
+    proposalToken?: unknown;
+    partySize?: unknown;
   } | null;
   try {
     const text = await req.text();
@@ -21,7 +23,9 @@ export async function POST(req: NextRequest) {
       !body ||
       typeof body.token !== 'string' ||
       body.token.length > 100 ||
-      !['view', 'withdraw_whatsapp', 'cancel'].includes(String(body.action))
+      !['view', 'withdraw_whatsapp', 'cancel', 'modification_options', 'modify'].includes(
+        String(body.action),
+      )
     )
       return Response.json({ error: 'Demande invalide.' }, { status: 400, headers });
     if (
@@ -31,6 +35,21 @@ export async function POST(req: NextRequest) {
         body.confirmationToken.length > 80)
     )
       return Response.json({ error: 'Confirmation invalide.' }, { status: 400, headers });
+    if (
+      body.action === 'modify' &&
+      (body.confirmed !== true ||
+        typeof body.proposalToken !== 'string' ||
+        body.proposalToken.length > 1500)
+    )
+      return Response.json({ error: 'Confirmation invalide.' }, { status: 400, headers });
+    if (
+      body.action === 'modification_options' &&
+      (typeof body.partySize !== 'number' ||
+        !Number.isInteger(body.partySize) ||
+        body.partySize < 1 ||
+        body.partySize > 50)
+    )
+      return Response.json({ error: 'Nombre de personnes invalide.' }, { status: 400, headers });
     const forwardedFor = req.headers.get('x-forwarded-for');
     const response = await fetch(
       `${process.env.API_URL || 'http://127.0.0.1:4000'}/public/reservation-management`,
@@ -43,6 +62,10 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           token: body.token,
           action: body.action,
+          ...(body.action === 'modify'
+            ? { confirmed: true, proposalToken: body.proposalToken }
+            : {}),
+          ...(body.action === 'modification_options' ? { partySize: body.partySize } : {}),
           ...(body.action === 'cancel'
             ? { confirmed: true, confirmationToken: body.confirmationToken }
             : {}),

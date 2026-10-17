@@ -24,6 +24,7 @@ import {
 import { SokarLogo } from '@/components/SokarLogo';
 import { cn } from '@/lib/utils';
 import styles from './reservation-view.module.css';
+import { ReservationModification } from './reservation-modification';
 
 type Reservation = {
   restaurantName: string;
@@ -42,6 +43,7 @@ type Reservation = {
     terms?: string;
     confirmationToken?: string;
   };
+  modification?: { available: boolean; message: string };
   whatsappReminder: { visible: boolean; enabled: boolean };
 };
 const STATES: Record<string, string> = {
@@ -233,6 +235,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
 
   const bookingDate = reservation ? new Date(`${reservation.date}T12:00:00Z`) : null;
   const confirmed = reservation?.state === 'CONFIRMED';
+  const renderedToken = token.current;
   const terminal = ['CANCELLED', 'EXPIRED', 'FAILED', 'NO_SHOW'].includes(reservation?.state ?? '');
   const StatusIcon = confirmed ? Check : terminal ? CircleX : CircleDashed;
 
@@ -409,6 +412,17 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                     )}
                   </details>
                 )}
+                {reservation.modification?.available && !terminal && (
+                  <ReservationModification
+                    booking={reservation}
+                    token={renderedToken}
+                    disabled={busy}
+                    terms={reservation.cancellation?.terms}
+                    onUpdated={(updated) => {
+                      if (token.current === renderedToken) setReservation(updated);
+                    }}
+                  />
+                )}
                 {reservation.cancellation && !terminal && (
                   <section aria-label="Conditions d’annulation" className="space-y-3 text-sm">
                     {reservation.cancellation.terms && <p>{reservation.cancellation.terms}</p>}
@@ -429,30 +443,31 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                   </section>
                 )}
                 <section className={styles.contactGroup}>
-                  {demo ? (
-                    <button
-                      type="button"
-                      disabled
-                      title="Indisponible dans la démonstration"
-                      className={styles.manageLink}
-                    >
-                      {reservation.cancellation
-                        ? 'Demander une modification'
-                        : 'Modifier ou annuler'}
-                    </button>
-                  ) : reservation.restaurantPhone ? (
-                    <a
-                      href={`tel:${reservation.restaurantPhone.replace(/[^+0-9]/g, '')}`}
-                      title="Contacter le restaurant par téléphone pour modifier ou annuler"
-                      className={cn(styles.manageLink, 'transition-all duration-200')}
-                    >
-                      {reservation.cancellation
-                        ? 'Demander une modification'
-                        : 'Modifier ou annuler'}
-                    </a>
-                  ) : (
-                    <span className={styles.manageLabel}>Modifier ou annuler</span>
-                  )}
+                  {!reservation.modification?.available &&
+                    (demo ? (
+                      <button
+                        type="button"
+                        disabled
+                        title="Indisponible dans la démonstration"
+                        className={styles.manageLink}
+                      >
+                        {reservation.cancellation
+                          ? 'Demander une modification'
+                          : 'Modifier ou annuler'}
+                      </button>
+                    ) : reservation.restaurantPhone ? (
+                      <a
+                        href={`tel:${reservation.restaurantPhone.replace(/[^+0-9]/g, '')}`}
+                        title="Contacter le restaurant par téléphone pour modifier ou annuler"
+                        className={cn(styles.manageLink, 'transition-all duration-200')}
+                      >
+                        {reservation.cancellation
+                          ? 'Demander une modification'
+                          : 'Modifier ou annuler'}
+                      </a>
+                    ) : (
+                      <span className={styles.manageLabel}>Modifier ou annuler</span>
+                    ))}
                   {demo ? (
                     <Button
                       disabled

@@ -1,3 +1,4 @@
+import type { Reservation } from '@prisma/client';
 /**
  * Reservation service : crée, transitionne, annule les réservations.
  *
@@ -723,6 +724,9 @@ export class ReservationService {
     startsAt?: Date;
     endsAt?: Date;
     customerName?: string;
+    /** Internal adapter authorization, rechecked under the same capacity/row locks. */
+    beforeModify?: (tx: Prisma.TransactionClient, current: Reservation) => Promise<void>;
+    auditMetadata?: Prisma.InputJsonObject;
   }): Promise<{ reservationId: string; state: ReservationState; changed: boolean }> {
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockCapacitySlot(tx, args.restaurantId);
@@ -744,6 +748,8 @@ export class ReservationService {
       if (current.state !== 'PENDING' && current.state !== 'CONFIRMED') {
         throw new ReservationModificationNotAllowedError();
       }
+
+      await args.beforeModify?.(tx, current);
 
       const startsAt = args.startsAt ?? current.startsAt ?? current.reservedAt;
       const endsAt = args.endsAt ?? current.endsAt;
@@ -842,7 +848,8 @@ export class ReservationService {
           fromState: current.state,
           toState: current.state,
           metadata: {
-            source: 'mcp',
+            ...args.auditMetadata,
+            source: args.auditMetadata?.source ?? 'mcp',
             changedFields: [
               ...(capacityChanged ? ['partySize', 'startsAt', 'endsAt', 'tableId'] : []),
               ...(nameChanged ? ['customerName'] : []),
@@ -893,7 +900,7 @@ export class ReservationService {
     }
     if (result.changed) {
       observeReservationMutation({
-        source: 'mcp',
+        source: args.actor === 'customer:personal-link' ? 'direct' : 'mcp',
         operation: 'update',
         status: result.reservation.status,
         state: result.reservation.state,

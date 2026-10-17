@@ -368,3 +368,131 @@ test('cancellation requires a second deliberate action and survives reload', asy
   expect(writes).toBe(1);
   await expect(page.getByRole('button', { name: 'Ajouter au calendrier' })).toHaveCount(0);
 });
+
+test('personal modification keeps the current carton through selection and review', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !!process.env.PLAYWRIGHT_BASE_URL &&
+      !new URL(process.env.PLAYWRIGHT_BASE_URL).hostname.match(/^(localhost|127\.0\.0\.1)$/),
+    'Local mocked qualification only',
+  );
+  let modifications = 0;
+  let time = '19:30';
+  let partySize = 2;
+  await page.route('**/api/reservation-management', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === 'modification_options') {
+      return route.fulfill({
+        json: {
+          date: '2026-10-20',
+          partySize: body.partySize,
+          maxPartySize: 7,
+          slots: [
+            { time: '20:00', proposalToken: `offer-${body.partySize}` },
+            { time: '21:00', proposalToken: `late-${body.partySize}` },
+          ],
+          message: 'Votre réservation actuelle est conservée.',
+        },
+      });
+    }
+    if (body.action === 'modify') {
+      expect(body.confirmed).toBe(true);
+      expect(body.proposalToken).toBe('offer-3');
+      modifications++;
+      time = '20:00';
+      partySize = 3;
+    }
+    await route.fulfill({
+      json: {
+        restaurantName: 'La Très Belle Table du Restaurant et de sa Terrasse',
+        restaurantPhone: '+33100000000',
+        date: '2026-10-20',
+        time,
+        partySize,
+        state: 'CONFIRMED',
+        whatsappReminder: { visible: false, enabled: false },
+        modification: { available: true, message: 'Conservée' },
+      },
+    });
+  });
+  await page.goto(`/r#${'a'.repeat(27)}.${'b'.repeat(43)}`);
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Modifier ou annuler$/ })
+    .click();
+  await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
+  await page.getByLabel('Nombre de personnes').focus();
+  await page.getByLabel('Nombre de personnes').selectOption('3');
+  await expect(page.getByRole('radio', { name: '20:00' })).toBeVisible();
+  await expect(page.getByLabel('Nombre de personnes')).toBeFocused();
+  await page.getByRole('radio', { name: '20:00' }).check();
+  await page.getByRole('radio', { name: '20:00' }).press('ArrowRight');
+  await expect(page.getByRole('radio', { name: '21:00' })).toBeChecked();
+  await page.getByRole('radio', { name: '21:00' }).press('ArrowLeft');
+  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  expect(modifications).toBe(0);
+  await expect(page.locator('dl')).toContainText('19:30');
+  await expect(page.getByRole('dialog')).toContainText('20:00 · 3 personnes');
+  await page.screenshot({
+    path: testInfo.outputPath('reservation-modification-review.png'),
+    fullPage: true,
+  });
+  await page.getByRole('button', { name: 'Confirmer la modification' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('dl')).toContainText('20:00');
+  expect(modifications).toBe(1);
+  await page.reload();
+  await expect(page.locator('dl')).toContainText('20:00');
+  expect(modifications).toBe(1);
+});
+
+test('a taken modification slot leaves the current booking intact', async ({ page }) => {
+  test.skip(
+    !!process.env.PLAYWRIGHT_BASE_URL &&
+      !new URL(process.env.PLAYWRIGHT_BASE_URL).hostname.match(/^(localhost|127\.0\.0\.1)$/),
+    'Local mocked qualification only',
+  );
+  await page.route('**/api/reservation-management', async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === 'modification_options')
+      return route.fulfill({
+        json: {
+          date: '2026-10-20',
+          partySize: 2,
+          maxPartySize: 4,
+          slots: [{ time: '20:00', proposalToken: 'offer' }],
+          message: 'Conservée',
+        },
+      });
+    if (body.action === 'modify')
+      return route.fulfill({
+        status: 409,
+        json: { error: 'Ce créneau vient d’être pris. Votre réservation initiale est conservée.' },
+      });
+    await route.fulfill({
+      json: {
+        restaurantName: 'Chez Sokar',
+        restaurantPhone: '+33100000000',
+        date: '2026-10-20',
+        time: '19:30',
+        partySize: 2,
+        state: 'CONFIRMED',
+        whatsappReminder: { visible: false, enabled: false },
+        modification: { available: true, message: 'Conservée' },
+      },
+    });
+  });
+  await page.goto(`/r#${'a'.repeat(27)}.${'b'.repeat(43)}`);
+  await page
+    .locator('summary')
+    .filter({ hasText: /^Modifier ou annuler$/ })
+    .click();
+  await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
+  await page.getByRole('radio', { name: '20:00' }).check();
+  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  await page.getByRole('button', { name: 'Confirmer la modification' }).click();
+  await expect(page.getByRole('alert')).toContainText('réservation initiale est conservée');
+  await page.getByRole('button', { name: 'Conserver ma réservation' }).click();
+  await expect(page.locator('dl')).toContainText('19:30');
+});

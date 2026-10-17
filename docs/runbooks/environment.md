@@ -1080,3 +1080,5 @@ de test ; à confirmer dans le portail.
 reservation management to be enabled. Enable on staging only after qualification.
 This enables free cancellation before the frozen onboarding deadline, not payment
 collection or refunds. No migration is required. Turn it off to restore phone contact.
+
+`RESERVATION_SELF_MODIFICATION_ENABLED` defaults to false. It enables signed, explicitly confirmed same-day time/party-size modifications from personal reservation links. Requires `RESERVATION_MANAGEMENT_ENABLED` and reliable frozen free-cancellation terms; independent of the cancellation flag. The original reservation stays allocated until a successful atomic replacement. No additional SMS, payment or migration.

@@ -9,7 +9,7 @@
  * Contrat de surface inchangé : { restaurantId, date, partySize, slots }.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
@@ -150,39 +150,48 @@ export class CapacityAwareAvailabilityService {
    * Un créneau est disponible si au moins une table active peut accueillir le
    * groupe sur la durée du service.
    */
-  async getAvailability(args: {
-    restaurantId: string;
-    date: string; // YYYY-MM-DD
-    partySize: number;
-    preferredSectionId?: string;
-    /** Horloge injectable (tests) : par défaut, l'instant de l'appel. */
-    now?: Date;
-    /**
-     * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
-     * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
-     */
-    minLeadTimeMinutes?: number;
-  }): Promise<AvailabilityDto> {
+  async getAvailability(
+    args: {
+      restaurantId: string;
+      date: string; // YYYY-MM-DD
+      partySize: number;
+      preferredSectionId?: string;
+      /** Horloge injectable (tests) : par défaut, l'instant de l'appel. */
+      now?: Date;
+      /** Private modification preview: never read or populate the public cache. */
+      excludeReservationId?: string;
+      defaultFloorOnly?: boolean;
+      /**
+       * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
+       * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
+       */
+      minLeadTimeMinutes?: number;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<AvailabilityDto> {
+    const queryDb = tx ?? this.prisma;
+    const privatePreview = !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly;
     // Une seule lecture de l'horloge par appel : le cache garde le résultat brut (sans passé ni délai),
     // ils se marquent à chaque lecture, y compris pour une valeur en cache depuis quelques secondes.
     // Le délai n'entre pas dans la clé de cache : il ne change que ce qu'on marque après.
     const now = args.now ?? new Date();
     let version = 0;
-    try {
-      version = await this.getVersion(args.restaurantId);
-      const cached = await redisCache.get(this.cacheKey(args, version));
-      const hit = cached ? parseCachedAvailability(cached) : null;
-      if (hit) {
-        return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
+    if (!privatePreview)
+      try {
+        version = await this.getVersion(args.restaurantId);
+        const cached = await redisCache.get(this.cacheKey(args, version));
+        const hit = cached ? parseCachedAvailability(cached) : null;
+        if (hit) {
+          return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
+        }
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : err, args },
+          'availability cache read failed',
+        );
       }
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, args },
-        'availability cache read failed',
-      );
-    }
 
-    const restaurant = await this.prisma.restaurant.findUnique({
+    const restaurant = await queryDb.restaurant.findUnique({
       where: { id: args.restaurantId },
       include: { exposureSettings: true },
     });
@@ -217,10 +226,11 @@ export class CapacityAwareAvailabilityService {
     const dayEnd = zonedTimeToUtc(args.date, '23:59:59.999', timeZone);
 
     const [reservations, holds, tables] = await Promise.all([
-      this.prisma.reservation.findMany({
+      queryDb.reservation.findMany({
         where: {
           restaurantId: args.restaurantId,
           state: { in: [...ACTIVE_RESERVATION_STATES] },
+          ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
           OR: [
             { startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
             // Legacy rows may have startsAt but no endsAt; their duration is
@@ -231,7 +241,7 @@ export class CapacityAwareAvailabilityService {
         },
         select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
       }),
-      this.prisma.agenticHold.findMany({
+      queryDb.agenticHold.findMany({
         where: {
           restaurantId: args.restaurantId,
           status: 'ACTIVE',
@@ -242,19 +252,27 @@ export class CapacityAwareAvailabilityService {
         select: { tableId: true, slotStart: true, slotEnd: true },
       }),
       args.preferredSectionId
-        ? this.prisma.table.findMany({
+        ? queryDb.table.findMany({
             where: {
               sectionId: args.preferredSectionId,
               isActive: true,
-              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              floorPlan: {
+                restaurantId: args.restaurantId,
+                isActive: true,
+                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
+              },
               capacity: { gte: args.partySize },
             },
             select: { id: true, capacity: true, minCapacity: true, sectionId: true },
           })
-        : this.prisma.table.findMany({
+        : queryDb.table.findMany({
             where: {
               isActive: true,
-              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              floorPlan: {
+                restaurantId: args.restaurantId,
+                isActive: true,
+                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
+              },
               capacity: { gte: args.partySize },
             },
             select: { id: true, capacity: true, minCapacity: true, sectionId: true },
@@ -310,21 +328,22 @@ export class CapacityAwareAvailabilityService {
       slots,
     };
 
-    try {
-      version = await this.getVersion(args.restaurantId);
-      const entry: CachedAvailability = { timeZone, dto };
-      await redisCache.set(
-        this.cacheKey(args, version),
-        JSON.stringify(entry),
-        'EX',
-        AVAILABILITY_CACHE_TTL_SECONDS,
-      );
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, args },
-        'availability cache write failed',
-      );
-    }
+    if (!privatePreview)
+      try {
+        version = await this.getVersion(args.restaurantId);
+        const entry: CachedAvailability = { timeZone, dto };
+        await redisCache.set(
+          this.cacheKey(args, version),
+          JSON.stringify(entry),
+          'EX',
+          AVAILABILITY_CACHE_TTL_SECONDS,
+        );
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : err, args },
+          'availability cache write failed',
+        );
+      }
 
     return markTooSoonSlotsUnavailable(dto, timeZone, now, args.minLeadTimeMinutes);
   }
