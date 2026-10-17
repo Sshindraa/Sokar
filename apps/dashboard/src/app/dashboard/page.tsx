@@ -231,18 +231,24 @@ export default function DashboardPage() {
       stats.estimatedRevenue > 0,
     [stats],
   );
+  // Les chiffres comptent les réservations PRISES sur la période (date d'enregistrement), pas celles
+  // du service du jour : « 2 réservations » peut coexister avec 25 tables attendues ce soir.
   const periodLabel =
-    period === 'today' ? 'Aujourd’hui' : period === '7d' ? 'Cette semaine' : 'Ce mois-ci';
+    period === 'today'
+      ? 'Réservations prises aujourd’hui'
+      : period === '7d'
+        ? 'Réservations prises ces 7 derniers jours'
+        : 'Réservations prises ces 30 derniers jours';
   const averagePartySize =
     stats.totalReservations > 0
       ? `${(stats.covers / stats.totalReservations).toLocaleString('fr-FR', {
           maximumFractionDigits: 1,
         })} / résa`
-      : 'attendus';
+      : 'sur la période';
   const averageReservationRevenue =
     stats.totalReservations > 0
       ? `${Math.round(stats.estimatedRevenue / stats.totalReservations).toLocaleString('fr-FR')} € / résa`
-      : 'prévisionnel';
+      : 'sur la période';
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -324,7 +330,7 @@ export default function DashboardPage() {
           />
           <KpiCard
             label="Conversion appels"
-            value={`${stats.conversionRate}%`}
+            value={stats.totalCalls > 0 ? `${stats.conversionRate}\u00a0%` : '—'}
             icon={TrendingUp}
             caption="des appels"
           />

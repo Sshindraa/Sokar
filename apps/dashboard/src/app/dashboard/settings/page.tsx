@@ -37,10 +37,12 @@ import { TeamCard } from '@/features/team/team-card';
 import { useSiteSelection } from '@/features/sites/site-context';
 import { TrialRecap, TrialTrack } from '@/features/billing/trial';
 
+// Aucun quota d'appels n'existe dans l'offre : les formules ne se distinguent pas par un plafond
+// (une ancienne mention « 1 500 appels / mois » n'était implémentée nulle part).
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
-  STARTER: { label: 'Essential', calls: '1 500 appels / mois' },
-  PRO: { label: 'Pro', calls: 'Appels illimités' },
-  PREMIUM: { label: 'Multi-site', calls: 'Appels illimités — 99€/site suppl.' },
+  STARTER: { label: 'Essential', calls: 'Appels inclus' },
+  PRO: { label: 'Pro', calls: 'Appels inclus, copilote de service' },
+  PREMIUM: { label: 'Multi-site', calls: 'Appels inclus, plusieurs adresses' },
 };
 
 const PROFILE_OPTIONS = [
@@ -141,8 +143,11 @@ export default function SettingsPage() {
       if (params.get('google_sync') === 'success') {
         window.history.replaceState({}, '', window.location.pathname);
       } else if (params.get('google_sync') === 'error') {
-        const msg = params.get('message') || "Erreur d'association de l'agenda";
-        setError(msg);
+        // Texte fixe : le paramètre `message` de l'URL n'est jamais affiché (n'importe quel lien pourrait
+        // y mettre ce qu'il veut sous les yeux du restaurateur).
+        setError(
+          "La connexion à Google Agenda n'a pas abouti. Réessayez en acceptant bien l'accès demandé par Google.",
+        );
         window.history.replaceState({}, '', window.location.pathname);
       } else if (params.get('billing') === 'success') {
         setBillingNotice(
