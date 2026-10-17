@@ -4,6 +4,10 @@ test('local fictional preview is interactive without requesting booking data', a
   page,
 }, testInfo) => {
   test.skip(
+    !!process.env.CI,
+    'The fictional preview is intentionally absent from production builds',
+  );
+  test.skip(
     !!process.env.PLAYWRIGHT_BASE_URL &&
       !new URL(process.env.PLAYWRIGHT_BASE_URL).hostname.match(/^(localhost|127\.0\.0\.1)$/),
     'Development preview only',
