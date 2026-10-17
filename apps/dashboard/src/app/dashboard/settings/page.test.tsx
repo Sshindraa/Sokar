@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toApiError } from '@/lib/api-error';
 import SettingsPage from './page';
@@ -172,5 +172,93 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
     await screen.findByDisplayValue('Le Bistrot');
     expect(screen.queryByText(/1 500 appels/)).not.toBeInTheDocument();
+  });
+
+  it('retire le lien « CRM » de la barre quand la carte n’existe pas', async () => {
+    loadSucceeds('closed');
+    render(<SettingsPage />);
+    await screen.findByDisplayValue('Le Bistrot');
+    const nav = screen.getByRole('navigation', { name: 'Sections des paramètres' });
+
+    await waitFor(() => expect(nav).toHaveTextContent('Abonnement'));
+    expect(nav).not.toHaveTextContent('CRM');
+  });
+
+  it('montre le lien « CRM » quand la carte est disponible', async () => {
+    loadSucceeds('ok');
+    render(<SettingsPage />);
+    await screen.findByText('Visibilité des notes CRM');
+
+    expect(screen.getByRole('link', { name: 'CRM' })).toHaveAttribute('href', '#settings-crm');
+  });
+
+  it('retire « Enregistré » dès que le champ est modifié', async () => {
+    loadSucceeds('closed');
+    render(<SettingsPage />);
+    fireEvent.change(await screen.findByDisplayValue('Le Bistrot'), {
+      target: { value: 'Le Bistrot 2' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enregistrer' })[0]);
+    expect(await screen.findByText('Enregistré')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('Le Bistrot 2'), {
+      target: { value: 'Le Bistrot 3' },
+    });
+
+    expect(screen.queryByText('Enregistré')).not.toBeInTheDocument();
+  });
+
+  it('n’appelle plus Sokar « assistant téléphonique » quand l’abonnement est terminé', async () => {
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === 'restaurants/org_test') return RESTAURANT;
+      if (path === 'restaurants/org_test/personality') return PERSONALITY;
+      if (path === 'billing/status') {
+        return { plan: 'pro', subscriptionStatus: 'canceled', suspended: true };
+      }
+      if (path === 'crm/privacy') throw toApiError(503, { error: 'CRM_ADVANCED_DISABLED' });
+      return {};
+    });
+    render(<SettingsPage />);
+
+    expect(await screen.findByText(/Sokar ne répond plus aux appels/)).toBeInTheDocument();
+    expect(screen.queryByText(/assistant téléphonique/)).not.toBeInTheDocument();
+  });
+
+  describe('retour de paiement', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('relit le statut jusqu’à ce que la formule soit à jour, sans parler de webhook', async () => {
+      window.history.replaceState({}, '', '/dashboard/settings?billing=success');
+      let billingCalls = 0;
+      mocks.get.mockImplementation(async (path: string) => {
+        if (path === 'restaurants/org_test') return RESTAURANT;
+        if (path === 'restaurants/org_test/personality') return PERSONALITY;
+        if (path === 'billing/status') {
+          billingCalls += 1;
+          return billingCalls === 1
+            ? { plan: 'pro', subscriptionStatus: null }
+            : { plan: 'pro', subscriptionStatus: 'active' };
+        }
+        if (path === 'crm/privacy') throw toApiError(503, { error: 'CRM_ADVANCED_DISABLED' });
+        return {};
+      });
+      render(<SettingsPage />);
+
+      expect(
+        await screen.findByText(/Votre formule s’affichera ici dans quelques instants/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/webhook/i)).not.toBeInTheDocument();
+      expect(
+        await screen.findByText(
+          'Souscription confirmée : votre formule est à jour.',
+          {},
+          { timeout: 6000 },
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Abonnement actif')).toBeInTheDocument();
+    }, 15000);
   });
 });

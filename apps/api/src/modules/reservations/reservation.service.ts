@@ -3,6 +3,7 @@ import { db } from '../../shared/db/client';
 import {
   Prisma,
   type Reservation,
+  type ReservationChannel,
   type ReservationState,
   type ReservationStatus,
   type Restaurant,
@@ -41,6 +42,8 @@ export interface CreateReservationInput {
   customerName: string;
   customerPhone?: string;
   marketingAttributionToken?: string;
+  consents?: Prisma.InputJsonObject;
+  channel?: ReservationChannel;
 }
 
 interface AvailabilitySlot {
@@ -339,6 +342,8 @@ export class ReservationService {
             partySize: input.partySize,
             customerName: input.customerName,
             customerPhone: input.customerPhone,
+            ...(input.consents ? { consents: input.consents } : {}),
+            ...(input.channel ? { channel: input.channel } : {}),
             ...(customerId ? { customerId } : {}),
             // `state` est écrit explicitement : s'en remettre au défaut Prisma
             // marchait par coïncidence et laissait la porte ouverte à une

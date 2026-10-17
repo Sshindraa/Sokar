@@ -301,4 +301,15 @@ describe('FloorPlanPage — switch desktop', () => {
     });
     expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('propose de créer un premier plan dès la vue service, sans second encadré vide', async () => {
+    apiMocks.get.mockResolvedValue([]);
+    render(<FloorPlanPage />);
+
+    expect(await screen.findByText('Aucun plan de salle')).toBeInTheDocument();
+    expect(screen.getByText(/Dessinez votre salle/)).toBeInTheDocument();
+    expect(screen.queryByText('Aucun plan de salle sélectionné.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Créer votre premier plan' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
 });

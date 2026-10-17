@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -151,6 +151,7 @@ export default function CustomerDuplicatesPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [lock, setLock] = useState<FeatureLock | null>(null);
+  const previewPanelRef = useRef<HTMLDivElement>(null);
   // Échec du chargement de la liste (≠ erreur d'aperçu ou de fusion, où la liste reste affichée).
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -196,6 +197,11 @@ export default function CustomerDuplicatesPage() {
     setSelected({ candidate, targetCustomerId });
     setPreview(null);
     setResolutions({});
+    // Sous 1280 px, l'aperçu s'affiche sous toute la liste : on y amène le restaurateur, sinon le bouton
+    // semble ne rien faire.
+    if (typeof window !== 'undefined' && !window.matchMedia?.('(min-width: 1280px)').matches) {
+      previewPanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
     const sourceCustomerId =
       candidate.left.id === targetCustomerId ? candidate.right.id : candidate.left.id;
     try {
@@ -379,7 +385,9 @@ export default function CustomerDuplicatesPage() {
                             disabled={Boolean(action)}
                             onClick={() => void openPreview(candidate, customer.id)}
                           >
-                            Garder ce profil
+                            {action === `preview:${candidate.id}:${customer.id}`
+                              ? 'Préparation…'
+                              : 'Garder ce profil'}
                           </Button>
                         </div>
                       </div>
@@ -390,7 +398,7 @@ export default function CustomerDuplicatesPage() {
             ))}
           </div>
 
-          <Card className="h-fit xl:sticky xl:top-6">
+          <Card ref={previewPanelRef} className="h-fit xl:sticky xl:top-6">
             <CardHeader>
               <CardTitle className="text-base">Aperçu de fusion</CardTitle>
               <CardDescription>

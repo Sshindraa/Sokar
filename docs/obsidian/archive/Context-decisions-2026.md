@@ -16,3 +16,25 @@
 - **2026-06-21** — Migration TTS ElevenLabs → Cartesia Sonic 3.5 finalisée (cf. [[Telnyx Pipeline]]). Limitation speed/volume sur sonic-3.5 (depuis avril 2026), workaround = revenir à sonic-3 si besoin.
 - **2026-05-21** — Crof AI `deepseek-v4-pro` ne fonctionne pas comme provider `custom` (404). Le provider normalise le model name en `deepseek/deepseek-v4-pro` que Crof rejette. **Résolu** par switch vers `opencode-go` + `minimax-m3` (cf. 2026-06-23).
 - **2026-05-21** — Clerk mocké en test via `helpers.ts` (`requireOrg` lit `Authorization` header). Telnyx webhook guard mocké dans `reservation.test.ts`.
+
+## Archivage du 17 octobre 2026 — décisions de septembre sorties du Context
+
+2026-09-30 — [MCP, UX] Réponse de disponibilité limitée au résultat utile ; préciser la création uniquement si demandé et rafraîchir les outils après déploiement.
+
+2026-09-29 — [MCP, UX] Pas de surface prompts/resources sans besoin récurrent avéré.
+
+2026-09-29 — [MCP, contrats] Retries idempotents, erreurs stables, sorties validées ; quote informatif, hold réservé à la capacité.
+
+2026-09-29 — [MCP, observabilité] Contrats recherche/disponibilité additifs ; métriques indépendantes du client.
+
+2026-09-25 — [Voix] Keyterms métier en opt-in par restaurant ; aucune donnée personnelle ; MIP opt-out par défaut.
+
+2026-09-24 — [Réservations] Taille de groupe par défaut unifiée à 7 ; lignes existantes inchangées.
+
+2026-09-23 — [Voix/observabilité] TurnPlan en shadow sans autorité ; métriques Prometheus, Grafana accessible par tunnel SSH.
+
+2026-09-21 — [Connect] Publication refusée sans slug, avant toute écriture.
+
+2026-09-21 — [Seed] Restaurants de démo créés uniquement en local, ou à distance avec opt-in explicite.
+
+2026-09-21 — [Codex] Configuration plugins allégée ; raisonnement par défaut réglé sur high.

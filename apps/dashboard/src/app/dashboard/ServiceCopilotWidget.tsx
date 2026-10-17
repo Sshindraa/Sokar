@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { AlertCircle, BarChart3, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -402,12 +402,17 @@ function ServiceCopilotWidgetContent({
   );
 }
 
-export default function ServiceCopilotWidget(props: {
+export default function ServiceCopilotWidget({
+  accessFallback,
+  ...props
+}: {
   showCalm?: boolean;
   density?: 'default' | 'service';
+  /** Rendu quand l'accès au copilote n'est pas accordé ; `null` pour ne rien afficher. */
+  accessFallback?: ReactNode;
 }) {
   return (
-    <ServiceCopilotAccess>
+    <ServiceCopilotAccess fallback={accessFallback}>
       <ServiceCopilotWidgetContent {...props} />
     </ServiceCopilotAccess>
   );

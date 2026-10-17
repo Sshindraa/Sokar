@@ -37,7 +37,71 @@ type FloorPlan = {
   id: string;
   name: string | null;
   sections: Section[];
+  /** Toutes les tables du plan, y compris celles dessinées dans « Plan visuel » sans section. */
+  tables?: Table[];
 };
+
+/** Met à jour une table où qu'elle soit : dans une section, ou dans la liste « sans section ». */
+function mapTables(plan: FloorPlan, update: (table: Table) => Table): FloorPlan {
+  return {
+    ...plan,
+    sections: plan.sections.map((section) => ({ ...section, tables: section.tables.map(update) })),
+    ...(plan.tables ? { tables: plan.tables.map(update) } : {}),
+  };
+}
+
+function removeTable(plan: FloorPlan, tableId: string): FloorPlan {
+  return {
+    ...plan,
+    sections: plan.sections.map((section) => ({
+      ...section,
+      tables: section.tables.filter((table) => table.id !== tableId),
+    })),
+    ...(plan.tables ? { tables: plan.tables.filter((table) => table.id !== tableId) } : {}),
+  };
+}
+
+function TableLine({
+  table,
+  onToggle,
+  onDelete,
+}: {
+  table: Table;
+  onToggle: (checked: boolean) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center justify-between rounded-lg border p-3 transition-all duration-200',
+        table.isActive ? 'border-border bg-card' : 'border-border bg-muted opacity-60',
+      )}
+    >
+      <div>
+        <p className="font-medium">{table.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {table.capacity} couvert{table.capacity > 1 ? 's' : ''}
+          {table.minCapacity > 1 && ` (min. ${table.minCapacity})`}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={table.isActive}
+          onCheckedChange={onToggle}
+          aria-label={`Activer ${table.name}`}
+        />
+        <button
+          onClick={onDelete}
+          className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
+          title="Supprimer la table"
+          aria-label="Supprimer la table"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
   const { get, patch, put, post, del, orgId } = useApi();
@@ -83,40 +147,30 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
   async function toggleTable(tableId: string, isActive: boolean) {
     if (!orgId) return;
     const previousIsActive =
-      floorPlan?.sections.flatMap((section) => section.tables).find((table) => table.id === tableId)
-        ?.isActive ?? !isActive;
+      [
+        ...(floorPlan?.sections.flatMap((section) => section.tables) ?? []),
+        ...(floorPlan?.tables ?? []),
+      ].find((table) => table.id === tableId)?.isActive ?? !isActive;
     try {
       setError('');
-      setFloorPlan((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          sections: prev.sections.map((section) => ({
-            ...section,
-            tables: section.tables.map((table) =>
-              table.id === tableId ? { ...table, isActive } : table,
-            ),
-          })),
-        };
-      });
+      setFloorPlan((prev) =>
+        prev
+          ? mapTables(prev, (table) => (table.id === tableId ? { ...table, isActive } : table))
+          : prev,
+      );
       await patch(`restaurants/${orgId}/floor-plan/tables/${tableId}`, {
         isActive,
         ...(floorPlanId ? { floorPlanId } : {}),
       });
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de modifier la table'));
-      setFloorPlan((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          sections: prev.sections.map((section) => ({
-            ...section,
-            tables: section.tables.map((table) =>
+      setFloorPlan((prev) =>
+        prev
+          ? mapTables(prev, (table) =>
               table.id === tableId ? { ...table, isActive: previousIsActive } : table,
-            ),
-          })),
-        };
-      });
+            )
+          : prev,
+      );
     }
   }
 
@@ -185,16 +239,7 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
           floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
         }`,
       );
-      setFloorPlan((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          sections: prev.sections.map((section) => ({
-            ...section,
-            tables: section.tables.filter((table) => table.id !== tableId),
-          })),
-        };
-      });
+      setFloorPlan((prev) => (prev ? removeTable(prev, tableId) : prev));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de supprimer la table'));
     }
@@ -256,9 +301,14 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
       );
       setFloorPlan((prev) => {
         if (!prev) return prev;
+        // Les tables de la section supprimée ne disparaissent pas : elles passent « sans section ».
+        const removed = prev.sections.find((section) => section.id === sectionId);
+        const known = new Set((prev.tables ?? []).map((table) => table.id));
+        const orphaned = (removed?.tables ?? []).filter((table) => !known.has(table.id));
         return {
           ...prev,
           sections: prev.sections.filter((section) => section.id !== sectionId),
+          tables: [...(prev.tables ?? []), ...orphaned],
         };
       });
     } catch (err: unknown) {
@@ -281,6 +331,13 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
       </div>
     );
   }
+
+  const sectionTableIds = new Set(
+    floorPlan?.sections.flatMap((section) => section.tables.map((table) => table.id)) ?? [],
+  );
+  const unassignedTables = (floorPlan?.tables ?? []).filter(
+    (table) => !sectionTableIds.has(table.id),
+  );
 
   // Sans plan chargé, ni formulaire « Nouvelle section » (la section créée n'apparaîtrait pas) ni grille.
   if (!floorPlan) {
@@ -327,7 +384,7 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
         </div>
       ) : null}
 
-      {floorPlan?.sections.length === 0 ? (
+      {floorPlan.sections.length === 0 && unassignedTables.length === 0 ? (
         <div className="sokar-empty">
           <LayoutGrid size={40} className="opacity-30" />
           <p className="text-sm">Aucune section dans votre plan de salle</p>
@@ -337,7 +394,7 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {floorPlan?.sections.map((section) => (
+          {floorPlan.sections.map((section) => (
             <Card key={section.id} className="sokar-card" data-testid="section-card">
               <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
                 {editingSectionId === section.id ? (
@@ -412,38 +469,12 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
                     <p className="text-sm text-muted-foreground">Aucune table</p>
                   ) : (
                     section.tables.map((table) => (
-                      <div
+                      <TableLine
                         key={table.id}
-                        className={cn(
-                          'flex items-center justify-between rounded-lg border p-3 transition-all duration-200',
-                          table.isActive
-                            ? 'border-border bg-card'
-                            : 'border-border bg-muted opacity-60',
-                        )}
-                      >
-                        <div>
-                          <p className="font-medium">{table.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {table.capacity} couvert{table.capacity > 1 ? 's' : ''}
-                            {table.minCapacity > 1 && ` (min. ${table.minCapacity})`}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={table.isActive}
-                            onCheckedChange={(checked) => toggleTable(table.id, checked)}
-                            aria-label={`Activer ${table.name}`}
-                          />
-                          <button
-                            onClick={() => deleteTable(table.id)}
-                            className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
-                            title="Supprimer la table"
-                            aria-label="Supprimer la table"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
+                        table={table}
+                        onToggle={(checked) => toggleTable(table.id, checked)}
+                        onDelete={() => deleteTable(table.id)}
+                      />
                     ))
                   )}
                 </div>
@@ -513,6 +544,26 @@ export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
               </CardContent>
             </Card>
           ))}
+          {unassignedTables.length > 0 ? (
+            <Card className="sokar-card" data-testid="unassigned-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-medium">Sans section</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Tables dessinées dans « Plan visuel » sans être rattachées à une section.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {unassignedTables.map((table) => (
+                  <TableLine
+                    key={table.id}
+                    table={table}
+                    onToggle={(checked) => toggleTable(table.id, checked)}
+                    onDelete={() => deleteTable(table.id)}
+                  />
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       )}
 

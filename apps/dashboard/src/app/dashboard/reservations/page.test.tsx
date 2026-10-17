@@ -351,6 +351,31 @@ describe('ReservationsPage', () => {
       expect(screen.queryByText(/already_promoted/)).toBeNull();
     });
 
+    it('affiche la file d’attente en cartes sur téléphone, avec le compteur au bon accord', async () => {
+      mocks.isMobile = true;
+      const entries = [
+        makeWaitingListEntry({ id: 'wl1', position: 1 }),
+        makeWaitingListEntry({ id: 'wl2', position: 2, customerFirstName: 'Carla' }),
+      ];
+      mocks.get.mockImplementation((path: string) =>
+        Promise.resolve(path.includes('waiting-list') ? entries : []),
+      );
+      render(<ReservationsPage />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /File d'attente/i }));
+
+      expect(await screen.findByText('2 en attente')).toBeInTheDocument();
+      expect(screen.queryByText(/en attentes/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+      const proposer = screen.getAllByRole('button', { name: 'Proposer une table' });
+      expect(proposer).toHaveLength(2);
+      mocks.post.mockResolvedValue({});
+      fireEvent.click(proposer[0]);
+      await waitFor(() =>
+        expect(mocks.post).toHaveBeenCalledWith('restaurants/org_test/waiting-list/wl1/promote'),
+      );
+    });
+
     it("permet de retirer une entrée de la file d'attente", async () => {
       const entry = makeWaitingListEntry();
       mocks.get.mockImplementation((path: string) => {

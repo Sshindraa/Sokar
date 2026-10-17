@@ -21,6 +21,7 @@ import type { Reservation } from '@prisma/client';
  */
 
 import { Prisma } from '@prisma/client';
+import { enqueueReservationConfirmation } from '../../../shared/outbox/reservation-confirmation';
 import type { PrismaClient, ReservationState } from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
 import { logger } from '../../../shared/logger/pino';
@@ -116,6 +117,14 @@ export type CreateReservationInput = {
     transactionalSms: boolean;
     transactionalEmail: boolean;
     marketingOptIn: boolean;
+    transactionalWhatsapp?: boolean;
+    whatsappConsentProof?: {
+      version: string;
+      purpose: string;
+      acceptedAt: string;
+      ipHash?: string;
+    };
+    whatsappWithdrawalTokenHash?: string;
   };
   /** Optionnel : policy snapshot figé à T */
   cancellationPolicySnap?: unknown;
@@ -290,6 +299,7 @@ export class ReservationService {
 
     // 4. INSERT dans une transaction
     let reservationId: string;
+    let confirmationRequested = false;
     try {
       reservationId = await this.prisma.$transaction(async (tx) => {
         const now = new Date();
@@ -462,6 +472,8 @@ export class ReservationService {
           },
         });
 
+        confirmationRequested = await enqueueReservationConfirmation(tx, reservation);
+
         if (consumedHoldId) {
           if (shouldConsumeAfterReservation) {
             await this.lockActiveHold(tx, consumedHoldId, now);
@@ -605,7 +617,7 @@ export class ReservationService {
       state: final?.state ?? 'CONFIRMED',
       idempotency: 'keyed',
       audit: 'written',
-      notification: 'not_sent',
+      notification: confirmationRequested ? 'queued' : 'not_sent',
       capacity: 'reserved',
     });
     if (giftCardSnapshotUpdated) {

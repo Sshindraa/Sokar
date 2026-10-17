@@ -1,7 +1,16 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { ArrowRight, Bot, CalendarCheck, Mail, PhoneCall, Sparkles, Utensils } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  CalendarCheck,
+  Mail,
+  Mic,
+  PhoneCall,
+  Sparkles,
+  Utensils,
+} from 'lucide-react';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';

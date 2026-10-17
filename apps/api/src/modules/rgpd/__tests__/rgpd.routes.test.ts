@@ -18,6 +18,7 @@ import { db } from '../../../shared/db/client';
 import { sendSms } from '../../../shared/telnyx/client';
 import { sendEmail } from '../../../shared/email';
 import { redisCache } from '../../../shared/redis/client';
+import { PRIVACY_DOCUMENT, PRIVACY_PROVIDERS, PRIVACY_RETENTION_RULES } from '@sokar/shared';
 
 // Mocks Telnyx et Brevo (hoisted pour être dispo dans le mock factory)
 const { sendSmsMock, sendEmailMock } = vi.hoisted(() => ({
@@ -416,6 +417,23 @@ describe('RGPD routes (with identity verification)', () => {
       const body = res.json();
       expect(body.summary).toBeDefined();
       expect(body.text).toBeDefined();
+      expect(body.summary).toMatchObject({
+        version: 'v1.1-2026-10-16',
+        effectiveAt: PRIVACY_DOCUMENT.revision,
+        retentionDays: 730,
+        dpo: PRIVACY_DOCUMENT.contact,
+        documentationRevision: PRIVACY_DOCUMENT.revision,
+        status: 'under_review',
+        automaticAnonymizationGuaranteed: false,
+      });
+      expect(body.summary.retentionDaysMeaning).toContain('pas une durée générale');
+      expect(body.summary.providers).toEqual(PRIVACY_PROVIDERS);
+      expect(body.summary.retentionRules).toEqual(PRIVACY_RETENTION_RULES);
+      for (const rule of PRIVACY_RETENTION_RULES) expect(body.text).toContain(rule.description);
+      for (const provider of PRIVACY_PROVIDERS) expect(body.text).toContain(provider.name);
+      expect(body.text).not.toMatch(
+        /Sokar SAS|Twilio|Brevo|Postmark|2 ans à compter de la dernière interaction/,
+      );
     });
   });
 });

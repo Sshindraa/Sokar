@@ -113,7 +113,61 @@ afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
 
-### Demandes de démonstration
+### Régulation Resend (préparation locale du 16 octobre 2026)
+
+Le transport partagé régule les créations et les lectures d'e-mails : un départ au
+plus toutes les 150 ms, coordonné par Redis entre API et workers. Il attend au plus
+5 secondes avant de refuser une requête qui n'a pas encore contacté Resend.
+Une panne Redis refuse également l'admission ; aucun envoi différé ne survient après
+ce refus. Les jobs persistants conservent leurs mécanismes de reprise existants ;
+un appel direct (dont la notification démo) peut rester en échec, sans reprise ajoutée.
+Un timeout fournisseur reste ambigu : pas de rejeu automatique ajouté par le transport.
+
+Par défaut, la coordination utilise `redisCache` de l'environnement. Si plusieurs
+environnements partagent la même équipe Resend, définir **le même**
+`RESEND_RATE_LIMIT_REDIS_URL` (URL Redis secrète, même base logique) dans chaque
+processus API/worker concerné. Le raccordement préparé localement transmet le secret
+GitHub `RESEND_RATE_LIMIT_REDIS_URL` via les deux workflows et
+`scripts/ops/sync-alerting-config.sh`. Une valeur absente conserve l'existant ; une
+valeur fournie doit désigner explicitement une base (`redis[s]://hôte:port/numéro`),
+sans espaces, fragment, paramètres ni caractères nécessitant une citation dotenv.
+Encoder les caractères réservés des identifiants dans l'URL.
+
+Constat du 16 octobre 2026 après autorisation : secret **de dépôt** configuré
+(le workflow staging n'est lié à aucun environnement GitHub), valeur commune ajoutée
+aux deux `.env` API, permissions 0600. Coordination sur la base cache 1 du Redis
+existant, clé de régulation dédiée ; bases sessions/files et clés métier inchangées.
+Test isolé sur le serveur avec deux clients lisant ces configurations : 30 admissions,
+espacement minimum 150 ms, clé temporaire supprimée, aucun appel Resend.
+Mise à jour après livraison : PR #463 fusionnée, commit `e5eb3520` livré en staging
+puis production après CI et smoke tests verts. API et workers en ligne, santé
+base/Redis/files OK. Clé staging distincte créée sur confirmation spécifique,
+Sending access limité à `sokar.tech`, secret `RESEND_API_KEY_STAGING` et `.env`
+staging configurés ; clé production et allowlist inchangées. Le nouvel artefact
+staging a groupé deux alertes dans un e-mail accepté vers l'adresse de test
+fournisseur, puis supprimé leur répétition. Admission production vérifiée sans
+appel fournisseur. Les erreurs et jobs historiques ne sont ni purgés ni corrigés.
+Voir `docs/runbooks/resend-alert-regulation.md` pour la qualification et le retour arrière.
+
+Retour arrière de cette préparation : les trois entrées de coordination étaient
+absentes avant l'opération. Retirer uniquement la variable ajoutée des deux `.env`
+et le secret de dépôt homonyme, après vérification qu'ils n'ont pas été modifiés
+depuis. Ne pas restaurer un `.env` complet ni effacer les autres paramètres.
+Ne pas le déduire de la clé API : plusieurs clés peuvent partager la limite d'une
+équipe. Les appels hors de ce transport (console, scripts externes) ne sont pas régulés.
+La marge sous 10 req/s ne garantit pas l'absence de 429 et n'augmente aucun quota.
+
+Le worker `system-health` groupe les findings éligibles du tick dans un e-mail.
+Rappel e-mail après deux heures par `(kind, identifier, severity)` ; une autre file
+ou une escalade critique possède une entrée distincte. Même après un bref retour
+à la normale, une réapparition de la même combinaison reste soumise à ce délai.
+Logs/Sentry, webhook et SMS conservent une cadence de 30 minutes, distincte du
+résultat e-mail. Une tentative refusée n'acquiert pas le rappel de deux heures :
+seulement un verrou court de 60 secondes, puis réévaluation au tick suivant.
+Les autres émetteurs d'alertes, dont `alert-evaluation`, gardent leur cadence actuelle.
+Aucune file historique n'est purgée ni rejouée, aucun incident n'est corrigé par ce regroupement.
+
+### Notification des demandes de démonstration
 
 `DEMO_REQUEST_NOTIFY_TO` (adresses séparées par des virgules) reçoit une notification pour chaque
 demande envoyée depuis `/demo`. Sans valeur, aucune notification n'est envoyée : la demande reste
@@ -168,15 +222,28 @@ la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEX
 Les variables suivantes sont nécessaires uniquement pour le contrôle marketing CRM en local ou en
 staging contrôlé. Elles ne doivent jamais être committées ni exposées au dashboard :
 
-| Variable                         | Rôle et défaut sûr                                                                                                                                    |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                |
-| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                    |
-| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                               |
-| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                           |
-| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                            |
-| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                              |
-| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner). |
+| Variable                         | Rôle et défaut sûr                                                                                                                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
+| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
+| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
+| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
+| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
+| `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
+| `TELNYX_WHATSAPP_FROM`           | Expediteur WhatsApp dedie requis, distinct de la configuration voix ; aucun repli implicite sur `TELNYX_FROM_NUMBER`. Voir `whatsapp-reservation-activation.md`.                                                                   |
+| `WHATSAPP_PROVIDER`              | `telnyx` par defaut ; `meta` selectionne la Cloud API directe, sans modifier les SMS/voix.                                                                                                                                         |
+| `WHATSAPP_CONSENT_ENABLED`       | `false` par defaut ; autorise la collecte facultative de l'accord pour le rappel dans les deux parcours web. Ne declenche pas d'envoi a lui seul.                                                                                  |
+| `RESERVATION_MANAGEMENT_ENABLED` | `false` par defaut. Page personnelle et lien dans la confirmation SMS/web ; requiert cle et routage Dashboard qualifies. Voir `reservation-management.md`.                                                                         |
+| `RESERVATION_MANAGEMENT_SECRET`  | Secret dedie aleatoire 32 octets, encode en 64 caracteres hexadecimaux, `key_env` uniquement. Identique API/workers, stable entre releases ; rotation = invalidation des liens existants. Aucun secret reel configure dans ce lot. |
+| `META_WHATSAPP_ACCESS_TOKEN`     | Secret du compte Meta direct (`key_env` uniquement), absent tant que le compte n'est pas qualifie. Ne pas utiliser la cle Telnyx.                                                                                                  |
+| `META_WHATSAPP_PHONE_NUMBER_ID`  | Identifiant Meta du numero, pas le numero de telephone ni le WABA.                                                                                                                                                                 |
+| `META_WHATSAPP_GRAPH_VERSION`    | Version Graph explicite au format `vN.N`, a qualifier avant activation ; pas de selection automatique de version.                                                                                                                  |
+| `META_WHATSAPP_WEBHOOK_ENABLED`  | `false` par defaut. Active uniquement les callbacks signes `/webhooks/meta/whatsapp`, pas les envois.                                                                                                                              |
+| `META_WHATSAPP_APP_SECRET`       | Secret d'application Meta, `key_env` uniquement ; HMAC SHA-256 du corps brut obligatoire.                                                                                                                                          |
+| `META_WHATSAPP_VERIFY_TOKEN`     | Secret aleatoire de verification de l'abonnement GET, `key_env` uniquement. Ne jamais copier une URL contenant ce secret dans les logs ou captures.                                                                                |
+| `META_WHATSAPP_WABA_ID`          | Identifiant du compte WhatsApp autorise pour les callbacks ; filtre cumule avec `META_WHATSAPP_PHONE_NUMBER_ID`.                                                                                                                   |
+| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                                                                                                           |
+| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner).                                                                              |
 
 ### POS, paiements et CRM groupe en qualification
 

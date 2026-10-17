@@ -2,6 +2,9 @@ import { processGiftCardDelivery } from '../../../modules/gift-cards/gift-card-d
 import { Worker, type Job } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
+import { queues } from '../queues';
+import { buildReservationNotificationJobId } from '../job-options';
+import { utcToZonedParts, isSlotStartPast } from '../../timezone/restaurant-time';
 import { jobLogger, setupWorkerListeners } from './helper';
 import {
   recordPricedUsageEvent,
@@ -37,6 +40,50 @@ export async function processOutboxDeliveryJob(job: Job<OutboxDeliveryJobData>):
       payload.occurredAt instanceof Date ? payload.occurredAt : new Date(payload.occurredAt);
     await recordPricedUsageEvent({ ...payload, occurredAt });
     log.info({ outboxEventId: event.id, topic: event.topic }, '[outbox] event consumed');
+    return;
+  }
+
+  if (event.topic === 'reservation-confirmation') {
+    const payload = event.payload as { reservationId?: unknown };
+    if (
+      typeof payload.reservationId !== 'string' ||
+      !payload.reservationId ||
+      !event.restaurantId ||
+      payload.reservationId !== event.aggregateId
+    ) {
+      throw new Error('INVALID_RESERVATION_CONFIRMATION_PAYLOAD');
+    }
+    const reservation = await db.reservation.findUnique({
+      where: { id: payload.reservationId, restaurantId: event.restaurantId },
+      include: { restaurant: { select: { name: true, timezone: true, smsConfirmEnabled: true } } },
+    });
+    if (
+      !reservation ||
+      reservation.state !== 'CONFIRMED' ||
+      reservation.status !== 'CONFIRMED' ||
+      !reservation.customerPhone ||
+      !reservation.restaurant.smsConfirmEnabled
+    )
+      return;
+    const instant = reservation.startsAt ?? reservation.reservedAt;
+    if (isSlotStartPast(instant)) return;
+    await queues.smsClient.add(
+      'client-confirm',
+      // Preserve the historical queue payload for rolling deployments/rollback.
+      // The current SMS worker rereads the booking before the provider call.
+      {
+        reservationId: payload.reservationId,
+        customerPhone: reservation.customerPhone,
+        customerName: reservation.customerName,
+        restaurantName: reservation.restaurant.name,
+        partySize: reservation.partySize,
+        date: instant.toLocaleDateString('fr-FR', { timeZone: reservation.restaurant.timezone }),
+        time: utcToZonedParts(instant, reservation.restaurant.timezone).time,
+      },
+      {
+        jobId: buildReservationNotificationJobId('confirmation', payload.reservationId),
+      },
+    );
     return;
   }
 

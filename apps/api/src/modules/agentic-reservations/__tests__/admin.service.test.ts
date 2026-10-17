@@ -223,7 +223,7 @@ describe('agentic admin service', () => {
           input: { mcp: true, openaiReserve: true },
           actor: 'user:test',
         }),
-      ).rejects.toThrow(/formattedAddress/);
+      ).rejects.toThrow(/complétez les informations du restaurant : adresse\./);
     });
 
     it('refuse openaiReserve=true si phoneE164 manquant', async () => {
@@ -234,7 +234,7 @@ describe('agentic admin service', () => {
           input: { mcp: true, openaiReserve: true },
           actor: 'user:test',
         }),
-      ).rejects.toThrow(/phoneE164/);
+      ).rejects.toThrow(/complétez les informations du restaurant : téléphone\./);
     });
 
     it('active MCP sans revérifier un OpenAI Reserve déjà actif', async () => {

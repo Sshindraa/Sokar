@@ -853,7 +853,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
             phoneNumber: true,
           },
         });
-        return reply.send(restaurant);
+        return reply.send({
+          ...restaurant,
+          whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
+        });
       } catch (err) {
         app.log.error({ err }, 'Restaurant fetch failed');
         return reply.status(404).send({ error: 'Restaurant not found' });
@@ -904,6 +907,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         return reply.send({
           ...restaurant,
           sections: defaultFloorPlan?.sections ?? [],
+          whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
         });
       } catch (err) {
         app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');

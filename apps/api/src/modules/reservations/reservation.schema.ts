@@ -11,6 +11,12 @@ export const CreateReservationSchema = z.object({
     .regex(/^\+?[0-9]{10,15}$/)
     .optional(),
   marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
+  whatsappReminderConsent: z
+    .object({
+      accepted: z.boolean(),
+      version: z.literal('whatsapp-reminder-2026-10-17'),
+    })
+    .optional(),
 });
 
 export const ReservationQuerySchema = z.object({

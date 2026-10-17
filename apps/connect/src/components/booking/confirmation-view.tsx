@@ -6,14 +6,18 @@
 
 import Link from 'next/link';
 import { Check } from 'lucide-react';
+import { useState } from 'react';
+import { fetchWithTimeout } from '@sokar/shared';
 
 export type ConfirmDto = {
+  managementUrl?: string;
   reservationId: string;
   restaurantName: string;
   date: string;
   time: string;
   partySize: number;
   source?: string;
+  whatsappWithdrawalToken?: string;
 };
 
 export function ConfirmationView({
@@ -25,6 +29,33 @@ export function ConfirmationView({
   slug: string;
   embedded?: boolean;
 }) {
+  const [withdrawn, setWithdrawn] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState(false);
+  async function withdrawWhatsApp() {
+    if (!result.whatsappWithdrawalToken || withdrawing) return;
+    setWithdrawing(true);
+    setWithdrawError(false);
+    try {
+      const response = await fetchWithTimeout(
+        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/public/r/${slug}/whatsapp-consent/withdraw`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reservationId: result.reservationId,
+            token: result.whatsappWithdrawalToken,
+          }),
+        },
+      );
+      if (!response.ok) throw new Error('withdrawal failed');
+      setWithdrawn(true);
+    } catch {
+      setWithdrawError(true);
+    } finally {
+      setWithdrawing(false);
+    }
+  }
   return (
     <div role="status" aria-live="polite" className="rounded-xl border border-border bg-cream p-6">
       <div className="mb-4 flex items-center gap-3">
@@ -47,8 +78,41 @@ export function ConfirmationView({
         <code className="rounded bg-muted px-1 py-0.5 text-xs">{result.reservationId}</code>
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        Un SMS de confirmation vous a été envoyé.
+        Les notifications dépendent des options du restaurant.
       </p>
+      {result.managementUrl && (
+        <a
+          href={result.managementUrl}
+          referrerPolicy="no-referrer"
+          className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 transition-all duration-200"
+        >
+          Gérer ma réservation
+        </a>
+      )}
+      {!result.managementUrl && result.whatsappWithdrawalToken && (
+        <div className="mt-4 text-sm">
+          <p>
+            {withdrawn
+              ? 'Votre accord pour le rappel WhatsApp a été retiré.'
+              : 'Vous avez accepté le rappel WhatsApp pour cette réservation.'}
+          </p>
+          {!withdrawn && (
+            <button
+              type="button"
+              onClick={withdrawWhatsApp}
+              disabled={withdrawing}
+              className="mt-2 underline underline-offset-4 transition-all duration-200 disabled:opacity-50"
+            >
+              {withdrawing ? 'Retrait en cours…' : 'Retirer mon accord WhatsApp'}
+            </button>
+          )}
+          {withdrawError && (
+            <p role="alert">
+              Le retrait n’a pas pu être confirmé. Veuillez réessayer ou contacter le restaurant.
+            </p>
+          )}
+        </div>
+      )}
       {!embedded && (
         <Link
           href={`/restaurant/${slug}`}
