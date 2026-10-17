@@ -168,12 +168,13 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Mode demo local/staging : sans Clerk, NEXT_PUBLIC_DEMO_RESTAURANT_ID
+  // agit comme un orgId forcé. On affiche les données de démo pour que le
+  // dashboard reste utilisable sans session réelle ; les widgets qui appellent l'API restent masqués.
+  const isDemo = !orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID;
 
   useEffect(() => {
-    // Mode demo local/staging : sans Clerk, NEXT_PUBLIC_DEMO_RESTAURANT_ID
-    // agit comme un orgId forcé. On affiche les données de démo pour que le
-    // dashboard reste utilisable sans session réelle.
-    if (!orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) {
+    if (isDemo) {
       const demoAnalytics = DEMO_ANALYTICS_BY_PERIOD[period];
       const demoStats = summarizeAnalytics(demoAnalytics);
       setStats(demoStats);
@@ -221,7 +222,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [get, orgId, period, refreshNonce]);
+  }, [get, isDemo, orgId, period, refreshNonce]);
 
   const hasData = useMemo(
     () =>
@@ -231,18 +232,24 @@ export default function DashboardPage() {
       stats.estimatedRevenue > 0,
     [stats],
   );
+  // Les chiffres comptent les réservations PRISES sur la période (date d'enregistrement), pas celles
+  // du service du jour : « 2 réservations » peut coexister avec 25 tables attendues ce soir.
   const periodLabel =
-    period === 'today' ? 'Aujourd’hui' : period === '7d' ? 'Cette semaine' : 'Ce mois-ci';
+    period === 'today'
+      ? 'Réservations prises aujourd’hui'
+      : period === '7d'
+        ? 'Réservations prises ces 7 derniers jours'
+        : 'Réservations prises ces 30 derniers jours';
   const averagePartySize =
     stats.totalReservations > 0
       ? `${(stats.covers / stats.totalReservations).toLocaleString('fr-FR', {
           maximumFractionDigits: 1,
         })} / résa`
-      : 'attendus';
+      : 'sur la période';
   const averageReservationRevenue =
     stats.totalReservations > 0
       ? `${Math.round(stats.estimatedRevenue / stats.totalReservations).toLocaleString('fr-FR')} € / résa`
-      : 'prévisionnel';
+      : 'sur la période';
 
   if (isLoading) return <DashboardSkeleton />;
 
@@ -302,7 +309,7 @@ export default function DashboardPage() {
         <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
       )}
 
-      {!error && <EmptySlotsWidget />}
+      {!error && !isDemo && <EmptySlotsWidget />}
 
       {!error && hasData && (
         <section
@@ -324,7 +331,7 @@ export default function DashboardPage() {
           />
           <KpiCard
             label="Conversion appels"
-            value={`${stats.conversionRate}%`}
+            value={stats.totalCalls > 0 ? `${stats.conversionRate}\u00a0%` : '—'}
             icon={TrendingUp}
             caption="des appels"
           />
@@ -337,7 +344,7 @@ export default function DashboardPage() {
 
       {!error && hasData && <DashboardCharts analytics={analytics} />}
 
-      <NoShowWidget />
+      {!isDemo && <NoShowWidget />}
     </div>
   );
 }

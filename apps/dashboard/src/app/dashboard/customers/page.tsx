@@ -18,16 +18,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Users, Search, Star, Phone, Sparkles, StickyNote, X } from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
-type CustomerListResponse = Customer[] | { data?: Customer[] };
+type CustomerListResponse = Customer[] | { data?: Customer[]; total?: number };
+
+const PAGE_SIZE = 50;
 
 function formatLastVisit(value: string | null) {
   if (!value) return '—';
@@ -54,11 +48,9 @@ function customerInitials(name: string | null) {
 function CustomerMobileCard({
   customer,
   onToggleVip,
-  onCall,
 }: {
   customer: Customer;
   onToggleVip: (id: string, current: boolean) => void;
-  onCall: (customer: Customer) => void;
 }) {
   const name = customer.name || 'Client inconnu';
 
@@ -134,15 +126,12 @@ function CustomerMobileCard({
           <Star size={14} className={customer.isVip ? 'fill-current' : ''} />
           <span className="truncate">{customer.isVip ? 'Retirer VIP' : 'Marquer VIP'}</span>
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => onCall(customer)}
-          className="h-10 min-w-0 px-2 text-xs"
-        >
-          <Phone size={14} />
-          Appeler
+        {/* Sur téléphone, le numéro se compose d'un geste : lien tel:, pas une fenêtre sans action. */}
+        <Button asChild variant="secondary" size="sm" className="h-10 min-w-0 px-2 text-xs">
+          <a href={`tel:${customer.phone}`} aria-label={`Appeler ${name}`}>
+            <Phone size={14} />
+            Appeler
+          </a>
         </Button>
       </div>
     </article>
@@ -154,27 +143,67 @@ export default function CustomersPage() {
   const isMobile = useIsMobile();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [searchPhone, setSearchPhone] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
+  // Saisie en cours, et recherche réellement appliquée (celle que « Afficher plus » doit continuer).
+  const [searchText, setSearchText] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [error, setError] = useState('');
-  const [callInfo, setCallInfo] = useState<{ name: string; phone: string } | null>(null);
+
+  const customersUrl = useCallback((search: string, offset: number) => {
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+    // Un nom ou un numéro tel qu'on le tape (« 06 12 34 56 78 »), entier ou en partie.
+    if (search) params.set('search', search);
+    return `customers?${params.toString()}`;
+  }, []);
 
   const fetchCustomers = useCallback(
-    async (phone?: string) => {
+    async (search = '') => {
       setLoading(true);
       setError('');
+      setMoreError('');
       try {
-        const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
-        const response = await get<CustomerListResponse>(`customers${params}`);
+        const response = await get<CustomerListResponse>(customersUrl(search, 0));
         const rows = Array.isArray(response) ? response : response.data;
-        setCustomers(Array.isArray(rows) ? rows : []);
+        const list = Array.isArray(rows) ? rows : [];
+        setCustomers(list);
+        setTotal(
+          !Array.isArray(response) && typeof response.total === 'number'
+            ? response.total
+            : list.length,
+        );
+        setAppliedSearch(search);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger les clients'));
       }
       setLoading(false);
     },
-    [get],
+    [get, customersUrl],
   );
+
+  // Sans suite, la liste s'arrêtait aux 50 premiers clients et l'en-tête annonçait « 50 clients ».
+  async function loadMore() {
+    setLoadingMore(true);
+    setMoreError('');
+    try {
+      const response = await get<CustomerListResponse>(
+        customersUrl(appliedSearch, customers.length),
+      );
+      const rows = Array.isArray(response) ? response : response.data;
+      const next = Array.isArray(rows) ? rows : [];
+      setCustomers((current) => {
+        const known = new Set(current.map((customer) => customer.id));
+        return [...current, ...next.filter((customer) => !known.has(customer.id))];
+      });
+      if (!Array.isArray(response) && typeof response.total === 'number') setTotal(response.total);
+    } catch (err: unknown) {
+      setMoreError(getErrorMessage(err, 'Impossible de charger les clients suivants'));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     if (!orgId) return;
@@ -219,7 +248,7 @@ export default function CustomersPage() {
         </div>
         <div className="flex flex-none items-center gap-2">
           <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
-            {customers.length} client{customers.length > 1 ? 's' : ''}
+            {total} client{total > 1 ? 's' : ''}
           </span>
           <Button asChild variant="outline" size="sm" className="px-2.5 sm:px-3">
             <Link href="/dashboard/customers/crm">
@@ -234,7 +263,7 @@ export default function CustomersPage() {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void fetchCustomers(searchPhone || undefined);
+          void fetchCustomers(searchText.trim());
         }}
         className="flex min-w-0 gap-2"
         role="search"
@@ -246,10 +275,10 @@ export default function CustomersPage() {
           />
           <Input
             type="text"
-            placeholder="Rechercher un téléphone…"
-            value={searchPhone}
-            onChange={(e) => setSearchPhone(e.target.value)}
-            aria-label="Rechercher un client par téléphone"
+            placeholder="Rechercher un nom ou un téléphone…"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            aria-label="Rechercher un client par nom ou téléphone"
             className="w-full pl-9 pr-28"
           />
           <Button
@@ -260,12 +289,12 @@ export default function CustomersPage() {
           >
             Rechercher
           </Button>
-          {searchPhone && (
+          {searchText && (
             <button
               type="button"
               aria-label="Effacer la recherche"
               onClick={() => {
-                setSearchPhone('');
+                setSearchText('');
                 void fetchCustomers();
               }}
               className="absolute right-[5.75rem] top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -280,7 +309,7 @@ export default function CustomersPage() {
       {error && (
         <DataFetchError
           message={error}
-          onRetry={() => fetchCustomers(searchPhone || undefined)}
+          onRetry={() => fetchCustomers(appliedSearch)}
           retrying={loading}
         />
       )}
@@ -288,27 +317,28 @@ export default function CustomersPage() {
         error ? null : (
           <div className="sokar-empty">
             <Users size={40} className="opacity-30" />
-            <p className="text-sm">Aucun client enregistré</p>
-            <p className="max-w-sm text-xs opacity-60">
-              Les clients apparaîtront après vos premiers appels.
+            <p className="text-sm">
+              {appliedSearch
+                ? 'Aucun client ne correspond à cette recherche'
+                : 'Aucun client enregistré'}
             </p>
-            <Button asChild size="sm" variant="outline" className="mt-1">
-              <Link href="/dashboard/calls">Voir les appels</Link>
-            </Button>
+            <p className="max-w-sm text-xs opacity-60">
+              {appliedSearch
+                ? 'Essayez un autre nom, ou seulement quelques chiffres du numéro.'
+                : 'Les clients apparaîtront après vos premiers appels.'}
+            </p>
+            {!appliedSearch && (
+              <Button asChild size="sm" variant="outline" className="mt-1">
+                <Link href="/dashboard/calls">Voir les appels</Link>
+              </Button>
+            )}
           </div>
         )
       ) : isMobile ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-3">
           {customers.map((customer) => (
-            <CustomerMobileCard
-              key={customer.id}
-              customer={customer}
-              onToggleVip={toggleVip}
-              onCall={(selected) =>
-                setCallInfo({ name: selected.name || 'inconnu', phone: selected.phone })
-              }
-            />
+            <CustomerMobileCard key={customer.id} customer={customer} onToggleVip={toggleVip} />
           ))}
         </div>
       ) : (
@@ -367,25 +397,22 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Dialog d'information : appel client */}
-      <Dialog open={!!callInfo} onOpenChange={(v) => !v && setCallInfo(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Phone size={18} className="text-primary" />
-              Appel du client
-            </DialogTitle>
-            <DialogDescription>
-              {callInfo && `Vous allez appeler ${callInfo.name} au ${callInfo.phone}.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setCallInfo(null)} className="transition-all duration-200">
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {customers.length > 0 && customers.length < total && (
+        <div className="flex flex-col items-center gap-2">
+          {moreError && <p className="text-sm text-destructive">{moreError}</p>}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+            className="transition-all duration-200"
+          >
+            {loadingMore
+              ? 'Chargement…'
+              : `Afficher plus de clients (${customers.length} sur ${total})`}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import type { Reservation, WaitingListEntry } from '@/types/api';
 import ReservationsPage from './page';
@@ -87,7 +87,7 @@ describe('ReservationsPage', () => {
     mocks.get.mockResolvedValue([]);
     render(<ReservationsPage />);
     await waitFor(() => {
-      expect(screen.getByText('Aucune réservation pour le moment')).toBeInTheDocument();
+      expect(screen.getByText('Aucune réservation pour cette date')).toBeInTheDocument();
     });
   });
 
@@ -243,7 +243,7 @@ describe('ReservationsPage', () => {
       render(<ReservationsPage />);
 
       await waitFor(() => {
-        expect(screen.getByText('Aucune réservation pour le moment')).toBeInTheDocument();
+        expect(screen.getByText('Aucune réservation pour cette date')).toBeInTheDocument();
       });
 
       fireEvent.click(screen.getByRole('button', { name: /File d'attente/i }));
@@ -336,6 +336,64 @@ describe('ReservationsPage', () => {
         expect(screen.queryByText('Bob Dylan')).not.toBeInTheDocument();
       });
       expect(mocks.del).toHaveBeenCalledWith('restaurants/org_test/waiting-list/wl1');
+    });
+  });
+});
+
+describe('ReservationsPage — jour affiché', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.isMobile = false;
+    Element.prototype.scrollIntoView = vi.fn();
+    mocks.get.mockResolvedValue([]);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 17, 10, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('charge les réservations du jour, pas tout l’historique du compte', async () => {
+    render(<ReservationsPage />);
+    await waitFor(() => {
+      expect(mocks.get).toHaveBeenCalledWith('reservations?date=2026-10-17');
+    });
+    expect(mocks.get).not.toHaveBeenCalledWith(expect.stringContaining('limit=100'));
+    expect(await screen.findByText(/samedi 17 octobre 2026/i)).toBeInTheDocument();
+  });
+
+  it('passe au jour suivant en gardant la barre de dates à l’écran', async () => {
+    render(<ReservationsPage />);
+    await screen.findByText(/samedi 17 octobre 2026/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jour suivant' }));
+
+    await waitFor(() => {
+      expect(mocks.get).toHaveBeenCalledWith('reservations?date=2026-10-18');
+    });
+    expect(await screen.findByText(/dimanche 18 octobre 2026/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Jour précédent' })).toBeInTheDocument();
+  });
+
+  it('garde la date affichée quand le champ est vidé', async () => {
+    render(<ReservationsPage />);
+    const input = (await screen.findByLabelText('Date')) as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: '' } });
+
+    expect(input.value).toBe('2026-10-17');
+    expect(screen.getByText(/samedi 17 octobre 2026/i)).toBeInTheDocument();
+  });
+
+  it('partage le jour avec la file d’attente', async () => {
+    render(<ReservationsPage />);
+    await screen.findByText(/samedi 17 octobre 2026/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /file d.attente/i }));
+
+    await waitFor(() => {
+      expect(mocks.get).toHaveBeenCalledWith('restaurants/org_test/waiting-list?date=2026-10-17');
     });
   });
 });

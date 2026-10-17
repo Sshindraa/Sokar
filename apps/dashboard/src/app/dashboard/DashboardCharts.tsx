@@ -110,7 +110,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
         title="Réservations et couverts"
         header={
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-            {peak && (
+            {peak && peak.covers > 0 && (
               <span className="font-semibold text-foreground">
                 Pic {peak.label} · {peak.covers} couverts
               </span>

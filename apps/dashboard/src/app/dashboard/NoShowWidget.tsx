@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { UserX, TrendingDown, MessageSquare, Euro } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useApi } from '../../lib/api';
 
 interface NoShowStats {
@@ -15,10 +16,16 @@ interface NoShowStats {
   impact: number | null;
 }
 
+/** Nombre à la française : « 12,5 », jamais « 12.5 ». */
+const formatDecimal = (value: number) =>
+  value.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 export default function NoShowWidget() {
   const { get, orgId } = useApi();
   const [data, setData] = useState<NoShowStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!orgId) {
@@ -27,11 +34,14 @@ export default function NoShowWidget() {
     }
     let mounted = true;
     async function fetchStats() {
+      setFailed(false);
+      setLoading(true);
       try {
         const res = await get<NoShowStats>('dashboard/no-show-stats');
         if (mounted) setData(res);
       } catch {
-        // silent fail — widget is non-critical
+        // Le widget n'est pas critique, mais une panne ne doit pas ressembler à « aucun no-show ».
+        if (mounted) setFailed(true);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -40,7 +50,7 @@ export default function NoShowWidget() {
     return () => {
       mounted = false;
     };
-  }, [get, orgId]);
+  }, [get, orgId, reloadKey]);
 
   if (!orgId) return null;
   if (loading) {
@@ -52,6 +62,28 @@ export default function NoShowWidget() {
             <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
+      </section>
+    );
+  }
+
+  if (failed) {
+    return (
+      <section
+        aria-label="No-shows"
+        className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between md:p-6"
+      >
+        <p className="text-sm text-muted-foreground">
+          Les statistiques de no-show sont momentanément indisponibles.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setReloadKey((key) => key + 1)}
+          className="w-fit transition-all duration-200"
+        >
+          Réessayer
+        </Button>
       </section>
     );
   }
@@ -82,7 +114,9 @@ export default function NoShowWidget() {
               Taux
             </span>
           </div>
-          <p className="mt-2 text-3xl font-black text-foreground">{data.noShowRate.toFixed(1)}%</p>
+          <p className="mt-2 text-3xl font-black text-foreground">
+            {formatDecimal(data.noShowRate)}&nbsp;%
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {data.noShows} no-show{data.noShows > 1 ? 's' : ''} sur {data.total}
           </p>
@@ -104,53 +138,39 @@ export default function NoShowWidget() {
           </p>
         </div>
 
-        {/* Impact du rappel SMS */}
-        <div
-          className={`rounded-xl border p-4 ${
-            hasComparison
-              ? smsWorks
-                ? 'border-success/20 bg-success/[0.04]'
-                : 'border-warning/20 bg-warning/[0.04]'
-              : 'border-border bg-card'
-          }`}
-        >
+        {/* Effet du rappel SMS : le sens passe par le texte, pas par un signe ni une couleur */}
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <MessageSquare
-              size={14}
-              className={
-                hasComparison
-                  ? smsWorks
-                    ? 'text-success'
-                    : 'text-warning'
-                  : 'text-muted-foreground'
-              }
-            />
+            <MessageSquare size={14} className="text-muted-foreground" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Réservations sauvées par SMS
+              Effet du rappel SMS
             </span>
           </div>
 
           {hasComparison ? (
             <>
               <p
-                className={`mt-2 text-3xl font-black ${smsWorks ? 'text-success' : 'text-warning'}`}
+                className={`mt-2 text-3xl font-black ${
+                  smsWorks ? 'text-foreground' : 'text-muted-foreground'
+                }`}
               >
-                {smsWorks ? '-' : '+'}
-                {Math.abs(data.impact!).toFixed(1)} pts
+                {smsWorks
+                  ? `${formatDecimal(Math.abs(data.impact!))} pts`
+                  : data.impact === 0
+                    ? 'Écart nul'
+                    : 'Aucun gain mesuré'}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {smsWorks ? (
-                  <>
-                    <span className="text-success">{data.withSms.rate.toFixed(1)}%</span> avec SMS
-                    vs <span className="text-destructive">{data.withoutSms.rate.toFixed(1)}%</span>{' '}
-                    sans
-                  </>
-                ) : (
-                  <>
-                    <span className="text-warning">{data.withSms.rate.toFixed(1)}%</span> avec SMS
-                    vs <span>{data.withoutSms.rate.toFixed(1)}%</span> sans
-                  </>
-                )}
+                {smsWorks
+                  ? 'de no-shows en moins grâce au SMS'
+                  : data.impact === 0
+                    ? 'autant de no-shows avec et sans SMS'
+                    : `${formatDecimal(Math.abs(data.impact!))} pts de no-shows en plus avec le SMS`}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatDecimal(data.withSms.rate)}&nbsp;% avec SMS ·{' '}
+                {formatDecimal(data.withoutSms.rate)}
+                &nbsp;% sans
               </p>
             </>
           ) : (

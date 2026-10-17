@@ -20,6 +20,9 @@ export function forwardedHeaders(req: NextRequest) {
   // resolves membership and account ownership server-side.
   const siteId = req.headers.get('x-sokar-site-id') || req.nextUrl.searchParams.get('siteId') || '';
   const range = req.headers.get('range') || '';
+  // Preuve d'identité de l'export RGPD d'un client (code SMS saisi) : sans elle, l'API répond
+  // « identité requise » et l'export ne peut jamais aboutir.
+  const identityToken = req.headers.get('x-identity-token') || '';
 
   const headers: Record<string, string> = {};
   if (cookie) headers.Cookie = cookie;
@@ -29,6 +32,7 @@ export function forwardedHeaders(req: NextRequest) {
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   if (siteId) headers['X-Sokar-Site-ID'] = siteId;
   if (range) headers.Range = range;
+  if (identityToken) headers['X-Identity-Token'] = identityToken;
   return headers;
 }
 
