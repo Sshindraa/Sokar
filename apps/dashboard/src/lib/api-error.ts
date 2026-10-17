@@ -106,6 +106,56 @@ const CODE_MESSAGES: Record<string, string> = {
     'Les préférences ont changé. Relancez l’aperçu et choisissez une résolution pour chaque conflit.',
   MERGE_IDEMPOTENCY_KEY_REUSED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
   MERGE_SERIALIZATION_RETRY_EXHAUSTED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
+  // Attentions clients
+  LOYALTY_CUSTOMER_NOT_ELIGIBLE: 'Ce client ne remplit pas la condition de cette attention.',
+  LOYALTY_GRANT_LIMIT_REACHED:
+    'Ce client a déjà reçu cette attention autant de fois que le permet sa configuration.',
+  LOYALTY_BENEFIT_KEY_CONFLICT: 'Une attention porte déjà ce nom. Choisissez un autre nom.',
+  LOYALTY_GRANT_EXPIRED: 'Cette attribution a expiré.',
+  LOYALTY_GRANT_ALREADY_REDEEMED: 'Cette attention a déjà été utilisée.',
+  LOYALTY_GRANT_CODE_INVALID: 'Le code saisi ne correspond pas à cette attention.',
+  LOYALTY_GRANT_VOID: 'Cette attribution a été annulée.',
+  LOYALTY_GRANT_REDEMPTION_CONFLICT: 'Cette attention vient d’être utilisée. Actualisez la page.',
+  LOYALTY_RESERVATION_INVALID: 'Cette réservation ne correspond pas à ce client.',
+  LOYALTY_ROLE_REQUIRED: 'Cette action est réservée aux responsables.',
+  // Réputation
+  REPUTATION_ROLE_REQUIRED: 'Cette action est réservée aux responsables.',
+  REPUTATION_RECOVERY_TRANSITION_INVALID: 'Cette demande a déjà été traitée. Actualisez la liste.',
+  REPUTATION_RECOVERY_TASK_NOT_FOUND: 'Cette demande n’existe plus. Actualisez la liste.',
+  // Événements
+  EVENT_CAPACITY_EXCEEDED: 'Il n’y a plus assez de places pour cette date.',
+  EVENT_KEY_CONFLICT: 'Un événement porte déjà ce nom. Choisissez un autre nom.',
+  EVENT_SESSION_CONFLICT: 'Une date existe déjà à cet horaire pour cet événement.',
+  EVENT_SESSION_IN_PAST: 'Cette date est déjà passée.',
+  EVENT_SESSION_CLOSED: 'Cette date n’est plus ouverte à la réservation.',
+  EVENT_NOT_ACTIVE: 'Cet événement n’est pas encore actif.',
+  EVENT_TICKET_CHECKED_IN: 'Ce billet a déjà été contrôlé.',
+  EVENT_TICKET_NOT_FOUND: 'Billet introuvable. Vérifiez le code.',
+  EVENT_TICKET_CODE_INVALID: 'Billet introuvable. Vérifiez le code.',
+  EVENT_TICKET_UNAVAILABLE: 'Ce billet n’est plus valable.',
+  EVENT_TICKET_TYPE_INACTIVE: 'Ce tarif n’est plus proposé.',
+  EVENT_ORDER_CANCELLED: 'Cette commande a été annulée.',
+  EVENT_ORDER_REFUNDED: 'Cette commande est déjà remboursée.',
+  EVENT_WAITLIST_CLOSED: 'La liste d’attente de cette date est fermée.',
+  EVENT_WAITLIST_ALREADY_PROMOTED: 'Cette demande a déjà reçu sa place.',
+  // Expériences
+  EXPERIENCE_CAPACITY_EXCEEDED: 'Il n’y a plus assez de places pour cette date.',
+  EXPERIENCE_KEY_CONFLICT: 'Une expérience porte déjà ce nom. Choisissez un autre nom.',
+  EXPERIENCE_SESSION_CONFLICT: 'Une date existe déjà à cet horaire pour cette expérience.',
+  EXPERIENCE_SESSION_IN_PAST: 'Cette date est déjà passée.',
+  EXPERIENCE_SESSION_CLOSED: 'Cette date n’est plus ouverte à la réservation.',
+  EXPERIENCE_NOT_ACTIVE: 'Cette expérience n’est pas active.',
+  EXPERIENCE_RESERVATION_CANCELLED: 'Cette réservation est déjà annulée.',
+  EXPERIENCE_REFUND_FAILED:
+    'Le remboursement a échoué. Réessayez, ou remboursez depuis votre compte Stripe.',
+  EXPERIENCE_PAYMENT_NOT_CONFIGURED:
+    'Le paiement n’est pas encore configuré. Connectez Stripe dans les réglages des cartes cadeaux.',
+  EXPERIENCE_STRIPE_NOT_READY:
+    'Le paiement n’est pas encore configuré. Connectez Stripe dans les réglages des cartes cadeaux.',
+  EXPERIENCE_DELETE_CONFLICT:
+    'Cette expérience ne peut pas être supprimée : elle a déjà des réservations. Archivez-la.',
+  EXPERIENCE_DELETE_NOT_ALLOWED:
+    'Cette expérience ne peut pas être supprimée : elle a déjà des réservations. Archivez-la.',
 };
 
 const KIND_MESSAGES: Record<ApiErrorKind, string> = {

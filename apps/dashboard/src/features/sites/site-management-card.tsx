@@ -1,5 +1,6 @@
 'use client';
 
+import { roleLabel } from '@/features/team/roles';
 import { useState } from 'react';
 import { AlertCircle, Building2, CheckCircle2, Loader2, Plus, ShieldCheck } from 'lucide-react';
 import { useApi } from '@/lib/api';
@@ -89,7 +90,7 @@ export function SiteManagementCard() {
                   </div>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                     <ShieldCheck size={13} />
-                    {site.role === 'OWNER' ? 'Propriétaire' : site.role}
+                    {roleLabel(site.role)}
                     {' · '}
                     {site.siteStatus === 'ACTIVE' ? 'Actif' : 'Suspendu'}
                   </p>

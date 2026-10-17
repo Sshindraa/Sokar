@@ -336,7 +336,7 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
     await expect(page.getByLabel('Date du service')).toBeVisible();
     await expect(
       page.getByText('Le copilote de service accompagne la formule Pro.').first(),
-    ).toBeVisible();
+    ).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'T1 · 2 places' })).toBeVisible();
     expect(advancedRequests).toBe(0);
   });

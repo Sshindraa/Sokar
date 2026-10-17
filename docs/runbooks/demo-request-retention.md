@@ -9,7 +9,10 @@ créée par le formulaire. Cette règle couvre la base et les copies e-mail.
 
 - `DemoRequest` : établissement, e-mail, téléphone facultatif, outil et besoin
   facultatifs, version du formulaire, identifiant anti-doublon, dates/statut.
-- Notification via Resend : référence, établissement, e-mail et téléphone.
+- Notifications actuellement déployées : référence, établissement, e-mail et
+  téléphone. Modification locale préparée le 16 octobre : référence et lien vers
+  l'administration authentifiée seulement, sans établissement, coordonnées ni
+  contenu libre de la demande. À confirmer après une livraison autorisée.
 - Boîte professionnelle de réception : Google Workspace. Rechercher également
   les réponses et copies transférées, sans recopier de données personnelles ici.
 - L’accès aux demandes en base est réservé aux opérateurs habilités.
@@ -61,6 +64,9 @@ compléter la revue avec une extraction opérateur autorisée avant de conclure.
   OVH ne suffit pas à prouver que toutes les données restent dans l’UE.
 - La politique nomme les destinataires et la règle validée ; sa publication
   suppose la mise en pratique de cette procédure et la revue des réserves.
+- La minimisation des nouvelles notifications ne supprime aucune copie déjà
+  envoyée, aucun échange manuel et aucune donnée en base. La référence reste
+  rattachable à une demande et n'est pas présentée comme une donnée anonyme.
 - L’identification légale de l’éditeur reste une réserve indépendante.
 - Ne pas présenter le texte de confidentialité comme une validation générale
   RGPD des appels, comptes, réservations, contrats et fournisseurs.

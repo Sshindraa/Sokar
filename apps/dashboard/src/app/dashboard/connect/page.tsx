@@ -107,16 +107,6 @@ function ScoreCircle({ score, level }: { score: number; level: ConnectScore['lev
 
 // ── Stat card ──────────────────────────────────────────
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-0.5 text-xs text-faint">{sub}</p>
-    </div>
-  );
-}
-
 // ── Page principale ────────────────────────────────────
 
 export default function ConnectDashboardPage() {
@@ -185,8 +175,12 @@ export default function ConnectDashboardPage() {
             ? 'Découverte IA activée — visible sur ChatGPT, Perplexity & Google AI'
             : 'Découverte IA désactivée',
       );
-      // Recharge le score après un toggle (l'activation peut changer le contexte)
-      setTimeout(() => loadData(), 500);
+      // Recharge le score seul après un toggle : la page et l'aperçu restent en place (pas de clignotement).
+      setTimeout(() => {
+        get<ConnectScore>(`restaurants/${orgId}/connect/score`)
+          .then(setScore)
+          .catch(() => undefined);
+      }, 500);
     } catch (err: unknown) {
       // Publier sans adresse publique (slug) : l'API répond 409 sans texte, on dit quoi faire.
       if (err instanceof ApiError && err.code === 'CONNECT_SLUG_REQUIRED') {
@@ -331,12 +325,6 @@ export default function ConnectDashboardPage() {
                           })}
                         </p>
                       )}
-                      {/* Stats preview */}
-                      <div className="grid grid-cols-3 gap-2 pt-2">
-                        <StatCard label="Vues" value="—" sub="7j" />
-                        <StatCard label="Résa" value="—" sub="7j" />
-                        <StatCard label="Conversion" value="—" sub="vue→résa" />
-                      </div>
                     </>
                   ) : (
                     <div className="space-y-3">

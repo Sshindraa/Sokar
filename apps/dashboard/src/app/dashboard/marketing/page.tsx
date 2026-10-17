@@ -705,7 +705,7 @@ export default function MarketingPage() {
                           }
                           aria-invalid={Boolean(fieldErrors[type]?.delayHours)}
                           aria-describedby={`${type}-delayHours-error`}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                         />
                         <FieldError
                           id={`${type}-delayHours-error`}
@@ -726,7 +726,7 @@ export default function MarketingPage() {
                           }
                           aria-invalid={Boolean(fieldErrors[type]?.inactiveDays)}
                           aria-describedby={`${type}-inactiveDays-error`}
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                         />
                         <FieldError
                           id={`${type}-inactiveDays-error`}
@@ -748,7 +748,7 @@ export default function MarketingPage() {
                             }
                             aria-invalid={Boolean(fieldErrors[type]?.daysBefore)}
                             aria-describedby={`${type}-daysBefore-error`}
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                           />
                           <FieldError
                             id={`${type}-daysBefore-error`}
@@ -767,7 +767,7 @@ export default function MarketingPage() {
                             }
                             aria-invalid={Boolean(fieldErrors[type]?.sendHour)}
                             aria-describedby={`${type}-sendHour-error`}
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                           />
                           <FieldError
                             id={`${type}-sendHour-error`}
@@ -781,7 +781,7 @@ export default function MarketingPage() {
                       <select
                         value={draft.timezone}
                         onChange={(event) => updateDraft(type, { timezone: event.target.value })}
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
                       >
                         {TIMEZONES.some(([value]) => value === draft.timezone) ? null : (
                           <option value={draft.timezone}>{draft.timezone}</option>
@@ -909,7 +909,7 @@ export default function MarketingPage() {
                       {report && (
                         <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs sm:grid-cols-5">
                           <span>
-                            Ouvertures/clics <strong>{report.delivery.clicked}</strong>
+                            Clics <strong>{report.delivery.clicked}</strong>
                           </span>
                           <span>
                             Réservations <strong>{report.attribution.reservationsCreated}</strong>
@@ -919,7 +919,7 @@ export default function MarketingPage() {
                           </span>
                           <span>
                             CA confirmé{' '}
-                            <strong>{report.attribution.confirmedRevenue.toFixed(2)} €</strong>
+                            <strong>{formatEur(report.attribution.confirmedRevenue)}</strong>
                           </span>
                           <span>
                             Coût messages <strong>{formatEur(report.cost.amount)}</strong>{' '}

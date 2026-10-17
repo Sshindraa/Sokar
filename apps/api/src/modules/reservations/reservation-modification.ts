@@ -11,7 +11,10 @@ import {
   reservationSelfServiceConditions,
   type CancellationReservation,
 } from './reservation-cancellation';
-import { verifyReservationManagementToken } from './reservation-management';
+import {
+  parseReservationManagementToken,
+  verifyReservationManagementToken,
+} from './reservation-management';
 import {
   ReservationService,
   ReservationSlotUnavailableError,
@@ -57,6 +60,10 @@ export function modificationAccess(
     !manualValidation;
   return {
     available,
+    maxDate: utcToZonedParts(
+      new Date(Math.min(Date.now() + 89 * 86400000, row.createdAt.getTime() + 89 * 86400000)),
+      timezone,
+    ).date,
     message: available
       ? 'Votre réservation actuelle reste conservée jusqu’à la confirmation du nouveau choix.'
       : contact,
@@ -111,6 +118,7 @@ async function context(
   db: PrismaClient | Prisma.TransactionClient,
   row: ManagedRow,
   bearer: string,
+  requestedDate?: string,
 ) {
   const restaurant = await db.restaurant.findUniqueOrThrow({
     where: { id: row.restaurantId },
@@ -128,7 +136,11 @@ async function context(
   const financialPolicy = await db.reservationPaymentPolicy.findFirst({
     where: {
       restaurantId: row.restaurantId,
-      activeFrom: { lte: now },
+      activeFrom: {
+        lte: requestedDate
+          ? new Date(Math.max(now.getTime(), Date.parse(`${requestedDate}T23:59:59Z`) + 86400000))
+          : now,
+      },
       OR: [{ activeUntil: null }, { activeUntil: { gt: now } }],
     },
     select: { id: true },
@@ -151,14 +163,47 @@ async function context(
   };
 }
 
+function validateModificationDate(date: string, row: ManagedRow, bearer: string, timezone: string) {
+  const originalDate = utcToZonedParts(row.startsAt ?? row.reservedAt, timezone).date;
+  if (date === originalDate) return;
+  const parsedDate = new Date(`${date}T12:00:00Z`);
+  const today = utcToZonedParts(new Date(), timezone).date;
+  const last = new Date(`${today}T12:00:00Z`);
+  last.setUTCDate(last.getUTCDate() + 89);
+  const token = parseReservationManagementToken(bearer, new Date(), true);
+  if (
+    !Number.isFinite(parsedDate.getTime()) ||
+    parsedDate.toISOString().slice(0, 10) !== date ||
+    date < today ||
+    date > last.toISOString().slice(0, 10) ||
+    !token ||
+    zonedTimeToUtc(date, '23:59', timezone).getTime() >= row.createdAt.getTime() + 90 * 86400000
+  )
+    throw new ModificationConflict(
+      'Cette date n’est pas accessible en ligne avec ce lien. Votre réservation actuelle est conservée.',
+    );
+}
+
 export async function modificationOptions(
   db: PrismaClient,
   row: ManagedRow,
   bearer: string,
   partySize: number,
+  requestedDate?: string,
 ) {
-  const ctx = await context(db, row, bearer);
-  const date = utcToZonedParts(row.startsAt ?? row.reservedAt, ctx.restaurant.timezone).date;
+  if (requestedDate) {
+    const parsed = new Date(`${requestedDate}T12:00:00Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ||
+      !Number.isFinite(parsed.getTime()) ||
+      parsed.toISOString().slice(0, 10) !== requestedDate
+    )
+      throw new ModificationConflict('Date invalide. Votre réservation actuelle est conservée.');
+  }
+  const ctx = await context(db, row, bearer, requestedDate);
+  const date =
+    requestedDate ?? utcToZonedParts(row.startsAt ?? row.reservedAt, ctx.restaurant.timezone).date;
+  validateModificationDate(date, row, bearer, ctx.restaurant.timezone);
   if (partySize > ctx.maxPartySize)
     return {
       date,
@@ -182,11 +227,6 @@ export async function modificationOptions(
     if (!slot.available) return [];
     const startsAt = zonedTimeToUtc(date, slot.time, ctx.restaurant.timezone);
     const endsAt = new Date(startsAt.getTime() + ctx.duration * 60000);
-    if (
-      partySize === row.partySize &&
-      startsAt.getTime() === (row.startsAt ?? row.reservedAt).getTime()
-    )
-      return [];
     const terms = reservationSelfServiceConditions(
       { ...row, startsAt, reservedAt: startsAt },
       bearer,
@@ -269,7 +309,8 @@ export async function confirmModification(
           where: { id: current.id, restaurantId: current.restaurantId },
           include: cancellationRelations,
         });
-        const ctx = await context(tx, fresh, bearer);
+        const ctx = await context(tx, fresh, bearer, proposal.date);
+        validateModificationDate(proposal.date, fresh, bearer, ctx.restaurant.timezone);
         const auditCount = await tx.reservationAuditLog.count({
           where: { reservationId: fresh.id },
         });
@@ -289,8 +330,8 @@ export async function confirmModification(
         };
         if (
           !reservationSelfServiceConditions(target, bearer, ctx.restaurant.timezone).available ||
-          utcToZonedParts(target.startsAt, ctx.restaurant.timezone).date !==
-            utcToZonedParts(fresh.startsAt ?? fresh.reservedAt, ctx.restaurant.timezone).date
+          utcToZonedParts(target.startsAt, ctx.restaurant.timezone).date !== proposal.date ||
+          utcToZonedParts(target.startsAt, ctx.restaurant.timezone).time !== proposal.time
         )
           throw new ModificationConflict(contact);
         const available = await new CapacityAwareAvailabilityService(db).getAvailability(

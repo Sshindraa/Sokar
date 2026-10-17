@@ -7,6 +7,7 @@ import { reservationManagementRoutes } from '../reservation-management.routes';
 import { reservationManagementUrl } from '../reservation-management';
 import { snapshotCancellationPolicy } from '../../../shared/reservations/cancellation-policy';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service';
+import { zonedTimeToUtc } from '../../../shared/timezone/restaurant-time';
 import { redisCache } from '../../../shared/redis/client';
 
 const enabled =
@@ -77,14 +78,14 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
     vi.unstubAllEnvs();
     await db.$disconnect();
   });
-  async function fixture() {
+  async function fixture(start = original) {
     const row = await db.reservation.create({
       data: {
         restaurantId,
         tableId: small,
-        startsAt: original,
-        reservedAt: original,
-        endsAt: end(original),
+        startsAt: start,
+        reservedAt: start,
+        endsAt: end(start),
         partySize: 2,
         customerName: 'Local test',
         customerPhone: '+33600000000',
@@ -145,6 +146,106 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
         partySize: 3,
       });
     } finally {
+      await app.close();
+    }
+  });
+  it('moves to another day atomically, preserves the original link and rejects invalid dates', async () => {
+    const { row, app, post } = await fixture();
+    const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    try {
+      for (const date of ['2026-02-30', '2000-01-01', '2099-12-31']) {
+        expect(
+          (await post({ action: 'modification_options', partySize: 3, date })).statusCode,
+        ).toBe(409);
+      }
+      const choices = await post({ action: 'modification_options', partySize: 3, date: day });
+      expect(choices.statusCode).toBe(200);
+      expect(choices.json().date).toBe(day);
+      const selected = choices.json().slots.find((slot: { time: string }) => slot.time === '20:00');
+      expect(selected).toBeTruthy();
+      expect((await db.reservation.findUniqueOrThrow({ where: { id: row.id } })).startsAt).toEqual(
+        original,
+      );
+      expect(
+        (await post({ action: 'modify', proposalToken: selected.proposalToken })).statusCode,
+      ).toBe(400);
+      const targetStart = zonedTimeToUtc(day, '20:00', 'Europe/Paris');
+      const blocker = await db.reservation.create({
+        data: {
+          restaurantId,
+          tableId: large,
+          startsAt: targetStart,
+          reservedAt: targetStart,
+          endsAt: end(targetStart),
+          partySize: 4,
+          customerName: 'Local test blocker',
+          state: 'CONFIRMED',
+          status: 'CONFIRMED',
+        },
+      });
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: selected.proposalToken }))
+          .statusCode,
+      ).toBe(409);
+      expect(await db.reservation.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+        startsAt: original,
+        tableId: small,
+        partySize: 2,
+      });
+      await db.reservation.update({
+        where: { id: blocker.id },
+        data: { state: 'CANCELLED', status: 'CANCELLED' },
+      });
+      const updated = await post({
+        action: 'modify',
+        confirmed: true,
+        proposalToken: selected.proposalToken,
+      });
+      expect(updated.statusCode).toBe(200);
+      expect(updated.json()).toMatchObject({ date: day, time: '20:00', partySize: 3 });
+      expect((await post({ action: 'view' })).json()).toMatchObject({
+        date: day,
+        time: '20:00',
+        partySize: 3,
+      });
+      expect(
+        await new TableAllocationService(db).isTableAvailable({
+          tableId: small,
+          startsAt: original,
+          endsAt: end(original),
+        }),
+      ).toBe(true);
+      expect(
+        await db.reservationAuditLog.count({
+          where: { reservationId: row.id, event: 'reservation_fields_changed' },
+        }),
+      ).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+  it('allows a two-month rescheduling and preserves access through the initial SMS link', async () => {
+    const now = Date.now();
+    const { row, app, post } = await fixture(new Date(now + 4 * 86400000));
+    const date = new Date(now + 60 * 86400000).toISOString().slice(0, 10);
+    try {
+      const choices = await post({ action: 'modification_options', partySize: 3, date });
+      expect(choices.statusCode).toBe(200);
+      const selected = choices.json().slots.find((slot: { time: string }) => slot.time === '20:00');
+      expect(selected).toBeTruthy();
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: selected.proposalToken }))
+          .statusCode,
+      ).toBe(200);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(now + 30 * 86400000);
+      const laterView = await post({ action: 'view' });
+      expect(laterView.statusCode).toBe(200);
+      expect(laterView.json()).toMatchObject({ date, time: '20:00', partySize: 3 });
+      vi.setSystemTime(now + 91 * 86400000);
+      expect((await post({ action: 'view' })).statusCode).toBe(404);
+    } finally {
+      vi.useRealTimers();
       await app.close();
     }
   });

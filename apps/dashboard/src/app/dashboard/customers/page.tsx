@@ -74,7 +74,7 @@ function CustomerMobileCard({
           <span
             className={`inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
               customer.isVip
-                ? 'border-warning/30 bg-warning/10 text-warning'
+                ? 'border-primary/20 bg-secondary text-foreground'
                 : 'border-border bg-secondary/70 text-muted-foreground'
             }`}
           >
@@ -398,8 +398,10 @@ export default function CustomersPage() {
                         {c.isVip ? 'VIP' : 'Ajouter'}
                       </button>
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                      {c.notes || <span className="opacity-50">—</span>}
+                    <TableCell className="text-muted-foreground">
+                      <span className="block max-w-[200px] truncate" title={c.notes ?? undefined}>
+                        {c.notes || <span className="opacity-50">—</span>}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {c.lastSeenAt ? (

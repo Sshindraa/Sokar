@@ -8,6 +8,12 @@
 
 import type { Metadata } from 'next';
 import { ArrowLeft, ArrowUpRight, Mail } from 'lucide-react';
+import {
+  PRIVACY_DOCUMENT,
+  PRIVACY_PROVIDERS,
+  PRIVACY_RETENTION,
+  PRIVACY_RETENTION_RULES,
+} from '@sokar/shared';
 
 // A per-request nonce cannot be attached to a prerendered HTML document.
 export const dynamic = 'force-dynamic';
@@ -52,7 +58,8 @@ export default function PrivacyPage() {
           droits.
         </p>
         <p className="mt-5 text-xs text-muted-foreground">
-          Dernière mise à jour : <time dateTime="2026-10-15">15 octobre 2026</time>
+          Dernière mise à jour :{' '}
+          <time dateTime={PRIVACY_DOCUMENT.revision}>{PRIVACY_DOCUMENT.updatedLabel}</time>
         </p>
       </div>
       <div className="grid items-start gap-10 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-16">
@@ -94,6 +101,12 @@ export default function PrivacyPage() {
                 className="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Conservation
+              </a>
+              <a
+                href="#fournisseurs"
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Fournisseurs
               </a>
               <a
                 href="#droits"
@@ -146,6 +159,7 @@ export default function PrivacyPage() {
               contactent. Pour ces demandes et leur suivi, Sokar détermine les finalités du
               traitement.
             </p>
+            <p className="mt-4 text-muted-foreground">{PRIVACY_DOCUMENT.review}</p>
             <p className="mt-4 text-muted-foreground">
               Pour les réservations gérées pour le compte d’un restaurant, le restaurant détermine
               les finalités de gestion de sa clientèle ; Sokar intervient comme prestataire traitant
@@ -204,23 +218,14 @@ export default function PrivacyPage() {
             <div className="mt-6 first:mt-0">
               <h3 className="mb-2 text-sm font-semibold text-foreground">Qui peut y accéder</h3>
               <p className="mt-4 text-muted-foreground">
-                La demande est enregistrée dans notre base hébergée chez OVHcloud. L’équipe Sokar
-                habilitée à la traiter peut y accéder ; une notification contenant l’établissement,
-                l’e-mail et le téléphone, s’il est renseigné, lui est également adressée via Resend.
-                Les copies reçues dans la messagerie professionnelle sont traitées avec Google
-                Workspace. Les informations de suivi comprennent également les dates de création et
-                de prise de contact, le statut de la demande et la version du formulaire utilisée.
+                Votre demande est accessible à l’équipe Sokar habilitée à y répondre. Nos
+                prestataires d’hébergement, d’envoi d’e-mails et de messagerie interviennent pour
+                l’enregistrer, nous la transmettre et permettre le suivi de nos échanges.
               </p>
             </div>
             <div className="mt-6 first:mt-0">
               <h3 className="mb-2 text-sm font-semibold text-foreground">Combien de temps</h3>
-              <p className="mt-4 text-muted-foreground">
-                Pour une demande sans suite, la règle de conservation est de douze mois après le
-                dernier échange avec vous, ou après la demande si aucun échange n’a eu lieu. Elle
-                couvre la demande en base et les copies e-mail. Si vous devenez client, les données
-                nécessaires à la relation contractuelle relèvent de cette relation et des
-                obligations applicables.
-              </p>
+              <p className="mt-4 text-muted-foreground">{PRIVACY_RETENTION.demo}</p>
             </div>
             <div className="mt-6 first:mt-0">
               <h3 className="mb-2 text-sm font-semibold text-foreground">Traitements hors UE</h3>
@@ -274,12 +279,12 @@ export default function PrivacyPage() {
               <li>Adresse e-mail (optionnelle, pour une confirmation par e-mail)</li>
               <li>Demandes spéciales éventuelles (allergies, accès, etc.)</li>
               <li>
-                Pour les appels téléphoniques : audio de la conversation et transcription, après
-                information donnée au début de l&apos;appel
+                Pour les appels téléphoniques : informations sur l’appel et transcription selon la
+                fonctionnalité utilisée. Les enregistrements audio sont limités aux tests autorisés.
               </li>
               <li>
-                Métadonnées de navigation : source (Google, QR code, etc.) et hash de l&apos;adresse
-                IP (jamais l&apos;IP en clair)
+                Informations de navigation : origine de la réservation et données techniques
+                nécessaires à la sécurité du service
               </li>
             </ul>
           </section>
@@ -300,21 +305,11 @@ export default function PrivacyPage() {
                 Finalités des réservations
               </h2>
             </div>
-            <ul className="list-disc space-y-2 pl-6 text-muted-foreground">
-              <li>
-                <strong className="text-foreground">Exécution du contrat</strong> : création et
-                gestion de la réservation auprès du restaurant.
-              </li>
-              <li>
-                <strong className="text-foreground">Intérêt légitime</strong> : mesures
-                d&apos;anti-fraude (honeypot, rate-limiting), analytics agrégées (compteurs
-                Prometheus, sans PII) et contrôle qualité des appels annoncés au client.
-              </li>
-              <li>
-                <strong className="text-foreground">Consentement</strong> : SMS et e-mail
-                transactionnels de confirmation, recueillis au moment de la réservation.
-              </li>
-            </ul>
+            <p className="text-muted-foreground">{PRIVACY_DOCUMENT.reservationProcessing}</p>
+            <p className="mt-4 text-muted-foreground">
+              La prévention des abus et la protection du service reposent sur l’intérêt légitime à
+              assurer sa sécurité.
+            </p>
           </section>
 
           <section
@@ -333,13 +328,41 @@ export default function PrivacyPage() {
                 Conservation
               </h2>
             </div>
-            <p className="text-muted-foreground">
-              Les données de réservation sont conservées par le restaurant pour la durée nécessaire
-              à la gestion de ses opérations (annulation, modification, no-show). Les métadonnées
-              analytics agrégées ne contiennent aucune PII et sont conservées sous forme de
-              compteurs anonymisés. Les enregistrements audio sont stockés de manière privée pendant
-              30 jours au maximum, puis supprimés automatiquement.
-            </p>
+            <dl className="space-y-6">
+              {PRIVACY_RETENTION_RULES.map((rule) => (
+                <div key={rule.id}>
+                  <dt className="font-semibold">{rule.category}</dt>
+                  <dd className="mt-2 text-muted-foreground">{rule.description}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section
+            id="fournisseurs"
+            aria-labelledby="fournisseurs-title"
+            className="scroll-mt-8 border-b border-border pb-10 last:border-0"
+          >
+            <div className="mb-5 flex items-start gap-3">
+              <span aria-hidden="true" className="mt-0.5 font-mono text-xs text-muted-foreground">
+                06
+              </span>
+              <h2 id="fournisseurs-title" className="text-lg font-semibold sm:text-xl">
+                Fournisseurs et transferts
+              </h2>
+            </div>
+            <p className="text-muted-foreground">{PRIVACY_DOCUMENT.transfers}</p>
+            <dl className="mt-6 divide-y divide-border border-y border-border">
+              {PRIVACY_PROVIDERS.map((provider) => (
+                <div key={provider.id} className="py-5">
+                  <dt className="font-semibold">{provider.name}</dt>
+                  <dd className="mt-2 space-y-2 text-muted-foreground">
+                    <p>{provider.purpose}</p>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-4 text-muted-foreground">{PRIVACY_DOCUMENT.supplierInformation}</p>
           </section>
 
           <section
@@ -349,7 +372,7 @@ export default function PrivacyPage() {
           >
             <div className="mb-5 flex items-start gap-3">
               <span aria-hidden="true" className="mt-0.5 font-mono text-xs text-muted-foreground">
-                06
+                07
               </span>
               <h2
                 id="droits-title"
@@ -360,8 +383,9 @@ export default function PrivacyPage() {
             </div>
             <p className="text-muted-foreground">
               Conformément au RGPD, vous disposez d&apos;un droit d&apos;accès, de rectification, de
-              suppression et d&apos;opposition concernant vos données. Pour exercer ces droits,
-              contactez-nous à{' '}
+              suppression, de limitation et d&apos;opposition concernant vos données, ainsi que de
+              portabilité lorsque les conditions légales sont réunies. Vous pouvez retirer un
+              consentement à tout moment. Pour exercer ces droits, contactez-nous à{' '}
               <a
                 href="mailto:privacy@sokar.tech"
                 className="text-foreground underline transition-all duration-200 hover:text-foreground"
@@ -391,7 +415,7 @@ export default function PrivacyPage() {
           >
             <div className="mb-5 flex items-start gap-3">
               <span aria-hidden="true" className="mt-0.5 font-mono text-xs text-muted-foreground">
-                07
+                08
               </span>
               <h2
                 id="cookies-title"
@@ -400,11 +424,7 @@ export default function PrivacyPage() {
                 Cookies
               </h2>
             </div>
-            <p className="text-muted-foreground">
-              Les pages publiques de réservation Sokar ne déposent aucun cookie de tracking.
-              L&apos;IP est hashée côté client avant envoi (pas de stockage de l&apos;IP en clair).
-              Aucun script tiers (Google Analytics, Meta Pixel, etc.) n&apos;est chargé.
-            </p>
+            <p className="text-muted-foreground">{PRIVACY_DOCUMENT.cookies}</p>
           </section>
           <a
             href="#main-content"

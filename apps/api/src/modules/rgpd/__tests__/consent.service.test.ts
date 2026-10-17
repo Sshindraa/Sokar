@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHash } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { ConsentService, ConsentRequiredError } from '../consent.service';
+import { CURRENT_PRIVACY_POLICY_VERSION } from '../privacy-policy';
 
 const FIXED_DATE = new Date('2026-07-08T12:00:00.000Z');
 const sha256 = (s: string) => createHash('sha256').update(s.toLowerCase().trim()).digest('hex');
@@ -104,7 +105,7 @@ describe('ConsentService.recordConsent', () => {
       });
 
       expect(result.id).toBe('consent-1');
-      expect(result.version).toMatch(/.+/);
+      expect(result.version).toBe(CURRENT_PRIVACY_POLICY_VERSION);
       expect(create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           restaurantId: 'rest-1',
@@ -119,6 +120,7 @@ describe('ConsentService.recordConsent', () => {
           marketingOptIn: true,
           consentIpHash: 'ip-hash-1',
           consentedAt: FIXED_DATE,
+          privacyPolicyVersion: CURRENT_PRIVACY_POLICY_VERSION,
         }),
       });
     } finally {

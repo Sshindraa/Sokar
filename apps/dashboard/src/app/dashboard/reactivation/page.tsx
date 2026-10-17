@@ -306,6 +306,7 @@ export default function ReactivationPage() {
                   )}
 
                   {/* Actions */}
+                  {isMobile ? <div className="mb-4" /> : null}
                   {sendsEnabled === false && (
                     <p className="mb-3 text-xs text-muted-foreground">
                       Les envois SMS ne sont pas encore ouverts sur votre compte : vous pourrez

@@ -19,6 +19,11 @@ import type { FastifyInstance } from 'fastify';
 import type { Table } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import {
+  isReservationManagementEnabled,
+  reservationManagementUrl,
+} from '../reservations/reservation-management';
+import { createWhatsAppReminderConsent, withdrawWhatsAppReminderConsent } from './whatsapp-consent';
 import { slugifyCity, slugifyCuisine } from '@sokar/shared';
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { db } from '../../shared/db/client';
@@ -177,7 +182,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
-      return reply.send(restaurant);
+      return reply.send({
+        ...restaurant,
+        whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
+      });
     },
   );
 
@@ -643,6 +651,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       if (!bodyParse.success) {
         return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
       }
+      if (
+        bodyParse.data.whatsappReminderConsent?.accepted &&
+        process.env.WHATSAPP_CONSENT_ENABLED !== 'true'
+      ) {
+        return reply
+          .status(409)
+          .send({ error: 'Le rappel WhatsApp n’est pas disponible actuellement.' });
+      }
 
       // Honeypot anti-bot : si le champ website est rempli, c'est un bot.
       // On retourne 202 (accepted) pour ne pas alerter le bot, mais on ne crée pas de résa.
@@ -730,6 +746,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       // RGPD consent (channel=WEB, context=web_booking_intent)
       const ipHash = req.ip ? hashIp(req.ip) : undefined;
+      const whatsappConsent = createWhatsAppReminderConsent(
+        bodyParse.data.whatsappReminderConsent?.accepted === true,
+        ipHash,
+      );
       await consents.recordConsent({
         restaurantId: restaurant.id,
         customerId: null,
@@ -768,6 +788,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         holdId: hold.id,
         customerPhone: bodyParse.data.customer.phone,
         customerName,
+        ...(bodyParse.data.whatsappReminderConsent
+          ? { whatsappReminderConsent: bodyParse.data.whatsappReminderConsent.accepted }
+          : {}),
       });
 
       try {
@@ -789,6 +812,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             giftCardCode: bodyParse.data.giftCardCode,
             giftCardReservationAmount: Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
             consents: {
+              ...whatsappConsent.consents,
               reservationProcessing: true,
               transactionalSms: true,
               transactionalEmail: !!bodyParse.data.customer.email,
@@ -834,8 +858,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           reservationId: result.reservationId,
         });
 
+        const managed = isReservationManagementEnabled()
+          ? await db.reservation.findUnique({
+              where: { id: result.reservationId, restaurantId: restaurant.id },
+            })
+          : null;
         return reply.send({
           reservationId: result.reservationId,
+          ...(managed ? { managementUrl: reservationManagementUrl(managed) } : {}),
           status: 'confirmed',
           state: result.state,
           reused: result.reused,
@@ -845,6 +875,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           partySize: hold.partySize,
           source,
           giftCardApplication: result.giftCardApplication,
+          ...(!result.reused && whatsappConsent.withdrawalToken
+            ? { whatsappWithdrawalToken: whatsappConsent.withdrawalToken }
+            : {}),
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
@@ -1023,6 +1056,39 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         logger.error({ err, slug: slugParse.data.slug }, 'connect waiting-list join failed');
         return reply.status(500).send({ error: 'Internal error' });
       }
+    },
+  );
+
+  // Retrait du rappel WhatsApp : jeton dedie, sans modifier la reservation.
+  app.post(
+    '/public/r/:slug/whatsapp-consent/withdraw',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const params = SlugParamSchema.safeParse(req.params);
+      const body = z
+        .object({
+          reservationId: z.string().min(1).max(100),
+          token: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .safeParse(req.body);
+      if (!params.success || !body.success)
+        return reply.status(400).send({ error: 'Invalid request' });
+      const restaurant = await db.restaurant.findUnique({
+        where: { slug: params.data.slug },
+        select: { id: true },
+      });
+      if (!restaurant) return reply.status(404).send({ error: 'Not found' });
+      const outcome = await withdrawWhatsAppReminderConsent(
+        db,
+        restaurant.id,
+        body.data.reservationId,
+        body.data.token,
+      );
+      if (outcome === 'not_found') return reply.status(404).send({ error: 'Not found' });
+      if (outcome === 'conflict') return reply.status(409).send({ error: 'Veuillez réessayer.' });
+      return reply.send({ status: 'withdrawn' });
     },
   );
 

@@ -1,22 +1,31 @@
-/**
- * Privacy policy versionnée.
- *
- * La version est stockée en DB (dans customer_consents.privacyPolicyVersion)
- * à chaque consentement collecté. Quand la policy change, on incrémente
- * la version et tous les consents existants doivent être renouvelés.
- *
- * Source de vérité : ce fichier. Pas de DB, pas d'admin (Phase 5 MVP).
- */
+import {
+  PRIVACY_ANONYMIZATION_REFERENCE,
+  PRIVACY_DOCUMENT,
+  PRIVACY_PROVIDERS,
+  PRIVACY_RETENTION_RULES,
+} from '@sokar/shared';
 
-export const CURRENT_PRIVACY_POLICY_VERSION = 'v1.0-2026-06';
+// New records reference the corrected disclosure; historical consent versions stay intact.
+// This does not change consent purposes, flags or introduce an automatic renewal workflow.
+export const CURRENT_PRIVACY_POLICY_VERSION = 'v1.1-2026-10-16';
 
 export const PRIVACY_POLICY_SUMMARY = {
   version: CURRENT_PRIVACY_POLICY_VERSION,
-  effectiveAt: '2026-06-01',
-  retentionDays: 730, // 2 ans
-  dataController: 'Sokar SAS',
-  hosting: 'France (OVHcloud)',
-  dpo: 'dpo@sokar.tech',
+  effectiveAt: PRIVACY_DOCUMENT.revision,
+  // Preserve the public numeric field; additive fields below explicitly qualify its scope.
+  retentionDays: PRIVACY_ANONYMIZATION_REFERENCE.reservationAgeDays,
+  dataController: 'Sokar — nom commercial d’une entreprise individuelle',
+  hosting: PRIVACY_DOCUMENT.hosting,
+  dpo: PRIVACY_DOCUMENT.contact,
+  contactEmail: PRIVACY_DOCUMENT.contact,
+  documentationRevision: PRIVACY_DOCUMENT.revision,
+  status: 'under_review',
+  retentionDaysMeaning:
+    'Seuil du mécanisme d’anonymisation des réservations, désactivé par défaut ; pas une durée générale de conservation.',
+  automaticAnonymizationGuaranteed: false,
+  anonymizationReference: PRIVACY_ANONYMIZATION_REFERENCE,
+  retentionRules: PRIVACY_RETENTION_RULES,
+  providers: PRIVACY_PROVIDERS,
 } as const;
 
 /**
@@ -27,43 +36,50 @@ export const PRIVACY_POLICY_TEXT = `
 # Politique de confidentialité Sokar
 
 ## Responsable du traitement
-Sokar SAS, contact DPO : dpo@sokar.tech
+Sokar, nom commercial d’une entreprise individuelle. L’identification complète du responsable reste à compléter. Contact données personnelles : ${PRIVACY_DOCUMENT.contact}
+
+Révision documentaire : ${PRIVACY_DOCUMENT.revision}.
+${PRIVACY_DOCUMENT.review}
+${PRIVACY_DOCUMENT.roles}
 
 ## Données collectées
 - Numéro de téléphone (E.164)
 - Nom du client
 - Consentements (réservation, SMS transactionnel, email transactionnel, marketing)
 - Métadonnées de réservation (date, heure, nombre de personnes, demandes spéciales)
+- Données de compte, de restaurant et de facturation
+- Demandes de démonstration et échanges de suivi
+- Métadonnées d’appels et, selon les fonctions de test activées, audio et dialogues de diagnostic
 
 ## Base légale
-- Réservation : exécution du contrat (article 6.1.b RGPD)
-- SMS/email transactionnel : exécution du contrat
-- Marketing : consentement explicite (article 6.1.a RGPD)
+${PRIVACY_DOCUMENT.reservationProcessing}
+- Gestion des comptes et du service : exécution du contrat
+- Demandes de démonstration : intérêt légitime à répondre aux professionnels intéressés
+- Sécurité du service : intérêt légitime à prévenir les abus et les accès non autorisés
+- Pièces comptables : obligations légales applicables
 
 ## Durée de conservation
-- 2 ans à compter de la dernière interaction
-- Anonymisation automatique (PII effacée, structure conservée pour les stats)
-- Conservation des données comptables : 10 ans (obligation légale)
+${PRIVACY_RETENTION_RULES.map((rule) => `- ${rule.category} : ${rule.description}`).join('\n')}
 
 ## Vos droits
 - Accès (Article 15) : POST /api/rgpd/export
 - Effacement (Article 17) : POST /api/rgpd/erase
 - Portabilité (Article 20) : export JSON ci-dessus
-- Opposition (Article 21) : retirer le consentement marketing
+- Rectification et limitation : contactez ${PRIVACY_DOCUMENT.contact}
+- Opposition (Article 21) : selon les conditions légales applicables
+- Retrait du consentement marketing : à tout moment, sans effet sur la licéité des traitements antérieurs
 - Réclamation : CNIL (cnil.fr)
 
 ## Sous-traitants
-- Twilio (SMS, USA + EU) : DPA à formaliser, SCC 2021/914 à valider
-- Brevo (email, France) : DPA à formaliser
-- Postmark (email transactionnel, USA) : DPA à formaliser, SCC 2021/914 à valider
-- Telnyx (téléphonie, USA + EU) : DPA à formaliser, SCC 2021/914 à valider
-- ElevenLabs (STT, USA) : DPA à formaliser, SCC 2021/914 à valider
-- Cartesia (TTS, USA) : DPA à formaliser, SCC 2021/914 à valider
+${PRIVACY_DOCUMENT.transfers}
+${PRIVACY_PROVIDERS.map((provider) => `- ${provider.name} : ${provider.purpose}`).join('\n')}
+${PRIVACY_DOCUMENT.supplierInformation}
+
+Hébergement : ${PRIVACY_DOCUMENT.hosting}
 
 ## Sécurité
-- Chiffrement at-rest (AES-256)
-- Chiffrement in-transit (TLS 1.3)
-- Logs d'audit append-only (toute mutation tracée)
-- Aucune PII dans les tool responses MCP
-- Origine allowlistée pour les clients MCP
+${PRIVACY_DOCUMENT.security}
+
+## Cookies
+${PRIVACY_DOCUMENT.cookies}
 `.trim();

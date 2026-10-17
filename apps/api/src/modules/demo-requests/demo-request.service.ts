@@ -66,17 +66,19 @@ function escapeHtml(value: string): string {
  * Retourne true seulement si chaque envoi a été accepté explicitement (`outcome` = 'success') : un refus
  * (liste de destinataires de test), un échec, un résultat inconnu ou une exception ne sont pas une notification.
  */
-export async function notifyDemoRequest(
-  record: Pick<DemoRequest, 'id' | 'establishmentName' | 'contactEmail' | 'contactPhone'>,
-): Promise<boolean> {
+export async function notifyDemoRequest(record: Pick<DemoRequest, 'id'>): Promise<boolean> {
   const recipients = parseRecipients(process.env.DEMO_REQUEST_NOTIFY_TO);
   if (recipients.length === 0) return false;
 
+  const dashboardUrl = new URL(
+    '/admin/demo-requests',
+    process.env.DASHBOARD_URL ?? 'https://sokar.tech',
+  );
+  // Les coordonnées restent dans le suivi authentifié, pas dans les copies e-mail.
   const html = [
     `<p>Nouvelle demande de démonstration (réf. ${escapeHtml(record.id)}).</p>`,
-    `<p>Établissement : ${escapeHtml(record.establishmentName)}</p>`,
-    `<p>E-mail : ${escapeHtml(record.contactEmail)}</p>`,
-    `<p>Téléphone : ${escapeHtml(record.contactPhone ?? 'non renseigné')}</p>`,
+    `<p><a href="${escapeHtml(dashboardUrl.href)}">Consulter les demandes dans Sokar</a></p>`,
+    '<p>Une connexion avec un compte administrateur autorisé est nécessaire.</p>',
   ].join('');
 
   let allAccepted = true;

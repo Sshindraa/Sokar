@@ -27,7 +27,8 @@
   color: hsl(var(--foreground));
 }
 .demo {
-  margin-top: 3px;
+  padding-left: 12px;
+  border-left: 1px solid hsl(var(--foreground) / 0.25);
   font-size: 0.625rem;
   color: hsl(var(--muted-foreground));
 }
@@ -145,30 +146,33 @@
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px 32px;
   width: 100%;
 }
 .calendar,
 .directions {
   border: 0;
+  border-bottom: 0;
   border-radius: 0;
   background: transparent;
+  padding: 8px 0;
   color: hsl(var(--foreground));
   font-size: 0.75rem;
   font-weight: 400;
   text-decoration: underline;
-  text-decoration-color: hsl(var(--foreground) / 0.35);
+  text-decoration-color: hsl(var(--foreground) / 0.3);
   text-decoration-thickness: 1px;
   text-underline-offset: 5px;
 }
 .calendar:hover,
 .directions:hover {
   background: transparent;
+  border-color: hsl(var(--foreground) / 0.85);
   color: hsl(var(--foreground));
   text-decoration-color: currentColor;
 }
 .management {
-  max-width: 560px;
+  max-width: 440px;
   margin: 14px auto 0;
 }
 .managementToggle,
@@ -205,13 +209,17 @@
 .details {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 20px 0;
   margin-top: 8px;
-  border: 1px solid hsl(var(--border));
+  border: 0;
+  border-top: 1px solid hsl(var(--foreground) / 0.18);
 }
 .preferences {
   min-width: 0;
+  order: 3;
+  padding-top: 8px;
+  border-top: 1px solid hsl(var(--foreground) / 0.12);
 }
 .contactGroup {
   display: flex;
@@ -223,15 +231,17 @@
 }
 .contact {
   border-radius: 0;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   background: transparent;
   color: hsl(var(--foreground));
-  border-color: transparent;
+  border: 0;
+  border-bottom: 0;
   padding-right: 0;
   padding-left: 0;
 }
 .contact:hover {
-  background: hsl(var(--accent));
+  background: transparent;
+  border-color: hsl(var(--foreground) / 0.75);
   color: hsl(var(--foreground));
 }
 .contact:disabled {

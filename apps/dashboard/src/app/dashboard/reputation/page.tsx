@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, RefreshCw, ShieldAlert, Star } from 'lucide-react';
+import { CheckCircle2, Clock3, RefreshCw, ShieldAlert, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { DataFetchError } from '@/components/DataFetchError';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type Feedback = {
@@ -91,19 +94,31 @@ export default function ReputationPage() {
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Échec du chargement ou module fermé : on n'affiche ni « 0 retour » ni « aucune récupération à traiter ».
+  const [loadError, setLoadError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setLoadError('');
+    setLock(null);
     try {
-      const [feedbackResponse, taskResponse] = await Promise.all([
+      // Les demandes à traiter sont chargées par état : une note faible récente ne doit jamais disparaître
+      // derrière 100 demandes déjà classées.
+      const [feedbackResponse, openResponse, inProgressResponse] = await Promise.all([
         get<ListResponse<Feedback>>('reputation/feedback?limit=100'),
-        get<ListResponse<RecoveryTask>>('reputation/recovery-tasks?limit=100'),
+        get<ListResponse<RecoveryTask>>('reputation/recovery-tasks?status=OPEN&limit=100'),
+        get<ListResponse<RecoveryTask>>('reputation/recovery-tasks?status=IN_PROGRESS&limit=100'),
       ]);
       setFeedback(Array.isArray(feedbackResponse.data) ? feedbackResponse.data : []);
-      setTasks(Array.isArray(taskResponse.data) ? taskResponse.data : []);
+      setTasks([
+        ...(Array.isArray(openResponse.data) ? openResponse.data : []),
+        ...(Array.isArray(inProgressResponse.data) ? inProgressResponse.data : []),
+      ]);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger la réputation'));
+      setLock(featureLockFromError(err));
+      setLoadError(getErrorMessage(err, 'Impossible de charger la réputation.'));
       setFeedback([]);
       setTasks([]);
     } finally {
@@ -115,6 +130,7 @@ export default function ReputationPage() {
     void load();
   }, [load]);
 
+  const showContent = !lock && !loadError;
   const averageScore = useMemo(() => {
     if (feedback.length === 0) return null;
     return feedback.reduce((sum, item) => sum + item.score, 0) / feedback.length;
@@ -146,13 +162,17 @@ export default function ReputationPage() {
         );
       }
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de mettre à jour la tâche de récupération'));
+      if (err instanceof ApiError && (err.kind === 'conflict' || err.kind === 'not-found')) {
+        // Un collègue a déjà traité cette demande, ou la page n'est plus à jour : on la rafraîchit.
+        await load();
+        setError('Cette demande a déjà été traitée par un collègue. La liste est actualisée.');
+      } else {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour cette demande.'));
+      }
     } finally {
       setAction(null);
     }
   }
-
-  const locked = error.includes('REPUTATION_DISABLED') || error.includes('CAPABILITY_NOT_INCLUDED');
 
   return (
     <div className="w-full space-y-6">
@@ -174,196 +194,191 @@ export default function ReputationPage() {
         </Button>
       </header>
 
-      {error ? (
-        <Card className="border-destructive/30 bg-destructive/5" role="alert">
-          <CardContent className="flex items-start gap-3 pt-6 text-sm text-destructive">
-            {locked ? (
-              <ShieldAlert className="mt-0.5 shrink-0" size={18} />
-            ) : (
-              <AlertCircle className="mt-0.5 shrink-0" size={18} />
-            )}
-            <div className="space-y-2">
-              <p>{error}</p>
-              {locked ? (
-                <p className="text-muted-foreground">
-                  Module Pro indisponible tant que les sources d’avis et le pilote d’envoi ne sont
-                  pas validés.
-                </p>
-              ) : null}
-              <Button variant="outline" size="sm" onClick={() => void load()}>
-                Réessayer
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {lock ? (
+        <FeatureLockCard lock={lock} feature="Réputation" />
+      ) : loadError ? (
+        <DataFetchError message={loadError} onRetry={() => void load()} retrying={loading} />
+      ) : null}
+      {showContent && error ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          {error}
+        </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Score moyen</CardDescription>
-            <CardTitle className="text-3xl">
-              {averageScore === null ? '—' : `${averageScore.toFixed(1)}/5`}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Sur les retours chargés (100 maximum).
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Retours reçus</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '—' : feedback.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Une réponse par invitation.
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Récupérations ouvertes</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '—' : openTasks}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {activeTasks.length} active(s) à suivre.
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ShieldAlert size={17} aria-hidden="true" />
-                Boîte de récupération
-              </CardTitle>
-              <CardDescription>
-                Les notes faibles créent une tâche dans la même transaction que le retour client.
-              </CardDescription>
-            </div>
-            <Badge variant="secondary">{activeTasks.length} active(s)</Badge>
+      {showContent ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Score moyen</CardDescription>
+                <CardTitle className="text-3xl">
+                  {averageScore === null ? '—' : `${averageScore.toFixed(1)}/5`}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                Sur les retours chargés (100 maximum).
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Retours reçus</CardDescription>
+                <CardTitle className="text-3xl">{loading ? '—' : feedback.length}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                Une réponse par invitation.
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Récupérations ouvertes</CardDescription>
+                <CardTitle className="text-3xl">{loading ? '—' : openTasks}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                {activeTasks.length} active(s) à suivre.
+              </CardContent>
+            </Card>
           </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <LoadingTable />
-          ) : tasks.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center">
-              <CheckCircle2 className="mx-auto text-success" size={24} aria-hidden="true" />
-              <p className="mt-3 text-sm font-medium">Aucune récupération à traiter</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Les retours positifs restent disponibles ci-dessous.
-              </p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Note</TableHead>
-                  <TableHead>Réservation</TableHead>
-                  <TableHead>État</TableHead>
-                  <TableHead>Créée</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={task.priority === 'HIGH' ? 'destructive' : 'secondary'}>
-                          {scoreLabel(task.score)}
-                        </Badge>
-                        {task.comment ? (
-                          <span className="max-w-[18rem] truncate text-sm">{task.comment}</span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {task.reservationId}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(task.status)}>{statusLabel(task.status)}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDate(task.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {task.status === 'OPEN' ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void updateTask(task, 'IN_PROGRESS')}
-                            disabled={action !== null}
-                          >
-                            <Clock3 size={14} aria-hidden="true" />
-                            Prendre en charge
-                          </Button>
-                        ) : null}
-                        {task.status === 'IN_PROGRESS' ? (
-                          <Button
-                            size="sm"
-                            onClick={() => void updateTask(task, 'RESOLVED')}
-                            disabled={action !== null}
-                          >
-                            <CheckCircle2 size={14} aria-hidden="true" />
-                            Marquer résolue
-                          </Button>
-                        ) : null}
-                        {action?.startsWith(`${task.id}:`) ? (
-                          <span className="sr-only">Mise à jour…</span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Retours récents</CardTitle>
-          <CardDescription>
-            Les commentaires sont visibles uniquement aux rôles autorisés du site.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <LoadingTable />
-          ) : feedback.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Aucun retour reçu pour le moment.</p>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {feedback.slice(0, 8).map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-border p-4 transition-all duration-200"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Badge variant={item.score <= 2 ? 'destructive' : 'secondary'}>
-                      {scoreLabel(item.score)}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(item.submittedAt)}
-                    </span>
-                  </div>
-                  <p className="mt-3 text-sm text-foreground">
-                    {item.comment || 'Aucun commentaire.'}
-                  </p>
-                  <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                    Réservation {item.reservationId}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ShieldAlert size={17} aria-hidden="true" />
+                    Boîte de récupération
+                  </CardTitle>
+                  <CardDescription>
+                    Quand un client donne une note faible, une demande de rappel apparaît ici pour
+                    que vous puissiez lui répondre.
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary">{activeTasks.length} active(s)</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <LoadingTable />
+              ) : tasks.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-8 text-center">
+                  <CheckCircle2 className="mx-auto text-success" size={24} aria-hidden="true" />
+                  <p className="mt-3 text-sm font-medium">Aucune récupération à traiter</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Les retours positifs sont visibles ci-dessous.
                   </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Note</TableHead>
+                      <TableHead>État</TableHead>
+                      <TableHead>Créée</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={task.priority === 'HIGH' ? 'destructive' : 'secondary'}>
+                              {scoreLabel(task.score)}
+                            </Badge>
+                            {task.comment ? (
+                              <span className="max-w-[18rem] whitespace-normal break-words text-sm">
+                                {task.comment}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={statusVariant(task.status)}>
+                            {statusLabel(task.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDate(task.createdAt)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            {task.status === 'OPEN' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void updateTask(task, 'IN_PROGRESS')}
+                                disabled={action !== null}
+                              >
+                                <Clock3 size={14} aria-hidden="true" />
+                                Prendre en charge
+                              </Button>
+                            ) : null}
+                            {task.status === 'IN_PROGRESS' ? (
+                              <Button
+                                size="sm"
+                                onClick={() => void updateTask(task, 'RESOLVED')}
+                                disabled={action !== null}
+                              >
+                                <CheckCircle2 size={14} aria-hidden="true" />
+                                Marquer résolue
+                              </Button>
+                            ) : null}
+                            {action?.startsWith(`${task.id}:`) ? (
+                              <span className="sr-only">Mise à jour…</span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Retours récents</CardTitle>
+              <CardDescription>
+                Les commentaires sont visibles uniquement aux rôles autorisés du site.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <LoadingTable />
+              ) : feedback.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Aucun retour pour le moment. Après chaque visite, vos clients reçoivent une
+                  invitation à noter leur repas : leurs réponses apparaîtront ici.
+                </p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {feedback.slice(0, 8).map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-border p-4 transition-all duration-200"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <Badge variant={item.score <= 2 ? 'destructive' : 'secondary'}>
+                          {scoreLabel(item.score)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDate(item.submittedAt)}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-foreground">
+                        {item.comment || 'Aucun commentaire.'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -50,9 +50,14 @@ La page ne promet aucun envoi SMS/e-mail dont elle n'a pas la preuve.
 
 - Jeton HMAC-SHA256, lie a la reservation, au restaurant, a sa creation et au
   telephone actuel. Aucun jeton brut ni nouvelle table en base.
-- Expiration : le plus proche entre creation + 90 jours et reservation + 7 jours.
+- Expiration : le plus proche entre creation + 90 jours et reservation + 7 jours. Apres un report confirme, le lien
+  initial signe suit la nouvelle echeance de reservation (toujours borne a creation
+
+* 90 jours). Le decodage differe peut resoudre un ancien jeton mais ne donne aucun
+  acces avant verification HMAC du destinataire/restaurant et de cette echeance.
   Un changement de telephone ou une rotation de cle invalide les anciens liens.
   Un report ne prolonge pas un lien deja distribue.
+
 - URL reproductible, egalement retournee par Connect sur une reponse rejouee.
   Conserver le SMS donne l'acces apres fermeture de la confirmation web.
 - Le fragment n'est pas envoye lors de l'ouverture HTTP. Le navigateur le
@@ -150,17 +155,25 @@ l’etat avant d’annoncer le resultat. Aucun nouveau SMS n’est envoye par ce
 ## Modification autonome (drapeau distinct, desactive par defaut)
 
 `RESERVATION_SELF_MODIFICATION_ENABLED=true` expose « Modifier la reservation »
-dans le panneau existant. Choisir un nombre de personnes, puis une heure
-**le meme jour**, verifier l’ancien et le nouveau choix, confirmer explicitement.
-Aucun changement de date dans cette premiere version. Aucune modification ni
+dans le panneau existant. Le widget commun avec photo permet de choisir le jour,
+le nombre de personnes et l’heure, puis de verifier et confirmer le changement.
+Extension locale du 17/10 : sept raccourcis de jours et un champ calendrier
+permettent de choisir une date dans les 90 prochains jours. Les nouvelles dates
+sont bornees aussi a la creation de la reservation + 90 jours ; les conditions
+gratuites et la disponibilite reelle restent requises. Le lien SMS initial suit
+le report confirme sans nouveau SMS, dans cette meme limite de securite.
+Aucune modification ni
 hold temporaire n’est cree pendant la consultation ou la fermeture du dialogue.
 
 Le POST `modification_options` demande un nombre de personnes borne (1..50,
-limite du restaurant appliquee). Les heures proviennent du moteur de disponibilite
+limite du restaurant appliquee), et une `date` ISO facultative pour compatibilite
+(omise : jour actuel de la reservation). Les heures proviennent du moteur de disponibilite
 existant, des horaires/fuseau, duree, delai minimum en ligne, tables physiques et
 holds actifs. Seule la reservation porteuse est exclue des conflits ; cette lecture
 ignore le cache public et ne peut pas y publier une disponibilite personnelle.
-Une heure identique reste proposable pour un autre nombre de personnes.
+L’heure actuelle est preselectionnee et conservee tant qu’elle reste disponible
+apres un changement de date ou de groupe. Le bouton est inactif sans changement.
+Une heure devenue indisponible est deselectionnee avec une explication.
 
 Chaque choix porte une proposition HMAC de 10 minutes maximum, sans PII, liee
 au porteur, aux details initiaux, au compteur des audits append-only, aux reglages et au nouveau creneau/groupe.
