@@ -20,6 +20,7 @@ import {
   startMetricsServer,
   type MetricsServerHandle,
 } from './shared/observability/metrics-server';
+import { startWorkerHeartbeat } from './shared/health/watchtower';
 import './workers/index';
 
 initSentry();
@@ -63,6 +64,8 @@ async function start(): Promise<void> {
   metricsServer = await startMetricsServer();
 
   await registerJobSchedulers();
+  // Battement lu par l'API : sans lui pendant 3 minutes, alerte « workers arrêtés ».
+  startWorkerHeartbeat();
 
   logger.info('Sokar workers ready');
   // PM2 `wait_ready` attend ce signal avant de considérer le process démarré.

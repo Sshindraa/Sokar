@@ -238,7 +238,7 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
-  // Solde Telnyx et quota ElevenLabs : à zéro, plus de ligne ou plus de voix. Lecture horaire.
+  // Solde Telnyx : à zéro, plus d'appels ni de SMS. Lecture horaire.
   await register('provider-balance/hourly', () =>
     queues.providerBalance.upsertJobScheduler(
       'provider-balance-hourly',
