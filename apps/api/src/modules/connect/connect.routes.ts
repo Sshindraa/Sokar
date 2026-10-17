@@ -1075,6 +1075,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         .safeParse(req.body);
       if (!params.success || !body.success)
         return reply.status(400).send({ error: 'Invalid request' });
+      // tenant-scoping: global — resolve the public slug only; consent access then requires
+      // the matching restaurant, reservation ID and withdrawal token (no booking data exposed).
       const restaurant = await db.restaurant.findUnique({
         where: { slug: params.data.slug },
         select: { id: true },
