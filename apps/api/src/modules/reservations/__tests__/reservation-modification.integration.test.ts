@@ -306,6 +306,41 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
       await app.close();
     }
   });
+  it('rejects an old confirmation after a later modification returns to the initial details', async () => {
+    const { row, app, post } = await fixture();
+    try {
+      const first = (await post({ action: 'modification_options', partySize: 3 }))
+        .json()
+        .slots.find((slot: { time: string }) => slot.time === '20:00');
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: first.proposalToken }))
+          .statusCode,
+      ).toBe(200);
+      const back = (await post({ action: 'modification_options', partySize: 2 }))
+        .json()
+        .slots.find((slot: { time: string }) => slot.time === '19:00');
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: back.proposalToken }))
+          .statusCode,
+      ).toBe(200);
+      expect(
+        (await post({ action: 'modify', confirmed: true, proposalToken: first.proposalToken }))
+          .statusCode,
+      ).toBe(409);
+      expect(await db.reservation.findUnique({ where: { id: row.id } })).toMatchObject({
+        startsAt: original,
+        partySize: 2,
+        tableId: small,
+      });
+      expect(
+        await db.reservationAuditLog.count({
+          where: { reservationId: row.id, event: 'reservation_fields_changed' },
+        }),
+      ).toBe(2);
+    } finally {
+      await app.close();
+    }
+  });
   it('does not let a larger party bypass a newly applicable deposit policy', async () => {
     const { row, app, post } = await fixture();
     try {

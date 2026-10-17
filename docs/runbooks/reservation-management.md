@@ -163,7 +163,7 @@ ignore le cache public et ne peut pas y publier une disponibilite personnelle.
 Une heure identique reste proposable pour un autre nombre de personnes.
 
 Chaque choix porte une proposition HMAC de 10 minutes maximum, sans PII, liee
-au porteur, aux details initiaux, aux reglages et au nouveau creneau/groupe.
+au porteur, aux details initiaux, au compteur des audits append-only, aux reglages et au nouveau creneau/groupe.
 Le POST `modify` exige `confirmed=true` et cette proposition. Le service de
 modification existant verrouille la capacite du restaurant puis la reservation,
 reverifie la proposition et les conditions, les horaires et la capacite reelle,
