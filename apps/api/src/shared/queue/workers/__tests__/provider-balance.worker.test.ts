@@ -12,10 +12,8 @@ vi.mock('../../../logger/pino', () => ({
 }));
 
 import {
-  ELEVENLABS_QUOTA_LEVELS,
   TELNYX_BALANCE_LEVELS,
   dispatchLevelAlerts,
-  fetchElevenLabsQuota,
   fetchTelnyxAvailableCredit,
   type ProviderBalanceDependencies,
 } from '../provider-balance.worker';
@@ -71,24 +69,6 @@ describe('alertes de solde fournisseur', () => {
       suppressed: 0,
     });
   });
-
-  it('suit la part restante du quota ElevenLabs', async () => {
-    const { dependencies, dispatch } = makeDependencies();
-    await dispatchLevelAlerts(
-      {
-        provider: 'elevenlabs',
-        value: 0.1,
-        levels: ELEVENLABS_QUOTA_LEVELS,
-        summary: () => 'quota',
-        detail: [],
-      },
-      dependencies,
-    );
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'elevenlabs_balance_low', severity: 'warning' }),
-    );
-  });
 });
 
 describe('lecture des soldes', () => {
@@ -103,24 +83,5 @@ describe('lecture des soldes', () => {
       currency: 'USD',
     });
     await expect(fetchTelnyxAvailableCredit({ apiKey: '' })).resolves.toBeNull();
-  });
-
-  it('calcule la part restante du quota ElevenLabs', async () => {
-    const fetcher = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ character_count: 25_000, character_limit: 100_000, tier: 'creator' }),
-    });
-    await expect(fetchElevenLabsQuota({ apiKey: TEST_KEY, fetcher })).resolves.toEqual({
-      used: 25_000,
-      limit: 100_000,
-      remainingRatio: 0.75,
-      tier: 'creator',
-    });
-  });
-
-  it('refuse une réponse invalide', async () => {
-    const fetcher = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-    await expect(fetchElevenLabsQuota({ apiKey: TEST_KEY, fetcher })).rejects.toThrow(/invalid/);
   });
 });

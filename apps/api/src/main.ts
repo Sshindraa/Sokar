@@ -64,6 +64,7 @@ import { registerClerk } from './plugins/clerk';
 import fastifyWebsocket from '@fastify/websocket';
 import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
 import { registerLiveDemoStreamRoute } from './modules/voice/demo/demo-stream';
+import { startWatchtower, startWorkerHeartbeat } from './shared/health/watchtower';
 import { checkHealth } from './shared/health/checks';
 import { registerJobSchedulers } from './shared/queue/schedulers';
 
@@ -318,6 +319,8 @@ async function start() {
     if (typeof process.send === 'function') {
       process.send('ready');
     }
+    // Workers arrêtés, ligne téléphonique hors service : alerte par e-mail (watchtower.ts).
+    startWatchtower();
   } catch (err) {
     logger.error(err);
     logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
@@ -351,7 +354,10 @@ async function start() {
   if (env.RUN_WORKERS_IN_PROCESS === 'true') {
     setImmediate(() => {
       import('./workers/index')
-        .then(() => registerJobSchedulers())
+        .then(() => {
+          startWorkerHeartbeat();
+          return registerJobSchedulers();
+        })
         .catch((err) => logger.error({ err }, 'Worker bootstrap failed (in-process mode)'));
     });
   }
