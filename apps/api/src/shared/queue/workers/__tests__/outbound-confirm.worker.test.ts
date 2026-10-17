@@ -1,4 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { countSmsSegments } from '../../../../modules/usage/messaging-usage.service';
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 
@@ -99,7 +101,19 @@ function makeDependencies(
 ) {
   const db = {
     reservation: {
-      findUnique: vi.fn().mockResolvedValue(reservation),
+      findUnique: vi.fn().mockResolvedValue(
+        reservation
+          ? {
+              restaurantId: 'restaurant-1',
+              customerPhone: '+33600000001',
+              reservedAt: new Date('2099-06-05T17:00:00.000Z'),
+              startsAt: null,
+              partySize: 2,
+              restaurant: { name: 'Chez Sokar', timezone: 'Europe/Paris', smsConfirmEnabled: true },
+              ...reservation,
+            }
+          : null,
+      ),
     },
     reservationAuditLog: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -126,9 +140,31 @@ function makeReconciliationQueue() {
 }
 
 describe('outbound-confirm.worker', () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(sendSms).mockResolvedValue(undefined);
+  });
+
+  it('includes personal access in the existing single-segment SMS, without another send', async () => {
+    vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
+    vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
+    vi.stubEnv('DASHBOARD_URL', 'https://staging.sokar.tech');
+    const { deps, db } = makeDependencies();
+    const current = await db.reservation.findUnique();
+    db.reservation.findUnique.mockResolvedValue({
+      ...current,
+      id: randomUUID(),
+      createdAt: new Date(),
+      reservedAt: new Date(Date.now() + 2 * 86_400_000),
+    });
+
+    await processOutboundConfirmJob(makeJob(), deps);
+
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    const message = vi.mocked(sendSms).mock.calls[0][1];
+    expect(message).toContain('https://staging.sokar.tech/r#');
+    expect(countSmsSegments(message)).toBe(1);
   });
 
   it('ne peut envoyer qu’une seule fois sous concurrence', async () => {
@@ -141,6 +177,59 @@ describe('outbound-confirm.worker', () => {
 
     expect(sendSms).toHaveBeenCalledTimes(1);
     expect(deps.db.reservationAuditLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('utilise les coordonnees et le creneau actuels plutot que le vieux job', async () => {
+    const { deps, db } = makeDependencies();
+    const current = await db.reservation.findUnique();
+    db.reservation.findUnique.mockResolvedValue({
+      ...current,
+      customerPhone: '+33600000002',
+      partySize: 4,
+      startsAt: new Date('2099-07-06T22:30:00.000Z'),
+      restaurant: { name: 'Le Nouveau', timezone: 'Europe/Paris', smsConfirmEnabled: true },
+    });
+
+    await processOutboundConfirmJob(makeJob(), deps);
+
+    expect(sendSms).toHaveBeenCalledWith(
+      '+33600000002',
+      'Reservation confirmee - Le Nouveau 07/07/2099 00:30 4pers. Annulation: appelez le restaurant.',
+      expect.objectContaining({ restaurantId: 'restaurant-1' }),
+    );
+  });
+
+  it.each([
+    { customerPhone: null },
+    { reservedAt: new Date('2000-01-01T00:00:00.000Z') },
+    { restaurant: { name: 'Chez Sokar', timezone: 'Europe/Paris', smsConfirmEnabled: false } },
+  ])('ignore une confirmation devenue ineligible sans prendre de claim (%j)', async (changes) => {
+    const { deps, db, set } = makeDependencies();
+    const current = await db.reservation.findUnique();
+    db.reservation.findUnique.mockResolvedValue({ ...current, ...changes });
+
+    await processOutboundConfirmJob(makeJob(), deps);
+
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    expect(db.reservationAuditLog.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['2099-01-05T18:00:00.000Z', '05/01/2099 19:00'],
+    ['2099-07-05T17:00:00.000Z', '05/07/2099 19:00'],
+  ])('respecte le fuseau du restaurant en hiver et en ete (%s)', async (instant, expected) => {
+    const { deps, db } = makeDependencies();
+    const current = await db.reservation.findUnique();
+    db.reservation.findUnique.mockResolvedValue({ ...current, reservedAt: new Date(instant) });
+
+    await processOutboundConfirmJob(makeJob(), deps);
+
+    expect(sendSms).toHaveBeenCalledWith(
+      '+33600000001',
+      expect.stringContaining(expected),
+      expect.any(Object),
+    );
   });
 
   it('ne renvoie pas un SMS pour une réservation annulée', async () => {
@@ -241,6 +330,23 @@ describe('outbound-confirm.worker', () => {
     expect(claim).toContain('"status":"unknown"');
     expect(claim).toContain('"providerMessageId":"msg-outbound-unknown"');
     expect(sendSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not audit a missing provider receipt as a successful confirmation', async () => {
+    const { deps, db, claims } = makeDependencies();
+    const { queue } = makeReconciliationQueue();
+    deps.reconciliationQueue = queue;
+    vi.mocked(sendSms).mockResolvedValue({
+      outcome: 'unknown',
+      provider: 'telnyx',
+      channel: 'sms',
+    });
+    await processOutboundConfirmJob(makeJob(), deps);
+    await processOutboundConfirmJob(makeJob(), deps);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(db.reservationAuditLog.create).not.toHaveBeenCalled();
+    expect([...claims.values()][0]).toContain('"status":"unknown"');
+    expect(queue.add).toHaveBeenCalled();
   });
 
   it('ne renvoie pas si la queue de réconciliation est indisponible', async () => {

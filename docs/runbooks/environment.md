@@ -1069,3 +1069,9 @@ de test ; à confirmer dans le portail.
 ### Identité opérateur staging
 
 `SOKAR_OPERATOR_USER_IDS_STAGING` est une variable GitHub dédiée aux identités de l’instance Clerk Development. Le workflow staging l’utilise en priorité, avec repli sur `SOKAR_OPERATOR_USER_IDS` pour les installations existantes. La production continue à utiliser uniquement `SOKAR_OPERATOR_USER_IDS`. Un identifiant Clerk de production ne désigne pas automatiquement le même compte en développement ; ne pas ajouter de compte à une liste sans autorisation explicite. Aucun identifiant personnel ne doit être consigné dans le dépôt.
+
+## Personal reservation SMS
+
+`RESERVATION_MANAGEMENT_ENABLED` defaults to false. `RESERVATION_MANAGEMENT_SECRET` is a stable key_env secret of 32 random bytes encoded as 64 hex characters, shared by API/workers. `TELNYX_SMS_FROM` optionally selects a dedicated SMS sender (for example the alphanumeric sender already configured in the messaging profile); when unset, the historical `TELNYX_FROM_NUMBER` is preserved. Voice always keeps its existing sender. See `reservation-management.md`.
+
+`TELNYX_SMS_WEBHOOK_URL` optionally overrides delivery callbacks per SMS with `use_profile_webhooks=false`, so a staging test does not report to the shared production profile webhook. It must point to the signed `/sms/telnyx/inbound` route on the intended environment. An accepted request/message ID is not proof of handset delivery; require the matching signed `message.finalized` receipt with `delivered` status and the tester’s reception report.

@@ -1,0 +1,115 @@
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import Page from './page';
+import ReservationView from './reservation-view';
+
+const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
+const data = {
+  restaurantName: 'Restaurant Exemple',
+  restaurantPhone: '+33100000000',
+  date: '2026-10-18',
+  time: '19:00',
+  partySize: 2,
+  state: 'CONFIRMED',
+  whatsappReminder: { visible: true, enabled: true },
+};
+describe('Ma reservation', () => {
+  it('previews the same UI without network calls or a dialable phone', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(<ReservationView demo />);
+    expect(await screen.findByText('Restaurant Exemple')).toBeInTheDocument();
+    expect(screen.getByText(/Réservation fictive/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Appeler le restaurant', hidden: true }),
+    ).toBeDisabled();
+    expect(screen.getByText('Préférences de rappel').closest('details')).not.toHaveAttribute(
+      'open',
+    );
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByText('Préférences de rappel'));
+    fireEvent.click(screen.getByRole('switch'));
+    expect(await screen.findByText(/Votre accord a été retiré/)).toBeInTheDocument();
+    expect(screen.getByRole('switch')).not.toBeChecked();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  beforeEach(() => {
+    window.history.replaceState(null, '', `/r#${token}`);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+  it('reads details without posting any mutation and puts the token only in the POST body', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json(data));
+    vi.stubGlobal('fetch', fetch);
+    render(<Page />);
+    expect(await screen.findByText('Restaurant Exemple')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/reservation-management',
+      expect.objectContaining({
+        body: JSON.stringify({ token, action: 'view' }),
+        cache: 'no-store',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+      }),
+    );
+    expect(
+      screen.getByRole('link', { name: 'Appeler le restaurant', hidden: true }),
+    ).toHaveAttribute('href', 'tel:+33100000000');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('only announces withdrawal after server acknowledgement', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(data))
+      .mockResolvedValueOnce(
+        Response.json({ ...data, whatsappReminder: { visible: true, enabled: false } }),
+      );
+    vi.stubGlobal('fetch', fetch);
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByText('Préférences de rappel'));
+    fireEvent.click(screen.getByRole('switch', { name: 'Rappel WhatsApp' }));
+    expect(await screen.findByText(/Votre accord a été retiré/)).toBeInTheDocument();
+    expect(fetch.mock.calls[1][1].body).toBe(
+      JSON.stringify({ token, action: 'withdraw_whatsapp' }),
+    );
+    expect(screen.getByRole('switch')).not.toBeChecked();
+  });
+  it('keeps the previous state when withdrawal fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(data))
+        .mockResolvedValueOnce(new Response(null, { status: 503 })),
+    );
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByText('Préférences de rappel'));
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Le retrait n’a pas pu être confirmé'),
+    );
+    expect(screen.getByRole('switch')).toBeChecked();
+    expect(screen.queryByText(/Votre accord a été retiré/)).not.toBeInTheDocument();
+  });
+  it('shows an expired link without disclosing stale details', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+    render(<Page />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ce lien est invalide ou a expiré');
+    expect(screen.queryByText('Restaurant Exemple')).not.toBeInTheDocument();
+  });
+  it.each([
+    ['PENDING', 'En attente'],
+    ['CANCELLED', 'Annulée'],
+  ])('does not label a %s booking as confirmed', async (state, label) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ ...data, state })));
+    render(<Page />);
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.queryByText('Réservation confirmée')).not.toBeInTheDocument();
+  });
+});

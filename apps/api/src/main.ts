@@ -11,6 +11,7 @@ import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logg
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
+import { reservationManagementRoutes } from './modules/reservations/reservation-management.routes';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
@@ -106,7 +107,7 @@ export async function buildApp() {
         censor: REDACT_CENSOR,
       },
     } as never,
-    childLoggerFactory: (loggerInstance, bindings, _opts, rawReq) => {
+    childLoggerFactory: (loggerInstance, bindings, opts, rawReq) => {
       const headerId = (rawReq as { headers?: Record<string, unknown> }).headers?.['x-request-id'];
       const headerStr = Array.isArray(headerId) ? headerId[0] : headerId;
       const requestId =
@@ -114,7 +115,7 @@ export async function buildApp() {
       bindings.request_id = requestId;
       // Stash on the raw request so the onRequest hook / handlers can read it.
       (rawReq as { requestId?: string }).requestId = requestId;
-      return loggerInstance.child(bindings);
+      return loggerInstance.child(bindings, opts);
     },
     // Versioning des endpoints publics Connect (Phase 6) :
     // /public/v1/* est un alias de /public/* (transition progressive).
@@ -220,6 +221,7 @@ export async function buildApp() {
 
   await app.register(telnyxVoiceRoutes);
   await app.register(smsInboundRoutes);
+  await app.register(reservationManagementRoutes);
   await app.register(whatsappWebhookRoutes);
   await app.register(marketingProviderRoutes);
   await app.register(restaurantRoutes);
