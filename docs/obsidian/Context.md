@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Annulation autonome : conditions onboarding figees, confirmation et capacite qualifiees en local ; flag off. Livrer puis qualifier staging. Apres delai : contact, aucun frais automatique.
+
 - [ ] Ops Resend : correctif isole `codex/resend-alert-regulation` (debit Redis commun, e-mails system-health groupes). Coordination serveur/GitHub configuree ; cle staging dediee Sending access/sokar.tech autorisee et configuree, envoi technique fournisseur accepte. Livrer par CI/staging/smoke avant production ; aucune migration. Voir `docs/runbooks/resend-alert-regulation.md`.
 
 - [ ] SEO : accueil/privacy livrés (#438–#442) ; GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Mentions légales bloquées : identité non autorisée à publier ; réseaux facultatifs.

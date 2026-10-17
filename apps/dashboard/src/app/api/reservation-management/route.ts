@@ -2,7 +2,12 @@ import type { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {
   const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
-  let body: { token?: unknown; action?: unknown } | null;
+  let body: {
+    token?: unknown;
+    action?: unknown;
+    confirmed?: unknown;
+    confirmationToken?: unknown;
+  } | null;
   try {
     const text = await req.text();
     if (text.length > 2048)
@@ -16,9 +21,16 @@ export async function POST(req: NextRequest) {
       !body ||
       typeof body.token !== 'string' ||
       body.token.length > 100 ||
-      !['view', 'withdraw_whatsapp'].includes(String(body.action))
+      !['view', 'withdraw_whatsapp', 'cancel'].includes(String(body.action))
     )
       return Response.json({ error: 'Demande invalide.' }, { status: 400, headers });
+    if (
+      body.action === 'cancel' &&
+      (body.confirmed !== true ||
+        typeof body.confirmationToken !== 'string' ||
+        body.confirmationToken.length > 80)
+    )
+      return Response.json({ error: 'Confirmation invalide.' }, { status: 400, headers });
     const forwardedFor = req.headers.get('x-forwarded-for');
     const response = await fetch(
       `${process.env.API_URL || 'http://127.0.0.1:4000'}/public/reservation-management`,
@@ -28,7 +40,13 @@ export async function POST(req: NextRequest) {
           'Content-Type': 'application/json',
           ...(forwardedFor ? { 'X-Forwarded-For': forwardedFor } : {}),
         },
-        body: JSON.stringify({ token: body.token, action: body.action }),
+        body: JSON.stringify({
+          token: body.token,
+          action: body.action,
+          ...(body.action === 'cancel'
+            ? { confirmed: true, confirmationToken: body.confirmationToken }
+            : {}),
+        }),
         cache: 'no-store',
         redirect: 'error',
         signal: AbortSignal.timeout(8000),

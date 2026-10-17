@@ -97,6 +97,69 @@ describe('Ma reservation', () => {
     expect(screen.getByRole('switch')).toBeChecked();
     expect(screen.queryByText(/Votre accord a été retiré/)).not.toBeInTheDocument();
   });
+  it('requires explicit confirmation and updates the carton only after cancellation succeeds', async () => {
+    const cancellation = {
+      available: true,
+      deadline: '2026-10-18T15:00:00Z',
+      message: 'Annulation gratuite avant 17 h.',
+      terms: 'Conditions enregistrées.',
+      confirmationToken: 'quote',
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ ...data, cancellation }))
+      .mockResolvedValueOnce(
+        Response.json({
+          ...data,
+          state: 'CANCELLED',
+          cancellation: { ...cancellation, available: false },
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler la réservation' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Conserver ma réservation' }));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler la réservation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer l’annulation' }));
+    expect(await screen.findByText('Annulée')).toBeInTheDocument();
+    expect(fetch.mock.calls[1][1].body).toBe(
+      JSON.stringify({ token, action: 'cancel', confirmed: true, confirmationToken: 'quote' }),
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter au calendrier' })).not.toBeInTheDocument();
+  });
+  it('recovers the actual cancellation state after a lost server response', async () => {
+    const cancellation = {
+      available: true,
+      deadline: null,
+      message: 'Annulation gratuite.',
+      confirmationToken: 'quote',
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ ...data, cancellation }))
+      .mockRejectedValueOnce(new Error('Connection lost'))
+      .mockResolvedValueOnce(
+        Response.json({
+          ...data,
+          state: 'CANCELLED',
+          cancellation: { ...cancellation, available: false },
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler la réservation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer l’annulation' }));
+    expect(await screen.findByText('Annulée')).toBeInTheDocument();
+    expect(JSON.parse(fetch.mock.calls[2][1].body).action).toBe('view');
+  });
   it('shows an expired link without disclosing stale details', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
     render(<Page />);
