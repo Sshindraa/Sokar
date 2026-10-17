@@ -71,7 +71,7 @@ await step('API en bonne santé (base, Redis, files, workers)', async () => {
   return `telnyx ${body?.checks?.telnyx?.status}, elevenlabs ${body?.checks?.elevenlabs?.status}`;
 });
 
-let slot = null;
+let slots = [];
 let date = null;
 
 await step('Page publique du restaurant', async () => {
@@ -91,7 +91,13 @@ await step('Disponibilités sur les 7 prochains jours (2 personnes)', async () =
     const free = (body?.slots ?? []).filter((item) => item.available);
     if (free.length > 0) {
       date = day;
-      slot = free[Math.floor(free.length / 2)].time;
+      // Milieu de journée d'abord, puis les créneaux voisins : un autre client (ou le lancement précédent)
+      // peut déjà garder un créneau identique pendant quelques minutes.
+      const middle = Math.floor(free.length / 2);
+      slots = free
+        .map((item, index) => ({ time: item.time, index }))
+        .sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle))
+        .map((item) => item.time);
       return `${day} : ${free.length} créneaux libres`;
     }
   }
@@ -99,15 +105,26 @@ await step('Disponibilités sur les 7 prochains jours (2 personnes)', async () =
 });
 
 await step('Créneau gardé (expire seul, aucune réservation créée)', async () => {
-  assert(slot, 'pas de créneau à garder');
-  const { status, body } = await call(`${API}/public/r/${SLUG}/hold`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ date, time: slot, partySize: 2, source: 'web', website: '' }),
-  });
-  assert(status === 200 || status === 201, `HTTP ${status} ${JSON.stringify(body)?.slice(0, 160)}`);
-  assert(typeof body?.holdToken === 'string' && body.holdToken.length >= 10, 'pas de holdToken');
-  return `${slot}, expire à ${body.expiresAt}`;
+  assert(slots.length > 0, 'pas de créneau à garder');
+  let lastFailure = '';
+  for (const slot of slots.slice(0, 5)) {
+    const { status, body } = await call(`${API}/public/r/${SLUG}/hold`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ date, time: slot, partySize: 2, source: 'web', website: '' }),
+    });
+    if (status === 200 || status === 201) {
+      assert(
+        typeof body?.holdToken === 'string' && body.holdToken.length >= 10,
+        'pas de holdToken',
+      );
+      return `${slot}, expire à ${body.expiresAt}`;
+    }
+    // 409 : créneau déjà gardé par quelqu'un d'autre, on essaie le suivant ; toute autre réponse est une panne.
+    lastFailure = `HTTP ${status} ${JSON.stringify(body)?.slice(0, 120)}`;
+    if (status !== 409) break;
+  }
+  throw new Error(`aucun créneau n'a pu être gardé (${lastFailure})`);
 });
 
 await step('Facturation Stripe active (statut lisible)', async () => {
