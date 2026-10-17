@@ -9,12 +9,16 @@ import * as Sentry from '@sentry/nextjs';
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN;
+// Personal reservation links contain a bearer credential in the URL fragment.
+const privateReservationPage =
+  typeof window !== 'undefined' && /^\/r(?:\/demo)?\/?$/.test(window.location.pathname);
 if (!dsn) {
   // eslint-disable-next-line no-console
   console.warn('[Sentry] NEXT_PUBLIC_SENTRY_DSN is not set; Sentry is disabled.');
 }
 
 Sentry.init({
+  enabled: !privateReservationPage,
   dsn,
   environment: process.env.NODE_ENV ?? 'development',
   release: process.env.NEXT_PUBLIC_SENTRY_RELEASE ?? process.env.SENTRY_RELEASE ?? undefined,

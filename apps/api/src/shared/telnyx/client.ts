@@ -1,5 +1,6 @@
 const createTelnyx: (key: string) => import('telnyx').TelnyxClient = require('telnyx');
 import * as https from 'https';
+import { sanitizeSmsProviderError } from './sms-error';
 import {
   extractProviderMessageId,
   type NotificationProviderResult,
@@ -64,14 +65,24 @@ export async function sendSms(
 ): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
-  const response = await t.messages.create({
-    from: smsSender(),
-    to,
-    text,
-    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
-  });
+  const response = await t.messages
+    .create({
+      from: smsSender(),
+      to,
+      text,
+      ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+      ...(process.env.TELNYX_SMS_WEBHOOK_URL
+        ? {
+            webhook_url: process.env.TELNYX_SMS_WEBHOOK_URL,
+            use_profile_webhooks: false,
+          }
+        : {}),
+    })
+    .catch((error: unknown) => {
+      throw sanitizeSmsProviderError(error);
+    });
   const result = normalizeTelnyxSendResponse(response, 'sms');
-  if (usage) {
+  if (usage && result.outcome === 'success') {
     await recordAcceptedMessagingUsage({
       channel: 'sms',
       provider: 'telnyx',
@@ -116,7 +127,7 @@ export async function sendWhatsApp(
     ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
   const result = normalizeTelnyxSendResponse(response, 'whatsapp');
-  if (usage) {
+  if (usage && result.outcome === 'success') {
     await recordAcceptedMessagingUsage({
       channel: 'whatsapp',
       provider: 'telnyx',
@@ -142,9 +153,9 @@ export function normalizeTelnyxSendResponse(
   response: unknown,
   channel: 'sms' | 'whatsapp' = 'sms',
 ): NotificationSendResult {
-  const providerMessageId = extractProviderMessageId(response);
+  const providerMessageId = extractProviderMessageId(response)?.trim() || undefined;
   return {
-    outcome: 'success',
+    outcome: providerMessageId ? 'success' : 'unknown',
     provider: 'telnyx',
     channel,
     ...(providerMessageId ? { providerMessageId } : {}),
