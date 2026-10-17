@@ -105,6 +105,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
 import {
   Dialog,
   DialogContent,
@@ -2545,6 +2546,10 @@ export function FloorPlanCanvas({
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Erreurs par source : le rafraîchissement automatique (10 s) ne doit pas effacer l'échec d'une action,
+  // et l'échec du chargement du plan ne doit jamais se lire « Aucune table dans ce plan ».
+  const [planLoadError, setPlanLoadError] = useState('');
+  const [reservationsError, setReservationsError] = useState('');
 
   // Historique undo/redo des mutations de géométrie (édition uniquement).
   // Une seule pile unifiée tables + murs : ⌘Z défait exactement la dernière
@@ -3060,7 +3065,7 @@ export function FloorPlanCanvas({
 
   const loadFloorPlan = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setPlanLoadError('');
     try {
       const path = floorPlanId
         ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
@@ -3082,7 +3087,7 @@ export function FloorPlanCanvas({
       wallMutationVersionRef.current.clear();
       setFloorPlan(data);
     } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
+      setPlanLoadError(getErrorMessage(err, 'Impossible de charger le plan de salle.'));
     } finally {
       setLoading(false);
     }
@@ -3101,7 +3106,6 @@ export function FloorPlanCanvas({
       const controller = new AbortController();
       pollAbortRef.current = controller;
       pollInFlightRef.current = true;
-      setError('');
       try {
         const query = floorPlanId
           ? `date=${liveDate}&floorPlanId=${floorPlanId}`
@@ -3133,6 +3137,7 @@ export function FloorPlanCanvas({
         if (pollAbortRef.current !== controller) return;
         if (liveDateRef.current !== liveDate) return;
         if (reservationsResult.status === 'rejected') throw reservationsResult.reason;
+        let secondaryError = '';
         setReservations(reservationsResult.value);
         if (waitingListResult.status === 'fulfilled') {
           setWaitingList(
@@ -3141,8 +3146,9 @@ export function FloorPlanCanvas({
             ),
           );
         } else {
-          setError(
-            getErrorMessage(waitingListResult.reason, "Impossible de charger la liste d'attente"),
+          secondaryError = getErrorMessage(
+            waitingListResult.reason,
+            "Impossible de charger la liste d'attente",
           );
         }
         if (delayRecoveriesResult.status === 'fulfilled') {
@@ -3152,11 +3158,9 @@ export function FloorPlanCanvas({
               : [],
           );
         } else {
-          setError(
-            getErrorMessage(
-              delayRecoveriesResult.reason,
-              'Impossible de charger l’historique des plans',
-            ),
+          secondaryError = getErrorMessage(
+            delayRecoveriesResult.reason,
+            'Impossible de charger l’historique des plans',
           );
         }
         if (pulseResult.status === 'fulfilled') {
@@ -3166,12 +3170,13 @@ export function FloorPlanCanvas({
           // est temporairement indisponible.
           setServicePulse(null);
         }
+        setReservationsError(secondaryError);
         setLastUpdatedAt(Date.now());
         setLoadedLiveDate(liveDate);
       } catch (err) {
         if (pollAbortRef.current !== controller) return;
         if (controller.signal.aborted) return;
-        setError(getErrorMessage(err, 'Impossible de charger les réservations'));
+        setReservationsError(getErrorMessage(err, 'Impossible de charger les réservations'));
       } finally {
         if (pollAbortRef.current === controller) {
           setWaitingListLoading(false);
@@ -7973,15 +7978,16 @@ export function FloorPlanCanvas({
     );
   }
 
-  if (error && !floorPlan) {
+  if (!floorPlan) {
     return (
       <>
         <Card className="sokar-card">
           <CardContent className="p-6">
-            <div className="sokar-error">
-              <AlertCircle size={18} />
-              {error}
-            </div>
+            <DataFetchError
+              message={planLoadError || error || 'Impossible de charger le plan de salle.'}
+              onRetry={() => void loadFloorPlan()}
+              retrying={loading}
+            />
           </CardContent>
         </Card>
         {dialog}
@@ -8480,10 +8486,10 @@ export function FloorPlanCanvas({
           ) : null}
         </CardHeader>
 
-        {error ? (
+        {error || reservationsError ? (
           <div className="sokar-error m-4 text-sm">
             <AlertCircle size={16} />
-            {error}
+            {error || reservationsError}
           </div>
         ) : null}
 

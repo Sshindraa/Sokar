@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage } from '@/types/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,7 +75,7 @@ const MCP_SCOPE_OPTIONS = [
 const NO_SHOW_OPTIONS = [
   { value: 'warning', label: 'Avertissement (par défaut)' },
   { value: 'fee', label: 'Frais appliqués' },
-  { value: 'block', label: 'Bloquer les futures résas' },
+  { value: 'block', label: 'Bloquer les futures réservations' },
 ] as const;
 
 const DAYS_FR = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -101,38 +105,48 @@ export default function AgenticSettingsPage() {
   const [creatingClient, setCreatingClient] = useState(false);
   const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
+  const [clientToRevoke, setClientToRevoke] = useState<McpClient | null>(null);
   const [success, setSuccess] = useState('');
   const [newClientName, setNewClientName] = useState('');
   const [newClientScopes, setNewClientScopes] = useState<string[]>(['mcp:read', 'mcp:reserve']);
   const [newClientOrigins, setNewClientOrigins] = useState('');
   const [createdApiKey, setCreatedApiKey] = useState('');
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!orgId) return;
-    (async () => {
-      try {
-        const [optInData, settingsData, clientsData] = await Promise.all([
-          get('api/agentic/opt-in') as Promise<OptInStatus>,
-          get('api/agentic/exposure-settings') as Promise<ExposureSettings>,
-          get('api/agentic/mcp-clients') as Promise<McpClientListResponse>,
-        ]);
-        setOptIn(optInData);
-        setSettings(settingsData);
-        setMcpClients(clientsData.clients ?? []);
-        setMaxPartySize(settingsData.maxPartySize);
-        setMinLeadTimeMinutes(settingsData.minLeadTimeMinutes);
-        setQuoteTtlSeconds(settingsData.quoteTtlSeconds);
-        setHoldTtlSeconds(settingsData.holdTtlSeconds);
-        setNoShowPolicy(settingsData.noShowPolicy);
-        setNotificationChannels(settingsData.notificationChannels);
-        setRequireManualValidation(settingsData.requireManualValidation);
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Impossible de charger les paramètres agentic'));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    setLoading(true);
+    setLoadError('');
+    setLock(null);
+    try {
+      const [optInData, settingsData, clientsData] = await Promise.all([
+        get('api/agentic/opt-in') as Promise<OptInStatus>,
+        get('api/agentic/exposure-settings') as Promise<ExposureSettings>,
+        get('api/agentic/mcp-clients') as Promise<McpClientListResponse>,
+      ]);
+      setOptIn(optInData);
+      setSettings(settingsData);
+      setMcpClients(clientsData.clients ?? []);
+      setMaxPartySize(settingsData.maxPartySize);
+      setMinLeadTimeMinutes(settingsData.minLeadTimeMinutes);
+      setQuoteTtlSeconds(settingsData.quoteTtlSeconds);
+      setHoldTtlSeconds(settingsData.holdTtlSeconds);
+      setNoShowPolicy(settingsData.noShowPolicy);
+      setNotificationChannels(settingsData.notificationChannels);
+      setRequireManualValidation(settingsData.requireManualValidation);
+    } catch (err: unknown) {
+      const locked = featureLockFromError(err);
+      if (locked) setLock(locked);
+      else setLoadError(getErrorMessage(err, 'Impossible de charger vos réglages de réservation'));
+    } finally {
+      setLoading(false);
+    }
   }, [orgId, get]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   async function handleOptInSave(next: { mcp: boolean; openaiReserve: boolean }) {
     setSavingOptIn(true);
@@ -141,7 +155,7 @@ export default function AgenticSettingsPage() {
     try {
       const result = (await post('api/agentic/opt-in', next)) as OptInStatus;
       setOptIn(result);
-      setSuccess('Préférences agentic enregistrées');
+      setSuccess('Préférences enregistrées');
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
     } finally {
@@ -225,6 +239,7 @@ export default function AgenticSettingsPage() {
       setError(getErrorMessage(err, 'Impossible de révoquer la clé MCP'));
     } finally {
       setRevokingClientId(null);
+      setClientToRevoke(null);
     }
   }
 
@@ -244,14 +259,35 @@ export default function AgenticSettingsPage() {
     );
   }
 
-  const mcpActive = optIn?.mcp ?? false;
-  const openaiActive = optIn?.openaiReserve ?? false;
+  // Sans réglages chargés, aucun formulaire : il afficherait des valeurs fictives (MCP « Désactivé », 7 couverts…)
+  // et « Enregistrer » les écraserait par-dessus la vraie configuration.
+  if (lock || !settings || !optIn) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+          Réservations par les assistants IA
+        </h1>
+        {lock ? (
+          <FeatureLockCard lock={lock} feature="Réservations par les assistants IA" />
+        ) : (
+          <DataFetchError
+            message={`${loadError || 'Impossible de charger vos réglages de réservation.'} Vos réglages n’ont pas été modifiés.`}
+            onRetry={() => void loadData()}
+            retrying={loading}
+          />
+        )}
+      </div>
+    );
+  }
+
+  const mcpActive = optIn.mcp;
+  const openaiActive = optIn.openaiReserve;
 
   return (
     <div className="space-y-8">
       <OnboardingLockBanner task="phone" />
       <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-        Réservations par les agents
+        Réservations par les assistants IA
       </h1>
 
       {error && (
@@ -277,9 +313,9 @@ export default function AgenticSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Active les canaux par lesquels les assistants IA (ChatGPT, Claude, Cursor) peuvent
-            consulter et réserver chez vous. Vous pouvez désactiver à tout moment — les réservations
-            en cours ne sont pas affectées.
+            Activez les canaux par lesquels les assistants IA (ChatGPT, Claude, Cursor) peuvent
+            consulter et réserver chez vous. Vous pouvez les désactiver à tout moment : les
+            réservations en cours ne sont pas affectées.
           </p>
 
           <div className="space-y-4">
@@ -289,10 +325,10 @@ export default function AgenticSettingsPage() {
                   <Bot size={24} />
                 </div>
                 <div>
-                  <p className="font-semibold text-base">MCP (Model Context Protocol)</p>
+                  <p className="font-semibold text-base">Assistants IA (connecteur MCP)</p>
                   <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                    Visible sur Claude Desktop, Cursor, et tous les clients MCP. Active la
-                    recherche, la consultation des dispos, et la résa.
+                    Visible dans Claude, Cursor et les autres assistants compatibles : ils peuvent
+                    chercher votre restaurant, consulter les disponibilités et réserver.
                   </p>
                   <div className="mt-3 flex items-center gap-2">
                     <span
@@ -454,7 +490,7 @@ export default function AgenticSettingsPage() {
                               : 'Jamais'}
                           </p>
                           <p>
-                            Origins :{' '}
+                            Sites autorisés :{' '}
                             {client.allowedOrigins.length > 0
                               ? client.allowedOrigins.join(', ')
                               : 'Aucune restriction client'}
@@ -466,7 +502,7 @@ export default function AgenticSettingsPage() {
                         type="button"
                         variant="destructive"
                         size="sm"
-                        onClick={() => handleClientRevoke(client.id)}
+                        onClick={() => setClientToRevoke(client)}
                         disabled={revokingClientId === client.id}
                         className="transition-all duration-200"
                       >
@@ -511,7 +547,7 @@ export default function AgenticSettingsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Origins autorisées</label>
+                  <label className="text-sm font-medium">Sites autorisés</label>
                   <textarea
                     value={newClientOrigins}
                     onChange={(e) => setNewClientOrigins(e.target.value)}
@@ -548,8 +584,8 @@ export default function AgenticSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Contrôle les limites de réservation, les durées de maintien, et les politiques
-            appliquées aux réservations créées par les agents.
+            Contrôlez les limites de réservation, la durée pendant laquelle un créneau est gardé et
+            les règles appliquées aux réservations faites par les assistants IA.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
@@ -580,13 +616,13 @@ export default function AgenticSettingsPage() {
                 onChange={(e) => setMinLeadTimeMinutes(Number(e.target.value))}
               />
               <p className="text-xs text-muted-foreground">
-                Empêche les résas trop tardives (ex: 30 min)
+                Empêche les réservations trop tardives (par exemple 30 min avant)
               </p>
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                TTL quote : {Math.round(quoteTtlSeconds / 60)} min
+                Validité d’une estimation : {Math.round(quoteTtlSeconds / 60)} min
               </label>
               <input
                 type="range"
@@ -604,7 +640,7 @@ export default function AgenticSettingsPage() {
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                TTL hold : {Math.round(holdTtlSeconds / 60)} min
+                Créneau gardé pendant : {Math.round(holdTtlSeconds / 60)} min
               </label>
               <input
                 type="range"
@@ -652,7 +688,7 @@ export default function AgenticSettingsPage() {
                       }}
                       className="accent-primary"
                     />
-                    {ch.toUpperCase()}
+                    {ch === 'sms' ? 'SMS' : 'E-mail'}
                   </label>
                 ))}
               </div>
@@ -666,11 +702,11 @@ export default function AgenticSettingsPage() {
                   onChange={(e) => setRequireManualValidation(e.target.checked)}
                   className="accent-primary"
                 />
-                Validation manuelle pour chaque résa
+                Valider chaque réservation à la main
               </label>
               <p className="text-xs text-muted-foreground">
-                Si activé, les résas agentic passent en PENDING avant que vous validiez (utile au
-                début du pilote)
+                Si activé, les réservations faites par les assistants IA restent en attente jusqu’à
+                votre validation (utile au démarrage).
               </p>
             </div>
           </div>
@@ -690,21 +726,32 @@ export default function AgenticSettingsPage() {
           <p className="font-medium text-foreground mb-2">Comment ça marche</p>
           <ul className="space-y-1 list-disc list-inside">
             <li>
-              Les <strong>quotes</strong> sont des estimations (5 min par défaut). Elles ne bloquent
+              Les <strong>estimations</strong> sont valables 5 minutes par défaut. Elles ne bloquent
               pas votre capacité.
             </li>
             <li>
-              Les <strong>holds</strong> bloquent une table (7 min par défaut). Au-delà, le créneau
+              Un <strong>créneau gardé</strong> bloque une table 7 minutes par défaut. Au-delà, il
               se libère automatiquement.
             </li>
             <li>
-              Les changements de paramètres sont audités et peuvent être rollbackés en contactant le
-              support.
+              Chaque changement de paramètre est conservé dans un historique : pour en annuler un,
+              contactez le support.
             </li>
             {DAYS_FR.length > 0 /* keep import used */ && null}
           </ul>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={clientToRevoke !== null}
+        title="Révoquer cette clé ?"
+        description={`« ${clientToRevoke?.name ?? ''} » ne pourra plus se connecter. Si cette clé sert à une intégration en service (ChatGPT, Claude…), celle-ci cessera de fonctionner immédiatement. Cette action est définitive.`}
+        confirmLabel="Révoquer la clé"
+        variant="destructive"
+        pending={revokingClientId !== null}
+        onConfirm={() => clientToRevoke && void handleClientRevoke(clientToRevoke.id)}
+        onCancel={() => setClientToRevoke(null)}
+      />
     </div>
   );
 }

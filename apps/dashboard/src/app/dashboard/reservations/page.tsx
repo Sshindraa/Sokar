@@ -12,6 +12,7 @@ import {
   type WaitingListEntry,
   type WaitingListStatus,
 } from '@/types/api';
+import { ApiError } from '@/lib/api-error';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import MobileDataCard from '@/components/MobileDataCard';
@@ -194,7 +195,20 @@ export default function ReservationsPage() {
         setError('Statut mis à jour, mais la liste n’a pas pu être actualisée.');
       }
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de mettre à jour la réservation'));
+      if (err instanceof ApiError && err.kind === 'conflict') {
+        // La liste affichée est périmée (autre appareil) ou le créneau est terminé : on la rafraîchit.
+        setError(
+          'Cette réservation a changé entre-temps ou son créneau est terminé. Liste actualisée.',
+        );
+        try {
+          const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
+          setReservations(Array.isArray(data) ? data : []);
+        } catch {
+          /* le message ci-dessus suffit ; « Actualiser » reste disponible */
+        }
+      } else {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour la réservation.'));
+      }
     } finally {
       setPendingActionId(null);
     }
@@ -261,6 +275,9 @@ export default function ReservationsPage() {
       const msg = getErrorMessage(err, 'Impossible de proposer une table');
       if (msg === 'no_compatible_table' || msg.includes('no_compatible_table')) {
         setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Aucune table compatible' }));
+      } else if (msg.includes('already_promoted')) {
+        setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Cette demande a déjà reçu une table' }));
+        await loadWaitingList();
       } else {
         setError(msg);
       }

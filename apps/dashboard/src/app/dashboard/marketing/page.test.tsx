@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import MarketingPage from './page';
 
 const apiMocks = vi.hoisted(() => ({
@@ -93,9 +94,10 @@ describe('MarketingPage', () => {
     expect(screen.getByText('Anniversaire')).toBeInTheDocument();
     expect(screen.getByText('Merci première visite')).toBeInTheDocument();
     expect(screen.getByText('Envoyée')).toBeInTheDocument();
-    expect(screen.getByText('Readiness des canaux')).toBeInTheDocument();
-    expect(screen.getByText('Envois verrouillés')).toBeInTheDocument();
-    expect(screen.getByText(/Porte globale à renseigner/)).toBeInTheDocument();
+    expect(screen.getByText('État des canaux')).toBeInTheDocument();
+    expect(screen.getByText('Envois bientôt disponibles')).toBeInTheDocument();
+    // Aucun nom de variable serveur ni jargon d'exploitation côté restaurateur.
+    expect(screen.queryByText(/MARKETING_SENDS_ENABLED|RESEND_WEBHOOK_SECRET|Callback/)).toBeNull();
     expect(screen.getByRole('link', { name: /CSV/ })).toHaveAttribute(
       'href',
       '/api/proxy/marketing/campaigns/campaign-1/report.csv?siteId=org_test_123',
@@ -128,10 +130,107 @@ describe('MarketingPage', () => {
     expect(await screen.findByText('Après la première visite enregistré.')).toBeInTheDocument();
   });
 
-  it('affiche une erreur explicite lorsque le compte n’a pas accès au marketing Pro', async () => {
-    apiMocks.get.mockRejectedValueOnce(new Error('CAPABILITY_NOT_INCLUDED'));
+  it('dit calmement que le marketing n’est pas dans la formule, sans formulaire ni bouton Enregistrer', async () => {
+    apiMocks.get.mockRejectedValueOnce(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<MarketingPage />);
 
-    expect(await screen.findByText('CAPABILITY_NOT_INCLUDED')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Cette fonctionnalité n’est pas incluse dans votre formule.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('CAPABILITY_NOT_INCLUDED')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull();
+    expect(screen.queryByText('0/3 automations actives')).toBeNull();
+    expect(screen.queryByText('Aucune campagne préparée')).toBeNull();
+  });
+
+  it('propose de réessayer après une panne, sans règles par défaut qu’on pourrait enregistrer', async () => {
+    apiMocks.get.mockRejectedValueOnce(toApiError(503, {}));
+    render(<MarketingPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Vos règles enregistrées');
+    expect(screen.queryByRole('button', { name: 'Enregistrer' })).toBeNull();
+    expect(screen.queryByText('Pas encore enregistrée')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
+    expect(await screen.findByText('Après la première visite')).toBeInTheDocument();
+  });
+
+  it('refuse d’enregistrer un message sans lien de désinscription, avec un texte clair', async () => {
+    render(<MarketingPage />);
+    await screen.findByRole('heading', { name: 'Marketing Pro' });
+
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Merci à vous' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enregistrer' })[0]);
+
+    expect(
+      await screen.findByText(/Le message doit contenir \{\{unsubscribeUrl\}\}/),
+    ).toBeInTheDocument();
+    expect(apiMocks.put).not.toHaveBeenCalled();
+  });
+
+  it('n’envoie jamais un nombre vide comme 0 : il est refusé avec ses bornes', async () => {
+    render(<MarketingPage />);
+    await screen.findByRole('heading', { name: 'Marketing Pro' });
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /délai/i }), { target: { value: '' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Enregistrer' })[0]);
+
+    expect(await screen.findByText('Entre 0 et 168 heures.')).toBeInTheDocument();
+    expect(apiMocks.put).not.toHaveBeenCalled();
+  });
+
+  it('signale les modifications non enregistrées', async () => {
+    render(<MarketingPage />);
+    await screen.findByRole('heading', { name: 'Marketing Pro' });
+    expect(screen.queryByText('Modifications non enregistrées')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Activer Client dormant'));
+
+    expect(await screen.findByText('Modifications non enregistrées')).toBeInTheDocument();
+  });
+
+  it('demande confirmation avant d’annuler une campagne', async () => {
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('marketing/automations')) return Promise.resolve({ data: [automation] });
+      if (path.startsWith('marketing/providers/readiness')) return Promise.resolve({ data: null });
+      return Promise.resolve({ data: [{ ...campaign, status: 'READY' }] });
+    });
+    render(<MarketingPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la campagne' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Annuler cette campagne ?');
+    expect(apiMocks.post).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler la campagne' }));
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith('marketing/campaigns/campaign-1/cancel'),
+    );
+  });
+
+  it('ne propose pas de préparer un brouillon sans destinataire et traduit les incidents', async () => {
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('marketing/automations')) return Promise.resolve({ data: [automation] });
+      if (path.startsWith('marketing/providers/readiness')) return Promise.resolve({ data: null });
+      return Promise.resolve({
+        data: [
+          { ...campaign, id: 'c-draft', status: 'DRAFT', audienceCount: 0 },
+          {
+            ...campaign,
+            id: 'c-failed',
+            name: 'Relance échouée',
+            status: 'FAILED',
+            lastErrorCode: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN',
+          },
+        ],
+      });
+    });
+    render(<MarketingPage />);
+
+    expect(await screen.findByRole('button', { name: /Préparer/ })).toBeDisabled();
+    expect(screen.getByText(/Aucun destinataire consentant pour le moment/)).toBeInTheDocument();
+    expect(screen.getByText(/Envoi non démarré, vous pouvez réessayer/)).toBeInTheDocument();
+    expect(screen.queryByText(/MARKETING_QUEUE_ENQUEUE_UNKNOWN/)).toBeNull();
   });
 });

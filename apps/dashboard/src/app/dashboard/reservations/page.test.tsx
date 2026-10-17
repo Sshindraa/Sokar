@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import type { Reservation, WaitingListEntry } from '@/types/api';
+import { toApiError } from '@/lib/api-error';
 import ReservationsPage from './page';
 
 const mocks = vi.hoisted(() => ({
@@ -212,6 +213,29 @@ describe('ReservationsPage', () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 
+  it('traduit un conflit d’état (créneau terminé, liste périmée) et rafraîchit la liste', async () => {
+    mocks.get.mockResolvedValue([
+      makeReservation({ state: 'CONFIRMED', tableId: 't1', table: { name: 'Terrasse 1' } }),
+    ]);
+    mocks.patch.mockRejectedValue(
+      toApiError(409, { error: 'Cannot seat a reservation that has already ended' }),
+    );
+    render(<ReservationsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Installer' }));
+
+    expect(
+      await screen.findByText(
+        'Cette réservation a changé entre-temps ou son créneau est terminé. Liste actualisée.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Cannot seat/)).toBeNull();
+    // Chargement initial + rafraîchissement après le conflit.
+    expect(
+      mocks.get.mock.calls.filter(([path]) => String(path).startsWith('reservations?')),
+    ).toHaveLength(2);
+  });
+
   it('donne sur mobile la même prochaine action et cache celles des états terminaux', async () => {
     mocks.isMobile = true;
     mocks.get.mockResolvedValue([
@@ -309,6 +333,22 @@ describe('ReservationsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Aucune table compatible')).toBeInTheDocument();
       });
+    });
+
+    it('dit qu’une demande a déjà reçu une table au lieu d’afficher already_promoted', async () => {
+      const entry = makeWaitingListEntry();
+      mocks.get.mockImplementation((path: string) =>
+        Promise.resolve(path.includes('waiting-list') ? [entry] : []),
+      );
+      mocks.post.mockRejectedValue(new Error('already_promoted'));
+
+      render(<ReservationsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /File d'attente/i }));
+      await screen.findByText('Bob Dylan');
+      fireEvent.click(screen.getByRole('button', { name: 'Proposer une table' }));
+
+      expect(await screen.findByText('Cette demande a déjà reçu une table')).toBeInTheDocument();
+      expect(screen.queryByText(/already_promoted/)).toBeNull();
     });
 
     it("permet de retirer une entrée de la file d'attente", async () => {
