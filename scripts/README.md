@@ -14,7 +14,7 @@ les commandes `package.json` :
 - `ops/test-deploy-common.sh` — fixture locale d'activation/rollback des releases Next.js.
 - `precommit-review.sh` — garde-fous secrets et code dangereux avant commit.
 - `prepush-quality-gate.sh` — vérifications ciblées avant push.
-- `agent/submit-pr.sh` — soumission et auto-merge des PR d'agents.
+- `agent/submit-pr.sh` — pousse la branche et crée ou réutilise sa PR, sans activer l'auto-merge.
 
 ## Organisation
 
