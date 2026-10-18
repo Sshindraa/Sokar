@@ -32,8 +32,8 @@ Approches écartées : une table séparée (dupliquerait confirmation, messages 
 
 ## 1. Lancement et lien de test
 
-- Nouvelle route authentifiée `POST /restaurants/:id/test-booking-link` (Clerk, accès au
-  restaurant vérifié comme les autres routes du dashboard). Elle renvoie
+- Nouvelle route authentifiée `POST /restaurant/test-booking-link` (Clerk, restaurant de la
+  session, comme les autres routes du dashboard). Elle renvoie
   `{ url }` vers `/restaurant/<slug>?testBooking=<jeton>`.
 - Jeton : identifiant du restaurant et expiration à 1 h, signé HMAC côté serveur sur le
   modèle de `reservation-management.ts`, avec une clé dédiée lue dans l'environnement

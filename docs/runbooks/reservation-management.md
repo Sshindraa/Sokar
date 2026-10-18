@@ -217,13 +217,26 @@ Migration `20261019120000_reservation_is_test` (colonne `is_test`, index
 partiel, additive) a appliquer AVANT d'activer le drapeau.
 
 Fonctionnement : jeton HMAC-SHA256 lie au restaurant, valable 1 h, accepte par
-`hold` et `confirm` (`testBookingToken`) ; refus 403 « Ce lien de test a expire.
+`hold` et `confirm` (`testBookingToken`) ; refus 403 « Ce lien de test a expiré.
 Relancez-le depuis votre tableau de bord. ». Quota : 5 reservations test par
 restaurant sur 24 h glissantes. La reservation suit le circuit reel (hold,
 table, confirmation SMS) mais ne cree ni client, ni consentement, ni analytics,
 ni attribution marketing, et reste masquee du planning, des statistiques et des
 listes (extension Prisma `test-reservation-scope`). La page « Ma reservation »
 affiche « Reservation test · supprimee automatiquement sous 24 h ».
+
+Limites connues :
+
+- restaurant en validation manuelle : la reservation test reste « en attente » et
+  aucun SMS de confirmation n'est envoye (personne ne peut la valider, elle est
+  masquee du planning) ;
+- les SMS envoyes pendant un test comptent dans la consommation de messagerie du
+  restaurant.
+
+Le tableau de bord n'annonce l'absence d'effet qu'une fois le mode test actif
+(bandeau de la page publique). Drapeau coupe, l'API repond
+`TEST_BOOKING_DISABLED` : la page publique s'ouvre quand meme et un avis sous le
+bouton previent que la reservation sera reelle et qu'il faut l'annuler.
 
 Purge : tache horaire `purgeTestReservations` ; supprime les reservations
 `is_test` creees il y a plus de 24 h, avec leur journal d'audit et leurs
@@ -236,7 +249,10 @@ Qualification staging avant activation en production :
 3. Page « Ma reservation » : mention test visible.
 4. Modification, puis annulation depuis cette page.
 5. Reservation absente du planning, des statistiques et du CRM.
-6. Purge : apres 24 h (ou `purgeTestReservations` avec une date simulee en
+6. Modifier une vraie reservation a cote d'une reservation test (meme creneau,
+   meme table) : la modification passe, la reservation test ne bloque rien.
+7. Annuler la reservation test → aucune fiche client creee.
+8. Purge : apres 24 h (ou `purgeTestReservations` avec une date simulee en
    local), reservation, audit et outbox supprimes.
 
 Retour arriere : `TEST_BOOKING_ENABLED=false` (redemarrage de l'API). Les
