@@ -738,3 +738,28 @@ describe('reconciliation.worker voice finalization sweep', () => {
     );
   });
 });
+
+describe('reconciliation.worker test reservation purge', () => {
+  it('purge les réservations test via le kind dédié', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { reservation: { findMany } } as unknown as PrismaClient;
+    const { store } = makeClaimStore();
+
+    await processReconciliationJob(
+      {
+        name: 'test-reservation-purge',
+        data: { kind: 'test-reservation-purge' },
+      } as unknown as Job<ReconciliationJobData>,
+      {
+        db,
+        claimStore: store,
+        lookupProviderMessage: vi.fn(),
+        deadLetterQueue: { add: vi.fn() },
+      },
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isTest: true }) }),
+    );
+  });
+});

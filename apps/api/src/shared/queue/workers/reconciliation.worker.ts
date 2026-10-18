@@ -32,9 +32,10 @@ import {
   finalizeVoiceCall,
   type CallFinalizationDependencies,
 } from '../../../modules/voice/call-finalization.service';
+import { purgeTestReservations } from '../../../modules/reservations/test-reservation-purge';
 
 interface DailyReconciliationJobData {
-  readonly kind: 'calls' | 'sms' | 'voice-finalization';
+  readonly kind: 'calls' | 'sms' | 'voice-finalization' | 'test-reservation-purge';
   readonly dayKey?: string;
 }
 
@@ -440,6 +441,12 @@ export async function processReconciliationJob(
 
   if (data.kind === 'notification') {
     await processNotificationReconciliation(job as Job<NotificationReconciliationJobData>, deps);
+    return;
+  }
+
+  if (data.kind === 'test-reservation-purge') {
+    const deleted = await purgeTestReservations(deps.db);
+    log.info({ deleted }, 'test reservation purge completed');
     return;
   }
 
