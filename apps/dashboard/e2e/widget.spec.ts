@@ -64,6 +64,18 @@ async function mockDemoApi(page: Page, partySize = 2, slots = ['12:00', '19:00']
   });
 }
 
+async function revealSlotService(page: Page, slot: string): Promise<void> {
+  await expect(page.getByRole('group', { name: 'Créneaux horaires' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  const hour = Number(slot.split(/[h:]/)[0]);
+  const service = hour >= 18 ? 'Dîner' : hour >= 11 && hour < 15 ? 'Déjeuner' : 'Autres horaires';
+  const serviceButton = page.getByRole('button', { name: service, exact: true });
+  // A single service has a plain label rather than a service switch.
+  if (await serviceButton.count()) await serviceButton.click();
+}
+
 /**
  * Mocks : aujourd'hui puis demain à 20:30, comme avant. Vraie API : la date et les créneaux sont
  * choisis parmi ses disponibilités, et le test échoue avec un message explicite s'il n'y en a pas.
@@ -160,6 +172,7 @@ test.describe('Widget réservation public', () => {
     }
     await expect(openDate).toBeVisible();
     await openDate.click();
+    await revealSlotService(page, expectedSlot);
     await expect(
       page.getByRole('button', { name: `Choisir le créneau ${expectedSlot}` }),
     ).toBeVisible();
@@ -220,7 +233,8 @@ test.describe('Widget réservation public', () => {
       );
     });
     await page.getByRole('button', { name: `${CHANGED_PARTY_SIZE} personnes` }).click();
-    await groupAvailability;
+    await (await groupAvailability).finished();
+    await revealSlotService(page, firstSlot);
     const slotAfterGroupChange = page.getByRole('button', {
       name: `Choisir le créneau ${firstSlot}`,
     });
@@ -237,7 +251,8 @@ test.describe('Widget réservation public', () => {
       );
     });
     await secondDate.click();
-    await secondAvailability;
+    await (await secondAvailability).finished();
+    await revealSlotService(page, secondSlot);
     const verifiedSecondSlot = page.getByRole('button', {
       name: `Choisir le créneau ${secondSlot}`,
     });
