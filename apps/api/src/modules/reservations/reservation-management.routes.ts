@@ -49,6 +49,10 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
           confirmationToken: z.string().max(80).optional(),
           proposalToken: z.string().max(1500).optional(),
           partySize: z.number().int().min(1).max(50).optional(),
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
         })
         .strict()
         .safeParse(req.body);
@@ -65,7 +69,7 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: 'Veuillez confirmer explicitement la modification.' });
       if (input.data.action === 'modification_options' && !input.data.partySize)
         return reply.code(400).send({ error: 'Veuillez choisir le nombre de personnes.' });
-      const parsed = parseReservationManagementToken(input.data.token);
+      const parsed = parseReservationManagementToken(input.data.token, new Date(), true);
       if (!parsed) return reply.code(404).send({ error: 'Lien invalide ou expiré.' });
       try {
         let row = await db.reservation.findUnique({
@@ -87,7 +91,13 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
           return reply.code(404).send({ error: 'Lien invalide ou expiré.' });
         if (input.data.action === 'modification_options')
           return reply.send(
-            await modificationOptions(db, row, input.data.token, input.data.partySize!),
+            await modificationOptions(
+              db,
+              row,
+              input.data.token,
+              input.data.partySize!,
+              input.data.date,
+            ),
           );
         if (input.data.action === 'modify') {
           await confirmModification(db, row, input.data.token, input.data.proposalToken!);

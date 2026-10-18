@@ -63,6 +63,7 @@ export function reservationManagementUrl(
 export function parseReservationManagementToken(
   token: string,
   now = new Date(),
+  deferExpiryToReservation = false,
 ): { id: string; payload: Buffer; signature: Buffer } | undefined {
   if (!/^[A-Za-z0-9_-]{27}\.[A-Za-z0-9_-]{43}$/.test(token)) return;
   const [data, mac] = token.split('.');
@@ -71,7 +72,7 @@ export function parseReservationManagementToken(
   if (
     payload.toString('base64url') !== data ||
     signature.toString('base64url') !== mac ||
-    payload.readUInt32BE(16) <= now.getTime() / 1000
+    (!deferExpiryToReservation && payload.readUInt32BE(16) <= now.getTime() / 1000)
   )
     return;
   const hex = payload.subarray(0, 16).toString('hex');
@@ -79,13 +80,23 @@ export function parseReservationManagementToken(
   return { id, payload, signature };
 }
 
-export function verifyReservationManagementToken(token: string, row: ManagedReservation): boolean {
-  const parsed = parseReservationManagementToken(token);
+export function verifyReservationManagementToken(
+  token: string,
+  row: ManagedReservation,
+  now = new Date(),
+): boolean {
+  // A signed link follows a confirmed rescheduling; never extend beyond creation + 90 days.
+  // Deferred parsing is only safe when followed by this recipient-bound HMAC check.
+  const parsed = parseReservationManagementToken(token, now, true);
   const key = secret();
   return (
     !!parsed &&
     !!key &&
     parsed.id === row.id &&
+    Math.min(
+      row.createdAt.getTime() + 90 * DAY,
+      Math.max(parsed.payload.readUInt32BE(16) * 1000, row.reservedAt.getTime() + 7 * DAY),
+    ) > now.getTime() &&
     timingSafeEqual(sign(parsed.payload, row, key), parsed.signature)
   );
 }

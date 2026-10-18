@@ -265,7 +265,7 @@ describe('checkHealth — ElevenLabs (synthèse du téléphone)', () => {
     );
   });
 
-  it('vérifie la clé et la voix par GET sur la voix, avec l’en-tête xi-api-key', async () => {
+  it('vérifie la clé par GET sur le compte, avec l’en-tête xi-api-key', async () => {
     vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
     vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
     vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
@@ -274,12 +274,29 @@ describe('checkHealth — ElevenLabs (synthèse du téléphone)', () => {
 
     expect(result.checks.elevenlabs.status).toBe('ok');
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
-      'https://api.elevenlabs.io/v1/voices/voix-test',
+      'https://api.elevenlabs.io/v1/user/subscription',
       expect.objectContaining({
         method: 'GET',
         headers: { 'xi-api-key': 'unit-test-placeholder-credential' },
       }),
     );
+  });
+
+  it('ne dégrade pas le statut quand la voix n’est pas lisible par métadonnées (voix hors compte)', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'YxrwjAKoUKULGd0g8K9Y');
+    globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
+      if (typeof url === 'string' && url.includes('/v1/voices/')) {
+        return { ok: false, status: 400, statusText: 'Bad Request' } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK' } as Response;
+    });
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('ok');
+    expect(result.status).toBe('ok');
   });
 
   it('signale une clé refusée en degraded, sans dégrader le code HTTP des checks cœur', async () => {

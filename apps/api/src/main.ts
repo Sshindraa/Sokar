@@ -13,6 +13,7 @@ import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
 import { reservationManagementRoutes } from './modules/reservations/reservation-management.routes';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
+import { metaWhatsAppWebhookRoutes } from './modules/whatsapp/meta-webhook.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
 import { teamRoutes } from './modules/restaurants/team.routes';
@@ -223,6 +224,7 @@ export async function buildApp() {
   await app.register(smsInboundRoutes);
   await app.register(reservationManagementRoutes);
   await app.register(whatsappWebhookRoutes);
+  await app.register(metaWhatsAppWebhookRoutes);
   await app.register(marketingProviderRoutes);
   await app.register(restaurantRoutes);
   await app.register(teamRoutes);

@@ -14,6 +14,21 @@ function request(body: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('reservation management proxy', () => {
+  it('forwards the requested modification date and rejects malformed dates', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ slots: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const body = {
+      token: 'fixture',
+      action: 'modification_options',
+      partySize: 3,
+      date: '2026-10-22',
+    };
+    expect((await POST(request(JSON.stringify(body)))).status).toBe(200);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(body);
+    expect((await POST(request(JSON.stringify({ ...body, date: 123 })))).status).toBe(400);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['null', '{', '{}', JSON.stringify({ token: 'x', action: 'cancel' })])(
     'rejects invalid input without an upstream request: %s',
     async (body) => {

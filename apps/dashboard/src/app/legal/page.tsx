@@ -81,8 +81,8 @@ export default function LegalPage() {
           >
             <p className="text-sm font-semibold">Informations en cours de finalisation</p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              L’identification juridique de l’éditeur et de la direction de publication reste à
-              compléter. Cette page ne constitue pas des mentions légales finalisées.
+              Les informations d’identification de l’éditeur et de la direction de publication ne
+              sont pas complètes. Cette page ne constitue pas des mentions légales finalisées.
             </p>
           </aside>
           <section
@@ -96,6 +96,9 @@ export default function LegalPage() {
             <p className="text-muted-foreground">
               Sokar est le nom commercial du service de gestion des appels et des réservations pour
               restaurants.
+            </p>
+            <p className="mt-4 text-muted-foreground">
+              Adresse de l’établissement : 9 rue Vaubecour, 69002 Lyon.
             </p>
             <p className="mt-4 text-muted-foreground">
               Contact général :{' '}

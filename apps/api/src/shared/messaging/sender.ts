@@ -1,19 +1,18 @@
 /**
  * Abstraction multi-canal pour l'envoi de messages.
  *
- * Stratégie :
- * - Rappel J-1 (utility) → WhatsApp si configuré, sinon SMS
- * - Réactivation VIP (marketing) → toujours SMS (WhatsApp marketing coûte 5x plus cher + opt-in requis)
- * - Messages transactionnels (annulation, etc.) → WhatsApp si configuré, sinon SMS
- *
- * Le fallback SMS intervient si WhatsApp n'est pas configuré ou après un refus certain de WhatsApp ;
- * un résultat inconnu bloque le second canal jusqu'à réconciliation.
- * Chaque envoi émet un event analytics `reminder_sent` avec le canal pour comparer
- * open rate SMS vs WhatsApp et justifier l'économie.
+ * Rappel J-1 : WhatsApp uniquement pour une reservation WEB avec accord.
+ * Aucun rappel SMS, meme si WhatsApp est absent ou refuse l'envoi.
+ * Les claims historiques des deux canaux restent proteges contre les doublons.
+ * La reactivation marketing SMS est un parcours distinct, inchange.
  */
 
 import { sendSms } from '../telnyx/client';
-import { isWhatsAppConfigured, sendWhatsAppTemplate } from '../whatsapp/client';
+import {
+  getWhatsAppProvider,
+  isWhatsAppConfigured,
+  sendWhatsAppTemplate,
+} from '../whatsapp/client';
 import { trackMessagingEvent } from '../../modules/analytics/events.service';
 import { logger } from '../logger/pino';
 import { recordNotificationProviderResult } from '../observability/metrics';
@@ -46,6 +45,9 @@ export interface SendReminderParams {
   date: string; // déjà formaté en français
   time: string;
   partySize: number;
+  /** Explicit agreement for WhatsApp reminders on this reservation only. */
+  whatsappOptIn?: boolean;
+  reservationChannel?: string;
 }
 
 export interface SendReminderOptions {
@@ -55,6 +57,12 @@ export interface SendReminderOptions {
 }
 
 export interface SendResult {
+  skipped?:
+    | 'non_web_booking'
+    | 'no_whatsapp_consent'
+    | 'whatsapp_unavailable'
+    | 'outside_reminder_window'
+    | 'missing_recipient';
   channel: MessageChannel;
   success: boolean;
   outcome?: NotificationProviderResult;
@@ -206,7 +214,7 @@ async function findExistingReminderClaim(
   if (!options.claimStore || !params.reservationId) return null;
 
   const candidates: Array<{ channel: MessageChannel; provider: NotificationProvider }> = [
-    { channel: 'whatsapp', provider: 'telnyx' },
+    { channel: 'whatsapp', provider: getWhatsAppProvider() },
     { channel: 'sms', provider: 'telnyx' },
   ];
   let successfulClaim: SendResult | null = null;
@@ -244,8 +252,9 @@ async function acquireReminderChannelClaim(
 ): Promise<ReminderClaimHandle | SendResult | null> {
   if (!options.claimStore || !params.reservationId) return null;
   const key = buildNotificationClaimKey(`reservation-reminder-${channel}`, params.reservationId);
+  const provider = channel === 'whatsapp' ? getWhatsAppProvider() : 'telnyx';
   const attempt = await acquireNotificationClaim(options.claimStore, key, {
-    provider: 'telnyx',
+    provider,
     channel,
   });
   if (attempt.acquired && attempt.token) return { key, token: attempt.token };
@@ -254,149 +263,80 @@ async function acquireReminderChannelClaim(
       attempt.record,
       key,
       options.reconciliationQueue,
-      'telnyx',
+      provider,
       channel,
     );
   }
-  return { channel, success: false, outcome: 'unknown', provider: 'telnyx' };
+  return { channel, success: false, outcome: 'unknown', provider };
 }
 
 /**
  * Envoie un rappel de réservation J-1.
- * WhatsApp (utility template) si configuré, sinon SMS.
+ * WhatsApp uniquement, sans secours SMS.
  */
 export async function sendReminder(
   params: SendReminderParams,
   options: SendReminderOptions = {},
 ): Promise<SendResult> {
-  const { to, restaurantName, restaurantId, reservationId, customerId, date, time, partySize } =
-    params;
-
-  let fellBackFromWhatsApp = false;
-  const usageContext: MessagingUsageContext | undefined =
-    restaurantId && reservationId
-      ? {
-          restaurantId,
-          sourceType: 'reservation_reminder',
-          sourceId: reservationId,
-          metadata: { messageType: 'reservation_reminder', ...(customerId ? { customerId } : {}) },
-        }
-      : undefined;
-
-  // A retry must inspect both channel claims before selecting a provider. This
-  // prevents a previous unknown SMS result from causing a fresh WhatsApp call.
+  // Preserve historical SMS/WhatsApp claims so a policy change never duplicates
+  // an already accepted or ambiguous reminder.
   const existingClaim = await findExistingReminderClaim(params, options);
   if (existingClaim) return existingClaim;
 
-  if (isWhatsAppConfigured()) {
-    const whatsappClaim = await acquireReminderChannelClaim(params, options, 'whatsapp');
-    if (whatsappClaim && 'outcome' in whatsappClaim) return whatsappClaim;
+  const skipped =
+    params.reservationChannel !== 'WEB'
+      ? 'non_web_booking'
+      : params.whatsappOptIn !== true
+        ? 'no_whatsapp_consent'
+        : !isWhatsAppConfigured()
+          ? 'whatsapp_unavailable'
+          : undefined;
+  if (skipped) return { channel: 'whatsapp', success: false, skipped };
 
-    try {
-      const providerResult = asSendResult(
-        await sendWhatsAppTemplate(
-          to,
-          'reservation_reminder',
-          'fr',
-          [restaurantName, date, time, String(partySize)],
-          usageContext,
-        ),
-        'telnyx',
-        'whatsapp',
-      );
-      await retainClaimResult(
-        options.claimStore,
-        options.reconciliationQueue,
-        whatsappClaim && 'token' in whatsappClaim ? whatsappClaim : undefined,
-        providerResult,
-      );
-      if (providerResult.outcome === 'success') {
-        await trackReminderEvent({
-          event: 'reminder_sent',
-          channel: 'whatsapp',
-          restaurantId,
-          reservationId,
-          customerId,
-          success: true,
-        });
-        return providerResult;
-      }
-      if (providerResult.outcome === 'unknown') return providerResult;
-      fellBackFromWhatsApp = true;
-      await trackReminderEvent({
-        event: 'whatsapp_fallback_to_sms',
-        channel: 'whatsapp',
-        restaurantId,
-        reservationId,
-        customerId,
-        success: false,
-      });
-    } catch (err: unknown) {
-      const providerResult = asErrorResult(err, 'telnyx', 'whatsapp');
-      await retainClaimResult(
-        options.claimStore,
-        options.reconciliationQueue,
-        whatsappClaim && 'token' in whatsappClaim ? whatsappClaim : undefined,
-        providerResult,
-      );
-      if (providerResult.outcome === 'unknown') return providerResult;
-      fellBackFromWhatsApp = true;
-      await trackReminderEvent({
-        event: 'whatsapp_fallback_to_sms',
-        channel: 'whatsapp',
-        restaurantId,
-        reservationId,
-        customerId,
-        success: false,
-        error: providerResult.error,
-      });
-    }
-  }
-
-  const smsClaim = await acquireReminderChannelClaim(params, options, 'sms');
-  if (smsClaim && 'outcome' in smsClaim) return smsClaim;
-
-  // SMS fallback (ou canal par défaut si WhatsApp non configuré).
+  const claim = await acquireReminderChannelClaim(params, options, 'whatsapp');
+  if (claim && 'outcome' in claim) return claim;
+  const usageContext: MessagingUsageContext | undefined =
+    params.restaurantId && params.reservationId
+      ? {
+          restaurantId: params.restaurantId,
+          sourceType: 'reservation_reminder',
+          sourceId: params.reservationId,
+          metadata: { messageType: 'reservation_reminder' },
+        }
+      : undefined;
+  let result: SendResult;
   try {
-    const smsText = `Rappel ${restaurantName}: votre réservation ${date} à ${time} pour ${partySize} pers. Nous avons hâte de vous accueillir.`;
-    const providerResult = asSendResult(await sendSms(to, smsText, usageContext), 'telnyx', 'sms');
-    await retainClaimResult(
-      options.claimStore,
-      options.reconciliationQueue,
-      smsClaim && 'token' in smsClaim ? smsClaim : undefined,
-      providerResult,
+    result = asSendResult(
+      await sendWhatsAppTemplate(
+        params.to,
+        'reservation_reminder',
+        'fr',
+        [params.restaurantName, params.date, params.time, String(params.partySize)],
+        usageContext,
+      ),
+      getWhatsAppProvider(),
+      'whatsapp',
     );
-    await trackReminderEvent({
-      event: 'reminder_sent',
-      channel: 'sms',
-      restaurantId,
-      reservationId,
-      customerId,
-      success: providerResult.outcome === 'success',
-      ...(providerResult.error ? { error: providerResult.error } : {}),
-      metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
-    });
-    return providerResult;
-  } catch (err: unknown) {
-    const providerResult = asErrorResult(err, 'telnyx', 'sms');
-    await retainClaimResult(
-      options.claimStore,
-      options.reconciliationQueue,
-      smsClaim && 'token' in smsClaim ? smsClaim : undefined,
-      providerResult,
-    );
-    await trackReminderEvent({
-      event: 'reminder_sent',
-      channel: 'sms',
-      restaurantId,
-      reservationId,
-      customerId,
-      success: false,
-      error: providerResult.error,
-      metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
-    });
-    return providerResult;
+  } catch (error: unknown) {
+    result = asErrorResult(error, getWhatsAppProvider(), 'whatsapp');
   }
+  await retainClaimResult(
+    options.claimStore,
+    options.reconciliationQueue,
+    claim && 'token' in claim ? claim : undefined,
+    result,
+  );
+  await trackReminderEvent({
+    event: 'reminder_sent',
+    channel: 'whatsapp',
+    restaurantId: params.restaurantId,
+    reservationId: params.reservationId,
+    customerId: params.customerId,
+    success: result.outcome === 'success',
+    ...(result.error ? { error: result.error } : {}),
+  });
+  // A refused WhatsApp reminder can be retried on WhatsApp only, never by SMS.
+  return result;
 }
 
 /**
