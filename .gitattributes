@@ -1,0 +1,3 @@
+# Le journal du vault n'accumule que des entrées ajoutées en fin de fichier : deux branches
+# qui ajoutent chacune leur entrée ne doivent pas se bloquer. union garde les deux côtés.
+docs/obsidian/Journal.md merge=union
