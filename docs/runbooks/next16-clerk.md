@@ -64,3 +64,24 @@ ne modifie ni le schéma ni les données. Conserver le snapshot de release et le
 
 Sources : [migration Next 16](https://nextjs.org/docs/app/guides/upgrading/version-16),
 `peerDependencies` des versions installées de `@clerk/nextjs`, `@sentry/nextjs` et `next-intl`.
+
+## Preuve de qualification — 18 octobre 2026
+
+- Code qualifié : `8f1f2d78df7c7e2ab6b38ce247db177b1c235431` (#511, dépend de #510).
+- CI : 18 contrôles verts sur ce commit.
+- [Workflow staging 39165720884](https://github.com/Sshindraa/Sokar/actions/runs/39165720884) :
+  succès ; release `20261018T210139Z`. Retour arrière testé, santé vérifiée, puis release
+  courante restaurée. Version du serveur standalone constatée : 16.4.2.
+- E2E staging : dashboard/widget 8 réussis, 4 ignorés ; Connect 5 réussis.
+- API `/livez` OK, accueil HTTP 200, quatre processus PM2 staging online.
+- Navigateur avec session opérateur existante : `/admin` fonctionne après rechargement ;
+  `/dashboard/admin/margin` redirige vers `/admin/margin` et les données se chargent ;
+  aucune erreur navigateur observée.
+- Instance locale Next 16 hors démo, configuration Clerk Development injectée uniquement
+  en mémoire depuis staging : `/dashboard`, `/onboarding`, `/admin` et
+  `/dashboard/admin/margin` renvoient en 307 vers `/login` sans session ; formulaire Clerk
+  réel et redirection Google chargés.
+- Restent non validés : nouvelle connexion, organisation active hors démo, déconnexion
+  puis reconnexion et compte restaurant sans privilège opérateur. L’utilisateur termine
+  lui-même la connexion dans le navigateur. La PR reste en brouillon ; aucune fusion
+  et aucun déploiement production.
