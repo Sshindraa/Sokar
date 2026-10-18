@@ -220,6 +220,7 @@ function makeReservation(
     tableId: overrides.tableId,
     giftCardRedemptionSnap: null,
     giftCardComplementAmount: null,
+    isTest: false,
   };
 }
 
