@@ -43,7 +43,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@types/node": "^20.19.43",
     "husky": "^9.1.7",
     "prettier": "^3.5.0",
@@ -65,7 +65,8 @@
     "overrides": {
       "@hono/node-server": ">=2.0.5",
       "@opentelemetry/core": ">=2.8.0",
-      "brace-expansion": ">=5.0.9",
+      "brace-expansion": ">=5.0.11",
+      "browserslist": ">=4.28.7",
       "deepmerge-ts": ">=8.0.0",
       "esbuild": ">=0.28.1",
       "find-my-way": ">=9.7.0",
@@ -80,7 +81,8 @@
       "proxy-addr": ">=2.0.8",
       "qs": ">=6.15.2",
       "sharp": ">=0.35.5",
-      "undici": ">=7.29.0 <8.0.0",
+      "source-map-js": ">=1.2.2",
+      "undici": ">=7.29.1 <8.0.0",
       "uuid": ">=11.1.1",
       "vite": "8.1.5"
     }
