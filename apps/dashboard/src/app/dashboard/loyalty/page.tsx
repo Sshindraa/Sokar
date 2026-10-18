@@ -705,6 +705,12 @@ export default function LoyaltyPage() {
               icon={<Award size={18} aria-hidden="true" />}
             />
           </div>
+          {grants.length >= 100 ? (
+            <p className="-mt-3 text-xs text-muted-foreground">
+              Indicateurs calculés sur les 100 attributions chargées : au-delà, les chiffres sont
+              partiels.
+            </p>
+          ) : null}
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <Card>

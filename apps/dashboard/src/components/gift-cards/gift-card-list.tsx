@@ -309,7 +309,7 @@ export default function GiftCardList({
                     {onView && (
                       <button
                         onClick={() => onView(card)}
-                        className="p-2 text-white/50 hover:text-brand rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-all duration-200"
                         title="Voir le détail"
                       >
                         <Eye size={16} />
@@ -322,7 +322,7 @@ export default function GiftCardList({
                         <button
                           onClick={() => onClose(card)}
                           disabled={closingId === card.id}
-                          className="p-2 text-white/50 hover:text-metal rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
+                          className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-all duration-200 disabled:opacity-50"
                           title="Clôturer la cagnotte"
                         >
                           <Lock size={16} />
@@ -331,7 +331,7 @@ export default function GiftCardList({
                     {onCancel && card.status === 'ACTIVE' && (
                       <button
                         onClick={() => onCancel(card)}
-                        className="p-2 text-white/50 hover:text-destructive rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
                         title="Annuler la carte"
                       >
                         <Ban size={16} />
