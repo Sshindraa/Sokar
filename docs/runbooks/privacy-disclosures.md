@@ -316,8 +316,17 @@ Constats du compte de production le 18 octobre 2026, en lecture seule :
   avec l'accord de Hamza : nom « Hamza AKKIF EI – SOKAR », adresse du siège
   inchangée (SIRET 106 740 202 00010). Aucun numéro de TVA intracommunautaire à
   ce jour ; la TVA reste donc facturée. Moyen de paiement non modifié.
-- À vérifier : sous-traitants ultérieurs sur compliance.elevenlabs.io. La double
-  authentification du compte est désactivée : à activer.
+- Double authentification du compte désactivée : choix de Hamza le 18 octobre
+  2026, à reconsidérer.
+- [Sous-traitants ultérieurs](https://compliance.elevenlabs.io/subprocessors),
+  consultés le 18 octobre 2026 (32 entrées) : filiales ElevenLabs (dont Pologne,
+  Royaume-Uni, Irlande, Pays-Bas, Suisse, Singapour, Inde, Japon, Émirats) ;
+  Google Cloud et AWS pour l'infrastructure et le stockage, hors Enterprise aux
+  États-Unis, dans l'UE ou à Singapour ; Anthropic (États-Unis) et OpenAI
+  (États-Unis/UE) pour des services de modèles ; outils de support (Zendesk,
+  Slack, Asana) et d'analyse (PostHog, UE). La liste indique que les services de
+  modèles peuvent servir à l'amélioration des produits dans la mesure permise par
+  le contrat. Pas de choix de région hors Enterprise.
 
 ## Références vérifiées le 16 octobre 2026
 
