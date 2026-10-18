@@ -17,7 +17,6 @@
 - [ ] SMS : staging validé (1 SMS/segment, iPhone/calendrier/itinéraire, accusé livré); PM2 corrigé. Réception prod à qualifier, aucun rejeu historique.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
 - [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
-- [ ] RGPD TTS : ElevenLabs conserve le texte des phrases de l'agent (noms, numéros, heures); `enable_logging=false` est réservé à l'Enterprise. Production déjà basculée (risque accepté le 15/10); sous-traitant, DPA et politique de confidentialité restent à trancher.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
