@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminHealthPage from './page';
 
@@ -138,5 +138,34 @@ describe('AdminHealthPage', () => {
 
     expect(await screen.findByText('Erreur 500')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
+
+  it('affiche des libellés français, jamais les codes techniques', async () => {
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve(path.includes('provisioning') ? restaurantsResponse : healthResponse),
+    );
+    render(<AdminHealthPage />);
+
+    expect(await screen.findByText('Confirmée')).toBeInTheDocument();
+    expect(screen.getByText('Téléphone')).toBeInTheDocument();
+    expect(screen.queryByText('CONFIRMED')).toBeNull();
+    expect(screen.queryByText('PHONE')).toBeNull();
+    expect(screen.queryByText('READY')).toBeNull();
+  });
+
+  it('n’affiche plus l’ancienne santé pendant qu’une nouvelle est en cours de chargement', async () => {
+    let calls = 0;
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.includes('provisioning')) return Promise.resolve(restaurantsResponse);
+      calls += 1;
+      return calls === 1 ? Promise.resolve(healthResponse) : new Promise(() => undefined);
+    });
+    render(<AdminHealthPage />);
+    await screen.findByText('Martin Dupont');
+
+    fireEvent.click(screen.getByRole('button', { name: /Actualiser/ }));
+
+    await waitFor(() => expect(screen.queryByText('Martin Dupont')).toBeNull());
+    expect(screen.getByText(/Chargement de la santé/)).toBeInTheDocument();
   });
 });

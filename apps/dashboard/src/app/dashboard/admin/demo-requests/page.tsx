@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Clock3, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
@@ -73,15 +73,23 @@ export default function DemoRequestsPage() {
   const [editingInteractionId, setEditingInteractionId] = useState<string | null>(null);
   const [interactionDateDraft, setInteractionDateDraft] = useState('');
 
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
+    const current = ++requestId.current;
     setLoadFailed(false);
+    // Changer de filtre vide la liste : l'ancienne ne reste pas affichée sous le nouveau filtre.
+    setRows(null);
     try {
       const params = new URLSearchParams({ limit: '200' });
       if (filter !== 'ALL') params.set('status', filter);
       const query = `?${params.toString()}`;
       const response = await get<{ data: DemoRequestRow[] }>(`/admin/demo-requests${query}`);
+      // Une réponse arrivée en retard pour un autre filtre est ignorée.
+      if (current !== requestId.current) return;
       setRows(response.data);
     } catch {
+      if (current !== requestId.current) return;
       setLoadFailed(true);
     }
   }, [filter, get]);
@@ -183,137 +191,144 @@ export default function DemoRequestsPage() {
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Aucune demande pour ce filtre.</p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {rows.map((row) => {
-            const trackedAt = row.lastInteractionAt ?? row.contactedAt ?? row.createdAt;
-            const reviewDate = addTwelveMonths(trackedAt);
-            const needsRetentionReview = reviewDate.getTime() <= Date.now();
+        <>
+          {rows.length >= 200 ? (
+            <p className="text-xs text-muted-foreground">
+              Les 200 demandes les plus récentes sont affichées : les plus anciennes ne le sont pas.
+            </p>
+          ) : null}
+          <ul className="flex flex-col gap-3">
+            {rows.map((row) => {
+              const trackedAt = row.lastInteractionAt ?? row.contactedAt ?? row.createdAt;
+              const reviewDate = addTwelveMonths(trackedAt);
+              const needsRetentionReview = reviewDate.getTime() <= Date.now();
 
-            return (
-              <li
-                key={row.id}
-                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 md:flex-row md:items-start md:justify-between"
-              >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="font-semibold text-foreground">{row.establishmentName}</p>
-                  {row.pageVersion === 'demo-assistant-tel-v1' && (
-                    <p className="text-xs text-muted-foreground">Source : assistant téléphonique</p>
-                  )}
-                  <p className="break-all text-sm text-muted-foreground">
-                    {row.contactEmail}
-                    {row.contactPhone ? ` · ${row.contactPhone}` : ''}
-                  </p>
-                  {row.currentTool && (
-                    <p className="text-sm text-muted-foreground">
-                      Outil actuel : {row.currentTool}
+              return (
+                <li
+                  key={row.id}
+                  className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 md:flex-row md:items-start md:justify-between"
+                >
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="font-semibold text-foreground">{row.establishmentName}</p>
+                    {row.pageVersion === 'demo-assistant-tel-v1' && (
+                      <p className="text-xs text-muted-foreground">Source : démo du téléphone</p>
+                    )}
+                    <p className="break-all text-sm text-muted-foreground">
+                      {row.contactEmail}
+                      {row.contactPhone ? ` · ${row.contactPhone}` : ''}
                     </p>
-                  )}
-                  {row.mainProblem && (
-                    <p className="text-sm text-muted-foreground">Problème : {row.mainProblem}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Reçue le {formatDate(row.createdAt)} ·{' '}
-                    <span className={cn(row.notifiedAt ? 'text-foreground' : 'text-destructive')}>
-                      {row.notifiedAt ? 'Envoi accepté' : 'Envoi non confirmé'}
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {row.lastInteractionAt
-                      ? `Dernier échange enregistré le ${formatDate(row.lastInteractionAt)}`
-                      : row.contactedAt
-                        ? `Premier contact enregistré le ${formatDate(row.contactedAt)}`
-                        : 'Aucun échange enregistré'}
-                  </p>
-                  {needsRetentionReview && (
-                    <p className="text-xs font-medium text-destructive">
-                      À examiner depuis le {formatDate(reviewDate.toISOString())}
+                    {row.currentTool && (
+                      <p className="text-sm text-muted-foreground">
+                        Outil actuel : {row.currentTool}
+                      </p>
+                    )}
+                    {row.mainProblem && (
+                      <p className="text-sm text-muted-foreground">Problème : {row.mainProblem}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Reçue le {formatDate(row.createdAt)} ·{' '}
+                      <span className={cn(row.notifiedAt ? 'text-foreground' : 'text-destructive')}>
+                        {row.notifiedAt ? 'Envoi accepté' : 'Envoi non confirmé'}
+                      </span>
                     </p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {editingInteractionId === row.id ? (
-                    <>
-                      <input
-                        aria-label={`Date du dernier échange pour ${row.establishmentName}`}
-                        type="datetime-local"
-                        max={toDateTimeLocal(new Date().toISOString())}
-                        value={interactionDateDraft}
-                        onChange={(event) => setInteractionDateDraft(event.target.value)}
-                        className="h-10 min-w-0 rounded-xl border border-border bg-background px-3 text-sm text-foreground transition-all duration-200"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={savingId === row.id || !interactionDateDraft}
-                        onClick={() => void recordInteraction(row.id, interactionDateDraft)}
-                        className="transition-all duration-200"
-                      >
-                        Enregistrer la date
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={savingId === row.id}
-                        onClick={() => {
-                          setEditingInteractionId(null);
-                          setInteractionDateDraft('');
-                        }}
-                        className="transition-all duration-200"
-                      >
-                        Annuler
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={savingId === row.id}
-                        onClick={() => void recordInteraction(row.id)}
-                        aria-label={`Enregistrer un échange pour ${row.establishmentName}`}
-                        className="transition-all duration-200"
-                      >
-                        <Clock3 size={16} aria-hidden="true" />
-                        Enregistrer un échange
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setInteractionDateDraft(
-                            row.lastInteractionAt ? toDateTimeLocal(row.lastInteractionAt) : '',
-                          );
-                          setEditingInteractionId(row.id);
-                        }}
-                        className="transition-all duration-200"
-                      >
-                        Corriger la date
-                      </Button>
-                    </>
-                  )}
-                  <select
-                    aria-label={`Statut de ${row.establishmentName}`}
-                    value={row.status}
-                    disabled={savingId === row.id}
-                    onChange={(event) =>
-                      void updateStatus(row.id, event.target.value as DemoRequestStatus)
-                    }
-                    className="h-10 rounded-xl border border-border bg-background px-3 text-sm text-foreground transition-all duration-200 disabled:opacity-60"
-                  >
-                    {(Object.keys(STATUS_LABELS) as DemoRequestStatus[]).map((status) => (
-                      <option key={status} value={status}>
-                        {STATUS_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    <p className="text-xs text-muted-foreground">
+                      {row.lastInteractionAt
+                        ? `Dernier échange enregistré le ${formatDate(row.lastInteractionAt)}`
+                        : row.contactedAt
+                          ? `Premier contact enregistré le ${formatDate(row.contactedAt)}`
+                          : 'Aucun échange enregistré'}
+                    </p>
+                    {needsRetentionReview && (
+                      <p className="text-xs font-medium text-destructive">
+                        À examiner depuis le {formatDate(reviewDate.toISOString())}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {editingInteractionId === row.id ? (
+                      <>
+                        <input
+                          aria-label={`Date du dernier échange pour ${row.establishmentName}`}
+                          type="datetime-local"
+                          max={toDateTimeLocal(new Date().toISOString())}
+                          value={interactionDateDraft}
+                          onChange={(event) => setInteractionDateDraft(event.target.value)}
+                          className="h-10 min-w-0 rounded-xl border border-border bg-background px-3 text-sm text-foreground transition-all duration-200"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={savingId === row.id || !interactionDateDraft}
+                          onClick={() => void recordInteraction(row.id, interactionDateDraft)}
+                          className="transition-all duration-200"
+                        >
+                          Enregistrer la date
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={savingId === row.id}
+                          onClick={() => {
+                            setEditingInteractionId(null);
+                            setInteractionDateDraft('');
+                          }}
+                          className="transition-all duration-200"
+                        >
+                          Annuler
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={savingId === row.id}
+                          onClick={() => void recordInteraction(row.id)}
+                          aria-label={`Enregistrer un échange pour ${row.establishmentName}`}
+                          className="transition-all duration-200"
+                        >
+                          <Clock3 size={16} aria-hidden="true" />
+                          Enregistrer un échange
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setInteractionDateDraft(
+                              row.lastInteractionAt ? toDateTimeLocal(row.lastInteractionAt) : '',
+                            );
+                            setEditingInteractionId(row.id);
+                          }}
+                          className="transition-all duration-200"
+                        >
+                          Corriger la date
+                        </Button>
+                      </>
+                    )}
+                    <select
+                      aria-label={`Statut de ${row.establishmentName}`}
+                      value={row.status}
+                      disabled={savingId === row.id}
+                      onChange={(event) =>
+                        void updateStatus(row.id, event.target.value as DemoRequestStatus)
+                      }
+                      className="h-10 rounded-xl border border-border bg-background px-3 text-sm text-foreground transition-all duration-200 disabled:opacity-60"
+                    >
+                      {(Object.keys(STATUS_LABELS) as DemoRequestStatus[]).map((status) => (
+                        <option key={status} value={status}>
+                          {STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </main>
   );

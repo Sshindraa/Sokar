@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -97,6 +97,34 @@ const OUTCOME_LABELS: Record<string, string> = {
   ERROR: 'Erreur',
 };
 
+const PROVISIONING_LABELS: Record<string, string> = {
+  PENDING: 'En attente de numéro',
+  PHONE_ASSIGNED: 'Numéro attribué',
+  WEBHOOK_READY: 'Webhook prêt',
+  FORWARDING_CONFIGURED: 'Renvoi configuré',
+  TEST_CALL_VALIDATED: 'Appel test validé',
+  LIVE: 'En service',
+  READY: 'Prêt',
+};
+const RESERVATION_STATE_LABELS: Record<string, string> = {
+  PENDING: 'En attente',
+  CONFIRMED: 'Confirmée',
+  SEATED: 'Installée',
+  HONORED: 'Honorée',
+  CANCELLED: 'Annulée',
+  NO_SHOW: 'Absent',
+};
+const CHANNEL_LABELS: Record<string, string> = {
+  PHONE: 'Téléphone',
+  WEB: 'En ligne',
+  WIDGET: 'Widget',
+  GOOGLE: 'Google',
+  AI: 'Assistant IA',
+  MCP: 'Assistant IA',
+  STAFF: 'Équipe',
+  DASHBOARD: 'Équipe',
+};
+
 const SMS_KIND_LABELS: Record<string, string> = {
   reservation_confirmation_sms_sent: 'SMS de confirmation',
   reminder_j1: 'Rappel J-1',
@@ -124,6 +152,7 @@ export default function AdminHealthPage() {
 
   const [health, setHealth] = useState<RestaurantHealth | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const healthRequestId = useRef(0);
   const [error, setError] = useState<string | null>(null);
 
   const fetchRestaurants = useCallback(async () => {
@@ -147,14 +176,19 @@ export default function AdminHealthPage() {
 
   const fetchHealth = useCallback(
     async (restaurantId: string) => {
+      const requestId = ++healthRequestId.current;
       setLoadingHealth(true);
       setError(null);
+      // La santé de l'ancien restaurant ne reste pas affichée sous le nom du nouveau.
+      setHealth(null);
       try {
         const res = await get<{ ok: boolean; health: RestaurantHealth }>(
           `admin/restaurants/${restaurantId}/health`,
         );
+        if (requestId !== healthRequestId.current) return;
         setHealth(res.health);
       } catch (err: unknown) {
+        if (requestId !== healthRequestId.current) return;
         setHealth(null);
         setError(
           err instanceof Error
@@ -162,7 +196,7 @@ export default function AdminHealthPage() {
             : 'Erreur lors du chargement de la santé du restaurant',
         );
       } finally {
-        setLoadingHealth(false);
+        if (requestId === healthRequestId.current) setLoadingHealth(false);
       }
     },
     [get],
@@ -209,9 +243,9 @@ export default function AdminHealthPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Select value={selectedId ?? undefined} onValueChange={setSelectedId}>
-            <SelectTrigger className="w-64" aria-label="Choisir un restaurant">
+            <SelectTrigger className="w-full sm:w-64" aria-label="Choisir un restaurant">
               <SelectValue placeholder="Choisir un restaurant" />
             </SelectTrigger>
             <SelectContent>
@@ -273,7 +307,9 @@ export default function AdminHealthPage() {
               <CardContent className="space-y-2">
                 <p className="text-lg font-semibold text-foreground">{health.phone.number}</p>
                 <div className="flex flex-wrap gap-1.5">
-                  <Badge variant="outline">{health.phone.provisioningStatus}</Badge>
+                  <Badge variant="outline">
+                    {PROVISIONING_LABELS[health.phone.provisioningStatus] ?? 'Étape en cours'}
+                  </Badge>
                   {health.phone.carrier && <Badge variant="outline">{health.phone.carrier}</Badge>}
                 </div>
                 <div className="space-y-1 text-xs text-muted-foreground">
@@ -328,8 +364,8 @@ export default function AdminHealthPage() {
                         variant={health.lastCall.outcome === 'ERROR' ? 'destructive' : 'outline'}
                       >
                         {health.lastCall.outcome
-                          ? (OUTCOME_LABELS[health.lastCall.outcome] ?? health.lastCall.outcome)
-                          : 'Sans outcome'}
+                          ? (OUTCOME_LABELS[health.lastCall.outcome] ?? 'Autre issue')
+                          : 'Issue non renseignée'}
                       </Badge>
                       {health.lastCall.durationSec !== null && (
                         <Badge variant="outline">{health.lastCall.durationSec}s</Badge>
@@ -366,9 +402,14 @@ export default function AdminHealthPage() {
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       <Badge variant="outline">
-                        {health.lastReservation.state ?? health.lastReservation.status}
+                        {RESERVATION_STATE_LABELS[
+                          health.lastReservation.state ?? health.lastReservation.status
+                        ] ?? 'À vérifier'}
                       </Badge>
-                      <Badge variant="outline">{health.lastReservation.channel}</Badge>
+                      <Badge variant="outline">
+                        {CHANNEL_LABELS[health.lastReservation.channel.toUpperCase()] ??
+                          'Autre canal'}
+                      </Badge>
                     </div>
                   </>
                 ) : (
