@@ -216,6 +216,7 @@ function makeFakes() {
 
   const audit = new AuditLogService(prisma);
   const tableAllocation = {
+    allocate: vi.fn().mockResolvedValue(null),
     assertTableAvailableForSeating: vi.fn().mockResolvedValue(undefined),
   } as unknown as TableAllocationService;
   const service = new HoldService(prisma, audit, tableAllocation);
@@ -283,6 +284,49 @@ describe('hold.service', () => {
   });
 
   describe('createHold', () => {
+    it.each([false, true])(
+      'rechecks capacity after pool timeout without replaying a hold (free=%s)',
+      async (free) => {
+        const timeout = new Prisma.PrismaClientKnownRequestError('Pool wait expired', {
+          code: 'P2028',
+          clientVersion: 'test',
+        });
+        const transaction = vi.spyOn(fakes.prisma, '$transaction').mockRejectedValueOnce(timeout);
+        vi.mocked(fakes.tableAllocation.allocate).mockResolvedValueOnce(
+          free ? ({ id: 'free-table' } as never) : null,
+        );
+        const request = {
+          restaurantId: 'r-1',
+          partySize: 4,
+          slotStart: new Date('2099-06-22T19:00:00Z'),
+          slotEnd: new Date('2099-06-22T21:00:00Z'),
+          channel: 'MCP' as const,
+          actor: 'agent:test',
+          policy: buildPolicySnapshot({
+            policyVersion: 'test',
+            maxPartySize: 12,
+            minLeadTimeMinutes: 30,
+            requireManualValidation: false,
+            quoteTtlSeconds: 300,
+            holdTtlSeconds: 420,
+            noShowPolicy: 'warning',
+            notificationChannels: ['sms'],
+            capacitySpecials: {},
+          }),
+        };
+        if (free) await expect(fakes.service.createHold(request)).rejects.toBe(timeout);
+        else
+          await expect(fakes.service.createHold(request)).rejects.toBeInstanceOf(HoldConflictError);
+        expect(transaction).toHaveBeenCalledTimes(1);
+        expect(fakes.tableAllocation.allocate).toHaveBeenCalledWith(
+          expect.objectContaining({ restaurantId: 'r-1', partySize: 4 }),
+          undefined,
+          { readOnly: true },
+        );
+        expect(fakes.holds.size).toBe(0);
+      },
+    );
+
     it('crée un hold et émet un token', async () => {
       const policy = buildPolicySnapshot({
         policyVersion: '2026-06-20',

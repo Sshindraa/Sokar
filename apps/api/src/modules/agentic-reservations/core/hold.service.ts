@@ -304,6 +304,25 @@ export class HoldService {
           if (activeHold) {
             throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
           }
+          // The pool can time out before the callback selects a table. A hold on
+          // a physical table then cannot match the unassigned-hold lookup above.
+          // Read capacity without locking or writing; never replay an uncertain write.
+          if (!attemptedTableId) {
+            const available = await this.tableAllocation.allocate(
+              {
+                restaurantId: args.restaurantId,
+                partySize: args.partySize,
+                startsAt: args.slotStart,
+                endsAt: args.slotEnd,
+                preferredSectionId: args.preferredSectionId,
+              },
+              undefined,
+              { readOnly: true },
+            );
+            if (!available) {
+              throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+            }
+          }
         }
 
         throw err;
