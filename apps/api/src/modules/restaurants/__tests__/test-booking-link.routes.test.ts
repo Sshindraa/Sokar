@@ -48,21 +48,46 @@ describe('POST /restaurant/test-booking-link', () => {
   });
 
   it('renvoie 409 PAGE_NOT_PUBLISHED quand la page n’est pas publiée', async () => {
-    mockRestaurant({ slug: 'le-bistrot', exposureSettings: { connectPublished: false } });
+    mockRestaurant({
+      slug: 'le-bistrot',
+      publishedAt: new Date(),
+      agenticOptIn: true,
+      exposureSettings: { connectPublished: false },
+    });
     const res = await call();
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ code: 'PAGE_NOT_PUBLISHED', error: PUBLISHED_MESSAGE });
   });
 
+  it.each([
+    ['publishedAt absent', { publishedAt: null, agenticOptIn: true }],
+    ['agenticOptIn désactivé', { publishedAt: new Date(), agenticOptIn: false }],
+  ])('renvoie 409 PAGE_NOT_PUBLISHED quand %s malgré connectPublished', async (_n, extra) => {
+    mockRestaurant({ slug: 'le-bistrot', ...extra, exposureSettings: { connectPublished: true } });
+    const res = await call();
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('PAGE_NOT_PUBLISHED');
+  });
+
   it('renvoie 409 PAGE_NOT_PUBLISHED quand le restaurant n’a pas de slug', async () => {
-    mockRestaurant({ slug: null, exposureSettings: { connectPublished: true } });
+    mockRestaurant({
+      slug: null,
+      publishedAt: new Date(),
+      agenticOptIn: true,
+      exposureSettings: { connectPublished: true },
+    });
     const res = await call();
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('PAGE_NOT_PUBLISHED');
   });
 
   it('renvoie 200 avec une URL Connect portant un jeton vérifiable', async () => {
-    mockRestaurant({ slug: 'le-bistrot', exposureSettings: { connectPublished: true } });
+    mockRestaurant({
+      slug: 'le-bistrot',
+      publishedAt: new Date(),
+      agenticOptIn: true,
+      exposureSettings: { connectPublished: true },
+    });
     const res = await call();
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');

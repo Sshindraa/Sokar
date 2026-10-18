@@ -8,6 +8,7 @@ import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytic
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
+import { isPublicConnectPage } from '../connect/connect.types';
 import { isTestBookingEnabled, issueTestBookingToken } from '../connect/test-booking';
 import {
   getOnboardingPlaceDetails,
@@ -1507,18 +1508,20 @@ export async function restaurantRoutes(app: FastifyInstance) {
       }
       const restaurant = await app.db.restaurant.findUnique({
         where: { id: req.restaurantId },
-        select: { slug: true, exposureSettings: { select: { connectPublished: true } } },
+        select: {
+          slug: true,
+          publishedAt: true,
+          agenticOptIn: true,
+          exposureSettings: { select: { connectPublished: true } },
+        },
       });
-      if (!restaurant?.slug || !restaurant.exposureSettings?.connectPublished) {
+      if (!restaurant || !restaurant.slug || !isPublicConnectPage(restaurant)) {
         return reply.status(409).send({
           code: 'PAGE_NOT_PUBLISHED',
           error: 'Publiez d’abord votre page pour la tester.',
         });
       }
-      const url = new URL(
-        `/restaurant/${encodeURIComponent(restaurant.slug)}`,
-        process.env.SITE_URL ?? env.SITE_URL,
-      );
+      const url = new URL(`/restaurant/${encodeURIComponent(restaurant.slug)}`, env.SITE_URL);
       url.searchParams.set('testBooking', issueTestBookingToken(req.restaurantId));
       return reply.send({ url: url.toString() });
     },
