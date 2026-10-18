@@ -162,7 +162,10 @@ export async function testRoutes(app: FastifyInstance) {
   app.get('/api/test/restaurants', async (_req, reply) => {
     const restaurants = await db.restaurant.findMany({
       where: { id: { startsWith: 'test-' } },
-      include: { personality: true, _count: { select: { calls: true, reservations: true } } },
+      include: {
+        personality: true,
+        _count: { select: { calls: true, reservations: { where: { isTest: false } } } },
+      },
     });
     return reply.send(restaurants);
   });
