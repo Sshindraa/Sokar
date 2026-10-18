@@ -210,23 +210,29 @@ export default function ExperiencesPage() {
     setLoading(true);
     setError('');
     try {
-      const [experienceResponse, reservationResponse, readinessResponse] = await Promise.all([
+      const [experienceResponse, readinessResponse] = await Promise.all([
         get<ListResponse<Experience>>('experiences?limit=100'),
-        get<ListResponse<ExperienceReservation>>('experience-reservations?limit=100'),
         get<{ data?: ExperiencePaymentReadiness }>('experiences/payment-readiness').catch(
           () => null,
         ),
       ]);
       const nextExperiences = Array.isArray(experienceResponse.data) ? experienceResponse.data : [];
-      const nextReservations = Array.isArray(reservationResponse.data)
-        ? reservationResponse.data
-        : [];
       const nextSelected =
         selectedExperienceId && nextExperiences.some((item) => item.id === selectedExperienceId)
           ? selectedExperienceId
           : (nextExperiences.find((item) => item.status === 'ACTIVE')?.id ??
             nextExperiences[0]?.id ??
             '');
+      // Réservations de l'expérience choisie seulement (filtrées par le serveur) : une expérience ancienne
+      // ne perd plus les siennes derrière les 100 plus récentes du restaurant.
+      const reservationResponse = nextSelected
+        ? await get<ListResponse<ExperienceReservation>>(
+            `experience-reservations?experienceId=${nextSelected}&limit=100`,
+          )
+        : { data: [] as ExperienceReservation[] };
+      const nextReservations = Array.isArray(reservationResponse.data)
+        ? reservationResponse.data
+        : [];
       selectionHandledByLoadRef.current = nextSelected;
       setExperiences(nextExperiences);
       setReservations(nextReservations);
@@ -256,6 +262,19 @@ export default function ExperiencesPage() {
       setLoading(false);
     }
   }, [get, selectedExperienceId]);
+
+  // Le menu « Autres actions » se ferme aussi au toucher ailleurs (sur iPad, il restait ouvert par-dessus la page).
+  useEffect(() => {
+    function closeMenus(event: MouseEvent) {
+      document
+        .querySelectorAll<HTMLDetailsElement>('details[data-actions-menu][open]')
+        .forEach((menu) => {
+          if (!menu.contains(event.target as Node)) menu.removeAttribute('open');
+        });
+    }
+    document.addEventListener('click', closeMenus);
+    return () => document.removeEventListener('click', closeMenus);
+  }, []);
 
   useEffect(() => {
     if (selectionHandledByLoadRef.current === selectedExperienceId) return;
@@ -640,7 +659,7 @@ export default function ExperiencesPage() {
               {(paymentReadiness.blocker === 'stripe_not_configured' ||
                 paymentReadiness.blocker === 'stripe_not_ready') && (
                 <Button asChild size="sm" variant="outline" className="transition-all duration-200">
-                  <Link href="/dashboard/gift-cards">Configurer Stripe</Link>
+                  <Link href="/dashboard/gift-cards?settings=stripe">Configurer Stripe</Link>
                 </Button>
               )}
             </div>
@@ -761,6 +780,7 @@ export default function ExperiencesPage() {
                             Modifier
                           </Button>
                           <details
+                            data-actions-menu
                             className="relative"
                             onKeyDown={(event) => {
                               if (event.key === 'Escape')

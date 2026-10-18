@@ -258,4 +258,14 @@ describe('EventsPage', () => {
     await screen.findAllByRole('button', { name: 'Activer l’événement' });
     expect(screen.queryByText('Enregistrer une commande')).toBeNull();
   });
+
+  it('charge commandes et billets de l’événement choisi seulement, filtrés par le serveur', async () => {
+    render(<EventsPage />);
+    await screen.findAllByText('Soirée dégustation');
+
+    const paths = apiMocks.get.mock.calls.map(([path]) => String(path));
+    expect(paths).toContain('event-orders?eventId=event-1&limit=100');
+    expect(paths).toContain('event-tickets?eventId=event-1&limit=100');
+    expect(paths).not.toContain('event-orders?limit=100');
+  });
 });

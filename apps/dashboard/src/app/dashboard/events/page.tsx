@@ -230,28 +230,31 @@ export default function EventsPage() {
     setError('');
     setLock(null);
     try {
-      const [eventResponse, orderResponse, ticketResponse] = await Promise.all([
-        get<ListResponse<SokarEvent>>('events?limit=100'),
-        get<ListResponse<Order>>('event-orders?limit=100'),
-        get<ListResponse<EventTicket>>('event-tickets?limit=100'),
-      ]);
+      const eventResponse = await get<ListResponse<SokarEvent>>('events?limit=100');
       const nextEvents = Array.isArray(eventResponse.data) ? eventResponse.data : [];
       setEvents(nextEvents);
-      setOrders(Array.isArray(orderResponse.data) ? orderResponse.data : []);
-      setTickets(Array.isArray(ticketResponse.data) ? ticketResponse.data : []);
       const nextSelected =
         selectedEventId && nextEvents.some((item) => item.id === selectedEventId)
           ? selectedEventId
           : (nextEvents.find((item) => item.status === 'ACTIVE')?.id ?? nextEvents[0]?.id ?? '');
       setSelectedEventId(nextSelected);
       if (nextSelected) {
-        const [sessionResponse, ticketTypeResponse] = await Promise.all([
-          get<ListResponse<Session>>(`events/${nextSelected}/sessions?limit=100`),
-          get<ListResponse<TicketType>>(`events/${nextSelected}/ticket-types?limit=100`),
-        ]);
+        // Commandes et billets de l'événement choisi seulement : filtrés par le serveur, ils ne sont plus
+        // noyés parmi les 100 plus récents de tout le restaurant.
+        const [orderResponse, ticketResponse, sessionResponse, ticketTypeResponse] =
+          await Promise.all([
+            get<ListResponse<Order>>(`event-orders?eventId=${nextSelected}&limit=100`),
+            get<ListResponse<EventTicket>>(`event-tickets?eventId=${nextSelected}&limit=100`),
+            get<ListResponse<Session>>(`events/${nextSelected}/sessions?limit=100`),
+            get<ListResponse<TicketType>>(`events/${nextSelected}/ticket-types?limit=100`),
+          ]);
+        setOrders(Array.isArray(orderResponse.data) ? orderResponse.data : []);
+        setTickets(Array.isArray(ticketResponse.data) ? ticketResponse.data : []);
         setSessions(Array.isArray(sessionResponse.data) ? sessionResponse.data : []);
         setTicketTypes(Array.isArray(ticketTypeResponse.data) ? ticketTypeResponse.data : []);
       } else {
+        setOrders([]);
+        setTickets([]);
         setSessions([]);
         setTicketTypes([]);
       }

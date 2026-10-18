@@ -423,7 +423,7 @@ export default function AdminProvisioningPage() {
         onRetry={fetchRestaurants}
       />
 
-      <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-8 xl:grid-cols-[320px_1fr]">
         {/* Colonne gauche : liste des restaurants */}
         <div className="space-y-4">
           <div className="relative">
@@ -544,7 +544,7 @@ export default function AdminProvisioningPage() {
             </div>
 
             {/* Grille des 4 étapes */}
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 2xl:grid-cols-2">
               {/* ÉTAPE 1 : Attribution Telnyx */}
               <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm flex flex-col justify-between">
                 <div className="space-y-3">
