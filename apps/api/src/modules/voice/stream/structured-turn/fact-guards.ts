@@ -26,6 +26,11 @@ export interface StructuredTurnState {
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+  /**
+   * Début de phrase pris par la relance après silence, tant qu'elle n'a pas parlé. Si l'appelant reprend avant,
+   * le tour suivant le récupère (appel bb50c0d3 : la lettre A d'une épellation perdue ainsi).
+   */
+  unansweredFragment?: string | null;
   /** Récapitulatif dont le « oui » a déjà été refusé une fois parce qu'il avait été coupé. */
   recapCutBlockedKey: string | null;
 }
@@ -187,6 +192,13 @@ const SPELLING_AWAITING: ReadonlySet<StructuredTurnOutput['awaiting']> = new Set
   'customerNameConfirmation',
   'confirmation',
 ]);
+
+/** L'agent attend un nom ou sa relecture : une lettre seule de l'appelant appartient à l'épellation. */
+export function expectsSpelledLetters(
+  awaiting: StructuredTurnOutput['awaiting'] | undefined,
+): boolean {
+  return awaiting !== undefined && SPELLING_AWAITING.has(awaiting);
+}
 
 const stripToLetters = (text: string): string =>
   text
@@ -628,14 +640,26 @@ export function outsideOpeningHoursFact(
   if (!days.length) return null;
   const [year, month, day] = draft.date.split('-').map(Number);
   const utc = new Date(Date.UTC(year, month - 1, day));
-  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
-  if (!slot || slot.close <= slot.open) return null;
-  if (draft.time >= slot.open && draft.time <= slot.close) return null;
+  const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
+  if (!periods.length || periods.some((period) => period.close <= period.open)) return null;
   const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
     utc,
   );
+  const service = periods.find((period) => draft.time >= period.open && draft.time <= period.close);
+  if (service) {
+    // Dans le service, mais après la dernière réservation que le restaurateur a fixée.
+    const lastBooking = service.lastBooking;
+    if (!lastBooking || draft.time <= lastBooking) return null;
+    return (
+      `L'heure demandée (${draft.time}) est après la dernière réservation du ${weekday} ` +
+      `pour ce service (${lastBooking}, service ${service.open}–${service.close}). ` +
+      "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
+      `et laisse-le choisir une heure jusqu'à ${lastBooking}.`
+    );
+  }
+  const ranges = periods.map((period) => `${period.open}–${period.close}`).join(' puis ');
   return (
-    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${slot.open}–${slot.close}). ` +
+    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${ranges}). ` +
     "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
     'et laisse-le choisir une heure dans ces horaires.'
   );

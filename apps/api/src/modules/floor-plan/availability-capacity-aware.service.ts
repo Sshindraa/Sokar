@@ -9,12 +9,11 @@
  * Contrat de surface inchangé : { restaurantId, date, partySize, slots }.
  */
 
-import { PrismaClient } from '@prisma/client';
-import { normalizeOpeningHours } from '@sokar/shared';
+import { PrismaClient, type Prisma } from '@prisma/client';
+import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
-import { HOURS_TO_MINUTES } from '../../shared/constants/time.js';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
 import { ACTIVE_RESERVATION_STATES, intervalsOverlap } from '../../shared/reservations/capacity.js';
@@ -22,6 +21,7 @@ import {
   DEFAULT_RESTAURANT_TIMEZONE,
   zonedTimeToUtc,
 } from '../../shared/timezone/restaurant-time.js';
+import { isSlotTooSoonAt } from '../../shared/reservations/lead-time.js';
 
 // Compatibilité pour les callers internes existants. L'implémentation est
 // désormais centralisée dans shared/timezone.
@@ -35,6 +35,56 @@ const SLOT_MINUTES = 30;
 const AVAILABILITY_CACHE_TTL_SECONDS = 30;
 const AVAILABILITY_VERSION_TTL_SECONDS = 120;
 const CACHE_KEY_PREFIX = 'availability:v:';
+// Écarts UTC extrêmes en usage (UTC-12 à UTC+14) : bornent la journée locale d'une date, donc
+// évitent de convertir chaque créneau quand la date est sans ambiguïté future ou passée.
+const MAX_UTC_OFFSET_AHEAD_MS = 14 * 60 * 60 * 1000;
+const MAX_UTC_OFFSET_BEHIND_MS = 12 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Valeur mise en cache : le résultat brut du moteur et le fuseau du restaurant. Le fuseau permet de
+ * marquer les créneaux passés APRÈS la lecture du cache, sans recharger le restaurant.
+ */
+type CachedAvailability = { timeZone: string; dto: AvailabilityDto };
+
+function parseCachedAvailability(raw: string): CachedAvailability | null {
+  const parsed = JSON.parse(raw) as Partial<CachedAvailability> | null;
+  // Ancien format (le DTO seul, sans fuseau) : ignoré, la valeur est recalculée.
+  if (!parsed || typeof parsed.timeZone !== 'string' || !parsed.dto) return null;
+  return { timeZone: parsed.timeZone, dto: parsed.dto };
+}
+
+/**
+ * Les créneaux déjà commencés, ou qui commencent avant maintenant plus le délai minimum, passent à
+ * `available: false`. Ils restent dans le tableau : un appelant qui cherche une heure doit lire
+ * « indisponible », pas « introuvable ». Le DTO reçu n'est jamais modifié (il peut être celui que le
+ * cache vient de stocker). `minLeadTimeMinutes` vaut 0 sauf pour les surfaces en ligne.
+ */
+export function markTooSoonSlotsUnavailable(
+  dto: AvailabilityDto,
+  timeZone: string,
+  now: Date,
+  minLeadTimeMinutes: number = 0,
+): AvailabilityDto {
+  const dayStart = Date.parse(`${dto.date}T00:00:00.000Z`);
+  if (Number.isNaN(dayStart)) return dto;
+  const lead = Number.isFinite(minLeadTimeMinutes) ? Math.max(0, minLeadTimeMinutes) : 0;
+  // Dès cet instant, un créneau est réservable : `maintenant + délai` est le plus petit début permis.
+  const earliestBookableMs = now.getTime() + lead * 60_000;
+  // Tous les créneaux de la date commencent au plus tôt à `earliestStartMs` (minuit local en UTC+14) :
+  // si maintenant et maintenant + délai ne l'atteignent pas, rien n'est trop proche.
+  const earliestStartMs = dayStart - MAX_UTC_OFFSET_AHEAD_MS;
+  if (now.getTime() < earliestStartMs && earliestBookableMs <= earliestStartMs) return dto;
+  const allTooSoon = earliestBookableMs >= dayStart + DAY_MS + MAX_UTC_OFFSET_BEHIND_MS;
+  return {
+    ...dto,
+    slots: dto.slots.map((slot) =>
+      slot.available && (allTooSoon || isSlotTooSoonAt(dto.date, slot.time, timeZone, lead, now))
+        ? { ...slot, available: false }
+        : slot,
+    ),
+  };
+}
 
 export class CapacityAwareAvailabilityService {
   private readonly allocation: TableAllocationService;
@@ -100,27 +150,48 @@ export class CapacityAwareAvailabilityService {
    * Un créneau est disponible si au moins une table active peut accueillir le
    * groupe sur la durée du service.
    */
-  async getAvailability(args: {
-    restaurantId: string;
-    date: string; // YYYY-MM-DD
-    partySize: number;
-    preferredSectionId?: string;
-  }): Promise<AvailabilityDto> {
+  async getAvailability(
+    args: {
+      restaurantId: string;
+      date: string; // YYYY-MM-DD
+      partySize: number;
+      preferredSectionId?: string;
+      /** Horloge injectable (tests) : par défaut, l'instant de l'appel. */
+      now?: Date;
+      /** Private modification preview: never read or populate the public cache. */
+      excludeReservationId?: string;
+      defaultFloorOnly?: boolean;
+      /**
+       * Délai minimum de réservation, en minutes. Passé par les surfaces EN LIGNE (page et widget
+       * Connect, page /book, cartes cadeaux) ; absent (donc 0) pour le téléphone et le personnel.
+       */
+      minLeadTimeMinutes?: number;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<AvailabilityDto> {
+    const queryDb = tx ?? this.prisma;
+    const privatePreview = !!args.excludeReservationId || !!tx || !!args.defaultFloorOnly;
+    // Une seule lecture de l'horloge par appel : le cache garde le résultat brut (sans passé ni délai),
+    // ils se marquent à chaque lecture, y compris pour une valeur en cache depuis quelques secondes.
+    // Le délai n'entre pas dans la clé de cache : il ne change que ce qu'on marque après.
+    const now = args.now ?? new Date();
     let version = 0;
-    try {
-      version = await this.getVersion(args.restaurantId);
-      const cached = await redisCache.get(this.cacheKey(args, version));
-      if (cached) {
-        return JSON.parse(cached) as AvailabilityDto;
+    if (!privatePreview)
+      try {
+        version = await this.getVersion(args.restaurantId);
+        const cached = await redisCache.get(this.cacheKey(args, version));
+        const hit = cached ? parseCachedAvailability(cached) : null;
+        if (hit) {
+          return markTooSoonSlotsUnavailable(hit.dto, hit.timeZone, now, args.minLeadTimeMinutes);
+        }
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : err, args },
+          'availability cache read failed',
+        );
       }
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, args },
-        'availability cache read failed',
-      );
-    }
 
-    const restaurant = await this.prisma.restaurant.findUnique({
+    const restaurant = await queryDb.restaurant.findUnique({
       where: { id: args.restaurantId },
       include: { exposureSettings: true },
     });
@@ -136,13 +207,15 @@ export class CapacityAwareAvailabilityService {
 
     const dayOfWeek = computeDayOfWeek(args.date);
     const openingHours = normalizeOpeningHours(restaurant.openingHours);
-    const dayHours = openingHours.find((d) => d.dayIndex === dayOfWeek);
+    const dayHours = openingHours.filter((period) => period.dayIndex === dayOfWeek);
 
-    if (!dayHours) {
+    if (dayHours.length === 0) {
       return emptyAvailability(args);
     }
 
-    const allSlots = generateSlots(dayHours.open, dayHours.close, SLOT_MINUTES);
+    const allSlots = Array.from(
+      new Set(dayHours.flatMap((period) => bookingSlotsOf(period, SLOT_MINUTES))),
+    ).sort();
     if (allSlots.length === 0) {
       return emptyAvailability(args);
     }
@@ -153,10 +226,11 @@ export class CapacityAwareAvailabilityService {
     const dayEnd = zonedTimeToUtc(args.date, '23:59:59.999', timeZone);
 
     const [reservations, holds, tables] = await Promise.all([
-      this.prisma.reservation.findMany({
+      queryDb.reservation.findMany({
         where: {
           restaurantId: args.restaurantId,
           state: { in: [...ACTIVE_RESERVATION_STATES] },
+          ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
           OR: [
             { startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
             // Legacy rows may have startsAt but no endsAt; their duration is
@@ -167,7 +241,7 @@ export class CapacityAwareAvailabilityService {
         },
         select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
       }),
-      this.prisma.agenticHold.findMany({
+      queryDb.agenticHold.findMany({
         where: {
           restaurantId: args.restaurantId,
           status: 'ACTIVE',
@@ -178,19 +252,27 @@ export class CapacityAwareAvailabilityService {
         select: { tableId: true, slotStart: true, slotEnd: true },
       }),
       args.preferredSectionId
-        ? this.prisma.table.findMany({
+        ? queryDb.table.findMany({
             where: {
               sectionId: args.preferredSectionId,
               isActive: true,
-              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              floorPlan: {
+                restaurantId: args.restaurantId,
+                isActive: true,
+                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
+              },
               capacity: { gte: args.partySize },
             },
             select: { id: true, capacity: true, minCapacity: true, sectionId: true },
           })
-        : this.prisma.table.findMany({
+        : queryDb.table.findMany({
             where: {
               isActive: true,
-              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              floorPlan: {
+                restaurantId: args.restaurantId,
+                isActive: true,
+                ...(args.defaultFloorOnly ? { isDefault: true } : {}),
+              },
               capacity: { gte: args.partySize },
             },
             select: { id: true, capacity: true, minCapacity: true, sectionId: true },
@@ -246,22 +328,24 @@ export class CapacityAwareAvailabilityService {
       slots,
     };
 
-    try {
-      version = await this.getVersion(args.restaurantId);
-      await redisCache.set(
-        this.cacheKey(args, version),
-        JSON.stringify(dto),
-        'EX',
-        AVAILABILITY_CACHE_TTL_SECONDS,
-      );
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, args },
-        'availability cache write failed',
-      );
-    }
+    if (!privatePreview)
+      try {
+        version = await this.getVersion(args.restaurantId);
+        const entry: CachedAvailability = { timeZone, dto };
+        await redisCache.set(
+          this.cacheKey(args, version),
+          JSON.stringify(entry),
+          'EX',
+          AVAILABILITY_CACHE_TTL_SECONDS,
+        );
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : err, args },
+          'availability cache write failed',
+        );
+      }
 
-    return dto;
+    return markTooSoonSlotsUnavailable(dto, timeZone, now, args.minLeadTimeMinutes);
   }
 }
 
@@ -281,19 +365,4 @@ function emptyAvailability(args: {
 function computeDayOfWeek(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-
-function generateSlots(open: string, close: string, stepMinutes: number): string[] {
-  const slots: string[] = [];
-  const [openH, openM] = open.split(':').map(Number);
-  const [closeH, closeM] = close.split(':').map(Number);
-  let cur = openH * HOURS_TO_MINUTES + openM;
-  const end = closeH * HOURS_TO_MINUTES + closeM;
-  while (cur + stepMinutes <= end) {
-    const h = Math.floor(cur / HOURS_TO_MINUTES);
-    const m = cur % HOURS_TO_MINUTES;
-    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
-    cur += stepMinutes;
-  }
-  return slots;
 }

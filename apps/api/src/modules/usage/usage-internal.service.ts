@@ -12,6 +12,7 @@ export interface InternalUsageSummaryRow {
   readonly category: UsageCategory;
   readonly quantity: string;
   readonly estimatedCostEur: string;
+  readonly pricedCostEur: string;
   readonly costStatus: UsageCostStatus;
   readonly pricedEvents: number;
   readonly unpricedEvents: number;
@@ -31,6 +32,10 @@ export interface InternalMarginReportRow {
   readonly estimatedCostEur: string;
   /** Estimated cost plus approved restaurant-scoped corrections. */
   readonly adjustedCostEur: string;
+  /** Cost from priced usage events plus approved restaurant-scoped corrections. */
+  readonly knownAdjustedCostEur: string;
+  readonly pricedEventCount: number;
+  readonly unpricedEventCount: number;
   readonly costStatus: InternalMarginCostStatus;
   readonly grossMarginEur: string | null;
   readonly grossMarginPercent: string | null;
@@ -78,6 +83,7 @@ export async function getInternalUsageSummary(input: {
       category: UsageCategory;
       quantity: Prisma.Decimal;
       estimatedCost: Prisma.Decimal;
+      pricedCost: Prisma.Decimal;
       pricedEvents: number;
       unpricedEvents: number;
     }
@@ -89,13 +95,18 @@ export async function getInternalUsageSummary(input: {
       category: event.category,
       quantity: new Prisma.Decimal(0),
       estimatedCost: new Prisma.Decimal(0),
+      pricedCost: new Prisma.Decimal(0),
       pricedEvents: 0,
       unpricedEvents: 0,
     };
     current.quantity = current.quantity.add(event.quantity);
     current.estimatedCost = current.estimatedCost.add(event.estimatedCost);
-    if (isPricedMetadata(event.metadata, event.estimatedCost)) current.pricedEvents += 1;
-    else current.unpricedEvents += 1;
+    if (isPricedMetadata(event.metadata, event.estimatedCost)) {
+      current.pricedEvents += 1;
+      current.pricedCost = current.pricedCost.add(event.estimatedCost);
+    } else {
+      current.unpricedEvents += 1;
+    }
     grouped.set(key, current);
   }
 
@@ -115,6 +126,7 @@ export async function getInternalUsageSummary(input: {
     category: row.category,
     quantity: row.quantity.toFixed(6),
     estimatedCostEur: row.estimatedCost.toFixed(6),
+    pricedCostEur: row.pricedCost.toFixed(6),
     costStatus: row.pricedEvents === 0 ? 'UNPRICED' : row.unpricedEvents === 0 ? 'PRICED' : 'MIXED',
     pricedEvents: row.pricedEvents,
     unpricedEvents: row.unpricedEvents,
@@ -203,6 +215,13 @@ export async function getInternalMarginReport(input: {
       count: 0,
     };
     const adjustedCost = estimatedCost.add(adjustment.cost);
+    const pricedEventCount = rows.reduce((sum, row) => sum + row.pricedEvents, 0);
+    const unpricedEventCount = rows.reduce((sum, row) => sum + row.unpricedEvents, 0);
+    const pricedUsageCost = rows.reduce(
+      (sum, row) => sum.add(new Prisma.Decimal(row.pricedCostEur)),
+      new Prisma.Decimal(0),
+    );
+    const knownAdjustedCost = pricedUsageCost.add(adjustment.cost);
     if (rows.length === 0) {
       return {
         restaurantId,
@@ -213,6 +232,9 @@ export async function getInternalMarginReport(input: {
         approvedAdjustmentCount: adjustment.count,
         estimatedCostEur: '0.000000',
         adjustedCostEur: adjustedCost.toFixed(6),
+        knownAdjustedCostEur: knownAdjustedCost.toFixed(6),
+        pricedEventCount,
+        unpricedEventCount,
         costStatus: 'NO_USAGE' as const,
         grossMarginEur: null,
         grossMarginPercent: null,
@@ -221,11 +243,10 @@ export async function getInternalMarginReport(input: {
     }
 
     const first = rows[0]!;
-    const allPriced = rows.every((row) => row.costStatus === 'PRICED');
-    const anyPriced = rows.some((row) => row.costStatus === 'PRICED');
+    const allPriced = unpricedEventCount === 0;
     const status: InternalMarginCostStatus = allPriced
       ? 'PRICED'
-      : anyPriced
+      : pricedEventCount > 0
         ? 'MIXED'
         : 'UNPRICED';
     const price = catalogPrice(first.plan);
@@ -239,6 +260,9 @@ export async function getInternalMarginReport(input: {
       approvedAdjustmentCount: adjustment.count,
       estimatedCostEur: estimatedCost.toFixed(6),
       adjustedCostEur: adjustedCost.toFixed(6),
+      knownAdjustedCostEur: knownAdjustedCost.toFixed(6),
+      pricedEventCount,
+      unpricedEventCount,
       costStatus: status,
       grossMarginEur: margin?.toFixed(6) ?? null,
       grossMarginPercent: margin && price !== null ? margin.div(price).mul(100).toFixed(2) : null,

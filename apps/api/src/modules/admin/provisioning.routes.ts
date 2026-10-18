@@ -36,8 +36,8 @@ export async function provisioningRoutes(app: FastifyInstance) {
     { preHandler: requireSokarOperator() },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       try {
-        const numbers = await ProvisioningService.listAvailableNumbers();
-        return reply.send({ ok: true, numbers });
+        const { numbers, source } = await ProvisioningService.listAvailableNumbers();
+        return reply.send({ ok: true, numbers, source });
       } catch (err: unknown) {
         app.log.error({ err }, 'Failed to fetch available Telnyx numbers');
         return reply

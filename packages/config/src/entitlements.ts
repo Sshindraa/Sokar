@@ -9,6 +9,7 @@ export const ENTITLEMENT_CAPABILITIES = [
   'voice.inbound',
   'reservations.manage',
   'floorPlan.manage',
+  'floorPlan.copilot',
   'widget.publish',
   'customers.basic',
   'customers.advanced',
@@ -60,6 +61,7 @@ const ESSENTIAL_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> =
   'voice.inbound': true,
   'reservations.manage': true,
   'floorPlan.manage': true,
+  'floorPlan.copilot': false,
   'widget.publish': true,
   'customers.basic': true,
   'customers.advanced': false,
@@ -86,6 +88,7 @@ const ESSENTIAL_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> =
 
 const PRO_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> = {
   ...ESSENTIAL_CAPABILITIES,
+  'floorPlan.copilot': true,
   'customers.vipRecognition': true,
   'customers.advanced': true,
   'reactivation.manage': true,

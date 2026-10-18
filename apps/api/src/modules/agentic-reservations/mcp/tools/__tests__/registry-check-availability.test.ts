@@ -297,3 +297,103 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
     }
   });
 });
+
+describe('McpToolRegistry.checkAvailability — créneaux passés (service et moteur réels)', () => {
+  // Jeudi 2 juillet 2026, 15:00 à Paris. Le délai minimum est réglé à 0 : seule la règle « créneau
+  // passé » du moteur peut alors refuser un créneau qui commence exactement maintenant.
+  const NOW = new Date('2026-07-02T13:00:00.000Z');
+  const TOOL_CONTEXT = {
+    clientId: 'c1',
+    clientName: 'test',
+    restaurantId: null,
+    scopes: ['mcp:read', 'mcp:reserve'],
+    actor: 'test',
+  };
+
+  function makeEnginePrisma(minLeadTimeMinutes = 0) {
+    const restaurant = {
+      timezone: 'Europe/Paris',
+      openingHours: {
+        thu: { open: '12:00', close: '22:30' },
+        fri: { open: '12:00', close: '22:30' },
+      },
+      exposureSettings: {
+        maxPartySize: 12,
+        minLeadTimeMinutes,
+        exposedCreneaux: [],
+        capacitySpecials: {},
+      },
+      floorPlans: [{ tables: [{ capacity: 6 }] }],
+    };
+    return {
+      restaurant: {
+        findFirst: vi.fn().mockResolvedValue(restaurant),
+        findUnique: vi.fn().mockResolvedValue(restaurant),
+      },
+      reservation: { count: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+      agenticHold: { findMany: vi.fn().mockResolvedValue([]) },
+      table: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: 't-1', capacity: 6, minCapacity: 1, sectionId: null }]),
+      },
+    } as unknown as PrismaClient;
+  }
+
+  const call = (slotStart: string, minLeadTimeMinutes = 0) =>
+    new McpToolRegistry(makeEnginePrisma(minLeadTimeMinutes), makeRateLimiter()).checkAvailability(
+      {
+        restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+        partySize: 2,
+        slotStart,
+        slotEnd: undefined,
+      },
+      TOOL_CONTEXT,
+    );
+
+  it('répond « indisponible » pour un créneau qui commence exactement maintenant', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    try {
+      const result = await call('2026-07-02T15:00:00');
+
+      expect(result).toMatchObject({
+        ok: true,
+        data: { available: false, decision: 'unavailable' },
+      });
+      if (result.ok) {
+        expect(CheckAvailabilityOutputSchema.parse(result.data)).toEqual(result.data);
+        for (const alternative of (result.data as { alternativeSlots: Array<{ startsAt: string }> })
+          .alternativeSlots) {
+          expect(new Date(alternative.startsAt).getTime()).toBeGreaterThan(NOW.getTime());
+        }
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('répond « disponible » pour un créneau à venir', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    try {
+      const result = await call('2026-07-02T19:00:00');
+      expect(result).toMatchObject({ ok: true, data: { available: true, decision: 'available' } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('délai minimum : le MCP le refuse déjà, comportement inchangé (POLICY_VIOLATION), limite exacte permise', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    try {
+      // 2 h de délai à 15:00 : 16:30 est refusé, 17:00 (maintenant + 2 h pile) est disponible.
+      const tooSoon = await call('2026-07-02T16:30:00', 120);
+      expect(tooSoon).toMatchObject({ ok: false, code: 'POLICY_VIOLATION' });
+      expect(tooSoon.ok ? '' : tooSoon.error).toMatch(/Insufficient lead time/);
+
+      const atLimit = await call('2026-07-02T17:00:00', 120);
+      expect(atLimit).toMatchObject({ ok: true, data: { available: true } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

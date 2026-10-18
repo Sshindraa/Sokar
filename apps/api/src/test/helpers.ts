@@ -17,8 +17,21 @@ vi.mock('../plugins/clerk', () => ({
       req.clerkOrganizationId = 'test-rest-1';
       const requestedRole = req.headers?.['x-test-site-role'];
       req.siteRole =
-        requestedRole === 'STAFF' || requestedRole === 'MANAGER' ? requestedRole : 'OWNER';
+        requestedRole === 'STAFF' || requestedRole === 'MANAGER' || requestedRole === 'READ_ONLY'
+          ? requestedRole
+          : 'OWNER';
       req.userId = 'test-user-1';
+      // La politique de rôles est celle du vrai requireOrg, appliquée seulement à la demande : les
+      // tests qui envoient un rôle pour tester une route ne doivent pas être arrêtés avant elle.
+      if (req.headers?.['x-test-enforce-role-policy']) {
+        const { evaluateRolePolicy } = await import('../modules/restaurants/role-policy');
+        const decision = evaluateRolePolicy({
+          role: req.siteRole,
+          method: req.method,
+          route: req.routeOptions?.url,
+        });
+        if (!decision.allowed) return reply.status(403).send({ error: decision.code });
+      }
     };
   },
   requireSokarOperator: () => {
@@ -26,6 +39,10 @@ vi.mock('../plugins/clerk', () => ({
       const authHeader = req.headers?.authorization;
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
+      }
+      // Un restaurateur connecté mais hors de la liste des opérateurs Sokar.
+      if (req.headers?.['x-test-not-operator']) {
+        return reply.status(403).send({ error: 'Sokar operator access required' });
       }
       req.userId = 'test-operator-1';
     };
@@ -114,9 +131,17 @@ vi.mock('../shared/db/client', () => {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
+      createMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
+      groupBy: vi.fn(),
+      aggregate: vi.fn().mockResolvedValue({
+        _count: { _all: 0 },
+        _sum: { capacity: null },
+        _max: { capacity: null },
+      }),
     },
     reactivationCampaign: {
       findMany: vi.fn(),
@@ -239,6 +264,21 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    experienceCheckout: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    experiencePaymentEvent: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
     },
     event: {
       findUnique: vi.fn(),
@@ -419,6 +459,14 @@ vi.mock('../shared/db/client', () => {
   };
 
   const dbObj = {
+    demoRequest: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      groupBy: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     restaurant: {
       create: vi.fn(),
       update: vi.fn(),
@@ -490,6 +538,21 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    },
+    experienceCheckout: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    experiencePaymentEvent: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
     },
     event: {
       findUnique: vi.fn(),
@@ -629,7 +692,9 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
       upsert: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     restaurantAccountBilling: {
       findUnique: vi.fn(),
@@ -942,9 +1007,17 @@ vi.mock('../shared/db/client', () => {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
+      createMany: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
+      groupBy: vi.fn(),
+      aggregate: vi.fn().mockResolvedValue({
+        _count: { _all: 0 },
+        _sum: { capacity: null },
+        _max: { capacity: null },
+      }),
     },
     reactivationCampaign: {
       findMany: vi.fn(),

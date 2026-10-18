@@ -1,3 +1,4 @@
+import type { Reservation } from '@prisma/client';
 /**
  * Reservation service : crée, transitionne, annule les réservations.
  *
@@ -20,6 +21,7 @@
  */
 
 import { Prisma } from '@prisma/client';
+import { enqueueReservationConfirmation } from '../../../shared/outbox/reservation-confirmation';
 import type { PrismaClient, ReservationState } from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
 import { logger } from '../../../shared/logger/pino';
@@ -115,6 +117,14 @@ export type CreateReservationInput = {
     transactionalSms: boolean;
     transactionalEmail: boolean;
     marketingOptIn: boolean;
+    transactionalWhatsapp?: boolean;
+    whatsappConsentProof?: {
+      version: string;
+      purpose: string;
+      acceptedAt: string;
+      ipHash?: string;
+    };
+    whatsappWithdrawalTokenHash?: string;
   };
   /** Optionnel : policy snapshot figé à T */
   cancellationPolicySnap?: unknown;
@@ -289,6 +299,7 @@ export class ReservationService {
 
     // 4. INSERT dans une transaction
     let reservationId: string;
+    let confirmationRequested = false;
     try {
       reservationId = await this.prisma.$transaction(async (tx) => {
         const now = new Date();
@@ -447,7 +458,7 @@ export class ReservationService {
             createdByClient: input.actor,
             cancellationPolicySnap: input.cancellationPolicySnap
               ? (input.cancellationPolicySnap as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+              : (input.policy.cancellation as Prisma.InputJsonValue),
             noShowPolicySnap: input.noShowPolicySnap
               ? (input.noShowPolicySnap as Prisma.InputJsonValue)
               : Prisma.JsonNull,
@@ -460,6 +471,8 @@ export class ReservationService {
             tableId,
           },
         });
+
+        confirmationRequested = await enqueueReservationConfirmation(tx, reservation);
 
         if (consumedHoldId) {
           if (shouldConsumeAfterReservation) {
@@ -604,7 +617,7 @@ export class ReservationService {
       state: final?.state ?? 'CONFIRMED',
       idempotency: 'keyed',
       audit: 'written',
-      notification: 'not_sent',
+      notification: confirmationRequested ? 'queued' : 'not_sent',
       capacity: 'reserved',
     });
     if (giftCardSnapshotUpdated) {
@@ -723,6 +736,9 @@ export class ReservationService {
     startsAt?: Date;
     endsAt?: Date;
     customerName?: string;
+    /** Internal adapter authorization, rechecked under the same capacity/row locks. */
+    beforeModify?: (tx: Prisma.TransactionClient, current: Reservation) => Promise<void>;
+    auditMetadata?: Prisma.InputJsonObject;
   }): Promise<{ reservationId: string; state: ReservationState; changed: boolean }> {
     const result = await this.prisma.$transaction(async (tx) => {
       await this.lockCapacitySlot(tx, args.restaurantId);
@@ -744,6 +760,8 @@ export class ReservationService {
       if (current.state !== 'PENDING' && current.state !== 'CONFIRMED') {
         throw new ReservationModificationNotAllowedError();
       }
+
+      await args.beforeModify?.(tx, current);
 
       const startsAt = args.startsAt ?? current.startsAt ?? current.reservedAt;
       const endsAt = args.endsAt ?? current.endsAt;
@@ -842,7 +860,8 @@ export class ReservationService {
           fromState: current.state,
           toState: current.state,
           metadata: {
-            source: 'mcp',
+            ...args.auditMetadata,
+            source: args.auditMetadata?.source ?? 'mcp',
             changedFields: [
               ...(capacityChanged ? ['partySize', 'startsAt', 'endsAt', 'tableId'] : []),
               ...(nameChanged ? ['customerName'] : []),
@@ -893,7 +912,7 @@ export class ReservationService {
     }
     if (result.changed) {
       observeReservationMutation({
-        source: 'mcp',
+        source: args.actor === 'customer:personal-link' ? 'direct' : 'mcp',
         operation: 'update',
         status: result.reservation.status,
         state: result.reservation.state,

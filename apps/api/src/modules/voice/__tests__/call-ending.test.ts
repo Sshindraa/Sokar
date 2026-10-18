@@ -88,6 +88,28 @@ describe('farewell playback and hangup', () => {
     expect(telnyxFetch).toHaveBeenCalledOnce();
   });
 
+  it('démonstration navigateur : prévient le navigateur et ferme la socket, sans hangup Telnyx', async () => {
+    const { session, mgr } = fixture();
+    (session as { demo?: boolean }).demo = true;
+    const ws = session.telnyxWs as unknown as {
+      send: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    };
+    ws.close = vi.fn();
+
+    const done = finishCall(session, mgr, 'Au revoir.');
+    await vi.advanceTimersByTimeAsync(0);
+    acknowledgeCallEnding(session, session.ending!.markName); // le navigateur a fini de jouer l'au revoir
+    await done;
+
+    expect(telnyxFetch).not.toHaveBeenCalled();
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ event: 'ended', reason: 'agent_hangup' }),
+    );
+    expect(ws.close).toHaveBeenCalledWith(1000, 'agent_hangup');
+    expect(mgr.cleanup).toHaveBeenCalledWith(session);
+  });
+
   it('ne reste pas silencieux indéfiniment si le mark est perdu', async () => {
     const { session, mgr } = fixture();
     const done = finishCall(session, mgr, 'Au revoir.');

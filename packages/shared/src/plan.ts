@@ -1,3 +1,5 @@
+import { PRICING_CATALOG } from './pricing-catalog.cjs';
+
 /**
  * Plan enum — mirror of Prisma `Plan` enum.
  *
@@ -28,15 +30,24 @@ export const PLAN_LABELS: Record<Plan, string> = {
 };
 
 /**
- * Public monthly price in EUR (HT). `null` = "sur devis" / enterprise.
+ * Sokar is a micro-entreprise under the VAT franchise: prices are charged without VAT and every
+ * price display and invoice carries this legal mention. Change it only when the VAT status changes.
+ */
+export const VAT_MENTION = 'TVA non applicable, art. 293 B du CGI';
+
+/** Free trial on a first subscription, without a payment method (Stripe Checkout). */
+export const TRIAL_DAYS = 14;
+
+/**
+ * Public monthly price in EUR, charged as is (no VAT, see `VAT_MENTION`). `null` = "sur devis" / enterprise.
  * Use this for pricing pages, upgrade CTAs, invoices.
  * Keep these values aligned with `packages/config/src/constants.ts`.
  */
 export const PLAN_PRICES_EUR: Record<Plan, number | null> = {
-  ESSENTIAL: 199,
-  STARTER: 199,
-  PRO: 299,
-  PREMIUM: 249, // Multi-site base remains 249€ + 99€/site.
+  ESSENTIAL: PRICING_CATALOG.essential.monthlyCents / 100,
+  STARTER: PRICING_CATALOG.essential.monthlyCents / 100,
+  PRO: PRICING_CATALOG.pro.monthlyCents / 100,
+  PREMIUM: PRICING_CATALOG['multi-site'].monthlyCents / 100,
 };
 
 /**

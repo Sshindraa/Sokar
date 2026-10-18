@@ -1,4 +1,5 @@
 'use client';
+import { GiftCardTestBanner } from './gift-card-test-banner';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatEuro } from '@sokar/shared';
@@ -24,6 +25,7 @@ export function GiftCardBeneficiaryPage({ code }: { code: string }) {
   }, [refresh]);
   return (
     <main className="mx-auto min-h-screen max-w-xl space-y-6 p-6 sm:p-8">
+      <GiftCardTestBanner />
       <h1 className="text-2xl font-semibold">Votre carte cadeau</h1>
       {loading ? (
         <p role="status">Chargement de votre solde…</p>

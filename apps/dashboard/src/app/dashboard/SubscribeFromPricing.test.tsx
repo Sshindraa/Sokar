@@ -47,6 +47,19 @@ describe('SubscribeFromPricing', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it.each([1, 2, 3])('transmet %i sites en annuel sans changer le choix', async (siteCount) => {
+    mocks.search = `subscribe_plan=multi-site&billing=annual&sites=${siteCount}`;
+    mocks.post.mockRejectedValue(new Error('Indisponible'));
+    render(<SubscribeFromPricing />);
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('billing/checkout-session', {
+        plan: 'multi-site',
+        billing: 'annual',
+        siteCount,
+      }),
+    );
+  });
+
   it('transmet le nombre de sites pour une souscription Multi-site', async () => {
     mocks.search = 'subscribe_plan=multi-site&billing=monthly&sites=4';
     mocks.post.mockResolvedValue({ url: 'https://checkout.stripe.test/session' });

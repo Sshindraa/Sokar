@@ -1,4 +1,4 @@
-import type { InterruptedReply } from './interrupted-reply';
+import type { InterruptedReply, SpokenAlignment } from './interrupted-reply';
 import type { CallerVoiceActivity } from './caller-voice-activity';
 import type { FastBargeInState } from './fast-barge-in';
 import type { StructuredTurnState } from './structured-turn/fact-guards';
@@ -237,14 +237,19 @@ export interface ConversationState {
   closing: boolean;
 }
 
-/** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
+/** Contrat minimal du contexte TTS actif (Cartesia ou ElevenLabs), sans coupler le manager au transport. */
 export interface ActiveTtsContext {
   cancel(): void;
   /** Met la lecture en pause (l'appelant a pris la parole) ; `resume` la reprend là où elle en était. */
   pause?(): void;
   resume?(): void;
   /** Texte poussé et audio joué, à lire avant `cancel` : de quoi estimer ce que l'appelant a entendu. */
-  interruptionSnapshot?(): { text: string; playedMs: number; totalMs: number | null };
+  interruptionSnapshot?(): {
+    text: string;
+    playedMs: number;
+    totalMs: number | null;
+    alignment?: SpokenAlignment;
+  };
 }
 
 /** Compteurs internes de consommation des providers d'un appel. */
@@ -257,6 +262,7 @@ export interface VoiceUsageLlmCounter {
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
   cartesiaTtsCharacters: number;
+  elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
   finalization?: Promise<void>;
 }
@@ -416,6 +422,12 @@ export interface CallSession {
    */
   maxPartySize?: number;
   restaurantName: string;
+  /**
+   * Appel de démonstration lancé depuis le navigateur pendant l'onboarding. Aucun effet de bord
+   * réel : pas d'écriture (réservation, message), pas de transfert, pas de raccrochage Telnyx, pas
+   * de finalisation ni de facturation d'appel.
+   */
+  demo?: boolean;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
   /** Keyterms métier non personnels préparés pour le chemin Deepgram ciblé. */
@@ -626,12 +638,14 @@ export interface CallSession {
   agentAudioSpans?: { startedAt: number; endedAt?: number }[];
   /** Répliques récentes de l'agent, avec l'instant où elles ont été demandées. */
   agentSpeechLog?: { text: string; at: number }[];
-  /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
+  /** Contexte TTS optionnel (Cartesia ou ElevenLabs) pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
   /** Dernière réponse coupée par l'appelant, jusqu'au prochain tour traité. */
   interruptedReply?: InterruptedReply;
   /** Texte de l'accueil, tant qu'il peut encore être repris après une coupure sans suite. */
   greetingText?: string;
+  /** Style de la maison pour l'accueil composé (absent : accueil fixe). Voir styled-greeting.ts. */
+  greetingStyle?: { profileType?: string; fillerStyle?: string };
   /** L'accueil est en cours de lecture. */
   greetingPlaying?: boolean;
   /** L'accueil a été coupé et aucun tour n'a été traité depuis. */

@@ -15,7 +15,8 @@
     "eslint": "^9",
     "eslint-config-prettier": "^9",
     "globals": "^15",
-    "typescript-eslint": "^8"
+    "typescript-eslint": "^8",
+    "@sokar/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

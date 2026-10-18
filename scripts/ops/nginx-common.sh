@@ -49,6 +49,7 @@ install_nginx_vhost() {
     install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
     install -m 0644 "$root/infra/nginx/snippets/sokar-proxy.conf" /etc/nginx/snippets/sokar-proxy.conf
     install -m 0644 "$root/infra/nginx/snippets/sokar-cloudflare-real-ip.conf" /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
+    install -m 0644 "$root/infra/nginx/snippets/sokar-security-headers.conf" /etc/nginx/snippets/sokar-security-headers.conf
 
     if [ -f "/etc/nginx/sites-available/$vhost" ]; then
         install -m 0644 "/etc/nginx/sites-available/$vhost" "/etc/nginx/sites-available/$vhost.bak"

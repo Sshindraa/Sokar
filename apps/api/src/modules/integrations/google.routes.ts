@@ -5,6 +5,15 @@ import { requireOrg } from '../../plugins/clerk';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
 import { logger } from '../../shared/logger/pino';
 
+/**
+ * Dashboard public où ramener le restaurateur après Google (`DASHBOARD_URL`). L'ancien calcul dérivait
+ * l'adresse de `PUBLIC_URL` (api.sokar.tech → app.sokar.tech) : un hôte que rien ne sert, donc une
+ * page 404 à la fin de chaque connexion réussie.
+ */
+export function dashboardBase(environment: NodeJS.ProcessEnv = process.env): string {
+  return (environment.DASHBOARD_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+}
+
 export async function googleRoutes(app: FastifyInstance) {
   // Initiate OAuth flow
   app.get(
@@ -41,24 +50,14 @@ export async function googleRoutes(app: FastifyInstance) {
 
       logger.info({ restaurantId }, '[GoogleCalendar] Successfully connected Google Calendar');
 
-      // Redirect back to frontend settings dashboard
-      const publicUrl = process.env.PUBLIC_URL || 'http://localhost:4000';
-      // If running on localhost default: API is on 4000, Web is on 3000
-      const frontendUrl = publicUrl.includes('localhost:4000')
-        ? 'http://localhost:3000'
-        : publicUrl.replace('/api', '').replace('api.', 'app.');
-
-      return reply.redirect(`${frontendUrl}/dashboard/settings?google_sync=success`);
+      // Retour dans les réglages du dashboard.
+      return reply.redirect(`${dashboardBase()}/dashboard/settings?google_sync=success`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ err: message }, '[GoogleCalendar] OAuth Callback failed');
-      const publicUrl = process.env.PUBLIC_URL || 'http://localhost:4000';
-      const frontendUrl = publicUrl.includes('localhost:4000')
-        ? 'http://localhost:3000'
-        : publicUrl;
-      return reply.redirect(
-        `${frontendUrl}/dashboard/settings?google_sync=error&message=${encodeURIComponent(message)}`,
-      );
+      // Le détail reste dans les journaux : il n'a pas sa place dans une URL, ni sous les yeux du
+      // restaurateur.
+      return reply.redirect(`${dashboardBase()}/dashboard/settings?google_sync=error`);
     }
   });
 

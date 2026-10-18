@@ -44,7 +44,8 @@ const localEnv = path.resolve(__dirname, '../../../.env.local');
 
 const envFile = fs.existsSync(appEnv) ? appEnv : fs.existsSync(rootEnv) ? rootEnv : localEnv;
 
-dotenv.config({ path: envFile });
+// En test, on ne lit jamais le .env du développeur : les tests tournent comme en CI, sans fichier local.
+if (process.env.NODE_ENV !== 'test') dotenv.config({ path: envFile });
 
 // ─── Defaults dev (ergonomie out-of-the-box) ─────────────────────────────
 // En dev/test, si les 4 vars URL ne sont pas positionnées (pas de apps/api/.env
@@ -101,6 +102,23 @@ export function hasSttProviderKey(data: {
   const key =
     data.VOICE_STT_PROVIDER === 'deepgram' ? data.DEEPGRAM_API_KEY : data.ELEVENLABS_API_KEY;
   return !!key && key.length >= 20;
+}
+
+/**
+ * Synthèse ElevenLabs du téléphone : exigée seulement quand `VOICE_TTS_PROVIDER=elevenlabs`.
+ * Cartesia reste requis en production par ailleurs (démo et chemin de secours).
+ */
+export function hasElevenLabsTtsConfig(data: {
+  VOICE_TTS_PROVIDER: 'cartesia' | 'elevenlabs';
+  ELEVENLABS_API_KEY?: string;
+  ELEVENLABS_TTS_VOICE_ID?: string;
+}): boolean {
+  if (data.VOICE_TTS_PROVIDER !== 'elevenlabs') return true;
+  return (
+    !!data.ELEVENLABS_API_KEY &&
+    data.ELEVENLABS_API_KEY.length >= 20 &&
+    !!data.ELEVENLABS_TTS_VOICE_ID
+  );
 }
 
 export function isLiveStripeSecretKey(value: string | undefined): boolean {
@@ -318,8 +336,12 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    // Application voix Telnyx à laquelle relier les numéros attribués (sans elle, un numéro attribué
+    // dans Sokar ne reçoit aucun appel). Voir docs/runbooks/environment.md.
+    TELNYX_CONNECTION_ID: z.string().optional(),
     TELNYX_PUBLIC_KEY: z.string().optional(),
     TELNYX_FROM_NUMBER: z.string().optional(),
+    TELNYX_SMS_FROM: z.string().optional(),
     // Profil Telnyx utilisé pour les SMS transactionnels et leurs webhooks.
     // Le numéro expéditeur doit aussi être affecté à ce profil côté Telnyx.
     TELNYX_MESSAGING_PROFILE_ID: z.string().optional(),
@@ -372,6 +394,11 @@ const EnvSchema = z
     // Dictionnaire Cartesia global de secours ; une personnalité peut en
     // définir un différent pour un restaurant donné.
     CARTESIA_PRONUNCIATION_DICT_ID: z.string().optional(),
+    // Fournisseur de synthèse vocale du téléphone : cartesia (défaut) ou elevenlabs.
+    // Le retour arrière est une variable : repasser à cartesia.
+    VOICE_TTS_PROVIDER: z.enum(['cartesia', 'elevenlabs']).default('cartesia'),
+    ELEVENLABS_TTS_VOICE_ID: z.string().optional(),
+    ELEVENLABS_TTS_MODEL: z.string().default('eleven_v4_turbo'),
     // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
     // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
     VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),
@@ -417,6 +444,7 @@ const EnvSchema = z
     // Il reste optionnel tant que les envois marketing sont gelés.
     RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
+    EMAIL_REPLY_TO: z.string().optional(),
     // Les rapports récurrents envoient un email aux gestionnaires. Staging les
     // désactive explicitement tant qu'il n'existe pas de canal d'envoi isolé.
     EVENING_REPORTS_ENABLED: z
@@ -469,9 +497,10 @@ const EnvSchema = z
     // restaurant pilot are qualified.
     REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
     LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Experiences remain local-only until capacity, pricing and pilot
-    // procedures are validated; no payment or distribution provider is called.
+    // Internal experience management and public paid bookings have independent
+    // gates. Public Checkout remains off until Connect/payment readiness is proven.
     EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),
+    EXPERIENCE_BOOKING_ENABLED: z.enum(['true', 'false']).default('false'),
     // Event ticketing remains local-only until payment, refund and distribution
     // contracts are qualified with a pilot.
     EVENTS_ENABLED: z.enum(['true', 'false']).default('false'),
@@ -595,6 +624,17 @@ const EnvSchema = z
       message:
         'En production, CARTESIA_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
       path: ['CARTESIA_API_KEY'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production' || process.env.VOICE_DISABLED === 'true') return true;
+      return hasElevenLabsTtsConfig(data);
+    },
+    {
+      message:
+        'En production avec VOICE_TTS_PROVIDER=elevenlabs, ELEVENLABS_API_KEY (≥20 chars) et ELEVENLABS_TTS_VOICE_ID doivent être définies.',
+      path: ['VOICE_TTS_PROVIDER'],
     },
   )
   .refine(

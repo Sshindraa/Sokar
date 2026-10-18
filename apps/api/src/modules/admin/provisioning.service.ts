@@ -5,6 +5,7 @@ import {
   hasUsablePhone,
   computeOnboardingState,
   normalizeTasks,
+  socleCompletedAt,
 } from '../restaurants/onboarding.service';
 import { trackOnboardingEvent } from '../analytics/events.service';
 import pino from 'pino';
@@ -21,9 +22,25 @@ export interface TelnyxNumberItem {
   assignedToRestaurantName?: string | null;
 }
 
+/** D'où vient la liste des numéros : le compte Telnyx, un jeu fictif de développement, ou rien. */
+export type AvailableNumbersSource = 'telnyx' | 'dev-fallback' | 'unavailable';
+
+/**
+ * État du lien entre le numéro et l'application voix Telnyx (celle qui envoie les appels à Sokar).
+ * Sans lien, le numéro est attribué dans Sokar mais le restaurant ne reçoit aucun appel.
+ */
+export type VoiceAppLinkState =
+  | 'linked'
+  | 'failed'
+  | 'skipped_no_connection_id'
+  | 'skipped_manual_number'
+  | 'skipped_no_telnyx';
+
 export interface ProvisioningStatusView {
   restaurantId: string;
   restaurantName: string;
+  /** Ville du restaurant (pas une donnée du gérant). */
+  city: string | null;
   phoneNumber: string;
   hasAssignedPhone: boolean;
   provisioningStatus: string;
@@ -31,12 +48,16 @@ export interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  /** Fin de la salle (la plus récente des tâches restaurant, hours, floor), `null` si inachevée. */
+  floorCompletedAt: string | null;
   testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
     assignment: {
       completed: boolean;
       phoneNumber: string;
+      /** `null` : numéro attribué avant que le lien ne soit enregistré (état inconnu). */
+      voiceAppLink: VoiceAppLinkState | null;
     };
     webhook: {
       completed: boolean;
@@ -53,6 +74,29 @@ export interface ProvisioningStatusView {
     };
   };
 }
+
+const VOICE_APP_LINK_STATES: readonly VoiceAppLinkState[] = [
+  'linked',
+  'failed',
+  'skipped_no_connection_id',
+  'skipped_manual_number',
+  'skipped_no_telnyx',
+];
+
+function readVoiceAppLink(tasks: unknown): VoiceAppLinkState | null {
+  const value = normalizeTasks(tasks).phone.metadata?.voiceAppLink;
+  return VOICE_APP_LINK_STATES.find((state) => state === value) ?? null;
+}
+
+/** Le jeu de numéros fictifs ne sert qu'en développement, jamais face à un compte Telnyx réel. */
+function allowDevFallbackNumbers(): boolean {
+  return (
+    !process.env.TELNYX_API_KEY && ['development', 'test', undefined].includes(process.env.NODE_ENV)
+  );
+}
+
+const TELNYX_PAGE_SIZE = 100;
+const TELNYX_MAX_PAGES = 20;
 
 export class ProvisioningNotReadyError extends Error {
   readonly code = 'PROVISIONING_NOT_READY';
@@ -80,10 +124,15 @@ function readTestCallControlId(tasks: unknown): string | null {
 
 export class ProvisioningService {
   /**
-   * Liste les numéros Telnyx disponibles depuis le compte Telnyx
-   * ou depuis un pool d'inventaire si l'API Telnyx n'est pas configurée.
+   * Liste les numéros du compte Telnyx (toutes les pages), avec leur éventuelle attribution.
+   * Sans clé Telnyx, uniquement en développement, un jeu fictif permet de tester l'écran ; en
+   * production (ou si Telnyx échoue), la liste est vide et `source` le dit : on ne propose jamais
+   * un numéro qui n'existe pas chez Telnyx.
    */
-  static async listAvailableNumbers(): Promise<TelnyxNumberItem[]> {
+  static async listAvailableNumbers(): Promise<{
+    numbers: TelnyxNumberItem[];
+    source: AvailableNumbersSource;
+  }> {
     const assignedRestaurants = await db.restaurant.findMany({
       select: { id: true, name: true, phoneNumber: true, telnyxPhoneNumberId: true },
     });
@@ -95,68 +144,65 @@ export class ProvisioningService {
       }
     }
 
+    const toItem = (id: string, phoneNumber: string, status: string): TelnyxNumberItem => {
+      const assigned = assignedMap.get(phoneNumber);
+      return {
+        id,
+        phoneNumber,
+        status,
+        assignedToRestaurantId: assigned?.id ?? null,
+        assignedToRestaurantName: assigned?.name ?? null,
+      };
+    };
+
     if (process.env.TELNYX_API_KEY) {
       try {
         const telnyxClient = telnyx as unknown as {
           phoneNumbers: {
-            list: (
-              params?: Record<string, unknown>,
-            ) => Promise<{ data: Array<Record<string, unknown>> }>;
-            update: (id: string, params: Record<string, unknown>) => Promise<unknown>;
+            list: (params?: Record<string, unknown>) => Promise<{
+              data: Array<Record<string, unknown>>;
+              meta?: { total_pages?: number };
+            }>;
           };
         };
-        const response = await telnyxClient.phoneNumbers.list({
-          page: { size: 50 },
-        });
-
         const items: TelnyxNumberItem[] = [];
-        const rawList = (response?.data as Array<Record<string, unknown>>) ?? [];
-
-        for (const num of rawList) {
-          const id = (num.id as string) ?? '';
-          const rawPhone = (num.phone_number as string) ?? '';
-          if (!rawPhone) continue;
-
-          const assigned = assignedMap.get(rawPhone);
-          items.push({
-            id,
-            phoneNumber: rawPhone,
-            status: (num.status as string) ?? 'active',
-            assignedToRestaurantId: assigned?.id ?? null,
-            assignedToRestaurantName: assigned?.name ?? null,
+        for (let page = 1; page <= TELNYX_MAX_PAGES; page++) {
+          const response = await telnyxClient.phoneNumbers.list({
+            page: { number: page, size: TELNYX_PAGE_SIZE },
           });
+          const rawList = response?.data ?? [];
+          for (const num of rawList) {
+            const rawPhone = (num.phone_number as string) ?? '';
+            if (!rawPhone) continue;
+            items.push(
+              toItem((num.id as string) ?? '', rawPhone, (num.status as string) ?? 'active'),
+            );
+          }
+          const totalPages = response?.meta?.total_pages;
+          const lastPage =
+            totalPages !== undefined ? page >= totalPages : rawList.length < TELNYX_PAGE_SIZE;
+          if (lastPage) break;
         }
-
-        if (items.length > 0) {
-          return items;
-        }
+        return { numbers: items, source: 'telnyx' };
       } catch (err) {
-        logger.warn(
-          { err },
-          'Failed to fetch Telnyx numbers from Telnyx API, falling back to inventory pool',
-        );
+        logger.warn({ err }, 'Failed to fetch Telnyx numbers from Telnyx API');
+        return { numbers: [], source: 'unavailable' };
       }
     }
 
-    // Fallback inventory pool pour environnements de test / dev
-    const fallbackPool = [
-      { id: 'tnx_fr_01', phoneNumber: '+33451221528' },
-      { id: 'tnx_fr_02', phoneNumber: '+33451221529' },
-      { id: 'tnx_fr_03', phoneNumber: '+33451221530' },
-      { id: 'tnx_fr_04', phoneNumber: '+33189000001' },
-      { id: 'tnx_fr_05', phoneNumber: '+33189000002' },
-    ];
-
-    return fallbackPool.map((item) => {
-      const assigned = assignedMap.get(item.phoneNumber);
+    if (allowDevFallbackNumbers()) {
+      const fallbackPool = [
+        { id: 'tnx_dev_01', phoneNumber: '+33100000001' },
+        { id: 'tnx_dev_02', phoneNumber: '+33100000002' },
+        { id: 'tnx_dev_03', phoneNumber: '+33100000003' },
+      ];
       return {
-        id: item.id,
-        phoneNumber: item.phoneNumber,
-        status: 'active',
-        assignedToRestaurantId: assigned?.id ?? null,
-        assignedToRestaurantName: assigned?.name ?? null,
+        numbers: fallbackPool.map((item) => toItem(item.id, item.phoneNumber, 'active')),
+        source: 'dev-fallback',
       };
-    });
+    }
+
+    return { numbers: [], source: 'unavailable' };
   }
 
   /**
@@ -229,30 +275,51 @@ export class ProvisioningService {
     // Invalider le nouveau cache Redis
     await invalidateRestaurantContextCache(formattedPhone);
 
-    // Essayer de lier l'ID de connexion Telnyx si disponible
-    if (process.env.TELNYX_API_KEY && telnyxPhoneNumberId && process.env.TELNYX_CONNECTION_ID) {
-      try {
-        const telnyxClient = telnyx as unknown as {
-          phoneNumbers: {
-            update: (id: string, params: Record<string, unknown>) => Promise<unknown>;
-          };
-        };
-        await telnyxClient.phoneNumbers.update(telnyxPhoneNumberId, {
-          connection_id: process.env.TELNYX_CONNECTION_ID,
-        });
-        logger.info(
-          { restaurantId, telnyxPhoneNumberId },
-          'Telnyx phone number connection_id updated',
-        );
-      } catch (err) {
-        logger.warn(
-          { err, telnyxPhoneNumberId },
-          'Could not update Telnyx connection_id via Telnyx SDK',
-        );
-      }
-    }
+    // Relier le numéro à l'application voix Telnyx : sans ce lien, le numéro est attribué dans Sokar
+    // mais les appels n'arrivent pas. Un échec ne bloque pas l'attribution ; l'état est enregistré
+    // pour que l'écran de l'opérateur l'affiche.
+    const voiceAppLink = await this.linkVoiceApp(restaurantId, telnyxPhoneNumberId);
+    const linkedTasks = normalizeTasks(updated.onboardingTasks);
+    linkedTasks.phone = {
+      ...linkedTasks.phone,
+      metadata: { ...(linkedTasks.phone.metadata ?? {}), voiceAppLink },
+    };
+    await db.restaurant.update({
+      where: { id: restaurantId },
+      data: { onboardingTasks: linkedTasks as unknown as Prisma.InputJsonValue },
+    });
 
     return this.getProvisioningStatus(updated.id);
+  }
+
+  private static async linkVoiceApp(
+    restaurantId: string,
+    telnyxPhoneNumberId: string | undefined,
+  ): Promise<VoiceAppLinkState> {
+    if (!process.env.TELNYX_API_KEY) return 'skipped_no_telnyx';
+    if (!telnyxPhoneNumberId) return 'skipped_manual_number';
+    if (!process.env.TELNYX_CONNECTION_ID) return 'skipped_no_connection_id';
+    try {
+      const telnyxClient = telnyx as unknown as {
+        phoneNumbers: {
+          update: (id: string, params: Record<string, unknown>) => Promise<unknown>;
+        };
+      };
+      await telnyxClient.phoneNumbers.update(telnyxPhoneNumberId, {
+        connection_id: process.env.TELNYX_CONNECTION_ID,
+      });
+      logger.info(
+        { restaurantId, telnyxPhoneNumberId },
+        'Telnyx phone number connection_id updated',
+      );
+      return 'linked';
+    } catch (err) {
+      logger.warn(
+        { err, restaurantId, telnyxPhoneNumberId },
+        'Could not update Telnyx connection_id via Telnyx SDK',
+      );
+      return 'failed';
+    }
   }
 
   /**
@@ -352,7 +419,7 @@ export class ProvisioningService {
     }
 
     const baseUrl = process.env.PUBLIC_API_URL ?? 'https://api.sokar.tech';
-    const webhookUrl = `${baseUrl}/voice/stream`;
+    const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     const { callControlId } = await placeOutboundCall(formattedTarget, {
       webhookUrl,
@@ -532,6 +599,7 @@ export class ProvisioningService {
     return {
       restaurantId: restaurant.id,
       restaurantName: restaurant.name,
+      city: restaurant.city ?? null,
       phoneNumber: restaurant.phoneNumber,
       hasAssignedPhone: isAssigned,
       provisioningStatus: restaurant.provisioningStatus,
@@ -543,12 +611,14 @@ export class ProvisioningService {
         ? restaurant.testCallValidatedAt.toISOString()
         : null,
       firstCallAt: restaurant.firstCallAt ? restaurant.firstCallAt.toISOString() : null,
+      floorCompletedAt: socleCompletedAt(normalizeTasks(restaurant.onboardingTasks)),
       testCallControlId: readTestCallControlId(restaurant.onboardingTasks),
       forwardingCode: ussdCode,
       steps: {
         assignment: {
           completed: assignmentCompleted,
           phoneNumber: restaurant.phoneNumber,
+          voiceAppLink: isAssigned ? readVoiceAppLink(restaurant.onboardingTasks) : null,
         },
         webhook: {
           completed: webhookCompleted,

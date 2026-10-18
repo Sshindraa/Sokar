@@ -78,3 +78,24 @@ export function utcToZonedParts(
     time: `${hour}:${get('minute')}`,
   };
 }
+
+/**
+ * Règle unique « créneau passé » : un créneau dont le début est à maintenant, ou avant, ne se réserve
+ * plus. `now` est injectable pour les tests ; la valeur par défaut est lue ici et nulle part ailleurs.
+ */
+export function isSlotStartPast(slotStart: Date, now: Date = new Date()): boolean {
+  return slotStart.getTime() <= now.getTime();
+}
+
+/**
+ * Le créneau « date + heure locales du restaurant » est-il passé ? Le début est converti avec
+ * `zonedTimeToUtc` : le fuseau du serveur ou du navigateur n'entre jamais en jeu.
+ */
+export function isSlotPast(
+  dateStr: string,
+  timeStr: string,
+  timeZone: string,
+  now: Date = new Date(),
+): boolean {
+  return isSlotStartPast(zonedTimeToUtc(dateStr, timeStr, timeZone), now);
+}

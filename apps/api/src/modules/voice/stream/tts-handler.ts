@@ -21,6 +21,14 @@ import {
   getCartesiaPronunciationDictId,
   getCartesiaVoiceId,
 } from './cartesia-config';
+import {
+  buildElevenLabsCacheVariant,
+  buildElevenLabsTtsRequest,
+  elevenLabsTtsModel,
+  elevenLabsTtsStreamingEnabled,
+  elevenLabsTtsVoiceId,
+  telephonyTtsProvider,
+} from './elevenlabs-tts';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
@@ -50,7 +58,10 @@ import {
   recordVoiceTurnEventIfCurrent,
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
-import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
+import {
+  addCartesiaTtsCharacters,
+  addElevenLabsTtsCharacters,
+} from '../../usage/voice-usage.service';
 import {
   recordDebugAgentSpeech,
   rememberRecentAgentSpeech,
@@ -158,7 +169,8 @@ export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'
       .replace(/€/g, ' euros')
       .replace(/%/g, ' pour cent')
       .replace(/\bMme\.?\s/gi, 'Madame ')
-      .replace(/\bM\.\s/g, 'Monsieur ');
+      // Pas après « , » : dans une relecture épelée (« A, S, S, A, M, M. »), le M final est une lettre.
+      .replace(/(?<!,\s?)\bM\.\s/g, 'Monsieur ');
   }
 
   // 4. Rend un numéro français lisible en groupes. Les virgules laissent une
@@ -190,6 +202,8 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
     `[speakTelnyxNative] Sending native Telnyx TTS speak command ${JSON.stringify(describeTranscript(text))}`,
   );
   if (session.ending?.nativePlayback) return;
+  // Pas de leg Telnyx en démonstration : la voix native n'existe pas, la synthèse Cartesia est la seule voie.
+  if (session.demo) return;
   if (session.ending) session.ending.nativePlayback = true;
   try {
     const language = effectiveVoiceLanguage(session);
@@ -317,8 +331,12 @@ async function speakTtsFragment(
 
   writeDebugLog('[speakTtsStreamed] Synthesizing one prosodic segment');
 
-  const apiKey = process.env.CARTESIA_API_KEY;
-  const voiceId = getCartesiaVoiceId(session);
+  const provider = telephonyTtsProvider();
+  // Libellés de logs et de Sentry : identiques à ceux d'avant la bascule pour Cartesia.
+  const providerLabel = provider === 'elevenlabs' ? 'ElevenLabs' : 'Cartesia';
+  const apiKey =
+    provider === 'elevenlabs' ? process.env.ELEVENLABS_API_KEY : process.env.CARTESIA_API_KEY;
+  const voiceId = provider === 'elevenlabs' ? elevenLabsTtsVoiceId() : getCartesiaVoiceId(session);
   if (!apiKey || !voiceId) {
     await speakTelnyxNative(
       session,
@@ -345,13 +363,21 @@ async function speakTtsFragment(
   const locale = effectiveVoiceLocale(session);
   const generationConfig = getCartesiaGenerationConfig(session);
   const pronunciationDictId = getCartesiaPronunciationDictId(session);
-  const cacheVoiceId = buildCartesiaCacheVariant({
-    voiceId,
-    locale,
-    codec: codecProfile.label,
-    generationConfig,
-    pronunciationDictId,
-  });
+  const cacheVoiceId =
+    provider === 'elevenlabs'
+      ? buildElevenLabsCacheVariant({
+          voiceId,
+          model: elevenLabsTtsModel(),
+          locale,
+          codec: codecProfile.label,
+        })
+      : buildCartesiaCacheVariant({
+          voiceId,
+          locale,
+          codec: codecProfile.label,
+          generationConfig,
+          pronunciationDictId,
+        });
 
   // ─── Traitement séquentiel d'un segment prosodique ──────────────────
   for (let i = 0; i < sentences.length; i++) {
@@ -419,28 +445,42 @@ async function speakTtsFragment(
         },
       });
 
-      let response: Response | null = null;
-      for (let attempt = 0; attempt < CARTESIA_TTS_MAX_ATTEMPTS; attempt++) {
-        try {
-          // R1-2 : chaque tentative est bornée. Sans timeout, une socket
-          // Cartesia qui ne répond plus laissait l'appel muet jusqu'à la mort
-          // de la connexion, sans jamais déclencher la dégradation ci-dessous.
-          response = await fetchWithTimeout(
-            'https://api.cartesia.ai/tts/bytes',
-            {
-              method: 'POST',
+      // Requête du fournisseur choisi : Cartesia par défaut, ElevenLabs si VOICE_TTS_PROVIDER=elevenlabs.
+      const ttsRequest =
+        provider === 'elevenlabs'
+          ? buildElevenLabsTtsRequest({
+              apiKey,
+              voiceId,
+              model: elevenLabsTtsModel(),
+              text: trimmed,
+              locale,
+              codec: codecProfile.label,
+              streaming: elevenLabsTtsStreamingEnabled(),
+            })
+          : {
+              url: 'https://api.cartesia.ai/tts/bytes',
               headers: {
                 'Cartesia-Version': '2026-03-01',
                 'X-API-Key': apiKey,
                 'Content-Type': 'application/json',
               },
               body: cartesiaBody,
-            },
+            };
+
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < CARTESIA_TTS_MAX_ATTEMPTS; attempt++) {
+        try {
+          // R1-2 : chaque tentative est bornée. Sans timeout, une socket
+          // fournisseur qui ne répond plus laissait l'appel muet jusqu'à la mort
+          // de la connexion, sans jamais déclencher la dégradation ci-dessous.
+          response = await fetchWithTimeout(
+            ttsRequest.url,
+            { method: 'POST', headers: ttsRequest.headers, body: ttsRequest.body },
             VOICE_PROVIDER_TIMEOUT_MS,
           );
         } catch {
-          writeDebugLog(`[speakTtsStreamed] Cartesia timeout (tentative ${attempt + 1})`);
-          voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: 'timeout' });
+          writeDebugLog(`[speakTtsStreamed] ${providerLabel} timeout (tentative ${attempt + 1})`);
+          voiceProviderErrorsTotal.inc({ provider, type: 'timeout' });
           response = null;
           if (attempt === 0) {
             await new Promise((r) => setTimeout(r, CARTESIA_RETRY_DELAY_MS));
@@ -461,16 +501,16 @@ async function speakTtsFragment(
 
       if (!response || !response.ok) {
         const status = response?.status ?? 0;
-        writeDebugLog(`[speakTtsStreamed] Cartesia stream failed after retry: ${status}`);
+        writeDebugLog(`[speakTtsStreamed] ${providerLabel} stream failed after retry: ${status}`);
         logger.error(
-          { callId: session.callControlId, status },
-          '[speakTtsStreamed] Cartesia stream failed after retry',
+          { callId: session.callControlId, status, provider },
+          `[speakTtsStreamed] ${providerLabel} stream failed after retry`,
         );
         voiceProviderErrorsTotal.inc({
-          provider: 'cartesia',
+          provider,
           type: status === 429 ? '429' : '5xx',
         });
-        const err = new Error(`Cartesia stream failed with status ${status}`);
+        const err = new Error(`${providerLabel} stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
           extra: { callId: session.callControlId, status, ...describeTranscript(trimmed) },
@@ -486,9 +526,10 @@ async function speakTtsFragment(
       }
 
       // Un cache hit ne déclenche aucun appel fournisseur. Ici, la réponse
-      // Cartesia a été acceptée : ses caractères deviennent facturables même
-      // si le body de streaming est ensuite vide ou interrompu.
-      addCartesiaTtsCharacters(session, trimmed.length);
+      // du fournisseur a été acceptée : ses caractères deviennent facturables
+      // même si le body de streaming est ensuite vide ou interrompu.
+      if (provider === 'elevenlabs') addElevenLabsTtsCharacters(session, trimmed.length);
+      else addCartesiaTtsCharacters(session, trimmed.length);
 
       if (!response.body) {
         writeDebugLog(`[speakTtsStreamed] Cartesia stream body is null`);
@@ -562,7 +603,7 @@ async function speakTtsFragment(
         if (!firstByteReceived) {
           firstByteReceived = true;
           writeDebugLog(`[speakTtsStreamed] First Cartesia byte received for sentence ${i}`);
-          markVoiceTurnTtsSynthesisFirstByte(session, 'cartesia_http', turnId);
+          markVoiceTurnTtsSynthesisFirstByte(session, `${provider}_http`, turnId);
         }
 
         const rawChunk = Buffer.from(value);
@@ -591,11 +632,11 @@ async function speakTtsFragment(
       streamFinished = true;
       await playPromise; // Attendre la fin de la lecture progressive
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
 

@@ -1,4 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+vi.mock('@/lib/use-service-copilot-access', () => ({
+  useServiceCopilotAccess: () => ({ allowed: true, loading: false, error: false, retry: vi.fn() }),
+}));
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import FloorPlanPage from './page';
 
@@ -173,6 +176,21 @@ describe('FloorPlanPage — switch desktop', () => {
     expect(screen.queryByTestId('create-floor-plan')).not.toBeInTheDocument();
   });
 
+  it('affiche le guide du premier service en vue Live, jamais dans l’édition', async () => {
+    window.localStorage.removeItem('sokar:first-service-guide:dismissed');
+    const { unmount } = render(<FloorPlanPage />);
+    await waitFor(() => expect(screen.getByText('service')).toBeInTheDocument());
+    expect(
+      await screen.findByRole('complementary', { name: 'Guide du premier service' }),
+    ).toBeInTheDocument();
+    unmount();
+
+    mocks.setSearchParams('view=edit-plan');
+    render(<FloorPlanPage />);
+    await waitFor(() => expect(screen.getByText('design')).toBeInTheDocument());
+    expect(screen.queryByRole('complementary', { name: 'Guide du premier service' })).toBeNull();
+  });
+
   it('affiche la vue Edition sans en-tête ni bascule redondante', async () => {
     mocks.setSearchParams('view=edit-plan');
     render(<FloorPlanPage />);
@@ -258,5 +276,40 @@ describe('FloorPlanPage — switch desktop', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Créer un plan de salle' })).toBeInTheDocument();
+  });
+
+  it('garde la fenêtre de création ouverte et affiche l’erreur dedans quand la création échoue', async () => {
+    mocks.setSearchParams('view=edit-plan');
+    apiMocks.post.mockRejectedValue(new Error('Un plan porte déjà ce nom.'));
+    render(<FloorPlanPage />);
+
+    fireEvent.click(await screen.findByTestId('create-floor-plan'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Nom du plan'), {
+      target: { value: 'Terrasse' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Créer' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Un plan porte déjà ce nom.',
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Créer' })).toBeEnabled();
+
+    fireEvent.change(within(dialog).getByLabelText('Nom du plan'), {
+      target: { value: 'Terrasse 2' },
+    });
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('propose de créer un premier plan dès la vue service, sans second encadré vide', async () => {
+    apiMocks.get.mockResolvedValue([]);
+    render(<FloorPlanPage />);
+
+    expect(await screen.findByText('Aucun plan de salle')).toBeInTheDocument();
+    expect(screen.getByText(/Dessinez votre salle/)).toBeInTheDocument();
+    expect(screen.queryByText('Aucun plan de salle sélectionné.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Créer votre premier plan' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

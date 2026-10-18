@@ -4,64 +4,98 @@ import { db } from '../../db/client';
 import { sendEmail } from '../../email';
 import { setupWorkerListeners, jobLogger } from './helper';
 import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
+import { computeOnboardingState } from '../../../modules/restaurants/onboarding.service';
+import { loadFloorStats } from '../../../modules/restaurants/onboarding-floor.service';
+import { resolveAccountOwnerEmail } from '../../../modules/restaurants/account-email.service';
+import {
+  buildReminderEmail,
+  resolveReminderAction,
+  type ReminderKind,
+} from '../../../modules/restaurants/onboarding-reminder';
 
 export interface ReengagementJobData {
   restaurantId: string;
-  // type détermine le template : "stalled" (J+3 sans avancée) | "inactive" (J+7 après complétion sans appel test)
-  type: 'stalled' | 'inactive';
+  // type : "stalled" (J+3 sans avancée) | "inactive" (J+7, parcours terminé sans appel test validé).
+  // Le texte envoyé dépend de l'état réel au moment de l'envoi, pas du type programmé.
+  type: ReminderKind;
 }
 
 const MS_DAY = 24 * 60 * 60 * 1000;
 
-function buildStalledEmail(restaurantName: string, completedCount: number) {
-  const remaining = 5 - completedCount;
-  return {
-    subject: `🍽️ Sokar — Encore ${remaining} étape${remaining > 1 ? 's' : ''} pour activer ${restaurantName}`,
-    html: `
-      <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
-        <h1 style="font-size:22px;margin:0 0 12px">${restaurantName}, votre assistant est presque prêt</h1>
-        <p style="margin:0 0 12px;line-height:1.5">
-          Vous avez déjà validé ${completedCount} étape${completedCount > 1 ? 's' : ''} sur 5.
-          Encore quelques minutes et Sokar pourra répondre à vos clients à votre place.
-        </p>
-        <p style="margin:0 0 16px;line-height:1.5">
-          Le plus utile maintenant : connecter votre agenda ou tester votre numéro.
-        </p>
-        <a href="${process.env.DASHBOARD_URL ?? 'https://app.sokar.tech'}/onboarding"
-           style="display:inline-block;background:#0f172a;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">
-          Reprendre la configuration →
-        </a>
-        <p style="margin-top:24px;color:#64748b;font-size:13px">
-          Une question ? Répondez à cet email, on est là.
-        </p>
-      </div>
-    `,
-  };
+export type ReengagementOutcome =
+  | 'sent'
+  | 'restaurant-not-found'
+  | 'no-email'
+  | 'recently-active'
+  | 'already-complete'
+  | 'waiting-number';
+
+function hasEmailAddress(value: string | null | undefined): value is string {
+  return Boolean(value && /^\S+@\S+\.\S+$/.test(value.trim()));
 }
 
-function buildInactiveEmail(restaurantName: string) {
-  return {
-    subject: `🎙️ Testez votre assistant vocal ${restaurantName} en 1 appel`,
-    html: `
-      <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
-        <h1 style="font-size:22px;margin:0 0 12px">Tout est prêt, il ne reste qu'à entendre</h1>
-        <p style="margin:0 0 12px;line-height:1.5">
-          La configuration de <strong>${restaurantName}</strong> est complète.
-          Votre assistant peut déjà prendre des appels, mais on ne l'a pas encore activé ensemble.
-        </p>
-        <p style="margin:0 0 16px;line-height:1.5">
-          Cliquez ci-dessous, on vous appelle dans la minute et vous entendez votre propre assistant.
-        </p>
-        <a href="${process.env.DASHBOARD_URL ?? 'https://app.sokar.tech'}/onboarding/phone"
-           style="display:inline-block;background:#0f172a;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:600">
-          Lancer un appel test →
-        </a>
-        <p style="margin-top:24px;color:#64748b;font-size:13px">
-          Aucun engagement. Si vous n'êtes pas convaincu, répondez à cet email.
-        </p>
-      </div>
-    `,
+/**
+ * Envoie la relance si elle a encore un sens. Aucune adresse ni numéro ne sont journalisés : le
+ * résultat est un simple code.
+ */
+export async function processReengagement(
+  data: ReengagementJobData,
+  jobId: string,
+): Promise<ReengagementOutcome> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: data.restaurantId },
+    include: { personality: true, exposureSettings: true, images: true },
+  });
+  if (!restaurant) return 'restaurant-not-found';
+
+  // Le restaurateur est revenu de lui-même : on ne le relance pas.
+  if (
+    restaurant.onboardingLastSeenAt &&
+    Date.now() - new Date(restaurant.onboardingLastSeenAt).getTime() < MS_DAY
+  ) {
+    return 'recently-active';
+  }
+
+  const floorStats = await loadFloorStats(db, restaurant.id);
+  const state = computeOnboardingState({ ...restaurant, floorStats });
+  const action = resolveReminderAction(state, restaurant.phoneNumber);
+  if (action.kind === 'waiting-number') return 'waiting-number';
+
+  // Parcours terminé : "stalled" n'a plus d'objet ; "inactive" ne vaut que sans appel test validé.
+  if (action.kind === 'complete' && (data.type !== 'inactive' || restaurant.firstCallAt)) {
+    return 'already-complete';
+  }
+
+  // Un restaurateur bloqué à la première étape n'a pas encore enregistré d'adresse : on prend celle
+  // de sa connexion.
+  const recipient = hasEmailAddress(restaurant.managerEmail)
+    ? restaurant.managerEmail.trim()
+    : await resolveAccountOwnerEmail(restaurant.accountId);
+  if (!recipient) return 'no-email';
+
+  const email = buildReminderEmail({
+    kind: data.type,
+    action,
+    restaurantName: restaurant.name,
+    sokarNumber: restaurant.phoneNumber,
+    dashboardUrl: process.env.DASHBOARD_URL ?? 'https://sokar.tech',
+  });
+  if (!email) return 'already-complete';
+
+  const usageContext: MessagingUsageContext = {
+    restaurantId: data.restaurantId,
+    sourceType: 'onboarding_reengagement',
+    sourceId: `${data.restaurantId}:${data.type}:${jobId}`,
+    metadata: { messageType: 'onboarding_reengagement', reengagementType: data.type },
   };
+
+  await sendEmail({
+    to: recipient,
+    subject: email.subject,
+    html: email.html,
+    usage: usageContext,
+  });
+  return 'sent';
 }
 
 export const reengagementWorker = new Worker(
@@ -69,69 +103,10 @@ export const reengagementWorker = new Worker(
   async (job) => {
     const log = jobLogger(job);
     const data = job.data as ReengagementJobData;
-    const restaurant = await db.restaurant.findUnique({
-      where: { id: data.restaurantId },
-    });
-    if (!restaurant) {
-      // Restaurant supprimé → on drop le job silencieusement
-      log.warn('restaurant not found, skipping reengagement');
-      return;
-    }
-
-    // Garde-fou : on ne re-engueule pas un user qui a déjà fait l'étape en question
-    if (data.type === 'stalled' && restaurant.onboardingDone) return;
-    if (data.type === 'inactive' && restaurant.firstCallAt) return;
-    if (data.type === 'inactive' && !restaurant.onboardingDone) return;
-
-    // Garde-fou : si lastSeen récent, le user est revenu de lui-même, on annule
-    if (
-      restaurant.onboardingLastSeenAt &&
-      Date.now() - new Date(restaurant.onboardingLastSeenAt).getTime() < MS_DAY
-    ) {
-      return;
-    }
-
-    const email =
-      data.type === 'stalled'
-        ? buildStalledEmail(restaurant.name, await getCompletedCount(restaurant.id))
-        : buildInactiveEmail(restaurant.name);
-
-    const usageContext: MessagingUsageContext = {
-      restaurantId: data.restaurantId,
-      sourceType: 'onboarding_reengagement',
-      sourceId: `${data.restaurantId}:${data.type}:${job.id ?? 'manual'}`,
-      metadata: { messageType: 'onboarding_reengagement', reengagementType: data.type },
-    };
-
-    await sendEmail({
-      to: restaurant.managerEmail,
-      subject: email.subject,
-      html: email.html,
-      usage: usageContext,
-    });
-    log.info({ type: data.type }, 'reengagement email sent');
+    const outcome = await processReengagement(data, String(job.id ?? 'manual'));
+    log.info({ type: data.type, outcome }, 'reengagement processed');
   },
   { connection: redisQueue },
 );
 
 setupWorkerListeners(reengagementWorker);
-
-async function getCompletedCount(restaurantId: string): Promise<number> {
-  const r = await db.restaurant.findUniqueOrThrow({
-    where: { id: restaurantId },
-    include: { personality: true },
-  });
-  // On compte rapidement sans passer par computeOnboardingState (perf acceptable ici)
-  let count = 0;
-  if (r.name && r.name !== 'Mon Restaurant' && r.managerPhone && r.managerEmail) count++;
-  if (
-    r.openingHours &&
-    typeof r.openingHours === 'object' &&
-    Object.keys(r.openingHours as Record<string, unknown>).length > 0
-  )
-    count++;
-  if (r.personality) count++;
-  if (r.googleRefreshToken) count++;
-  if (r.phoneNumber && !r.phoneNumber.startsWith('+000')) count++;
-  return count;
-}

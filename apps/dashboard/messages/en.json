@@ -27,8 +27,8 @@
     "marketing": "Campaigns",
     "reputation": "Customer reviews",
     "loyalty": "Customer perks",
-    "experiences": "Offers",
-    "events": "Events",
+    "experiences": "Bookable experiences",
+    "events": "Events & tickets",
     "distribution": "Partners",
     "usage": "Usage",
     "margin": "Sokar margin",
@@ -93,5 +93,25 @@
     "settings": "Settings",
     "signOut": "Sign out",
     "signingOut": "Signing out…"
+  },
+  "offerChooser": {
+    "openButton": "Create an offer",
+    "title": "What would you like to create?",
+    "description": "Choose the right format for your offer.",
+    "experience": {
+      "title": "Bookable experience",
+      "description": "Workshop, brunch, cooking class… Your customers choose a date and reserve places.",
+      "action": "Create an experience"
+    },
+    "event": {
+      "title": "Event with tickets",
+      "description": "Concert, party, dinner show… Offer different ticket prices and check tickets at the entrance.",
+      "action": "Create an event"
+    },
+    "giftCard": {
+      "title": "Gift card",
+      "description": "An amount or package to give as a gift and redeem at your restaurant.",
+      "action": "Create a gift card"
+    }
   }
 }

@@ -4,20 +4,31 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
+import { buildPracticalFacts } from '../restaurants/practical-info';
 import { buildSystemPrompt, type OpeningHours, agentVoiceGender } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import {
+  handleOnboardingTestCallEvent,
+  isOnboardingTestCall,
+  parseClientState,
+} from './onboarding-test-call';
+import {
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
+  isVoicePracticalInfoEnabled,
+  isVoicePersonalityStyleEnabled,
 } from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
+import { observedTtsProvider } from './stream/turn-telemetry';
 import { callFinalizationDependencies } from './call-finalization.dependencies';
 
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
+import { isBillingSuspended } from '../billing/billing.service';
+import { answerSuspendedCall, handleSuspendedCallEvent, isSuspendedCall } from './suspended-call';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
@@ -92,6 +103,40 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     const eventType = body.data.event_type;
     const payload = body.data.payload;
 
+    // Appel de test sortant du provisioning : le numéro appelé est celui du gérant, pas celui d'un restaurant.
+    // Ses événements sont traités ici, avant la résolution du restaurant par le numéro appelé.
+    const clientState = parseClientState(payload.client_state);
+    if (isOnboardingTestCall(clientState)) {
+      try {
+        const outcome = await handleOnboardingTestCallEvent(eventType, payload.call_control_id);
+        return reply.send({ result: outcome });
+      } catch (err) {
+        app.log.error(
+          { err: err instanceof Error ? err.message : String(err), eventType },
+          'Onboarding test call action failed',
+        );
+        return reply.send({ result: 'failed' });
+      }
+    }
+
+    // Appel d'un restaurant suspendu : message court puis raccroché (voir suspended-call.ts).
+    if (isSuspendedCall(clientState)) {
+      try {
+        const outcome = await handleSuspendedCallEvent(
+          eventType,
+          payload.call_control_id,
+          clientState as Record<string, unknown>,
+        );
+        return reply.send({ result: outcome });
+      } catch (err) {
+        app.log.error(
+          { err: err instanceof Error ? err.message : String(err), eventType },
+          'Suspended call action failed',
+        );
+        return reply.send({ result: 'failed' });
+      }
+    }
+
     switch (eventType) {
       case 'call.recording.saved': {
         const recordingId = payload.recording_id;
@@ -143,9 +188,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // Avant : checkMarginHealth → isVoicePipelineEnabled → lookupOrCreate
         //         (3 awaits séquentiels = ~50-150ms cumulés)
         // Après : Promise.all des 3 en parallèle = max(3) au lieu de sum(3)
-        const [safe, voiceEnabled, customer] = await Promise.all([
+        const [safe, voiceEnabled, billingSuspended, customer] = await Promise.all([
           RestaurantService.checkMarginHealth(ctx.id),
           isVoicePipelineEnabled(ctx.id),
+          isBillingSuspended(ctx.id),
           payload.from
             ? CustomerService.lookupOrCreate(ctx.id, payload.from)
             : Promise.resolve(null),
@@ -164,6 +210,25 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             { restaurantId: ctx.id, callId: payload.call_control_id },
             'Voice pipeline killed by feature flag — dropping call',
           );
+          return reply.send({ result: 'ok' });
+        }
+
+        // Ended subscription (trial without a card, cancellation, unpaid): no voice session.
+        // The restaurant may still forward its line here, so the caller hears a short message in
+        // the restaurant's name instead of silence, then Sokar hangs up.
+        if (billingSuspended) {
+          app.log.warn(
+            { restaurantId: ctx.id, callId: payload.call_control_id },
+            'Billing suspended — short message then hang up',
+          );
+          try {
+            await answerSuspendedCall(payload.call_control_id, ctx.name);
+          } catch (err) {
+            app.log.error(
+              { err: err instanceof Error ? err.message : String(err), restaurantId: ctx.id },
+              'Suspended call answer failed',
+            );
+          }
           return reply.send({ result: 'ok' });
         }
 
@@ -189,6 +254,16 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           customerGreeting,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
           voiceGender: agentVoiceGender(ctx.personality),
+          personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),
+          ...(isVoicePracticalInfoEnabled(ctx.id)
+            ? {
+                restaurantFacts: buildPracticalFacts({
+                  practicalInfo: ctx.practicalInfo,
+                  dietary: ctx.dietary,
+                  ambiance: ctx.ambiance,
+                }),
+              }
+            : {}),
         });
 
         // Créer un enregistrement Call minimal dès l'init
@@ -263,6 +338,14 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
           callLegId: payload.call_leg_id,
           codec: telnyxCodec,
+          ...(isVoicePersonalityStyleEnabled(ctx.id) && ctx.personality
+            ? {
+                greetingStyle: {
+                  profileType: ctx.personality.profileType,
+                  fillerStyle: ctx.personality.fillerStyle,
+                },
+              }
+            : {}),
           personality: ctx.personality
             ? {
                 fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(
@@ -503,6 +586,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               durationSec,
               handoffConclusion: session?.handoffConclusion,
               conversationIntent: session?.conversation?.intent ?? null,
+              ttsProvider: session ? observedTtsProvider(session) : null,
               to: payload.to,
               customerPhone: payload.from,
             },

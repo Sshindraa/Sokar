@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -19,6 +20,7 @@ import {
   Megaphone,
   Moon,
   MoreHorizontal,
+  Plus,
   PencilRuler,
   PhoneCall,
   Radio,
@@ -35,6 +37,9 @@ import {
 import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { cn, triggerHaptic } from '@/lib/utils';
+import { CreateOfferDialog } from '@/features/offers/create-offer-dialog';
+import { useSiteSelection } from '@/features/sites/site-context';
+import { isServiceStaff } from '@/features/team/roles';
 
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
@@ -45,6 +50,12 @@ const copilotNavItems = [
 const salleNavItems = [
   { href: '/dashboard/floor-plan?view=service-live', key: 'live' as const, icon: Radio },
   { href: '/dashboard/floor-plan?view=edit-plan', key: 'edition' as const, icon: PencilRuler },
+];
+
+/** L'équipe de service n'a que les réservations et le service en salle. */
+const staffNavItems = [
+  { href: '/dashboard/reservations', key: 'reservations' as const, icon: CalendarCheck },
+  { href: '/dashboard/floor-plan?view=service-live', key: 'live' as const, icon: Radio },
 ];
 
 type PrimaryNavItem = (typeof copilotNavItems)[number] | (typeof salleNavItems)[number];
@@ -96,6 +107,7 @@ type NavGeometry = {
 const DRAG_THRESHOLD = 6;
 const LIQUID_SETTLE_TRANSITION =
   'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), width 240ms cubic-bezier(0.22, 1, 0.36, 1)';
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
@@ -103,16 +115,21 @@ export default function MobileBottomNav() {
   const router = useRouter();
   const tNav = useTranslations('nav');
   const tDashboard = useTranslations('dashboard');
+  const tOfferChooser = useTranslations('offerChooser');
   const { theme, toggleTheme } = useDashboardTheme();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [createOfferOpen, setCreateOfferOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [dragPreviewIndex, setDragPreviewIndex] = useState<number | null>(null);
+  const [liquidReady, setLiquidReady] = useState(false);
 
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
   const salleEditMode = searchParams.get('view') === 'edit-plan';
-  const activeNavItems = salleMode ? salleNavItems : copilotNavItems;
-  const hasMoreMenu = !salleMode;
+  const { activeSite } = useSiteSelection();
+  const serviceStaff = isServiceStaff(activeSite?.role);
+  const activeNavItems = serviceStaff ? staffNavItems : salleMode ? salleNavItems : copilotNavItems;
+  const hasMoreMenu = !salleMode && !serviceStaff;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const liquidRef = useRef<HTMLSpanElement>(null);
@@ -224,21 +241,24 @@ export default function MobileBottomNav() {
       // A route update can arrive while the settle transition is still
       // running. If it points at the same tab, leave the in-flight transform
       // alone instead of cancelling it with a second write.
-      if (!force && settledIndexRef.current === index) return;
+      if (!force && settledIndexRef.current === index) return false;
 
       const geometry = getGeometry();
-      if (!geometry) return;
+      if (!geometry) return false;
       const center = geometry.centers[index] ?? geometry.centers[0];
       if (center !== undefined) {
         setLiquidPosition(center, animate);
         settledIndexRef.current = index;
+        return true;
       }
+      return false;
     },
     [getGeometry, setLiquidPosition],
   );
 
-  useEffect(() => {
-    settleLiquid(committedIndex, false);
+  useIsomorphicLayoutEffect(() => {
+    geometryRef.current = null;
+    if (settleLiquid(committedIndex, false)) setLiquidReady(true);
 
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
@@ -247,7 +267,7 @@ export default function MobileBottomNav() {
       // The bar can change width when rotating or entering the iPad layout.
       // Invalidate the cached measurements before settling the lens.
       geometryRef.current = null;
-      settleLiquid(committedIndex, false, true);
+      if (settleLiquid(committedIndex, false, true)) setLiquidReady(true);
     });
     resizeObserver.observe(container);
 
@@ -419,7 +439,7 @@ export default function MobileBottomNav() {
   // monté pendant une navigation entre les onglets principaux. On le ferme
   // dès que l'URL change afin de ne jamais laisser le voile/modal au-dessus
   // d'une nouvelle page.
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     setMoreOpen(false);
   }, [pathname]);
 
@@ -503,6 +523,17 @@ export default function MobileBottomNav() {
                 );
               })}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false);
+                setCreateOfferOpen(true);
+              }}
+              className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-all duration-200 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Plus size={16} aria-hidden="true" />
+              {tOfferChooser('openButton')}
+            </button>
             <div className="mt-2 border-t border-border pt-2">
               <button
                 type="button"
@@ -531,6 +562,7 @@ export default function MobileBottomNav() {
           ref={containerRef}
           className={cn(
             'dashboard-mobile-nav__inner',
+            !liquidReady && 'is-initializing',
             isDragging && 'is-dragging',
             isPressed && 'is-pressed',
           )}
@@ -629,6 +661,7 @@ export default function MobileBottomNav() {
           </div>
         </div>
       </nav>
+      <CreateOfferDialog open={createOfferOpen} onOpenChange={setCreateOfferOpen} />
     </>
   );
 }

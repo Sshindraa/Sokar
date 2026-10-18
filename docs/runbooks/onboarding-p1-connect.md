@@ -42,7 +42,7 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 - [ ] Coordonnées GPS (géocodage via Nominatim)
 - [ ] Type de cuisine
 - [ ] Gamme de prix (1-4)
-- [ ] Capacité (nombre de tables, taille max de groupe)
+- [ ] Tables de la salle (nombre par taille) et règles (durée d'un repas, taille max de groupe, annulation, acompte) : étape `floor`, valables pour tous les canaux
 - [ ] Horaires d'ouverture (jour par jour, midi/soir)
 - [ ] Photo de couverture (upload via `POST /api/restaurants/:id/images`)
 - [ ] Description courte (1-2 phrases, vous-forme)
@@ -53,12 +53,11 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 
 - [ ] Accéder au dashboard Sokar (`https://sokar.tech/dashboard`)
 - [ ] Créer le restaurant
-- [ ] Compléter les 5 étapes Connect :
-  - `connect-identity` — slug, description, photo de couverture
-  - `connect-location` — adresse, carte, coordonnées GPS
-  - `connect-cuisine` — type de cuisine, tarifs, ambiance
-  - `connect-capacity` — capacité d'accueil, durée de service, acompte
-  - `connect-activation` — publication de la page
+- [ ] Compléter le socle commun (`restaurant`, `hours`, `floor` : salle et règles) puis les 2 étapes Connect (nouveau parcours local, 9 octobre 2026) :
+  - `connect-identity` — Votre page : éditeur et aperçu côte à côte ; adresse importée à la sélection Google et enregistrée à l’étape restaurant ; correction de l’adresse intégrée. Photo, présentation, cuisine, gamme de prix, régimes et ambiance facultatifs.
+  - `connect-activation` — Publication : vérification finale, publication explicite, lien et widget.
+  - Compatibilité : les tâches API `connect-location` et `connect-cuisine` restent acceptées/exposées ; elles n’entrent plus dans la progression. Leurs anciennes URL et paramètres `?step=` ouvrent l’éditeur unique. Le nom et les horaires proviennent du socle commun.
+  - Une adresse incomplète est corrigée dans l’éditeur ; les coordonnées Google sont réutilisées, avec le géocodage existant en secours et une saisie manuelle si celui-ci échoue. La page doit être enregistrée avant publication.
 - [ ] Vérifier la preview sur `/restaurant/[slug]`
 - [ ] Activer `connectPublished` via `PATCH /api/restaurants/:id/connect`
 
@@ -97,3 +96,7 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 
 - Désactiver `connectPublished` pour un restaurant : `PATCH /api/restaurants/:id/connect` avec `{ connectPublished: false }`
 - Le restaurant reste dans la base mais n'est plus public (retiré du sitemap, page 404)
+
+> Depuis le 2026-10-07, l'étape `connect-capacity` n'existe plus : ses règles (durée d'un repas, taille
+> maximale des groupes, annulation, acompte) sont dans l'étape `floor` « Votre salle et vos règles »,
+> commune à tous les canaux. Connect compte 4 étapes.

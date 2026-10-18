@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useApi } from '@/lib/api';
+import { useSiteSelection } from '@/features/sites/site-context';
 import { getErrorMessage, type FloorPlan, type FloorPlanSummary } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
+import { FirstServiceGuide } from './_components/FirstServiceGuide';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
 import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
 import { DataFetchError } from '@/components/DataFetchError';
@@ -44,6 +46,10 @@ export default function FloorPlanPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
+  // Créer un plan est réservé aux responsables : l'équipe de service et la lecture seule voient une consigne.
+  const { activeSite } = useSiteSelection();
+  const canEditPlan =
+    !activeSite?.role || activeSite.role === 'OWNER' || activeSite.role === 'MANAGER';
   const requestedFloorPlanId = searchParams.get('floorPlanId');
   const reportedReservationId = searchParams.get('reservationId');
   const reportedDelayReportId = searchParams.get('delayReportId');
@@ -72,6 +78,8 @@ export default function FloorPlanPage() {
   const [createName, setCreateName] = useState('');
   const [createIsDefault, setCreateIsDefault] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  // Erreur de création : affichée dans la fenêtre elle-même, pas derrière son voile.
+  const [createError, setCreateError] = useState('');
   const [walkInModalOpen, setWalkInModalOpen] = useState(false);
 
   const clearReportedDelay = useCallback(() => {
@@ -124,7 +132,7 @@ export default function FloorPlanPage() {
     e.preventDefault();
     if (!orgId || !createName.trim()) return;
     setCreateLoading(true);
-    setListError('');
+    setCreateError('');
     try {
       const created = await post<FloorPlan>(`restaurants/${orgId}/floor-plans`, {
         name: createName.trim(),
@@ -145,7 +153,7 @@ export default function FloorPlanPage() {
       setCreateName('');
       setCreateIsDefault(false);
     } catch (err) {
-      setListError(getErrorMessage(err, 'Impossible de créer le plan de salle'));
+      setCreateError(getErrorMessage(err, 'Impossible de créer le plan de salle.'));
     } finally {
       setCreateLoading(false);
     }
@@ -189,15 +197,22 @@ export default function FloorPlanPage() {
         listError ? null : (
           <div className="sokar-empty">
             <p className="text-sm">Aucun plan de salle</p>
-            {activeView === 'edit-plan' && (
+            <p className="text-xs opacity-60">
+              Dessinez votre salle pour suivre le service en direct.
+            </p>
+            {canEditPlan ? (
               <Button
                 type="button"
                 size="sm"
                 onClick={() => setCreateDialogOpen(true)}
-                className="mt-4"
+                className="mt-4 transition-all duration-200"
               >
                 Créer votre premier plan
               </Button>
+            ) : (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Demandez à un responsable de créer le plan de salle.
+              </p>
             )}
           </div>
         )
@@ -249,8 +264,9 @@ export default function FloorPlanPage() {
       )}
 
       {selectedFloorPlanId && activeView === 'service-live' && (
-        <ServiceCopilotWidget showCalm={false} />
+        <ServiceCopilotWidget showCalm={false} density="service" accessFallback={null} />
       )}
+      {selectedFloorPlanId && activeView === 'service-live' && <FirstServiceGuide />}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <FloorPlanCanvas
           key={`service-live-${selectedFloorPlanId}`}
@@ -317,19 +333,29 @@ export default function FloorPlanPage() {
         />
       )}
 
-      {!selectedFloorPlanId && !listLoading && (
-        <div className="sokar-empty">
-          <p className="text-sm">Aucun plan de salle sélectionné.</p>
-        </div>
-      )}
+      {!selectedFloorPlanId &&
+        !listLoading &&
+        !listError &&
+        floorPlans !== null &&
+        floorPlans.length > 0 && (
+          <div className="sokar-empty">
+            <p className="text-sm">Aucun plan de salle sélectionné.</p>
+          </div>
+        )}
 
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          setCreateDialogOpen(open);
+          if (!open) setCreateError('');
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleCreateFloorPlan}>
             <DialogHeader>
               <DialogTitle>Créer un plan de salle</DialogTitle>
               <DialogDescription>
-                Crée un plan de salle supplémentaire. Le plan ouvert reste inchangé. Vous pouvez le
+                Créez un plan de salle supplémentaire. Le plan ouvert reste inchangé. Vous pouvez le
                 définir comme plan par défaut.
               </DialogDescription>
             </DialogHeader>
@@ -339,7 +365,10 @@ export default function FloorPlanPage() {
                 <Input
                   id="floor-plan-name"
                   value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
+                  onChange={(e) => {
+                    setCreateName(e.target.value);
+                    setCreateError('');
+                  }}
                   placeholder="Ex. : Terrasse"
                   disabled={createLoading}
                   className="bg-card border-border"
@@ -359,12 +388,20 @@ export default function FloorPlanPage() {
                   aria-label="Définir comme plan par défaut"
                 />
               </div>
+              {createError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {createError}
+                </p>
+              ) : null}
             </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setCreateDialogOpen(false)}
+                onClick={() => {
+                  setCreateDialogOpen(false);
+                  setCreateError('');
+                }}
                 disabled={createLoading}
               >
                 Annuler

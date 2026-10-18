@@ -1,0 +1,94 @@
+{
+  "capturedAt": "2026-10-02T22:41:59.926Z",
+  "baseline": "Interface après la phase 3, mêmes scénarios et dimensions que la phase 0",
+  "browser": "Playwright Chromium",
+  "referenceClock": "2026-10-02T18:15:00.000Z",
+  "timezone": "Europe/Paris",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000
+    },
+    "ipad": {
+      "width": 1024,
+      "height": 768
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "screenshots": [
+    {
+      "filename": "salle-desktop-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "desktop",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-ipad-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "ipad",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-une-recommandation.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "une-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-trois-recommandations.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "trois-recommandations",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-desktop-apres-minuit.png",
+      "screen": "salle",
+      "viewport": "desktop",
+      "state": "apres-minuit",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-zero-recommandation.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "zero-recommandation",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-desktop-table-occupee-selectionnee.png",
+      "screen": "salle",
+      "viewport": "desktop",
+      "state": "table-occupee-selectionnee",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-table-occupee-selectionnee.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "table-occupee-selectionnee",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-table-libre-selectionnee.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "table-libre-selectionnee",
+      "route": "/dashboard/floor-plan"
+    },
+    {
+      "filename": "salle-mobile-nom-long-selectionne.png",
+      "screen": "salle",
+      "viewport": "mobile",
+      "state": "nom-long-selectionne",
+      "route": "/dashboard/floor-plan"
+    }
+  ],
+  "unexpectedApiRequests": []
+}

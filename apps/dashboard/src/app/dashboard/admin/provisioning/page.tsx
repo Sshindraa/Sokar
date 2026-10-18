@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   PhoneForwarded,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   PhoneCall,
   Search,
@@ -18,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { PendingNumbersSection } from './PendingNumbersSection';
 
 interface TelnyxNumberItem {
   id: string;
@@ -27,9 +29,31 @@ interface TelnyxNumberItem {
   assignedToRestaurantName?: string | null;
 }
 
+type NumbersSource = 'telnyx' | 'dev-fallback' | 'unavailable';
+
+type VoiceAppLinkState =
+  | 'linked'
+  | 'failed'
+  | 'skipped_no_connection_id'
+  | 'skipped_manual_number'
+  | 'skipped_no_telnyx';
+
+/** Ce que l'opérateur doit faire quand le numéro n'est pas relié à l'application voix. */
+const VOICE_APP_LINK_WARNING: Record<Exclude<VoiceAppLinkState, 'linked'>, string> = {
+  failed:
+    'Telnyx a refusé de relier ce numéro à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_no_connection_id:
+    'TELNYX_CONNECTION_ID n’est pas défini sur l’API : le numéro n’est pas relié à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_manual_number:
+    'Numéro saisi à la main : il n’a pas été relié à l’application voix. Reliez-le dans le portail Telnyx.',
+  skipped_no_telnyx:
+    'Telnyx n’est pas configuré sur cette API : aucun lien avec l’application voix.',
+};
+
 interface ProvisioningStatusView {
   restaurantId: string;
   restaurantName: string;
+  city: string | null;
   phoneNumber: string;
   hasAssignedPhone: boolean;
   provisioningStatus: string;
@@ -37,12 +61,15 @@ interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  floorCompletedAt: string | null;
   testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
     assignment: {
       completed: boolean;
       phoneNumber: string;
+      /** `null` : numéro attribué avant l'enregistrement du lien (état inconnu). */
+      voiceAppLink: VoiceAppLinkState | null;
     };
     webhook: {
       completed: boolean;
@@ -66,6 +93,7 @@ export default function AdminProvisioningPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [restaurants, setRestaurants] = useState<ProvisioningStatusView[]>([]);
   const [availableNumbers, setAvailableNumbers] = useState<TelnyxNumberItem[]>([]);
+  const [numbersSource, setNumbersSource] = useState<NumbersSource>('telnyx');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -78,30 +106,45 @@ export default function AdminProvisioningPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+
+  // Les boutons sont en bas du cockpit, le message en haut de page : on l'amène sous les yeux.
+  useEffect(() => {
+    if (actionError || actionSuccess) {
+      feedbackRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }
+  }, [actionError, actionSuccess]);
 
   const fetchRestaurants = useCallback(async () => {
     setLoadingList(true);
     setActionError(null);
+    setListError(null);
     try {
       const [resList, resNumbers] = await Promise.all([
         get<{ ok: boolean; restaurants: ProvisioningStatusView[] }>(
           'admin/provisioning/restaurants',
         ),
-        get<{ ok: boolean; numbers: TelnyxNumberItem[] }>('admin/provisioning/available-numbers'),
+        get<{ ok: boolean; numbers: TelnyxNumberItem[]; source?: NumbersSource }>(
+          'admin/provisioning/available-numbers',
+        ),
       ]);
       setRestaurants(resList.restaurants ?? []);
       setAvailableNumbers(resNumbers.numbers ?? []);
+      setNumbersSource(resNumbers.source ?? 'telnyx');
 
-      if (resList.restaurants && resList.restaurants.length > 0 && !selectedId) {
-        setSelectedId(resList.restaurants[0].restaurantId);
+      // Premier restaurant par défaut, sans écraser un choix déjà fait.
+      if (resList.restaurants && resList.restaurants.length > 0) {
+        setSelectedId((current) => current ?? resList.restaurants[0].restaurantId);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur lors de la récupération des données';
       setActionError(msg);
+      setListError(msg);
     } finally {
       setLoadingList(false);
     }
-  }, [get, selectedId]);
+  }, [get]);
 
   useEffect(() => {
     fetchRestaurants();
@@ -143,12 +186,17 @@ export default function AdminProvisioningPage() {
     setTestCallPhone('');
   };
 
+  // Depuis « En attente de numéro » : le restaurant s'ouvre dans le panneau d'attribution.
+  const handleSelectPending = (id: string) => {
+    handleSelectRestaurant(id);
+    document.getElementById('provisioning-cockpit')?.scrollIntoView?.({ behavior: 'smooth' });
+  };
+
   // Action 1 : Assign Phone
   const handleAssignPhone = async () => {
     if (!selectedId) return;
-    const phoneToAssign =
-      customPhoneInput.trim() ||
-      availableNumbers.find((n) => n.id === selectedTelnyxId)?.phoneNumber;
+    const selectedNumber = availableNumbers.find((n) => n.id === selectedTelnyxId);
+    const phoneToAssign = customPhoneInput.trim() || selectedNumber?.phoneNumber;
     if (!phoneToAssign) {
       setActionError(
         'Sélectionnez un numéro Telnyx ou saisissez un numéro E.164 (ex: +33451221528).',
@@ -165,7 +213,12 @@ export default function AdminProvisioningPage() {
         `admin/provisioning/${selectedId}/assign-phone`,
         {
           phoneNumber: phoneToAssign,
-          telnyxPhoneNumberId: selectedTelnyxId || undefined,
+          // L'identifiant Telnyx n'est envoyé que s'il correspond au numéro saisi : sinon l'API relierait
+          // à l'application voix un autre numéro que celui affiché.
+          telnyxPhoneNumberId:
+            selectedNumber && selectedNumber.phoneNumber === phoneToAssign
+              ? selectedNumber.id
+              : undefined,
         },
       );
       setActionSuccess(res.message);
@@ -337,27 +390,40 @@ export default function AdminProvisioningPage() {
         </Button>
       </div>
 
-      {actionError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-3 transition-all duration-200">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Erreur de provisioning</p>
-            <p className="mt-0.5 leading-relaxed">{actionError}</p>
+      <div ref={feedbackRef} className="space-y-3 empty:hidden">
+        {actionError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-3 transition-all duration-200"
+          >
+            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Erreur de provisioning</p>
+              <p className="mt-0.5 leading-relaxed">{actionError}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {actionSuccess && (
-        <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success flex items-start gap-3 transition-all duration-200">
-          <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Opération réussie</p>
-            <p className="mt-0.5 leading-relaxed">{actionSuccess}</p>
+        {actionSuccess && (
+          <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success flex items-start gap-3 transition-all duration-200">
+            <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Opération réussie</p>
+              <p className="mt-0.5 leading-relaxed">{actionSuccess}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
+      <PendingNumbersSection
+        restaurants={restaurants}
+        loading={loadingList}
+        error={listError}
+        onSelect={handleSelectPending}
+        onRetry={fetchRestaurants}
+      />
+
+      <div className="grid gap-8 xl:grid-cols-[320px_1fr]">
         {/* Colonne gauche : liste des restaurants */}
         <div className="space-y-4">
           <div className="relative">
@@ -425,7 +491,7 @@ export default function AdminProvisioningPage() {
 
         {/* Colonne droite : Cockpit de provisioning */}
         {selectedStatus ? (
-          <div className="space-y-6">
+          <div id="provisioning-cockpit" className="scroll-mt-6 space-y-6">
             {/* Header du restaurant sélectionné */}
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -478,7 +544,7 @@ export default function AdminProvisioningPage() {
             </div>
 
             {/* Grille des 4 étapes */}
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 2xl:grid-cols-2">
               {/* ÉTAPE 1 : Attribution Telnyx */}
               <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm flex flex-col justify-between">
                 <div className="space-y-3">
@@ -502,6 +568,41 @@ export default function AdminProvisioningPage() {
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Associe un numéro E.164 réel du compte Telnyx au restaurant.
                   </p>
+
+                  {selectedStatus.steps.assignment.completed &&
+                    selectedStatus.steps.assignment.voiceAppLink !== 'linked' && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground"
+                      >
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                        <span>
+                          {selectedStatus.steps.assignment.voiceAppLink
+                            ? VOICE_APP_LINK_WARNING[selectedStatus.steps.assignment.voiceAppLink]
+                            : 'Le lien entre ce numéro et l’application voix n’a jamais été vérifié : sans lui, le restaurant ne reçoit aucun appel. Vérifiez-le dans le portail Telnyx.'}
+                        </span>
+                      </div>
+                    )}
+
+                  {numbersSource === 'unavailable' && (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-foreground"
+                    >
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                      <span>
+                        L’inventaire Telnyx est indisponible (clé absente ou erreur Telnyx).
+                        Saisissez le numéro à la main, puis reliez-le à l’application voix dans le
+                        portail.
+                      </span>
+                    </div>
+                  )}
+                  {numbersSource === 'telnyx' && availableNumbers.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Le compte Telnyx ne contient aucun numéro. Commandez-en un dans le portail
+                      Telnyx.
+                    </p>
+                  )}
 
                   <div className="space-y-3 pt-2">
                     {availableNumbers.length > 0 && (
@@ -542,7 +643,11 @@ export default function AdminProvisioningPage() {
                       <Input
                         placeholder="+33451221528"
                         value={customPhoneInput}
-                        onChange={(e) => setCustomPhoneInput(e.target.value)}
+                        onChange={(e) => {
+                          setCustomPhoneInput(e.target.value);
+                          // Un numéro tapé à la main remplace le choix de l'inventaire.
+                          setSelectedTelnyxId('');
+                        }}
                         className="h-9 text-xs font-mono"
                       />
                     </div>
@@ -611,6 +716,11 @@ export default function AdminProvisioningPage() {
                   )}
                   Tester & valider le webhook
                 </Button>
+                {!selectedStatus.hasAssignedPhone ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Attribuez d’abord un numéro (étape 1).
+                  </p>
+                ) : null}
               </div>
 
               {/* ÉTAPE 3 : Consignes Renvoi d'appel */}
@@ -663,6 +773,11 @@ export default function AdminProvisioningPage() {
                   )}
                   Marquer renvoi comme configuré
                 </Button>
+                {!selectedStatus.hasAssignedPhone ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Attribuez d’abord un numéro (étape 1).
+                  </p>
+                ) : null}
               </div>
 
               {/* ÉTAPE 4 : Validation Appel Test */}
@@ -686,7 +801,8 @@ export default function AdminProvisioningPage() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Déclenche un appel sortant pour faire entendre l&apos;assistant vocal au gérant.
+                    Déclenche un appel sortant pour faire entendre Léa, l&apos;assistante IA, au
+                    gérant.
                   </p>
 
                   <div className="space-y-1">
@@ -706,7 +822,7 @@ export default function AdminProvisioningPage() {
                   <div className="space-y-2 mt-4">
                     <p className="text-xs text-muted-foreground">
                       L&apos;appel a été déclenché. Confirmez sa réception après avoir entendu la
-                      réponse de l&apos;assistant.
+                      réponse de l&apos;assistante.
                     </p>
                     <Button
                       onClick={handleValidateTestCall}
@@ -749,6 +865,16 @@ export default function AdminProvisioningPage() {
                     Lancer l&apos;appel test IA
                   </Button>
                 )}
+                {!selectedStatus.steps.testCall.completed &&
+                !selectedStatus.testCallControlId &&
+                (!selectedStatus.hasAssignedPhone ||
+                  !selectedStatus.steps.webhook.completed ||
+                  !selectedStatus.steps.forwarding.completed) ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Disponible une fois le numéro attribué, le webhook validé et le renvoi
+                    configuré.
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

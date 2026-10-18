@@ -109,7 +109,15 @@ export interface BehaviorProfile {
   systemPromptExtra?: string;
   /** Genre de la voix de production, quand le profil le fixe (voir `agentVoiceGender`). */
   voiceGender?: 'masculine' | 'feminine';
-  openingHours: Record<string, { open: string; close: string } | null>;
+  openingHours: Record<
+    string,
+    {
+      open: string;
+      close: string;
+      slots?: Array<{ open: string; close: string }>;
+      services?: Array<{ open: string; close: string }>;
+    } | null
+  >;
 }
 
 export interface BehaviorCase {

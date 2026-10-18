@@ -1,4 +1,5 @@
 'use client';
+import { GiftCardTestBanner } from './gift-card-test-banner';
 
 /**
  * Sokar Connect — GiftCardConfirmation.
@@ -75,6 +76,13 @@ export function GiftCardConfirmation({
 
   return (
     <div style={reservationTheme} className="space-y-5">
+      <GiftCardTestBanner />
+      <a
+        className="underline"
+        href={`/gift-card/${encodeURIComponent(result.shortCode ?? result.code)}`}
+      >
+        Consulter la carte comme bénéficiaire
+      </a>
       {/* Carte de confirmation — glassmorphism */}
       <div className={panelClass}>
         <div className="mb-5 flex items-center gap-3">

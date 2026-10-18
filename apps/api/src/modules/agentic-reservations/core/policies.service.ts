@@ -1,3 +1,4 @@
+import { snapshotCancellationPolicy } from '../../../shared/reservations/cancellation-policy.js';
 /**
  * Policies service pour l'agentic reservations.
  *
@@ -11,10 +12,15 @@
 import type { ReservationChannel } from './state-machine.js';
 import { HOURS_PER_DAY, HOURS_TO_MINUTES, HOUR_SECONDS } from '../../../shared/constants/time.js';
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import {
+  DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES,
+  INSUFFICIENT_LEAD_TIME,
+  isSlotTooSoon,
+} from '../../../shared/reservations/lead-time.js';
 
 export const DEFAULT_QUOTE_TTL_SECONDS = 300; // 5 min
 export const DEFAULT_HOLD_TTL_SECONDS = 420; // 7 min
-export const DEFAULT_MIN_LEAD_TIME_MINUTES = 30;
+export const DEFAULT_MIN_LEAD_TIME_MINUTES = DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES;
 
 /** Limite dure pour maxPartySize (validation des settings restaurant) */
 export const MAX_PARTY_SIZE_HARD_LIMIT = 50;
@@ -45,6 +51,9 @@ export type CancellationPolicySnap = {
   feeAmount?: number;
   feeCurrency?: string;
   version: string;
+  source?: string;
+  selfService?: string;
+  terms?: string;
 };
 
 export type NoShowPolicySnap = {
@@ -169,12 +178,7 @@ function isNoShowPolicyKind(v: string | undefined): v is NoShowPolicyKind {
  */
 export function buildPolicySnapshot(input: RestaurantPolicyInput): PolicySnapshot {
   return {
-    cancellation: {
-      freeUntilMinutesBefore: DEFAULT_FREE_CANCELLATION_MINUTES,
-      feeAmount: undefined,
-      feeCurrency: 'EUR',
-      version: input.policyVersion,
-    },
+    cancellation: snapshotCancellationPolicy(input.capacitySpecials, input.policyVersion),
     noShow: {
       kind: isNoShowPolicyKind(input.noShowPolicy ?? undefined)
         ? (input.noShowPolicy as NoShowPolicyKind)
@@ -217,14 +221,13 @@ export function validateReservationAgainstPolicy(
     );
   }
 
-  const now = Date.now();
-  const start = request.startsAt.getTime();
-  const minutesBefore = (start - now) / 60_000;
-
-  if (minutesBefore < snapshot.minLeadTimeMinutes) {
+  // Même règle que l'affichage des créneaux (`isSlotTooSoon`) : ils ne peuvent pas diverger.
+  const now = new Date();
+  if (isSlotTooSoon(request.startsAt, snapshot.minLeadTimeMinutes, now)) {
+    const minutesBefore = (request.startsAt.getTime() - now.getTime()) / 60_000;
     throw new PolicyValidationError(
       `Insufficient lead time: ${Math.round(minutesBefore)}min avant, minimum ${snapshot.minLeadTimeMinutes}min requis`,
-      'INSUFFICIENT_LEAD_TIME',
+      INSUFFICIENT_LEAD_TIME,
     );
   }
 }

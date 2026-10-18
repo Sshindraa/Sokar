@@ -3,7 +3,14 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import {
   resolveRestaurantContext,
   RestaurantContextError,
+  type RestaurantContext,
 } from '../modules/restaurants/site-context';
+import { claimInvitedMembership } from '../modules/restaurants/team.service';
+import {
+  evaluateRolePolicy,
+  READ_ONLY_MESSAGE,
+  ROLE_FORBIDDEN_MESSAGE,
+} from '../modules/restaurants/role-policy';
 import { db } from '../shared/db/client';
 
 export function isClerkConfigured() {
@@ -107,7 +114,7 @@ export function requireOrg() {
 
     const requestedSiteId = getRequestedSiteId(req);
     try {
-      const context = await resolveRestaurantContext(db, {
+      const context = await resolveContextForMember({
         organizationId: orgId,
         userId,
         requestedSiteId,
@@ -117,13 +124,16 @@ export function requireOrg() {
       req.accountId = context.accountId;
       req.clerkOrganizationId = context.clerkOrganizationId;
       req.siteRole = context.role;
-      if (
-        context.role === 'READ_ONLY' &&
-        !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase())
-      ) {
+      const decision = evaluateRolePolicy({
+        role: context.role,
+        method: req.method,
+        route: req.routeOptions?.url,
+      });
+      if (!decision.allowed) {
         return reply.status(403).send({
-          error: 'READ_ONLY_ACCESS',
-          message: 'Ce membre dispose d’un accès en lecture seule.',
+          error: decision.code,
+          message:
+            decision.code === 'READ_ONLY_ACCESS' ? READ_ONLY_MESSAGE : ROLE_FORBIDDEN_MESSAGE,
         });
       }
     } catch (error) {
@@ -153,6 +163,33 @@ export function requireOrg() {
   };
 }
 
+/**
+ * Un invité qui vient d'accepter appartient à l'organisation Clerk mais n'a pas encore de
+ * membership Sokar : on lit le rôle de son invitation, on le rattache, puis on résout de nouveau.
+ */
+async function resolveContextForMember(input: {
+  organizationId: string;
+  userId?: string | null;
+  requestedSiteId?: string;
+}): Promise<RestaurantContext> {
+  try {
+    return await resolveRestaurantContext(db, input);
+  } catch (error) {
+    if (
+      error instanceof RestaurantContextError &&
+      error.code === 'SITE_ACCESS_DENIED' &&
+      input.userId
+    ) {
+      const claimed = await claimInvitedMembership({
+        organizationId: input.organizationId,
+        userId: input.userId,
+      });
+      if (claimed) return resolveRestaurantContext(db, input);
+    }
+    throw error;
+  }
+}
+
 function getRequestedSiteId(req: FastifyRequest): string | undefined {
   const value = req.headers['x-sokar-site-id'];
   const siteId = Array.isArray(value) ? value[0] : value;
@@ -163,11 +200,11 @@ function getRequestedSiteId(req: FastifyRequest): string | undefined {
 /**
  * Middleware qui exige une session utilisateur (login simple sans org).
  */
-export function requireAuth() {
+export function requireAuth(options: { allowDemo?: boolean } = {}) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     // Staging demo mode : voir requireOrg(). DEMO_STAGING isolé à la staging.
     const demoMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_STAGING === '1';
-    if (demoMode && process.env.DEMO_RESTAURANT_ID) {
+    if (options.allowDemo !== false && demoMode && process.env.DEMO_RESTAURANT_ID) {
       req.userId = process.env.DEMO_USER_ID ?? 'demo-user';
       req.log = req.log.child({ user_id: req.userId });
       return;
@@ -195,7 +232,11 @@ export function requireAuth() {
  * operator access through a request body or a Clerk organization role.
  */
 export function requireSokarOperator() {
-  const authenticate = requireAuth();
+  // Les opérations globales exigent une vraie session en staging/production.
+  // Le compte démo reste réservé à la prévisualisation locale.
+  const authenticate = requireAuth({
+    allowDemo: process.env.NODE_ENV !== 'production' && process.env.DEMO_STAGING !== '1',
+  });
 
   return async (req: FastifyRequest, reply: FastifyReply) => {
     await authenticate(req, reply);

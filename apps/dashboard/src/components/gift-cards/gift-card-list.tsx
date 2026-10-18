@@ -16,18 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { GiftCardListItem } from '@/lib/api/gift-cards';
-
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: 'Active',
-  REDEEMED: 'Utilisée',
-  EXPIRED: 'Expirée',
-  CANCELLED: 'Annulée',
-  REFUND_PENDING: 'Remboursement en cours',
-  REFUND_FAILED: 'Remboursement à vérifier',
-  PAYMENT_REVIEW: 'Paiement à vérifier',
-  REFUND_REVIEW: 'Remboursement à vérifier',
-  CLOSED: 'Clôturée',
-};
+import { giftCardPaymentLabel, giftCardStatusLabel } from './gift-card-labels';
 
 const STATUS_VARIANT: Record<string, string> = {
   ACTIVE: 'border-success/30 bg-success/10 text-success',
@@ -43,41 +32,70 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${variant}`}
     >
-      {STATUS_LABELS[status] ?? status}
+      {giftCardStatusLabel(status)}
     </span>
   );
 }
 
 export type GiftCardListProps = {
   items: GiftCardListItem[];
+  isCrowdfunding: boolean;
   onView?: (card: GiftCardListItem) => void;
   onCancel?: (card: GiftCardListItem) => void;
   onClose?: (card: GiftCardListItem) => void;
   closingId?: string | null;
+  /** Une recherche ou un filtre est actif : une liste vide ne veut pas dire « aucune carte ». */
+  filtered?: boolean;
+  onClearFilters?: () => void;
 };
 
 export default function GiftCardList({
   items,
+  isCrowdfunding,
   onView,
   onCancel,
   onClose,
   closingId,
+  filtered = false,
+  onClearFilters,
 }: GiftCardListProps) {
   const isMobile = useIsMobile();
 
   if (items.length === 0) {
-    const isCrowdfunding = items.length === 0 && onClose !== undefined;
     return (
       <div className="sokar-empty">
         <Gift size={40} className="opacity-30" />
-        <p className="text-sm">
-          {isCrowdfunding ? 'Aucune cagnotte pour le moment' : 'Aucune carte cadeau pour le moment'}
-        </p>
-        <p className="text-xs opacity-60">
-          {isCrowdfunding
-            ? 'Les cagnottes créées via le widget apparaîtront ici.'
-            : 'Les cartes cadeaux vendues ou créées manuellement apparaîtront ici.'}
-        </p>
+        {filtered ? (
+          <>
+            <p className="text-sm">
+              {isCrowdfunding
+                ? 'Aucune cagnotte ne correspond à cette recherche'
+                : 'Aucune carte ne correspond à cette recherche'}
+            </p>
+            {onClearFilters ? (
+              <button
+                type="button"
+                onClick={onClearFilters}
+                className="text-xs font-medium underline underline-offset-4 transition-all duration-200"
+              >
+                Effacer la recherche et les filtres
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p className="text-sm">
+              {isCrowdfunding
+                ? 'Aucune cagnotte pour le moment'
+                : 'Aucune carte cadeau pour le moment'}
+            </p>
+            <p className="text-xs opacity-60">
+              {isCrowdfunding
+                ? 'Les cagnottes créées via votre page de réservation apparaîtront ici.'
+                : 'Les cartes cadeaux vendues ou créées manuellement apparaîtront ici.'}
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -95,7 +113,7 @@ export default function GiftCardList({
             }
             subtitle={
               card.type === 'CROWDFUNDED'
-                ? `Cagnotte — ${card.recipientName ?? ''}`
+                ? `Cagnotte${card.recipientName ? ` — ${card.recipientName}` : ''}`
                 : (card.packName ?? 'Montant libre')
             }
             badge={<StatusBadge status={card.status} />}
@@ -215,8 +233,8 @@ export default function GiftCardList({
               <TableHead>Destinataire</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Paiement</TableHead>
-              <TableHead>Achetée le</TableHead>
-              <TableHead>Expire le</TableHead>
+              <TableHead>{isCrowdfunding ? 'Date butoir' : 'Achetée le'}</TableHead>
+              <TableHead>{isCrowdfunding ? 'Clôturée le' : 'Expire le'}</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -266,11 +284,7 @@ export default function GiftCardList({
                             : 'text-destructive'
                       }`}
                     >
-                      {card.stripePaymentStatus === 'succeeded'
-                        ? 'Payé'
-                        : card.stripePaymentStatus === 'pending'
-                          ? 'En attente'
-                          : card.stripePaymentStatus}
+                      {giftCardPaymentLabel(card.stripePaymentStatus)}
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
@@ -282,8 +296,10 @@ export default function GiftCardList({
                     : format(new Date(card.purchasedAt), 'dd MMM yyyy', { locale: fr })}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
-                  {card.type === 'CROWDFUNDED' && card.closedAt
-                    ? format(new Date(card.closedAt), 'dd MMM yyyy', { locale: fr })
+                  {card.type === 'CROWDFUNDED'
+                    ? card.closedAt
+                      ? format(new Date(card.closedAt), 'dd MMM yyyy', { locale: fr })
+                      : '—'
                     : card.expiresAt
                       ? format(new Date(card.expiresAt), 'dd MMM yyyy', { locale: fr })
                       : '—'}
@@ -293,7 +309,7 @@ export default function GiftCardList({
                     {onView && (
                       <button
                         onClick={() => onView(card)}
-                        className="p-2 text-white/50 hover:text-brand rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-all duration-200"
                         title="Voir le détail"
                       >
                         <Eye size={16} />
@@ -306,7 +322,7 @@ export default function GiftCardList({
                         <button
                           onClick={() => onClose(card)}
                           disabled={closingId === card.id}
-                          className="p-2 text-white/50 hover:text-metal rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
+                          className="p-2 text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-all duration-200 disabled:opacity-50"
                           title="Clôturer la cagnotte"
                         >
                           <Lock size={16} />
@@ -315,7 +331,7 @@ export default function GiftCardList({
                     {onCancel && card.status === 'ACTIVE' && (
                       <button
                         onClick={() => onCancel(card)}
-                        className="p-2 text-white/50 hover:text-destructive rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
                         title="Annuler la carte"
                       >
                         <Ban size={16} />

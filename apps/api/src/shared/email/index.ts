@@ -10,6 +10,8 @@ import {
   type MessagingUsageContext,
 } from '../../modules/usage/messaging-usage.service';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, withTimeout } from '../resilience';
+import { logger } from '../logger/pino';
+import { waitForResendSlot } from './rate-limit';
 
 // Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
 // L'API HTTP de Resend utilise le port 443 (HTTPS).
@@ -110,13 +112,53 @@ export function normalizeResendSendResponse(response: unknown): NotificationSend
   };
 }
 
+/**
+ * Liste blanche des destinataires (EMAIL_TEST_ALLOWLIST, adresses séparées par des virgules). Absente ou vide :
+ * aucune restriction. Utilisée en staging pendant une campagne de test, jamais en production.
+ */
+function isRecipientAllowed(to: string): boolean {
+  const raw = process.env.EMAIL_TEST_ALLOWLIST?.trim();
+  if (!raw) return true;
+  const allowed = raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+  return allowed.includes(to.trim().toLowerCase());
+}
+
+const DEFAULT_EMAIL_FROM = 'Sokar <noreply@sokar.tech>';
+const DEFAULT_EMAIL_REPLY_TO = 'hello@sokar.tech';
+
+/**
+ * Expéditeur affiché « Sokar » : une adresse nue s'affiche « noreply » dans la boîte de réception,
+ * ce qui coûte en confiance et en ouverture. `EMAIL_FROM` peut fournir l'adresse seule ou complète.
+ */
+export function emailSender(environment: NodeJS.ProcessEnv = process.env): string {
+  const configured = environment.EMAIL_FROM?.trim();
+  if (!configured) return DEFAULT_EMAIL_FROM;
+  return configured.includes('<') ? configured : `Sokar <${configured}>`;
+}
+
+/** Les réponses arrivent à une boîte lue par un humain, jamais à `noreply`. */
+export function emailReplyTo(environment: NodeJS.ProcessEnv = process.env): string {
+  return environment.EMAIL_REPLY_TO?.trim() || DEFAULT_EMAIL_REPLY_TO;
+}
+
 export async function sendEmail(opts: SendEmailOptions): Promise<void | NotificationSendResult> {
+  if (!isRecipientAllowed(opts.to)) {
+    // Refus certain : Resend n'est pas appelé, l'appelant ne relance pas, et l'adresse n'est jamais journalisée.
+    logger.warn({ reason: 'recipient_not_allowlisted' }, 'Email refused by test allowlist');
+    return { outcome: 'failure_certain', provider: 'resend', channel: 'email' };
+  }
+
   // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté
   // appelant pour qu'un envoi bloqué ne retienne pas le worker indéfiniment ;
   // la requête HTTP peut continuer côté SDK, mais l'appel métier est rendu.
+  await waitForResendSlot();
   const response = await withTimeout(
     getResend().emails.send({
-      from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
+      from: emailSender(),
+      replyTo: emailReplyTo(),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
@@ -177,6 +219,7 @@ export async function lookupResendEmail(
   providerMessageId: string,
 ): Promise<NotificationProviderResult> {
   try {
+    await waitForResendSlot();
     const response = await getResend().emails.get(providerMessageId);
     return classifyResendEmailResponse(response);
   } catch {

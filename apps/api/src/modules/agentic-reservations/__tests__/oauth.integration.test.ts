@@ -80,6 +80,7 @@ describe('OAuth MCP integration flow', () => {
       authorization_servers: [MCP_RESOURCE],
       scopes_supported: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
     });
+    expect(res.json().resource_documentation).toMatch(/\/assistants-ia$/);
   });
 
   // ── 2. Dynamic Client Registration ───────────────────

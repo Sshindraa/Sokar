@@ -12,6 +12,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
+import { normalizeOpeningHours } from '@sokar/shared';
 import {
   EXPECTED_ANSWER_THRESHOLDS,
   rankExpectedAnswers,
@@ -1063,19 +1064,20 @@ export function openingHourTimes(
   date?: string,
 ): string[] {
   if (!openingHours) return [];
-  const days = date
-    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
-    : OPENING_DAY_KEYS;
+  const dayIndexes = new Set(
+    date ? [new Date(`${date}T12:00:00Z`).getUTCDay()] : [0, 1, 2, 3, 4, 5, 6],
+  );
   const times = new Set<string>();
-  for (const day of days) {
-    const slot = openingHours[day];
-    if (!slot?.open || !slot.close) continue;
-    const toMinutes = (value: string) => {
-      const [h, m] = value.split(':').map(Number);
-      return h * 60 + (m || 0);
-    };
-    const close = toMinutes(slot.close);
-    for (let minute = toMinutes(slot.open); minute < close; minute += 15) {
+  const toMinutes = (value: string) => {
+    const [h, m] = value.split(':').map(Number);
+    return h * 60 + (m || 0);
+  };
+  for (const period of normalizeOpeningHours(openingHours)) {
+    if (!dayIndexes.has(period.dayIndex)) continue;
+    let close = toMinutes(period.close);
+    const open = toMinutes(period.open);
+    if (close <= open) close += 24 * 60;
+    for (let minute = open; minute < close; minute += 15) {
       times.add(
         `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`,
       );
@@ -1230,15 +1232,14 @@ export function isWithinOpeningHours(
   time: string,
 ): boolean {
   if (!openingHours) return true;
-  const days = date
-    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
-    : OPENING_DAY_KEYS;
+  const dayIndexes = new Set(
+    date ? [new Date(`${date}T12:00:00Z`).getUTCDay()] : [0, 1, 2, 3, 4, 5, 6],
+  );
   const minute = toMinutes(time);
-  return days.some((day) => {
-    const slot = openingHours[day];
-    if (!slot?.open || !slot.close) return false;
-    const open = toMinutes(slot.open);
-    let close = toMinutes(slot.close);
+  return normalizeOpeningHours(openingHours).some((period) => {
+    if (!dayIndexes.has(period.dayIndex)) return false;
+    const open = toMinutes(period.open);
+    let close = toMinutes(period.close);
     if (close <= open) close += 24 * 60; // service qui finit après minuit
     return (
       (minute >= open && minute < close) || (minute + 24 * 60 >= open && minute + 24 * 60 < close)
@@ -1360,13 +1361,11 @@ export function buildClosedTimeRepromptPlan(
   const days = date
     ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
     : OPENING_DAY_KEYS;
+  const allowedDays = new Set(days.map((day) => OPENING_DAY_KEYS.indexOf(day)));
   const ranges = [
     ...new Set(
-      days
-        .map((day) => session.openingHours?.[day])
-        .filter((slot): slot is { open: string; close: string } =>
-          Boolean(slot?.open && slot.close),
-        )
+      normalizeOpeningHours(session.openingHours)
+        .filter((period) => allowedDays.has(period.dayIndex))
         .map((slot) =>
           en
             ? `from ${formatAvailabilitySlot(slot.open, 'en')} to ${formatAvailabilitySlot(slot.close, 'en')}`

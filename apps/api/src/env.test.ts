@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   callReportConfigProblem,
+  hasElevenLabsTtsConfig,
   hasSttProviderKey,
   isLiveStripeSecretKey,
   openRouterFallbackBaseUrlSchema,
@@ -82,6 +83,34 @@ describe('clé du fournisseur de reconnaissance vocale en production', () => {
   it('avec Scribe, la clé ElevenLabs reste exigée', () => {
     expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', ELEVENLABS_API_KEY: key })).toBe(true);
     expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', DEEPGRAM_API_KEY: key })).toBe(false);
+  });
+});
+
+describe('synthèse ElevenLabs du téléphone en production', () => {
+  const key = 'k'.repeat(24);
+
+  it('sans bascule, aucune exigence ElevenLabs', () => {
+    expect(hasElevenLabsTtsConfig({ VOICE_TTS_PROVIDER: 'cartesia' })).toBe(true);
+  });
+
+  it('avec ElevenLabs, la clé (≥20 caractères) et la voix sont exigées', () => {
+    expect(
+      hasElevenLabsTtsConfig({
+        VOICE_TTS_PROVIDER: 'elevenlabs',
+        ELEVENLABS_API_KEY: key,
+        ELEVENLABS_TTS_VOICE_ID: 'voix',
+      }),
+    ).toBe(true);
+    expect(
+      hasElevenLabsTtsConfig({ VOICE_TTS_PROVIDER: 'elevenlabs', ELEVENLABS_API_KEY: key }),
+    ).toBe(false);
+    expect(
+      hasElevenLabsTtsConfig({
+        VOICE_TTS_PROVIDER: 'elevenlabs',
+        ELEVENLABS_API_KEY: 'court',
+        ELEVENLABS_TTS_VOICE_ID: 'voix',
+      }),
+    ).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@ import { Bot, CalendarCheck, MessageSquare, PhoneCall } from 'lucide-react';
 const storySteps = [
   {
     kicker: 'Assistant vocal restaurant',
-    title: 'Sokar capte chaque appel',
+    title: 'Sokar répond à vos appels',
     accent: 'meme pendant le service',
   },
   {
@@ -18,12 +18,12 @@ const storySteps = [
   {
     kicker: 'Reservations automatiques',
     title: 'Chaque demande devient action',
-    accent: 'planning, SMS, client reconnu',
+    accent: 'planning, SMS, fiche client',
   },
   {
     kicker: 'Croissance mesurable',
-    title: 'Visualisez ce que Sokar récupère',
-    accent: 'appels, tables, revenus',
+    title: 'Suivez vos appels et vos réservations',
+    accent: 'appels, tables, réservations',
   },
 ];
 
@@ -97,7 +97,7 @@ export default function ScrollStoryboardSection() {
             Experience Sokar
           </p>
           <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-black tracking-tight text-white font-display">
-            Une interface qui transforme chaque appel en reservation.
+            Une interface pour suivre les appels et les réservations.
           </h2>
         </div>
       </section>
@@ -153,7 +153,7 @@ export default function ScrollStoryboardSection() {
             style={{ y: cardRowY, opacity: cardRowOpacity }}
           >
             {[
-              { icon: PhoneCall, title: 'Appels entrants', text: 'Sokar répond instantanément' },
+              { icon: PhoneCall, title: 'Appels entrants', text: 'Sokar prend l’appel' },
               { icon: CalendarCheck, title: 'Tables réservées', text: 'Le planning se met à jour' },
               { icon: MessageSquare, title: 'SMS confirmé', text: 'Le client repart rassuré' },
             ].map(({ icon: Icon, title, text }) => (
@@ -180,17 +180,38 @@ export default function ScrollStoryboardSection() {
                   <Bot size={18} />
                 </span>
                 <div>
-                  <p className="text-sm font-bold text-white">Console temps réel</p>
-                  <p className="text-xs text-muted-foreground">Assistant en communication</p>
+                  <p className="text-sm font-bold text-white">Exemple de console</p>
+                  <p className="text-xs text-muted-foreground">
+                    Exemple illustratif — données simulées
+                  </p>
                 </div>
               </div>
-              <div className="mt-5 h-24 rounded-2xl border border-white/8 bg-black/45" />
+              <div className="mt-5 flex h-24 items-center justify-between gap-4 rounded-2xl border border-white/8 bg-black/45 px-4">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">
+                    <PhoneCall size={12} aria-hidden="true" /> Exemple d’appel
+                  </p>
+                  <p className="mt-2 truncate text-sm font-medium text-white">
+                    « Bonjour, avez-vous une table pour deux ce soir ? »
+                  </p>
+                </div>
+                <div aria-hidden="true" className="flex shrink-0 items-center gap-1">
+                  {[12, 22, 15, 28, 18, 32, 20, 13, 25, 16, 10].map((height, index) => (
+                    <span
+                      key={index}
+                      style={{ height }}
+                      className="w-1 rounded-full bg-pricing-accent/80"
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <FloatingMetric label="Appels traites" value="412" className="relative inset-auto" />
               <FloatingMetric label="Tables prises" value="189" className="relative inset-auto" />
-              <FloatingMetric label="Taux reponse" value="98%" className="relative inset-auto" />
-              <FloatingMetric label="Revenus" value="5.4k€" className="relative inset-auto" />
+              <div className="col-span-2">
+                <FloatingMetric label="Taux reponse" value="98%" className="relative inset-auto" />
+              </div>
             </div>
           </motion.div>
         </motion.div>

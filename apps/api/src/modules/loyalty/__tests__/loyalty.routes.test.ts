@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LoyaltyBenefitRule, LoyaltyBenefitStatus, LoyaltyGrantStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { closeApp, getApp } from '../../../test/helpers';
@@ -55,6 +55,8 @@ function grantRow(overrides: Record<string, unknown> = {}) {
 
 describe('loyalty routes', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     vi.clearAllMocks();
     vi.stubEnv('LOYALTY_ENABLED', 'false');
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -63,6 +65,10 @@ describe('loyalty routes', () => {
       siteStatus: 'ACTIVE',
     } as never);
     vi.mocked(db.restaurant.findFirst).mockResolvedValue({ id: 'test-rest-1' } as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   afterAll(async () => {

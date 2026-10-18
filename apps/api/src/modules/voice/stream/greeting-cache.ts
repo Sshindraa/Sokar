@@ -1,7 +1,8 @@
 /**
  * Pré-génération des greetings audio par restaurant au boot.
  *
- * Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+ * Le greeting "Bonjour, ici {restaurant}, je suis Léa, l'assistante IA. Je vous écoute." est la
+ * première
  * chose que le client entend. Sans cache, il faut ~400-800ms pour le
  * synthétiser via Cartesia au premier appel. En pré-générant au boot et en
  * cachant dans Redis (via le TTS cache existant), le greeting devient un
@@ -26,6 +27,13 @@ import { getTtsCached, setTtsCached } from '../tts-cache';
 import { cleanTextForTts, addNaturalPauses } from './tts-handler';
 import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
 import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-config';
+import {
+  buildElevenLabsCacheVariant,
+  buildElevenLabsTtsRequest,
+  elevenLabsTtsModel,
+  elevenLabsTtsVoiceId,
+  telephonyTtsProvider,
+} from './elevenlabs-tts';
 import { getTelnyxCodec, telnyxCodecProfile, type TelnyxCodecProfile } from './telnyx-codec';
 
 /** Profil codec Telnyx courant : PCMA par défaut, L16 si le flag est actif. */
@@ -33,13 +41,16 @@ function greetingCodecProfile(): TelnyxCodecProfile {
   return telnyxCodecProfile(getTelnyxCodec());
 }
 import { normalizeVoiceLocale } from './voice-language';
+import { buildFixedGreeting } from '../agent-identity';
 
 /**
  * Construit le texte du greeting pour un restaurant.
  * Doit être identique à buildInitialGreeting dans handler.ts.
+ * L'appelant est informé dès le décroché qu'il parle à une IA (règlement européen sur l'IA,
+ * article 50, applicable depuis le 2 août 2026).
  */
 export function buildGreetingText(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return buildFixedGreeting(restaurantName);
 }
 
 /**
@@ -52,25 +63,40 @@ export function buildGreetingText(restaurantName: string): string {
 async function generateSentenceAudio(text: string, voiceId: string): Promise<Buffer> {
   const maxRetries = 3;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await fetch('https://api.cartesia.ai/tts/bytes', {
+    const request =
+      telephonyTtsProvider() === 'elevenlabs'
+        ? buildElevenLabsTtsRequest({
+            apiKey: process.env.ELEVENLABS_API_KEY ?? '',
+            voiceId,
+            model: elevenLabsTtsModel(),
+            text,
+            locale: 'fr-FR',
+            codec: greetingCodecProfile().label,
+          })
+        : {
+            url: 'https://api.cartesia.ai/tts/bytes',
+            headers: {
+              'Cartesia-Version': '2026-03-01',
+              'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model_id: CARTESIA_MODEL,
+              transcript: text,
+              voice: { mode: 'id', id: voiceId },
+              locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
+              normalization: CARTESIA_NORMALIZATION,
+              output_format: {
+                container: 'raw',
+                encoding: greetingCodecProfile().cartesiaEncoding,
+                sample_rate: greetingCodecProfile().sampleRate,
+              },
+            }),
+          };
+    const response = await fetch(request.url, {
       method: 'POST',
-      headers: {
-        'Cartesia-Version': '2026-03-01',
-        'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model_id: CARTESIA_MODEL,
-        transcript: text,
-        voice: { mode: 'id', id: voiceId },
-        locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
-        normalization: CARTESIA_NORMALIZATION,
-        output_format: {
-          container: 'raw',
-          encoding: greetingCodecProfile().cartesiaEncoding,
-          sample_rate: greetingCodecProfile().sampleRate,
-        },
-      }),
+      headers: request.headers,
+      body: request.body,
     });
 
     if (response.ok) {
@@ -97,21 +123,41 @@ async function generateSentenceAudio(text: string, voiceId: string): Promise<Buf
  * @param restaurantNames Liste optionnelle pour tests. En prod, charge depuis la DB.
  */
 export async function initGreetingCache(restaurantNames?: string[]): Promise<void> {
-  const apiKey = process.env.CARTESIA_API_KEY;
+  const provider = telephonyTtsProvider();
+  const apiKey =
+    provider === 'elevenlabs' ? process.env.ELEVENLABS_API_KEY : process.env.CARTESIA_API_KEY;
   if (!apiKey) {
-    logger.warn('[greetings] No CARTESIA_API_KEY — greetings will not be pre-cached');
+    logger.warn(
+      `[greetings] No ${provider === 'elevenlabs' ? 'ELEVENLABS_API_KEY' : 'CARTESIA_API_KEY'} — greetings will not be pre-cached`,
+    );
     return;
   }
 
-  const voiceId = process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID;
-  // Clé de cache identique à celle utilisée par speakTtsStreamed :
-  // Le modèle fait partie de la clé pour invalider les greetings lorsqu'un
-  // nouveau snapshot stable est servi par l'alias continu.
-  const cacheVoiceId = buildCartesiaCacheVariant({
-    voiceId,
-    locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
-    codec: greetingCodecProfile().label,
-  });
+  const voiceId =
+    provider === 'elevenlabs'
+      ? elevenLabsTtsVoiceId()
+      : (process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID);
+  if (!voiceId) {
+    const voiceEnv = provider === 'elevenlabs' ? 'ELEVENLABS_TTS_VOICE_ID' : 'CARTESIA_VOICE_ID';
+    logger.warn(`[greetings] No ${voiceEnv} — greetings will not be pre-cached`);
+    return;
+  }
+  // Clé de cache identique à celle utilisée par speakTtsStreamed (même fournisseur, même
+  // modèle, même codec) : le modèle fait partie de la clé pour invalider les greetings
+  // lorsque le fournisseur publie un nouveau snapshot.
+  const cacheVoiceId =
+    provider === 'elevenlabs'
+      ? buildElevenLabsCacheVariant({
+          voiceId,
+          model: elevenLabsTtsModel(),
+          locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
+          codec: greetingCodecProfile().label,
+        })
+      : buildCartesiaCacheVariant({
+          voiceId,
+          locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
+          codec: greetingCodecProfile().label,
+        });
 
   // Charger les noms de restaurants depuis la DB (si non fournis)
   let names = restaurantNames;

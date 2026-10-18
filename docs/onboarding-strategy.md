@@ -22,13 +22,14 @@ Le parcours est orchestré dans `apps/dashboard/src/features/onboarding/` :
 ```text
 RestaurantStep
   -> HoursStep
+  -> FloorStep
+       -> salle, règles et informations pratiques
   -> KnowledgeStep
        -> sauvegarde de la personnalité
        -> DemoCallPlayer
        -> POST /api/proxy/restaurant/onboarding/demo-call
        -> audio Cartesia ou transcript fallback
        -> message du fondateur après lecture
-  -> CalendarStep
   -> PhoneStep
        -> écran préalable
        -> POST /api/proxy/restaurant/onboarding/test-call
@@ -37,9 +38,17 @@ RestaurantStep
   -> ConnectIdentityStep
   -> ConnectLocationStep
   -> ConnectCuisineStep
-  -> ConnectCapacityStep
   -> ConnectActivationStep
+       -> aperçu et publication explicite
+       -> lien public et code du widget après publication
 ```
+
+Après les appels, le parcours passe directement à Sokar Connect : cinq étapes vocales, puis quatre
+étapes Connect. La finalisation est la dernière étape (`ConnectActivationStep`), avec aperçu et
+publication explicite. La clé historique `channels` reste dans le contrat API et est acquise lorsque
+le socle de réservation est prêt ; elle ne correspond plus à une page visible. Ses anciennes URL
+ouvrent la présentation Connect. Le lien et le widget sont proposés après publication.
+Le réglage `connectAgentic` reste dans `ConnectActivationStep`, son point de configuration unique.
 
 `KnowledgeStep` enregistre `profileType`, `fillerStyle`, `speakingRate` et
 `systemPromptExtra`, puis sépare la sauvegarde de la configuration de l'écoute de l'aperçu.

@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import * as entitlementService from '../../entitlements/entitlement.service';
 import { FloorPlanNotFoundError, FloorPlanService } from '../floor-plan.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../../agentic-reservations/core/waiting-list.service';
@@ -32,6 +33,9 @@ import { ServiceCopilotTelemetryService } from '../service-copilot-telemetry.ser
 describe('floorPlanRoutes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(entitlementService, 'evaluateCapability').mockImplementation(
+      async (_id, capability) => ({ capability, allowed: true, plan: 'pro' }),
+    );
   });
 
   afterAll(async () => {

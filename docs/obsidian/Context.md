@@ -1,52 +1,56 @@
 # Contexte Sokar
 
-> État courant, court et à jour. Historique complet : [[Journal]]. Archives : [[archive/Context-log-2026]] (activité), [[archive/Context-decisions-2026]] (décisions).
+> État courant; historique : [[Journal]]. Archives : [[archive/Context-log-2026]] (activité), [[archive/Context-decisions-2026]] (décisions).
 >
-> Les entrées d'activité ne vont **jamais** ici : direction `Journal.md`. Les décisions de plus de ~30 jours partent dans `archive/Context-decisions-2026.md`.
+> Activité → `Journal.md`; décisions >30 j → `archive/Context-decisions-2026.md`.
 >
-> Tenue du fichier : ne reçoit que les TODOs et les décisions du mois courant. Doit rester sous ~8 Ko — `scripts/quality/check-vault-size.sh` le vérifie avant chaque push.
+> TODOs et décisions du mois uniquement; cible <8 Ko (`scripts/quality/check-vault-size.sh`).
 
 ## TODOs actifs
 
+- [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
+- [ ] WhatsApp : local, flags off. Telephone = confirmation SMS sans rappel; WEB avec accord = rappel WhatsApp sans secours SMS. Callbacks Meta signes implementes (recus 7 j, rapprochement par ID; timeout sans ID manuel). Template fr/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta et qualification staging; confirmation SMS a qualifier. Voir `whatsapp-reservation-activation.md`.
+- [ ] SEO : accueil/privacy livrés (#438–#442); GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Confidentialité locale Dashboard/Connect/API : notice commune par catégories, annexe nominative clients en projet (`privacy-client-annex.md`), preuves techniques internes; Workspace constaté Business Starter actif, stockage « Aucune préférence » : ne pas promettre une résidence UE. ATDC Google accepté sur autorisation spécifique. Notifications démo minimisées en local (référence + lien admin). Resend Free constaté et DPA signé fournisseur archivé en privé; conservation effective et autres contrats restent à valider. Dashboard `/privacy` noindex et en vérification. Mentions légales : nom/prénom de l'EI non autorisés à publier; adresse seule autorisée. La page reste incomplète sans identité d'éditeur; réseaux facultatifs.
+- [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
+- [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation; valider la promesse « Support prioritaire 7j/7 ».
+- [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging dediee Sending access/sokar.tech configuree, cle prod/allowlist preservees. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
+- [ ] SMS : staging validé (1 SMS/segment, iPhone/calendrier/itinéraire, accusé livré); PM2 corrigé. Réception prod à qualifier, aucun rejeu historique.
+- [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
+- [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
+- [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
+- [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
+- [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
+- [ ] Onboarding v2 : #404–#411 livrés; téléphone et en ligne restent requis, attribution du numéro manuelle avant ouverture. En local : proposition de formule après appel test, équipe/rôles à valider avec un compte Clerk. Décider l'attribution Telnyx automatique et le compte Stripe unique après l'audit phase 1.6; paiement après onboarding. UI locale à valider.
+- [ ] Onboarding en ligne : bouton « Annuler la réservation test » dans l’étape Règles et diffusion (aujourd’hui le restaurateur réserve sur sa vraie page puis annule à la main).
+- [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
-
-- [ ] Banc voix : mesure de référence faite (30/09, voir Journal). Décider de la phase 1b (famille de dégradation qui reproduit le défaut « valeur sans rôle clair » : ablation/substitution sont à 100 %, donc non discriminantes) ; annoter par écoute humaine le cas bf3893ae (`truthStatus: unverified`).
-- [ ] Compréhension + épellation déployées et actives pour Chez Sokar (01/10) : valider sur un appel réel (épeler un nom neuf), lire `understanding` et `spelled_name_mismatch` dans les journaux. Relecture du nom : mesurer sur un appel réel le délai des tours de relecture (phrase retenue + second passage) face aux autres tours ; tester en synthèse « A, deux S, A, M » avec virgules.
-- [ ] Juge de fin de tour ACTIVÉ pour Chez Sokar (02/10, retrait : supprimer `VOICE_TURN_JUDGE_RESTAURANT_IDS`) : après l'appel réel de l'utilisateur, lire `judge` dans les journaux (`unavailable`, délai), refaire « je voudrais bien venir ».
-- [ ] Banc voix : `pas-de-repetition-mot-pour-mot` est à 20-55 % (seuil 80 %) avant et après l'étape 3 (l'agent reformule mais repose la même question) ; faire utiliser au banc la vraie base `prompts.ts` (prompt minimal aujourd'hui) ; mesurer le mode à outils, non couvert.
-- [ ] Routage UE du secours (`OPENROUTER_FALLBACK_BASE_URL`, non activé) : latence et qualité mesurées le 01/10 (Journal) ; aucun candidat n'est un remplaçant évident, DeepSeek (1 hébergeur UE) reste le meilleur. Décider : bascule UE seule, UE puis mondial, ou rester mondial ; vérifier la région de Cerebras, Deepgram, Cartesia, Telnyx.
+- [ ] Banc voix : décider phase 1b et annoter humainement `bf3893ae` (`truthStatus: unverified`); ablation/substitution ne discriminent pas.
+- [ ] Appel en direct onboarding : l'essayer avec les vrais fournisseurs (écho, latence, réservation simulée), puis déployer `microphone=(self)` (nginx prod) avant la mise en ligne.
+- [ ] Appel réel Chez Sokar : valider compréhension/épellation, mesurer le délai de relecture et tester « A, deux S, A, M ».
+- [ ] Après l’appel réel, vérifier `judge` (disponibilité/délai) et rejouer « je voudrais bien venir »; retrait via `VOICE_TURN_JUDGE_RESTAURANT_IDS`.
+- [ ] Banc voix : traiter la répétition mot pour mot (20–55 %, seuil 80 %) et utiliser le vrai prompt `prompts.ts`.
+- [ ] Secours UE : décider UE seule, UE→mondial ou aucun basculement; vérifier les régions Cerebras, Deepgram, Cartesia et Telnyx.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
-- [ ] Après déploiement phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
-- [ ] Avant un canary Flux, comprendre les 9/31 finals manquants sur le bruit synthétique; allowlist Flux vide jusque-là.
-- [ ] Phase A3 : décider d’un canary keyterms métier/L16 après revue des résultats synthétiques et validation staging.
-- [ ] MCP : fusionner puis déployer le reset compatible avec l’audit, nettoyer le run existant du staging et rejouer les écritures après déploiement. Claude staging est reconnecté avec la portée multi-restaurants approuvée par l’utilisateur ; seuls les tests Chez Sokar sont autorisés pour ce run. Les clients n’exposent pas `initialize`/`tools/list` bruts.
-- [ ] Rapport automatique d'appel : activé en prod le 03/10 (worker). Après un appel réel de test, lire `voice_call_audio.py report <id>` ; vérifier que la ligne `[voice-report] call linked` relie bien l'appel (statut `linked`, plus `matched_by_time`).
-- [ ] Mode à outils supprimé (03/10, PR 1 + 2) : après le déploiement, lire le rapport du premier appel de test ; ~2 500 lignes de dialogue historique ne restent que pour le banc STT (`conversation-controller.ts`, `expected-answer.ts`, `slot-confidence.ts`) : décider de les déplacer sous `scripts/voice-stt-bench/`.
+- [ ] Après phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
+- [ ] Avant Flux, comprendre les 9/31 finals manquants; garder l’allowlist vide jusque-là.
+- [ ] Phase A3 : décider du canary keyterms métier/L16 après revue des résultats et validation staging.
+- [ ] MCP : déployer le reset audité, nettoyer/rejouer le run staging et rejouer les écritures; tests Chez Sokar uniquement, sans `initialize`/`tools/list` bruts.
+- [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
+- [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
+- [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
 
 ## Décisions récentes
 
-2026-09-30 — [MCP, UX] Pour une question simple de disponibilité, utiliser `answer_availability`, dont la sortie est limitée à `{ message }`; répondre uniquement avec le résultat utile, sans commentaire automatique sur l’absence de réservation. Si la personne demande explicitement si une réservation a été créée, répondre clairement. Après tout déploiement ou changement des consignes MCP, actualiser la liste d’outils dans ChatGPT et Claude : les deux peuvent conserver les définitions précédentes en cache. Les clients génèrent encore le texte final.
+- 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.
+- 2026-10-06 — [Onboarding audio] Réponses de démonstration alignées sur les phrases du client; le cache inclut le texte pour invalider les anciens audios après une modification du script.
+- 2026-10-11 — [Onboarding/horaires] Dernières arrivées réglées une fois par service et propagées automatiquement aux jours ouverts; si une fermeture plus tôt rend l’heure invalide, retenir le dernier créneau valide avant cette limite.
 
-2026-09-29 — [MCP, UX] **Prompts et resources différés** — Les parcours ChatGPT/Claude déjà observés utilisent directement recherche, disponibilité et réservations ; aucune demande produit ne justifie une surface `prompts`/`resources` supplémentaire. Réévaluer lorsqu’un parcours récurrent nécessite un workflow guidé ou un contenu restaurant statique dans le client.
-
-2026-09-29 — [MCP, contrats] **Retries sûrs et résultats validés à l'exécution** — Une modification répétée avec les mêmes valeurs devient un no-op (`changed: false`) ; une annulation déjà réussie renvoie `cancelled: true` sans rejouer les effets. Les erreurs exposent aussi un code/message stable dans `_meta["com.sokar/error"]`, en conservant le texte existant. Sokar vérifie les sorties après redaction contre les schémas publiés. `create_quote` est conservé sans changement de contrat comme référence informative temporaire ; son `quoteId` ne réserve pas la capacité et ne peut pas finaliser une réservation. `create_hold` reste l'action qui garde un créneau.
-
-2026-09-29 — [MCP, contrats et observabilité] **Contrats de recherche additifs, métriques indépendantes du client** — `search_restaurants` expose adresse, cuisine, gamme de prix et créneau exact ; `check_availability` expose décision, alternatives et action recommandée, sans IDs internes de conflit. Les dimensions Prometheus restent outil, statut, type d’authentification et transport ; ChatGPT/Claude sont comparés dans la matrice plutôt que distingués par un nouveau label.
-
-2026-09-25 — [voice, deepgram, keyterms] **Keyterms par restaurant en opt-in** — Les termes métier générés (budget estimé dédié de 200 tokens) s'activent par allowlist. Hors allowlist, conserver les keyterms historiques pour préserver le comportement ; aucune donnée client/personnel ou note libre n'est chargée. `VOICE_DEEPGRAM_MIP_OPT_OUT=true` devient le seul changement Deepgram par défaut.
-
-2026-09-24 — [reservations, voice, prisma] **Seuil de groupe unifié à 7** — La valeur par défaut des réservations vocales et agentiques est 7, portée par une constante partagée et le défaut Prisma. La migration ne change que le défaut des nouvelles lignes ; les lignes existantes conservent leur valeur.
-
-2026-09-23 — [voice, TurnPlan, observabilité] **Shadow global et supervision** — `VOICE_TURN_PLAN_SHADOW_ENABLED=true` concerne tous les restaurants, sans allowlist ; `false` coupe partout. Flag actif en staging et production, API saine après reload sans session active. Le TurnPlan ne modifie rien. Prometheus scrape les quatre cibles de production et staging ; Grafana est séparé, loopback-only, en lecture seule par tunnel SSH. Son secret admin dédié est dans l’environnement GitHub `production` et le workflow le synchronise hors du checkout. Aucun appel réel staging (Telnyx absent).
-
-2026-09-21 — [connect, onboarding, api] **Publier exige un slug** — `PATCH /api/restaurants/:id/connect` avec `connectPublished: true` refusait auparavant d'échouer proprement : sans slug, la fiche passait `connectPublished=true` + `publishedAt` + `agenticOptIn=true` mais ne produisait aucune page publique, sans message. La route renvoie désormais `409 { code: 'CONNECT_SLUG_REQUIRED', missing: ['slug'] }` avant toute écriture. Forme alignée sur `PROVISIONING_NOT_READY`.
-
-2026-09-21 — [connect, database, seed, sécurité] **Le seed ne publie plus de fiches fictives sur une base distante** — Le garde passe de `NODE_ENV !== 'production'` (qui échouait en mode ouvert) à un raisonnement sur l'hôte de `DATABASE_URL`. Les fiches de démo `chez-sokar-*` ne se créent plus que sur `localhost`/`127.0.0.1`/`::1`, ou sur une base distante avec l'opt-in explicite `SEED_DEMO_RESTAURANTS=true`. Conséquence opérationnelle : si le seed doit alimenter les pages locales de staging, il faut désormais poser cet opt-in — `env.md` le documente. La fiche `chez-sokar-demo` reste hors garde et se crée partout.
-
-2026-09-21 — [codex, performance, plugins, config] **Configuration Codex allégée** — Les entrées résiduelles Google Calendar et Slack sont désactivées (elles étaient déjà absentes côté gestionnaire de plugins). L’ancien plugin `computer-use` est désactivé ; `unified-computer-use`/`cua_repl` et le pont Chromium utilisé avec Brave restent actifs, GitHub est conservé. Le raisonnement par défaut passe de `max` à `high` pour réduire la latence ; `max` reste disponible comme choix ponctuel. Mesure sur session fraîche à confirmer.
+- 2026-10-06 — [Onboarding] Appel test sur le numéro public uniquement.
+- 2026-10-03 — [UI/widget] Retour à la référence visuelle de phase 2; conserver les corrections fonctionnelles suivantes.
+- Cartes cadeaux : encaissement restaurant via Stripe Connect; aucun débit à la réservation, consommation sur l’addition réelle. Qualification financière avant ouverture commerciale; commit/push du lot autorisés le 06/10.
 
 ## Liens rapides
 

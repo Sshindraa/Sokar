@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
 import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -6,6 +7,7 @@ import Providers from '@/components/providers';
 import Header from '@/components/header';
 import PwaInstallBanner from '@/components/PwaInstallBanner';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale, type Locale } from '@/i18n/config';
+import { THEME_BOOTSTRAP } from '@/app/theme-bootstrap';
 import './globals.css';
 
 export const viewport: Viewport = {
@@ -18,8 +20,10 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Sokar — Restaurant Management',
-  description: 'Assistant vocal intelligent pour votre restaurant',
+  title: `Sokar — ${BRAND_TITLE}`,
+  description: BRAND_SLOGAN,
+  // Base absolue pour les canonical et Open Graph relatifs des pages marketing.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech'),
   manifest: '/manifest.json',
   icons: {
     icon: [
@@ -51,7 +55,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const messages = await getMessages();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script id="sokar-theme-bootstrap" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+      </head>
       <body className="min-h-screen bg-background antialiased">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Providers>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import EmptySlotsWidget from '../EmptySlotsWidget';
 
 // Mock contrôlable du hook useApi — on délègue à un objet mutable
@@ -72,13 +72,21 @@ describe('EmptySlotsWidget', () => {
     expect(document.querySelector('section')).toBeInTheDocument();
   });
 
-  it("état error : ne crash pas et n'affiche pas la grille", async () => {
-    mockGet.mockRejectedValue(new Error('Network error'));
+  it('état error : annonce la panne avec un bouton pour réessayer, sans afficher la grille', async () => {
+    mockGet.mockRejectedValueOnce(new Error('Network error'));
+    mockGet.mockResolvedValueOnce(makeResponse([makeDay({ date: '2026-07-01' })], {}));
     render(<EmptySlotsWidget />);
-    // En cas d'erreur, le composant retourne null
+
+    // Une panne ne doit pas ressembler à « aucun jour à renforcer ».
+    expect(await screen.findByRole('alert')).toHaveTextContent('Network error');
+    expect(screen.queryByText('Semaine bien remplie')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
+
     await waitFor(() => {
-      expect(document.querySelector('section')).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+    expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
   it('état data : affiche les jours sous-réservés (actionableDays)', async () => {

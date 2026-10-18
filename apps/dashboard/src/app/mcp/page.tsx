@@ -305,7 +305,7 @@ export default function McpPage() {
           <SectionHeader
             icon={<ShieldCheck size={14} />}
             eyebrow="Sécurité"
-            title="Trois scopes, zéro débordement"
+            title="Trois scopes distincts"
             description="Tokens opaques stockés en Redis. Refresh automatique. Révocation à tout moment depuis le dashboard."
           />
 
@@ -360,9 +360,9 @@ export default function McpPage() {
             <Link href="/pricing" className="hover:text-foreground transition-all duration-200">
               Tarifs
             </Link>
-            <Link href="/privacy" className="hover:text-foreground transition-all duration-200">
+            <a href="/privacy" className="hover:text-foreground transition-all duration-200">
               Confidentialité
-            </Link>
+            </a>
             <Link href="/login" className="hover:text-foreground transition-all duration-200">
               Connexion
             </Link>

@@ -605,9 +605,10 @@ build_packages_api() {
     find "$SOKAR_ROOT/apps" "$SOKAR_ROOT/packages" -maxdepth 2 -name 'tsconfig.tsbuildinfo' -delete 2>/dev/null || true
 
     if [ "$need_packages" = true ] || [ "$need_api" = true ]; then
+        # config imports the shared catalogue; database imports config.
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
-        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
     fi
     if [ "$need_api" = true ]; then
         # `tsc` sur l'API consomme ~2 Go de mémoire (mesuré le 27/09/2026 avec

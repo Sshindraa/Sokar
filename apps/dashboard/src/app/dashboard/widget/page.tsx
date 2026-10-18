@@ -3,9 +3,9 @@
 /**
  * Sokar Dashboard — Widget / Intégration.
  *
- * Permet au restaurateur de copier le snippet JS d'embed et de visualiser
- * un aperçu live du widget. Paramètres de marque blanche : couleurs
- * primaires et accent.
+ * Permet au restaurateur de copier le code d'embed et de visualiser un aperçu du widget.
+ * Les couleurs ne sont pas réglables ici : le widget n'en tient pas compte (l'ancien réglage
+ * « couleur principale / accent » n'avait aucun effet, ni sur l'aperçu ni sur le site).
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -15,21 +15,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Code,
-  Copy,
-  ExternalLink,
-  Palette,
-  RefreshCw,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, Code, Copy, ExternalLink, RefreshCw } from 'lucide-react';
 import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 import { getErrorMessage } from '@/types/api';
-
-const DEFAULT_PRIMARY = '#0f172a';
-const DEFAULT_ACCENT = '#f97316';
-const WIDGET_HOST = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech';
+import { buildWidgetPreviewUrl } from '@/lib/widget-preview-url';
+import {
+  buildWidgetSnippet,
+  WIDGET_DEFAULT_ACCENT,
+  WIDGET_DEFAULT_PRIMARY,
+  WIDGET_HOST,
+} from '@/lib/widget-snippet';
 
 type ConnectSettings = {
   restaurantId: string;
@@ -38,19 +33,8 @@ type ConnectSettings = {
   connectPublished: boolean;
 };
 
-const PROD_WIDGET_HOST = 'https://sokar.tech';
-
-function buildSnippet(slug: string, primary: string, accent: string): string {
-  const isProd = WIDGET_HOST === PROD_WIDGET_HOST;
-  const hostAttr = isProd ? '' : ` data-host="${WIDGET_HOST}"`;
-  return `<script src="${WIDGET_HOST}/embed.js" data-slug="${slug}"${hostAttr} data-primary="${primary}" data-accent="${accent}"></script>`;
-}
-
-function buildWidgetUrl(slug: string, primary: string, accent: string): string {
-  return (
-    `${WIDGET_HOST}/widget/${slug}?embedded=1&primary=` +
-    `${encodeURIComponent(primary.replace('#', ''))}&accent=${encodeURIComponent(accent.replace('#', ''))}`
-  );
+function buildWidgetUrl(slug: string): string {
+  return buildWidgetPreviewUrl(slug, WIDGET_DEFAULT_PRIMARY, WIDGET_DEFAULT_ACCENT);
 }
 
 export default function WidgetIntegrationPage() {
@@ -60,8 +44,6 @@ export default function WidgetIntegrationPage() {
   const [error, setError] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [primary, setPrimary] = useState(DEFAULT_PRIMARY);
-  const [accent, setAccent] = useState(DEFAULT_ACCENT);
 
   const loadData = useCallback(() => {
     if (!orgId) {
@@ -90,11 +72,11 @@ export default function WidgetIntegrationPage() {
     if (!settings) return;
     setCopyError(null);
     try {
-      await navigator.clipboard.writeText(buildSnippet(settings.slug, primary, accent));
+      await navigator.clipboard.writeText(buildWidgetSnippet(settings.slug));
       setCopied(true);
       setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
     } catch {
-      setCopyError('Impossible de copier le snippet. Veuillez le sélectionner manuellement.');
+      setCopyError('Impossible de copier le code. Veuillez le sélectionner manuellement.');
     }
   }
 
@@ -170,7 +152,7 @@ export default function WidgetIntegrationPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Code size={18} />
-                Snippet à intégrer
+                Code à intégrer
               </CardTitle>
               <CardDescription>
                 Copiez ce code dans le HTML de votre site, à l&apos;endroit où vous souhaitez
@@ -180,63 +162,19 @@ export default function WidgetIntegrationPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="snippet" className="text-sm font-medium">
-                  Snippet
+                  Code du widget
                 </label>
                 <Input
                   id="snippet"
                   readOnly
-                  value={buildSnippet(settings.slug, primary, accent)}
+                  value={buildWidgetSnippet(settings.slug)}
                   className="font-mono text-xs"
                 />
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label htmlFor="primary" className="flex items-center gap-2 text-sm font-medium">
-                    <Palette size={16} />
-                    Couleur principale
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="primary"
-                      type="color"
-                      value={primary}
-                      onChange={(e) => setPrimary(e.target.value)}
-                      className="h-10 w-10 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <Input
-                      value={primary}
-                      onChange={(e) => setPrimary(e.target.value)}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="accent" className="flex items-center gap-2 text-sm font-medium">
-                    <Palette size={16} />
-                    Couleur d&apos;accent
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="accent"
-                      type="color"
-                      value={accent}
-                      onChange={(e) => setAccent(e.target.value)}
-                      className="h-10 w-10 cursor-pointer rounded border border-border bg-transparent"
-                    />
-                    <Input
-                      value={accent}
-                      onChange={(e) => setAccent(e.target.value)}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
               <Button onClick={handleCopy} className="w-full gap-2" variant="default">
                 {copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-                {copied ? 'Snippet copié' : 'Copier le snippet'}
+                {copied ? 'Code copié' : 'Copier le code'}
               </Button>
             </CardContent>
           </Card>
@@ -248,13 +186,13 @@ export default function WidgetIntegrationPage() {
                 Aperçu
               </CardTitle>
               <CardDescription>
-                Cet aperçu correspond exactement à ce que vos clients verront sur votre site.
+                Cet aperçu montre ce que vos clients verront sur votre site.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-hidden rounded-lg border border-border bg-background">
                 <iframe
-                  src={buildWidgetUrl(settings.slug, primary, accent)}
+                  src={buildWidgetUrl(settings.slug)}
                   title="Aperçu du widget Sokar"
                   className="w-full"
                   style={{ height: 520 }}

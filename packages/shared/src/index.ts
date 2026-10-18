@@ -11,6 +11,7 @@
  */
 
 export * from './plan';
+export * from './brand';
 export * from './reservation';
 export * from './call';
 export * from './agent';
@@ -22,3 +23,8 @@ export * from './utils/fetch-with-timeout';
 export * from './utils/format';
 export * from './utils/opening-hours';
 export * from './utils/slugify';
+
+export * from './pricing-catalog.cjs';
+
+export * from './connect-demo';
+export * from './privacy';

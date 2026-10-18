@@ -106,6 +106,32 @@ function notify(alert: Promise<unknown>): void {
 }
 
 /** Flux LLM ouvert, premier fragment déjà lu. */
+/** Au-delà, la chronologie du flux structuré est journalisée (médiane habituelle : environ 400 ms). */
+const SLOW_STRUCTURED_STREAM_MS = 1500;
+
+/** Un fragment SSE porte du texte : `"content":"` suivi d'au moins un caractère. */
+const SSE_CONTENT_RE = /"content"\s*:\s*"(?!")/;
+
+/** Lit le flux jusqu'au premier fragment de texte et rend tous les octets lus jusque-là en une lecture. */
+async function readUntilContent(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<StreamChunkRead> {
+  const parts: Uint8Array[] = [];
+  const decoder = new TextDecoder();
+  let seen = '';
+  for (;;) {
+    const read = await reader.read();
+    if (read.done) {
+      return parts.length ? { done: false, value: Buffer.concat(parts) } : read;
+    }
+    parts.push(read.value);
+    seen += decoder.decode(read.value, { stream: true });
+    if (SSE_CONTENT_RE.test(seen)) {
+      return { done: false, value: parts.length === 1 ? read.value : Buffer.concat(parts) };
+    }
+  }
+}
+
 interface OpenedStream {
   reader: ReadableStreamDefaultReader<Uint8Array>;
   provider: LlmProviderUsed;
@@ -409,6 +435,10 @@ export class CallSessionManager {
     telnyxWs: WebSocket;
     callLegId: string;
     codec: 'PCMA' | 'PCMU' | 'L16';
+    /** Appel de démonstration depuis le navigateur : aucun effet de bord réel (voir `CallSession.demo`). */
+    demo?: boolean;
+    /** Style de la maison pour l'accueil composé (voir styled-greeting.ts). */
+    greetingStyle?: { profileType?: string; fillerStyle?: string };
     personality?: {
       fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
       systemPromptExtra?: string | null;
@@ -449,6 +479,7 @@ export class CallSessionManager {
       isVip: opts.isVip,
       telnyxWs: opts.telnyxWs,
       codec: opts.codec,
+      ...(opts.demo ? { demo: true } : {}),
       history: [
         { role: 'system', content: opts.systemPrompt },
         { role: 'assistant', content: greeting },
@@ -486,6 +517,7 @@ export class CallSessionManager {
       lastActivityAt: Date.now(),
       createdAt: Date.now(),
       personality: opts.personality ?? null,
+      ...(opts.greetingStyle ? { greetingStyle: opts.greetingStyle } : {}),
       conversation: createConversationState(),
     };
     this.sessions.set(sessionIdKey(opts.callControlId), session);
@@ -615,7 +647,7 @@ export class CallSessionManager {
     // Avant `cancel` : le contexte vide ses trames en attente. Sans contexte (voix HTTP), on ne sait pas.
     const snapshot = session.ttsContext?.interruptionSnapshot?.();
     session.interruptedReply = snapshot?.text.trim()
-      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs)
+      ? splitHeardReply(snapshot.text, snapshot.playedMs, snapshot.totalMs, snapshot.alignment)
       : undefined;
     session.ttsContext?.cancel();
     session.ttsContext = null;
@@ -797,6 +829,7 @@ export class CallSessionManager {
       signal: options.signal,
     };
     const hedgeMs = voiceConfig.VOICE_LLM_HEDGE_MS;
+    const startedAt = Date.now();
     const opened =
       hedgeMs > 0 && voiceConfig.OPENROUTER_API_KEY?.trim()
         ? await this.openStructuredHedged(session, messages, request, hedgeMs)
@@ -809,10 +842,18 @@ export class CallSessionManager {
     let text = '';
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
+    // Chronologie du flux, journalisée seulement s'il est lent : premier texte et plus longue pause.
+    const openedMs = Date.now() - startedAt;
+    let lastChunkAt = Date.now();
+    let maxGapMs = 0;
+    let firstTextMs: number | null = null;
     try {
       for (;;) {
         const { done, value } = nextRead ?? (await reader.read());
         nextRead = null;
+        const now = Date.now();
+        maxGapMs = Math.max(maxGapMs, now - lastChunkAt);
+        lastChunkAt = now;
         if (done) break;
         pending += decoder.decode(value, { stream: true });
         const lines = pending.split('\n');
@@ -833,6 +874,7 @@ export class CallSessionManager {
             }
             const delta = chunk.choices?.[0]?.delta?.content;
             if (delta) {
+              firstTextMs ??= Date.now() - startedAt;
               text += delta;
               options.onDelta(delta);
             }
@@ -843,6 +885,21 @@ export class CallSessionManager {
       }
     } finally {
       reader.releaseLock();
+    }
+    const totalMs = Date.now() - startedAt;
+    if (totalMs >= SLOW_STRUCTURED_STREAM_MS) {
+      logger.warn(
+        {
+          callId: session.callControlId,
+          provider,
+          totalMs,
+          openedMs,
+          firstTextMs,
+          maxGapMs,
+          outputTokens,
+        },
+        '[llm-stream] slow structured stream',
+      );
     }
     addLlmUsage(
       session,
@@ -1182,17 +1239,24 @@ export class CallSessionManager {
    * Premier fragment du flux, avec un délai maximal : un modèle principal lent (file d'attente,
    * incident partiel) ne doit pas laisser l'appelant attendre le délai total de 8 s.
    */
+  /**
+   * Lit jusqu'au premier fragment qui porte du texte, dans le délai donné. Un fragment sans texte
+   * (rôle seul, ouvert d'emblée par Cerebras) ne compte pas : sinon un flux ouvert vite mais dont le
+   * texte tarde échappe au hedging et au délai maximal (appel 80a153e6 du 16/10/2026). Les octets
+   * lus avant sont rendus avec ce premier texte, rien n'est perdu.
+   */
   private async readFirstChunk(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     timeoutMs?: number,
   ): Promise<StreamChunkRead | 'timeout'> {
-    if (!timeoutMs) return reader.read();
+    const firstText = readUntilContent(reader);
+    if (!timeoutMs) return firstText;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), timeoutMs);
     });
     try {
-      return await Promise.race([reader.read(), timeout]);
+      return await Promise.race([firstText, timeout]);
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -1346,6 +1410,16 @@ export class CallSessionManager {
             session.conversation.slots.customerName;
           const reservationCustomerName = confirmedCustomerName ?? customerName ?? 'Client';
 
+          // Démonstration d'onboarding : tout le parcours (disponibilité, relecture, accord, nom)
+          // est réel, seule l'écriture est simulée. Rien n'est créé dans l'agenda du restaurant.
+          if (session.demo) {
+            session.reservationCreatedAt = Date.now();
+            return terminalToolReply(
+              executionControl,
+              `Réservation confirmée pour ${reservationCustomerName}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s).`,
+            );
+          }
+
           try {
             const callRecordId = await this.resolveCallRecordId(session);
             if (!callRecordId) {
@@ -1402,6 +1476,13 @@ export class CallSessionManager {
         case 'takeMessage': {
           const { customerName, message, callbackPhone } = args;
 
+          if (session.demo) {
+            return terminalToolReply(
+              executionControl,
+              `J'ai bien noté votre message pour le gérant : "${message}". Il vous recontactera${callbackPhone ? ` au ${callbackPhone}` : ''} dès que possible. Merci de votre appel.`,
+            );
+          }
+
           try {
             const callRecordId = await this.resolveCallRecordId(session);
             if (!callRecordId) {
@@ -1450,6 +1531,12 @@ export class CallSessionManager {
         }
 
         case 'handoffToManager':
+          // Jamais de transfert réel pendant une démonstration : le gérant ne doit pas être appelé.
+          // Le résultat est un fait pour le modèle, qui le dit avec ses mots (pas de réplique codée).
+          if (session.demo) {
+            session.handoffConclusion = 'demo_no_transfer';
+            return "Transfert non effectué : cette conversation est une démonstration. Propose de prendre un message pour le gérant, sans affirmer qu'il est absent ou indisponible.";
+          }
           if (!session.managerPhone?.trim()) {
             session.handoffConclusion = 'manager_unconfigured';
             recordVoiceTransfer(session, authorizationBasis, 'unconfigured');

@@ -12,8 +12,14 @@ function parseCorsOrigins(): string | string[] {
     return origins.length === 1 ? origins[0] : origins;
   }
 
-  // 2. Dev localhost (uniquement en non-production — en prod, env.ts a déjà crashé)
-  return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  // 2. Dev localhost (dashboard + Connect, uniquement hors production — en prod,
+  // env.ts a déjà crashé si l'allowlist explicite est absente).
+  return [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:4002',
+    'http://127.0.0.1:4002',
+  ];
 }
 
 export async function registerCors(app: FastifyInstance) {

@@ -8,6 +8,7 @@ import { formatDate } from '@sokar/shared';
 import { queues } from '../queues';
 import { CONFIRMATION_SMS_WORKER_CONCURRENCY } from '../constants';
 import { isConfirmedReservation } from '../../reservations/reservation-state';
+import { utcToZonedParts } from '../../timezone/restaurant-time';
 import {
   acquireNotificationClaim,
   buildNotificationClaimKey,
@@ -23,9 +24,8 @@ import {
 /**
  * Worker pour l'envoi des rappels de réservation J-1.
  *
- * Canal : WhatsApp (utility template) si configuré, sinon SMS.
- * Le fallback WhatsApp→SMS est autorisé uniquement après un refus certain —
- * voir shared/messaging/sender.ts. Un résultat unknown reste bloqué.
+ * Canal : WhatsApp uniquement pour les reservations WEB avec accord.
+ * Aucun secours SMS. Un resultat unknown reste bloque.
  *
  * Jobs :
  * 1. { kind: 'scan' } — Scanne les réservations de demain et envoie un rappel.
@@ -58,11 +58,11 @@ function getDefaultDependencies(): ConfirmationSmsDependencies {
   };
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export function isReminderDue(date: Date, timezone: string, now = new Date()): boolean {
+  const today = utcToZonedParts(now, timezone).date;
+  const tomorrow = new Date(`${today}T12:00:00.000Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return date > now && utcToZonedParts(date, timezone).date === tomorrow.toISOString().slice(0, 10);
 }
 
 function isReminderEligible(reservation: {
@@ -86,7 +86,7 @@ async function requeueUnknownClaim(
   reconciliationQueue: NotificationReconciliationQueue | undefined,
   claimKey: string,
   record: {
-    provider?: 'telnyx' | 'resend';
+    provider?: 'telnyx' | 'resend' | 'meta';
     channel?: 'sms' | 'whatsapp' | 'email';
     providerMessageId?: string;
   },
@@ -135,13 +135,20 @@ async function processReminderForReservation(
     customerPhone: string | null;
     restaurantId: string;
     customerId: string | null;
-    restaurant: { name: string; id: string };
+    restaurant: { name: string; id: string; timezone: string };
     reservedAt: Date;
+    startsAt?: Date | null;
     partySize: number;
+    consents?: unknown;
+    channel?: string;
   },
 ): Promise<Awaited<ReturnType<typeof sendReminder>>> {
+  const instant = r.startsAt ?? r.reservedAt;
+  if (!isReminderDue(instant, r.restaurant.timezone)) {
+    return { channel: 'whatsapp', success: false, skipped: 'outside_reminder_window' };
+  }
   if (!r.customerPhone) {
-    return { channel: 'sms', success: false, outcome: 'failure_certain', provider: 'telnyx' };
+    return { channel: 'whatsapp', success: false, skipped: 'missing_recipient' };
   }
   const reminderParams = {
     to: r.customerPhone,
@@ -149,14 +156,29 @@ async function processReminderForReservation(
     restaurantId: r.restaurantId,
     reservationId: r.id,
     customerId: r.customerId ?? undefined,
-    date: deps.formatDate(r.reservedAt, 'fr-FR', {
+    date: deps.formatDate(instant, 'fr-FR', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
+      timeZone: r.restaurant.timezone,
     }),
-    time: formatTime(r.reservedAt),
+    time: utcToZonedParts(instant, r.restaurant.timezone).time,
     partySize: r.partySize,
+    reservationChannel: r.channel,
+    whatsappOptIn:
+      r.consents !== null &&
+      typeof r.consents === 'object' &&
+      !Array.isArray(r.consents) &&
+      (r.consents as Record<string, unknown>).transactionalWhatsapp === true,
   };
+
+  if (r.channel !== 'WEB' || !reminderParams.whatsappOptIn) {
+    return {
+      channel: 'whatsapp',
+      success: false,
+      skipped: r.channel !== 'WEB' ? 'non_web_booking' : 'no_whatsapp_consent',
+    };
+  }
 
   if (deps.manageReminderClaims) {
     return deps.sendReminder(reminderParams, {
@@ -187,6 +209,10 @@ async function processReminderForReservation(
 
   try {
     const result = await deps.sendReminder(reminderParams);
+    if (result.skipped) {
+      await recordNotificationResult(deps.claimStore, claimKey, attempt.token, 'failure_certain');
+      return result;
+    }
     await recordWorkerResult(deps, claimKey, attempt.token, result);
     return result;
   } catch (err) {
@@ -218,21 +244,24 @@ export async function processConfirmationSmsJob(
   const data = job.data;
 
   if (data.kind === 'scan') {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setDate(dayAfter.getDate() + 1);
+    // Broad UTC bounds cover tomorrow in every IANA timezone. Each current row
+    // is checked against its own local calendar immediately before sending.
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 72 * 60 * 60 * 1000);
 
     const reservations = await deps.db.reservation.findMany({
       where: {
+        channel: 'WEB',
         status: 'CONFIRMED',
-        reservedAt: { gte: tomorrow, lt: dayAfter },
+        OR: [
+          { startsAt: { gt: now, lt: horizon } },
+          { startsAt: null, reservedAt: { gt: now, lt: horizon } },
+        ],
         customerPhone: { not: null },
         confirmationStatus: { in: ['NOT_REQUIRED', 'PENDING'] },
         confirmationSentAt: null,
       },
-      include: { restaurant: { select: { name: true, id: true } } },
+      include: { restaurant: { select: { name: true, id: true, timezone: true } } },
     });
 
     log.info({ count: reservations.length }, 'rappel scan: reservations to remind');
@@ -245,7 +274,7 @@ export async function processConfirmationSmsJob(
 
       const latest = await deps.db.reservation.findUnique({
         where: { id: r.id },
-        select: { status: true, state: true, confirmationSentAt: true },
+        include: { restaurant: { select: { name: true, id: true, timezone: true } } },
       });
       if (!latest || !isReminderEligible(latest)) {
         log.info({ reservationId: r.id }, 'reminder skipped: reservation no longer eligible');
@@ -253,7 +282,11 @@ export async function processConfirmationSmsJob(
       }
 
       try {
-        const result = await processReminderForReservation(deps, log, r);
+        const result = await processReminderForReservation(deps, log, latest);
+        if (result.skipped) {
+          log.info({ reservationId: r.id, reason: result.skipped }, 'reminder skipped');
+          continue;
+        }
         if (getResultOutcome(result) === 'success') {
           await deps.db.reservation.update({
             where: { id: r.id },
@@ -291,7 +324,7 @@ export async function processConfirmationSmsJob(
   if (data.kind === 'send' && data.reservationId) {
     const r = await deps.db.reservation.findUniqueOrThrow({
       where: { id: data.reservationId },
-      include: { restaurant: { select: { name: true, id: true } } },
+      include: { restaurant: { select: { name: true, id: true, timezone: true } } },
     });
     if (!r.customerPhone) {
       log.warn({ reservationId: r.id }, 'no customer phone, skipping');
@@ -304,6 +337,10 @@ export async function processConfirmationSmsJob(
 
     try {
       const result = await processReminderForReservation(deps, log, r);
+      if (result.skipped) {
+        log.info({ reservationId: r.id, reason: result.skipped }, 'reminder skipped');
+        return;
+      }
       if (getResultOutcome(result) === 'success') {
         await deps.db.reservation.update({
           where: { id: r.id },

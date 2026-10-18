@@ -15,21 +15,20 @@ describe('PricingSection', () => {
   it('affiche un CTA pour chaque formule avec la cadence annuelle sélectionnée', () => {
     render(<PricingSection />);
 
-    expect(screen.getByText('159')).toBeInTheDocument();
-    expect(screen.getByText('239')).toBeInTheDocument();
-    expect(screen.getByText('199')).toBeInTheDocument();
+    expect(screen.getByText('179')).toBeInTheDocument();
+    expect(screen.getAllByText('269')).toHaveLength(2);
 
-    expect(screen.getByRole('link', { name: 'Souscrire Essential' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Choisir Essential' })).toHaveAttribute(
       'href',
       '/register?plan=essential&billing=annual',
     );
-    expect(screen.getByRole('link', { name: 'Souscrire Pro' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Découvrir Pro' })).toHaveAttribute(
       'href',
-      '/register?plan=pro&billing=annual',
+      '/demo?plan=pro&billing=annual',
     );
-    expect(screen.getByRole('link', { name: 'Souscrire Multi-site' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
       'href',
-      '/register?plan=multi-site&billing=annual&sites=2',
+      '/demo?plan=multi-site&billing=annual&sites=2',
     );
   });
 
@@ -38,9 +37,9 @@ describe('PricingSection', () => {
 
     fireEvent.click(screen.getByRole('switch'));
 
-    expect(screen.getByRole('link', { name: 'Souscrire Pro' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Découvrir Pro' })).toHaveAttribute(
       'href',
-      '/register?plan=pro&billing=monthly',
+      '/demo?plan=pro&billing=monthly',
     );
   });
 
@@ -48,9 +47,32 @@ describe('PricingSection', () => {
     const { container } = render(<PricingSection />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('249\u00a0€/mois + 99\u00a0€/site');
-    expect(text).toContain('+ 79\u00a0€/site');
+    expect(text).toContain('+ 89\u00a0€/site par adresse supplémentaire');
+    expect(text).not.toContain('HT');
     expect(text).not.toContain('Économisez');
+  });
+
+  it('précise le paiement annuel et distingue le mensuel', () => {
+    render(<PricingSection />);
+    expect(screen.getByText(/Équivalents mensuels arrondis/)).toBeInTheDocument();
+    expect(screen.getAllByText('Facturé à l’année, engagement 12 mois')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByText(/engagement 12 mois/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Sans engagement')).toHaveLength(3);
+  });
+
+  it('calcule le total multi-site et transmet le nombre sélectionné', () => {
+    render(<PricingSection />);
+    fireEvent.click(screen.getByRole('switch'));
+    fireEvent.change(screen.getByLabelText('Nombre d’établissements'), { target: { value: '3' } });
+    expect(screen.getByText(/Total pour 3 établissements : 497/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
+      'href',
+      '/demo?plan=multi-site&billing=monthly&sites=3',
+    );
+    fireEvent.click(screen.getByRole('switch'));
+    expect(screen.getByText(/Total pour 3 établissements : 447/)).toBeInTheDocument();
+    expect(screen.queryByText(/,\d{2}.*€\/mois/)).not.toBeInTheDocument();
   });
 
   it('masque le prix barré et les économies en mensuel', () => {
@@ -59,9 +81,23 @@ describe('PricingSection', () => {
     fireEvent.click(screen.getByRole('switch'));
 
     const text = container.textContent ?? '';
-    expect(screen.getByText('299')).toBeInTheDocument();
+    expect(screen.getAllByText('299')[0]).toBeInTheDocument();
     expect(text).toContain('+ 99\u00a0€/site');
     expect(text).not.toContain('Économisez');
-    expect(text).not.toContain('-20% annuel');
+    expect(text).not.toContain('-10% annuel');
+  });
+
+  it('ne marque que le non livré, d’un simple « Bientôt »', () => {
+    render(<PricingSection />);
+
+    expect(screen.queryByText('Disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Prévu')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Bientôt').length).toBeGreaterThan(0);
+  });
+
+  it('ne présente aucune formule comme « Recommandé »', () => {
+    render(<PricingSection />);
+
+    expect(screen.queryByText('Recommandé')).not.toBeInTheDocument();
   });
 });

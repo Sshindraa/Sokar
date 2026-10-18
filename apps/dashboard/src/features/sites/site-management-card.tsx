@@ -1,5 +1,6 @@
 'use client';
 
+import { roleLabel } from '@/features/team/roles';
 import { useState } from 'react';
 import { AlertCircle, Building2, CheckCircle2, Loader2, Plus, ShieldCheck } from 'lucide-react';
 import { useApi } from '@/lib/api';
@@ -89,7 +90,7 @@ export function SiteManagementCard() {
                   </div>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                     <ShieldCheck size={13} />
-                    {site.role === 'OWNER' ? 'Propriétaire' : site.role}
+                    {roleLabel(site.role)}
                     {' · '}
                     {site.siteStatus === 'ACTIVE' ? 'Actif' : 'Suspendu'}
                   </p>
@@ -144,6 +145,10 @@ export function SiteManagementCard() {
               required
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            Indiquez la ligne actuelle du site. L’équipe Sokar lui attribuera ensuite son numéro
+            Sokar, vers lequel vous renverrez vos appels.
+          </p>
           <Button type="submit" disabled={saving || !name.trim() || !phoneNumber.trim()}>
             {saving ? <Loader2 className="animate-spin" /> : <Plus />}
             {saving ? 'Ajout…' : 'Ajouter le site'}

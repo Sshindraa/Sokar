@@ -22,6 +22,7 @@ import { CapacityAwareAvailabilityService } from '../floor-plan/availability-cap
 import { TableAllocationService } from '../floor-plan/table-allocation.service.js';
 import { transitionProjection } from '../../shared/reservations/reservation-state.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
+import { enqueueReservationConfirmation } from '../../shared/outbox/reservation-confirmation';
 
 export class ReservationNotFoundError extends Error {
   constructor(public readonly id: string) {
@@ -204,6 +205,10 @@ export class ReservationLifecycleService {
       where: { id: args.reservationId, restaurantId: args.restaurantId },
       data: { ...additionalData, ...projection },
     });
+
+    if (!sameState && args.toState === 'CONFIRMED') {
+      await enqueueReservationConfirmation(tx, reservation);
+    }
 
     if (!sameState) {
       if (

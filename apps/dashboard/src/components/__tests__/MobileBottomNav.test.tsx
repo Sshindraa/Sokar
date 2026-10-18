@@ -13,6 +13,13 @@ vi.mock('next/navigation', () => ({
   useRouter: () => routerState,
 }));
 
+const roleState = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock('@/features/sites/site-context', () => ({
+  useSiteSelection: () => ({
+    activeSite: roleState.value ? { id: 'site', role: roleState.value } : undefined,
+  }),
+}));
+
 vi.mock('@/features/theme/dashboard-theme', () => ({
   useDashboardTheme: () => ({
     theme: 'dark',
@@ -41,8 +48,10 @@ vi.mock('next-intl', () => ({
       reputation: 'Avis',
       loyalty: 'Fidélité',
       reactivation: 'Relances',
-      experiences: 'Offres',
-      events: 'Événements',
+      openButton: 'Créer une offre',
+      title: 'Que souhaitez-vous créer ?',
+      experiences: 'Expériences à réserver',
+      events: 'Événements & billets',
       giftCards: 'Cartes cadeaux',
       connect: 'Connect',
       widget: 'Widget',
@@ -60,6 +69,7 @@ describe('MobileBottomNav', () => {
   beforeEach(() => {
     pathnameState.value = '/dashboard';
     searchParamsState.value = '';
+    roleState.value = undefined;
     vi.clearAllMocks();
 
     // Mock ResizeObserver
@@ -262,6 +272,8 @@ describe('MobileBottomNav', () => {
     expect(moreButton).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('dialog', { name: /Plus/i })).toBeInTheDocument();
     expect(screen.getByText('Campagnes')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Vue d’ensemble' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Créer une offre' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Réglages/i })).toHaveClass(
       'col-span-2',
       'md:col-span-3',
@@ -271,6 +283,14 @@ describe('MobileBottomNav', () => {
     const closeButtons = screen.getAllByRole('button', { name: /Fermer/i });
     fireEvent.click(closeButtons[0]);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('ouvre le choix de création depuis le menu mobile et ferme le panneau Plus', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: 'Plus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Créer une offre' }));
+    expect(screen.queryByRole('dialog', { name: 'Plus' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Que souhaitez-vous créer ?' })).toBeInTheDocument();
   });
 
   it('keeps primary items visible and closes the menu when navigating', () => {
@@ -299,5 +319,36 @@ describe('MobileBottomNav', () => {
     pathnameState.value = '/dashboard/reservations';
     rerender(<MobileBottomNav />);
     expect(screen.queryByRole('dialog', { name: /Plus/i })).not.toBeInTheDocument();
+  });
+
+  describe('équipe de service', () => {
+    it('ne montre que les réservations et le service en salle, sans menu « Plus »', () => {
+      roleState.value = 'STAFF';
+      render(<MobileBottomNav />);
+
+      expect(screen.getByRole('link', { name: /Réservations/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.queryAllByText('Pilotage')).toHaveLength(0);
+      expect(screen.queryAllByText('Clients')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: /Plus/ })).not.toBeInTheDocument();
+      expect(screen.queryByText('Réglages')).not.toBeInTheDocument();
+    });
+
+    it('ne propose pas la modification du plan de salle', () => {
+      roleState.value = 'STAFF';
+      pathnameState.value = '/dashboard/floor-plan';
+      render(<MobileBottomNav />);
+
+      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.queryAllByText('Édition')).toHaveLength(0);
+    });
+
+    it('un responsable garde le menu complet', () => {
+      roleState.value = 'MANAGER';
+      render(<MobileBottomNav />);
+
+      expect(screen.getAllByText('Pilotage').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Clients').length).toBeGreaterThan(0);
+    });
   });
 });

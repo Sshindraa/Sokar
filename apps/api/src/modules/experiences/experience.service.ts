@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import {
+  ExperienceCheckoutStatus,
   ExperienceReservationStatus,
   ExperienceSessionStatus,
   ExperienceStatus,
   Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { refundPaidExperienceReservation } from './experience-payment.service';
 
 const EXPERIENCE_KEY_PATTERN = /^[a-z][a-z0-9_.-]{1,63}$/;
 const ACTOR_HASH_PREFIX = 'sokar:experience-actor:';
@@ -58,6 +60,8 @@ const RESERVATION_SELECT = {
   experienceId: true,
   sessionId: true,
   customerId: true,
+  customerName: true,
+  customerPhone: true,
   reservationId: true,
   idempotencyKey: true,
   quantity: true,
@@ -73,6 +77,7 @@ const RESERVATION_SELECT = {
   experience: { select: { key: true, name: true, priceCents: true, currency: true } },
   session: { select: { startsAt: true, endsAt: true } },
   customer: { select: { name: true, phone: true } },
+  paymentCheckout: { select: { status: true } },
 } as const;
 
 type ExperienceRow = Prisma.ExperienceGetPayload<{ select: typeof EXPERIENCE_SELECT }>;
@@ -141,6 +146,8 @@ export class ExperienceCustomerNotFoundError extends Error {
 export class ExperienceConflictError extends Error {
   constructor(
     readonly code:
+      | 'EXPERIENCE_DELETE_NOT_ALLOWED'
+      | 'EXPERIENCE_DELETE_CONFLICT'
       | 'EXPERIENCE_KEY_CONFLICT'
       | 'EXPERIENCE_SESSION_CONFLICT'
       | 'EXPERIENCE_CAPACITY_EXCEEDED'
@@ -228,6 +235,7 @@ export interface ExperienceReservationView {
   totalPriceCents: number;
   currency: string;
   status: ExperienceReservationStatus;
+  paymentStatus?: ExperienceCheckoutStatus | null;
   experience: { key: string; name: string; priceCents: number; currency: string };
   session: { startsAt: Date; endsAt: Date };
   customerName: string | null;
@@ -239,6 +247,7 @@ export interface ExperienceReservationView {
 
 export interface ExperienceReservationMutationResult extends ExperienceReservationView {
   replayed: boolean;
+  refundStatus?: 'not_required' | 'pending' | 'refunded';
 }
 
 function hashActor(actor: string): string {
@@ -418,10 +427,15 @@ function serializeReservation(row: ReservationRow): ExperienceReservationView {
     totalPriceCents: row.totalPriceCents,
     currency: row.currency,
     status: row.status,
+    paymentStatus: row.paymentCheckout?.status ?? null,
     experience: row.experience,
     session: row.session,
-    customerName: row.customer?.name ?? null,
-    phoneLast4: row.customer ? maskPhone(row.customer.phone) : null,
+    customerName: row.customerName ?? row.customer?.name ?? null,
+    phoneLast4: row.customerPhone
+      ? maskPhone(row.customerPhone)
+      : row.customer
+        ? maskPhone(row.customer.phone)
+        : null,
     cancelledAt: row.cancelledAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -801,15 +815,28 @@ export async function reserveExperience(input: {
       if (currentSession.startsAt <= now) {
         throw new ExperienceConflictError('EXPERIENCE_SESSION_IN_PAST');
       }
-      const booked = await tx.experienceReservation.findMany({
-        where: {
-          sessionId: input.sessionId,
-          restaurantId: input.restaurantId,
-          status: ExperienceReservationStatus.CONFIRMED,
-        },
-        select: { quantity: true },
-      });
-      const used = booked.reduce((sum, item) => sum + item.quantity, 0);
+      const [booked, held] = await Promise.all([
+        tx.experienceReservation.findMany({
+          where: {
+            sessionId: input.sessionId,
+            restaurantId: input.restaurantId,
+            status: ExperienceReservationStatus.CONFIRMED,
+          },
+          select: { quantity: true },
+        }),
+        tx.experienceCheckout.findMany({
+          where: {
+            sessionId: input.sessionId,
+            restaurantId: input.restaurantId,
+            status: ExperienceCheckoutStatus.OPEN,
+            expiresAt: { gt: now },
+          },
+          select: { quantity: true },
+        }),
+      ]);
+      const used =
+        booked.reduce((sum, item) => sum + item.quantity, 0) +
+        held.reduce((sum, item) => sum + item.quantity, 0);
       const effectiveCapacity =
         currentSession.capacityOverride ?? currentSession.experience.capacity;
       if (used + quantity > effectiveCapacity) {
@@ -881,6 +908,10 @@ export async function cancelExperienceReservation(input: {
   now?: Date;
 }): Promise<ExperienceReservationMutationResult> {
   const now = input.now ?? new Date();
+  const refundStatus = await refundPaidExperienceReservation({
+    restaurantId: input.restaurantId,
+    reservationId: input.reservationId,
+  });
   const result = await db.experienceReservation.updateMany({
     where: {
       id: input.reservationId,
@@ -900,7 +931,7 @@ export async function cancelExperienceReservation(input: {
     });
     if (!current) throw new ExperienceReservationNotFoundError();
     if (current.status === ExperienceReservationStatus.CANCELLED) {
-      return { ...serializeReservation(current), replayed: true };
+      return { ...serializeReservation(current), replayed: true, refundStatus };
     }
     throw new ExperienceReservationStateError('EXPERIENCE_RESERVATION_CANCELLED');
   }
@@ -909,7 +940,7 @@ export async function cancelExperienceReservation(input: {
     select: RESERVATION_SELECT,
   });
   if (!row) throw new ExperienceReservationNotFoundError();
-  return { ...serializeReservation(row), replayed: false };
+  return { ...serializeReservation(row), replayed: false, refundStatus };
 }
 
 export async function expireExperienceSessions(input?: {
@@ -930,4 +961,55 @@ export async function expireExperienceSessions(input?: {
     data: { status: ExperienceSessionStatus.CLOSED },
   });
   return (result as { count?: number }).count ?? 0;
+}
+
+/** Only unused drafts can be removed; historical bookings are never cascaded away. */
+export async function deleteExperience(input: {
+  restaurantId: string;
+  experienceId: string;
+}): Promise<void> {
+  try {
+    await db.$transaction(
+      async (tx) => {
+        // Block activation and FK-backed reservation inserts before checking eligibility.
+        await tx.$executeRaw(
+          Prisma.sql`SELECT id FROM experiences WHERE id = ${input.experienceId} AND restaurant_id = ${input.restaurantId} FOR UPDATE`,
+        );
+        const experience = await tx.experience.findFirst({
+          where: { id: input.experienceId, restaurantId: input.restaurantId },
+          select: { id: true },
+        });
+        if (!experience) throw new ExperienceNotFoundError();
+        const deleted = await tx.experience.deleteMany({
+          where: {
+            id: input.experienceId,
+            restaurantId: input.restaurantId,
+            status: ExperienceStatus.DRAFT,
+            reservations: { none: {} },
+            checkouts: {
+              none: {
+                status: ExperienceCheckoutStatus.OPEN,
+                expiresAt: { gt: new Date() },
+              },
+            },
+            sessions: {
+              none: {
+                OR: [
+                  { startsAt: { lte: new Date() } },
+                  { status: { not: ExperienceSessionStatus.OPEN } },
+                ],
+              },
+            },
+          },
+        });
+        if (deleted.count !== 1) throw new ExperienceConflictError('EXPERIENCE_DELETE_NOT_ALLOWED');
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      throw new ExperienceConflictError('EXPERIENCE_DELETE_CONFLICT');
+    }
+    throw error;
+  }
 }

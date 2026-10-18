@@ -35,7 +35,7 @@ POST /voice/telnyx  ← call.initiated webhook
 | ------------------- | -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | **STT**             | Telnyx ai_config / Scribe Media Stream | `scribe_v2_realtime` en Media Stream                         | La route Media Stream envoie PCMU en `ulaw_8000` et convertit PCMA en `pcm_8000`        |
 | **LLM**             | Cerebras OpenAI-compatible             | `qwen-3.8-27b`                                               | System prompt + conversation turns ; aucun repli de modèle                              |
-| **TTS**             | Cartesia                               | `sonic-3.6` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
+| **TTS**             | Cartesia                               | `sonic-3.6` + Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
 | **First utterance** | —                                      | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
 > **Version TTS** : le pipeline suit l'alias stable continu `sonic-3.6` afin de recevoir les snapshots stables les plus récents. Si un comportement strictement reproductible devient nécessaire, revenir à un snapshot daté et mettre à jour les clés de cache et les tests dans la même release.

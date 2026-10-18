@@ -1,11 +1,28 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import ExperiencesPage from './page';
+
+// La page charge ses données en plusieurs requêtes : sous charge (pré-push, CI), 1 s par défaut ne suffit pas.
+configure({ asyncUtilTimeout: 5000 });
+
+// Les boutons d’action (Créer une expérience, Modifier, Dupliquer, Archiver, Supprimer, Ajouter une
+// date) restent désactivés pendant le chargement. `findByRole` trouve déjà le bouton désactivé et
+// React ignore le clic : on attend qu’il soit actif.
+async function clickWhenEnabled(name: string | RegExp) {
+  await waitFor(() => expect(screen.getByRole('button', { name })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name }));
+}
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  del: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -13,6 +30,7 @@ vi.mock('@/lib/api', () => ({
     get: apiMocks.get,
     post: apiMocks.post,
     patch: apiMocks.patch,
+    del: apiMocks.del,
   }),
 }));
 
@@ -30,11 +48,13 @@ const experience = {
   reservationCount: 1,
 };
 
+const sessionStartsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+const sessionEndsAt = new Date(sessionStartsAt.getTime() + 90 * 60 * 1000);
 const session = {
   id: 'session-1',
   experienceId: 'experience-1',
-  startsAt: '2026-09-20T18:00:00.000Z',
-  endsAt: '2026-09-20T19:30:00.000Z',
+  startsAt: sessionStartsAt.toISOString(),
+  endsAt: sessionEndsAt.toISOString(),
   capacityOverride: null,
   status: 'OPEN',
   experience: {
@@ -71,6 +91,8 @@ const reservation = {
 describe('ExperiencesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/dashboard/experiences');
+    apiMocks.del.mockResolvedValue({});
     apiMocks.get.mockImplementation((path: string) => {
       if (path.startsWith('experiences?')) return Promise.resolve({ data: [experience] });
       if (path.startsWith('experience-reservations'))
@@ -78,7 +100,10 @@ describe('ExperiencesPage', () => {
       return Promise.resolve({ data: [session] });
     });
     apiMocks.post.mockImplementation((path: string) => {
-      if (path === 'experiences') return Promise.resolve({ data: experience });
+      if (path === 'experiences')
+        return Promise.resolve({
+          data: { ...experience, id: 'new-experience', name: 'Atelier vins', status: 'DRAFT' },
+        });
       if (path.includes('/sessions') && path.endsWith('/reservations')) {
         return Promise.resolve({ data: { ...reservation, replayed: false } });
       }
@@ -92,37 +117,162 @@ describe('ExperiencesPage', () => {
   it('charge le catalogue, les sessions et les réservations', async () => {
     render(<ExperiencesPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Expériences' })).toBeInTheDocument();
-    expect(await screen.findByText('Dégustation de vins')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Expériences à réserver' }),
+    ).toBeInTheDocument();
+    expect((await screen.findAllByText('Dégustation de vins')).length).toBeGreaterThan(0);
     expect(await screen.findByText(/Alice Martin/)).toBeInTheDocument();
-    expect(screen.getByText('Sessions — Dégustation de vins')).toBeInTheDocument();
+    expect(screen.getByText('Prochaines dates')).toBeInTheDocument();
     expect(screen.getByText('Réservations confirmées')).toBeInTheDocument();
   });
 
-  it('crée une expérience avec des nombres explicites', async () => {
+  it('charge chaque donnée une seule fois à l’ouverture', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences' });
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Modifier' })).toBeEnabled());
+    // Laisse passer un éventuel second chargement lancé après le premier rendu.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
 
-    fireEvent.change(screen.getByLabelText('Clé'), { target: { value: 'atelier-vins' } });
-    fireEvent.change(screen.getByLabelText('Nom'), { target: { value: 'Atelier vins' } });
+    expect(apiMocks.get.mock.calls.map(([path]) => path).sort()).toEqual([
+      'experience-reservations?experienceId=experience-1&limit=100',
+      'experiences/experience-1/sessions?status=OPEN&limit=100',
+      'experiences/payment-readiness',
+      'experiences?limit=100',
+    ]);
+  });
+
+  it('charge les dates de l’expérience choisie quand on change de sélection', async () => {
+    const cocktails = {
+      ...experience,
+      id: 'experience-2',
+      key: 'cocktail-class',
+      name: 'Atelier cocktails',
+      status: 'DRAFT',
+      sessionCount: 0,
+      reservationCount: 0,
+    };
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?'))
+        return Promise.resolve({ data: [experience, cocktails] });
+      if (path.startsWith('experience-reservations'))
+        return Promise.resolve({ data: [reservation] });
+      if (path.startsWith('experiences/experience-2/sessions'))
+        return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [session] });
+    });
+    render(<ExperiencesPage />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Modifier' })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole('button', { name: /Atelier cocktails/ }));
+
+    await waitFor(() =>
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        'experiences/experience-2/sessions?status=OPEN&limit=100',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Atelier cocktails/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('sélectionne et charge les dates de l’expérience qu’on vient de créer', async () => {
+    const created = { ...experience, id: 'new-experience', name: 'Atelier vins', status: 'DRAFT' };
+    let createdOnServer = false;
+    apiMocks.post.mockImplementation(async (path: string) => {
+      if (path === 'experiences') {
+        createdOnServer = true;
+        return { data: created };
+      }
+      return { data: session };
+    });
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?'))
+        return Promise.resolve({ data: createdOnServer ? [experience, created] : [experience] });
+      if (path.startsWith('experience-reservations'))
+        return Promise.resolve({ data: [reservation] });
+      if (path.startsWith('experiences/new-experience/sessions'))
+        return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [session] });
+    });
+    render(<ExperiencesPage />);
+    await clickWhenEnabled('Créer une expérience');
+    fireEvent.change(await screen.findByLabelText('Nom'), { target: { value: 'Atelier vins' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Créer l’expérience' }));
+
+    await waitFor(() =>
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        'experiences/new-experience/sessions?status=OPEN&limit=100',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /Atelier vins/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('recharge la liste après la suppression de l’expérience sélectionnée', async () => {
+    let deleted = false;
+    const draft = { ...experience, status: 'DRAFT', reservationCount: 0 };
+    apiMocks.del.mockImplementation(async () => {
+      deleted = true;
+      return {};
+    });
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('experiences?')) return Promise.resolve({ data: deleted ? [] : [draft] });
+      return Promise.resolve({
+        data: path.includes('/sessions?') && !deleted ? [session] : [],
+      });
+    });
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByLabelText('Autres actions'));
+    await clickWhenEnabled('Supprimer l’expérience');
+    fireEvent.click(screen.getByRole('button', { name: /^Supprimer$/ }));
+
+    await waitFor(() => expect(apiMocks.del).toHaveBeenCalledWith('experiences/experience-1'));
+    expect(await screen.findByText('Créez votre première expérience')).toBeInTheDocument();
+    const listLoads = apiMocks.get.mock.calls.filter(([path]) => path.startsWith('experiences?'));
+    expect(listLoads).toHaveLength(2);
+  });
+
+  it('convertit le prix saisi en euros en centimes pour l’API', async () => {
+    render(<ExperiencesPage />);
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
+
+    await clickWhenEnabled('Créer une expérience');
+    expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText('Nom'), { target: { value: 'Atelier vins' } });
+    fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
+      target: { value: '45.50' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Créer l’expérience' }));
 
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith('experiences', {
-        key: 'atelier-vins',
+        key: expect.stringMatching(/^atelier-vins-[a-f0-9]{8}$/),
         name: 'Atelier vins',
         durationMinutes: 90,
-        priceCents: 0,
+        priceCents: 4550,
         capacity: 12,
       }),
     );
-    expect(await screen.findByText(/Expérience créée en brouillon/)).toBeInTheDocument();
+    expect(await screen.findByText(/Expérience créée. Ajoutez maintenant/)).toBeInTheDocument();
+  });
+
+  it('ouvre directement le formulaire quand le choix global demande une expérience', async () => {
+    window.history.replaceState({}, '', '/dashboard/experiences?create=1');
+    render(<ExperiencesPage />);
+    expect(await screen.findByRole('heading', { name: 'Nouvelle expérience' })).toBeInTheDocument();
+    expect(window.location.search).toBe('');
   });
 
   it('ouvre une session avec les dates converties en ISO', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences' });
-    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir la session' }));
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
+    await clickWhenEnabled('Ajouter une date');
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
 
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -137,8 +287,14 @@ describe('ExperiencesPage', () => {
 
   it('annule une réservation et garde le message de capacité libérée', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences' });
-    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la réservation' }));
+
+    // Annuler rembourse le client : une confirmation est demandée avant tout appel.
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Annuler cette réservation ?');
+    expect(apiMocks.post).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler la réservation' }));
 
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -148,10 +304,151 @@ describe('ExperiencesPage', () => {
     expect(await screen.findByText('Réservation d’expérience annulée.')).toBeInTheDocument();
   });
 
-  it('explique le verrouillage quand la fondation est désactivée', async () => {
-    apiMocks.get.mockRejectedValue(new Error('EXPERIENCES_DISABLED'));
+  it('affiche un remboursement échoué à côté des réservations, pas comme un échec de chargement', async () => {
+    apiMocks.post.mockRejectedValueOnce(toApiError(409, { error: 'EXPERIENCE_REFUND_FAILED' }));
     render(<ExperiencesPage />);
-    expect(await screen.findByText('EXPERIENCES_DISABLED')).toBeInTheDocument();
-    expect(screen.getByText(/Module Pro indisponible pendant la validation/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la réservation' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Annuler la réservation',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Le remboursement a échoué');
+    expect(screen.queryByText('Impossible de charger les expériences')).toBeNull();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
+  });
+
+  it('reconnaît un module hors formule à la nature de l’erreur, pas à son texte', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
+    render(<ExperiencesPage />);
+
+    expect(
+      await screen.findByText('Accès réservé aux formules Pro et Multi-site'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
+  });
+
+  it('modifie une offre sans changer sa clé ni son statut', async () => {
+    render(<ExperiencesPage />);
+    await clickWhenEnabled('Modifier');
+    await waitFor(() => expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins'));
+    expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
+    fireEvent.change(screen.getByLabelText('Prix par personne (€)'), {
+      target: { value: '49,50' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+    await waitFor(() =>
+      expect(apiMocks.patch).toHaveBeenCalledWith('experiences/experience-1', {
+        name: 'Dégustation de vins',
+        durationMinutes: 90,
+        priceCents: 4950,
+        capacity: 12,
+      }),
+    );
+    expect(await screen.findByText('Expérience mise à jour.')).toBeInTheDocument();
+  });
+
+  it('permet d’activer un brouillon depuis l’en-tête de sa fiche', async () => {
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.startsWith('experiences?')
+          ? [{ ...experience, status: 'DRAFT' }]
+          : path.includes('/sessions?')
+            ? [session]
+            : [],
+      }),
+    );
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Activer l’expérience' }));
+    await waitFor(() =>
+      expect(apiMocks.patch).toHaveBeenCalledWith('experiences/experience-1', { status: 'ACTIVE' }),
+    );
+  });
+
+  it('demande une date avant de proposer l’activation', async () => {
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.startsWith('experiences?') ? [{ ...experience, status: 'DRAFT' }] : [],
+      }),
+    );
+    render(<ExperiencesPage />);
+    expect(
+      await screen.findByText('Ajoutez une première date avant d’activer cette expérience.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Activer l’expérience' })).not.toBeInTheDocument();
+    const addSessionButton = await screen.findByRole('button', { name: 'Ajouter une date' });
+    await waitFor(() => expect(addSessionButton).toBeEnabled());
+    fireEvent.click(addSessionButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
+    expect(await screen.findByText('Prête à être activée')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Activer l’expérience' })).toBeEnabled();
+  });
+
+  it('confirme une suppression de brouillon avant d’appeler l’API', async () => {
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.startsWith('experiences?')
+          ? [{ ...experience, status: 'DRAFT', reservationCount: 0 }]
+          : path.includes('/sessions?')
+            ? [session]
+            : [],
+      }),
+    );
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByLabelText('Autres actions'));
+    await clickWhenEnabled('Supprimer l’expérience');
+    expect(apiMocks.del).not.toHaveBeenCalled();
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Cette action est définitive');
+    fireEvent.click(screen.getByRole('button', { name: /^Supprimer$/ }));
+    await waitFor(() => expect(apiMocks.del).toHaveBeenCalledWith('experiences/experience-1'));
+  });
+
+  it('conserve uniquement l’archivage pour une expérience utilisée', async () => {
+    render(<ExperiencesPage />);
+    const menu = await screen.findByLabelText('Autres actions');
+    fireEvent.click(menu);
+    expect(
+      screen.queryByRole('button', { name: 'Supprimer l’expérience' }),
+    ).not.toBeInTheDocument();
+    await clickWhenEnabled('Archiver');
+    fireEvent.click(await screen.findByRole('button', { name: /^Archiver$/ }));
+    await waitFor(() =>
+      expect(apiMocks.patch).toHaveBeenCalledWith('experiences/experience-1', {
+        status: 'ARCHIVED',
+      }),
+    );
+  });
+
+  it('prépare une copie sans dates et sans créer de données avant validation', async () => {
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByLabelText('Autres actions'));
+    await clickWhenEnabled('Dupliquer');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nom')).toHaveValue('Dégustation de vins (copie)'),
+    );
+    expect(screen.getByLabelText('Prix par personne (€)')).toHaveValue('45,00');
+    expect(apiMocks.post).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Créer l’expérience' })).toBeEnabled();
+  });
+
+  it('présente un accueil vide sans formulaire ni compteurs', async () => {
+    apiMocks.get.mockResolvedValue({ data: [] });
+    render(<ExperiencesPage />);
+    expect(await screen.findByText('Créez votre première expérience')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nom')).not.toBeInTheDocument();
+    expect(screen.queryByText('Expériences actives')).not.toBeInTheDocument();
+    expect(screen.queryByText('Prochaines dates')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Créer une expérience' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('explique le verrouillage quand la fondation est désactivée', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'EXPERIENCES_DISABLED' }));
+    render(<ExperiencesPage />);
+    expect(await screen.findByText('Expériences bientôt disponibles')).toBeInTheDocument();
+    expect(screen.getByText(/Vos données ne sont pas modifiées/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
+    expect(screen.queryByText('Expériences actives')).not.toBeInTheDocument();
   });
 });

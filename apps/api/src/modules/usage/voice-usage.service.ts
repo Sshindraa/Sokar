@@ -3,6 +3,7 @@ import { enqueueOnDatabase } from '../../shared/outbox/outbox.service';
 import { logger } from '../../shared/logger/pino';
 import type { CallSession, VoiceUsageCounters } from '../voice/stream/types';
 import { telnyxCodecProfile } from '../voice/stream/telnyx-codec';
+import { ELEVENLABS_DIALOGUE_MODEL } from '../voice/stream/elevenlabs-dialogue-context';
 
 const STT_SAMPLE_RATE = 8_000;
 
@@ -24,6 +25,7 @@ export function ensureVoiceUsage(session: CallSession): VoiceUsageCounters {
     session.voiceUsage = {
       sttAudioSamples: 0,
       cartesiaTtsCharacters: 0,
+      elevenLabsTtsCharacters: 0,
       llmByProvider: {},
     };
   }
@@ -46,6 +48,12 @@ export function sttSamplesForBuffer(session: CallSession, audioBytes: number): n
 export function addCartesiaTtsCharacters(session: CallSession, characters: number): void {
   if (!Number.isFinite(characters) || characters <= 0) return;
   ensureVoiceUsage(session).cartesiaTtsCharacters += characters;
+}
+
+/** Count ElevenLabs characters only after they are sent to the provider, as for Cartesia. */
+export function addElevenLabsTtsCharacters(session: CallSession, characters: number): void {
+  if (!Number.isFinite(characters) || characters <= 0) return;
+  ensureVoiceUsage(session).elevenLabsTtsCharacters += characters;
 }
 
 export function estimateTokenCount(text: string): number {
@@ -158,6 +166,22 @@ export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
             'characters',
             `cartesia:tts:${session.callLegId}:final`,
             { model: 'sonic', countMethod: 'provider_requests' },
+          ),
+        ),
+      );
+    }
+
+    if (counters.elevenLabsTtsCharacters > 0) {
+      tasks.push(
+        enqueueVoiceUsage(
+          buildPayload(
+            session,
+            'TTS_CHARACTERS',
+            'elevenlabs',
+            counters.elevenLabsTtsCharacters,
+            'characters',
+            `elevenlabs:tts:${session.callLegId}:final`,
+            { model: ELEVENLABS_DIALOGUE_MODEL, countMethod: 'provider_requests' },
           ),
         ),
       );

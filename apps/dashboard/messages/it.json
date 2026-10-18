@@ -27,8 +27,8 @@
     "marketing": "Campagne",
     "reputation": "Recensioni",
     "loyalty": "Vantaggi clienti",
-    "experiences": "Offerte",
-    "events": "Eventi",
+    "experiences": "Esperienze su prenotazione",
+    "events": "Eventi e biglietti",
     "distribution": "Partner",
     "usage": "Consumi",
     "margin": "Margine Sokar",
@@ -92,5 +92,25 @@
     "settings": "Impostazioni",
     "signOut": "Esci",
     "signingOut": "Uscita…"
+  },
+  "offerChooser": {
+    "openButton": "Crea un’offerta",
+    "title": "Che cosa desidera creare?",
+    "description": "Scelga il formato adatto alla sua offerta.",
+    "experience": {
+      "title": "Esperienza su prenotazione",
+      "description": "Laboratorio, brunch, corso di cucina… I clienti scelgono una data e prenotano i posti.",
+      "action": "Crea un’esperienza"
+    },
+    "event": {
+      "title": "Evento con biglietti",
+      "description": "Concerto, serata, cena con spettacolo… Proponga più tariffe e controlli i biglietti all’ingresso.",
+      "action": "Crea un evento"
+    },
+    "giftCard": {
+      "title": "Buono regalo",
+      "description": "Un importo o una proposta da regalare e utilizzare nel suo ristorante.",
+      "action": "Crea un buono regalo"
+    }
   }
 }

@@ -175,7 +175,7 @@ export default function GiftCardForm({ open, onOpenChange, packs, onCreated }: G
           )}
 
           {/* Destinataire */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="recipientName">Nom du destinataire</Label>
               <Input
@@ -197,7 +197,7 @@ export default function GiftCardForm({ open, onOpenChange, packs, onCreated }: G
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="recipientPhone">Téléphone du destinataire</Label>
               <Input

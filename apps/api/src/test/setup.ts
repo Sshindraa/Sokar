@@ -70,8 +70,10 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     };
     restaurantAccountBilling = {
       findUnique: vi.fn(),
@@ -179,6 +181,12 @@ vi.mock('@prisma/client', async (importOriginal) => {
       delete: vi.fn(),
       deleteMany: vi.fn(),
     };
+    demoRequest = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
     reputationFeedbackRequest = {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -240,6 +248,21 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+    };
+    experienceCheckout = {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    experiencePaymentEvent = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
     };
     event = {
       findUnique: vi.fn(),
@@ -582,6 +605,10 @@ const notificationProviderMocks = vi.hoisted(() => ({
   notificationProviderMocks;
 
 // ── Mock Resend (HTTP API email, remplace nodemailer) ──
+vi.mock('../shared/email/rate-limit', () => ({
+  waitForResendSlot: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('resend', () => ({
   Resend: class MockResend {
     emails = {
@@ -611,6 +638,13 @@ vi.mock('../../shared/telnyx/client', () => ({
 
 // ── Mock Stripe (SDK non nécessaire en tests unitaires) ──
 const stripeMocks = vi.hoisted(() => ({
+  customerCreate: vi.fn().mockResolvedValue({ id: 'cus_test' }),
+  subscriptionCreate: vi.fn().mockResolvedValue({
+    id: 'sub_trial_test',
+    created: 1_792_000_000,
+    trial_end: 1_792_000_000 + 14 * 24 * 60 * 60,
+    status: 'trialing',
+  }),
   checkoutSessionCreate: vi
     .fn()
     .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
@@ -622,11 +656,17 @@ const stripeMocks = vi.hoisted(() => ({
   stripeMocks.checkoutSessionCreate;
 (globalThis as Record<string, unknown>).__sokarStripeBillingPortalSessionCreate =
   stripeMocks.billingPortalSessionCreate;
+(globalThis as Record<string, unknown>).__sokarStripeCustomerCreate = stripeMocks.customerCreate;
+(globalThis as Record<string, unknown>).__sokarStripeSubscriptionCreate =
+  stripeMocks.subscriptionCreate;
 
 vi.mock('stripe', () => {
   class Stripe {
     customers = {
-      create: vi.fn().mockResolvedValue({ id: 'cus_test' }),
+      create: stripeMocks.customerCreate,
+    };
+    subscriptions = {
+      create: stripeMocks.subscriptionCreate,
     };
     checkout = {
       sessions: {

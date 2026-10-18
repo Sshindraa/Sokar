@@ -40,6 +40,9 @@ describe('internal usage margin report', () => {
         plan: 'PRO',
         catalogPriceEur: 299,
         estimatedCostEur: '0.400000',
+        knownAdjustedCostEur: '0.400000',
+        pricedEventCount: 1,
+        unpricedEventCount: 1,
         costStatus: 'MIXED',
         grossMarginEur: null,
         grossMarginPercent: null,
@@ -67,6 +70,9 @@ describe('internal usage margin report', () => {
       catalogPriceEur: 199,
       costStatus: 'PRICED',
       estimatedCostEur: '12.500000',
+      knownAdjustedCostEur: '12.500000',
+      pricedEventCount: 1,
+      unpricedEventCount: 0,
       approvedAdjustmentCostEur: '0.000000',
       approvedAdjustmentCount: 0,
       adjustedCostEur: '12.500000',
@@ -99,6 +105,9 @@ describe('internal usage margin report', () => {
 
     expect(report[0]).toMatchObject({
       estimatedCostEur: '12.500000',
+      knownAdjustedCostEur: '13.750000',
+      pricedEventCount: 1,
+      unpricedEventCount: 0,
       approvedAdjustmentCostEur: '1.250000',
       approvedAdjustmentCount: 1,
       adjustedCostEur: '13.750000',
@@ -136,10 +145,45 @@ describe('internal usage margin report', () => {
         catalogPriceEur: 299,
         estimatedCostEur: '0.000000',
         adjustedCostEur: '0.000000',
+        knownAdjustedCostEur: '0.000000',
+        pricedEventCount: 0,
+        unpricedEventCount: 0,
         costStatus: 'NO_USAGE',
         grossMarginEur: null,
         categories: [],
       }),
     ]);
+  });
+
+  it('classifies mixed events within one category and totals only priced event cost', async () => {
+    vi.mocked(db.usageEvent.findMany).mockResolvedValue([
+      {
+        restaurantId: 'restaurant-1',
+        category: 'SMS_SEGMENTS',
+        quantity: new Prisma.Decimal(2),
+        estimatedCost: new Prisma.Decimal('0.12'),
+        metadata: { costStatus: 'PRICED' },
+      },
+      {
+        restaurantId: 'restaurant-1',
+        category: 'SMS_SEGMENTS',
+        quantity: new Prisma.Decimal(1),
+        estimatedCost: new Prisma.Decimal(0),
+        metadata: { costStatus: 'UNPRICED' },
+      },
+    ] as never);
+    vi.mocked(db.restaurant.findMany).mockResolvedValue([
+      { id: 'restaurant-1', name: 'Chez Sokar', plan: 'PRO' },
+    ] as never);
+
+    const report = await getInternalMarginReport({ monthKey: '2026-09' });
+
+    expect(report[0]).toMatchObject({
+      costStatus: 'MIXED',
+      pricedEventCount: 1,
+      unpricedEventCount: 1,
+      knownAdjustedCostEur: '0.120000',
+      grossMarginEur: null,
+    });
   });
 });

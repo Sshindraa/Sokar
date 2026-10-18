@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { utcToZonedParts, zonedTimeToUtc } from '../restaurant-time';
+import { isSlotPast, isSlotStartPast, utcToZonedParts, zonedTimeToUtc } from '../restaurant-time';
 
 describe('zonedTimeToUtc', () => {
   it('convertit correctement un créneau Europe/Paris en été', () => {
@@ -62,5 +62,49 @@ describe('utcToZonedParts', () => {
       date: '2026-07-02',
       time: '19:00',
     });
+  });
+});
+
+describe('isSlotStartPast / isSlotPast : la règle unique « créneau passé »', () => {
+  const start = new Date('2026-07-02T17:00:00.000Z'); // 19:00 à Paris
+
+  it('un créneau qui commence exactement maintenant est passé', () => {
+    expect(isSlotStartPast(start, new Date('2026-07-02T17:00:00.000Z'))).toBe(true);
+  });
+
+  it('une milliseconde avant le début, le créneau est à venir', () => {
+    expect(isSlotStartPast(start, new Date('2026-07-02T16:59:59.999Z'))).toBe(false);
+  });
+
+  it('après le début, le créneau est passé', () => {
+    expect(isSlotStartPast(start, new Date('2026-07-02T17:00:00.001Z'))).toBe(true);
+  });
+
+  it('lit l’horloge quand `now` n’est pas fourni', () => {
+    expect(isSlotStartPast(new Date(Date.now() - 1000))).toBe(true);
+    expect(isSlotStartPast(new Date(Date.now() + 60_000))).toBe(false);
+  });
+
+  it('convertit date et heure locales du restaurant, pas celles du serveur', () => {
+    // 19:00 à Paris = 17:00 UTC : à 17:30 UTC le créneau est passé, à 16:30 UTC il est à venir.
+    expect(
+      isSlotPast('2026-07-02', '19:00', 'Europe/Paris', new Date('2026-07-02T17:30:00Z')),
+    ).toBe(true);
+    expect(
+      isSlotPast('2026-07-02', '19:00', 'Europe/Paris', new Date('2026-07-02T16:30:00Z')),
+    ).toBe(false);
+    // Même instant, autre fuseau : 19:00 à New York = 23:00 UTC, donc encore à venir à 17:30 UTC.
+    expect(
+      isSlotPast('2026-07-02', '19:00', 'America/New_York', new Date('2026-07-02T17:30:00Z')),
+    ).toBe(false);
+  });
+
+  it('traite le passage à l’heure d’hiver : 19:00 le 25 octobre 2026 est 18:00 UTC', () => {
+    expect(
+      isSlotPast('2026-10-25', '19:00', 'Europe/Paris', new Date('2026-10-25T17:59:59Z')),
+    ).toBe(false);
+    expect(
+      isSlotPast('2026-10-25', '19:00', 'Europe/Paris', new Date('2026-10-25T18:00:00Z')),
+    ).toBe(true);
   });
 });

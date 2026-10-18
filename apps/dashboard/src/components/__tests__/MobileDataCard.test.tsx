@@ -35,7 +35,7 @@ describe('MobileDataCard', () => {
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
-  it('rend les actions en arrière-plan et les déclenche au clic', () => {
+  it('rend les actions accessibles dans le menu et les déclenche au clic', () => {
     const handleEdit = vi.fn();
     const handleDelete = vi.fn();
 
@@ -50,12 +50,13 @@ describe('MobileDataCard', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Modifier' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Supprimer' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les actions' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
     expect(handleEdit).toHaveBeenCalledTimes(1);
 
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer' }));
     expect(handleDelete).toHaveBeenCalledTimes(1);
   });
@@ -72,6 +73,7 @@ describe('MobileDataCard', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les actions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
     expect(handleAction).toHaveBeenCalledTimes(1);
     expect(handleCardClick).not.toHaveBeenCalled();
@@ -85,7 +87,15 @@ describe('MobileDataCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Afficher les actions' }));
 
     expect(screen.getByRole('button', { name: 'Masquer les actions' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(1);
+  });
+
+  it('masque visuellement les fonds d’actions tant que la carte est fermée', () => {
+    const { container } = render(
+      <MobileDataCard title="Réservation" actions={[{ label: 'Annuler', onClick: vi.fn() }]} />,
+    );
+    const foreground = container.querySelector('[style*="translateX(0px)"]');
+    expect(foreground).toHaveClass('bg-background');
   });
 
   it('ne rend pas de boutons actions si aucune action fournie', () => {
