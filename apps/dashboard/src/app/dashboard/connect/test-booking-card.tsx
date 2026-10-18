@@ -5,7 +5,7 @@ import { ExternalLink, Loader2, Ticket } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
-import { openTestBooking } from '@/lib/test-booking';
+import { openTestBooking, type TestBookingOutcome } from '@/lib/test-booking';
 
 export type Props = {
   publicUrl: string;
@@ -14,13 +14,13 @@ export type Props = {
 export function TestBookingCard({ publicUrl }: Props) {
   const { post } = useApi();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<TestBookingOutcome>(null);
 
   async function handleClick() {
     setLoading(true);
-    setError(null);
+    setOutcome(null);
     try {
-      setError(await openTestBooking({ post: (path) => post(path) }, publicUrl));
+      setOutcome(await openTestBooking({ post: (path) => post(path) }, publicUrl));
     } finally {
       setLoading(false);
     }
@@ -33,10 +33,7 @@ export function TestBookingCard({ publicUrl }: Props) {
           <Ticket className="h-4 w-4 text-primary" />
           Tester ma page comme un client
         </CardTitle>
-        <CardDescription>
-          Faites le parcours d’un client, jusqu’à la confirmation. Les messages vous sont envoyés
-          comme à un client ; rien n’apparaît dans votre restaurant.
-        </CardDescription>
+        <CardDescription>Faites le parcours d’un client, jusqu’à la confirmation.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Button
@@ -53,9 +50,14 @@ export function TestBookingCard({ publicUrl }: Props) {
           )}
           Lancer le test
         </Button>
-        {error && (
+        {outcome?.kind === 'error' && (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {outcome.message}
+          </p>
+        )}
+        {outcome?.kind === 'notice' && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {outcome.message}
           </p>
         )}
       </CardContent>

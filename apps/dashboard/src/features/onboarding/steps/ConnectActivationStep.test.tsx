@@ -92,10 +92,9 @@ it('publie puis montre la diffusion sans clore l’étape', async () => {
   ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Réserver sur ma page/ })).toBeEnabled();
   expect(
-    screen.getByText(
-      'Faites le parcours d’un client, jusqu’à la confirmation. Les messages vous sont envoyés comme à un client ; rien n’apparaît dans votre restaurant.',
-    ),
+    screen.getByText('Faites le parcours d’un client, jusqu’à la confirmation.'),
   ).toBeInTheDocument();
+  expect(screen.queryByText(/rien n’apparaît/)).not.toBeInTheDocument();
   expect(screen.getByText(/data-slug="chez-emile"/)).toBeInTheDocument();
   // Sans conditions modifiées ni IA activée, rien d'autre n'est écrit.
   expect(mocks.put).not.toHaveBeenCalled();
@@ -205,4 +204,29 @@ it('lance la réservation test par l’API et montre l’erreur sans ouvrir de p
   );
   expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
   expect(tab.close).toHaveBeenCalled();
+});
+
+it('prévient sous le bouton que la réservation sera réelle quand le mode test est coupé', async () => {
+  mocks.ready = true;
+  mocks.published = true;
+  const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+  window.open = vi.fn(() => tab) as unknown as typeof window.open;
+  mocks.post.mockImplementation(async (path: string) => {
+    if (path === 'restaurant/test-booking-link') {
+      throw toApiError(404, { code: 'TEST_BOOKING_DISABLED' });
+    }
+    return {};
+  });
+  render(<ConnectActivationStep onComplete={vi.fn()} onNavigate={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Réserver sur ma page/ }));
+
+  const notice = await screen.findByText(
+    'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+  );
+  expect(notice).toHaveAttribute('role', 'status');
+  expect(notice).toHaveClass('text-muted-foreground');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(tab.close).not.toHaveBeenCalled();
+  expect(tab.location.href).not.toBe('about:blank');
 });

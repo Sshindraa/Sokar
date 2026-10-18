@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { openTestBooking } from '@/lib/test-booking';
+import { openTestBooking, type TestBookingOutcome } from '@/lib/test-booking';
 import { buildWidgetSnippet } from '@/lib/widget-snippet';
 import { useOnboarding } from '../onboarding-provider';
 import { ConnectStepAction } from '../ui';
@@ -154,15 +154,15 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
   const [copied, setCopied] = useState<'link' | 'widget' | null>(null);
   const [error, setError] = useState('');
   const [testBookingLoading, setTestBookingLoading] = useState(false);
-  const [testBookingError, setTestBookingError] = useState<string | null>(null);
+  const [testBookingOutcome, setTestBookingOutcome] = useState<TestBookingOutcome>(null);
 
   const previewUrl = `${CONNECT_HOST}/restaurant/${encodeURIComponent(restaurant.slug || '')}?preview=1`;
   const publicUrl = `${CONNECT_HOST}/restaurant/${encodeURIComponent(restaurant.slug || '')}`;
   async function handleTestBooking() {
     setTestBookingLoading(true);
-    setTestBookingError(null);
+    setTestBookingOutcome(null);
     try {
-      setTestBookingError(await openTestBooking({ post: (path) => post(path) }, publicUrl));
+      setTestBookingOutcome(await openTestBooking({ post: (path) => post(path) }, publicUrl));
     } finally {
       setTestBookingLoading(false);
     }
@@ -445,7 +445,7 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
       <Panel
         icon={Ticket}
         title="Faites une réservation test"
-        description="Faites le parcours d’un client, jusqu’à la confirmation. Les messages vous sont envoyés comme à un client ; rien n’apparaît dans votre restaurant."
+        description="Faites le parcours d’un client, jusqu’à la confirmation."
       >
         <Button
           type="button"
@@ -461,9 +461,14 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
             <ExternalLink size={15} aria-hidden="true" />
           )}
         </Button>
-        {testBookingError && (
+        {testBookingOutcome?.kind === 'error' && (
           <p role="alert" className="mt-2 text-sm text-destructive">
-            {testBookingError}
+            {testBookingOutcome.message}
+          </p>
+        )}
+        {testBookingOutcome?.kind === 'notice' && (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            {testBookingOutcome.message}
           </p>
         )}
       </Panel>

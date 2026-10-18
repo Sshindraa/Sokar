@@ -136,4 +136,27 @@ describe('ConnectDashboardPage', () => {
     expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
     expect(tab.close).toHaveBeenCalled();
   });
+
+  it('garde une description neutre et prévient quand le mode test est coupé', async () => {
+    loadSucceeds(false);
+    const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+    window.open = vi.fn(() => tab) as unknown as typeof window.open;
+    mocks.post.mockRejectedValue(toApiError(404, { code: 'TEST_BOOKING_DISABLED' }));
+    render(<ConnectDashboardPage />);
+    await screen.findByText('Tester ma page comme un client');
+    expect(
+      screen.getByText('Faites le parcours d’un client, jusqu’à la confirmation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rien n’apparaît/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /lancer le test/i }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(
+      'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+    );
+    expect(notice).toHaveClass('text-muted-foreground');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(tab.close).not.toHaveBeenCalled();
+  });
 });

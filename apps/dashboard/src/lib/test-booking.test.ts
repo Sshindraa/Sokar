@@ -42,9 +42,13 @@ describe('openTestBooking', () => {
     expect(tab.close).not.toHaveBeenCalled();
   });
 
-  it('ouvre la page publique quand la fonction est coupée', async () => {
+  it('ouvre la page publique et prévient que la réservation sera réelle quand la fonction est coupée', async () => {
     const post = vi.fn().mockRejectedValue(toApiError(404, { code: 'TEST_BOOKING_DISABLED' }));
-    expect(await openTestBooking({ post }, PUBLIC_URL)).toBeNull();
+    expect(await openTestBooking({ post }, PUBLIC_URL)).toEqual({
+      kind: 'notice',
+      message:
+        'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+    });
     expect(tab.location.href).toBe(PUBLIC_URL);
     expect(tab.close).not.toHaveBeenCalled();
   });
@@ -56,26 +60,29 @@ describe('openTestBooking', () => {
         error: 'Publiez d’abord votre page pour la tester.',
       }),
     );
-    expect(await openTestBooking({ post }, PUBLIC_URL)).toBe(
-      'Publiez d’abord votre page pour la tester.',
-    );
+    expect(await openTestBooking({ post }, PUBLIC_URL)).toEqual({
+      kind: 'error',
+      message: 'Publiez d’abord votre page pour la tester.',
+    });
     expect(tab.close).toHaveBeenCalled();
   });
 
   it('ferme l’onglet et renvoie un message simple sur une erreur réseau', async () => {
     const post = vi.fn().mockRejectedValue(new Error('network'));
-    expect(await openTestBooking({ post }, PUBLIC_URL)).toBe(
-      'Le lien de test n’a pas pu être créé. Réessayez.',
-    );
+    expect(await openTestBooking({ post }, PUBLIC_URL)).toEqual({
+      kind: 'error',
+      message: 'Le lien de test n’a pas pu être créé. Réessayez.',
+    });
     expect(tab.close).toHaveBeenCalled();
   });
 
   it('demande d’autoriser les onglets si le navigateur bloque l’ouverture', async () => {
     openSpy.mockReturnValue(null);
     const post = vi.fn();
-    expect(await openTestBooking({ post }, PUBLIC_URL)).toBe(
-      'Autorisez l’ouverture d’un nouvel onglet pour lancer le test.',
-    );
+    expect(await openTestBooking({ post }, PUBLIC_URL)).toEqual({
+      kind: 'error',
+      message: 'Autorisez l’ouverture d’un nouvel onglet pour lancer le test.',
+    });
     expect(post).not.toHaveBeenCalled();
   });
 });
