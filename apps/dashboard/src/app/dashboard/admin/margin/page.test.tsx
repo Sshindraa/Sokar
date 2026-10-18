@@ -102,10 +102,7 @@ describe('AdminMarginPage', () => {
     expect(screen.getAllByText(/12,50/).length).toBeGreaterThan(0);
     expect(screen.getByText(/286,50/)).toBeInTheDocument();
     expect(screen.getByText(/revenus Stripe non rapprochés/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Télécharger le suivi interne/ })).toHaveAttribute(
-      'href',
-      '/api/proxy/admin/usage/accounting-export.csv?month=' + currentMonthKey(),
-    );
+    expect(screen.getByRole('button', { name: /Télécharger le suivi interne/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Mois suivant' })).toBeDisabled();
     expect(apiMocks.get).toHaveBeenCalledWith('admin/usage/margin?month=' + currentMonthKey());
   });
@@ -121,10 +118,40 @@ describe('AdminMarginPage', () => {
     await waitFor(() =>
       expect(apiMocks.get).toHaveBeenCalledWith('admin/usage/margin?month=2026-09'),
     );
-    expect(screen.getByRole('link', { name: /Télécharger le suivi interne/ })).toHaveAttribute(
-      'href',
-      '/api/proxy/admin/usage/accounting-export.csv?month=2026-09',
+    // L'export suit la période choisie.
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['a']) });
+    vi.stubGlobal('fetch', fetchMock);
+    URL.createObjectURL = vi.fn(() => 'blob:csv');
+    URL.revokeObjectURL = vi.fn();
+    fireEvent.click(screen.getByRole('button', { name: /Télécharger le suivi interne/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/proxy/admin/usage/accounting-export.csv?month=2026-09',
+      ),
     );
+    vi.unstubAllGlobals();
+  });
+
+  it('n’interroge pas l’API tant que le mois saisi est incomplet (Firefox, Safari)', async () => {
+    render(<AdminMarginPage />);
+    await screen.findByText('Établissements', { exact: true });
+    const callsBefore = apiMocks.get.mock.calls.length;
+
+    fireEvent.change(screen.getByLabelText('Période du rapport'), { target: { value: '2026-1' } });
+
+    expect(apiMocks.get.mock.calls.length).toBe(callsBefore);
+    expect(screen.queryByText(/month must use/)).toBeNull();
+  });
+
+  it('affiche l’échec d’un export dans la page, sans la quitter', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    render(<AdminMarginPage />);
+    await screen.findByText('Établissements', { exact: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /Télécharger le suivi interne/ }));
+
+    expect(await screen.findByText('Cet export est réservé à l’équipe Sokar.')).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 
   it('ignore une réponse de rapport obsolète après un changement de mois', async () => {

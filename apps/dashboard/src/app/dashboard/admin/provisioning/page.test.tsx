@@ -283,4 +283,54 @@ describe('page Provisioning : lien avec l’application voix et inventaire Telny
 
     expect(await screen.findByText(/Le compte Telnyx ne contient aucun numéro/)).toBeVisible();
   });
+
+  it('n’envoie pas l’identifiant Telnyx d’un autre numéro que celui saisi à la main', async () => {
+    serveWith([status({ restaurantId: 'a' })], {
+      source: 'telnyx',
+      items: [{ id: 'tx-1', phoneNumber: '+33111111111', assignedToRestaurantId: null }],
+    });
+    mocks.post.mockResolvedValue({
+      ok: true,
+      message: 'Numéro attribué.',
+      status: status({ restaurantId: 'a', hasAssignedPhone: true }),
+    });
+    render(<AdminProvisioningPage />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'tx-1' } });
+    // L'opérateur remplace le numéro choisi par un autre, tapé à la main.
+    fireEvent.change(screen.getByPlaceholderText('+33451221528'), {
+      target: { value: '+33222222222' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Attribuer le numéro/ }));
+
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('admin/provisioning/a/assign-phone', {
+        phoneNumber: '+33222222222',
+        telnyxPhoneNumberId: undefined,
+      }),
+    );
+  });
+
+  it('envoie l’identifiant Telnyx quand le numéro choisi dans l’inventaire est conservé', async () => {
+    serveWith([status({ restaurantId: 'a' })], {
+      source: 'telnyx',
+      items: [{ id: 'tx-1', phoneNumber: '+33111111111', assignedToRestaurantId: null }],
+    });
+    mocks.post.mockResolvedValue({
+      ok: true,
+      message: 'ok',
+      status: status({ restaurantId: 'a', hasAssignedPhone: true }),
+    });
+    render(<AdminProvisioningPage />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'tx-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Attribuer le numéro/ }));
+
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('admin/provisioning/a/assign-phone', {
+        phoneNumber: '+33111111111',
+        telnyxPhoneNumberId: 'tx-1',
+      }),
+    );
+  });
 });
