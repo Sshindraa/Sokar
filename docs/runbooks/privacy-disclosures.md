@@ -284,6 +284,38 @@ destinataires configurés, leur contrôle d'autorisation, la persistance avant e
 et la confirmation d'acceptation fournisseur ne changent pas. 28 tests du module
 démo et TypeScript API réussis, avec SDK et base simulés ; aucun e-mail envoyé.
 
+## Vérification documentaire ElevenLabs — 18 octobre 2026
+
+Décision du 18 octobre 2026 : Hamza accepte la conservation des textes chez
+ElevenLabs. Faits internes, pas une attestation de conformité de Sokar.
+
+- Rôle : reconnaissance vocale Scribe (moteur par défaut, `VOICE_STT_PROVIDER`
+  dans `apps/api/src/env.ts`) et synthèse vocale des réponses. Reçoit l'audio de
+  l'appelant et le texte des réponses, dont noms, numéros et horaires.
+- [Conditions d'utilisation](https://elevenlabs.io/terms-of-use) : le DPA régit les
+  données personnelles lorsque les conditions sont acceptées pour une entité ; il
+  fait partie des conditions complémentaires.
+- [Politique de confidentialité](https://elevenlabs.io/privacy-policy) : Eleven Labs
+  Inc. (États-Unis) ; ElevenLabs Poland sp. z o.o. pour l'EEE ; stockage aux
+  États-Unis ; certification DPF limitée à l'entité américaine.
+- [DPA public](https://elevenlabs.io/dpa), mis à jour le 8 avril 2026 : clauses
+  types réputées signées (module 2 ou 3), droit irlandais ; en libre-service,
+  suppression possible mais non garantie après 180 jours d'inactivité. La
+  désactivation de la conservation (`enable_logging=false`) est réservée à
+  l'offre Enterprise.
+
+Constats du compte de production le 18 octobre 2026, en lecture seule :
+
+- Offre **Starter** (6 $/mois, prochain paiement 7,20 $ TTC le 14 novembre). Aucun
+  DPA à signer ni à télécharger dans le compte : le DPA public s'applique.
+- Copie de la page DPA archivée hors Git, permissions 0600 :
+  `~/.codex/private/sokar/contracts/elevenlabs-dpa-downloaded-2026-10-18.html`.
+- SHA-256 : `64b840ba641fdd9647564b6ab00f1fd037b9e93899f9fc01ef390f832e97617b`.
+- Page HTML de 352 947 octets, mention « Last Updated: 8 April 2026 ».
+- À vérifier : sous-traitants ultérieurs sur compliance.elevenlabs.io ; la TVA
+  facturée laisse penser que le compte n'est pas identifié comme entreprise
+  (nom, adresse ou numéro de TVA). Aucun réglage ni donnée de facturation modifié.
+
 ## Références vérifiées le 16 octobre 2026
 
 - [Resend : DPA et localisation](https://resend.com/security/gdpr) : DPA standard
