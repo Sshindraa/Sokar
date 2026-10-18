@@ -78,13 +78,13 @@ check "antislash conservé" 'SENTRY_DSN=https://ex.test/a\b' "$(grep '^SENTRY_DS
 
 echo "Clerk : la même clé est écrite dans l'API et le dashboard"
 d="$(fixture)"
-check "exit 0" 0 "$(run "$d" clerk prod CLERK_SECRET_KEY=sk_live_abcdef0123)"
-check "API" "CLERK_SECRET_KEY=sk_live_abcdef0123" "$(grep '^CLERK_SECRET_KEY=' "$d/api.env")"
-check "dashboard" "CLERK_SECRET_KEY=sk_live_abcdef0123" "$(grep '^CLERK_SECRET_KEY=' "$d/dashboard.env")"
+check "exit 0" 0 "$(run "$d" clerk prod CLERK_SECRET_KEY=sk_live_FIXTURE)"
+check "API" "CLERK_SECRET_KEY=sk_live_FIXTURE" "$(grep '^CLERK_SECRET_KEY=' "$d/api.env")"
+check "dashboard" "CLERK_SECRET_KEY=sk_live_FIXTURE" "$(grep '^CLERK_SECRET_KEY=' "$d/dashboard.env")"
 
 echo "Clerk : préfixe incompatible avec l'environnement, rien n'est écrit"
 d="$(fixture)"; before="$(cat "$d/dashboard.env")"
-check "exit 1" 1 "$(run "$d" clerk prod CLERK_SECRET_KEY=sk_test_abcdef0123)"
+check "exit 1" 1 "$(run "$d" clerk prod CLERK_SECRET_KEY=sk_test_FIXTURE)"
 check "dashboard inchangé" "$before" "$(cat "$d/dashboard.env")"
 
 echo "Stripe : checkout activé sans contrôle disponible, refus et fichier inchangé"
