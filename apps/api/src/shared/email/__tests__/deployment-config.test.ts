@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
-const script = resolve(__dirname, '../../../../../../scripts/ops/sync-alerting-config.sh');
+const script = resolve(__dirname, '../../../../../../scripts/ops/sync-env.sh');
 
 function synchronize(url: string | undefined, environment = 'staging') {
   const directory = mkdtempSync(join(tmpdir(), 'sokar-email-config-'));
@@ -22,7 +22,7 @@ function synchronize(url: string | undefined, environment = 'staging') {
     delete env[key];
   if (url !== undefined) env.RESEND_RATE_LIMIT_REDIS_URL = url;
   try {
-    const result = spawnSync('bash', [script, environment], { env, encoding: 'utf8' });
+    const result = spawnSync('bash', [script, 'alerting', environment], { env, encoding: 'utf8' });
     return {
       ...result,
       contents: readFileSync(target, 'utf8'),
