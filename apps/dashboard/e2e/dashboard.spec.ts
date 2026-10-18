@@ -101,18 +101,49 @@ test.describe('Espace administration Sokar — preview local', () => {
     });
   }
 
+  async function mockOperatorOverview(page: Page) {
+    await page.route('**/api/proxy/admin/provisioning/restaurants', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ count: 0, restaurants: [] }),
+      }),
+    );
+    await page.route('**/api/proxy/admin/demo-requests/summary', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ byStatus: { NEW: 2 }, notificationUnconfirmed: 1 }),
+      }),
+    );
+    await page.route('**/api/proxy/admin/onboarding-funnel/cohort', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ funnel: { timeToFirstReservation: { pending: 1 } } }),
+      }),
+    );
+    await page.route('**/api/proxy/admin/usage/margin**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ rows: [{ unpricedEventCount: 3 }] }),
+      }),
+    );
+  }
+
   test('ouvre un shell séparé sans contexte restaurant', async ({ page }) => {
     await mockOperatorAccess(page, true);
+    await mockOperatorOverview(page);
     await page.goto('/admin', { waitUntil: 'networkidle' });
 
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: 'Espace administration' })).toBeVisible();
-    await expect(
-      page.getByRole('heading', { name: 'Piloter Sokar sans entrer dans un restaurant' }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'Coûts opérationnels', exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Vue générale' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'À traiter' })).toBeVisible();
+    await expect(page.locator('main a[href="/admin/demo-requests"]')).toBeVisible();
+    await expect(page.locator('main a[href="/admin/onboarding"]')).toBeVisible();
+    await expect(page.locator('main a[href="/admin/margin"]')).toBeVisible();
     await expect(page.getByText('Chez Sokar HQ')).toHaveCount(0);
   });
 

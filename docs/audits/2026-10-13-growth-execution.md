@@ -1358,3 +1358,43 @@ CTR 2,2 %, position moyenne 16,3 ; les 19 requêtes détaillées n’indiquent a
 hors marque pertinent. Les totaux incluent des clics non détaillés : ne pas affirmer
 un total hors marque nul. Données antérieures à la livraison, aucune attribution de gain.
 Sitemap lu le 14/10, succès, quatre URLs : aucune nouvelle soumission nécessaire.
+
+### 10.35 Recette finale des réserves techniques — livrée le 15/10/2026
+
+**État final local après déploiement**, complément de preuve non encore commité.
+#441 et #442 fusionnées ; source production `3699e6da`. CI main `38733835822`,
+staging `38734664480` et production `38735057706` : succès. Le nouveau test de
+rendu privacy est vert en CI, ainsi que CodeQL après passage à un parseur DOM.
+
+Release production `20261015T123042Z`, prédécesseur `20261015T120048Z` ; staging
+`20261015T122746Z` (snapshot `0ae798d6`, source #442), prédécesseur `20261015T115647Z`.
+META et empreintes enregistrées dans `sokar-seo-reserves/releases-final.txt`.
+Retour applicatif explicite production depuis `/opt/sokar` :
+`bash scripts/deploy.sh --env prod --confirm-production rollback 20261015T120048Z`.
+Staging depuis `/opt/sokar-staging` :
+`bash scripts/deploy.sh --env staging rollback 20261015T115647Z`.
+Sans restauration DB. Ces commandes ne restaurent pas automatiquement un vhost Nginx.
+Le vhost antérieur à #441 est conservé dans `staging-vhost-before.conf` si nécessaire.
+
+Recette publique réalisée :
+
+- Staging : HTTP 200 accueil/démo/privacy ; `noindex, nofollow` sur les 12 réponses
+  représentatives (dont santé API, assets et erreurs 404). Exposition publique conservée.
+- Production : accueil HTTP 200, aucun `X-Robots-Tag` noindex ajouté ; privacy HTTP 200.
+- Deux environnements : 14 scripts inline du document privacy portent le nonce de la
+  CSP de réponse ; cache privé/no-store. Aucun élargissement de la politique CSP.
+- Dans Brave, sessions neuves démo → lien confidentialité : page visible et stable,
+  aucune erreur console observée, aucun formulaire envoyé. Captures et arbres AX conservés.
+- Aucune retouche hero/styles/animations/tarifs, aucune nouvelle landing. Contrôles
+  Lighthouse antérieurs conservés, non réexécutés pour ce correctif.
+
+Preuves locales : `/Users/hamza/.codex/visualizations/2026/10/15/sokar-seo-reserves/`
+(`public-after.json`, `privacy-nonces-after.json`, `production-privacy-final.png`,
+`staging-privacy-final.png`, JSON des workflows et META). Les fixtures Nginx isolées
+avec réponses 308/503 restent distinguées des réponses réelles observées.
+
+**Restes :** mentions légales non finalisées, identité légale non autorisée à publier ;
+aucune donnée personnelle du PDF publiée. Liens sociaux facultatifs. GSC : référence
+historique décrite en §10.34 ; indexation de la nouvelle version, canonical retenu et
+clics hors marque à observer ultérieurement, sans résultat ni délai garanti.
+Checkout original et travaux voix/onboarding conservés. Pas de changement de leurs sources.

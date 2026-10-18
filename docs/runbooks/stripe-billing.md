@@ -29,6 +29,48 @@ période.
 
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
+## Essai gratuit et suspension
+
+Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours offerts, sans carte**
+(`TRIAL_DAYS`, `packages/shared/src/plan.ts`).
+
+- Checkout : `payment_method_collection: if_required`, `subscription_data.trial_period_days` et
+  `trial_settings.end_behavior.missing_payment_method: cancel`. Un compte qui a déjà eu un abonnement
+  (`stripeSubscriptionId` présent) paie dès le premier jour : un seul essai par compte.
+- La session porte `metadata.trial=true` : le webhook `checkout.session.completed` enregistre
+  `trialing`, pas `active`.
+- Onboarding : un seul bouton, « Démarrer mon essai gratuit » (`POST /billing/trial`), démarre
+  l'essai sur la formule choisie (formule, cadence, nombre d'établissements) sans passer par
+  Checkout, puisqu'aucune carte n'est demandée (abonnement Stripe créé par l'API, mêmes réglages,
+  metadata `source=onboarding`). Aucun compte n'utilise donc Sokar hors essai ou abonnement. 409 si
+  un abonnement est en cours ou si l'essai a déjà servi.
+- Pendant l'essai, le restaurateur ajoute sa carte depuis le portail (« Gérer l'abonnement »). Le
+  dashboard affiche un bandeau les 5 derniers jours.
+- Sans carte au jour 15, Stripe supprime l'abonnement (`customer.subscription.deleted`) : le compte
+  passe `canceled`. **Suspension** : un compte dont l'abonnement a existé puis s'est terminé
+  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. Aucune session vocale : la ligne du
+  restaurant pouvant encore être renvoyée vers Sokar, Sokar décroche, lit « Bonjour, vous êtes bien
+  chez … Nous ne pouvons pas prendre votre appel pour le moment… » puis raccroche
+  (`voice/suspended-call.ts`). Le dashboard affiche « Réactiver mon assistant » ; e-mail de coupure,
+  dashboard et réglages rappellent de désactiver le renvoi. `past_due` ne suspend pas : Stripe
+  retente le paiement.
+- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, comptes antérieurs à l'essai
+  direct) ne sont pas suspendus.
+- Réactivation : un nouveau Checkout depuis `/pricing`, sans nouvel essai. Le webhook repasse le
+  compte `active` et l'agent décroche à nouveau.
+- Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause
+  d'une erreur de base de données.
+- E-mails (file `billing-notifications`, une fois par abonnement et par type) :
+  - **J-3** sur `customer.subscription.trial_will_end` : bilan de l'essai (appels décrochés,
+    réservations, couverts) et lien « Ajouter ma carte ». Sans appel reçu, l'e-mail signale un renvoi
+    de ligne probablement absent. Rien n'est envoyé si une carte est déjà enregistrée ou si l'essai
+    est déjà converti.
+  - **Coupure** sur `customer.subscription.deleted` : l'assistant ne répond plus, bilan, lien
+    « Réactiver mon assistant » (`/pricing`). Rien n'est envoyé si le compte a été réactivé entre-temps.
+  - Destinataire : `managerEmail`, sinon l'adresse du propriétaire du compte. Aucune adresse dans les
+    journaux ; coût suivi en `billing_notification`.
+  - Le point de réception Stripe de l'abonnement doit écouter `customer.subscription.trial_will_end`.
+
 ## Configuration
 
 Créer les huit prix récurrents dans le compte Stripe correspondant à l'environnement (six prix de base et deux add-ons Multi-site), puis renseigner dans `apps/api/.env` :
@@ -125,6 +167,50 @@ sans paiement ni création d’abonnement.
 | MULTI_SITE_ANNUAL                | `price_1UQELcHCZZuqZF0hodbuPFHe` | `price_1UQELwH4TS0ZYIJnpTL6GIVh` |
 | MULTI_SITE_ADDON_MONTHLY         | `price_1UI9zGHCZZuqZF0hC3xNNmsW` | `price_1UICseH4TS0ZYIJn0z9WoP0d` |
 | MULTI_SITE_ADDON_ANNUAL          | `price_1UQELdHCZZuqZF0hBBUgrRNS` | `price_1UQELxH4TS0ZYIJnof7S3O3p` |
+
+### Contrôle du 16 octobre 2026
+
+- `verify-stripe-catalog.mjs` exécuté sur le VPS avec le `.env` staging (`sk_test_`) puis prod
+  (`sk_live_`, lecture seule) : 8/8 conformes dans chaque environnement. Les `priceId` déployés
+  sont exactement ceux du tableau ci-dessus.
+- Rejeu sandbox mensuel sur un client test jetable : Checkout et aperçu de facture
+  (`invoices.createPreview`) donnent Essential 199,00 €, Pro 299,00 €, Multi-site 3 sites 497,00 €
+  (299 + 2 × 99). Sessions expirées sans paiement, client supprimé, aucun abonnement créé.
+- Portail, **compte test uniquement** (accord de Hamza : « Oui, active le changement de formule
+  dans le portail client Stripe, en test d'abord. ») : la configuration par défaut
+  `bpc_1UD3ilHCZZuqZF0hp2KK2EqF` a maintenant `subscription_update` activé avec
+  `default_allowed_updates: ["price"]`, `proration_behavior: create_prorations` et les produits
+  Essential et Pro (mensuel + annuel). Multi-site est exclu : un abonnement à deux lignes (base +
+  addon) ne passe pas par le portail, et `siteCount` vient de la metadata Checkout ; pas de
+  `quantity` pour la même raison. Retour arrière : `enabled: false`,
+  `default_allowed_updates: []`, `proration_behavior: none`. Le live n'est pas modifié.
+- Correctif requis avant toute ouverture en live : `handleSubscriptionEvent` donnait la priorité à
+  `metadata.plan` (posée par Checkout) sur le prix. Un changement Essential → Pro dans le portail
+  change le prix sans toucher la metadata, et le compte restait en Essential. Rejeu sandbox
+  Essential → Pro sur un client jetable : l'événement réel `customer.subscription.updated` porte le
+  prix Pro et `metadata.plan=essential` ; prochaine facture −199 € (prorata) + 299 € + 299 €.
+  Rejoué contre le handler local : `STARTER` sans correctif, `PRO` avec. Le prix résolu passe
+  désormais en premier, la metadata ne sert plus qu'aux prix historiques. Test unitaire ajouté.
+  Client et abonnement de test supprimés. Le correctif doit être déployé en staging avant de
+  rejouer le parcours depuis le dashboard, puis avant toute activation live.
+- Portail **live** (accord de Hamza, après déploiement de #460 en staging et production sur
+  `b73075bc`) : le compte live n'avait aucune configuration de portail. Configuration créée par
+  appel Stripe et devenue la configuration par défaut du compte :
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`, repérée par sa metadata `sokar_key` = `portal-v1`. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
+  annuel, `create_prorations`), Multi-site exclu, pas de `quantity` ; mise à jour carte et
+  coordonnées, historique des factures, résiliation en fin de période avec motif. Retour arrière :
+  `subscription_update.enabled: false` sur cette configuration. Aucun abonné live à ce jour : pas de
+  rejeu de bout en bout en live.
+- Contrôle live sans paiement (client jetable, `invoices.createPreview`, aucun moyen de paiement ni
+  abonnement, client supprimé) : Essential 199,00 € / 2 149,20 €, Pro 299,00 € / 3 229,20 €,
+  Multi-site 3 sites 497,00 € / 5 367,60 € (mensuel / annuel). Session de portail live créée sur
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`. Aucune TVA n'est calculée, volontairement : Sokar est en franchise
+  en base de TVA (décision du 16 octobre 2026). Les factures portent « TVA non applicable, art. 293 B
+  du CGI » via `invoice_settings.footer` du client Stripe (`VAT_MENTION`, PR #462 ; clients
+  existants mis à jour en live et en test). À revoir si le statut TVA change.
+- Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
+  `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
+  migrer ni archiver un ancien prix sans décision explicite.
 
 ### Rollback de cette grille
 
@@ -272,6 +358,7 @@ Essential 1 430,40 €/an, Pro 3 229,20 €/an, Multi-site 3 229,20 €/an et ad
 1 069,20 €/an par établissement supplémentaire. Cette preuve historique ne valide pas la nouvelle
 grille 199/299 ; elle doit être remplacée après création des nouveaux prix, synchronisation des
 `priceId`, Checkout, facture, taxes, prorata, période de grâce et renouvellement en sandbox.
+Remplacée par le contrôle du 16 octobre 2026 ci-dessus pour les prix, le Checkout et la facture.
 
 ## Test sans paiement
 

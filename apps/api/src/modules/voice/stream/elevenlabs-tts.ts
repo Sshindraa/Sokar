@@ -1,9 +1,15 @@
+import { CARTESIA_MODEL } from '@sokar/config';
+
 /**
  * Synthèse vocale ElevenLabs pour le téléphone (chemin HTTP, un segment par requête).
  *
  * Bascule depuis Cartesia : `VOICE_TTS_PROVIDER=elevenlabs`. ElevenLabs produit nativement
  * le G.711 et le PCM16 demandés par Telnyx : aucun transcodage, les octets reçus se mettent
  * en cache et se jouent exactement comme ceux de Cartesia. Cartesia reste le défaut.
+ *
+ * Par défaut, le point de synthèse classique renvoie l'audio d'un segment d'un bloc.
+ * `ELEVENLABS_TTS_STREAMING=true` passe sur `/stream`, dont le premier octet arrive plus tôt.
+ * Même corps, mêmes en-têtes, même format : seule l'URL change.
  */
 
 export const ELEVENLABS_TTS_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech';
@@ -14,6 +20,21 @@ export type TelephonyTtsProvider = 'cartesia' | 'elevenlabs';
 /** Fournisseur TTS du téléphone. Cartesia tant que la variable n'est pas `elevenlabs`. */
 export function telephonyTtsProvider(): TelephonyTtsProvider {
   return process.env.VOICE_TTS_PROVIDER === 'elevenlabs' ? 'elevenlabs' : 'cartesia';
+}
+
+/**
+ * Étiquette fournisseur + modèle écrite sur l'appel (`calls.tts_provider`), par ex. `elevenlabs-eleven_v4_turbo`.
+ * Toute autre valeur (`telnyx-native`) est rendue telle quelle.
+ */
+export function ttsProviderWithModel(provider: string): string {
+  if (provider === 'elevenlabs') return `elevenlabs-${elevenLabsTtsModel()}`;
+  if (provider === 'cartesia') return `cartesia-${CARTESIA_MODEL}`;
+  return provider;
+}
+
+/** Synthèse en flux (`/stream`) pour le téléphone. Désactivée tant que la variable n'est pas exactement `true`. */
+export function elevenLabsTtsStreamingEnabled(): boolean {
+  return process.env.ELEVENLABS_TTS_STREAMING === 'true';
 }
 
 export function elevenLabsTtsModel(): string {
@@ -78,10 +99,14 @@ export function buildElevenLabsTtsRequest(options: {
   text: string;
   locale: string;
   codec: string;
+  /** `true` : point de synthèse en flux (`/stream`), même corps et mêmes en-têtes. */
+  streaming?: boolean;
 }): ElevenLabsTtsRequest {
   const outputFormat = elevenLabsOutputFormat(options.codec);
+  const voice = encodeURIComponent(options.voiceId);
+  const path = options.streaming ? `${voice}/stream` : voice;
   return {
-    url: `${ELEVENLABS_TTS_ENDPOINT}/${encodeURIComponent(options.voiceId)}?output_format=${outputFormat}`,
+    url: `${ELEVENLABS_TTS_ENDPOINT}/${path}?output_format=${outputFormat}`,
     headers: {
       'xi-api-key': options.apiKey,
       'Content-Type': 'application/json',

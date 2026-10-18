@@ -33,13 +33,13 @@ describe('customer.routes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(db.customer.findMany).toHaveBeenCalledWith({
-        where: { restaurantId: 'test-rest-1' },
+        where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
         orderBy: { visitCount: 'desc' },
         take: 10,
         skip: 0,
       });
       expect(db.customer.count).toHaveBeenCalledWith({
-        where: { restaurantId: 'test-rest-1' },
+        where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
       });
       const body = res.json();
       expect(body.total).toBe(2);
@@ -59,11 +59,80 @@ describe('customer.routes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(db.customer.findMany).toHaveBeenCalledWith({
-        where: { restaurantId: 'test-rest-1', phone: '+33612345678' },
+        where: {
+          restaurantId: 'test-rest-1',
+          archivedAt: null,
+          mergedIntoId: null,
+          phone: '+33612345678',
+        },
         orderBy: { visitCount: 'desc' },
         take: 50,
         skip: 0,
       });
+    });
+
+    it('exclut les clients effacés (RGPD) et les profils déjà fusionnés de la liste et du total', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([]);
+      vi.mocked(db.customer.count).mockResolvedValue(0);
+
+      await app.inject({
+        method: 'GET',
+        url: '/customers',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      const expected = expect.objectContaining({
+        where: expect.objectContaining({ archivedAt: null, mergedIntoId: null }),
+      });
+      expect(db.customer.findMany).toHaveBeenCalledWith(expected);
+      expect(db.customer.count).toHaveBeenCalledWith(expected);
+    });
+
+    it('retrouve un client avec un numéro saisi à la française, entier ou en partie', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([]);
+      vi.mocked(db.customer.count).mockResolvedValue(0);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?search=06%2012%2034%2056%2078',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            restaurantId: 'test-rest-1',
+            OR: [
+              { name: { contains: '06 12 34 56 78', mode: 'insensitive' } },
+              { phone: { contains: '0612345678' } },
+              { phone: { contains: '612345678' } },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('cherche aussi par nom', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([]);
+      vi.mocked(db.customer.count).mockResolvedValue(0);
+
+      await app.inject({
+        method: 'GET',
+        url: '/customers?search=Martin',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(db.customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ name: { contains: 'Martin', mode: 'insensitive' } }],
+          }),
+        }),
+      );
     });
 
     it('masque les notes pour un rôle non autorisé selon la politique du site', async () => {

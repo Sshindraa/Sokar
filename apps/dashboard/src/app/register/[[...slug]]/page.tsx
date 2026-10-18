@@ -1,6 +1,12 @@
 'use client';
 
-import { PRICING_CATALOG, pricingTotalCents, formatPriceCents } from '@sokar/shared';
+import {
+  PRICING_CATALOG,
+  TRIAL_DAYS,
+  VAT_MENTION,
+  pricingTotalCents,
+  formatPriceCents,
+} from '@sokar/shared';
 
 import { SignUp, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -252,8 +258,8 @@ export default function RegisterPage() {
                 className="mt-2 flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                {PRICING_CATALOG['multi-site'].monthlyCents / 100} € HT/mois, premier établissement
-                inclus, puis {PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par
+                {PRICING_CATALOG['multi-site'].monthlyCents / 100} €/mois, premier établissement
+                inclus, puis {PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par
                 établissement supplémentaire.
               </p>
             </div>
@@ -264,6 +270,7 @@ export default function RegisterPage() {
               className="mx-auto mb-5 max-w-sm text-center text-sm text-foreground"
               aria-label="Récapitulatif de facturation"
             >
+              {TRIAL_DAYS} jours offerts, sans carte bancaire, puis{' '}
               {formatPriceCents(
                 pricingTotalCents(
                   selectedPlan.slug,
@@ -271,10 +278,11 @@ export default function RegisterPage() {
                   selectedPlan.siteCount ?? 1,
                 ),
               )}{' '}
-              € HT
+              €
               {selectedPlan.billing === 'annual'
                 ? ' facturés par an, engagement de 12 mois.'
-                : ' facturés chaque mois.'}
+                : ' facturés chaque mois.'}{' '}
+              {VAT_MENTION}.
             </p>
           )}
 

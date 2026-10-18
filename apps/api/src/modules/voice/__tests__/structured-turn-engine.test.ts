@@ -20,7 +20,7 @@ import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { partySizeCorrectionFact } from '../stream/structured-turn/fact-guards';
 import { speakTtsStreamed } from '../stream/tts-handler';
-import { __resetMetrics } from '../../../shared/observability/metrics';
+import { __resetMetrics, voiceTtsContextFailureTotal } from '../../../shared/observability/metrics';
 import { logger } from '../../../shared/logger/pino';
 
 vi.mock('../stream/tts-handler', () => ({
@@ -33,8 +33,10 @@ const contextTurn: {
   finish: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
   hasAudioOutput: boolean;
+  provider: 'cartesia';
   onHoldCancelled?: () => void;
 } = {
+  provider: 'cartesia',
   push: vi.fn(),
   finish: vi.fn().mockResolvedValue(undefined),
   cancel: vi.fn(),
@@ -1609,6 +1611,43 @@ describe('tour structuré (canary)', () => {
     ]);
   });
 
+  it('rend le début de phrase au tour suivant quand la relance après silence est dépassée (appel bb50c0d3)', async () => {
+    // Épellation : « c'est au nom de à » (la lettre A) retenu, relance après silence, puis l'appelant
+    // continue « f l e l o u » avant que la relance ait parlé. Le A ne doit pas disparaître.
+    vi.useFakeTimers();
+    const { session, mgr, outputs } = fixture();
+    const stream = vi.mocked(mgr.streamStructuredCompletion);
+    const scripted = stream.getMockImplementation()!;
+    stream
+      .mockImplementationOnce(scripted)
+      // La relance reste en cours : le modèle n'a pas encore répondu quand l'appelant reprend.
+      .mockImplementationOnce(() => new Promise<string>(() => undefined))
+      .mockImplementation(scripted);
+    outputs.push(
+      turn({ turnComplete: false, interpretation: 'unclear' }),
+      turn({
+        awaiting: 'customerNameConfirmation',
+        draft: { date: '', time: '', partySize: 0, customerName: 'AFLELOU' },
+        say: 'A, F, L, E, L, O, U. C’est bien ça ?',
+      }),
+    );
+
+    await processTranscriptStreaming(session, "c'est au nom de à", mgr);
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    await processTranscriptStreaming(session, 'f l e l o u', mgr);
+    vi.useRealTimers();
+
+    const lastMessages = stream.mock.calls.at(-1)?.[1] as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(lastMessages.at(-1)?.content).toContain("c'est au nom de à f l e l o u");
+    expect(session.history.filter((m) => m.role === 'user').map((m) => m.content)).toEqual([
+      "c'est au nom de à f l e l o u",
+    ]);
+  });
+
   describe('minuteur après un tour inachevé (appel 1b3f85e9)', () => {
     const scripted = (outputs: StructuredTurnOutput[]) =>
       outputs.push(
@@ -1713,13 +1752,70 @@ describe('tour structuré (canary)', () => {
       expect(session.ttsContext).toBeNull();
     });
 
-    it('repasse par HTTP si le contexte échoue avant tout audio', async () => {
+    it('repasse par HTTP si le contexte échoue avant tout audio, et le compte', async () => {
+      voiceTtsContextFailureTotal.reset();
       contextTurn.finish.mockRejectedValueOnce(new Error('socket closed'));
       const { session, mgr, outputs } = fixture();
       outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
       await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
 
       expect(spoken()).toEqual(['Bien sûr. Pour quel jour ?']);
+      const { values } = await voiceTtsContextFailureTotal.get();
+      expect(values).toEqual([
+        { labels: { provider: 'cartesia', outcome: 'http_fallback' }, value: 1 },
+      ]);
+    });
+
+    it('compte une réponse coupée en cours de route, sans la répéter en HTTP', async () => {
+      voiceTtsContextFailureTotal.reset();
+      contextTurn.finish.mockRejectedValueOnce(new Error('socket closed'));
+      contextTurn.hasAudioOutput = true;
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(speakTtsStreamed).not.toHaveBeenCalled();
+      const { values } = await voiceTtsContextFailureTotal.get();
+      expect(values).toEqual([
+        { labels: { provider: 'cartesia', outcome: 'audio_cut' }, value: 1 },
+      ]);
+    });
+
+    it('envoie le ton choisi avec la première phrase seulement, sous les deux drapeaux', async () => {
+      vi.stubEnv('VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS', RESTAURANT_ID);
+      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
+      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', RESTAURANT_ID);
+      // Sans clé ElevenLabs, la fabrique retombe sur le contexte simulé : seul le ton est observé ici.
+      vi.stubEnv('ELEVENLABS_API_KEY', '');
+      const { session, mgr, outputs } = fixture();
+      // `tone` avant `say`, comme dans le schéma.
+      const { say, ...rest } = turn({
+        awaiting: 'partySize',
+        say: 'Oh, quarante ans. Vous serez combien ?',
+      });
+      outputs.push({ ...rest, tone: 'cheerful', say });
+      await processTranscriptStreaming(session, "c'est pour les quarante ans de ma femme", mgr);
+
+      expect(contextTurn.push.mock.calls).toEqual([
+        ['Oh, quarante ans.', { tone: 'cheerful' }],
+        ['Vous serez combien ?', {}],
+      ]);
+      const format = vi.mocked(mgr.streamStructuredCompletion).mock.calls[0][2] as {
+        json_schema: { schema: { properties: Record<string, unknown> } };
+      };
+      expect(format.json_schema.schema.properties).toHaveProperty('tone');
+    });
+
+    it('n’ajoute aucun ton sans le drapeau, ni pour none', async () => {
+      const { session, mgr, outputs } = fixture();
+      outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
+      await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
+
+      expect(contextTurn.push.mock.calls.map(([, options]) => options)).toEqual([{}, {}]);
+      const format = vi.mocked(mgr.streamStructuredCompletion).mock.calls[0][2] as {
+        json_schema: { schema: { properties: Record<string, unknown> } };
+      };
+      expect(format.json_schema.schema.properties).not.toHaveProperty('tone');
     });
 
     it('ferme sans audio le contexte d’un tour où l’agent se tait', async () => {
@@ -1759,6 +1855,44 @@ describe('tour structuré (canary)', () => {
 
       expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
       expect(spoken()).toEqual(['Pour quel jour ?']);
+    });
+
+    it('prépare la réponse dès qu’un tour est jugé inachevé, et la dit sans nouvel appel si l’appelant se tait', async () => {
+      // Appel bb50c0d3 du 16/10/2026 : phrase finie jugée inachevée, puis attente, puis passage complet.
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ turnComplete: false, interpretation: 'new_request' }),
+        turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'je vous appelle pour faire une réservation', mgr);
+      // La réponse est déjà demandée, mais rien n'est dit pendant l'attente.
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(2_100);
+      vi.useRealTimers();
+
+      expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+      expect(spoken()).toEqual(['Bien sûr.', 'Pour quel jour ?']);
+    });
+
+    it('jette la réponse préparée quand l’appelant reprend la parole', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      outputs.push(
+        turn({ turnComplete: false, interpretation: 'new_request' }),
+        turn({ awaiting: 'date', say: 'Réponse préparée.' }),
+        turn({ awaiting: 'time', say: 'Pour samedi. Vers quelle heure ?' }),
+      );
+
+      await processTranscriptStreaming(session, 'je vous appelle pour', mgr);
+      await processTranscriptStreaming(session, 'réserver samedi', mgr);
+      await vi.advanceTimersByTimeAsync(2_100);
+      vi.useRealTimers();
+
+      expect(spoken()).toEqual(['Pour samedi.', 'Vers quelle heure ?']);
     });
 
     it('ne spécule pas pendant que l’agent parle', () => {

@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi, type Mock } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 /**
  * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).
@@ -678,100 +679,132 @@ describe('Sokar Connect — Routes publiques', () => {
   });
 
   describe('POST /public/r/:slug/confirm', () => {
-    it('consomme un hold puis confirme la réservation sans notification client', async () => {
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        id: RESTAURANT_ID,
-        slug: SLUG,
-        agenticOptIn: true,
-        publishedAt: new Date('2026-06-24'),
-        city: 'Lyon',
-        country: 'FR',
-        postalCode: '69001',
-        description: null,
-        formattedAddress: '12 Rue',
-        phoneNumber: '+334****0000',
-        phoneE164: '+334****0000',
-        cuisineType: ['Française'],
-        priceRange: 2,
-        openingHours: { mon: { open: '12:00', close: '22:00' } },
-        ambiance: [],
-        dietary: [],
-        noiseLevel: null,
-        exposureSettings: {
-          connectPublished: true,
-          connectAgentic: true,
-        },
-        images: [],
-      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
-      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as unknown as Awaited<
-          ReturnType<typeof db.restaurantExposureSettings.findUnique>
-        >,
-      );
-      vi.mocked(db.customerConsent.create).mockResolvedValue({
-        id: 'consent-confirm',
-      } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
-      vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
-        id: 'hold-confirm',
-        holdToken: CONFIRM_HOLD_TOKEN,
-        status: 'ACTIVE',
-        expiresAt: new Date(Date.now() + 60_000),
-        restaurantId: RESTAURANT_ID,
-        partySize: 2,
-        slotStart: new Date('2026-06-29T20:00:00Z'),
-        slotEnd: new Date('2026-06-29T21:30:00Z'),
-        tableId: null,
-      } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
-
-      const createReservation = vi
-        .spyOn(ReservationService.prototype, 'createReservation')
-        .mockResolvedValue({
-          reservationId: 'reservation-confirm',
-          state: 'CONFIRMED',
-          reused: false,
-        });
-
-      try {
-        const res = await app.inject({
-          method: 'POST',
-          url: `/public/r/${SLUG}/confirm`,
-          payload: {
-            holdToken: CONFIRM_HOLD_TOKEN,
-            idempotencyKey: '11111111-1111-4111-8111-111111111111',
-            customer: {
-              firstName: 'Alice',
-              phone: '+33612345678',
-            },
+    it.each([
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ])(
+      'consomme un hold et conserve le choix WhatsApp (%s, replay %s)',
+      async (accepted, reused) => {
+        vi.stubEnv('WHATSAPP_CONSENT_ENABLED', 'true');
+        vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
+        vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
+        vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+        const reservationId = randomUUID();
+        vi.mocked(db.reservation.findUnique).mockResolvedValue({
+          id: reservationId,
+          restaurantId: RESTAURANT_ID,
+          customerPhone: '+33612345678',
+          createdAt: new Date(),
+          reservedAt: new Date(Date.now() + 2 * 86_400_000),
+        } as never);
+        vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+          id: RESTAURANT_ID,
+          slug: SLUG,
+          agenticOptIn: true,
+          publishedAt: new Date('2026-06-24'),
+          city: 'Lyon',
+          country: 'FR',
+          postalCode: '69001',
+          description: null,
+          formattedAddress: '12 Rue',
+          phoneNumber: '+334****0000',
+          phoneE164: '+334****0000',
+          cuisineType: ['Française'],
+          priceRange: 2,
+          openingHours: { mon: { open: '12:00', close: '22:00' } },
+          ambiance: [],
+          dietary: [],
+          noiseLevel: null,
+          exposureSettings: {
+            connectPublished: true,
+            connectAgentic: true,
           },
-        });
+          images: [],
+        } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+        vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+          mockExposureSettings as unknown as Awaited<
+            ReturnType<typeof db.restaurantExposureSettings.findUnique>
+          >,
+        );
+        vi.mocked(db.customerConsent.create).mockResolvedValue({
+          id: 'consent-confirm',
+        } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
+        vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+          id: 'hold-confirm',
+          holdToken: CONFIRM_HOLD_TOKEN,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 60_000),
+          restaurantId: RESTAURANT_ID,
+          partySize: 2,
+          slotStart: new Date('2026-06-29T20:00:00Z'),
+          slotEnd: new Date('2026-06-29T21:30:00Z'),
+          tableId: null,
+        } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
 
-        expect(res.statusCode).toBe(200);
-        expect(res.json()).toMatchObject({
-          reservationId: 'reservation-confirm',
-          status: 'confirmed',
-          state: 'CONFIRMED',
-          reused: false,
-        });
-        expect(createReservation).toHaveBeenCalledWith(
-          expect.objectContaining({
-            holdToken: CONFIRM_HOLD_TOKEN,
-            actor: 'connect:web',
-            channel: 'WEB',
-          }),
-          expect.objectContaining({ key: '11111111-1111-4111-8111-111111111111' }),
-        );
-        expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
-          'connect-event',
-          expect.objectContaining({
-            event: 'reservation_confirmed',
-            reservationId: 'reservation-confirm',
-          }),
-          expect.any(Object),
-        );
-      } finally {
-        createReservation.mockRestore();
-      }
-    });
+        const createReservation = vi
+          .spyOn(ReservationService.prototype, 'createReservation')
+          .mockResolvedValue({
+            reservationId,
+            state: 'CONFIRMED',
+            reused,
+          });
+
+        try {
+          const res = await app.inject({
+            method: 'POST',
+            url: `/public/r/${SLUG}/confirm`,
+            payload: {
+              holdToken: CONFIRM_HOLD_TOKEN,
+              idempotencyKey: '11111111-1111-4111-8111-111111111111',
+              whatsappReminderConsent: { accepted, version: 'whatsapp-reminder-2026-10-17' },
+              customer: {
+                firstName: 'Alice',
+                phone: '+33612345678',
+              },
+            },
+          });
+
+          expect(res.statusCode).toBe(200);
+          expect(res.json()).toMatchObject({
+            reservationId,
+            status: 'confirmed',
+            state: 'CONFIRMED',
+            reused,
+          });
+          expect(res.json().managementUrl).toMatch(/^https:\/\/sokar.tech\/r#[\w-]+\.[\w-]+$/);
+          expect(createReservation).toHaveBeenCalledWith(
+            expect.objectContaining({
+              holdToken: CONFIRM_HOLD_TOKEN,
+              actor: 'connect:web',
+              channel: 'WEB',
+              consents: expect.objectContaining({ transactionalWhatsapp: accepted }),
+            }),
+            expect.objectContaining({ key: '11111111-1111-4111-8111-111111111111' }),
+          );
+          if (accepted) {
+            if (!reused) expect(res.json().whatsappWithdrawalToken).toMatch(/^[a-f0-9]{64}$/);
+            expect(createReservation.mock.calls[0][0].consents).toMatchObject({
+              whatsappConsentProof: expect.objectContaining({ purpose: 'reservation_reminder' }),
+            });
+          } else {
+            expect(res.json().whatsappWithdrawalToken).toBeUndefined();
+          }
+          expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
+            'connect-event',
+            expect.objectContaining({
+              event: 'reservation_confirmed',
+              reservationId,
+            }),
+            expect.any(Object),
+          );
+        } finally {
+          createReservation.mockRestore();
+          vi.unstubAllEnvs();
+        }
+      },
+    );
 
     it('retourne 410 si hold expiré', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({

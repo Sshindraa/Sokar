@@ -43,6 +43,10 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  billingNotifications: new Queue('billing-notifications', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   reconciliation: new Queue('reconciliation', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
@@ -133,6 +137,15 @@ export const queues = {
     },
   }),
   elevenlabsSubscription: new Queue('elevenlabs-subscription', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 24,
+      removeOnFail: 100,
+    },
+  }),
+  providerBalance: new Queue('provider-balance', {
     connection: redisQueue,
     defaultJobOptions: {
       attempts: 3,

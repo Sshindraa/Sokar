@@ -139,6 +139,9 @@ actuel. Préservez les abonnements et droits existants.
 
 ### Multi-site — base 249 € HT/mois, supplément 99 € HT
 
+> Remplacé le 14 octobre 2026 : la base Multi-site est 299 € HT/mois (premier établissement inclus),
+> voir [`stripe-billing.md`](./stripe-billing.md). Les montants 249 € ci-dessous sont historiques.
+
 **Direction : « L'esprit de chaque maison. Une vue d'ensemble. »**
 
 Accroche possible : « Pour coordonner vos établissements tout en gardant les règles de chaque adresse. »
@@ -184,6 +187,9 @@ de rareté, compteur, remise exceptionnelle ou faux avis.
 ## 6. Montrer le prix complet
 
 Conservez les montants et la réduction actuelle de 20 % ; ce chantier ne change pas le catalogue Stripe.
+
+> Historique : depuis le 14 octobre 2026, la remise annuelle est de 10 % et la base Multi-site de
+> 299 €. Montants en vigueur : [`stripe-billing.md`](./stripe-billing.md).
 
 | Élément                    | Mensuel HT | Équivalent mensuel avec paiement annuel | Total annuel HT |
 | -------------------------- | ---------- | --------------------------------------- | --------------- |

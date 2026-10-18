@@ -21,6 +21,8 @@ vi.mock('../../../src/shared/db/client', () => ({
 
 vi.mock('../../../src/shared/redis/client', () => ({
   redisCache: {
+    // Battement des workers récent : le contrôle `workers` passe.
+    get: vi.fn(async () => String(Date.now())),
     ping: vi.fn().mockResolvedValue('PONG'),
   },
   redisSession: {},

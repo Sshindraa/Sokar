@@ -1,7 +1,8 @@
 /**
  * Pré-génération des greetings audio par restaurant au boot.
  *
- * Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+ * Le greeting "Bonjour, ici {restaurant}, je suis Léa, l'assistante IA. Je vous écoute." est la
+ * première
  * chose que le client entend. Sans cache, il faut ~400-800ms pour le
  * synthétiser via Cartesia au premier appel. En pré-générant au boot et en
  * cachant dans Redis (via le TTS cache existant), le greeting devient un
@@ -40,13 +41,16 @@ function greetingCodecProfile(): TelnyxCodecProfile {
   return telnyxCodecProfile(getTelnyxCodec());
 }
 import { normalizeVoiceLocale } from './voice-language';
+import { buildFixedGreeting } from '../agent-identity';
 
 /**
  * Construit le texte du greeting pour un restaurant.
  * Doit être identique à buildInitialGreeting dans handler.ts.
+ * L'appelant est informé dès le décroché qu'il parle à une IA (règlement européen sur l'IA,
+ * article 50, applicable depuis le 2 août 2026).
  */
 export function buildGreetingText(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return buildFixedGreeting(restaurantName);
 }
 
 /**

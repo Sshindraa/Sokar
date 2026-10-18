@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   PhoneForwarded,
   CheckCircle2,
@@ -107,6 +107,14 @@ export default function AdminProvisioningPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+
+  // Les boutons sont en bas du cockpit, le message en haut de page : on l'amène sous les yeux.
+  useEffect(() => {
+    if (actionError || actionSuccess) {
+      feedbackRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    }
+  }, [actionError, actionSuccess]);
 
   const fetchRestaurants = useCallback(async () => {
     setLoadingList(true);
@@ -187,9 +195,8 @@ export default function AdminProvisioningPage() {
   // Action 1 : Assign Phone
   const handleAssignPhone = async () => {
     if (!selectedId) return;
-    const phoneToAssign =
-      customPhoneInput.trim() ||
-      availableNumbers.find((n) => n.id === selectedTelnyxId)?.phoneNumber;
+    const selectedNumber = availableNumbers.find((n) => n.id === selectedTelnyxId);
+    const phoneToAssign = customPhoneInput.trim() || selectedNumber?.phoneNumber;
     if (!phoneToAssign) {
       setActionError(
         'Sélectionnez un numéro Telnyx ou saisissez un numéro E.164 (ex: +33451221528).',
@@ -206,7 +213,12 @@ export default function AdminProvisioningPage() {
         `admin/provisioning/${selectedId}/assign-phone`,
         {
           phoneNumber: phoneToAssign,
-          telnyxPhoneNumberId: selectedTelnyxId || undefined,
+          // L'identifiant Telnyx n'est envoyé que s'il correspond au numéro saisi : sinon l'API relierait
+          // à l'application voix un autre numéro que celui affiché.
+          telnyxPhoneNumberId:
+            selectedNumber && selectedNumber.phoneNumber === phoneToAssign
+              ? selectedNumber.id
+              : undefined,
         },
       );
       setActionSuccess(res.message);
@@ -378,25 +390,30 @@ export default function AdminProvisioningPage() {
         </Button>
       </div>
 
-      {actionError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-3 transition-all duration-200">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Erreur de provisioning</p>
-            <p className="mt-0.5 leading-relaxed">{actionError}</p>
+      <div ref={feedbackRef} className="space-y-3 empty:hidden">
+        {actionError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive flex items-start gap-3 transition-all duration-200"
+          >
+            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Erreur de provisioning</p>
+              <p className="mt-0.5 leading-relaxed">{actionError}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {actionSuccess && (
-        <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success flex items-start gap-3 transition-all duration-200">
-          <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Opération réussie</p>
-            <p className="mt-0.5 leading-relaxed">{actionSuccess}</p>
+        {actionSuccess && (
+          <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-sm text-success flex items-start gap-3 transition-all duration-200">
+            <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Opération réussie</p>
+              <p className="mt-0.5 leading-relaxed">{actionSuccess}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <PendingNumbersSection
         restaurants={restaurants}
@@ -406,7 +423,7 @@ export default function AdminProvisioningPage() {
         onRetry={fetchRestaurants}
       />
 
-      <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-8 xl:grid-cols-[320px_1fr]">
         {/* Colonne gauche : liste des restaurants */}
         <div className="space-y-4">
           <div className="relative">
@@ -527,7 +544,7 @@ export default function AdminProvisioningPage() {
             </div>
 
             {/* Grille des 4 étapes */}
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 2xl:grid-cols-2">
               {/* ÉTAPE 1 : Attribution Telnyx */}
               <div className="rounded-xl border border-border bg-card p-6 space-y-4 shadow-sm flex flex-col justify-between">
                 <div className="space-y-3">
@@ -626,7 +643,11 @@ export default function AdminProvisioningPage() {
                       <Input
                         placeholder="+33451221528"
                         value={customPhoneInput}
-                        onChange={(e) => setCustomPhoneInput(e.target.value)}
+                        onChange={(e) => {
+                          setCustomPhoneInput(e.target.value);
+                          // Un numéro tapé à la main remplace le choix de l'inventaire.
+                          setSelectedTelnyxId('');
+                        }}
                         className="h-9 text-xs font-mono"
                       />
                     </div>
@@ -695,6 +716,11 @@ export default function AdminProvisioningPage() {
                   )}
                   Tester & valider le webhook
                 </Button>
+                {!selectedStatus.hasAssignedPhone ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Attribuez d’abord un numéro (étape 1).
+                  </p>
+                ) : null}
               </div>
 
               {/* ÉTAPE 3 : Consignes Renvoi d'appel */}
@@ -747,6 +773,11 @@ export default function AdminProvisioningPage() {
                   )}
                   Marquer renvoi comme configuré
                 </Button>
+                {!selectedStatus.hasAssignedPhone ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Attribuez d’abord un numéro (étape 1).
+                  </p>
+                ) : null}
               </div>
 
               {/* ÉTAPE 4 : Validation Appel Test */}
@@ -770,7 +801,8 @@ export default function AdminProvisioningPage() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Déclenche un appel sortant pour faire entendre l&apos;assistant vocal au gérant.
+                    Déclenche un appel sortant pour faire entendre Léa, l&apos;assistante IA, au
+                    gérant.
                   </p>
 
                   <div className="space-y-1">
@@ -790,7 +822,7 @@ export default function AdminProvisioningPage() {
                   <div className="space-y-2 mt-4">
                     <p className="text-xs text-muted-foreground">
                       L&apos;appel a été déclenché. Confirmez sa réception après avoir entendu la
-                      réponse de l&apos;assistant.
+                      réponse de l&apos;assistante.
                     </p>
                     <Button
                       onClick={handleValidateTestCall}
@@ -833,6 +865,16 @@ export default function AdminProvisioningPage() {
                     Lancer l&apos;appel test IA
                   </Button>
                 )}
+                {!selectedStatus.steps.testCall.completed &&
+                !selectedStatus.testCallControlId &&
+                (!selectedStatus.hasAssignedPhone ||
+                  !selectedStatus.steps.webhook.completed ||
+                  !selectedStatus.steps.forwarding.completed) ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Disponible une fois le numéro attribué, le webhook validé et le renvoi
+                    configuré.
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

@@ -11,6 +11,8 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // N'annonce pas la pile technique (en-tête x-powered-by).
+  poweredByHeader: false,
   // Le bouton Next.js de développement recouvre la navigation tactile et
   // n'apporte rien à l'aperçu produit. Il n'est jamais généré dans un build
   // de production.

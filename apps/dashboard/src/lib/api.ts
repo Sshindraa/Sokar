@@ -3,6 +3,7 @@
 import { useAuth, useOrganization } from '@clerk/nextjs';
 import { useCallback } from 'react';
 import { useSiteSelection } from '@/features/sites/site-context';
+import { toApiError } from '@/lib/api-error';
 
 const PROXY = '/api/proxy';
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -83,12 +84,8 @@ export function useApi(options: { requireSession?: boolean } = {}) {
       }
 
       if (!res.ok) {
-        const errorMsg =
-          (typeof data.message === 'string' && data.message.trim() ? data.message : null) ||
-          (typeof data.error === 'string' && data.error.trim() ? data.error : null) ||
-          (typeof data.detail === 'string' && data.detail.trim() ? data.detail : null) ||
-          `Erreur ${res.status}`;
-        throw Object.assign(new Error(errorMsg), { status: res.status });
+        // Message français, code et statut : voir lib/api-error.ts.
+        throw toApiError(res.status, data);
       }
 
       return data as T;

@@ -25,27 +25,27 @@ describe('PlanComparison', () => {
 
   it('marque prévue une intégration non livrée, incluse seulement à partir de Pro', () => {
     render(<PlanComparison />);
-    const row = rowFor('Synchronisation ZenChef, TheFork ou Lightspeed');
+    const row = rowFor('Synchronisation ZenChef, TheFork, Lightspeed');
 
-    expect(within(row).getAllByText('Prévu')).toHaveLength(2);
+    expect(within(row).getAllByText('Bientôt')).toHaveLength(2);
     expect(within(row).getByText('Non inclus')).toBeInTheDocument();
-    expect(within(row).queryByText('Disponible')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Inclus')).not.toBeInTheDocument();
   });
 
   it('marque disponible une fonctionnalité livrée, incluse dans les trois formules', () => {
     render(<PlanComparison />);
-    const row = rowFor('Rapport quotidien de vos appels');
+    const row = rowFor('Rapport quotidien des appels');
 
-    expect(within(row).getAllByText('Disponible')).toHaveLength(3);
+    expect(within(row).getAllByText('Inclus')).toHaveLength(3);
     expect(within(row).queryByText('Non inclus')).not.toBeInTheDocument();
-    expect(within(row).queryByText('Prévu')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Bientôt')).not.toBeInTheDocument();
   });
 
   it('réserve les fonctionnalités Multi-site à la formule Multi-site', () => {
     render(<PlanComparison />);
-    const row = rowFor('Une facturation réunie au niveau du groupe');
+    const row = rowFor('Facturation groupée');
 
     expect(within(row).getAllByText('Non inclus')).toHaveLength(2);
-    expect(within(row).getByText('Disponible')).toBeInTheDocument();
+    expect(within(row).getByText('Inclus')).toBeInTheDocument();
   });
 });

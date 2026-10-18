@@ -22,10 +22,13 @@ import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
 import { finalizeVoiceCall } from './call-finalization.service';
+import { observedTtsProvider } from './stream/turn-telemetry';
 import { callFinalizationDependencies } from './call-finalization.dependencies';
 
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
+import { isBillingSuspended } from '../billing/billing.service';
+import { answerSuspendedCall, handleSuspendedCallEvent, isSuspendedCall } from './suspended-call';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
 /**
@@ -116,6 +119,24 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       }
     }
 
+    // Appel d'un restaurant suspendu : message court puis raccroché (voir suspended-call.ts).
+    if (isSuspendedCall(clientState)) {
+      try {
+        const outcome = await handleSuspendedCallEvent(
+          eventType,
+          payload.call_control_id,
+          clientState as Record<string, unknown>,
+        );
+        return reply.send({ result: outcome });
+      } catch (err) {
+        app.log.error(
+          { err: err instanceof Error ? err.message : String(err), eventType },
+          'Suspended call action failed',
+        );
+        return reply.send({ result: 'failed' });
+      }
+    }
+
     switch (eventType) {
       case 'call.recording.saved': {
         const recordingId = payload.recording_id;
@@ -167,9 +188,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // Avant : checkMarginHealth → isVoicePipelineEnabled → lookupOrCreate
         //         (3 awaits séquentiels = ~50-150ms cumulés)
         // Après : Promise.all des 3 en parallèle = max(3) au lieu de sum(3)
-        const [safe, voiceEnabled, customer] = await Promise.all([
+        const [safe, voiceEnabled, billingSuspended, customer] = await Promise.all([
           RestaurantService.checkMarginHealth(ctx.id),
           isVoicePipelineEnabled(ctx.id),
+          isBillingSuspended(ctx.id),
           payload.from
             ? CustomerService.lookupOrCreate(ctx.id, payload.from)
             : Promise.resolve(null),
@@ -188,6 +210,25 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             { restaurantId: ctx.id, callId: payload.call_control_id },
             'Voice pipeline killed by feature flag — dropping call',
           );
+          return reply.send({ result: 'ok' });
+        }
+
+        // Ended subscription (trial without a card, cancellation, unpaid): no voice session.
+        // The restaurant may still forward its line here, so the caller hears a short message in
+        // the restaurant's name instead of silence, then Sokar hangs up.
+        if (billingSuspended) {
+          app.log.warn(
+            { restaurantId: ctx.id, callId: payload.call_control_id },
+            'Billing suspended — short message then hang up',
+          );
+          try {
+            await answerSuspendedCall(payload.call_control_id, ctx.name);
+          } catch (err) {
+            app.log.error(
+              { err: err instanceof Error ? err.message : String(err), restaurantId: ctx.id },
+              'Suspended call answer failed',
+            );
+          }
           return reply.send({ result: 'ok' });
         }
 
@@ -545,6 +586,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               durationSec,
               handoffConclusion: session?.handoffConclusion,
               conversationIntent: session?.conversation?.intent ?? null,
+              ttsProvider: session ? observedTtsProvider(session) : null,
               to: payload.to,
               customerPhone: payload.from,
             },

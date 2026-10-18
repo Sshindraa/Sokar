@@ -9,7 +9,9 @@ import {
   buildTextMessage,
   ELEVENLABS_DIALOGUE_MODEL,
   ElevenLabsDialogueSession,
+  getPronunciationDictionaryLocator,
   isElevenLabsDialogueEnabled,
+  isElevenLabsDialogueEnabledFor,
   parseElevenLabsDialogueMessage,
 } from '../stream/elevenlabs-dialogue-context';
 
@@ -30,8 +32,38 @@ describe('elevenlabs-dialogue-context : URL et messages', () => {
     ).toBe('ulaw_8000');
   });
 
+  it('ajoute la langue et l’alignement seulement quand ils sont demandés', () => {
+    const plain = new URL(buildElevenLabsDialogueUrl());
+    expect(plain.searchParams.has('language_code')).toBe(false);
+    expect(plain.searchParams.has('sync_alignment')).toBe(false);
+    const full = new URL(buildElevenLabsDialogueUrl({ languageCode: 'fr', syncAlignment: true }));
+    expect(full.searchParams.get('language_code')).toBe('fr');
+    expect(full.searchParams.get('sync_alignment')).toBe('true');
+  });
+
   it('enregistre une seule voix au premier message', () => {
     expect(buildOpeningMessage('voix-test')).toEqual({ voices: ['voix-test'] });
+  });
+
+  it('ajoute le dictionnaire de prononciation au premier message quand il est configuré', () => {
+    const dictionary = { pronunciation_dictionary_id: 'dico', version_id: 'v1' };
+    expect(buildOpeningMessage('voix-test', dictionary)).toEqual({
+      voices: ['voix-test'],
+      pronunciation_dictionary_locators: [dictionary],
+    });
+  });
+
+  it('ne lit le dictionnaire que si l’identifiant et la version sont présents', () => {
+    expect(getPronunciationDictionaryLocator({})).toBeNull();
+    expect(
+      getPronunciationDictionaryLocator({ ELEVENLABS_PRONUNCIATION_DICTIONARY_ID: 'dico' }),
+    ).toBeNull();
+    expect(
+      getPronunciationDictionaryLocator({
+        ELEVENLABS_PRONUNCIATION_DICTIONARY_ID: ' dico ',
+        ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID: ' v1 ',
+      }),
+    ).toEqual({ pronunciation_dictionary_id: 'dico', version_id: 'v1' });
   });
 
   it('envoie le texte dans inputs, avec flush par défaut', () => {
@@ -54,6 +86,30 @@ describe('elevenlabs-dialogue-context : lecture des messages serveur', () => {
       JSON.stringify({ audio: Buffer.from([1, 2, 3]).toString('base64') }),
     );
     expect(event).toEqual({ kind: 'audio', pcm: Buffer.from([1, 2, 3]) });
+  });
+
+  it('lit l’alignement d’un chunk audio, et l’ignore s’il est incohérent', () => {
+    const audio = Buffer.from([1, 2]).toString('base64');
+    expect(
+      parseElevenLabsDialogueMessage(
+        JSON.stringify({ audio, alignment: { chars: ['B', 'o'], char_start_times_ms: [0, 40] } }),
+      ),
+    ).toEqual({
+      kind: 'audio',
+      pcm: Buffer.from([1, 2]),
+      alignment: { chars: ['B', 'o'], startMs: [0, 40] },
+    });
+    for (const alignment of [
+      null,
+      { chars: ['B'], char_start_times_ms: [0, 40] },
+      { chars: [], char_start_times_ms: [] },
+      { chars: [1], char_start_times_ms: [0] },
+    ]) {
+      expect(parseElevenLabsDialogueMessage(JSON.stringify({ audio, alignment }))).toEqual({
+        kind: 'audio',
+        pcm: Buffer.from([1, 2]),
+      });
+    }
   });
 
   it('reconnaît la fin de tour et la fin de session', () => {
@@ -87,20 +143,54 @@ describe('elevenlabs-dialogue-context : lecture des messages serveur', () => {
   });
 });
 
-describe('elevenlabs-dialogue-context : drapeau', () => {
-  const previous = process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-  afterEach(() => {
-    if (previous === undefined) delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    else process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = previous;
+describe('elevenlabs-dialogue-context : drapeau global', () => {
+  it('est désactivé par défaut et ne s’active qu’avec la valeur « true »', () => {
+    expect(isElevenLabsDialogueEnabled({})).toBe(false);
+    expect(isElevenLabsDialogueEnabled({ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true' })).toBe(
+      true,
+    );
+    expect(isElevenLabsDialogueEnabled({ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: '1' })).toBe(false);
+  });
+});
+
+describe('elevenlabs-dialogue-context : restaurants listés', () => {
+  const listed = {
+    VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true',
+    VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS: ' resto-a , resto-b ',
+  };
+
+  it('reste inactif avec la liste seule, sans le drapeau global', () => {
+    expect(
+      isElevenLabsDialogueEnabledFor('resto-a', {
+        VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS: 'resto-a',
+      }),
+    ).toBe(false);
   });
 
-  it('est désactivé par défaut et ne s’active qu’avec la valeur « true »', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    expect(isElevenLabsDialogueEnabled()).toBe(false);
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = 'true';
-    expect(isElevenLabsDialogueEnabled()).toBe(true);
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = '1';
-    expect(isElevenLabsDialogueEnabled()).toBe(false);
+  it('reste inactif sans liste de restaurants, même avec le drapeau global', () => {
+    expect(
+      isElevenLabsDialogueEnabledFor('resto-a', { VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true' }),
+    ).toBe(false);
+  });
+
+  it('n’active que les restaurants listés, espaces compris', () => {
+    expect(isElevenLabsDialogueEnabledFor('resto-a', listed)).toBe(true);
+    expect(isElevenLabsDialogueEnabledFor('resto-b', listed)).toBe(true);
+    expect(isElevenLabsDialogueEnabledFor('resto-c', listed)).toBe(false);
+  });
+
+  it('reste inactif si le drapeau global est coupé, même pour un restaurant listé', () => {
+    expect(
+      isElevenLabsDialogueEnabledFor('resto-a', {
+        ...listed,
+        VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'false',
+      }),
+    ).toBe(false);
+  });
+
+  it('reste inactif sans identifiant de restaurant', () => {
+    expect(isElevenLabsDialogueEnabledFor(undefined, listed)).toBe(false);
+    expect(isElevenLabsDialogueEnabledFor('', listed)).toBe(false);
   });
 });
 

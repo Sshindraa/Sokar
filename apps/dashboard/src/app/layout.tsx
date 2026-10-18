@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
 import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale, getMessages } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -19,8 +20,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Sokar — Restaurant Management',
-  description: 'Assistant vocal intelligent pour votre restaurant',
+  title: `Sokar — ${BRAND_TITLE}`,
+  description: BRAND_SLOGAN,
   // Base absolue pour les canonical et Open Graph relatifs des pages marketing.
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sokar.tech'),
   manifest: '/manifest.json',

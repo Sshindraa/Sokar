@@ -41,6 +41,7 @@ import { db } from '../db/client';
 import { redisCache } from '../redis/client';
 import { queues } from '../queue/queues';
 import telnyx from '../telnyx/client';
+import { readWorkerHeartbeatAgeMs, WORKER_HEARTBEAT_STALE_MS } from './watchtower';
 import {
   elevenLabsTtsVoiceId,
   telephonyTtsProvider,
@@ -213,6 +214,30 @@ async function checkElevenLabs(): Promise<CheckResult> {
   );
 }
 
+/** Battement des workers BullMQ : informatif, il ne fait pas passer l'API en 503. */
+async function checkWorkers(): Promise<CheckResult> {
+  const start = Date.now();
+  try {
+    const age = await readWorkerHeartbeatAgeMs();
+    if (age === null)
+      return { status: 'error', latency_ms: Date.now() - start, error: 'no heartbeat' };
+    if (age > WORKER_HEARTBEAT_STALE_MS) {
+      return {
+        status: 'error',
+        latency_ms: Date.now() - start,
+        error: `stale ${Math.round(age / 1000)}s`,
+      };
+    }
+    return { status: 'ok', latency_ms: Date.now() - start };
+  } catch (err) {
+    return {
+      status: 'error',
+      latency_ms: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
@@ -220,13 +245,14 @@ const VOICE_CHECKS = ['telnyx', 'cartesia', 'elevenlabs'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, cartesia, elevenlabs] = await Promise.all([
+  const [db, redis, queues, telnyx, cartesia, elevenlabs, workers] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
     checkCartesia(),
     checkElevenLabs(),
+    checkWorkers(),
   ]);
 
   const checks: Record<string, CheckResult> = {
@@ -236,6 +262,7 @@ export async function checkHealth(): Promise<HealthReport> {
     telnyx,
     cartesia,
     elevenlabs,
+    workers,
   };
 
   // Core failure = 503 (API can't serve anything).

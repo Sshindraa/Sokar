@@ -54,8 +54,8 @@ export function SubdomainCard({ slug, connectPublished }: Props) {
 
         <p className="text-sm text-muted-foreground">
           Chaque restaurant obtient automatiquement un sous-domaine{' '}
-          <span className="font-medium text-foreground">{PRIMARY_HOST}</span>. Aucune
-          configuration requise.
+          <span className="font-medium text-foreground">{PRIMARY_HOST}</span>. Aucune configuration
+          requise.
         </p>
 
         <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">

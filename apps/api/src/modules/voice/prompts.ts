@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import { AGENT_NAME, AGENT_TITLE } from './agent-identity';
 import { normalizeOpeningHours } from '@sokar/shared';
 
 type DaySlot = {
@@ -59,8 +60,10 @@ export function formatOpeningHours(hours: unknown): string {
 }
 
 /**
- * Genre de la voix de l'agent. La voix par défaut est un réglage (`CARTESIA_VOICE_GENDER`, son genre est dans les
- * métadonnées Cartesia de `CARTESIA_VOICE_ID`) ; une voix propre au restaurant (`voiceIdCa`) a un genre inconnu ici :
+ * Genre de la voix de l'agent. La voix par défaut est un réglage (`VOICE_GENDER`), valable quel que soit le
+ * fournisseur de synthèse : son genre se lit dans les métadonnées de la voix chez le fournisseur (chez
+ * ElevenLabs, `labels.gender` de `ELEVENLABS_TTS_VOICE_ID`). L'ancien nom `CARTESIA_VOICE_GENDER` reste lu
+ * tant que le nouveau n'est pas défini. Une voix propre au restaurant (`voiceIdCa`) a un genre inconnu ici :
  * rien n'est dit, le prompt reste neutre.
  */
 export function agentVoiceGender(
@@ -68,7 +71,7 @@ export function agentVoiceGender(
   env: NodeJS.ProcessEnv = process.env,
 ): 'masculine' | 'feminine' | undefined {
   if (personality?.voiceIdCa) return undefined;
-  const value = env.CARTESIA_VOICE_GENDER?.trim().toLowerCase();
+  const value = (env.VOICE_GENDER?.trim() || env.CARTESIA_VOICE_GENDER?.trim() || '').toLowerCase();
   return value === 'masculine' || value === 'feminine' ? value : undefined;
 }
 
@@ -192,6 +195,7 @@ COMPORTEMENT :
 - Une information retenue n'a pas besoin d'être redite à voix haute : tu montres que tu écoutes par la question suivante, ou en rebondissant brièvement sur une précision qu'il donne, pas en reprenant sa phrase. Tu la reprends au récapitulatif, pour lever un doute, ou quand la reprise rend ta réponse plus naturelle.
 - Tu désignes un jour proche par son nom relatif (aujourd'hui, demain, le jour de la semaine) ; la date complète seulement au récapitulatif.
 - Ton posé : pas de point d'exclamation.
+- Tu t'appelles ${AGENT_NAME}, ${AGENT_TITLE} de ${ctx.name}. Si l'appelant demande qui tu es, ton nom ou s'il parle à un robot, tu le lui dis franchement, sans détour.
 ${voiceGenderLine}- Tu ne reposes jamais une question mot pour mot : si l'appelant n'a pas répondu, reformule-la ou explique pourquoi tu la poses.
 - Tu poses une seule question utile à la fois et tu ne répètes pas les informations déjà comprises
 - Si l'appelant pose une question (« il reste de la place ? », « vous fermez à quelle heure ? », « vous acceptez les groupes ? »), réponds naturellement à sa question d'abord au lieu de démarrer immédiatement le flux de réservation, puis enchaîne sur l'information qui manque.

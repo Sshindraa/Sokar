@@ -26,6 +26,7 @@ import { getErrorMessage, type Restaurant } from '@/types/api';
 import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
+import { giftCardStatusLabel } from '@/components/gift-cards/gift-card-labels';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
 import { GiftCardStripeConnect } from '@/components/gift-cards/gift-card-stripe-connect';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
@@ -51,7 +52,9 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 }
 
 export default function GiftCardsPage() {
-  const createRequested = useSearchParams().get('create') === '1';
+  const searchParams = useSearchParams();
+  const createRequested = searchParams.get('create') === '1';
+  const stripeSettingsRequested = searchParams.get('settings') === 'stripe';
   const {
     listGiftCards,
     getGiftCardStats,
@@ -71,6 +74,10 @@ export default function GiftCardsPage() {
   const [tab, setTab] = useState<'SINGLE' | 'CROWDFUNDED'>('SINGLE');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  // Recherche réellement appliquée (au clic/Entrée) : taper ne relance pas la liste à chaque lettre.
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [minError, setMinError] = useState('');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
@@ -99,7 +106,7 @@ export default function GiftCardsPage() {
     const settings = document.getElementById('gift-card-stripe-connect');
     if (!settings) return;
     settings.setAttribute('open', '');
-    settings.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    settings.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -111,7 +118,7 @@ export default function GiftCardsPage() {
         listGiftCards({
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
           type: tab,
-          search: search || undefined,
+          search: appliedSearch || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
         }),
@@ -121,6 +128,7 @@ export default function GiftCardsPage() {
       ]);
       setCards(list.items);
       setTotal(list.total);
+      setLoadedOnce(true);
       setStats(statsData);
       setPacks(packsData);
       setMinAmount(restaurant.giftCardMinimumAmount ?? 10);
@@ -137,7 +145,7 @@ export default function GiftCardsPage() {
   }, [
     orgId,
     statusFilter,
-    search,
+    appliedSearch,
     page,
     tab,
     listGiftCards,
@@ -149,6 +157,19 @@ export default function GiftCardsPage() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // Lien « Configurer Stripe » d'une autre page : on ouvre directement le réglage concerné.
+  useEffect(() => {
+    if (!stripeSettingsRequested || !loadedOnce) return;
+    openStripeSettings();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('settings');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [stripeSettingsRequested, loadedOnce, openStripeSettings]);
 
   useEffect(() => {
     if (!createRequested || loading || error) return;
@@ -205,7 +226,7 @@ export default function GiftCardsPage() {
     if (!orgId) return;
     setSavingMin(true);
     setSavedMin(false);
-    setError('');
+    setMinError('');
     try {
       const minimum = minAmount === '' ? 10 : Number(minAmount);
       await patch(`restaurants/${orgId}`, { giftCardMinimumAmount: minimum });
@@ -213,7 +234,7 @@ export default function GiftCardsPage() {
       setSavedMin(true);
       setTimeout(() => setSavedMin(false), SAVED_NOTIFICATION_RESET_MS);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum'));
+      setMinError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum.'));
     } finally {
       setSavingMin(false);
     }
@@ -222,12 +243,19 @@ export default function GiftCardsPage() {
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPage(0);
-    fetchAll();
+    setAppliedSearch(search.trim());
+  }
+
+  function clearFilters() {
+    setSearch('');
+    setAppliedSearch('');
+    setStatusFilter('ALL');
+    setPage(0);
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  if (loading && cards.length === 0) {
+  if (loading && !loadedOnce) {
     return (
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -407,6 +435,8 @@ export default function GiftCardsPage() {
         </div>
       ) : error && cards.length === 0 ? null : (
         <GiftCardList
+          filtered={appliedSearch !== '' || statusFilter !== 'ALL'}
+          onClearFilters={clearFilters}
           items={cards}
           isCrowdfunding={tab === 'CROWDFUNDED'}
           onView={setDetailCard}
@@ -512,6 +542,11 @@ export default function GiftCardsPage() {
                   </Button>
                   {savedMin && <span className="text-sm text-primary">Enregistré</span>}
                 </div>
+                {minError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {minError}
+                  </p>
+                ) : null}
               </form>
             </CardContent>
           </Card>
@@ -545,14 +580,14 @@ export default function GiftCardsPage() {
           )}
           {detailCard && (
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Code</p>
                   <p className="font-mono">{detailCard.code}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Statut</p>
-                  <p>{detailCard.status}</p>
+                  <p>{giftCardStatusLabel(detailCard.status)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Montant</p>
@@ -574,7 +609,13 @@ export default function GiftCardsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Créée par</p>
-                  <p>{detailCard.createdBy}</p>
+                  <p>
+                    {detailCard.createdBy === 'CLIENT'
+                      ? 'Le client (en ligne)'
+                      : detailCard.createdBy === 'DASHBOARD'
+                        ? 'Votre équipe'
+                        : '—'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Destinataire</p>
@@ -636,6 +677,7 @@ export default function GiftCardsPage() {
             : ''
         }
         confirmLabel="Annuler la carte"
+        cancelLabel="Garder la carte"
         variant="destructive"
       />
 

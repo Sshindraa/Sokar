@@ -25,6 +25,7 @@ import {
   buildElevenLabsCacheVariant,
   buildElevenLabsTtsRequest,
   elevenLabsTtsModel,
+  elevenLabsTtsStreamingEnabled,
   elevenLabsTtsVoiceId,
   telephonyTtsProvider,
 } from './elevenlabs-tts';
@@ -168,7 +169,8 @@ export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'
       .replace(/€/g, ' euros')
       .replace(/%/g, ' pour cent')
       .replace(/\bMme\.?\s/gi, 'Madame ')
-      .replace(/\bM\.\s/g, 'Monsieur ');
+      // Pas après « , » : dans une relecture épelée (« A, S, S, A, M, M. »), le M final est une lettre.
+      .replace(/(?<!,\s?)\bM\.\s/g, 'Monsieur ');
   }
 
   // 4. Rend un numéro français lisible en groupes. Les virgules laissent une
@@ -453,6 +455,7 @@ async function speakTtsFragment(
               text: trimmed,
               locale,
               codec: codecProfile.label,
+              streaming: elevenLabsTtsStreamingEnabled(),
             })
           : {
               url: 'https://api.cartesia.ai/tts/bytes',
@@ -600,7 +603,7 @@ async function speakTtsFragment(
         if (!firstByteReceived) {
           firstByteReceived = true;
           writeDebugLog(`[speakTtsStreamed] First Cartesia byte received for sentence ${i}`);
-          markVoiceTurnTtsSynthesisFirstByte(session, 'cartesia_http', turnId);
+          markVoiceTurnTtsSynthesisFirstByte(session, `${provider}_http`, turnId);
         }
 
         const rawChunk = Buffer.from(value);
@@ -629,11 +632,11 @@ async function speakTtsFragment(
       streamFinished = true;
       await playPromise; // Attendre la fin de la lecture progressive
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
       recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
-        source: 'cartesia_http',
+        source: `${provider}_http`,
         durationMs: Date.now() - synthesisStartedAt,
       });
 

@@ -38,6 +38,7 @@ import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { AccountMenu } from '@/components/AccountMenu';
+import { BillingNotice, BillingStatusProvider, TrialChip } from '@/features/billing/trial';
 import { OnboardingWizard } from '@/features/onboarding/onboarding-wizard';
 import { OnboardingAccessBoundary } from '@/features/onboarding/onboarding-access-boundary';
 import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
@@ -748,7 +749,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const [createOfferOpen, setCreateOfferOpen] = useState(false);
-  const { activeSite } = useSiteSelection();
+  const { activeSite, accountId } = useSiteSelection();
+  // Same rule as the settings page: on a multi-site account, only the owner manages billing.
+  const canManageBilling = !accountId || activeSite?.role === 'OWNER';
   const siteRole = activeSite?.role;
   const roleBlocked = !canOpenDashboardPath(siteRole, pathname, searchParams.get('view'));
   const isLegacyOperatorPath =
@@ -943,6 +946,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
             compact
           />
           <div className="dashboard-flow-header__actions ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <TrialChip canManageBilling={canManageBilling} />
             <ThemeToggle />
             <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
             <AccountMenu />
@@ -977,7 +981,10 @@ function DashboardShell({ children }: { children: ReactNode }) {
               </Link>
             </div>
           ) : (
-            children
+            <>
+              <BillingNotice canManageBilling={canManageBilling} />
+              {children}
+            </>
           )}
         </main>
       </div>
@@ -1013,7 +1020,9 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
               }
               onboarding={<OnboardingWizard />}
             >
-              <DashboardShell>{children}</DashboardShell>
+              <BillingStatusProvider>
+                <DashboardShell>{children}</DashboardShell>
+              </BillingStatusProvider>
             </OnboardingAccessBoundary>
           </DashboardSiteBoundary>
         </CreateRestaurantGate>

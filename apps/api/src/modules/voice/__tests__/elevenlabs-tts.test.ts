@@ -5,6 +5,7 @@ import {
   elevenLabsLanguageCode,
   elevenLabsOutputFormat,
   elevenLabsTtsModel,
+  elevenLabsTtsStreamingEnabled,
   elevenLabsTtsVoiceId,
   telephonyTtsProvider,
 } from '../stream/elevenlabs-tts';
@@ -135,5 +136,50 @@ describe('elevenlabs-tts : sélection du fournisseur', () => {
     vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', '');
 
     expect(elevenLabsTtsVoiceId()).toBeNull();
+  });
+});
+
+describe('elevenlabs-tts : synthèse en flux (drapeau ELEVENLABS_TTS_STREAMING)', () => {
+  const request = {
+    apiKey: placeholderCredential,
+    voiceId: 'voix-1',
+    model: 'eleven_v4_turbo',
+    text: 'Bonjour, je vous écoute.',
+    locale: 'fr-FR',
+    codec: 'alaw8k',
+  };
+
+  it('reste sur le point de synthèse classique quand le drapeau est absent', () => {
+    vi.stubEnv('ELEVENLABS_TTS_STREAMING', '');
+
+    expect(elevenLabsTtsStreamingEnabled()).toBe(false);
+    expect(buildElevenLabsTtsRequest(request).url).toBe(
+      'https://api.elevenlabs.io/v1/text-to-speech/voix-1?output_format=alaw_8000',
+    );
+  });
+
+  it('passe sur /stream quand le drapeau vaut exactement true', () => {
+    vi.stubEnv('ELEVENLABS_TTS_STREAMING', 'true');
+
+    expect(elevenLabsTtsStreamingEnabled()).toBe(true);
+    expect(buildElevenLabsTtsRequest({ ...request, streaming: true }).url).toBe(
+      'https://api.elevenlabs.io/v1/text-to-speech/voix-1/stream?output_format=alaw_8000',
+    );
+  });
+
+  it('refuse les autres valeurs du drapeau', () => {
+    for (const value of ['TRUE', '1', 'yes', 'oui']) {
+      vi.stubEnv('ELEVENLABS_TTS_STREAMING', value);
+      expect(elevenLabsTtsStreamingEnabled()).toBe(false);
+    }
+  });
+
+  it('ne change ni les en-têtes ni le corps de la requête', () => {
+    const classic = buildElevenLabsTtsRequest(request);
+    const streamed = buildElevenLabsTtsRequest({ ...request, streaming: true });
+
+    expect(streamed.headers).toEqual(classic.headers);
+    expect(streamed.body).toBe(classic.body);
+    expect(streamed.url).not.toContain(placeholderCredential);
   });
 });

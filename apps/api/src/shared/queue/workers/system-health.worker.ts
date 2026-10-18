@@ -7,9 +7,9 @@
  *   2. Appels Telnyx sans transcription ou sans outcome (24h)
  *   3. Réservations confirmées sans SMS de confirmation tracé (24h)
  *
- * Chaque finding est dispatché via alert-dispatcher (logs + Sentry + email /
- * webhook / SMS selon la configuration ALERT_*) avec un cooldown Redis de
- * 30 min par (kind, identifier) — même mécanisme que alert-evaluation.
+ * Les findings nouveaux sont signalés sur les canaux configurés, avec un
+ * e-mail groupé par tick et des rappels toutes les deux heures. Une escalade
+ * critique possède son propre cooldown, distinct des avertissements.
  *
  * Les compteurs lus sont aussi publiés en gauges Prometheus
  * (sokar_queue_jobs, sokar_calls_missing_transcript_24h,
@@ -25,8 +25,7 @@ import { redisQueue, redisCache } from '../../redis/client';
 import { db } from '../../db/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 import { logger } from '../../logger/pino';
-import { dispatchAlert } from '../../observability/alert-dispatcher';
-import { redisCooldown } from './alert-evaluation.worker';
+import { dispatchSystemFindings } from '../../observability/system-alerts';
 import {
   queueJobsGauge,
   callsMissingTranscriptGauge,
@@ -112,34 +111,6 @@ function publishQueueGauges(states: Record<string, QueueStateCounts | null>): vo
   }
 }
 
-async function dispatchFindings(
-  findings: SystemFinding[],
-  log: ReturnType<typeof jobLogger>,
-): Promise<{ dispatched: number; suppressed: number }> {
-  let dispatched = 0;
-  let suppressed = 0;
-  for (const finding of findings) {
-    try {
-      if (await redisCooldown.shouldSuppress(finding.kind, finding.identifier)) {
-        suppressed++;
-        continue;
-      }
-      await dispatchAlert({
-        kind: finding.kind,
-        severity: finding.severity,
-        summary: finding.summary,
-        detail: finding.detail,
-      });
-      await redisCooldown.markFired(finding.kind, finding.identifier);
-      dispatched++;
-    } catch (err) {
-      // dispatchAlert ne throw pas ; sécurité supplémentaire pour le cooldown.
-      log.error({ err, kind: finding.kind }, '[system-health] Failed to dispatch finding');
-    }
-  }
-  return { dispatched, suppressed };
-}
-
 export const systemHealthWorker = new Worker(
   'system-health',
   async (job: Job<SystemHealthJobData>) => {
@@ -202,7 +173,7 @@ export const systemHealthWorker = new Worker(
       log.error({ err }, '[system-health] Reservations SMS check failed');
     }
 
-    const { dispatched, suppressed } = await dispatchFindings(findings, log);
+    const { dispatched, suppressed } = await dispatchSystemFindings(findings);
 
     if (findings.length > 0) {
       log.warn(

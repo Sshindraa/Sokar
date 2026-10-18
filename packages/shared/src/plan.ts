@@ -30,7 +30,16 @@ export const PLAN_LABELS: Record<Plan, string> = {
 };
 
 /**
- * Public monthly price in EUR (HT). `null` = "sur devis" / enterprise.
+ * Sokar is a micro-entreprise under the VAT franchise: prices are charged without VAT and every
+ * price display and invoice carries this legal mention. Change it only when the VAT status changes.
+ */
+export const VAT_MENTION = 'TVA non applicable, art. 293 B du CGI';
+
+/** Free trial on a first subscription, without a payment method (Stripe Checkout). */
+export const TRIAL_DAYS = 14;
+
+/**
+ * Public monthly price in EUR, charged as is (no VAT, see `VAT_MENTION`). `null` = "sur devis" / enterprise.
  * Use this for pricing pages, upgrade CTAs, invoices.
  * Keep these values aligned with `packages/config/src/constants.ts`.
  */

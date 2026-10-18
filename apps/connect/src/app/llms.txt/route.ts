@@ -13,8 +13,11 @@
 
 import type { NextRequest } from 'next/server';
 
+import { publicApiUrl } from '@/lib/public-api-url';
+
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
-const API_URL = process.env.API_URL ?? 'https://api.sokar.tech';
+// Public API address only: `API_URL` is the internal one (127.0.0.1 in production).
+const API_URL = publicApiUrl();
 
 export async function GET(_req: NextRequest) {
   const content = `# Sokar
