@@ -835,6 +835,42 @@ describe('reservation.service', () => {
     }
   });
 
+  it('confirme une réservation test même si le restaurant valide à la main', async () => {
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(true);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      const result = await fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 2,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+          customerName: 'Jean Test',
+          customerPhone: '+33600000000',
+          channel: 'WEB',
+          policy: { ...policy, requireManualValidation: true },
+          actor: 'connect:web',
+          isTest: true,
+        },
+        {
+          scope: 'web:test',
+          key: 'key-test-manual',
+          payloadHash: hashPayload({ test: true, manual: true, startsAt }),
+          ttlSeconds: 300,
+        },
+      );
+
+      expect(result.state).toBe('CONFIRMED');
+      expect([...fakes.reservations.values()][0].state).toBe('CONFIRMED');
+      expect(intent).toHaveBeenCalledTimes(1);
+    } finally {
+      intent.mockRestore();
+    }
+  });
+
   it('ne marque pas une réservation réelle comme test', async () => {
     const lookupOrCreate = vi
       .spyOn(CustomerService, 'lookupOrCreate')

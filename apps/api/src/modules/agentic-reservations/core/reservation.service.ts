@@ -446,9 +446,9 @@ export class ReservationService {
           );
         }
 
-        const initialState: CreatableReservationState = input.policy.requireManualValidation
-          ? 'PENDING'
-          : 'CONFIRMED';
+        // Une réservation test est invisible pour le restaurant : personne ne pourrait la valider.
+        const initialState: CreatableReservationState =
+          input.policy.requireManualValidation && !input.isTest ? 'PENDING' : 'CONFIRMED';
 
         const reservation = await tx.reservation.create({
           data: {

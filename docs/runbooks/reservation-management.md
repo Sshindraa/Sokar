@@ -227,9 +227,10 @@ affiche « Reservation test · supprimee automatiquement sous 24 h ».
 
 Limites connues :
 
-- restaurant en validation manuelle : la reservation test reste « en attente » et
-  aucun SMS de confirmation n'est envoye (personne ne peut la valider, elle est
-  masquee du planning) ;
+- restaurant en validation manuelle : la reservation test est confirmee
+  directement (personne ne pourrait la valider, elle est masquee du planning) ;
+  le restaurateur recoit donc le SMS de confirmation, sans l'etape « en attente »
+  que vivrait un client ;
 - les SMS envoyes pendant un test comptent dans la consommation de messagerie du
   restaurant.
 
