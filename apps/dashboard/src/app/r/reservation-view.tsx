@@ -10,6 +10,8 @@ import {
   CircleX,
   ChevronDown,
   MapPin,
+  CalendarPlus,
+  Navigation,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -25,6 +27,7 @@ import { SokarLogo } from '@/components/SokarLogo';
 import { cn } from '@/lib/utils';
 import styles from './reservation-view.module.css';
 import { ReservationModification } from './reservation-modification';
+import { createReservationDemo } from './reservation-demo';
 
 type Reservation = {
   restaurantName: string;
@@ -43,7 +46,7 @@ type Reservation = {
     terms?: string;
     confirmationToken?: string;
   };
-  modification?: { available: boolean; message: string };
+  modification?: { available: boolean; message: string; maxDate?: string };
   whatsappReminder: { visible: boolean; enabled: boolean };
 };
 const STATES: Record<string, string> = {
@@ -68,24 +71,19 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
   const [cancelError, setCancelError] = useState('');
   const cancelInFlight = useRef(false);
 
-  const demoEnabled = useRef(true);
+  const demoSession = useRef<ReturnType<typeof createReservationDemo> | null>(null);
+  const demoRequest = useCallback(async (body: Record<string, unknown>) => {
+    demoSession.current ??= createReservationDemo();
+    return demoSession.current(body);
+  }, []);
   const request = useCallback(
     async (action: 'view' | 'withdraw_whatsapp' | 'cancel', confirmationToken?: string) => {
-      if (demo) {
-        if (action === 'withdraw_whatsapp') demoEnabled.current = false;
-        return {
-          restaurantName: 'Restaurant Exemple',
-          restaurantPhone: null,
-          restaurantAddress: '12 rue de la Table, 75002 Paris',
-          startsAt: '2026-10-18T17:30:00Z',
-          endsAt: null,
-          date: '2026-10-18',
-          time: '19:30',
-          partySize: 2,
-          state: 'CONFIRMED',
-          whatsappReminder: { visible: true, enabled: demoEnabled.current },
-        };
-      }
+      if (demo)
+        return (await demoRequest({
+          action,
+          confirmationToken,
+          confirmed: action === 'cancel',
+        })) as Reservation;
       const response = await fetch('/api/reservation-management', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,7 +105,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
         );
       return (await response.json()) as Reservation;
     },
-    [demo],
+    [demo, demoRequest],
   );
 
   const load = useCallback(async () => {
@@ -247,10 +245,8 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
             <SokarLogo className="h-5 w-5 text-foreground" />
             <span className="font-serif text-xl">Sokar</span>
           </div>
-          <div className="text-right">
-            <h1 className="text-xs">Ma réservation</h1>
-            {demo && <p className={styles.demo}>Démonstration · Réservation fictive</p>}
-          </div>
+          <h1 className="sr-only">Ma réservation</h1>
+          {demo && <p className={styles.demo}>Aperçu de démonstration</p>}
         </header>
         {loading ? (
           <div
@@ -317,6 +313,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                     variant="link"
                     className={cn(styles.calendar, 'min-h-11 transition-all duration-200')}
                   >
+                    <CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" />
                     Ajouter au calendrier
                   </Button>
                 )}
@@ -328,6 +325,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                       title="Indisponible dans la démonstration"
                       className={cn(styles.directions, 'min-h-11 transition-all duration-200')}
                     >
+                      <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
                       Itinéraire
                     </Button>
                   ) : (
@@ -342,6 +340,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                         rel="noopener noreferrer"
                         referrerPolicy="no-referrer"
                       >
+                        <Navigation className="h-3.5 w-3.5" aria-hidden="true" />
                         Itinéraire
                       </a>
                     </Button>
@@ -414,28 +413,39 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                 )}
                 {reservation.modification?.available && !terminal && (
                   <ReservationModification
+                    key={renderedToken}
                     booking={reservation}
                     token={renderedToken}
+                    demoRequest={demo ? demoRequest : undefined}
                     disabled={busy}
                     terms={reservation.cancellation?.terms}
+                    onCancelRequest={() => {
+                      if (token.current === renderedToken) {
+                        setCancelError('');
+                        setCancelOpen(true);
+                      }
+                    }}
                     onUpdated={(updated) => {
                       if (token.current === renderedToken) setReservation(updated);
                     }}
                   />
                 )}
                 {reservation.cancellation && !terminal && (
-                  <section aria-label="Conditions d’annulation" className="space-y-3 text-sm">
+                  <section
+                    aria-label="Conditions d’annulation"
+                    className="space-y-2 text-xs leading-relaxed"
+                  >
                     {reservation.cancellation.terms && <p>{reservation.cancellation.terms}</p>}
                     <p className="text-muted-foreground">{reservation.cancellation.message}</p>
                     {reservation.cancellation.available && (
                       <Button
-                        variant="link"
+                        variant="outline"
                         disabled={busy}
                         onClick={() => {
                           setCancelError('');
                           setCancelOpen(true);
                         }}
-                        className="min-h-11 px-0 transition-all duration-200"
+                        className="min-h-11 rounded-none border-0 bg-transparent px-0 text-xs font-normal text-foreground/80 underline decoration-foreground/30 underline-offset-4 shadow-none transition-all duration-200 hover:bg-transparent hover:text-foreground hover:decoration-foreground/70"
                       >
                         Annuler la réservation
                       </Button>
@@ -535,7 +545,7 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
               {reservation?.partySize} personnes.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-sm">
+          <div className="space-y-2 text-xs leading-relaxed">
             {reservation?.cancellation?.terms && <p>{reservation.cancellation.terms}</p>}
             <p>{reservation?.cancellation?.message}</p>
             <p>Votre table sera libérée. Cette action est définitive.</p>

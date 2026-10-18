@@ -422,15 +422,17 @@ test('personal modification keeps the current carton through selection and revie
     .filter({ hasText: /^Modifier ou annuler$/ })
     .click();
   await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
-  await page.getByLabel('Nombre de personnes').focus();
-  await page.getByLabel('Nombre de personnes').selectOption('3');
-  await expect(page.getByRole('radio', { name: '20:00' })).toBeVisible();
-  await expect(page.getByLabel('Nombre de personnes')).toBeFocused();
-  await page.getByRole('radio', { name: '20:00' }).check();
-  await page.getByRole('radio', { name: '20:00' }).press('ArrowRight');
-  await expect(page.getByRole('radio', { name: '21:00' })).toBeChecked();
-  await page.getByRole('radio', { name: '21:00' }).press('ArrowLeft');
-  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  await page.getByRole('button', { name: '3 personnes', exact: true }).click();
+  const early = page.getByRole('button', { name: 'Choisir le créneau 20h00' });
+  const late = page.getByRole('button', { name: 'Choisir le créneau 21h00' });
+  await early.focus();
+  await early.press('Space');
+  await expect(early).toHaveAttribute('aria-pressed', 'true');
+  await late.focus();
+  await late.press('Space');
+  await expect(late).toHaveAttribute('aria-pressed', 'true');
+  await early.press('Space');
+  await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   expect(modifications).toBe(0);
   await expect(page.locator('dl')).toContainText('19:30');
   await expect(page.getByRole('dialog')).toContainText('20:00 · 3 personnes');
@@ -489,8 +491,8 @@ test('a taken modification slot leaves the current booking intact', async ({ pag
     .filter({ hasText: /^Modifier ou annuler$/ })
     .click();
   await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
-  await page.getByRole('radio', { name: '20:00' }).check();
-  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  await page.getByRole('button', { name: 'Choisir le créneau 20h00' }).click();
+  await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   await page.getByRole('button', { name: 'Confirmer la modification' }).click();
   await expect(page.getByRole('alert')).toContainText('réservation initiale est conservée');
   await page.getByRole('button', { name: 'Conserver ma réservation' }).click();

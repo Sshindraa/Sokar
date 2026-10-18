@@ -76,6 +76,24 @@ describe('personal reservation management', () => {
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
     expect(verifyReservationManagementToken(bearer, row)).toBe(false);
   });
+  it('keeps a signed link after rescheduling, but never beyond 90 days or for another recipient', () => {
+    const bearer = token();
+    const later = new Date(row.createdAt.getTime() + 30 * 86400000);
+    const moved = { ...row, reservedAt: new Date(row.createdAt.getTime() + 60 * 86400000) };
+    expect(parseReservationManagementToken(bearer, later)).toBeUndefined();
+    expect(verifyReservationManagementToken(bearer, row, later)).toBe(false);
+    expect(verifyReservationManagementToken(bearer, moved, later)).toBe(true);
+    expect(
+      verifyReservationManagementToken(bearer, { ...moved, customerPhone: '+33600000001' }, later),
+    ).toBe(false);
+    expect(
+      verifyReservationManagementToken(
+        bearer,
+        moved,
+        new Date(row.createdAt.getTime() + 91 * 86400000),
+      ),
+    ).toBe(false);
+  });
   it('has no secret fallback and refuses a non-HTTPS public origin', () => {
     vi.stubEnv('DASHBOARD_URL', 'http://example.invalid');
     expect(reservationManagementUrl(row)).toBeUndefined();

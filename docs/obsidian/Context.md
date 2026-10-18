@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] Gestion client : annulation #485 active/qualifiee staging ; modification en cours (choix reels, remplacement atomique). Apres delai/contact ; liens off prod.
+- [ ] Gestion client : annulation/modification #485–#487 actives et qualifiees staging ; liens off prod. Choix reels, remplacement atomique ; apres delai/contact.
 
 - [ ] Ops Resend : correctif isole `codex/resend-alert-regulation` (debit Redis commun, e-mails system-health groupes). Coordination serveur/GitHub configuree ; cle staging dediee Sending access/sokar.tech autorisee et configuree, envoi technique fournisseur accepte. Livrer par CI/staging/smoke avant production ; aucune migration. Voir `docs/runbooks/resend-alert-regulation.md`.
 
