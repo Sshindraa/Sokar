@@ -51,7 +51,7 @@ describe('DemoRequestsPage', () => {
 
     expect(await screen.findByText('Le Bistrot du Coin')).toBeInTheDocument();
     expect(screen.getByText('La Table du Marché')).toBeInTheDocument();
-    expect(screen.getAllByText('Source : assistant téléphonique')).toHaveLength(2);
+    expect(screen.getAllByText('Source : démo du téléphone')).toHaveLength(2);
     expect(screen.getByText('Envoi accepté')).toBeInTheDocument();
     expect(screen.getByText('Envoi non confirmé')).toBeInTheDocument();
   });
@@ -146,5 +146,38 @@ describe('DemoRequestsPage', () => {
     render(<DemoRequestsPage />);
 
     expect(await screen.findByText('Aucune demande pour ce filtre.')).toBeInTheDocument();
+  });
+
+  it('prévient quand la liste est tronquée aux 200 demandes les plus récentes', async () => {
+    api.get.mockResolvedValue({
+      data: Array.from({ length: 200 }, (_, index) => ({
+        ...notifiedRequest,
+        id: `request-${index}`,
+        establishmentName: `Établissement ${index}`,
+      })),
+    });
+
+    render(<DemoRequestsPage />);
+
+    expect(
+      await screen.findByText(/Les 200 demandes les plus récentes sont affichées/),
+    ).toBeInTheDocument();
+  });
+
+  it('n’affiche plus la liste précédente quand le filtre change', async () => {
+    api.get
+      .mockResolvedValueOnce({ data: [notifiedRequest] })
+      .mockImplementation(() => new Promise(() => undefined));
+    render(<DemoRequestsPage />);
+    await screen.findByText('Le Bistrot du Coin');
+
+    fireEvent.click(
+      screen
+        .getAllByRole('button')
+        .find((button) => /Contactées?/i.test(button.textContent ?? ''))!,
+    );
+
+    expect(await screen.findByText('Chargement des demandes…')).toBeInTheDocument();
+    expect(screen.queryByText('Le Bistrot du Coin')).toBeNull();
   });
 });
