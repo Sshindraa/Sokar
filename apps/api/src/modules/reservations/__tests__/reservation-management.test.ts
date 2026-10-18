@@ -145,6 +145,25 @@ describe('personal reservation management', () => {
       await app.close();
     }
   });
+  it.each([
+    [true, true],
+    [undefined, false],
+  ])('reports isTest=%s as test=%s', async (isTest, expected) => {
+    vi.mocked(db.reservation.findUnique).mockResolvedValue({ ...row, isTest } as never);
+    const app = Fastify();
+    await app.register(reservationManagementRoutes);
+    try {
+      const result = await app.inject({
+        method: 'POST',
+        url: '/public/reservation-management',
+        payload: { token: token(), action: 'view' },
+      });
+      expect(result.statusCode).toBe(200);
+      expect(result.json().test).toBe(expected);
+    } finally {
+      await app.close();
+    }
+  });
   it('withdraws using a tenant-scoped optimistic write and preserves other consent', async () => {
     const app = Fastify();
     await app.register(reservationManagementRoutes);

@@ -233,6 +233,7 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
           time: local.time,
           partySize: row.partySize,
           state: row.state,
+          test: row.isTest === true,
           cancellation: cancellationOffer(row, input.data.token, row.restaurant.timezone),
           modification: modificationAccess(
             row,
