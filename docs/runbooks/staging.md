@@ -46,13 +46,15 @@
 ## Manual commands
 
 ```zsh
-ssh deploy@sokar
-cd /opt/sokar-staging
-bash scripts/deploy.sh --env staging              # full deploy
-bash scripts/deploy.sh --env staging --dry-run    # simulation
-bash scripts/deploy.sh --env staging rollback     # rollback
-pm2 status                                   # see services
-pm2 logs sokar-staging-api                   # API logs
+# Déploiement : passer par le workflow (pas de deploy.sh à la main)
+gh workflow run deploy-staging.yml --ref main
+
+# Rollback (même commande que celle du workflow)
+ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging rollback"
+
+# Services
+ssh deploy@sokar "pm2 status"                        # see services
+ssh deploy@sokar "pm2 logs sokar-staging-api"        # API logs
 ```
 
 ## Notes
