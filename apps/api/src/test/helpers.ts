@@ -1159,6 +1159,7 @@ vi.mock('../shared/redis/client', () => {
   // Les tests existants qui font get sans set auront toujours null (comportement inchangé).
   const store = new Map<string, string>();
   const counters = new Map<string, number>();
+  const expiring = new Set<string>();
   return {
     redisCache: {
       get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -1175,6 +1176,7 @@ vi.mock('../shared/redis/client', () => {
       flushall: vi.fn(async () => {
         store.clear();
         counters.clear();
+        expiring.clear();
         return 'OK';
       }),
       // Rate limiter support (McpRateLimiter + connect-rate-limit)
@@ -1185,7 +1187,15 @@ vi.mock('../shared/redis/client', () => {
         counters.set(key, count);
         return count;
       }),
-      expire: vi.fn(async () => 1),
+      expire: vi.fn(async (key: string) => {
+        expiring.add(key);
+        return 1;
+      }),
+      // Comme Redis : -2 clé absente, -1 clé sans expiration.
+      ttl: vi.fn(async (key: string) => {
+        if (!store.has(key) && !counters.has(key)) return -2;
+        return expiring.has(key) ? 60 : -1;
+      }),
       // Used by OAuth checkOauthRate for atomic INCR + PEXPIRE
       eval: vi.fn(async (_script: string, _numKeys: number, key: string) => {
         const count = (counters.get(key) ?? 0) + 1;

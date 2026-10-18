@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const redisMock = vi.hoisted(() => ({
   counts: new Map<string, number>(),
   fail: false,
+  expiring: new Set<string>(),
   incr: vi.fn(),
   expire: vi.fn(),
+  ttl: vi.fn(),
 }));
 
 vi.mock('../../../shared/redis/client', () => ({
-  redisCache: { incr: redisMock.incr, expire: redisMock.expire },
+  redisCache: { incr: redisMock.incr, expire: redisMock.expire, ttl: redisMock.ttl },
 }));
 vi.mock('../../../shared/observability/alerts', () => ({ alertFailOpen: vi.fn() }));
 
@@ -107,7 +109,26 @@ describe('test-booking quota', () => {
       redisMock.counts.set(key, next);
       return next;
     });
-    redisMock.expire.mockReset().mockResolvedValue(1);
+    redisMock.expiring.clear();
+    redisMock.expire.mockReset().mockImplementation(async (key: string) => {
+      redisMock.expiring.add(key);
+      return 1;
+    });
+    redisMock.ttl
+      .mockReset()
+      .mockImplementation(async (key: string) => (redisMock.expiring.has(key) ? 86400 : -1));
+  });
+
+  it('remet l’expiration si un EXPIRE précédent a échoué (pas de blocage définitif)', async () => {
+    const id = randomUUID();
+    const key = `test-booking:quota:${id}`;
+    redisMock.expire.mockRejectedValueOnce(new Error('redis blip'));
+    await consumeTestBookingQuota(id);
+    expect(redisMock.expiring.has(key)).toBe(false);
+    expect(await consumeTestBookingQuota(id)).toBe(true);
+    expect(redisMock.ttl).toHaveBeenCalledWith(key);
+    expect(redisMock.expire).toHaveBeenLastCalledWith(key, 86400);
+    expect(redisMock.expiring.has(key)).toBe(true);
   });
 
   it('autorise 5 réservations par restaurant puis refuse', async () => {

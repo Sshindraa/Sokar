@@ -5,10 +5,15 @@ import { describe, expect, it } from 'vitest';
 // Garde-fou : l'extension Prisma (`test-reservation-scope.ts`) n'agit ni sur le SQL brut ni sur
 // les lectures de réservations passant par une relation. Chaque fichier concerné doit donc
 // soit exclure `is_test` / `isTest`, soit être listé ci-dessous avec la raison.
-// Détection volontairement simple, au niveau du fichier : un `is_test` ou `isTest` n'importe où
-// dans le fichier suffit.
+// Détection volontairement simple, au niveau du fichier : une exclusion explicite
+// (`is_test = false` en SQL ou `isTest: false` en Prisma) n'importe où dans le fichier suffit.
+// Une simple mention (`isTestCallRecordingEnabled`, `const isTest = …`) ne compte pas.
 
-/** Fichier (relatif à apps/api/src) → raison pour laquelle il n'a pas besoin du filtre. */
+/**
+ * Fichier (relatif à apps/api/src) → raison pour laquelle il n'a pas besoin du filtre.
+ * Les exceptions valent pour tout le fichier : une nouvelle requête ajoutée dans un fichier listé
+ * n'est plus contrôlée. Vérifiez la raison à chaque ajout de SQL brut dans ces fichiers.
+ */
 export const RAW_SQL_RESERVATION_EXCEPTIONS: Record<string, string> = {
   'modules/reservations/reservation-lifecycle.service.ts':
     'Verrou FOR UPDATE sur une seule réservation ciblée par id.',
@@ -64,7 +69,8 @@ const files = listSourceFiles(SRC_ROOT).map((full) => ({
 }));
 
 const isCovered = (rel: string, source: string) =>
-  /is_test|isTest/.test(source) || rel in RAW_SQL_RESERVATION_EXCEPTIONS;
+  /\bis_test\s*=\s*false\b|\bisTest:\s*false\b/.test(source) ||
+  rel in RAW_SQL_RESERVATION_EXCEPTIONS;
 
 describe('réservations test : SQL brut et relations', () => {
   it('chaque SQL brut sur reservations exclut is_test ou est une exception documentée', () => {
@@ -81,6 +87,15 @@ describe('réservations test : SQL brut et relations', () => {
       .filter(({ rel, source }) => !isCovered(rel, source))
       .map(({ rel }) => rel);
     expect(offenders).toEqual([]);
+  });
+
+  it('ne compte comme filtre qu’une vraie exclusion is_test = false / isTest: false', () => {
+    const rel = 'modules/fake/fake.service.ts';
+    expect(isCovered(rel, 'if (settings.isTestCallRecordingEnabled) {}')).toBe(false);
+    expect(isCovered(rel, 'const isTest = input.isTest === true;')).toBe(false);
+    expect(isCovered(rel, 'WHERE r.is_test = false')).toBe(true);
+    expect(isCovered(rel, 'WHERE r.is_test=false')).toBe(true);
+    expect(isCovered(rel, 'where: { isTest: false }')).toBe(true);
   });
 
   it('les exceptions pointent vers des fichiers existants', () => {

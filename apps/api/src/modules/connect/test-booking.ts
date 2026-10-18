@@ -84,7 +84,9 @@ export async function consumeTestBookingQuota(restaurantId: string): Promise<boo
   const key = `test-booking:quota:${restaurantId}`;
   try {
     const count = await redisCache.incr(key);
-    if (count === 1) {
+    // TTL -1 = clé sans expiration (un EXPIRE précédent a échoué) : on la remet,
+    // sinon le quota bloquerait le restaurant pour toujours.
+    if (count === 1 || (await redisCache.ttl(key)) === -1) {
       await redisCache.expire(key, QUOTA_TTL_SECONDS);
     }
     return count <= QUOTA_LIMIT;

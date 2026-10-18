@@ -181,7 +181,8 @@ export async function reservationManagementRoutes(app: FastifyInstance) {
             await CapacityAwareAvailabilityService.invalidateAvailability(row.restaurantId);
           }
         }
-        if (input.data.action === 'cancel' && row.state === 'CANCELLED') {
+        // Une réservation test ne doit créer ni fiche client ni écriture marketing.
+        if (input.data.action === 'cancel' && row.state === 'CANCELLED' && !row.isTest) {
           await Promise.allSettled([
             CustomerService.recordReservationEvent({
               restaurantId: row.restaurantId,
