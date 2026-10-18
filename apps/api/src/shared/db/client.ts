@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { slowQueryExtension } from './middleware';
+import { testReservationScopeExtension } from './test-reservation-scope';
 
 declare global {
   var __db: PrismaClient | undefined;
@@ -15,7 +16,8 @@ const prismaClient = new PrismaClient({
 // pour préserver la compatibilité de typage (60+ fichiers et services
 // attendent `PrismaClient` en paramètre de constructeur). Le runtime conserve
 // bien le middleware — chaque opération est mesurée et loggée si elle dépasse
-// SLOW_QUERY_THRESHOLD_MS (voir middleware.ts).
+// SLOW_QUERY_THRESHOLD_MS (voir middleware.ts). Une seconde extension exclut
+// les réservations test (`isTest`) des lectures en masse (voir test-reservation-scope.ts).
 //
 // Quand l'ensemble des services auront migré vers un type partagé (ex. `Db`),
 // on pourra retirer le cast et exposer le vrai type étendu.
@@ -26,7 +28,9 @@ const prismaClient = new PrismaClient({
 // toujours.
 const extendedClient =
   typeof prismaClient.$extends === 'function'
-    ? (prismaClient.$extends(slowQueryExtension) as unknown as PrismaClient)
+    ? (prismaClient
+        .$extends(slowQueryExtension)
+        .$extends(testReservationScopeExtension as never) as unknown as PrismaClient)
     : prismaClient;
 
 export const db: PrismaClient = globalThis.__db ?? extendedClient;
