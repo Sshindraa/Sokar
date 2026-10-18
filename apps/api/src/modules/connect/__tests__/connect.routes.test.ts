@@ -12,7 +12,7 @@
  * - Pas d'auth requise (pas de 401 sans Authorization)
  */
 
-import { describe, it, expect, beforeEach, afterAll, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -79,10 +79,14 @@ import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 import { PolicyValidationError } from '../../agentic-reservations/core/policies.service';
+import { ConsentService } from '../../rgpd/consent.service';
+import * as connectRateLimit from '../connect-rate-limit';
+import { consumeTestBookingQuota, issueTestBookingToken } from '../test-booking';
 
 const SLUG = 'chez-sokar-demo';
 const RESTAURANT_ID = 'ba5be41b-eb72-4e05-bb9c-b576e39e33ba';
 const CONFIRM_HOLD_TOKEN = ['tok', 'confirm'].join('-');
+const TEST_HOLD_TOKEN = ['tok', 'test'].join('-');
 
 const mockPublishedRestaurant: PublicRestaurantDto = {
   id: RESTAURANT_ID,
@@ -1010,6 +1014,270 @@ describe('Sokar Connect — Routes publiques', () => {
           createReservation.mockRestore();
         }
       });
+    });
+  });
+
+  describe('réservation test (testBookingToken)', () => {
+    const EXPIRED_MESSAGE = 'Ce lien de test a expiré. Relancez-le depuis votre tableau de bord.';
+    const QUOTA_MESSAGE = 'Vous avez atteint la limite de 5 réservations test sur 24 heures.';
+    const OTHER_RESTAURANT_ID = 'c0ffee00-eb72-4e05-bb9c-b576e39e33ba';
+
+    function mockPublishedRestaurant() {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date('2026-06-24'),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        description: null,
+        formattedAddress: '12 Rue',
+        phoneNumber: '+334****0000',
+        phoneE164: '+334****0000',
+        cuisineType: ['Française'],
+        priceRange: 2,
+        openingHours: { mon: { open: '12:00', close: '22:00' } },
+        ambiance: [],
+        dietary: [],
+        noiseLevel: null,
+        exposureSettings: { connectPublished: true, connectAgentic: false },
+        images: [],
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
+      );
+    }
+
+    function mockActiveHold() {
+      vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+        id: 'hold-test',
+        holdToken: CONFIRM_HOLD_TOKEN,
+        status: 'ACTIVE',
+        expiresAt: new Date(Date.now() + 60_000),
+        restaurantId: RESTAURANT_ID,
+        partySize: 2,
+        slotStart: new Date('2026-06-29T20:00:00Z'),
+        slotEnd: new Date('2026-06-29T21:30:00Z'),
+        tableId: null,
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
+    }
+
+    function mockHoldCreate() {
+      // Les mocks gardent leur implémentation d'un test à l'autre : aucun hold existant.
+      vi.mocked(db.agenticHold.findFirst).mockResolvedValue(null);
+      vi.mocked(db.agenticHold.create).mockResolvedValue({
+        id: 'hold_test',
+        holdToken: TEST_HOLD_TOKEN,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        status: 'ACTIVE',
+        restaurantId: RESTAURANT_ID,
+        partySize: 2,
+        slotStart: new Date('2026-06-29T20:00:00Z'),
+        slotEnd: new Date('2026-06-29T21:30:00Z'),
+        channel: 'WEB',
+        type: 'HOLD',
+        policyVersion: '2026-06-20',
+        createdAt: new Date(),
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.create>>);
+    }
+
+    // Le rate limit par IP de Fastify survit entre les tests (horloge figée) :
+    // une adresse par requête garde ces tests indépendants des précédents.
+    let ipCounter = 0;
+    const nextIp = () => `198.51.100.${++ipCounter}`;
+
+    const holdRequest = (testBookingToken?: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/hold`,
+        remoteAddress: nextIp(),
+        payload: {
+          date: '2026-06-29',
+          time: '20:00',
+          partySize: 2,
+          source: 'web',
+          ...(testBookingToken !== undefined ? { testBookingToken } : {}),
+        },
+      });
+
+    const confirmRequest = (testBookingToken?: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/confirm`,
+        remoteAddress: nextIp(),
+        payload: {
+          holdToken: CONFIRM_HOLD_TOKEN,
+          idempotencyKey: '33333333-3333-4333-8333-333333333333',
+          marketingAttributionToken: 'm'.repeat(40),
+          giftCardCode: 'GIFT-TEST',
+          customer: { firstName: 'Alice', phone: '+33612345678' },
+          ...(testBookingToken !== undefined ? { testBookingToken } : {}),
+        },
+      });
+
+    let createReservation: ReturnType<typeof vi.spyOn>;
+    let recordConsent: ReturnType<typeof vi.spyOn>;
+    let canConfirm: ReturnType<typeof vi.spyOn>;
+    let recordFailedConfirm: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      vi.stubEnv('TEST_BOOKING_ENABLED', 'true');
+      vi.stubEnv('TEST_BOOKING_SECRET', randomBytes(32).toString('hex'));
+      mockPublishedRestaurant();
+      createReservation = vi
+        .spyOn(ReservationService.prototype, 'createReservation')
+        .mockResolvedValue({ reservationId: randomUUID(), state: 'CONFIRMED', reused: false });
+      recordConsent = vi
+        .spyOn(ConsentService.prototype, 'recordConsent')
+        .mockResolvedValue(undefined as never);
+      canConfirm = vi.spyOn(connectRateLimit, 'canConfirm').mockResolvedValue(true);
+      recordFailedConfirm = vi
+        .spyOn(connectRateLimit, 'recordFailedConfirm')
+        .mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      createReservation.mockRestore();
+      recordConsent.mockRestore();
+      canConfirm.mockRestore();
+      recordFailedConfirm.mockRestore();
+      vi.unstubAllEnvs();
+    });
+
+    const refusedTokens: Array<[string, () => string]> = [
+      ['malformé', () => 'pas-un-jeton'],
+      [
+        'signature invalide',
+        () => `${issueTestBookingToken(RESTAURANT_ID).split('.')[0]}.${'A'.repeat(43)}`,
+      ],
+      ['expiré', () => issueTestBookingToken(RESTAURANT_ID, new Date(Date.now() - 2 * 3600_000))],
+      ["d'un autre restaurant", () => issueTestBookingToken(OTHER_RESTAURANT_ID)],
+    ];
+
+    it.each(refusedTokens)('hold : refuse un jeton %s avec 403', async (_label, token) => {
+      const res = await holdRequest(token());
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: EXPIRED_MESSAGE });
+      expect(db.agenticHold.create).not.toHaveBeenCalled();
+      expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+    });
+
+    it.each(refusedTokens)('confirm : refuse un jeton %s avec 403', async (_label, token) => {
+      mockActiveHold();
+
+      const res = await confirmRequest(token());
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: EXPIRED_MESSAGE });
+      expect(createReservation).not.toHaveBeenCalled();
+      expect(recordConsent).not.toHaveBeenCalled();
+    });
+
+    it('refuse un jeton valide quand le drapeau est coupé', async () => {
+      const token = issueTestBookingToken(RESTAURANT_ID);
+      vi.stubEnv('TEST_BOOKING_ENABLED', 'false');
+      mockActiveHold();
+
+      const hold = await holdRequest(token);
+      const confirm = await confirmRequest(token);
+
+      expect(hold.statusCode).toBe(403);
+      expect(hold.json()).toEqual({ error: EXPIRED_MESSAGE });
+      expect(confirm.statusCode).toBe(403);
+      expect(confirm.json()).toEqual({ error: EXPIRED_MESSAGE });
+      expect(db.agenticHold.create).not.toHaveBeenCalled();
+      expect(createReservation).not.toHaveBeenCalled();
+    });
+
+    it('hold : crée le hold sans événement analytics avec un jeton valide', async () => {
+      mockHoldCreate();
+
+      const res = await holdRequest(issueTestBookingToken(RESTAURANT_ID));
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ holdId: 'hold_test', holdToken: TEST_HOLD_TOKEN });
+      expect(db.agenticHold.create).toHaveBeenCalled();
+      expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+    });
+
+    it('confirm : crée une réservation test hors consentement, anti-spam et analytics', async () => {
+      vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
+      vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
+      vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+      mockActiveHold();
+      const reservationId = randomUUID();
+      createReservation.mockResolvedValue({ reservationId, state: 'CONFIRMED', reused: false });
+      vi.mocked(db.reservation.findUnique).mockResolvedValue({
+        id: reservationId,
+        restaurantId: RESTAURANT_ID,
+        customerPhone: '+33612345678',
+        createdAt: new Date(),
+        reservedAt: new Date(Date.now() + 2 * 86_400_000),
+      } as never);
+
+      const res = await confirmRequest(issueTestBookingToken(RESTAURANT_ID));
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ reservationId, status: 'confirmed', reused: false });
+      expect(res.json().managementUrl).toMatch(/^https:\/\/sokar.tech\/r#[\w-]+\.[\w-]+$/);
+      expect(createReservation).toHaveBeenCalledTimes(1);
+      const [input, idempotency] = createReservation.mock.calls[0] as [
+        Record<string, unknown>,
+        { scope: string },
+      ];
+      expect(input).toMatchObject({ isTest: true, holdToken: CONFIRM_HOLD_TOKEN });
+      expect(input.marketingAttributionToken).toBeUndefined();
+      expect(input.giftCardCode).toBeUndefined();
+      expect(input.giftCardReservationAmount).toBeUndefined();
+      expect(idempotency.scope).toContain('test:');
+      expect(recordConsent).not.toHaveBeenCalled();
+      expect(canConfirm).not.toHaveBeenCalled();
+      expect(recordFailedConfirm).not.toHaveBeenCalled();
+      expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+    });
+
+    it('confirm : un échec de création test ne compte ni anti-spam ni analytics', async () => {
+      mockActiveHold();
+      createReservation.mockRejectedValue(new Error('boom'));
+
+      const res = await confirmRequest(issueTestBookingToken(RESTAURANT_ID));
+
+      expect(res.statusCode).toBe(500);
+      expect(recordFailedConfirm).not.toHaveBeenCalled();
+      expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+    });
+
+    it('confirm : répond 429 sans création quand le quota est épuisé', async () => {
+      mockActiveHold();
+      for (let i = 0; i < 5; i++) await consumeTestBookingQuota(RESTAURANT_ID);
+
+      const res = await confirmRequest(issueTestBookingToken(RESTAURANT_ID));
+
+      expect(res.statusCode).toBe(429);
+      expect(res.json()).toEqual({ error: QUOTA_MESSAGE });
+      expect(createReservation).not.toHaveBeenCalled();
+    });
+
+    it('confirm : sans jeton, le circuit réel reste inchangé', async () => {
+      mockActiveHold();
+
+      const res = await confirmRequest();
+
+      expect(res.statusCode).toBe(200);
+      const [input, idempotency] = createReservation.mock.calls[0] as [
+        Record<string, unknown>,
+        { scope: string },
+      ];
+      expect(input.isTest).toBeUndefined();
+      expect(input.marketingAttributionToken).toBe('m'.repeat(40));
+      expect(input.giftCardCode).toBe('GIFT-TEST');
+      expect(idempotency.scope).not.toContain('test:');
+      expect(recordConsent).toHaveBeenCalled();
+      expect(canConfirm).toHaveBeenCalled();
     });
   });
 });

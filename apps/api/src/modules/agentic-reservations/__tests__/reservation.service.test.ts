@@ -14,6 +14,9 @@ import {
 } from '../core/reservation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import * as confirmationOutbox from '../../../shared/outbox/reservation-confirmation';
+import { CustomerService } from '../../customers/customer.service';
+import * as marketingAttribution from '../../marketing/marketing-attribution.service';
+import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 
 type HoldRow = {
   id: string;
@@ -101,6 +104,7 @@ function makeFakes() {
   const holds = new Map<string, HoldRow>();
   const reservations = new Map<string, ReservationRow>();
   const audits: Record<string, unknown>[] = [];
+  const createdReservationData: Record<string, unknown>[] = [];
 
   const prisma = {
     $transaction: async (fn: unknown) =>
@@ -239,6 +243,7 @@ function makeFakes() {
     },
     reservation: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
+        createdReservationData.push(data);
         const id = `reservation-${reservations.size + 1}`;
         const row: ReservationRow = {
           id,
@@ -322,7 +327,14 @@ function makeFakes() {
   const idempotency = new IdempotencyService(makeIdempotencyStore());
   const reservationsService = new ReservationService(prisma, audit, holdService, idempotency);
 
-  return { audits, holdService, holds, reservations, reservationsService };
+  return {
+    audits,
+    createdReservationData,
+    holdService,
+    holds,
+    reservations,
+    reservationsService,
+  };
 }
 
 const policy = buildPolicySnapshot({
@@ -753,5 +765,107 @@ describe('reservation.service', () => {
       }),
     );
     invalidate.mockRestore();
+  });
+
+  it('crée une réservation test sans client CRM, attribution ni carte cadeau', async () => {
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(true);
+    const lookupOrCreate = vi
+      .spyOn(CustomerService, 'lookupOrCreate')
+      .mockResolvedValue({ id: 'customer-1' } as never);
+    const recordEvent = vi
+      .spyOn(CustomerService, 'recordReservationEvent')
+      .mockResolvedValue(undefined as never);
+    const attribution = vi
+      .spyOn(marketingAttribution, 'recordMarketingAttributionClick')
+      .mockResolvedValue(null as never);
+    const conversion = vi
+      .spyOn(marketingAttribution, 'recordMarketingConversion')
+      .mockResolvedValue(undefined as never);
+    const giftCard = vi
+      .spyOn(GiftCardService.prototype, 'associateToReservation')
+      .mockResolvedValue({} as never);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      const result = await fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 2,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+          customerName: 'Jean Test',
+          customerPhone: '+33600000000',
+          channel: 'WEB',
+          policy,
+          actor: 'connect:web',
+          isTest: true,
+          marketingAttributionToken: 'x'.repeat(40),
+          giftCardCode: 'GIFT-1',
+          giftCardReservationAmount: 50,
+        },
+        {
+          scope: 'web:test',
+          key: 'key-test',
+          payloadHash: hashPayload({ test: true, startsAt }),
+          ttlSeconds: 300,
+        },
+      );
+
+      expect(result.reused).toBe(false);
+      expect(result.giftCardApplication).toBeUndefined();
+      expect(fakes.createdReservationData).toHaveLength(1);
+      expect(fakes.createdReservationData[0]).toMatchObject({ isTest: true });
+      expect(fakes.createdReservationData[0]).not.toHaveProperty('customerId');
+      expect(lookupOrCreate).not.toHaveBeenCalled();
+      expect(recordEvent).not.toHaveBeenCalled();
+      expect(attribution).not.toHaveBeenCalled();
+      expect(conversion).not.toHaveBeenCalled();
+      expect(giftCard).not.toHaveBeenCalled();
+      expect(intent).toHaveBeenCalledTimes(1);
+      expect(fakes.audits.map((audit) => audit.event)).toContain('reservation_created');
+    } finally {
+      intent.mockRestore();
+      lookupOrCreate.mockRestore();
+      recordEvent.mockRestore();
+      attribution.mockRestore();
+      conversion.mockRestore();
+      giftCard.mockRestore();
+    }
+  });
+
+  it('ne marque pas une réservation réelle comme test', async () => {
+    const lookupOrCreate = vi
+      .spyOn(CustomerService, 'lookupOrCreate')
+      .mockResolvedValue({ id: 'customer-1' } as never);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      await fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 2,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+          customerName: 'Jean Test',
+          customerPhone: '+33600000000',
+          channel: 'WEB',
+          policy,
+          actor: 'connect:web',
+        },
+        {
+          scope: 'web:real',
+          key: 'key-real',
+          payloadHash: hashPayload({ real: true, startsAt }),
+          ttlSeconds: 300,
+        },
+      );
+      expect(lookupOrCreate).toHaveBeenCalledTimes(1);
+      expect(fakes.createdReservationData[0]).toMatchObject({ customerId: 'customer-1' });
+      expect(fakes.createdReservationData[0]).not.toHaveProperty('isTest');
+    } finally {
+      lookupOrCreate.mockRestore();
+    }
   });
 });
