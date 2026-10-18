@@ -37,13 +37,6 @@ const nextConfig = {
     parallelServerBuildTraces: false,
     webpackBuildWorker: false,
   },
-  // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
-  // Le relancer pendant next build sur le VPS ajoute ~40 s (dashboard) + ~68 s
-  // (connect) de linting redondant. On le désactive sur le build de prod.
-  // Le typecheck reste actif (ignoreBuildErrors: false) — safety net.
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   typescript: {
     ignoreBuildErrors: false,
   },

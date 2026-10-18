@@ -9,9 +9,9 @@ Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architectu
 
 ## Stack
 
-- Monorepo: pnpm 10.8 + Turbo, Node 20+, TypeScript 5.8.
+- Monorepo: pnpm 10.8 + Turbo, Node 20.9+, TypeScript 5.8.
 - API: `apps/api` — Fastify 5, Prisma 6, Redis, BullMQ, Telnyx.
-- Dashboard: `apps/dashboard` — Next.js 15 App Router, React 19, Tailwind 3, Shadcn UI, Lucide.
+- Dashboard: `apps/dashboard` — Next.js 16 App Router, React 19, Tailwind 3, Shadcn UI, Lucide.
 - Connect / Widget: `apps/connect` + `apps/widget` — Next.js, standalone/export.
 - Packages: `packages/database`, `packages/config`, `packages/shared`.
 - Voice: Telnyx Media Stream, ElevenLabs Scribe Realtime STT, Cartesia TTS.
@@ -50,7 +50,7 @@ sokar/
 ## Commands
 
 ```zsh
-# Node (>=20 <23, strict via .npmrc)
+# Node (>=20.9 <23, strict via .npmrc)
 pnpm node:check
 
 # Dev / build / test

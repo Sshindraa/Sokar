@@ -234,7 +234,7 @@ jobs:
         run: pnpm --filter @sokar/api test:int
 
   # ─────────────────────────────────────────────────────────────
-  # Dashboard: real ESLint (next lint), TypeScript via tsc --noEmit,
+  # Dashboard: ESLint CLI (flat config), TypeScript via tsc --noEmit,
   # and next build (catches server/client component boundary errors).
   # ─────────────────────────────────────────────────────────────
   dashboard:
