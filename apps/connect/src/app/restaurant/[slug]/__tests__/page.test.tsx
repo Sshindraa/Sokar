@@ -10,7 +10,10 @@ import type { PublicRestaurantDto } from '@/lib/api-client';
 const mocks = vi.hoisted(() => ({
   fetchPublicRestaurant: vi.fn(),
   fetchAvailability: vi.fn(),
+  PageViewTracker: vi.fn(() => null),
 }));
+
+vi.mock('@/components/page-view-tracker', () => ({ PageViewTracker: mocks.PageViewTracker }));
 
 vi.mock('@/lib/api-client', () => ({
   fetchPublicRestaurant: mocks.fetchPublicRestaurant,
@@ -136,18 +139,30 @@ describe('parcours de réservation test depuis l’onboarding', () => {
   const bookHrefs = (html: string) =>
     [...html.matchAll(/href="(\/book\/[^"]+)"/g)].map(([, href]) => href);
 
-  it('transmet testBooking=1 à tous les liens de réservation et le signale', async () => {
-    const html = await markup({ testBooking: '1' });
+  const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
+  const banner =
+    'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+
+  it('transmet le jeton à tous les liens de réservation et affiche le bandeau', async () => {
+    const html = await markup({ testBooking: token });
     const hrefs = bookHrefs(html);
     expect(hrefs.length).toBeGreaterThan(0);
-    for (const href of hrefs) expect(href).toContain('testBooking=1');
-    expect(html).toContain('Mode test');
+    for (const href of hrefs) expect(href).toContain(`testBooking=${encodeURIComponent(token)}`);
+    expect(html).toContain(banner);
+    expect(mocks.PageViewTracker).not.toHaveBeenCalled();
+  });
+
+  it('ignore une valeur qui n’a pas la forme d’un jeton', async () => {
+    const html = await markup({ testBooking: '1' });
+    expect(bookHrefs(html).length).toBeGreaterThan(0);
+    expect(html).not.toContain('testBooking');
+    expect(html).not.toContain('Réservation test');
   });
 
   it('ne change rien sans le paramètre', async () => {
     const html = await markup({});
     expect(bookHrefs(html).length).toBeGreaterThan(0);
     expect(html).not.toContain('testBooking');
-    expect(html).not.toContain('Mode test');
+    expect(html).not.toContain('Réservation test');
   });
 });

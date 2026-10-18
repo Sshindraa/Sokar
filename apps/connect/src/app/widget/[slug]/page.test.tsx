@@ -1,5 +1,5 @@
 /**
- * Page /widget/[slug] : le parcours d'essai de l'onboarding (`testBooking=1`)
+ * Page /widget/[slug] : le parcours d'essai de l'onboarding (`testBooking=<jeton>`)
  * n'est pas compté dans les statistiques et n'enregistre aucune réservation.
  */
 
@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const mocks = vi.hoisted(() => ({
   fetchWidgetRestaurant: vi.fn(),
   trackEventAsync: vi.fn(),
-  bookingWidget: vi.fn((_props: { testBooking?: boolean }) => null),
+  bookingWidget: vi.fn((_props: { testBookingToken?: string }) => null),
 }));
 
 vi.mock('@/lib/api-client', () => ({ fetchWidgetRestaurant: mocks.fetchWidgetRestaurant }));
@@ -42,17 +42,28 @@ describe('page widget : réservation test', () => {
     });
   });
 
-  it('passe le mode test au widget, sans compter la visite', async () => {
-    const html = await markup({ testBooking: '1' });
+  const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
+
+  it('passe le jeton au widget, sans compter la visite', async () => {
+    const html = await markup({ testBooking: token, marketingAttributionToken: 'x'.repeat(40) });
     expect(mocks.trackEventAsync).not.toHaveBeenCalled();
-    expect(mocks.bookingWidget.mock.calls[0][0].testBooking).toBe(true);
-    expect(html).toContain('href="/restaurant/chez-sokar?testBooking=1"');
+    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBe(token);
+    expect(html).toContain(
+      `href="/restaurant/chez-sokar?testBooking=${encodeURIComponent(token)}"`,
+    );
+  });
+
+  it('traite une valeur qui n’a pas la forme d’un jeton comme absente', async () => {
+    const html = await markup({ testBooking: '1' });
+    expect(mocks.trackEventAsync).toHaveBeenCalledOnce();
+    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBeUndefined();
+    expect(html).toContain('href="/restaurant/chez-sokar"');
   });
 
   it('compte la visite et garde le parcours normal sans le paramètre', async () => {
     const html = await markup({});
     expect(mocks.trackEventAsync).toHaveBeenCalledOnce();
-    expect(mocks.bookingWidget.mock.calls[0][0].testBooking).toBe(false);
+    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBeUndefined();
     expect(html).toContain('href="/restaurant/chez-sokar"');
   });
 });

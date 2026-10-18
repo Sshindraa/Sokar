@@ -29,6 +29,7 @@ import { BookCtaLink } from '@/components/book-cta-link';
 import { PageViewTracker } from '@/components/page-view-tracker';
 import { isValidSlug } from '@/lib/widget-colors';
 import { todayInTimezone } from '@/lib/restaurant-day';
+import { parseTestBookingToken, TEST_BOOKING_BANNER } from '@/lib/test-booking';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
@@ -164,9 +165,10 @@ export default async function RestaurantPage({
   const { slug } = await params;
   const sp = await searchParams;
   const isPreview = sp.preview === '1';
-  // Parcours d'essai lancé depuis l'onboarding : le widget n'enregistre rien.
-  const isTestBooking = sp.testBooking === '1';
-  const bookQuerySuffix = `${sp.source ? `&utm=${sp.source}` : ''}${isTestBooking ? '&testBooking=1' : ''}`;
+  // Parcours d'essai lancé depuis l'onboarding : jeton signé, ni statistique ni attribution.
+  const testBookingToken = parseTestBookingToken(sp.testBooking);
+  const isTestBooking = testBookingToken !== undefined;
+  const bookQuerySuffix = `${sp.source ? `&utm=${sp.source}` : ''}${testBookingToken ? `&testBooking=${encodeURIComponent(testBookingToken)}` : ''}`;
 
   // Valider le slug (anti-injection — audit sécurité Phase 2)
   if (!isValidSlug(slug)) {
@@ -287,8 +289,7 @@ export default async function RestaurantPage({
         )}
         {isTestBooking && (
           <p className="mb-6 rounded-xl border border-border bg-muted p-6 text-foreground">
-            Mode test : vous voyez votre page comme vos clients. Une réservation faite depuis ce
-            parcours n’est pas enregistrée.
+            {TEST_BOOKING_BANNER}
           </p>
         )}
         {isConnectDemoSlug(restaurant.slug) && (

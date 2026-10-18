@@ -25,6 +25,7 @@ import { fetchWithTimeout } from '@sokar/shared';
 import { PartySizePicker } from './booking/party-size-picker';
 import { SlotGrid } from './booking/slot-grid';
 import { CustomerForm } from './booking/customer-form';
+import { TEST_BOOKING_BANNER } from '@/lib/test-booking';
 import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 import { trackEvent } from '@/lib/tracking';
 import {
@@ -69,8 +70,8 @@ type Props = {
   embedded?: boolean;
   primaryColor?: string;
   accentColor?: string;
-  /** Parcours d'essai de l'onboarding : rien n'est créé ni envoyé. */
-  testBooking?: boolean;
+  /** Parcours d'essai de l'onboarding : jeton signé, envoyé à hold et confirm. */
+  testBookingToken?: string;
 };
 
 function todayIso(): string {
@@ -92,8 +93,9 @@ export function BookingWidget({
   embedded = false,
   primaryColor = '#0F172A',
   accentColor = '#0284C7',
-  testBooking = false,
+  testBookingToken,
 }: Props) {
+  const testBooking = testBookingToken !== undefined;
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick');
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
   const [partySize, setPartySize] = useState<number>(initialPartySize ?? 2);
@@ -251,17 +253,6 @@ export function BookingWidget({
       setError('Numéro de téléphone invalide (format international +33...)');
       return;
     }
-    if (testBooking) {
-      setConfirmResult({
-        reservationId: '',
-        restaurantName: restaurant?.name ?? '',
-        date,
-        time: selectedTime,
-        partySize,
-      });
-      setStep('done');
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
@@ -272,6 +263,7 @@ export function BookingWidget({
         partySize,
         source,
         website: honeypot,
+        ...(testBookingToken ? { testBookingToken } : {}),
       };
       if (preferredSectionId) {
         holdBody.preferredSectionId = preferredSectionId;
@@ -283,9 +275,14 @@ export function BookingWidget({
       });
       if (!holdRes.ok) {
         const data = await holdRes.json().catch(() => ({}));
-        if (holdRes.status === 409 && data.waitingListEnabled === true) {
+        // En test, pas de liste d'attente : elle créerait une vraie demande.
+        if (holdRes.status === 409 && data.waitingListEnabled === true && !testBooking) {
           setWaitingListOffer({ date, time: selectedTime, partySize, preferredSectionId });
           setError(null);
+          return;
+        }
+        if (holdRes.status === 403 || holdRes.status === 429) {
+          setError(data.error || 'Cette réservation test est refusée.');
           return;
         }
         setError(data.error || 'Créneau déjà réservé. Choisissez un autre horaire.');
@@ -317,7 +314,8 @@ export function BookingWidget({
                 },
               }
             : {}),
-          ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
+          ...(testBookingToken ? { testBookingToken } : {}),
+          ...(!testBooking && marketingAttributionToken ? { marketingAttributionToken } : {}),
         }),
       });
       if (!confirmRes.ok) {
@@ -343,10 +341,17 @@ export function BookingWidget({
           );
           return;
         }
-        // 429 = rate limit per-phone
+        // 403 = jeton test refusé : message de l'API (lien expiré)
+        if (confirmRes.status === 403) {
+          setError(data.error || 'Cette réservation test est refusée.');
+          return;
+        }
+        // 429 = rate limit per-phone (ou quota de réservations test : message de l'API)
         if (confirmRes.status === 429) {
           setError(
-            'Trop de tentatives. Veuillez réessayer dans une heure ou appelez le restaurant.',
+            testBooking && data.error
+              ? data.error
+              : 'Trop de tentatives. Veuillez réessayer dans une heure ou appelez le restaurant.',
           );
           return;
         }
@@ -474,9 +479,9 @@ export function BookingWidget({
 
   return (
     <div style={widgetStyle}>
-      {testBooking && step !== 'done' && (
+      {testBooking && (
         <p role="note" className="mb-4 rounded-xl border border-border bg-muted p-4 text-sm">
-          Réservation test : rien ne sera enregistré et aucun message ne sera envoyé.
+          {TEST_BOOKING_BANNER}
         </p>
       )}
       {step === 'done' ? (
@@ -485,7 +490,7 @@ export function BookingWidget({
             result={confirmResult}
             slug={slug}
             embedded={embedded}
-            testBooking={testBooking}
+            testBookingToken={testBookingToken}
           />
         ) : waitingListResult ? (
           <div

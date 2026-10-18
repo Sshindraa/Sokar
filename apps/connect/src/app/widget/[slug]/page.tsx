@@ -17,6 +17,7 @@ import { BookingWidget } from '@/components/booking-widget';
 import { trackEventAsync } from '@/lib/tracking';
 import { toHexColor, isValidSlug } from '@/lib/widget-colors';
 import { normalizeBookingSource } from '@/lib/booking-source';
+import { parseTestBookingToken } from '@/lib/test-booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,8 +56,9 @@ export default async function WidgetPage({
   }
 
   const isEmbedded = sp.embedded === '1';
-  // Parcours d'essai de l'onboarding : ni réservation, ni message, ni statistique.
-  const isTestBooking = sp.testBooking === '1';
+  // Parcours d'essai de l'onboarding : jeton signé, ni statistique ni attribution.
+  const testBookingToken = parseTestBookingToken(sp.testBooking);
+  const isTestBooking = testBookingToken !== undefined;
   const primary = toHexColor(sp.primary, '#0F172A');
   const accent = toHexColor(sp.accent, '#0284C7');
   const source = normalizeBookingSource(sp.source);
@@ -80,7 +82,7 @@ export default async function WidgetPage({
       {!isEmbedded && (
         <div className="mb-4">
           <Link
-            href={`/restaurant/${restaurant.slug}${isTestBooking ? '?testBooking=1' : ''}`}
+            href={`/restaurant/${restaurant.slug}${testBookingToken ? `?testBooking=${encodeURIComponent(testBookingToken)}` : ''}`}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-blue transition-all duration-200 hover:gap-2.5"
           >
             <ArrowLeft size={16} />
@@ -95,14 +97,14 @@ export default async function WidgetPage({
         slug={restaurant.slug}
         initialSource={source}
         initialGiftCardCode={sp.giftCardCode?.slice(0, 100)}
-        marketingAttributionToken={sp.marketingAttributionToken}
+        marketingAttributionToken={isTestBooking ? undefined : sp.marketingAttributionToken}
         initialPartySize={partySize}
         initialDate={date}
         initialTime={time}
         embedded={isEmbedded}
         primaryColor={primary}
         accentColor={accent}
-        testBooking={isTestBooking}
+        testBookingToken={testBookingToken}
       />
     </main>
   );
