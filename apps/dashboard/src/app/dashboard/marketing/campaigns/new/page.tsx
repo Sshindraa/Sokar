@@ -214,7 +214,7 @@ export default function NewMarketingCampaignPage() {
   const [testPreview, setTestPreview] = useState<CampaignTestPreview | null>(null);
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [action, setAction] = useState<'audience' | 'create' | null>(null);
+  const [action, setAction] = useState<'audience' | 'create' | 'test' | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   // Échec du chargement des segments : séparé de `error` (actions) pour rester affiché avec son « Réessayer ».
@@ -354,7 +354,7 @@ export default function NewMarketingCampaignPage() {
 
   async function testForManager() {
     if (!createdCampaignId) return;
-    setAction('create');
+    setAction('test');
     setError('');
     setNotice('');
     try {
@@ -404,8 +404,8 @@ export default function NewMarketingCampaignPage() {
       <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <Info className="mt-0.5 h-4 w-4 flex-none text-warning" />
         <p className="text-muted-foreground">
-          Brouillon local : aucun fournisseur n&apos;est contacté tant que l&apos;envoi reste
-          désactivé.
+          Cette campagne est enregistrée comme brouillon : aucun message ne part tant que vous ne
+          l&apos;avez pas préparée et lancée depuis la liste des campagnes.
         </p>
       </div>
 
@@ -723,7 +723,7 @@ export default function NewMarketingCampaignPage() {
                       disabled={action !== null}
                       className="transition-all duration-200"
                     >
-                      {action === 'create' ? (
+                      {action === 'test' ? (
                         <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Eye className="mr-1 h-3.5 w-3.5" />

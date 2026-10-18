@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import LoyaltyPage from './page';
 
 const apiMocks = vi.hoisted(() => ({
@@ -244,25 +245,43 @@ describe('LoyaltyPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('explique le verrouillage avec un message compréhensible', async () => {
-    apiMocks.get.mockRejectedValue(new Error('LOYALTY_DISABLED'));
+  it('explique calmement que le module n’est pas encore ouvert, sans formulaire ni compteurs', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'LOYALTY_DISABLED' }));
     render(<LoyaltyPage />);
 
-    expect(await screen.findByText('Le module est momentanément verrouillé')).toBeInTheDocument();
     expect(
-      screen.getByText(/aucune donnée ne sera créée tant qu’il reste verrouillé/),
+      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enregistrer l’attention' })).toBeDisabled();
+    expect(screen.queryByText('LOYALTY_DISABLED')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enregistrer l’attention' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
   });
 
-  it('propose clairement de passer à Pro quand la fidélité est hors formule', async () => {
-    apiMocks.get.mockRejectedValue(new Error('CAPABILITY_NOT_INCLUDED'));
+  it('propose les formules quand la fidélité est hors formule', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<LoyaltyPage />);
 
-    expect(await screen.findByRole('link', { name: 'Passer à Pro' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Voir les formules' })).toHaveAttribute(
       'href',
       '/pricing',
     );
-    expect(screen.getByRole('button', { name: 'Vérifier mon accès' })).toBeInTheDocument();
+  });
+
+  it('propose de réessayer après une panne, sans listes vides trompeuses', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(503, {}));
+    render(<LoyaltyPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('momentanément indisponible');
+    expect(screen.queryByText('Aucune attention configurée')).toBeNull();
+    expect(screen.queryByText('Aucune attention attribuée')).toBeNull();
+    expect(screen.getByRole('button', { name: /réessayer/i })).toBeInTheDocument();
+  });
+
+  it('ne propose plus de champ technique (référence interne, identifiant de réservation)', async () => {
+    render(<LoyaltyPage />);
+    await screen.findByRole('heading', { name: 'Attentions clients' });
+
+    expect(screen.queryByLabelText(/Référence interne/)).toBeNull();
+    expect(screen.queryByLabelText(/Réservation liée/)).toBeNull();
   });
 });

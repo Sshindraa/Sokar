@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -42,7 +41,6 @@ export default function GiftCardPackForm({
   const [amount, setAmount] = useState('');
   const [minPartySize, setMinPartySize] = useState('1');
   const [maxPartySize, setMaxPartySize] = useState('2');
-  const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -54,14 +52,12 @@ export default function GiftCardPackForm({
         setAmount(String(pack.amount));
         setMinPartySize(String(pack.minPartySize));
         setMaxPartySize(String(pack.maxPartySize));
-        setIsActive(pack.isActive);
       } else {
         setName('');
         setDescription('');
         setAmount('');
         setMinPartySize('1');
         setMaxPartySize('2');
-        setIsActive(true);
       }
       setError('');
     }
@@ -184,20 +180,6 @@ export default function GiftCardPackForm({
               />
             </div>
           </div>
-
-          {isEdit && (
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div>
-                <Label htmlFor="isActive" className="cursor-pointer">
-                  Pack actif
-                </Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Les packs désactivés ne sont pas proposés à la vente.
-                </p>
-              </div>
-              <Switch id="isActive" checked={isActive} onCheckedChange={setIsActive} />
-            </div>
-          )}
 
           <DialogFooter>
             <Button

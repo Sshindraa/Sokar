@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import GiftCardPacksPage from './page';
 
 const mocks = vi.hoisted(() => ({
@@ -43,5 +43,39 @@ describe('GiftCardPacksPage', () => {
       expect(screen.getByText('Aucun pack expérience pour le moment')).toBeInTheDocument();
     });
     expect(mocks.listGiftCardPacks).toHaveBeenCalledTimes(2);
+  });
+
+  it('demande une confirmation propre à Sokar avant de supprimer un pack', async () => {
+    const pack = {
+      id: 'pack-1',
+      name: 'Dîner pour deux',
+      description: null,
+      amount: 90,
+      minPartySize: 2,
+      maxPartySize: 2,
+      isActive: true,
+    };
+    mocks.listGiftCardPacks.mockResolvedValue([pack]);
+    mocks.deleteGiftCardPack.mockResolvedValue(undefined);
+    const nativeConfirm = vi.spyOn(window, 'confirm');
+    render(<GiftCardPacksPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /supprimer/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Supprimer ce pack ?');
+    expect(dialog).toHaveTextContent('Dîner pour deux');
+    expect(mocks.deleteGiftCardPack).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Supprimer' }));
+
+    await waitFor(() => expect(mocks.deleteGiftCardPack).toHaveBeenCalledWith('pack-1'));
+    expect(nativeConfirm).not.toHaveBeenCalled();
+  });
+
+  it('s’appelle « Packs cadeaux », comme l’onglet', async () => {
+    mocks.listGiftCardPacks.mockResolvedValue([]);
+    render(<GiftCardPacksPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Packs cadeaux' })).toBeInTheDocument();
   });
 });

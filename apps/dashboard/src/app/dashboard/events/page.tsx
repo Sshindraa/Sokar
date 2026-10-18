@@ -25,7 +25,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type EventStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
@@ -141,7 +143,14 @@ function formatDate(value: string): string {
 function defaultDateTime(offsetHours: number): string {
   const date = new Date(Date.now() + offsetHours * 3_600_000);
   date.setMinutes(Math.ceil(date.getMinutes() / 15) * 15, 0, 0);
-  return date.toISOString().slice(0, 16);
+  // Format attendu par un champ « datetime-local » : l'heure LOCALE, pas l'heure UTC (décalée d'1 à 2 h en France).
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Fuseau de l'événement en clair ; un identifiant technique ne s'affiche jamais. */
+function timezoneLabel(timezone: string): string | null {
+  return timezone === 'Europe/Paris' ? 'heure de Paris' : null;
 }
 function statusLabel(
   status: EventStatus | SessionStatus | TicketTypeStatus | OrderStatus | TicketStatus,
@@ -172,14 +181,9 @@ function statusVariant(
     status === 'CHECKED_IN'
   )
     return 'default';
-  if (
-    status === 'ARCHIVED' ||
-    status === 'CANCELLED' ||
-    status === 'INACTIVE' ||
-    status === 'REFUNDED'
-  )
-    return 'secondary';
-  return 'destructive';
+  // Un brouillon ou une dernière étape à faire n'est pas une erreur : seul un remboursement en attente alerte.
+  if (status === 'REFUND_PENDING') return 'destructive';
+  return 'secondary';
 }
 
 export default function EventsPage() {
@@ -195,6 +199,8 @@ export default function EventsPage() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Module hors formule ou pas encore ouvert : un état normal, sans « Réessayer ».
+  const [lock, setLock] = useState<FeatureLock | null>(null);
   const [notice, setNotice] = useState('');
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [dateDialogOpen, setDateDialogOpen] = useState(false);
@@ -222,6 +228,7 @@ export default function EventsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setLock(null);
     try {
       const [eventResponse, orderResponse, ticketResponse] = await Promise.all([
         get<ListResponse<SokarEvent>>('events?limit=100'),
@@ -249,7 +256,9 @@ export default function EventsPage() {
         setTicketTypes([]);
       }
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les événements'));
+      const locked = featureLockFromError(err);
+      if (locked) setLock(locked);
+      else setError(getErrorMessage(err, 'Impossible de charger les événements.'));
       setEvents([]);
       setSessions([]);
       setTicketTypes([]);
@@ -475,10 +484,12 @@ export default function EventsPage() {
             tarifs et contrôlez les billets à l’entrée.
           </p>
         </div>
-        <Button onClick={openEventCreation} disabled={loading || busy}>
-          <Plus className="mr-2 h-4 w-4" />
-          Créer un événement
-        </Button>
+        {lock ? null : (
+          <Button onClick={openEventCreation} disabled={loading || busy}>
+            <Plus className="mr-2 h-4 w-4" />
+            Créer un événement
+          </Button>
+        )}
       </header>
 
       <Card className="bg-muted/30">
@@ -493,6 +504,7 @@ export default function EventsPage() {
         </CardContent>
       </Card>
 
+      {lock && <FeatureLockCard lock={lock} feature="Événements" />}
       {error && (
         <div
           role="alert"
@@ -533,7 +545,7 @@ export default function EventsPage() {
           </div>
           <Skeleton className="h-96 w-full rounded-xl" />
         </div>
-      ) : error && events.length === 0 ? null : events.length === 0 ? (
+      ) : lock || (error && events.length === 0) ? null : events.length === 0 ? (
         <Card>
           <CardContent className="flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
             <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
@@ -611,8 +623,10 @@ export default function EventsPage() {
                         <CardTitle>{selectedEvent.name}</CardTitle>
                         <CardDescription>
                           {sessions.length} date{sessions.length === 1 ? '' : 's'} ·{' '}
-                          {ticketTypes.length} tarif{ticketTypes.length === 1 ? '' : 's'} ·{' '}
-                          {selectedEvent.timezone}
+                          {ticketTypes.length} tarif{ticketTypes.length === 1 ? '' : 's'}
+                          {timezoneLabel(selectedEvent.timezone)
+                            ? ` · ${timezoneLabel(selectedEvent.timezone)}`
+                            : ''}
                         </CardDescription>
                       </div>
                       <Button
@@ -759,93 +773,95 @@ export default function EventsPage() {
                       </CardContent>
                     </Card>
                   )}
-                  {sessions.length > 0 && ticketTypes.length > 0 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Enregistrer une commande</CardTitle>
-                        <CardDescription>
-                          Créez une commande au comptoir et remettez les billets au participant.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <form className="grid gap-3 md:grid-cols-4" onSubmit={issueOrder}>
-                          <div>
-                            <Label htmlFor="order-session">Date</Label>
-                            <select
-                              id="order-session"
-                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              value={orderForm.sessionId}
-                              onChange={(e) =>
-                                setOrderForm({ ...orderForm, sessionId: e.target.value })
-                              }
-                              required
+                  {sessions.length > 0 &&
+                    ticketTypes.length > 0 &&
+                    selectedEvent.status === 'ACTIVE' && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Enregistrer une commande</CardTitle>
+                          <CardDescription>
+                            Créez une commande au comptoir et remettez les billets au participant.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <form className="grid gap-3 md:grid-cols-4" onSubmit={issueOrder}>
+                            <div>
+                              <Label htmlFor="order-session">Date</Label>
+                              <select
+                                id="order-session"
+                                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                value={orderForm.sessionId}
+                                onChange={(e) =>
+                                  setOrderForm({ ...orderForm, sessionId: e.target.value })
+                                }
+                                required
+                              >
+                                <option value="">Choisir</option>
+                                {sessions
+                                  .filter((item) => item.status === 'OPEN')
+                                  .map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {formatDate(item.startsAt)}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div>
+                              <Label htmlFor="order-type">Tarif</Label>
+                              <select
+                                id="order-type"
+                                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                value={orderForm.ticketTypeId}
+                                onChange={(e) =>
+                                  setOrderForm({ ...orderForm, ticketTypeId: e.target.value })
+                                }
+                                required
+                              >
+                                <option value="">Choisir</option>
+                                {ticketTypes
+                                  .filter((item) => item.status === 'ACTIVE')
+                                  .map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name} · {formatEur(item.priceCents)}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div>
+                              <Label htmlFor="order-quantity">Quantité</Label>
+                              <Input
+                                id="order-quantity"
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={orderForm.quantity}
+                                onChange={(e) =>
+                                  setOrderForm({ ...orderForm, quantity: e.target.value })
+                                }
+                                required
+                              />
+                            </div>
+                            <div className="flex items-end">
+                              <Button type="submit" disabled={busy} className="w-full">
+                                <Ticket className="mr-2 h-4 w-4" />
+                                Créer la commande
+                              </Button>
+                            </div>
+                          </form>
+                          {ticketCodes.length > 0 && (
+                            <div
+                              role="status"
+                              className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
                             >
-                              <option value="">Choisir</option>
-                              {sessions
-                                .filter((item) => item.status === 'OPEN')
-                                .map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {formatDate(item.startsAt)}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
-                          <div>
-                            <Label htmlFor="order-type">Tarif</Label>
-                            <select
-                              id="order-type"
-                              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                              value={orderForm.ticketTypeId}
-                              onChange={(e) =>
-                                setOrderForm({ ...orderForm, ticketTypeId: e.target.value })
-                              }
-                              required
-                            >
-                              <option value="">Choisir</option>
-                              {ticketTypes
-                                .filter((item) => item.status === 'ACTIVE')
-                                .map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.name} · {formatEur(item.priceCents)}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
-                          <div>
-                            <Label htmlFor="order-quantity">Quantité</Label>
-                            <Input
-                              id="order-quantity"
-                              type="number"
-                              min="1"
-                              max="100"
-                              value={orderForm.quantity}
-                              onChange={(e) =>
-                                setOrderForm({ ...orderForm, quantity: e.target.value })
-                              }
-                              required
-                            />
-                          </div>
-                          <div className="flex items-end">
-                            <Button type="submit" disabled={busy} className="w-full">
-                              <Ticket className="mr-2 h-4 w-4" />
-                              Créer la commande
-                            </Button>
-                          </div>
-                        </form>
-                        {ticketCodes.length > 0 && (
-                          <div
-                            role="status"
-                            className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
-                          >
-                            <p className="font-medium">Billets à remettre au participant</p>
-                            <code className="mt-2 block break-all text-xs">
-                              {ticketCodes.join(' · ')}
-                            </code>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+                              <p className="font-medium">Billets à remettre au participant</p>
+                              <code className="mt-2 block break-all text-xs">
+                                {ticketCodes.join(' · ')}
+                              </code>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
                   {selectedTickets.length > 0 && (
                     <Card>
                       <CardHeader>
