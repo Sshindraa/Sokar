@@ -1452,6 +1452,7 @@ export default function ReservationWidget({
                                 triggerHaptic();
                                 requestedSlotRef.current = null;
                                 setSelectionNotice('');
+                                if (size !== partySize) setAvailabilityRefreshing(true);
                                 setPartySize(size);
                                 if (!modification) setSelectedTime('');
                                 setError('');
@@ -1588,6 +1589,9 @@ export default function ReservationWidget({
                       </div>
                       <div
                         ref={timeSectionRef}
+                        role="group"
+                        aria-label="Créneaux horaires"
+                        aria-busy={availabilityRefreshing}
                         className={cn(
                           'space-y-2 sm:space-y-2.5 lg:space-y-1 transition-opacity duration-200',
                           activeSection !== 'time' && 'opacity-90',
@@ -1738,7 +1742,7 @@ export default function ReservationWidget({
                           )}
                         >
                           <ChevronLeft size={18} />
-                          Revenir aux créneaux
+                          Retour aux créneaux
                         </button>
                       )}
 

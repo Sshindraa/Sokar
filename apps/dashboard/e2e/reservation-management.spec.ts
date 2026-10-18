@@ -428,11 +428,26 @@ test('personal modification keeps the current carton through selection and revie
     .filter({ hasText: /^Modifier ou annuler$/ })
     .click();
   await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
+  const refreshedOptions = page.waitForResponse((response) => {
+    if (
+      !response.url().includes('/api/reservation-management') ||
+      response.request().method() !== 'POST'
+    )
+      return false;
+    const body = response.request().postDataJSON();
+    return body.action === 'modification_options' && body.partySize === 3;
+  });
   await page.getByRole('button', { name: '3 personnes', exact: true }).click();
+  await (await refreshedOptions).finished();
+  await expect(page.getByRole('group', { name: 'Créneaux horaires' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   const early = page.getByRole('button', { name: 'Choisir le créneau 20h00' });
   const late = page.getByRole('button', { name: 'Choisir le créneau 21h00' });
   await early.focus();
-  await early.press('Space');
+  await expect(early).toBeFocused();
+  await page.keyboard.press('Space');
   await expect(early).toHaveAttribute('aria-pressed', 'true');
   await late.focus();
   await late.press('Space');
