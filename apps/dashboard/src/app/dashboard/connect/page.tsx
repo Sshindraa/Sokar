@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { CustomDomainCard, type Props as CustomDomainCardProps } from './custom-domain-card';
 import { SubdomainCard } from './subdomain-card';
+import { TestBookingCard } from './test-booking-card';
 
 // ── Types ──────────────────────────────────────────────
 
@@ -398,6 +399,9 @@ export default function ConnectDashboardPage() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Parcours client de bout en bout, sans toucher au restaurant */}
+              {settings.pageUrl && <TestBookingCard publicUrl={settings.pageUrl} />}
 
               {/* Sous-domaine gratuit (zéro configuration) */}
               <SubdomainCard slug={settings.slug} connectPublished={settings.connectPublished} />

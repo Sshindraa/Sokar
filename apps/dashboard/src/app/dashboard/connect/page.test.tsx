@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   siteId: 'org_test',
   get: vi.fn(),
   patch: vi.fn(),
+  post: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({ useApi: () => mocks }));
@@ -104,5 +105,35 @@ describe('ConnectDashboardPage', () => {
     expect(column).toContainElement(screen.getByText('Sous-domaine gratuit'));
     expect(column).toContainElement(screen.getByText('Domaine personnalisé'));
     expect(column).not.toContainElement(screen.getByText('Aperçu en direct'));
+  });
+
+  it('lance une réservation test depuis la carte dédiée et montre l’erreur', async () => {
+    loadSucceeds(false);
+    const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+    window.open = vi.fn(() => tab) as unknown as typeof window.open;
+    let release: (value: unknown) => void = () => undefined;
+    mocks.post.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          release = () =>
+            reject(
+              toApiError(409, {
+                code: 'PAGE_NOT_PUBLISHED',
+                error: 'Publiez d’abord votre page pour la tester.',
+              }),
+            );
+          void resolve;
+        }),
+    );
+    render(<ConnectDashboardPage />);
+    await screen.findByText('Tester ma page comme un client');
+
+    fireEvent.click(screen.getByRole('button', { name: /lancer le test/i }));
+    expect(screen.getByRole('button', { name: /lancer le test/i })).toBeDisabled();
+    release(null);
+
+    expect(await screen.findByText('Publiez d’abord votre page pour la tester.')).toBeVisible();
+    expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
+    expect(tab.close).toHaveBeenCalled();
   });
 });

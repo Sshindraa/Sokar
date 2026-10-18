@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { openTestBooking } from '@/lib/test-booking';
 import { buildWidgetSnippet } from '@/lib/widget-snippet';
 import { useOnboarding } from '../onboarding-provider';
 import { ConnectStepAction } from '../ui';
@@ -152,9 +153,21 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<'link' | 'widget' | null>(null);
   const [error, setError] = useState('');
+  const [testBookingLoading, setTestBookingLoading] = useState(false);
+  const [testBookingError, setTestBookingError] = useState<string | null>(null);
 
   const previewUrl = `${CONNECT_HOST}/restaurant/${encodeURIComponent(restaurant.slug || '')}?preview=1`;
   const publicUrl = `${CONNECT_HOST}/restaurant/${encodeURIComponent(restaurant.slug || '')}`;
+  async function handleTestBooking() {
+    setTestBookingLoading(true);
+    setTestBookingError(null);
+    try {
+      setTestBookingError(await openTestBooking({ post: (path) => post(path) }, publicUrl));
+    } finally {
+      setTestBookingLoading(false);
+    }
+  }
+
   const snippet = restaurant.slug ? buildWidgetSnippet(restaurant.slug) : '';
   const guide = PLATFORM_GUIDES.find((item) => item.key === platform) ?? PLATFORM_GUIDES[0];
 
@@ -432,13 +445,27 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
       <Panel
         icon={Ticket}
         title="Faites une réservation test"
-        description="Faites le parcours d’un client, jusqu’à la confirmation. Rien n’est enregistré et aucun message n’est envoyé."
+        description="Faites le parcours d’un client, jusqu’à la confirmation. Les messages vous sont envoyés comme à un client ; rien n’apparaît dans votre restaurant."
       >
-        <Button asChild variant="outline" className="rounded-full transition-all duration-200">
-          <a href={`${publicUrl}?testBooking=1`} target="_blank" rel="noopener noreferrer">
-            Réserver sur ma page <ExternalLink size={15} aria-hidden="true" />
-          </a>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void handleTestBooking()}
+          disabled={testBookingLoading}
+          className="rounded-full transition-all duration-200"
+        >
+          Réserver sur ma page{' '}
+          {testBookingLoading ? (
+            <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <ExternalLink size={15} aria-hidden="true" />
+          )}
         </Button>
+        {testBookingError && (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {testBookingError}
+          </p>
+        )}
       </Panel>
 
       <Panel
