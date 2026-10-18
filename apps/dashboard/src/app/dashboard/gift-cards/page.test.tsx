@@ -122,4 +122,16 @@ describe('GiftCardsPage', () => {
     );
     expect(screen.getByPlaceholderText(/Rechercher par nom/)).toBeInTheDocument();
   });
+
+  it('ouvre le réglage Stripe quand on arrive depuis « Configurer Stripe »', async () => {
+    window.history.replaceState({}, '', '/dashboard/gift-cards?settings=stripe');
+    mocks.listGiftCards.mockReset();
+    mocks.listGiftCards.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+    render(<GiftCardsPage />);
+
+    await waitFor(() =>
+      expect(document.getElementById('gift-card-stripe-connect')?.hasAttribute('open')).toBe(true),
+    );
+    expect(window.location.search).toBe('');
+  });
 });
