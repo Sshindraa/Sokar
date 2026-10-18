@@ -85,6 +85,14 @@ jobs:
           node scripts/quality/check-db-push-target.mjs --self-test
           node scripts/quality/check-migration-safety.mjs --self-test
 
+      - name: Ops scripts tests
+        # Tests des scripts d'exploitation qui ne sont couverts par aucun
+        # autre job : runner de synchronisation, déploiement, rappel SMS.
+        run: |
+          node --test scripts/ops/__tests__/*.test.mjs
+          bash scripts/ops/test-sync-env.sh
+          bash scripts/ops/test-deploy-common.sh
+
       - name: Migration safety guard
         # Échoue si une migration ajoutée par la branche contient un DROP /
         # TRUNCATE / DELETE sans acquittement explicite (R1-5).
