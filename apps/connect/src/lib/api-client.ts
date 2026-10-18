@@ -53,6 +53,8 @@ export type PublicRestaurantDto = {
   noiseLevel?: string;
   acceptsReservations: boolean;
   publishedAt: string;
+  /** Fuseau IANA du restaurant (absent pour une ancienne réponse en cache : Europe/Paris). */
+  timezone?: string;
   connectAgentic: boolean;
   // Note agrégée (importée Google Places, Phase 3). Absent si pas de Place ID.
   aggregateRating?: {
@@ -249,6 +251,46 @@ export async function fetchCities(): Promise<
   } catch {
     return [];
   }
+}
+
+/** Ville telle que renvoyée par GET /public/cities. */
+export type SitemapCity = {
+  city: string;
+  citySlug: string;
+  total: number;
+  cuisines: Array<{ name: string; slug: string; count: number }>;
+};
+
+const SITEMAP_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Sources du sitemap : fiches publiées et villes. Contrairement à fetchPublishedSlugs et
+ * fetchCities, un échec lève une erreur : un sitemap bâti sur une liste vide serait mis en cache
+ * par Next (ISR, 5 min) puis publié aux moteurs de recherche comme la liste complète.
+ */
+export async function fetchSitemapSources(): Promise<{
+  restaurants: SitemapRestaurantEntry[];
+  cities: SitemapCity[];
+}> {
+  const apiUrl = await getApiUrl();
+  const [restaurantsRes, citiesRes] = await Promise.all([
+    fetch(`${apiUrl}/public/sitemap-data`, {
+      next: { revalidate: 300 },
+      signal: AbortSignal.timeout(SITEMAP_FETCH_TIMEOUT_MS),
+    }),
+    fetch(`${apiUrl}/public/cities`, {
+      next: { revalidate: 300 },
+      signal: AbortSignal.timeout(SITEMAP_FETCH_TIMEOUT_MS),
+    }),
+  ]);
+  if (!restaurantsRes.ok || !citiesRes.ok) {
+    throw new Error(
+      `sitemap source unavailable (sitemap-data ${restaurantsRes.status}, cities ${citiesRes.status})`,
+    );
+  }
+  const restaurants = (await restaurantsRes.json()) as { restaurants: SitemapRestaurantEntry[] };
+  const cities = (await citiesRes.json()) as { cities: SitemapCity[] };
+  return { restaurants: restaurants.restaurants, cities: cities.cities };
 }
 
 /**

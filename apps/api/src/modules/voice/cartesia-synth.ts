@@ -1,7 +1,7 @@
 /**
  * Synthèse vocale Cartesia — fonction pure réutilisable.
  *
- * Contrairement à `stream/fillers-cache.ts` et `stream/handler.ts` qui
+ * Contrairement à `stream/tts-handler.ts` et `stream/handler.ts` qui
  * utilisent `/tts/sse` pour streamer du G.711 8kHz vers Telnyx en temps réel
  * pendant un appel, ce module utilise `/tts/bytes` (HTTP one-shot) qui
  * retourne un fichier audio complet (MP3 24kHz) directement jouable dans

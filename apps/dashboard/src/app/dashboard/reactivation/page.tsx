@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -44,10 +48,10 @@ interface ReactivationCampaign {
 function StatusBadge({ status }: { status: string }) {
   if (status === 'PENDING') return <Badge className="bg-warning">En attente</Badge>;
   if (status === 'SENT') return <Badge className="bg-success">Envoyée</Badge>;
-  if (status === 'DISMISSED') return <Badge className="bg-zinc-600">Ignorée</Badge>;
-  if (status === 'MIGRATED') return <Badge className="bg-muted">Envoi préparé</Badge>;
+  if (status === 'DISMISSED') return <Badge variant="secondary">Ignorée</Badge>;
+  if (status === 'MIGRATED') return <Badge variant="secondary">Envoi préparé</Badge>;
   if (status === 'FAILED') return <Badge variant="destructive">Échec</Badge>;
-  if (status === 'CANCELLED') return <Badge className="bg-zinc-600">Annulée</Badge>;
+  if (status === 'CANCELLED') return <Badge variant="secondary">Annulée</Badge>;
   return <Badge>{status}</Badge>;
 }
 
@@ -66,16 +70,33 @@ export default function ReactivationPage() {
   const [campaigns, setCampaigns] = useState<ReactivationCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  // Échec du chargement : distinct des erreurs d'action, pour ne jamais afficher « Aucune campagne » à tort.
+  const [loadError, setLoadError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [campaignToSend, setCampaignToSend] = useState<ReactivationCampaign | null>(null);
+  // `false` seulement quand l'API dit explicitement que les envois sont gelés ; inconnu = on laisse essayer.
+  const [sendsEnabled, setSendsEnabled] = useState<boolean | null>(null);
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setLoadError('');
+    setLock(null);
     try {
-      const data = await get<ReactivationCampaign[]>('dashboard/reactivation');
+      const [data, readiness] = await Promise.all([
+        get<ReactivationCampaign[]>('dashboard/reactivation'),
+        get<{ data?: { sendsEnabled?: boolean } }>('marketing/providers/readiness').catch(
+          () => null,
+        ),
+      ]);
       setCampaigns(Array.isArray(data) ? data : []);
+      setSendsEnabled(
+        typeof readiness?.data?.sendsEnabled === 'boolean' ? readiness.data.sendsEnabled : null,
+      );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les campagnes'));
+      setLock(featureLockFromError(err));
+      setLoadError(getErrorMessage(err, 'Impossible de charger les campagnes.'));
     }
     setLoading(false);
   }, [get]);
@@ -87,6 +108,8 @@ export default function ReactivationPage() {
 
   async function sendCampaign(id: string) {
     setActionLoading(id);
+    setError('');
+    setNotice('');
     try {
       const result = await post<{
         campaignId: string;
@@ -106,14 +129,23 @@ export default function ReactivationPage() {
             : c,
         ),
       );
+      setNotice(
+        `Envoi lancé pour ${result.audienceCount} client${result.audienceCount > 1 ? 's' : ''}. Ceux qui n’ont pas accepté les messages sont exclus avant l’envoi.` +
+          (result.droppedCustomerCount > 0
+            ? ` ${result.droppedCustomerCount} client${result.droppedCustomerCount > 1 ? 's' : ''} archivé${result.droppedCustomerCount > 1 ? 's' : ''} ou fusionné${result.droppedCustomerCount > 1 ? 's' : ''} retiré${result.droppedCustomerCount > 1 ? 's' : ''} de la liste.`
+            : ''),
+      );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Impossible d'envoyer la campagne"));
+      setError(getErrorMessage(err, 'Impossible d’envoyer la campagne.'));
     }
+    setCampaignToSend(null);
     setActionLoading(null);
   }
 
   async function dismissCampaign(id: string) {
     setActionLoading(id);
+    setError('');
+    setNotice('');
     try {
       await post(`dashboard/reactivation/${id}/dismiss`);
       setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'DISMISSED' } : c)));
@@ -139,6 +171,22 @@ export default function ReactivationPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <HeartHandshake size={24} className="text-warning" />
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Réactivation VIP</h1>
+        </div>
+        {lock ? (
+          <FeatureLockCard lock={lock} feature="Réactivation VIP" />
+        ) : (
+          <DataFetchError message={loadError} onRetry={() => void fetchCampaigns()} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -152,9 +200,21 @@ export default function ReactivationPage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
           <AlertCircle size={16} />
           {error}
+        </div>
+      )}
+      {notice && (
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success"
+        >
+          <Check size={16} />
+          {notice}
         </div>
       )}
 
@@ -246,19 +306,27 @@ export default function ReactivationPage() {
                   )}
 
                   {/* Actions */}
+                  {isMobile ? <div className="mb-4" /> : null}
+                  {sendsEnabled === false && (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      Les envois SMS ne sont pas encore ouverts sur votre compte : vous pourrez
+                      lancer cette campagne dès leur ouverture.
+                    </p>
+                  )}
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      className="bg-success text-success-foreground hover:opacity-90"
-                      onClick={() => sendCampaign(campaign.id)}
-                      disabled={actionLoading === campaign.id}
+                      className="bg-success text-success-foreground transition-all duration-200 hover:opacity-90"
+                      onClick={() => setCampaignToSend(campaign)}
+                      disabled={actionLoading === campaign.id || sendsEnabled === false}
                     >
                       <Send size={14} className="mr-1" />
-                      Envoyer {campaign.customerCount} SMS
+                      Envoyer la campagne
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
+                      className="transition-all duration-200"
                       onClick={() => dismissCampaign(campaign.id)}
                       disabled={actionLoading === campaign.id}
                     >
@@ -339,6 +407,20 @@ export default function ReactivationPage() {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={campaignToSend !== null}
+        title="Envoyer la campagne de réactivation ?"
+        description={
+          'Un SMS sera envoyé aux clients de cette liste qui ont accepté les messages marketing. ' +
+          'Les clients désinscrits ou sans consentement sont exclus automatiquement. ' +
+          'Cette action est irréversible.'
+        }
+        confirmLabel="Confirmer l’envoi"
+        pending={campaignToSend !== null && actionLoading === campaignToSend.id}
+        onConfirm={() => campaignToSend && void sendCampaign(campaignToSend.id)}
+        onCancel={() => setCampaignToSend(null)}
+      />
     </div>
   );
 }

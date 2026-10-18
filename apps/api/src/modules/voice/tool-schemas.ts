@@ -1,9 +1,7 @@
 /**
- * Schémas Zod pour les 8 tools vocaux — source de vérité unique.
- *
- * Le JSON Schema exposé au LLM (dans tools.ts) est dérivé de ces schémas via
- * zod-to-json-schema, et les arguments sont validés à l'exécution par
- * `validateToolArgs` dans le manager. Plus de JSON.parse sans validation.
+ * Schémas Zod des trois actions que le tour structuré exécute côté serveur (réservation, message au
+ * gérant, transfert). Les arguments sont validés à l'exécution par `validateToolArgs` dans le
+ * manager : pas de JSON.parse sans validation.
  *
  * Conventions :
  *  - date  → z.string().date()  (produit format: 'date' en JSON Schema)
@@ -38,41 +36,6 @@ export const CreateReservationSchema = z.object({
   customerPhone: z.string().optional().describe('Téléphone du client (optionnel)'),
 });
 
-// ─── checkAvailability ──────────────────────────────────────────
-
-export const CheckAvailabilitySchema = z.object({
-  date: dateField('Date au format YYYY-MM-DD'),
-  partySize: z.number().int().min(1).max(100).describe('Nombre de personnes'),
-  time: z
-    .string()
-    .regex(TIME_REGEX)
-    .optional()
-    .describe('Heure demandée au format HH:MM (optionnel)'),
-});
-
-// ─── cancelReservation ──────────────────────────────────────────
-
-export const CancelReservationSchema = z.object({
-  customerName: z.string().describe("Nom du client tel qu' donné lors de la réservation"),
-  date: dateField('Date de la réservation au format YYYY-MM-DD'),
-  time: z
-    .string()
-    .regex(TIME_REGEX)
-    .optional()
-    .describe(
-      'Heure de la réservation au format HH:MM (optionnel, ne demander que si le client la fournit spontanément pour lever une ambiguïté)',
-    ),
-});
-
-// ─── reportDelay ────────────────────────────────────────────────
-
-export const ReportDelaySchema = z.object({
-  customerName: z.string().describe('Nom complet du client'),
-  date: dateField('Date au format YYYY-MM-DD'),
-  time: z.string().regex(TIME_REGEX).describe('Heure réservée au format HH:MM'),
-  delayMinutes: z.number().int().min(5).max(180).describe('Retard annoncé en minutes'),
-});
-
 // ─── takeMessage ────────────────────────────────────────────────
 
 export const TakeMessageSchema = z.object({
@@ -87,27 +50,6 @@ export const TakeMessageSchema = z.object({
 // ─── handoffToManager ───────────────────────────────────────────
 
 export const HandoffToManagerSchema = z.object({}).describe('');
-
-// ─── purchaseGiftCard ───────────────────────────────────────────
-
-export const PurchaseGiftCardSchema = z.object({
-  amount: z.number().min(1).multipleOf(1).describe('Montant en euros — obligatoire (entier)'),
-  occasion: z.string().optional().describe('Occasion (anniversaire, remerciement, etc.)'),
-  senderName: z.string().describe("Nom de l'expéditeur"),
-  senderPhone: z
-    .string()
-    .describe("Téléphone de l'expéditeur au format international (ex: +33612345678)"),
-  recipientName: z.string().describe('Nom du destinataire'),
-  message: z.string().optional().describe('Message personnalisé (optionnel)'),
-});
-
-// ─── recommendGiftCardAmount ────────────────────────────────────
-
-export const RecommendGiftCardAmountSchema = z.object({
-  occasion: z.string().describe('Occasion'),
-  partySize: z.number().int().min(1).describe('Nombre de personnes'),
-  budget: z.number().optional().describe('Budget maximum (optionnel)'),
-});
 
 // ─── Registre ───────────────────────────────────────────────────
 
@@ -125,24 +67,6 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
     schema: CreateReservationSchema,
   },
   {
-    name: 'checkAvailability',
-    description:
-      'Vérifie immédiatement les disponibilités dès que la date et le nombre de personnes sont connus. Si le client a indiqué une heure, la transmettre aussi. Ne jamais annoncer une vérification sans appeler cet outil dans le même tour.',
-    schema: CheckAvailabilitySchema,
-  },
-  {
-    name: 'cancelReservation',
-    description:
-      "Annule une réservation existante. À appeler quand le client demande explicitement à annuler. Demander le nom et la date pour identifier la réservation avant d'annuler.",
-    schema: CancelReservationSchema,
-  },
-  {
-    name: 'reportDelay',
-    description:
-      'Signale le retard d’un client au Copilot de salle. À appeler uniquement après avoir confirmé le nom, la date, l’heure exacte de la réservation et le nombre de minutes de retard. Ne modifie jamais une réservation ni une table : le responsable valide toute réorganisation.',
-    schema: ReportDelaySchema,
-  },
-  {
     name: 'takeMessage',
     description:
       'Enregistre un message du client pour le gérant. À utiliser quand le client laisse un message (demande spéciale, rappel demandé, réclamation) qui nécessite un traitement humain différé.',
@@ -153,18 +77,6 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
     description:
       "Transfère l'appel au gérant. Utiliser si : groupe ≥8 personnes, demande complexe, client mécontent, ou incompréhension après 2 essais.",
     schema: HandoffToManagerSchema,
-  },
-  {
-    name: 'purchaseGiftCard',
-    description:
-      'Envoie un lien d’achat sécurisé par SMS. Confirmer le montant et le téléphone de l’expéditeur avant cet appel. Aucun solde cadeau n’est créé par téléphone : la carte est activée après paiement en ligne. Ne jamais dicter de code cadeau.',
-    schema: PurchaseGiftCardSchema,
-  },
-  {
-    name: 'recommendGiftCardAmount',
-    description:
-      "Suggère un montant de carte cadeau selon l'occasion et le nombre de personnes. Utiliser quand l'appelant demande un conseil.",
-    schema: RecommendGiftCardAmountSchema,
   },
 ];
 

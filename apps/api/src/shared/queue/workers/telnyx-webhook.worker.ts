@@ -12,6 +12,12 @@ import {
 import { db } from '../../db/client';
 import { purgeExpiredVoiceDebugTurns } from '../../../modules/voice/stream/debug-dialogue';
 import { buildTelnyxStreamConfig } from '../../../modules/voice/stream/telnyx-codec';
+import {
+  CALL_REPORT_JOB_NAME,
+  enqueueCallReport,
+  runCallReportJob,
+} from '../../../modules/voice/call-report/job-runtime';
+import { queues } from '../queues';
 
 export interface TelnyxAnswerJobData {
   readonly callControlId: string;
@@ -34,6 +40,8 @@ export const telnyxWebhookWorker = new Worker(
           { callLegId: data.callLegId, recordingId: data.recordingId },
           'Telnyx recording stored privately',
         );
+        // Rapport automatique de l'appel (désactivé par défaut) : mis en file, jamais bloquant.
+        await enqueueCallReport(data.callLegId, queues.telnyxWebhooks);
       } catch (err) {
         await db.call.updateMany({
           where: { callSid: data.callLegId },
@@ -59,7 +67,15 @@ export const telnyxWebhookWorker = new Worker(
     }
 
     if (job.name === 'recover-recording') {
-      await recoverPendingRecording(job.data as RecoverRecordingJobData);
+      const recovery = job.data as RecoverRecordingJobData;
+      await recoverPendingRecording(recovery);
+      await enqueueCallReport(recovery.callLegId, queues.telnyxWebhooks);
+      return;
+    }
+
+    if (job.name === CALL_REPORT_JOB_NAME) {
+      // Ne lève jamais : un rapport manquant n'a pas d'effet sur le reste.
+      await runCallReportJob((job.data as { callLegId: string }).callLegId);
       return;
     }
 

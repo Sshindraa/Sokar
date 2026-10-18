@@ -1,9 +1,11 @@
 'use client';
+import { GiftCardTestJourney } from '@/components/gift-cards/gift-card-test-journey';
 
 import { GiftCardOperationsPanel } from '@/components/gift-cards/gift-card-operations-panel';
 import { GiftCardCashier } from '@/components/gift-cards/gift-card-cashier';
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Gift, Plus, Save, Search } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { ChevronLeft, ChevronRight, Euro, Gift, Plus, Save, Search, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,6 +26,7 @@ import { getErrorMessage, type Restaurant } from '@/types/api';
 import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
+import { giftCardStatusLabel } from '@/components/gift-cards/gift-card-labels';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
 import { GiftCardStripeConnect } from '@/components/gift-cards/gift-card-stripe-connect';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
@@ -36,12 +39,12 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
   return (
     <Card className="bg-card">
       <CardContent className="p-4 md:p-5">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="text-xs font-medium text-foreground/70">{label}</p>
             <p className="mt-1 text-lg md:text-xl font-semibold tracking-tight">{value}</p>
           </div>
-          <div className="text-muted-foreground/50">{icon}</div>
+          <div className="text-muted-foreground">{icon}</div>
         </div>
       </CardContent>
     </Card>
@@ -49,6 +52,9 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 }
 
 export default function GiftCardsPage() {
+  const searchParams = useSearchParams();
+  const createRequested = searchParams.get('create') === '1';
+  const stripeSettingsRequested = searchParams.get('settings') === 'stripe';
   const {
     listGiftCards,
     getGiftCardStats,
@@ -68,9 +74,14 @@ export default function GiftCardsPage() {
   const [tab, setTab] = useState<'SINGLE' | 'CROWDFUNDED'>('SINGLE');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
+  // Recherche réellement appliquée (au clic/Entrée) : taper ne relance pas la liste à chaque lettre.
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [minError, setMinError] = useState('');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [detailCard, setDetailCard] = useState<GiftCardListItem | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState<GiftCardListItem | null>(null);
@@ -81,10 +92,22 @@ export default function GiftCardsPage() {
   }, [orgId]);
 
   // Montant minimum carte cadeau
-  const [minAmount, setMinAmount] = useState<number | ''>('');
-  const [commissionRate, setCommissionRate] = useState<number | ''>('');
+  const [minAmount, setMinAmount] = useState<number | ''>(10);
+  const [commissionRate, setCommissionRate] = useState(5);
   const [savingMin, setSavingMin] = useState(false);
   const [savedMin, setSavedMin] = useState(false);
+  const [stripeReady, setStripeReady] = useState<boolean | null>(null);
+
+  const handleStripeReadinessChange = useCallback((ready: boolean | null) => {
+    setStripeReady(ready);
+  }, []);
+
+  const openStripeSettings = useCallback(() => {
+    const settings = document.getElementById('gift-card-stripe-connect');
+    if (!settings) return;
+    settings.setAttribute('open', '');
+    settings.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   const fetchAll = useCallback(async () => {
     if (!orgId) return;
@@ -95,7 +118,7 @@ export default function GiftCardsPage() {
         listGiftCards({
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
           type: tab,
-          search: search || undefined,
+          search: appliedSearch || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
         }),
@@ -105,13 +128,14 @@ export default function GiftCardsPage() {
       ]);
       setCards(list.items);
       setTotal(list.total);
+      setLoadedOnce(true);
       setStats(statsData);
       setPacks(packsData);
-      setMinAmount(restaurant.giftCardMinimumAmount ?? '');
+      setMinAmount(restaurant.giftCardMinimumAmount ?? 10);
       setCommissionRate(
         restaurant.giftCardCommissionRate != null
           ? Number(restaurant.giftCardCommissionRate) * 100
-          : '',
+          : 5,
       );
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
@@ -121,7 +145,7 @@ export default function GiftCardsPage() {
   }, [
     orgId,
     statusFilter,
-    search,
+    appliedSearch,
     page,
     tab,
     listGiftCards,
@@ -133,6 +157,32 @@ export default function GiftCardsPage() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // Lien « Configurer Stripe » d'une autre page : on ouvre directement le réglage concerné.
+  useEffect(() => {
+    if (!stripeSettingsRequested || !loadedOnce) return;
+    openStripeSettings();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('settings');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [stripeSettingsRequested, loadedOnce, openStripeSettings]);
+
+  useEffect(() => {
+    if (!createRequested || loading || error) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('create') !== '1') return;
+    url.searchParams.delete('create');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    setFormOpen(true);
+  }, [createRequested, error, loading]);
 
   async function handleCancel(card: GiftCardListItem) {
     setCancelConfirm(card);
@@ -176,20 +226,15 @@ export default function GiftCardsPage() {
     if (!orgId) return;
     setSavingMin(true);
     setSavedMin(false);
-    setError('');
+    setMinError('');
     try {
-      const payload: Record<string, unknown> = {};
-      if (minAmount !== '') {
-        payload.giftCardMinimumAmount = Number(minAmount);
-      }
-      if (commissionRate !== '') {
-        payload.giftCardCommissionRate = Number(commissionRate) / 100;
-      }
-      await patch(`restaurants/${orgId}`, payload);
+      const minimum = minAmount === '' ? 10 : Number(minAmount);
+      await patch(`restaurants/${orgId}`, { giftCardMinimumAmount: minimum });
+      setMinAmount(minimum);
       setSavedMin(true);
       setTimeout(() => setSavedMin(false), SAVED_NOTIFICATION_RESET_MS);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum'));
+      setMinError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum.'));
     } finally {
       setSavingMin(false);
     }
@@ -198,19 +243,26 @@ export default function GiftCardsPage() {
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPage(0);
-    fetchAll();
+    setAppliedSearch(search.trim());
+  }
+
+  function clearFilters() {
+    setSearch('');
+    setAppliedSearch('');
+    setStatusFilter('ALL');
+    setPage(0);
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  if (loading && cards.length === 0) {
+  if (loading && !loadedOnce) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Skeleton className="h-8 w-36 rounded-full" />
           <Skeleton className="h-10 w-24 rounded-lg" />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-24 rounded-2xl" />
           ))}
@@ -226,16 +278,67 @@ export default function GiftCardsPage() {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Cartes cadeaux</h1>
-        <Button onClick={() => setFormOpen(true)} size="sm">
-          <Plus size={16} />
-          Créer
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setFormOpen(true)} size="sm" variant="outline">
+            <Plus size={16} />
+            Créer une carte
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              const cashierCode = document.getElementById('cashier-code');
+              cashierCode?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              cashierCode?.focus({ preventScroll: true });
+            }}
+            className="transition-all duration-200"
+          >
+            Encaisser une carte
+          </Button>
+        </div>
       </div>
 
+      {stripeReady === false && !settingsExpanded && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/50 p-4"
+        >
+          <div>
+            <p className="font-medium">Paiements à configurer</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Connectez Stripe pour vendre des cartes cadeaux en ligne.
+            </p>
+          </div>
+          <Button onClick={openStripeSettings} size="sm" className="transition-all duration-200">
+            Configurer
+          </Button>
+        </div>
+      )}
+
       <GiftCardSectionNav />
-      <GiftCardStripeConnect />
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <StatCard
+            label="Valeur totale émise"
+            value={formatEuro(stats.totalSoldAmount)}
+            icon={<Euro size={20} />}
+          />
+          <StatCard
+            label="Solde en circulation"
+            value={formatEuro(stats.totalRemainingAmount)}
+            icon={<Wallet size={20} />}
+          />
+          <StatCard
+            label="Cartes actives"
+            value={`${stats.activeCount}`}
+            icon={<Gift size={20} />}
+          />
+        </div>
+      )}
+
       <GiftCardOperationsPanel
         revision={operationsRevision}
         onChanged={() => {
@@ -246,85 +349,12 @@ export default function GiftCardsPage() {
 
       {error && <DataFetchError message={error} onRetry={fetchAll} retrying={loading} />}
 
-      {/* Configuration du montant minimum + commission */}
-      <Card>
-        <CardContent className="p-4 md:p-5">
-          <form onSubmit={handleSaveMin} className="flex flex-col gap-4 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <Label htmlFor="minAmount" className="text-sm font-medium">
-                Montant minimum d&apos;une carte cadeau (€)
-              </Label>
-              <Input
-                id="minAmount"
-                type="number"
-                min={0}
-                step={1}
-                value={minAmount}
-                onChange={(e) => setMinAmount(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="10"
-                className="mt-1.5"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Laisser vide pour utiliser le montant par défaut de 10€.
-              </p>
-            </div>
-            <div className="flex-1">
-              <Label htmlFor="commissionRate" className="text-sm font-medium">
-                Commission Sokar (%)
-              </Label>
-              <Input
-                id="commissionRate"
-                type="number"
-                min={0}
-                max={100}
-                step={0.1}
-                value={commissionRate}
-                onChange={(e) =>
-                  setCommissionRate(e.target.value === '' ? '' : Number(e.target.value))
-                }
-                placeholder="5"
-                className="mt-1.5"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Pourcentage prélevé par Sokar sur chaque vente. 5% par défaut.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button type="submit" size="sm" disabled={savingMin}>
-                <Save size={16} />
-                {savingMin ? 'Enregistrement...' : 'Enregistrer'}
-              </Button>
-              {savedMin && <span className="text-sm text-primary">Enregistré</span>}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard
-            label="Valeur totale émise"
-            value={formatEuro(stats.totalSoldAmount)}
-            icon={<Gift size={20} />}
-          />
-          <StatCard
-            label="Solde restant"
-            value={formatEuro(stats.totalRemainingAmount)}
-            icon={<Gift size={20} />}
-          />
-          <StatCard
-            label="Cartes actives"
-            value={`${stats.activeCount} / ${stats.totalCount}`}
-            icon={<Gift size={20} />}
-          />
-          <StatCard
-            label="Montant moyen"
-            value={formatEuro(stats.averageAmount)}
-            icon={<Gift size={20} />}
-          />
-        </div>
-      )}
+      <div>
+        <h2 className="font-semibold">Vos cartes</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Retrouvez une carte et consultez son solde et son historique.
+        </p>
+      </div>
 
       {/* Onglets SINGLE / CROWDFUNDED */}
       <div className="flex gap-1 rounded-lg border border-border bg-muted p-1">
@@ -405,7 +435,10 @@ export default function GiftCardsPage() {
         </div>
       ) : error && cards.length === 0 ? null : (
         <GiftCardList
+          filtered={appliedSearch !== '' || statusFilter !== 'ALL'}
+          onClearFilters={clearFilters}
           items={cards}
+          isCrowdfunding={tab === 'CROWDFUNDED'}
           onView={setDetailCard}
           onCancel={handleCancel}
           onClose={handleCloseCrowdfunding}
@@ -415,7 +448,7 @@ export default function GiftCardsPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground">
             {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} sur {total}
           </span>
@@ -441,6 +474,85 @@ export default function GiftCardsPage() {
           </div>
         </div>
       )}
+
+      <details
+        id="gift-card-stripe-connect"
+        className="group scroll-mt-6 rounded-xl border border-border bg-card"
+        onToggle={(event) => setSettingsExpanded(event.currentTarget.open)}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 transition-all duration-200 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+          <div>
+            <h2 className="font-semibold">Réglages</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Paiements et montants des cartes cadeaux.
+            </p>
+          </div>
+          <ChevronRight
+            size={18}
+            className="shrink-0 text-muted-foreground transition-all duration-200 group-open:rotate-90"
+          />
+        </summary>
+        <div className="space-y-4 border-t border-border p-4 md:p-6">
+          <GiftCardStripeConnect onReadinessChange={handleStripeReadinessChange} />
+          <Card>
+            <CardContent className="p-4 md:p-5">
+              <form
+                onSubmit={handleSaveMin}
+                className="flex flex-col gap-4 sm:flex-row sm:items-end"
+              >
+                <div className="grid flex-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="minAmount" className="text-sm font-medium">
+                      Montant minimum
+                    </Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="minAmount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={minAmount}
+                        onChange={(e) =>
+                          setMinAmount(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="pr-10"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+                        €
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Commission Sokar</p>
+                    <div className="mt-1.5 flex h-10 items-center justify-between rounded-lg border border-border bg-muted/30 px-3">
+                      <span className="font-medium">
+                        {new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(
+                          commissionRate,
+                        )}{' '}
+                        %
+                      </span>
+                      <span className="text-sm text-muted-foreground">par vente</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button type="submit" size="sm" disabled={savingMin}>
+                    <Save size={16} />
+                    {savingMin ? 'Enregistrement...' : 'Enregistrer'}
+                  </Button>
+                  {savedMin && <span className="text-sm text-primary">Enregistré</span>}
+                </div>
+                {minError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {minError}
+                  </p>
+                ) : null}
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </details>
+      <GiftCardTestJourney />
 
       {/* Formulaire de création */}
       <GiftCardForm
@@ -468,14 +580,14 @@ export default function GiftCardsPage() {
           )}
           {detailCard && (
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Code</p>
                   <p className="font-mono">{detailCard.code}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Statut</p>
-                  <p>{detailCard.status}</p>
+                  <p>{giftCardStatusLabel(detailCard.status)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Montant</p>
@@ -497,7 +609,13 @@ export default function GiftCardsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Créée par</p>
-                  <p>{detailCard.createdBy}</p>
+                  <p>
+                    {detailCard.createdBy === 'CLIENT'
+                      ? 'Le client (en ligne)'
+                      : detailCard.createdBy === 'DASHBOARD'
+                        ? 'Votre équipe'
+                        : '—'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Destinataire</p>
@@ -553,10 +671,13 @@ export default function GiftCardsPage() {
         title="Annuler la carte cadeau"
         description={
           cancelConfirm
-            ? `Annuler la carte cadeau ${cancelConfirm.code} ? Cette action est irréversible.`
+            ? cancelConfirm.type === 'CROWDFUNDED'
+              ? `Annuler la cagnotte ${cancelConfirm.code} et rembourser ses contributions ? Une cagnotte déjà utilisée nécessite l’intervention du support. Vérifiez ensuite le statut des remboursements.`
+              : `Annuler la carte cadeau ${cancelConfirm.code} ? Le solde inutilisé sera remboursé si la carte a été payée. Consultez ensuite le statut du remboursement dans le détail de la carte.`
             : ''
         }
         confirmLabel="Annuler la carte"
+        cancelLabel="Garder la carte"
         variant="destructive"
       />
 

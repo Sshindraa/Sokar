@@ -15,7 +15,6 @@
  */
 import { readFileSync } from 'node:fs';
 import {
-  buildAvailabilityReplyPlan,
   buildDeterministicTurnPlan,
   buildReservationProgressPlan,
   classifyVoiceSpeechActInContext,
@@ -24,6 +23,7 @@ import {
   recordAssistantReplyFromLlmTextFallback,
   recordUserTurn,
 } from '../../src/modules/voice/stream/conversation-controller';
+import { buildAvailabilityReplyPlan } from '../../src/modules/voice/stream/conversation-state';
 import {
   SLOT_CONFIDENCE_THRESHOLDS,
   valueConfidence,

@@ -20,6 +20,14 @@ import {
 } from './FloorPlanCanvas';
 import type { FloorPlan, FloorPlanWall, PlanningReservation, WaitingListEntry } from '@/types/api';
 
+const accessMocks = vi.hoisted(() => ({ allowed: true }));
+vi.mock('@/lib/use-service-copilot-access', () => ({
+  useServiceCopilotAccess: () => ({ allowed: accessMocks.allowed }),
+}));
+beforeEach(() => {
+  accessMocks.allowed = true;
+});
+
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -737,6 +745,25 @@ describe('FloorPlanCanvas — actions Live service', () => {
     };
   }
 
+  it('laisse le service Essential utilisable sans charger ni ouvrir les plans avancés', async () => {
+    accessMocks.allowed = false;
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [makeReservation('CONFIRMED')];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
+    expect(await screen.findByRole('button', { name: 'Installer à table' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Analyser l’impact' })).not.toBeInTheDocument();
+    expect(
+      apiMocks.get.mock.calls.some(([path]) => String(path).includes('delay-recoveries')),
+    ).toBe(false);
+    expect(
+      apiMocks.get.mock.calls.some(([path]) => String(path).includes('/service-copilot/pulse')),
+    ).toBe(true);
+  });
+
   it('place les onglets du service en tête sans bandeau de pouls', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('/floor-plan/reservations')) return [];
@@ -834,7 +861,10 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(screen.getByText('couverts')).toBeInTheDocument();
     expect(screen.getByText('tables occupées')).toBeInTheDocument();
     expect(screen.getByText('réservations')).toBeInTheDocument();
+    const occupiedTable = screen.getByRole('button', { name: /Martin Dupont/ });
+    fireEvent.click(occupiedTable.querySelector('[role="presentation"]')!);
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
+    expect(occupiedTable).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('Occupée').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTitle('Occupée')).toBeInTheDocument();
   });
@@ -980,7 +1010,88 @@ describe('FloorPlanCanvas — actions Live service', () => {
     reservations = [makeReservation('SEATED')];
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
     fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
-    expect(await screen.findByRole('button', { name: 'Libérer la table' })).toBeInTheDocument();
+    // Même libellé sur le panneau du bureau et sur la feuille du téléphone.
+    expect(await screen.findAllByRole('button', { name: 'Libérer la table' })).not.toHaveLength(0);
+  });
+
+  describe('placer un client sans réservation', () => {
+    const openForm = async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
+      const [button] = await screen.findAllByRole('button', {
+        name: 'Placer un client sans réservation',
+      });
+      fireEvent.click(button);
+      const [form] = await screen.findAllByRole('form', {
+        name: 'Placer un client sans réservation',
+      });
+      return form;
+    };
+
+    beforeEach(() => {
+      apiMocks.get.mockImplementation(async (path: string) => {
+        if (path.includes('/floor-plan/reservations')) return [];
+        if (path.includes('/waiting-list')) return [];
+        return floorPlan;
+      });
+    });
+
+    it('envoie 2 personnes par défaut sur une table de 4, sous le nom « Sans réservation »', async () => {
+      apiMocks.post.mockResolvedValue({ id: 'seated-1' });
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+      const form = await openForm();
+      expect(within(form).getByLabelText('Nombre de personnes')).toHaveValue(2);
+      fireEvent.click(within(form).getByRole('button', { name: 'Placer le client' }));
+
+      await waitFor(() =>
+        expect(apiMocks.post).toHaveBeenCalledWith(
+          'restaurants/org_test/floor-plan/walk-ins',
+          expect.objectContaining({
+            tableId: 'table-t4-minimum-round',
+            partySize: 2,
+            customerName: 'Sans réservation',
+            idempotencyKey: expect.any(String),
+          }),
+        ),
+      );
+      expect(document.body.textContent).not.toMatch(/walk-?in|⚡/i);
+    });
+
+    it('envoie le nombre de personnes et le nom saisis', async () => {
+      apiMocks.post.mockResolvedValue({ id: 'seated-2' });
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+      const form = await openForm();
+      fireEvent.change(within(form).getByLabelText('Nombre de personnes'), {
+        target: { value: '4' },
+      });
+      fireEvent.change(within(form).getByLabelText('Nom (facultatif)'), {
+        target: { value: 'Famille Durand' },
+      });
+      fireEvent.click(within(form).getByRole('button', { name: 'Placer le client' }));
+
+      await waitFor(() =>
+        expect(apiMocks.post).toHaveBeenCalledWith(
+          'restaurants/org_test/floor-plan/walk-ins',
+          expect.objectContaining({ partySize: 4, customerName: 'Famille Durand' }),
+        ),
+      );
+    });
+
+    it('explique qu’une table déjà occupée ne peut pas être prise', async () => {
+      apiMocks.post.mockRejectedValue(
+        Object.assign(new Error('Table non disponible sur ce créneau'), { status: 409 }),
+      );
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+      const form = await openForm();
+      fireEvent.click(within(form).getByRole('button', { name: 'Placer le client' }));
+
+      expect(await within(form).findByRole('alert')).toHaveTextContent(
+        'Cette table n’est pas disponible : elle est déjà occupée ou réservée.',
+      );
+      expect(within(form).getByRole('button', { name: 'Placer le client' })).toBeEnabled();
+    });
   });
 
   it('affiche le retard vocal et son plan directement au-dessus du canevas', async () => {

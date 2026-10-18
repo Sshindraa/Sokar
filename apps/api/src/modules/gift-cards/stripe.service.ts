@@ -5,6 +5,7 @@
  * Le webhook nécessite une URL publique (ngrok ou domaine de prod).
  */
 import Stripe from 'stripe';
+import { describeConnectedAccount } from './gift-card-connect-status';
 import { logger } from '../../shared/logger/pino';
 
 let _stripe: Stripe | null = null;
@@ -61,6 +62,111 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
   return {
     id: intent.id,
     clientSecret: intent.client_secret!,
+  };
+}
+
+export async function createExperienceCheckoutSession(input: {
+  amountCents: number;
+  applicationFeeCents: number;
+  currency: string;
+  restaurantId: string;
+  experienceCheckoutId: string;
+  experienceName: string;
+  sessionStartsAt: Date;
+  quantity: number;
+  expiresAt: Date;
+  successUrl: string;
+  cancelUrl: string;
+  stripeAccountId: string;
+  idempotencyKey: string;
+}) {
+  const session = await getStripe().checkout.sessions.create(
+    {
+      mode: 'payment',
+      locale: 'fr',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          quantity: input.quantity,
+          price_data: {
+            currency: input.currency.toLowerCase(),
+            unit_amount: input.amountCents / input.quantity,
+            product_data: {
+              name: input.experienceName,
+              description: `Date du ${input.sessionStartsAt.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/Paris' })}`,
+            },
+          },
+        },
+      ],
+      phone_number_collection: { enabled: true },
+      custom_fields: [
+        {
+          key: 'guest_name',
+          label: { type: 'custom', custom: 'Nom complet' },
+          optional: false,
+          text: { minimum_length: 2, maximum_length: 120 },
+          type: 'text',
+        },
+      ],
+      customer_creation: 'always',
+      metadata: {
+        type: 'experience_checkout',
+        restaurantId: input.restaurantId,
+        experienceCheckoutId: input.experienceCheckoutId,
+      },
+      ...(input.amountCents > 0
+        ? {
+            payment_intent_data: {
+              ...(input.applicationFeeCents > 0
+                ? { application_fee_amount: input.applicationFeeCents }
+                : {}),
+              metadata: {
+                type: 'experience_checkout',
+                restaurantId: input.restaurantId,
+                experienceCheckoutId: input.experienceCheckoutId,
+              },
+            },
+          }
+        : {}),
+      expires_at: Math.floor(input.expiresAt.getTime() / 1_000),
+      success_url: input.successUrl,
+      cancel_url: input.cancelUrl,
+    },
+    { idempotencyKey: input.idempotencyKey, stripeAccount: input.stripeAccountId },
+  );
+  if (!session.url) throw new Error('Stripe n’a pas fourni de lien de paiement.');
+  return {
+    id: session.id,
+    url: session.url,
+    paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+  };
+}
+
+export async function expireExperienceCheckoutSession(sessionId: string, stripeAccountId: string) {
+  const stripe = getStripe();
+  try {
+    return await stripe.checkout.sessions.expire(sessionId, { stripeAccount: stripeAccountId });
+  } catch (error) {
+    const current = await stripe.checkout.sessions.retrieve(sessionId, {
+      stripeAccount: stripeAccountId,
+    });
+    if (current.status === 'expired' || current.status === 'complete') return current;
+    throw error;
+  }
+}
+
+export async function retrieveExperienceCheckoutSession(
+  sessionId: string,
+  stripeAccountId: string,
+) {
+  const session = await getStripe().checkout.sessions.retrieve(sessionId, {
+    stripeAccount: stripeAccountId,
+  });
+  if (!session.url) throw new Error('Le lien de paiement Stripe n’est plus disponible.');
+  return {
+    id: session.id,
+    url: session.url,
+    paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
   };
 }
 
@@ -166,6 +272,7 @@ export async function retrieveConnectedAccount(accountId: string) {
     chargesEnabled: account.charges_enabled,
     payoutsEnabled: account.payouts_enabled,
     detailsSubmitted: account.details_submitted,
+    ...describeConnectedAccount(account),
   };
 }
 
@@ -175,7 +282,7 @@ const CONNECT_ACCOUNTS_API_VERSION = '2026-08-26.dahlia';
 export async function createConnectedAccount(restaurantId: string, _email: string) {
   // The pinned SDK supports raw v2 JSON requests but predates typed Accounts v2.
   // Account IDs remain interoperable with v1 Account Links and PaymentIntents.
-  // French personal data must be tokenized if prefilled; hosted onboarding collects it directly.
+  // French personal data must be tokenized if prefilled; Stripe onboarding collects it directly.
   const account = await getStripe().rawRequest(
     'POST',
     '/v2/core/accounts',
@@ -227,6 +334,19 @@ export async function createConnectedAccountLink(accountId: string) {
     refresh_url: `${base}?stripeConnect=refresh`,
     return_url: `${base}?stripeConnect=return`,
   });
+}
+
+/** Short-lived, owner-scoped access to onboarding only; never persist or log this secret. */
+export async function createConnectedAccountSession(accountId: string) {
+  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY?.trim();
+  if (!publishableKey?.startsWith('pk_')) {
+    throw new Error('La clé publique Stripe est manquante pour la configuration intégrée.');
+  }
+  const session = await getStripe().accountSessions.create({
+    account: accountId,
+    components: { account_onboarding: { enabled: true } },
+  });
+  return { clientSecret: session.client_secret, publishableKey };
 }
 
 /**

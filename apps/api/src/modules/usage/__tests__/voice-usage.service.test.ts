@@ -3,6 +3,7 @@ import { db } from '../../../shared/db/client';
 import type { CallSession } from '../../voice/stream/types';
 import {
   addCartesiaTtsCharacters,
+  addElevenLabsTtsCharacters,
   addLlmUsage,
   addSttAudioSamples,
   ensureVoiceUsage,
@@ -56,5 +57,24 @@ describe('voice usage counters', () => {
       unit: 'seconds',
     });
     expect(ensureVoiceUsage(session).finalization).toBeDefined();
+  });
+
+  it('records ElevenLabs TTS characters separately, under their own idempotency key', async () => {
+    const session = makeSession();
+    addElevenLabsTtsCharacters(session, 42);
+
+    await finalizeVoiceUsage(session);
+
+    const events = vi.mocked(db.outboxEvent.create).mock.calls.map(([call]) => call.data);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      idempotencyKey: 'elevenlabs:tts:leg-1:final',
+      payload: expect.objectContaining({
+        category: 'TTS_CHARACTERS',
+        provider: 'elevenlabs',
+        quantity: 42,
+        unit: 'characters',
+      }),
+    });
   });
 });

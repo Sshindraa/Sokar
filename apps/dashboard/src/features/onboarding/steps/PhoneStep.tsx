@@ -1,36 +1,197 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowRight, Loader2, PhoneForwarded, ShieldCheck } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { normalizePhone } from '@sokar/shared';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Headphones,
+  Info,
+  Check,
+  Copy,
+  Loader2,
+  Phone,
+  PhoneForwarded,
+  Pencil,
+  Router,
+  ShieldCheck,
+  Smartphone,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/api';
 import { getErrorMessage } from '@/types/api';
 import { useOnboarding } from '../onboarding-provider';
-import { StepHeader } from '../ui';
+import { StepHeader, OnboardingAction } from '../ui';
+import { FitToHeight } from '../fit-to-height';
+import { isValidPhoneInput, toNationalDisplay } from '../phone-format';
 import type { StepProps } from '../types';
 import { ONBOARDING_STEP_DELAY_MS } from '@/constants/ui';
 
+type LineType = 'mobile' | 'fixed' | 'box';
+
+const LINE_TYPES: Array<{ value: LineType; label: string; icon: typeof Phone }> = [
+  { value: 'mobile', label: 'Mobile', icon: Smartphone },
+  { value: 'fixed', label: 'Ligne fixe', icon: Phone },
+  { value: 'box', label: 'Box internet', icon: Router },
+];
+
+/** Sous-étape discrète : la seule numérotation appuyée reste celle du parcours en haut. */
+function StepBadge({ n }: { n: number }) {
+  return (
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-background text-xs font-semibold text-muted-foreground">
+      {n}
+    </span>
+  );
+}
+
+/**
+ * Le plan de numérotation français indique la ligne : 06/07 mobile, 09 box (VoIP des opérateurs),
+ * 01 à 05 géographique (ligne classique, ou numéro conservé sur une box). Hors de France : pas d'avis.
+ */
+function detectLineType(e164: string): LineType | null {
+  if (/^\+33[67]\d{8}$/.test(e164)) return 'mobile';
+  if (/^\+339\d{8}$/.test(e164)) return 'box';
+  if (/^\+33[1-5]\d{8}$/.test(e164)) return 'fixed';
+  return null;
+}
+
+/** +33 1 23 45 67 89 → 01 23 45 67 89 : les lignes fixes se composent au format national. */
+function toNational(e164: string) {
+  return e164.startsWith('+33') ? `0${e164.slice(3)}` : e164;
+}
+
+/** +33123456789 → ['+33', '1', '23', '45', '67', '89'] : des blocs faciles à recopier sur un clavier. */
+function digitGroups(number: string) {
+  if (/^\+33\d{9}$/.test(number)) {
+    return ['+33', number[3], ...(number.slice(4).match(/\d{2}/g) ?? [])];
+  }
+  if (/^0\d{9}$/.test(number)) return number.match(/\d{2}/g) ?? [number];
+  return [number];
+}
+
+/** Le geste exact pour activer le renvoi, avec le numéro Sokar déjà rempli. */
+function lineGuide(type: LineType, sokarNumber: string) {
+  if (type === 'mobile') {
+    return {
+      title: 'Depuis le téléphone du restaurant, composez ces caractères à la suite, puis appelez.',
+      code: `**21*${sokarNumber}#`,
+      parts: ['**21*', sokarNumber, '#'],
+      help: 'Un message de l’opérateur confirme l’activation.',
+      stop: '##21#',
+    };
+  }
+  if (type === 'fixed') {
+    return {
+      title: 'Depuis la ligne fixe du restaurant, composez ces caractères à la suite.',
+      code: `*21*${toNational(sokarNumber)}#`,
+      parts: ['*21*', toNational(sokarNumber), '#'],
+      help: 'Si le code n’est pas reconnu, activez le renvoi depuis l’espace client de votre opérateur.',
+      stop: '#21#',
+    };
+  }
+  return {
+    title: 'Activez le renvoi dans l’espace client de votre opérateur.',
+    code: '',
+    parts: ['', sokarNumber, ''],
+    help: `Rubrique « Renvoi d’appel » de votre abonnement, vers le ${toNationalDisplay(sokarNumber)}. Le code à composer dépend de l’opérateur.`,
+    stop: '',
+  };
+}
+
 export function PhoneStep({ onComplete }: StepProps) {
-  const { state, updateTask } = useOnboarding();
-  const { post } = useApi();
+  const { state, updateTask, setRestaurantDraft, placeImportDraft } = useOnboarding();
+  const { post, patch, orgId } = useApi();
   const [calling, setCalling] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  // Choix explicite de l'utilisateur ; sans lui, le type déduit du numéro du restaurant s'applique.
+  const [chosenLineType, setChosenLineType] = useState<LineType | null>(null);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [phoneEdited, setPhoneEdited] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   const [testCallControlId, setTestCallControlId] = useState<string | null>(null);
 
   const phoneNumber = state?.restaurant.phoneNumber ?? '';
   const hasAssignedPhone = Boolean(state?.restaurant.phoneAssigned);
-  const managerPhone = state?.restaurant.managerPhone ?? '';
+  const restaurantPhone = state?.restaurant.phoneE164?.trim() ?? '';
   const persistedTestCallControlId = state?.steps.find((step) => step.key === 'phone')?.state
     .metadata?.testCallControlId;
   const pendingTestCallControlId =
     testCallControlId ??
     (typeof persistedTestCallControlId === 'string' ? persistedTestCallControlId : null);
 
+  // Prérempli par la fiche Google choisie à l'étape 1 (relue après le premier rendu) : il ne reste
+  // qu'à valider. Une saisie de l'utilisateur n'est jamais écrasée.
+  const googlePhone = placeImportDraft?.phoneE164 ?? '';
+  useEffect(() => {
+    if (!phoneEdited && googlePhone) setPhoneInput(toNationalDisplay(googlePhone));
+  }, [googlePhone, phoneEdited]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  async function handleCopy(value: string) {
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+      setCopyError(true);
+    }
+  }
+
+  /** Le numéro public manque : on le saisit ici plutôt que de renvoyer à l'étape 1. */
+  async function handleSaveRestaurantPhone(event: FormEvent) {
+    event.preventDefault();
+    if (!isValidPhoneInput(phoneInput)) {
+      setPhoneError('Saisissez un numéro valide, par exemple 01 23 45 67 89.');
+      return;
+    }
+    const phoneE164 = normalizePhone(phoneInput);
+    if (phoneE164 === restaurantPhone) {
+      setEditingPhone(false);
+      return;
+    }
+    setSavingPhone(true);
+    setPhoneError(null);
+    try {
+      await patch(`restaurants/${orgId}`, { phoneE164 });
+      setRestaurantDraft({ phoneE164 });
+      setEditingPhone(false);
+    } catch {
+      setPhoneError('Impossible d’enregistrer le numéro. Réessayez.');
+    } finally {
+      setSavingPhone(false);
+    }
+  }
+
+  function startEditingPhone() {
+    setPhoneInput(toNationalDisplay(restaurantPhone));
+    setPhoneEdited(true);
+    setPhoneError(null);
+    setEditingPhone(true);
+  }
+
+  function cancelEditingPhone() {
+    setPhoneError(null);
+    setEditingPhone(false);
+  }
+
   async function handleTestCall() {
-    if (!managerPhone) {
-      setTestError("Numéro du restaurant manquant. Revenez à l'étape « Identité du restaurant ».");
+    if (!restaurantPhone) {
+      setTestError("Numéro du restaurant manquant. Revenez à l'étape « Votre restaurant ».");
       return;
     }
     setCalling(true);
@@ -39,7 +200,7 @@ export function PhoneStep({ onComplete }: StepProps) {
     try {
       const res = await post<{ ok: boolean; message: string; callControlId: string }>(
         'restaurant/onboarding/test-call',
-        { phoneNumber: managerPhone },
+        {},
       );
       setTestCallControlId(res.callControlId);
       setTestResult(
@@ -58,7 +219,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       if (code === 'NO_PHONE_ASSIGNED') {
         setTestError(
           apiMessage ??
-            "Aucun numéro Sokar attribué. L'équipe Sokar doit d'abord vous attribuer un numéro dédié.",
+            "Aucun numéro Sokar attribué. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Sokar doit d'abord vous en attribuer un.",
         );
       } else if (code === 'TELNYX_FAILED') {
         setTestError(
@@ -85,181 +246,450 @@ export function PhoneStep({ onComplete }: StepProps) {
         setTestError("La confirmation n'a pas été enregistrée. Actualisez la page puis réessayez.");
         return;
       }
-      await updateTask('complete', 'phone');
-      await updateTask('activate');
-      setTestResult(
-        'Assistant vocal validé. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
-      );
-      window.setTimeout(() => onComplete('connect-identity'), ONBOARDING_STEP_DELAY_MS);
+      const completed = await updateTask('complete', 'phone');
+      if (!completed) {
+        setTestError('La validation des appels n’a pas été enregistrée. Réessayez.');
+        return;
+      }
+      const activated = await updateTask('activate');
+      if (!activated) {
+        setTestError('La mise en service n’a pas été enregistrée. Réessayez.');
+        return;
+      }
+      setTestResult('Assistant vocal validé. Votre IA répond maintenant au téléphone.');
+      window.setTimeout(() => onComplete(null), ONBOARDING_STEP_DELAY_MS);
     } finally {
       setCalling(false);
     }
   }
 
-  async function handleSkip() {
-    await updateTask('skip', 'phone', { reason: 'Pas de test immédiat' });
-    onComplete('connect-identity');
-  }
+  // Pendant une saisie, le numéro tapé prime dès qu'il est reconnaissable.
+  const typedPhone = normalizePhone(phoneInput);
+  const showPhoneForm = !restaurantPhone || editingPhone;
+  const detectionPhone =
+    showPhoneForm && (detectLineType(typedPhone) || !restaurantPhone)
+      ? typedPhone
+      : restaurantPhone;
+  const detectedLineType = detectLineType(detectionPhone);
+  const lineType = chosenLineType ?? detectedLineType ?? 'mobile';
+  const guide = lineGuide(lineType, hasAssignedPhone ? phoneNumber : '');
+  const canContinue = hasAssignedPhone && Boolean(restaurantPhone) && !editingPhone;
 
-  // ─── Phase 1 : pre-permission screen ───────────────────────────
-  // Avant d'activer le renvoi d'appel (action opérateur irréversible),
-  // on explique exactement ce qui va se passer et on rassure sur la
-  // réversibilité. Pattern Brilliant/Centro — réduit la friction sur
-  // l'étape la plus engagée du flow voice.
-  if (!confirmed) {
-    return (
-      <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-        <StepHeader
-          icon={PhoneForwarded}
-          title="Mise en service des appels"
-          body="Avant d'activer le renvoi, voici exactement ce qui va se passer et comment garder le contrôle."
-        />
-        <div className="space-y-4">
-          {/* Schéma visuel : du téléphone du restaurant vers Sokar */}
-          <div className="rounded-lg border border-border bg-background/60 p-5 transition-colors duration-200">
-            <p className="text-sm font-semibold text-foreground">Ce qui va se passer</p>
-            <div className="mt-4 flex items-center gap-3">
-              <div className="flex-1 rounded-md border border-border bg-muted/30 p-3 text-center">
-                <PhoneForwarded size={20} className="mx-auto text-muted-foreground" />
-                <p className="mt-1 text-xs text-muted-foreground">Votre téléphone</p>
-                <p className="text-sm font-medium text-foreground">{managerPhone || '—'}</p>
-              </div>
-              <ArrowRight size={18} className="text-muted-foreground" />
-              <div className="flex-1 rounded-md border border-primary/30 bg-primary/5 p-3 text-center">
-                <ShieldCheck size={20} className="mx-auto text-primary" />
-                <p className="mt-1 text-xs text-muted-foreground">Numéro Sokar</p>
-                <p className="text-sm font-medium text-foreground">
-                  {hasAssignedPhone ? phoneNumber : 'À attribuer'}
+  return (
+    <FitToHeight minZoom={0.75} className="w-full max-w-6xl md:flex-1">
+      <StepHeader
+        icon={PhoneForwarded}
+        title="Votre accueil au téléphone"
+        body="Gardez votre numéro. Confiez vos appels à Sokar."
+      />
+
+      <ol
+        aria-label="Mise en service des appels"
+        className="mb-3 grid grid-cols-2 items-center gap-3 text-xs sm:flex sm:flex-wrap sm:text-sm"
+      >
+        <li aria-current={!confirmed ? 'step' : undefined} className="flex items-center gap-2">
+          <span
+            className={cn(
+              'flex size-7 items-center justify-center rounded-full text-xs font-semibold',
+              confirmed ? 'bg-success/10 text-success' : 'bg-foreground text-background',
+            )}
+          >
+            {confirmed ? <Check size={14} aria-hidden /> : '1'}
+          </span>
+          <span className={cn('font-medium', confirmed && 'text-muted-foreground')}>
+            Activer le renvoi
+          </span>
+        </li>
+        <li aria-hidden className="hidden h-px w-12 bg-border sm:block" />
+        <li aria-current={confirmed ? 'step' : undefined} className="flex items-center gap-2">
+          <span
+            className={cn(
+              'flex size-7 items-center justify-center rounded-full text-xs font-semibold',
+              confirmed ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground',
+            )}
+          >
+            2
+          </span>
+          <span className={cn('font-medium', !confirmed && 'text-muted-foreground')}>
+            Vérifier par un appel
+          </span>
+        </li>
+      </ol>
+
+      <div className="space-y-3">
+        <section
+          aria-label="Le parcours de vos appels"
+          className="flex flex-col gap-4 rounded-[1.75rem] bg-foreground px-5 py-4 text-background xl:flex-row xl:items-center xl:justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl border border-background/20 bg-background/10">
+              <PhoneForwarded size={19} aria-hidden />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold tracking-tight">
+                Votre numéro reste le même.
+              </h3>
+              <p className="mt-0.5 text-xs leading-5 text-background/70">
+                Le renvoi dirige les appels de vos clients vers votre assistant.{' '}
+                {guide.stop ? (
+                  <>
+                    Désactivable à tout moment avec{' '}
+                    <code className="font-semibold text-background">{guide.stop}</code>.
+                  </>
+                ) : (
+                  'Désactivable à tout moment depuis votre espace opérateur.'
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 rounded-2xl border border-background/15 bg-background/5 px-4 py-2.5 lg:flex-row lg:items-center lg:gap-5 xl:shrink-0">
+            <div className="flex items-center gap-3">
+              <Phone size={17} className="shrink-0 text-background/60" aria-hidden />
+              {!showPhoneForm ? (
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-xs text-background/60">Vos clients composent</p>
+                    <p className="whitespace-nowrap text-sm font-medium tabular-nums">
+                      {toNationalDisplay(restaurantPhone)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={startEditingPhone}
+                    aria-label="Modifier le numéro du restaurant"
+                    className="h-8 rounded-full px-2.5 text-xs text-background/70 transition-all duration-200 hover:bg-background/10 hover:text-background"
+                  >
+                    <Pencil size={13} aria-hidden />
+                    Modifier
+                  </Button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={handleSaveRestaurantPhone}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && editingPhone) cancelEditingPhone();
+                  }}
+                  noValidate
+                >
+                  <label htmlFor="restaurant-public-phone" className="text-xs text-background/60">
+                    Numéro du restaurant
+                  </label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Input
+                      id="restaurant-public-phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="01 23 45 67 89"
+                      value={phoneInput}
+                      autoFocus={editingPhone}
+                      aria-invalid={Boolean(phoneError)}
+                      aria-describedby={phoneError ? 'restaurant-public-phone-error' : undefined}
+                      onChange={(event) => {
+                        setPhoneInput(event.target.value);
+                        setPhoneEdited(true);
+                        setPhoneError(null);
+                      }}
+                      className="h-9 w-40 rounded-full border-background/25 bg-background/10 text-sm tabular-nums text-background placeholder:text-background/45 focus-visible:ring-background/40"
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={savingPhone}
+                      className="h-9 rounded-full bg-background px-3 text-xs text-foreground transition-all duration-200 hover:bg-background/90"
+                    >
+                      {savingPhone && <Loader2 className="animate-spin" size={14} aria-hidden />}
+                      Valider
+                    </Button>
+                    {editingPhone && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={cancelEditingPhone}
+                        aria-label="Annuler la modification"
+                        className="size-9 rounded-full p-0 text-background/70 transition-all duration-200 hover:bg-background/10 hover:text-background"
+                      >
+                        <X size={15} aria-hidden />
+                      </Button>
+                    )}
+                  </div>
+                  {phoneError && (
+                    <p
+                      id="restaurant-public-phone-error"
+                      role="alert"
+                      className="mt-1 max-w-56 text-xs leading-5 text-background"
+                    >
+                      {phoneError}
+                    </p>
+                  )}
+                </form>
+              )}
+            </div>
+            <ArrowRight
+              size={16}
+              className="ml-0.5 rotate-90 text-background/50 lg:ml-0 lg:rotate-0"
+              aria-hidden
+            />
+            <div className="flex items-center gap-3">
+              <Headphones size={17} className="shrink-0" aria-hidden />
+              <div>
+                <p className="text-xs text-background/60">Sokar répond</p>
+                <p className="whitespace-nowrap text-sm font-medium tabular-nums">
+                  {hasAssignedPhone ? toNationalDisplay(phoneNumber) : 'Numéro en attente'}
                 </p>
               </div>
             </div>
-            <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              Une fois le renvoi activé, les appels arrivant sur votre téléphone seront
-              automatiquement transférés vers Sokar. L&apos;assistant vocal répond à votre place,
-              prend les réservations et gère les annulations.
-            </p>
           </div>
+        </section>
 
-          {/* Rassurance réversibilité */}
-          <div className="rounded-lg border border-success/30 bg-success/5 p-4 transition-colors duration-200">
-            <div className="flex items-start gap-3">
-              <ShieldCheck size={18} className="mt-0.5 shrink-0 text-success" />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">Vous gardez le contrôle</p>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  Vous pouvez reprendre la main à tout moment en désactivant le renvoi depuis votre
-                  téléphone (composez <span className="font-mono text-foreground">##21#</span> sur
-                  la plupart des opérateurs français). Vous restez joignable directement pendant les
-                  heures de service si vous préférez décrocher vous-même.
+        <div className="min-w-0">
+          {!confirmed ? (
+            <section
+              aria-label="Configuration du renvoi"
+              className="rounded-[1.75rem] border border-border bg-card p-5"
+            >
+              {!hasAssignedPhone ? (
+                <div role="status" className="space-y-3">
+                  <span className="inline-flex size-10 items-center justify-center rounded-full bg-muted">
+                    <Phone size={18} aria-hidden />
+                  </span>
+                  <h3 className="text-lg font-semibold">Votre numéro Sokar est en préparation</h3>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    L’équipe Sokar doit vous attribuer un numéro pour activer le renvoi. Vous pouvez
+                    vérifier les autres étapes en attendant.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-medium">Votre type de ligne</h3>
+                    <div
+                      role="group"
+                      aria-label="Type de ligne"
+                      className="grid grid-cols-3 gap-2 lg:grid-cols-1"
+                    >
+                      {LINE_TYPES.map((option) => {
+                        const Icon = option.icon;
+                        const active = lineType === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => {
+                              setChosenLineType(option.value);
+                              if (lineType === option.value) return;
+                              setCopied(false);
+                              setCopyError(false);
+                            }}
+                            className={cn(
+                              'relative flex min-h-12 flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:flex-row sm:text-sm lg:justify-start',
+                              active
+                                ? 'border-foreground bg-foreground text-background shadow-sm'
+                                : 'border-border text-muted-foreground hover:border-foreground/30 hover:bg-muted/50 hover:text-foreground',
+                            )}
+                          >
+                            <Icon size={18} aria-hidden />
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {detectedLineType && !chosenLineType && (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Déduit de votre numéro{' '}
+                        <span className="whitespace-nowrap">
+                          {toNationalDisplay(detectionPhone)}
+                        </span>
+                        .
+                        {detectedLineType === 'fixed' &&
+                          ' Téléphone branché sur une box\u00a0? Choisissez Box internet.'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-3">
+                    <div>
+                      <h3 className="text-sm font-medium">
+                        {guide.code ? 'Code à composer' : 'Numéro de destination'}
+                      </h3>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{guide.title}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <code className="font-mono text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                          <span className="sr-only">{guide.code || phoneNumber}</span>
+                          <span aria-hidden className="flex flex-wrap items-baseline gap-x-2">
+                            {guide.parts[0] && <span>{guide.parts[0]}</span>}
+                            <span className="flex flex-wrap gap-x-1.5">
+                              {digitGroups(guide.parts[1]).map((group, index) => (
+                                <span key={index}>{group}</span>
+                              ))}
+                            </span>
+                            {guide.parts[2] && <span>{guide.parts[2]}</span>}
+                          </span>
+                        </code>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          aria-label={
+                            copied ? 'Copié' : guide.code ? 'Copier le code' : 'Copier le numéro'
+                          }
+                          onClick={() => handleCopy(guide.code || phoneNumber)}
+                          className="h-9 shrink-0 rounded-full bg-card px-3 text-xs transition-all duration-200"
+                        >
+                          {copied ? (
+                            <Check size={14} aria-hidden />
+                          ) : (
+                            <Copy size={14} aria-hidden />
+                          )}
+                          {copied ? 'Copié' : 'Copier'}
+                        </Button>
+                      </div>
+                      <p role="status" className="sr-only">
+                        {copied ? 'Copie effectuée.' : ''}
+                      </p>
+                      {copyError && (
+                        <p role="alert" className="mt-3 text-sm text-destructive">
+                          La copie n’a pas fonctionné. Sélectionnez le texte pour le copier ou
+                          composez-le directement.
+                        </p>
+                      )}
+                    </div>
+                    <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+                      <Info size={14} className="mt-0.5 shrink-0" aria-hidden />
+                      {guide.help}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : (
+            <section
+              aria-label="Vérification par un appel"
+              className="space-y-4 rounded-[1.75rem] border border-border bg-card p-5"
+            >
+              <div className="flex items-center gap-2 text-xs font-medium text-success">
+                <Check size={15} aria-hidden />
+                Code de renvoi composé
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold tracking-tight">Place au premier appel.</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Lancez le test vers le numéro du restaurant. Vérifiez que vous recevez l’appel et
+                  entendez l’assistant, puis confirmez.
                 </p>
               </div>
-            </div>
-          </div>
-
-          {!hasAssignedPhone && (
-            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 text-sm text-warning transition-colors duration-200">
-              Votre numéro dédié sera attribué par l&apos;équipe Sokar. Une fois attribué, vous
-              pourrez activer le renvoi et lancer l&apos;appel test.
-            </div>
+              <ol className="space-y-3 rounded-2xl bg-muted/40 p-4 text-sm">
+                <li className="flex items-center gap-3">
+                  <StepBadge n={1} />
+                  Lancez un appel test.
+                </li>
+                <li className="flex items-center gap-3">
+                  <StepBadge n={2} />
+                  Écoutez l’assistant répondre.
+                </li>
+                <li className="flex items-center gap-3">
+                  <StepBadge n={3} />
+                  Confirmez la réception de l’appel.
+                </li>
+              </ol>
+              {testResult && (
+                <p
+                  role="status"
+                  className="rounded-xl border border-success/30 bg-success/5 p-4 text-sm leading-6 text-success"
+                >
+                  {testResult}
+                </p>
+              )}
+              {testError && (
+                <p
+                  role="alert"
+                  className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm leading-6 text-destructive"
+                >
+                  {testError}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={calling}
+                onClick={() => setConfirmed(false)}
+                className="px-0 text-muted-foreground transition-all duration-200"
+              >
+                <ArrowLeft size={14} aria-hidden />
+                Revoir les instructions de renvoi
+              </Button>
+            </section>
           )}
+        </div>
+      </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
+      <OnboardingAction>
+        {!confirmed ? (
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <p id="phone-next-hint" className="max-w-60 text-xs leading-5 text-muted-foreground">
+              {!hasAssignedPhone
+                ? 'En attente de votre numéro Sokar.'
+                : showPhoneForm
+                  ? phoneInput.trim()
+                    ? 'Validez d’abord le numéro du restaurant.'
+                    : 'Renseignez d’abord le numéro du restaurant.'
+                  : 'Un appel test vérifiera le renvoi.'}
+            </p>
             <Button
               type="button"
               onClick={() => setConfirmed(true)}
-              disabled={!hasAssignedPhone}
-              className="transition-colors duration-200"
+              disabled={!canContinue}
+              aria-describedby="phone-next-hint"
+              className="h-11 rounded-full px-5 transition-all duration-200"
             >
-              J&apos;ai compris, continuer
-              <ArrowRight size={16} />
-            </Button>
-            <Button onClick={handleSkip} variant="ghost" className="transition-colors duration-200">
-              Plus tard
+              {lineType === 'box' ? 'J’ai activé le renvoi' : 'J’ai composé le code'}
+              <ArrowRight size={16} aria-hidden />
             </Button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Phase 2 : test call (après confirmation) ──────────────────
-  return (
-    <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-      <StepHeader
-        icon={PhoneForwarded}
-        title="Lancer l'appel test"
-        body="Activez le renvoi d'appel depuis votre opérateur, puis lancez le test pour entendre l'assistant répondre."
-      />
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-background/60 p-4 transition-colors duration-200">
-          <p className="text-sm text-muted-foreground font-semibold">Numéro Sokar</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight">
-            {hasAssignedPhone ? phoneNumber : 'À attribuer'}
-          </p>
-        </div>
-        <div className="rounded-lg border border-border bg-background/60 p-4 text-sm text-muted-foreground transition-colors duration-200">
-          Activez le renvoi d&apos;appel depuis l&apos;opérateur du restaurant vers le numéro Sokar,
-          puis lancez le test.
-        </div>
-
-        {testResult && (
-          <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success">
-            {testResult}
-          </div>
-        )}
-        {testError && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-            {testError}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {pendingTestCallControlId ? (
-            <>
-              <Button
-                type="button"
-                onClick={handleConfirmTestCall}
-                disabled={calling}
-                className="transition-colors duration-200"
-              >
-                {calling && <Loader2 className="animate-spin" size={16} />}
-                {calling ? 'Confirmation en cours…' : "J'ai reçu l'appel"}
-                <ShieldCheck size={16} />
-              </Button>
+        ) : (
+          <div className="flex flex-wrap justify-end gap-2">
+            {pendingTestCallControlId ? (
+              <>
+                <Button
+                  type="button"
+                  onClick={handleTestCall}
+                  disabled={calling || !hasAssignedPhone || !restaurantPhone || editingPhone}
+                  variant="outline"
+                  className="rounded-full transition-all duration-200"
+                >
+                  Relancer l’appel test
+                  <PhoneForwarded size={16} aria-hidden />
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmTestCall}
+                  disabled={calling}
+                  className="rounded-full transition-all duration-200"
+                >
+                  {calling && <Loader2 className="animate-spin" size={16} aria-hidden />}
+                  {calling ? 'Confirmation en cours…' : "J'ai reçu l'appel"}
+                  <ShieldCheck size={16} aria-hidden />
+                </Button>
+              </>
+            ) : (
               <Button
                 type="button"
                 onClick={handleTestCall}
-                disabled={calling || !hasAssignedPhone || !managerPhone}
-                variant="outline"
-                className="transition-colors duration-200"
+                disabled={calling || !hasAssignedPhone || !restaurantPhone || editingPhone}
+                className="rounded-full transition-all duration-200"
               >
-                Relancer l&apos;appel test
-                <PhoneForwarded size={16} />
+                {calling && <Loader2 className="animate-spin" size={16} aria-hidden />}
+                {calling ? 'Appel en cours…' : 'Lancer un appel test'}
+                <PhoneForwarded size={16} aria-hidden />
               </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleTestCall}
-              disabled={calling || !hasAssignedPhone || !managerPhone}
-              className="transition-colors duration-200"
-            >
-              {calling && <Loader2 className="animate-spin" size={16} />}
-              {calling ? 'Appel en cours…' : 'Lancer un appel test'}
-              <PhoneForwarded size={16} />
-            </Button>
-          )}
-          <Button onClick={handleSkip} variant="ghost" className="transition-colors duration-200">
-            Plus tard
-          </Button>
-        </div>
-        {!hasAssignedPhone && (
-          <p className="text-xs text-muted-foreground">
-            L&apos;appel test sera disponible dès qu&apos;un numéro Sokar sera attribué à ce
-            restaurant par notre équipe.
-          </p>
+            )}
+          </div>
         )}
-      </div>
-    </div>
+      </OnboardingAction>
+    </FitToHeight>
   );
 }

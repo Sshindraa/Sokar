@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, formatOpeningHours } from '../prompts';
+import { agentVoiceGender, buildSystemPrompt, formatOpeningHours } from '../prompts';
 import {
   buildStructuredTurnMessages,
   describeCalendar,
@@ -39,6 +39,61 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('8+');
   });
 
+  describe('style de la maison (Style et Ton de voix de l’onboarding)', () => {
+    const styled = (
+      personality: { profileType?: string; fillerStyle?: string } | null,
+      personalityStyleEnabled = true,
+    ) => buildSystemPrompt({ ...baseCtx, personality, personalityStyleEnabled });
+
+    it('laisse le prompt strictement inchangé quand le drapeau est coupé', () => {
+      const reference = buildSystemPrompt(baseCtx);
+      expect(styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' }, false)).toBe(
+        reference,
+      );
+    });
+
+    it('laisse le prompt inchangé pour le réglage par défaut (bistrot, naturel)', () => {
+      const reference = buildSystemPrompt(baseCtx);
+      expect(styled({ profileType: 'BISTROT_BRASSERIE', fillerStyle: 'CASUAL' })).toBe(reference);
+      expect(styled(null)).toBe(reference);
+    });
+
+    it('règle les mots et la politesse, jamais le rythme : la maison reste une conversation téléphonique', () => {
+      const prompt = styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' });
+      expect(prompt).toContain('jamais le rythme');
+      expect(prompt).toContain('on parle, on ne rédige pas');
+    });
+
+    it('la politesse du ton formel est présente sans se répéter d’un tour à l’autre', () => {
+      expect(styled({ fillerStyle: 'FORMAL' })).toContain("ne se répète pas d'un tour à l'autre");
+    });
+
+    it('garde mot pour mot le ton chaleureux (réglage validé)', () => {
+      expect(styled({ fillerStyle: 'WARM' })).toContain(
+        "- Ton de voix : chaleureux et convivial. Tu fais sentir à l'appelant qu'il est le bienvenu : quand sa demande s'y prête, une courte marque d'attention personnelle avant d'enchaîner, dite simplement, sans point d'exclamation ni formule toute faite répétée d'un tour à l'autre.",
+      );
+    });
+
+    it.each([
+      [{ profileType: 'SEMI_GASTRO' }, 'semi-gastronomique'],
+      [{ profileType: 'GASTRONOMIQUE' }, 'gastronomique'],
+      [{ fillerStyle: 'WARM' }, 'chaleureux et convivial'],
+      [{ fillerStyle: 'FORMAL' }, 'formel et soigné'],
+    ])('ajoute le registre de %j', (personality, expected) => {
+      const prompt = styled(personality);
+      expect(prompt).toContain('REGISTRE DE LA MAISON');
+      expect(prompt).toContain(expected);
+    });
+
+    it('cumule le style et le ton, et garde la brièveté et les règles de réservation', () => {
+      const prompt = styled({ profileType: 'GASTRONOMIQUE', fillerStyle: 'FORMAL' });
+      expect(prompt.match(/^- Maison gastronomique/m)).not.toBeNull();
+      expect(prompt.match(/^- Ton de voix/m)).not.toBeNull();
+      expect(prompt).toContain('la brièveté et les règles de réservation ne changent pas');
+      expect(prompt.indexOf('REGISTRE DE LA MAISON')).toBeLessThan(prompt.indexOf('DATE COURANTE'));
+    });
+  });
+
   it('liste un jour absent des horaires comme fermé, dans l’ordre de la semaine', () => {
     const hours = formatOpeningHours({
       fri: { open: '12:00', close: '23:00' },
@@ -53,6 +108,26 @@ describe('buildSystemPrompt', () => {
       'Samedi : fermé',
       'Dimanche : fermé',
     ]);
+  });
+
+  it('annonce la dernière réservation de chaque service quand elle est fixée', () => {
+    const hours = formatOpeningHours({
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30', lastBooking: '14:00' },
+          { open: '19:00', close: '22:30', lastBooking: '21:30' },
+        ],
+      },
+      fri: { open: '12:00', close: '23:00', lastBooking: '21:30' },
+      sat: { open: '12:00', close: '22:00' },
+    });
+    expect(hours).toContain(
+      'Mardi : 12:00–14:30 (dernière réservation à 14:00) puis 19:00–22:30 (dernière réservation à 21:30)',
+    );
+    expect(hours).toContain('Vendredi : 12:00–23:00 (dernière réservation à 21:30)');
+    expect(hours).toContain('Samedi : 12:00–22:00\n');
   });
 
   it('lit aussi les formats longs et schema.org, comme le calcul des créneaux', () => {
@@ -93,6 +168,37 @@ describe('buildSystemPrompt', () => {
     );
   });
 
+  it('annonce les deux services dans le prompt et le calendrier', () => {
+    const hours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+    expect(formatOpeningHours(hours)).toContain('Mardi : 12:00–14:30 puis 19:00–22:30');
+    expect(describeDate('2026-09-29', hours)?.hours).toBe('ouvert 12:00–14:30 puis 19:00–22:30');
+  });
+
+  it('annonce les slots du nouvel onboarding dans le prompt vocal', () => {
+    const hours = {
+      thu: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+
+    expect(formatOpeningHours(hours)).toContain('Jeudi : 12:00–14:30 puis 19:00–22:30');
+    expect(describeDate('2026-09-24', hours)?.hours).toBe('ouvert 12:00–14:30 puis 19:00–22:30');
+  });
+
   it("interdit d'annoncer une disponibilité avant le nombre de personnes (appel c5d6b07d)", () => {
     const [system] = buildStructuredTurnMessages({
       systemPrompt: 'Prompt',
@@ -110,6 +216,38 @@ describe('buildSystemPrompt', () => {
     expect(system.content).toContain("ses mots suffisent à savoir de quelle information il s'agit");
     // Groupe connu : lire la ligne de sa taille, refuser un horaire absent (1–2/10 → 9/10).
     expect(system.content).toContain('« 9-12 » contient 10');
+  });
+
+  it('met en données les lettres épelées du tour quand un nom est attendu (appel 8043662c)', () => {
+    const stateAwaiting = (awaiting: 'customerName' | 'customerNameConfirmation' | 'open') => {
+      const state = createStructuredTurnState();
+      state.lastAwaiting = awaiting;
+      return state;
+    };
+    const stateOf = (transcript: string, awaiting: Parameters<typeof stateAwaiting>[0]) =>
+      (
+        buildStructuredTurnMessages({
+          systemPrompt: 'Prompt',
+          history: [],
+          transcript,
+          state: stateAwaiting(awaiting),
+        })[0].content as string
+      ).split('ÉTAT VÉRIFIÉ : ')[1];
+
+    const verified = JSON.parse(stateOf('au nom de a 2 s a 2 m', 'customerName').split('\n')[0]);
+    expect(verified.spelledName).toBe('ASSAMM');
+    expect(verified.spelledLetters).toEqual([
+      { letter: 'A', count: 1 },
+      { letter: 'S', count: 2 },
+      { letter: 'A', count: 1 },
+      { letter: 'M', count: 2 },
+    ]);
+    expect(
+      JSON.parse(stateOf('m a 2 s o n', 'customerNameConfirmation').split('\n')[0]).spelledLetters,
+    ).toHaveLength(5);
+    // Pas d'épellation dans la parole, ou un autre message attendu : rien n'est ajouté.
+    expect(stateOf('oui c’est ça', 'customerNameConfirmation')).not.toContain('spelled');
+    expect(stateOf('a 2 s a 2 m', 'open')).not.toContain('spelled');
   });
 
   it('donne au modèle des principes de conversation, pas des phrases (appel b686b241)', () => {
@@ -207,7 +345,6 @@ describe('buildSystemPrompt', () => {
 
     expect(prompt).toContain("Tu es l'assistant vocal chaleureux de Chez Michel.");
     expect(prompt).toContain("L'accueil a déjà été prononcé");
-    expect(prompt).toContain('appelle checkAvailability immédiatement dans le même tour');
     expect(prompt).toContain('Tu évites le ton administratif');
     expect(prompt).toContain('SITUATIONS (des principes');
     expect(prompt).toContain('Non, plutôt 21 h 15.');
@@ -216,13 +353,10 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('Au tout début de chaque appel');
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
-    // Ne doit pas contenir d'extra ni de CRM
-    expect(prompt).toContain("handoffToManager : transférer l'appel au gérant");
-    expect(prompt).toContain('purchaseGiftCard : vendre une carte cadeau');
-    expect(prompt).toContain('recommendGiftCardAmount : conseiller un montant de carte cadeau');
-    expect(
-      prompt.trim().endsWith('recommendGiftCardAmount : conseiller un montant de carte cadeau'),
-    ).toBe(true);
+    // Aucun outil n'est décrit dans la base : le tour structuré décrit lui-même ses actions.
+    expect(prompt).not.toContain('OUTILS DISPONIBLES');
+    expect(prompt).not.toContain('checkAvailability');
+    expect(prompt.trim().endsWith('Dimanche : fermé')).toBe(true);
   });
 
   it('devrait inclure customerExtra quand fourni dans le contexte', () => {
@@ -295,7 +429,7 @@ describe('buildSystemPrompt', () => {
 });
 describe('phrases à dire : des principes, pas des formules', () => {
   const hours = { tue: { open: '12:00', close: '22:00' } };
-  const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn: true });
+  const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours });
   const [system] = buildStructuredTurnMessages({
     systemPrompt: base,
     history: [],
@@ -332,6 +466,17 @@ describe('phrases à dire : des principes, pas des formules', () => {
     expect(prompt).toContain("ne dis pas « c'est noté » pour cet horaire");
   });
 
+  it("une information retenue n'a pas à être redite : ni répétition interdite en bloc, ni confirmation à chaque tour", () => {
+    expect(prompt).toContain("Une information retenue n'a pas besoin d'être redite à voix haute");
+    expect(prompt).toContain(
+      'Tu ne demandes pas de confirmer cette date, cette heure ou ce nombre',
+    );
+    expect(prompt).not.toContain("Tu ne répètes pas ce que l'appelant vient de dire");
+    expect(prompt).not.toContain('fais-lui confirmer cette valeur');
+    expect(prompt).toContain('reste un réflexe, même variée');
+    expect(prompt).toContain('ni aucune autre formule qui revient à chaque tour');
+  });
+
   it("garde des exemples d'interprétation de l'entrée, avec des valeurs absentes du banc", () => {
     // Ce que dit l'appelant : on garde, pour apprendre à le comprendre.
     for (const heard of [
@@ -350,31 +495,12 @@ describe('phrases à dire : des principes, pas des formules', () => {
   });
 });
 
-describe('buildSystemPrompt : base commune et section propre au mode à outils', () => {
+describe('buildSystemPrompt : base sans outil', () => {
   const hours = { tue: { open: '12:00', close: '22:00' } };
   const base = { name: 'Chez Test', openingHours: hours, giftCardMinimumAmount: 25 };
-  const tools = buildSystemPrompt(base);
-  const structured = buildSystemPrompt({ ...base, structuredTurn: true });
+  const prompt = buildSystemPrompt(base);
 
-  it('garde le mode à outils complet, section outils séparée de la base', () => {
-    expect(buildSystemPrompt({ ...base, structuredTurn: false })).toBe(tools);
-    for (const kept of [
-      'RÈGLES DU MODE À OUTILS',
-      'OUTILS DISPONIBLES',
-      'appelle checkAvailability immédiatement',
-      'handoffToManager',
-      'purchaseGiftCard',
-      'reportDelay',
-      'le montant minimum est 25€',
-      'Transfert :',
-    ]) {
-      expect(tools).toContain(kept);
-    }
-    // La base commune vient d'abord, la section outils ensuite.
-    expect(tools.indexOf('COMPORTEMENT :')).toBeLessThan(tools.indexOf('RÈGLES DU MODE À OUTILS'));
-  });
-
-  it('le tour structuré ne reçoit que la base commune, sans aucun outil', () => {
+  it('ne reçoit aucun outil : le tour structuré décrit lui-même ses actions', () => {
     for (const name of [
       'RÈGLES DU MODE À OUTILS',
       'OUTILS DISPONIBLES',
@@ -388,36 +514,29 @@ describe('buildSystemPrompt : base commune et section propre au mode à outils',
       'recommendGiftCardAmount',
       'lien de paiement',
     ]) {
-      expect(structured).not.toContain(name);
+      expect(prompt).not.toContain(name);
     }
     for (const common of ['DATE COURANTE', 'COMPORTEMENT :', 'HORAIRES', 'Mardi : 12:00–22:00']) {
-      expect(structured).toContain(common);
+      expect(prompt).toContain(common);
     }
-    expect(structured.length).toBeLessThan(tools.length - 1500);
   });
 
-  it('supprime la contradiction « Parfait » dans les deux modes', () => {
-    expect(tools).not.toContain('« Parfait, donc… »');
-    expect(structured).not.toContain('« Parfait, donc… »');
+  it('ne contient pas la contradiction « Parfait, donc… »', () => {
+    expect(prompt).not.toContain('« Parfait, donc… »');
   });
 
-  it('la personnalisation du restaurant reste en fin de prompt dans les deux modes', () => {
+  it('la personnalisation du restaurant reste en fin de prompt', () => {
     const custom = {
       ...base,
       customerExtra: 'EXTRA-CLIENT',
       personality: { systemPromptExtra: 'EXTRA-PERSO' },
     };
     expect(buildSystemPrompt(custom).trimEnd().endsWith('EXTRA-PERSO')).toBe(true);
-    expect(
-      buildSystemPrompt({ ...custom, structuredTurn: true })
-        .trimEnd()
-        .endsWith('EXTRA-PERSO'),
-    ).toBe(true);
   });
 
-  it("les consignes du tour structuré disent ce qu'il ne peut pas faire, sans « prioritaire sur la section OUTILS »", () => {
+  it("les consignes du tour structuré disent ce qu'il ne peut pas faire", () => {
     const [system] = buildStructuredTurnMessages({
-      systemPrompt: structured,
+      systemPrompt: prompt,
       history: [],
       transcript: 'bonjour',
       state: createStructuredTurnState(),
@@ -425,6 +544,69 @@ describe('buildSystemPrompt : base commune et section propre au mode à outils',
     expect(system.content).not.toContain('prioritaire sur la section OUTILS');
     expect(system.content).toContain(
       'Tu ne peux ni annuler une réservation, ni signaler un retard, ni vendre une carte cadeau',
+    );
+  });
+});
+
+describe('genre de la voix', () => {
+  const ctx = { name: 'Chez Michel', openingHours: {} };
+  const now = new Date('2026-10-01T12:00:00Z');
+
+  it('dit au modèle le genre de sa voix, sans lui imposer de mots, quand il est connu', () => {
+    const masculine = buildSystemPrompt({ ...ctx, voiceGender: 'masculine' }, now);
+    expect(masculine).toContain('Ta voix est masculine');
+    expect(masculine).toContain('s’accordent à ce genre'.replace('’', "'"));
+    expect(buildSystemPrompt({ ...ctx, voiceGender: 'feminine' }, now)).toContain(
+      'Ta voix est féminine',
+    );
+  });
+
+  it('ne dit rien du genre quand il est inconnu : le prompt reste celui d’avant', () => {
+    expect(buildSystemPrompt(ctx, now)).not.toContain('Ta voix est');
+    expect(buildSystemPrompt({ ...ctx }, now)).not.toContain('Ta voix est');
+  });
+
+  it('vaut aussi pour le tour structuré (base commune)', () => {
+    expect(buildSystemPrompt({ ...ctx, voiceGender: 'masculine' }, now)).toContain(
+      'Ta voix est masculine',
+    );
+  });
+
+  it('vient du réglage de la voix par défaut, et jamais d’une voix propre au restaurant (genre inconnu)', () => {
+    expect(agentVoiceGender(null, { VOICE_GENDER: 'masculine' })).toBe('masculine');
+    expect(agentVoiceGender({}, { VOICE_GENDER: 'Feminine ' })).toBe('feminine');
+    expect(
+      agentVoiceGender({ voiceIdCa: 'voix-du-restaurant' }, { VOICE_GENDER: 'masculine' }),
+    ).toBeUndefined();
+    expect(agentVoiceGender(null, {})).toBeUndefined();
+    expect(agentVoiceGender(null, { VOICE_GENDER: 'autre' })).toBeUndefined();
+  });
+
+  it('lit encore l’ancien nom du réglage, mais le nouveau l’emporte, même quand il est vide', () => {
+    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'feminine' })).toBe('feminine');
+    expect(
+      agentVoiceGender(null, { VOICE_GENDER: 'masculine', CARTESIA_VOICE_GENDER: 'feminine' }),
+    ).toBe('masculine');
+    expect(agentVoiceGender(null, { VOICE_GENDER: '', CARTESIA_VOICE_GENDER: 'feminine' })).toBe(
+      'feminine',
+    );
+  });
+});
+
+describe('tour structuré : informations déjà données', () => {
+  it('retient le jour, l’heure et le nombre dits dans une question, et ne les redemande pas', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'vous êtes ouvert demain',
+      state: createStructuredTurnState(),
+      openingHours: {} as never,
+    });
+    expect(system.content).toContain(
+      'même dans une question sur les horaires ou les disponibilités',
+    );
+    expect(system.content).toContain(
+      "sauf s'ils sont ambiguës, contredits par ce que l'appelant vient de dire, ou si le créneau n'est plus disponible",
     );
   });
 });

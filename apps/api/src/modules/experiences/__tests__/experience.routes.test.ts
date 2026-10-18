@@ -98,6 +98,7 @@ describe('experience routes', () => {
       siteStatus: 'ACTIVE',
     } as never);
     vi.mocked(db.restaurant.findFirst).mockResolvedValue({ id: 'test-rest-1' } as never);
+    vi.mocked(db.experienceCheckout.findMany).mockResolvedValue([] as never);
   });
 
   afterAll(async () => {
@@ -223,5 +224,36 @@ describe('experience routes', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: 'Validation Error' });
+  });
+  it('protects deletion with the runtime flag and manager role', async () => {
+    const app = await getApp();
+    const disabled = await app.inject({
+      method: 'DELETE',
+      url: '/experiences/experience-1',
+      headers: AUTH,
+    });
+    expect(disabled.statusCode).toBe(503);
+    vi.stubEnv('EXPERIENCES_ENABLED', 'true');
+    const staff = await app.inject({
+      method: 'DELETE',
+      url: '/experiences/experience-1',
+      headers: { ...AUTH, 'x-test-site-role': 'STAFF' },
+    });
+    expect(staff.statusCode).toBe(403);
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty success response after a permitted deletion', async () => {
+    vi.stubEnv('EXPERIENCES_ENABLED', 'true');
+    vi.mocked(db.$transaction).mockResolvedValue(undefined as never);
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/experiences/experience-1',
+      headers: AUTH,
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe('');
+    expect(db.$transaction).toHaveBeenCalled();
   });
 });

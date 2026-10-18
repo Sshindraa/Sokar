@@ -885,8 +885,6 @@ describe('shadow boundary', () => {
     const root = path.resolve(__dirname, '..');
     for (const file of [
       'turn-policy.ts',
-      'turn-plan-authority.ts',
-      '../tools.ts',
       'llm-handler.ts',
       'manager.ts',
       'structured-turn/engine.ts',

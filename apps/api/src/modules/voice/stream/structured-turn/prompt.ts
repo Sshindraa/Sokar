@@ -1,6 +1,7 @@
 import { normalizeOpeningHours } from '@sokar/shared';
+import { nameLetterSequence, nameLettersData } from './name-readback';
 import type { ChatMessage } from '../types';
-import type { DayAvailability, StructuredTurnState } from './fact-guards';
+import { spelledLettersOf, type DayAvailability, type StructuredTurnState } from './fact-guards';
 
 /**
  * Consignes du tour structuré, ajoutées au prompt du restaurant. Elles
@@ -24,15 +25,15 @@ Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit
 - Limites : tes seules actions sont celles ci-dessus. Tu ne peux ni annuler une réservation, ni signaler un retard, ni vendre une carte cadeau par téléphone : dis-le simplement, oriente vers le site ou le widget de réservation pour une carte cadeau, ou propose le gérant ou de laisser un message. Tu ne promets jamais une de ces actions.
 - message : vide sauf pour take_message.
 - confidence : high si tu es sûr de ta compréhension, low si tu hésites (alors pose une question de clarification et action none).
-- say : ta phrase parlée, naturelle et courte, qui se termine par au plus une question. Comme au téléphone : pas de « Parfait » ou « Très bien » systématique en ouverture, pas d'écho de ce que l'appelant vient de dire, pas de point d'exclamation, pas la même question mot pour mot qu'au tour précédent. Quand tu dois reposer une question restée sans réponse (l'appelant a posé une autre question, ou n'a rien répondu), ne recopie jamais ta dernière phrase : reprends-la plus brièvement et avec d'autres mots, ou enchaîne sans la répéter en entier.
-Quand l'appelant pose une question qui contient, clairement dite, une date, une heure ou un nombre (ses mots suffisent à savoir de quelle information il s'agit), il répond déjà en creux à ta question ouverte : retiens la valeur, réponds à sa question, puis fais-lui confirmer cette valeur ou passe à l'information suivante. Ta question de fin de phrase porte alors sur l'information suivante ou sur la confirmation de cette valeur : ne repose jamais à vide la question à laquelle il vient de répondre.
-Un récapitulatif va droit au contenu, sans phrase d'introduction, et dit chaque information une seule fois sous sa forme parlée la plus courte : un jour proche se dit par son nom relatif seul, sans le répéter en date complète. Il ne rejoue pas ce que l'appelant vient de confirmer. Une fois l'orthographe d'un nom confirmée, dis-le comme un nom, pas lettre par lettre.
+- say : ta phrase parlée, naturelle et courte, qui se termine par au plus une question. Comme au téléphone : pas de « Parfait » ou « Très bien » systématique en ouverture, ni aucune autre formule qui revient à chaque tour, pas de reprise de sa phrase (une valeur peut revenir en passant, quand la phrase y gagne, jamais en confirmation à chaque tour), pas de point d'exclamation, pas la même question mot pour mot qu'au tour précédent. Quand tu dois reposer une question restée sans réponse (l'appelant a posé une autre question, ou n'a rien répondu), ne recopie jamais ta dernière phrase : reprends-la plus brièvement et avec d'autres mots, ou enchaîne sans la répéter en entier.
+Quand l'appelant pose une question qui contient, clairement dite, une date, une heure ou un nombre (ses mots suffisent à savoir de quelle information il s'agit), il répond déjà en creux à ta question ouverte : retiens la valeur, réponds à sa question, puis enchaîne sur l'information suivante. Tu ne demandes pas de confirmer cette date, cette heure ou ce nombre, sauf s'ils sont ambigus. Ta question de fin de phrase porte alors sur l'information suivante : ne repose jamais à vide la question à laquelle il vient de répondre. Cela vaut aussi quand tu n'attends rien : une date, une heure ou un nombre que l'appelant dit clairement est retenu dans draft dès qu'il est dit, même dans une question sur les horaires ou les disponibilités. Tu ne les redemandes jamais après les avoir retenus, sauf s'ils sont ambiguës, contredits par ce que l'appelant vient de dire, ou si le créneau n'est plus disponible. Tu montres que tu écoutes par la question suivante, pas en reformulant chaque réponse.
+Un récapitulatif va droit au contenu, sans phrase d'introduction, et dit chaque information une seule fois sous sa forme parlée la plus courte : un jour proche se dit par son nom relatif seul, sans le répéter en date complète. Il ne rejoue pas ce que l'appelant vient de confirmer. Il n'a lieu qu'à la fin de la réservation, avant son accord, ou pour lever une ambiguïté. Une fois l'orthographe d'un nom confirmée, dis-le comme un nom, pas lettre par lettre.
 Une fois la réservation créée et ton au revoir dit, un mot de politesse ou de salutation de l'appelant est sa façon de prendre congé, pas un nouvel appel : réponds-y d'une courte phrase avec action=end_call. S'il fait une nouvelle demande, traite-la normalement. Si tu ne comprends pas ce qu'il dit à ce moment-là, ne lui redemande pas ce qu'il veut : rien ne manque à la réservation, et des mots qui ne veulent rien dire après ton au revoir sont presque toujours un au revoir mal transcrit. Prends congé de la même façon.
 Une formule de politesse se rapporte au moment où tu parles (MOMENT DE LA JOURNÉE), pas au moment dont vous parlez (la réservation).
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
-La disponibilité dépend du nombre de personnes : tant que draft.partySize vaut 0, ne dis jamais qu'un horaire est possible, libre ou que « ça marche », même si « dayAvailability » le montre libre. Retiens l'horaire dans draft sans l'annoncer comme acquis ni le répéter, et demande le nombre ; tu confirmeras la disponibilité une fois le nombre connu. Dès que la date, l'heure et le nombre sont connus, lis dans « freeSlotsByPartySize » la ligne qui contient ce nombre (« 9-12 » contient 10) : si l'heure demandée n'y figure pas, dis clairement qu'elle n'est pas disponible pour ce nombre et propose les horaires libres les plus proches de cette ligne ; ne demande pas le nom et ne dis pas « c'est noté » pour cet horaire.
+La disponibilité dépend du nombre de personnes : tant que draft.partySize vaut 0, ne dis jamais qu'un horaire est possible, libre ou que « ça marche », même si « dayAvailability » le montre libre. Retiens l'horaire dans draft sans l'annoncer comme acquis ni le répéter, et demande le nombre ; tu confirmeras la disponibilité une fois le nombre connu. Dès que la date, l'heure et le nombre sont connus, lis dans « freeSlotsByPartySize » la ligne qui contient ce nombre (« 9-12 » contient 10) : si l'heure demandée n'y figure pas, dis clairement qu'elle n'est pas disponible pour ce nombre et propose les horaires libres les plus proches de cette ligne ; ne demande pas le nom et ne dis pas « c'est noté » pour cet horaire. Une ligne « aucune table » veut dire que le restaurant n'a aucune table pour ce nombre, un autre jour n'y changerait rien : ne propose alors aucun autre jour ni aucun horaire, traite ce nombre comme un groupe (le gérant ou un message). « aucun » veut dire complet ce jour-là seulement.
 Quand l'ÉTAT VÉRIFIÉ contient « dateFacts », c'est la vérité pour le jour demandé : ses horaires (ou FERMÉ) priment sur tout ce qui a été dit plus tôt dans l'appel, y compris par toi ; si tu t'étais trompé, corrige-toi.
-L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. Dans une épellation, « deux » ou « double » suivi d'une lettre, ou un chiffre suivi d'une lettre, double cette lettre, même sans autre mot autour ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom, c'est un faux départ : ne garde que la DERNIÈRE épellation complète, jamais un mélange des deux. Relis toujours toutes les lettres retenues, y compris les doubles. Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Seules les lettres épelées forment le nom : un mot dit en plus avant ou après l'épellation n'en fait jamais partie, même s'il ressemble à un nom, et il ne figure ni dans customerName ni dans ta relecture. Relis-la lettre par lettre et fais-la confirmer. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
+L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs morceaux sur plusieurs tours : assemble les morceaux dans l'ordre. Dans une épellation, « deux » ou « double » suivi d'une lettre, ou un chiffre suivi d'une lettre, double cette lettre, même sans autre mot autour ; un chiffre n'est jamais une lettre du nom. Un appelant se reprend souvent au milieu de l'épellation : quand les lettres recommencent par la première lettre du nom, c'est un faux départ : ne garde que la DERNIÈRE épellation complète, jamais un mélange des deux. Les lettres épelées, doubles comprises, font foi sur le mot entendu juste avant, même quand il s'écrit autrement ; le mot entendu ne sert qu'à départager deux lettres qui se ressemblent au téléphone. Seules les lettres épelées forment le nom : un mot dit en plus avant ou après l'épellation n'en fait jamais partie, même s'il ressemble à un nom, et il ne figure ni dans customerName ni dans ta relecture. Quand tu relis le nom (awaiting=customerNameConfirmation), tu écris ses lettres une à une, isolées et dans l'ordre, une lettre doublée s'écrivant deux fois de suite : « nameLetters » de l'ÉTAT VÉRIFIÉ donne les lettres du nom retenu AVANT ce tour (« count » : nombre de fois que la lettre s'écrit de suite) ; « spelledName » et « spelledLetters », quand ils sont présents, donnent les lettres que l'appelant vient d'épeler à ce tour, déjà déchiffrées par le code (le mot entier, puis lettre par lettre avec le même « count ») : elles sont exactes, ne les redéchiffre pas, et c'est leur suite (assemblée avec les morceaux des tours précédents si l'épellation s'étale) qui forme le nouveau nom ; si le nom change à ce tour, ce sont les lettres du nouveau nom. Tu ne dis jamais le nom comme un mot et tu ne décris jamais sa graphie (doubles, accents) : la voix lit mal une lettre suivie d'un nombre ou d'un mot. Fais confirmer cette relecture. Quand l'appelant ré-épelle ou corrige après ta relecture, customerName prend aussitôt la nouvelle épellation : ta phrase et customerName disent toujours le même nom. Si l'appelant ne veut plus épeler, garde l'orthographe la plus probable et poursuis la réservation.`;
 
 /**
  * Vérification de compréhension (drapeau par restaurant). Consignes de principe, sans formulation à imiter :
@@ -41,8 +42,18 @@ L'épellation d'un nom arrive transcrite automatiquement, parfois en plusieurs m
  */
 const UNDERSTANDING_INSTRUCTIONS = `COMPRÉHENSION VÉRIFIÉE (prioritaire sur la retenue de valeur ci-dessus) :
 - reading : avant de remplir le brouillon, redis en une courte phrase littérale ce que l'appelant a dit, sans l'interpréter au-delà de ses mots et sans compléter ce qui manque. La transcription vient d'une reconnaissance vocale au téléphone : un mot peut être faux, surtout un nombre, et une phrase peut être incomplète ou ne rien vouloir dire.
-- understanding : clear seulement si, pour CHAQUE valeur que tu ajoutes ou changes dans draft, les mots de l'appelant suffisent à savoir de quelle information il s'agit (le jour, l'heure, le nombre de personnes ou le nom) et que c'est la seule lecture raisonnable compte tenu de ta dernière question. doubtful dans tous les autres cas : une valeur qui pourrait désigner autre chose, une phrase qui n'a pas de sens comme réponse à ta question, une valeur que tu devrais deviner ou déduire plutôt qu'entendre.
+- understanding : clear seulement si, pour CHAQUE valeur que tu ajoutes ou changes dans draft, les mots de l'appelant suffisent à savoir de quelle information il s'agit (le jour, l'heure, le nombre de personnes ou le nom) et que c'est la seule lecture raisonnable compte tenu de ta dernière question (ou, s'il n'en a pas, de ce qu'il vient de dire). doubtful dans tous les autres cas : une valeur qui pourrait désigner autre chose, une phrase qui n'a pas de sens comme réponse à ta question, une valeur que tu devrais deviner ou déduire plutôt qu'entendre.
 - Quand understanding vaut doubtful : draft reste exactement celui de l'ÉTAT VÉRIFIÉ, interpretation=unclear, action none, confidence low. Ta phrase ne confirme, n'annonce et ne répète aucune valeur douteuse : elle redemande naturellement ce qui manque, en une seule question, sans reprocher quoi que ce soit à l'appelant. Une fois la réservation créée et ton au revoir dit, rien ne manque : tu ne redemandes rien, tu prends congé (action end_call).`;
+
+/**
+ * Ton de voix (drapeau par restaurant) : principes, sans phrase à imiter. Hamza veut une voix plus humaine
+ * mais jamais surjouée (16/10/2026) : un ton au plus par réponse, aucun sur une réponse pratique.
+ */
+const TONE_INSTRUCTIONS = `TON DE VOIX :
+- tone : la façon dont ta phrase sera dite au téléphone. Il ne change aucun mot de say.
+- none par défaut, et toujours pour une réponse pratique : une question sur le jour, l'heure, le nombre ou le nom, une relecture, un récapitulatif, une confirmation, une information sur le restaurant.
+- Un autre ton seulement quand ce que l'appelant vient de dire appelle une émotion qu'une personne à l'accueil laisserait entendre à ce moment précis : cheerful quand il partage une bonne nouvelle ou une occasion heureuse ; apologetic quand ta phrase annonce un refus, une indisponibilité ou s'excuse d'une erreur ; amused quand il plaisante ; reassuring quand il hésite, s'inquiète ou s'excuse.
+- Un appel professionnel reste sobre : la plupart de tes phrases sont none. Dans le doute, none.`;
 
 /**
  * Jour de la semaine et horaires de la date du brouillon, calculés par le code.
@@ -61,11 +72,13 @@ export function describeDate(
   );
   const days = normalizeOpeningHours(openingHours);
   if (!days.length) return { date, weekday, hours: 'horaires non renseignés' };
-  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
+  const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
   return {
     date,
     weekday,
-    hours: slot ? `ouvert ${slot.open}–${slot.close}` : 'FERMÉ ce jour-là',
+    hours: periods.length
+      ? `ouvert ${periods.map((period) => `${period.open}–${period.close}`).join(' puis ')}`
+      : 'FERMÉ ce jour-là',
   };
 }
 
@@ -123,16 +136,45 @@ function describeDayAvailability(day: DayAvailability) {
     .map(Number)
     .sort((a, b) => a - b);
   const freeSlotsByPartySize: Record<string, string> = {};
+  const noTable = new Set(day.noTableSizes ?? []);
+  // « aucune table » (aucun jour n'y change rien) se distingue de « aucun » (complet ce jour-là).
+  const label = (size: number) =>
+    noTable.has(size) ? 'aucune table' : compactSlots(day.slotsBySize[size]);
   let groupStart = sizes[0];
   sizes.forEach((size, index) => {
     const next = sizes[index + 1];
-    const text = compactSlots(day.slotsBySize[size]);
-    if (next !== undefined && compactSlots(day.slotsBySize[next]) === text) return;
+    const text = label(size);
+    if (next !== undefined && label(next) === text) return;
     freeSlotsByPartySize[groupStart === size ? String(size) : `${groupStart}-${size}`] = text;
     groupStart = next;
   });
   return { date: day.date, closed: false, freeSlotsByPartySize };
 }
+
+/**
+ * Relance sans énoncé de l'appelant : le modèle formule la relance à partir d'un fait, sans phrase codée.
+ * unheard : une parole a été détectée sans aucun mot reconnu ; silence : rien depuis sa dernière question ;
+ * opening : rien depuis l'accueil.
+ */
+export type StructuredRecoveryKind = 'unheard' | 'silence' | 'opening';
+
+const RECOVERY_INSTRUCTIONS: Record<StructuredRecoveryKind, string> = {
+  unheard:
+    "RELANCE : l'appelant a parlé mais aucun mot n'a pu être reconnu ; il n'y a aucune phrase à interpréter. Redemande-lui ta dernière question en t'excusant brièvement de ne pas avoir entendu.",
+  silence:
+    "RELANCE : l'appelant n'a rien dit depuis ta dernière question ; il n'y a aucune phrase à interpréter. Assure-toi brièvement qu'il est toujours là, puis repose ta dernière question.",
+  opening:
+    "RELANCE : l'appelant n'a encore rien dit depuis ton accueil ; il n'y a aucune phrase à interpréter. Tu ne sais pas pourquoi il se tait : ne dis jamais que tu l'entends ou que tu l'entends mal (pas de « je vous entends »), et ne parle ni de la ligne ni de l'audio. Invite-le simplement, en une courte phrase, à dire ce dont il a besoin.",
+};
+const RECOVERY_CONSTRAINTS =
+  "turnComplete=true, action none, draft inchangé (tu n'as rien appris), awaiting = ce que ta phrase attend. « say » n'est JAMAIS vide.";
+/** Dernier message du dialogue pour une relance : ce que l'appelant n'a pas dit, sans texte à lire. */
+const RECOVERY_USER_MARKER = '(aucune parole reconnue)';
+
+const NAME_AWAITING: ReadonlySet<StructuredTurnState['lastAwaiting']> = new Set([
+  'customerName',
+  'customerNameConfirmation',
+]);
 
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
@@ -148,14 +190,29 @@ export function buildStructuredTurnMessages(input: {
   dayPart?: string;
   /** L'appelant s'est tu après un tour jugé inachevé : il faut lui répondre. */
   callerFinished?: boolean;
+  /** Relance sans énoncé : l'appelant n'a pas été entendu ou ne dit rien. */
+  recovery?: StructuredRecoveryKind;
   /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
   understanding?: boolean;
+  /** Le fait de actionResult est une consigne de suite (rien n'a été exécuté), pas un résultat d'action. */
+  formulation?: boolean;
+  /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
+  tone?: boolean;
 }): ChatMessage[] {
+  const nameLetters = nameLettersData(input.state.draft.customerName);
+  // Le nom est attendu : les lettres épelées dans les mots de l'appelant sont déchiffrées par le code (« a 2 s a 2 m »
+  // = A, S ×2, A, M ×2) pour que le modèle n'ait plus à le faire (appel 8043662c : lettre doublée perdue au premier passage).
+  const spelledName = NAME_AWAITING.has(input.state.lastAwaiting)
+    ? nameLetterSequence(spelledLettersOf(input.transcript))
+    : '';
+  const spelledLetters = nameLettersData(spelledName);
   const verified = {
     draft: input.state.draft,
     availability: input.state.availability,
     reservationCreated: input.state.reservationCreated,
     lastAwaiting: input.state.lastAwaiting,
+    ...(nameLetters.length ? { nameLetters } : {}),
+    ...(spelledLetters.length ? { spelledName, spelledLetters } : {}),
     ...(input.state.draft.date
       ? { dateFacts: describeDate(input.state.draft.date, input.openingHours) }
       : {}),
@@ -168,13 +225,17 @@ export function buildStructuredTurnMessages(input: {
     input.systemPrompt,
     STRUCTURED_TURN_INSTRUCTIONS,
     input.understanding ? UNDERSTANDING_INSTRUCTIONS : '',
+    input.tone ? TONE_INSTRUCTIONS : '',
     calendar
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
       : '',
     `ÉTAT VÉRIFIÉ : ${JSON.stringify(verified)}`,
-    input.actionResult
-      ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
-      : '',
+    input.actionResult && input.formulation
+      ? `CONSIGNE DE SUITE (rien n'a été exécuté, ne la récite pas) : ${input.actionResult}\nFormule ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici. Enchaîne directement sur ce qui manque, ou sur la suite de l'appel si rien ne manque, sans reprendre ce qui est déjà retenu : ta question suffit à montrer que tu as compris.`
+      : input.actionResult
+        ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
+        : '',
+    input.recovery ? `${RECOVERY_INSTRUCTIONS[input.recovery]}\n${RECOVERY_CONSTRAINTS}` : '',
     input.callerFinished
       ? "L'appelant s'est tu : son tour est terminé. turnComplete=true ; réponds à ce qu'il a dit, ou demande-lui gentiment de préciser."
       : '',
@@ -194,6 +255,6 @@ export function buildStructuredTurnMessages(input: {
   return [
     { role: 'system', content: system },
     ...dialogue.map((message) => ({ role: message.role, content: message.content })),
-    { role: 'user', content: input.transcript },
+    { role: 'user', content: input.recovery ? RECOVERY_USER_MARKER : input.transcript },
   ];
 }

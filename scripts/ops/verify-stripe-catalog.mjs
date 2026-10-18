@@ -13,55 +13,28 @@
  *   node --env-file=/opt/sokar/apps/api/.env scripts/ops/verify-stripe-catalog.mjs
  *   node --env-file=.env scripts/ops/verify-stripe-catalog.mjs --json
  *
- * Les montants annuels reprennent la grille du runbook Stripe (-20 % sur
- * 12 mensualités). Chaque montant peut être surchargé par
- * `STRIPE_EXPECTED_<SUFFIXE>` (ex. `STRIPE_EXPECTED_ESSENTIAL_ANNUAL=199000`)
- * le jour où la grille change, sans toucher au script.
+ * Les tarifs et le calcul annuel viennent du catalogue partagé en centimes.
  */
 
 const STRIPE_API = 'https://api.stripe.com/v1/prices';
 
-/** Catalogue mensuel : montants en centimes, décidés par le produit. */
-export const EXPECTED_CATALOG = [
+import catalogue from '../../packages/shared/src/pricing-catalog.cjs';
+const { PRICING_CATALOG, ANNUAL_DISCOUNT_PERCENT, annualPriceCents } = catalogue;
+
+export const EXPECTED_CATALOG = Object.values(PRICING_CATALOG).flatMap((entry) => [
   {
-    env: 'STRIPE_PRICE_ESSENTIAL_MONTHLY',
-    label: 'Essential mensuel',
+    env: `STRIPE_PRICE_${entry.stripeSuffix}_MONTHLY`,
+    label: `${entry.label} mensuel`,
     interval: 'month',
-    amount: 19900,
+    amount: entry.monthlyCents,
   },
   {
-    env: 'STRIPE_PRICE_ESSENTIAL_ANNUAL',
-    label: 'Essential annuel (-20 %)',
+    env: `STRIPE_PRICE_${entry.stripeSuffix}_ANNUAL`,
+    label: `${entry.label} annuel (-${ANNUAL_DISCOUNT_PERCENT} %)`,
     interval: 'year',
-    amount: 191040,
+    amount: annualPriceCents(entry.monthlyCents),
   },
-  { env: 'STRIPE_PRICE_PRO_MONTHLY', label: 'Pro mensuel', interval: 'month', amount: 29900 },
-  { env: 'STRIPE_PRICE_PRO_ANNUAL', label: 'Pro annuel (-20 %)', interval: 'year', amount: 287040 },
-  {
-    env: 'STRIPE_PRICE_MULTI_SITE_MONTHLY',
-    label: 'Multi-site mensuel (base)',
-    interval: 'month',
-    amount: 24900,
-  },
-  {
-    env: 'STRIPE_PRICE_MULTI_SITE_ANNUAL',
-    label: 'Multi-site annuel (base, -20 %)',
-    interval: 'year',
-    amount: 239040,
-  },
-  {
-    env: 'STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY',
-    label: 'Multi-site mensuel (site sup.)',
-    interval: 'month',
-    amount: 9900,
-  },
-  {
-    env: 'STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL',
-    label: 'Multi-site annuel (site sup., -20 %)',
-    interval: 'year',
-    amount: 95040,
-  },
-];
+]);
 
 /** `STRIPE_PRICE_ESSENTIAL_MONTHLY` → `STRIPE_EXPECTED_ESSENTIAL_MONTHLY`. */
 export function expectedAmountEnvName(envName) {
@@ -133,13 +106,31 @@ async function main() {
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
 
   const rows = [];
+  const products = new Map();
   for (const entry of EXPECTED_CATALOG) {
     const id = process.env[entry.env].trim();
-    const override = process.env[expectedAmountEnvName(entry.env)];
-    const expectedAmount = override ? Number.parseInt(override, 10) : entry.amount;
+    const expectedAmount = entry.amount;
 
     const actual = await fetchPrice(id, secretKey);
     const problems = comparePrice(entry, actual, expectedAmount);
+    if (actual?.tax_behavior !== 'exclusive')
+      problems.push('prix non HT (tax_behavior différent de exclusive)');
+    if (actual?.billing_scheme !== 'per_unit')
+      problems.push('billing_scheme différent de per_unit');
+    const suffix = entry.env.replace(/^STRIPE_PRICE_/, '').replace(/_(MONTHLY|ANNUAL)$/, '');
+    const expectedAssociation =
+      suffix === 'MULTI_SITE_ADDON'
+        ? 'multi-site-addon'
+        : suffix.toLowerCase().replaceAll('_', '-');
+    const association =
+      suffix === 'MULTI_SITE_ADDON'
+        ? actual?.metadata?.sokar_component
+        : actual?.metadata?.sokar_plan;
+    if (association !== expectedAssociation) problems.push('association à l’offre incorrecte');
+    if (products.has(suffix) && products.get(suffix) !== actual?.product)
+      problems.push('produits mensuel et annuel différents');
+    products.set(suffix, actual?.product);
+
     if (duplicates.includes(id)) problems.push('identifiant dupliqué entre deux variables');
 
     rows.push({

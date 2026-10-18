@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
-import { TrendingUp, Euro, PhoneCall, CalendarCheck } from 'lucide-react';
+import { TrendingUp, PhoneCall, CalendarCheck } from 'lucide-react';
 import { SIMULATOR_STEPS } from '@/app/constants';
 
 /* ===== HELPER: RadialDial ===== */
@@ -125,6 +125,7 @@ function SegmentedSlider({
           ))}
         </div>
         <input
+          aria-label={label}
           type="range"
           min={0}
           max={labels.length - 1}
@@ -374,12 +375,18 @@ export default function DemoSection() {
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_26%,hsl(var(--pricing-accent)_/_0.14),transparent_28rem),radial-gradient(circle_at_78%_58%,rgba(255,255,255,0.08),transparent_30rem)]" />
       <div className="relative z-10 mb-12 max-w-lg text-center">
-        <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
-          Le Tableau de Bord en Action
+        <span className="inline-flex items-center rounded-full border border-white/15 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/70">
+          Exemple illustratif — données simulées
+        </span>
+        <h2 className="mt-4 text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
+          Aperçu du tableau de bord
         </h2>
         <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
-          Admirez l&apos;interface de pilotage Sokar en temps réel. Le moniteur d&apos;activité
-          affiche les statistiques de l&apos;assistant vocal en parallèle de la console de dialogue.
+          Exemple de l&apos;interface de pilotage Sokar. Les indicateurs et la conversation
+          ci-dessous sont simulés : restaurant, disponibilités et résultats fictifs. Cette animation
+          est sans audio ni conversation vocale interactive ; elle ne mesure pas la fiabilité
+          réelle. Aucun appel, réservation, SMS, transfert ou facturation n’est déclenché. Les
+          réglages modifient seulement cet aperçu, sans son.
         </p>
       </div>
 
@@ -388,26 +395,17 @@ export default function DemoSection() {
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />
           <div className="grid grid-cols-2 gap-3.5">
-            <ShowcaseMetricCard
-              label="Appels traités"
-              value="412"
-              icon={PhoneCall}
-              trend="+12.4%"
-            />
-            <ShowcaseMetricCard
-              label="Tables réservées"
-              value="189"
-              icon={CalendarCheck}
-              trend="+15.8%"
-            />
-            <ShowcaseMetricCard
-              label="Taux de réponse"
-              value="98%"
-              icon={TrendingUp}
-              isDial
-              dialValue={98}
-            />
-            <ShowcaseMetricCard label="Revenus récupérés" value="5 420 €" icon={Euro} featured />
+            <ShowcaseMetricCard label="Appels fictifs" value="412" icon={PhoneCall} />
+            <ShowcaseMetricCard label="Réservations fictives" value="189" icon={CalendarCheck} />
+            <div className="col-span-2">
+              <ShowcaseMetricCard
+                label="Indicateur fictif"
+                value="98%"
+                icon={TrendingUp}
+                isDial
+                dialValue={98}
+              />
+            </div>
           </div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/60 shadow-xl overflow-hidden flex flex-col h-full min-h-[320px] sm:min-h-[380px] transition-all duration-300 relative">
@@ -424,10 +422,10 @@ export default function DemoSection() {
               </div>
               <div>
                 <h4 className="text-xs font-semibold tracking-tight text-white">
-                  Console de Dialogue Live
+                  Exemple de conversation
                 </h4>
-                <p className="text-xs sm:text-[11px] text-success font-medium flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-success" /> Appel client en cours
+                <p className="text-xs sm:text-[11px] text-white/50 font-medium flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/40" /> Scénario simulé
                 </p>
               </div>
             </div>

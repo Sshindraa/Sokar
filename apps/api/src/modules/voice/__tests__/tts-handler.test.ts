@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { CARTESIA_MODEL } from '@sokar/config';
 import type { CallSession } from '../stream/types';
@@ -16,11 +16,16 @@ vi.mock('../../../shared/sentry/client', () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock('../../../shared/telnyx/http-agent', () => ({
+  telnyxFetch: vi.fn(async () => new Response('{}', { status: 200 })),
+}));
+
 vi.mock('../stream/session-persistence', () => ({
   persistLatencyTrace: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { getTtsCached } from '../tts-cache';
+import { captureException } from '../../../shared/sentry/client';
 import { cleanTextForTts, getInterSentencePauseMs, speakTtsStreamed } from '../stream/tts-handler';
 import { TTS_FRAME_BYTES } from '../stream/constants';
 
@@ -135,6 +140,15 @@ describe('prosodie TTS', () => {
     );
   });
 
+  it('ne lit pas « Monsieur » pour un M épelé en fin de relecture', () => {
+    // Audit de lecture du 16/10/2026 : « A, S, S, A, M, M. C'est bien ça ? » devenait « M, Monsieur C'est… ».
+    expect(cleanTextForTts("Je note A, S, S, A, M, M. C'est bien ça ?")).toBe(
+      "Je note A, S, S, A, M, M. C'est bien ça ?",
+    );
+    expect(cleanTextForTts('M. Dupont, à samedi.')).toBe('Monsieur Dupont, à samedi.');
+    expect(cleanTextForTts('Bonjour M. Dupont.')).toBe('Bonjour Monsieur Dupont.');
+  });
+
   it('laisse Cartesia piloter la pause selon la ponctuation', () => {
     expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(0);
     expect(getInterSentencePauseMs('Très bien.')).toBe(0);
@@ -227,5 +241,92 @@ describe('speakTtsStreamed — dialogue des appels de test', () => {
     await playback;
 
     expect(spokenStatus(session)).toEqual(['not_sent']);
+  });
+});
+
+describe('speakTtsStreamed — fournisseur ElevenLabs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+    vi.stubEnv('ELEVENLABS_TTS_MODEL', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('synthétise en G.711 natif via ElevenLabs et isole le cache du fournisseur', async () => {
+    const response = new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession('PCMA'), 'Bonjour, je vous écoute.');
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe(
+      'https://api.elevenlabs.io/v1/text-to-speech/voix-test?output_format=alaw_8000',
+    );
+    expect(init?.headers).toMatchObject({ 'xi-api-key': 'unit-test-placeholder-credential' });
+    expect(String(vi.mocked(getTtsCached).mock.calls[0]?.[1])).toBe(
+      'elevenlabs|voix-test|eleven_v4_turbo|fr|alaw8k',
+    );
+    fetchMock.mockRestore();
+  });
+});
+
+describe('speakTtsStreamed — libellés du chemin Cartesia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setEnv('CARTESIA_API_KEY', ['test', 'key'].join('-'));
+    setEnv('CARTESIA_VOICE_ID', ['test', 'voice'].join('-'));
+  });
+
+  it('garde le libellé « Cartesia » dans l’erreur remontée à Sentry', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('', { status: 500 }));
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession(), 'Bonjour, je vous écoute.');
+
+    const messages = vi
+      .mocked(captureException)
+      .mock.calls.map(([error]) => (error as Error).message);
+    expect(messages).toContain('Cartesia stream failed with status 500');
+    fetchMock.mockRestore();
+  });
+});
+
+describe('speakTtsStreamed — ElevenLabs en flux', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+    vi.stubEnv('ELEVENLABS_TTS_MODEL', '');
+    vi.stubEnv('ELEVENLABS_TTS_STREAMING', 'true');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('synthétise via /stream quand le drapeau est activé, avec le même format natif', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(
+        async () => new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 }),
+      );
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession('PCMA'), 'Bonjour, je vous écoute.');
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toBe(
+      'https://api.elevenlabs.io/v1/text-to-speech/voix-test/stream?output_format=alaw_8000',
+    );
+    fetchMock.mockRestore();
   });
 });

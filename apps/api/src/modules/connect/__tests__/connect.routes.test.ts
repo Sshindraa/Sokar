@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi, type Mock } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 /**
  * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).
@@ -25,7 +26,10 @@ import type { PublicRestaurantDto } from '../connect.types';
 const EXPECTED_PUBLIC_PREDICATE = {
   exposureSettings: { connectPublished: true },
   publishedAt: { not: null },
-  slug: { not: null },
+  slug: {
+    not: null,
+    notIn: expect.arrayContaining(['chez-sokar-demo', 'chez-sokar-bistrot-paris']),
+  },
   agenticOptIn: true,
 };
 
@@ -74,6 +78,7 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
+import { PolicyValidationError } from '../../agentic-reservations/core/policies.service';
 
 const SLUG = 'chez-sokar-demo';
 const RESTAURANT_ID = 'ba5be41b-eb72-4e05-bb9c-b576e39e33ba';
@@ -120,12 +125,17 @@ let app: FastifyInstance;
 describe('Sokar Connect — Routes publiques', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Les créneaux de ces tests sont fixes (29 juin) : l'horloge est figée avant eux, sinon le hold
+    // refuserait un créneau passé ou dans le délai minimum.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-25T10:00:00.000Z'));
     // Clear le store Redis in-memory pour éviter les cache hits
     // entre tests (le helper partage une Map entre les `it()` du fichier).
     await redisCache.flushall();
     app = await getApp();
   });
   afterAll(async () => {
+    vi.useRealTimers();
     await closeApp();
   });
 
@@ -669,100 +679,132 @@ describe('Sokar Connect — Routes publiques', () => {
   });
 
   describe('POST /public/r/:slug/confirm', () => {
-    it('consomme un hold puis confirme la réservation sans notification client', async () => {
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        id: RESTAURANT_ID,
-        slug: SLUG,
-        agenticOptIn: true,
-        publishedAt: new Date('2026-06-24'),
-        city: 'Lyon',
-        country: 'FR',
-        postalCode: '69001',
-        description: null,
-        formattedAddress: '12 Rue',
-        phoneNumber: '+334****0000',
-        phoneE164: '+334****0000',
-        cuisineType: ['Française'],
-        priceRange: 2,
-        openingHours: { mon: { open: '12:00', close: '22:00' } },
-        ambiance: [],
-        dietary: [],
-        noiseLevel: null,
-        exposureSettings: {
-          connectPublished: true,
-          connectAgentic: true,
-        },
-        images: [],
-      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
-      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as unknown as Awaited<
-          ReturnType<typeof db.restaurantExposureSettings.findUnique>
-        >,
-      );
-      vi.mocked(db.customerConsent.create).mockResolvedValue({
-        id: 'consent-confirm',
-      } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
-      vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
-        id: 'hold-confirm',
-        holdToken: CONFIRM_HOLD_TOKEN,
-        status: 'ACTIVE',
-        expiresAt: new Date(Date.now() + 60_000),
-        restaurantId: RESTAURANT_ID,
-        partySize: 2,
-        slotStart: new Date('2026-06-29T20:00:00Z'),
-        slotEnd: new Date('2026-06-29T21:30:00Z'),
-        tableId: null,
-      } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
-
-      const createReservation = vi
-        .spyOn(ReservationService.prototype, 'createReservation')
-        .mockResolvedValue({
-          reservationId: 'reservation-confirm',
-          state: 'CONFIRMED',
-          reused: false,
-        });
-
-      try {
-        const res = await app.inject({
-          method: 'POST',
-          url: `/public/r/${SLUG}/confirm`,
-          payload: {
-            holdToken: CONFIRM_HOLD_TOKEN,
-            idempotencyKey: '11111111-1111-4111-8111-111111111111',
-            customer: {
-              firstName: 'Alice',
-              phone: '+33612345678',
-            },
+    it.each([
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ])(
+      'consomme un hold et conserve le choix WhatsApp (%s, replay %s)',
+      async (accepted, reused) => {
+        vi.stubEnv('WHATSAPP_CONSENT_ENABLED', 'true');
+        vi.stubEnv('RESERVATION_MANAGEMENT_ENABLED', 'true');
+        vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
+        vi.stubEnv('DASHBOARD_URL', 'https://sokar.tech');
+        const reservationId = randomUUID();
+        vi.mocked(db.reservation.findUnique).mockResolvedValue({
+          id: reservationId,
+          restaurantId: RESTAURANT_ID,
+          customerPhone: '+33612345678',
+          createdAt: new Date(),
+          reservedAt: new Date(Date.now() + 2 * 86_400_000),
+        } as never);
+        vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+          id: RESTAURANT_ID,
+          slug: SLUG,
+          agenticOptIn: true,
+          publishedAt: new Date('2026-06-24'),
+          city: 'Lyon',
+          country: 'FR',
+          postalCode: '69001',
+          description: null,
+          formattedAddress: '12 Rue',
+          phoneNumber: '+334****0000',
+          phoneE164: '+334****0000',
+          cuisineType: ['Française'],
+          priceRange: 2,
+          openingHours: { mon: { open: '12:00', close: '22:00' } },
+          ambiance: [],
+          dietary: [],
+          noiseLevel: null,
+          exposureSettings: {
+            connectPublished: true,
+            connectAgentic: true,
           },
-        });
+          images: [],
+        } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+        vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+          mockExposureSettings as unknown as Awaited<
+            ReturnType<typeof db.restaurantExposureSettings.findUnique>
+          >,
+        );
+        vi.mocked(db.customerConsent.create).mockResolvedValue({
+          id: 'consent-confirm',
+        } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
+        vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+          id: 'hold-confirm',
+          holdToken: CONFIRM_HOLD_TOKEN,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 60_000),
+          restaurantId: RESTAURANT_ID,
+          partySize: 2,
+          slotStart: new Date('2026-06-29T20:00:00Z'),
+          slotEnd: new Date('2026-06-29T21:30:00Z'),
+          tableId: null,
+        } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
 
-        expect(res.statusCode).toBe(200);
-        expect(res.json()).toMatchObject({
-          reservationId: 'reservation-confirm',
-          status: 'confirmed',
-          state: 'CONFIRMED',
-          reused: false,
-        });
-        expect(createReservation).toHaveBeenCalledWith(
-          expect.objectContaining({
-            holdToken: CONFIRM_HOLD_TOKEN,
-            actor: 'connect:web',
-            channel: 'WEB',
-          }),
-          expect.objectContaining({ key: '11111111-1111-4111-8111-111111111111' }),
-        );
-        expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
-          'connect-event',
-          expect.objectContaining({
-            event: 'reservation_confirmed',
-            reservationId: 'reservation-confirm',
-          }),
-          expect.any(Object),
-        );
-      } finally {
-        createReservation.mockRestore();
-      }
-    });
+        const createReservation = vi
+          .spyOn(ReservationService.prototype, 'createReservation')
+          .mockResolvedValue({
+            reservationId,
+            state: 'CONFIRMED',
+            reused,
+          });
+
+        try {
+          const res = await app.inject({
+            method: 'POST',
+            url: `/public/r/${SLUG}/confirm`,
+            payload: {
+              holdToken: CONFIRM_HOLD_TOKEN,
+              idempotencyKey: '11111111-1111-4111-8111-111111111111',
+              whatsappReminderConsent: { accepted, version: 'whatsapp-reminder-2026-10-17' },
+              customer: {
+                firstName: 'Alice',
+                phone: '+33612345678',
+              },
+            },
+          });
+
+          expect(res.statusCode).toBe(200);
+          expect(res.json()).toMatchObject({
+            reservationId,
+            status: 'confirmed',
+            state: 'CONFIRMED',
+            reused,
+          });
+          expect(res.json().managementUrl).toMatch(/^https:\/\/sokar.tech\/r#[\w-]+\.[\w-]+$/);
+          expect(createReservation).toHaveBeenCalledWith(
+            expect.objectContaining({
+              holdToken: CONFIRM_HOLD_TOKEN,
+              actor: 'connect:web',
+              channel: 'WEB',
+              consents: expect.objectContaining({ transactionalWhatsapp: accepted }),
+            }),
+            expect.objectContaining({ key: '11111111-1111-4111-8111-111111111111' }),
+          );
+          if (accepted) {
+            if (!reused) expect(res.json().whatsappWithdrawalToken).toMatch(/^[a-f0-9]{64}$/);
+            expect(createReservation.mock.calls[0][0].consents).toMatchObject({
+              whatsappConsentProof: expect.objectContaining({ purpose: 'reservation_reminder' }),
+            });
+          } else {
+            expect(res.json().whatsappWithdrawalToken).toBeUndefined();
+          }
+          expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
+            'connect-event',
+            expect.objectContaining({
+              event: 'reservation_confirmed',
+              reservationId,
+            }),
+            expect.any(Object),
+          );
+        } finally {
+          createReservation.mockRestore();
+          vi.unstubAllEnvs();
+        }
+      },
+    );
 
     it('retourne 410 si hold expiré', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -804,6 +846,170 @@ describe('Sokar Connect — Routes publiques', () => {
       });
 
       expect(res.statusCode).toBe(410);
+    });
+  });
+
+  describe('délai minimum de réservation en ligne', () => {
+    // Le stub du moteur place le créneau « 20:00 » le 29 juin 2026 à 20:00 UTC.
+    const SLOT_START = new Date('2026-06-29T20:00:00.000Z');
+    const minutesBefore = (minutes: number) => new Date(SLOT_START.getTime() - minutes * 60_000);
+
+    function mockPublished(minLeadTimeMinutes: number, connectAgentic = false) {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date('2026-06-24'),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        description: null,
+        formattedAddress: '12 Rue',
+        phoneNumber: '+334****0000',
+        phoneE164: '+334****0000',
+        cuisineType: ['Française'],
+        priceRange: 2,
+        openingHours: { mon: { open: '12:00', close: '22:00' } },
+        ambiance: [],
+        dietary: [],
+        noiseLevel: null,
+        exposureSettings: { connectPublished: true, connectAgentic },
+        images: [],
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
+        ...mockExposureSettings,
+        minLeadTimeMinutes,
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findUnique>>);
+    }
+
+    const holdRequest = () =>
+      app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/hold`,
+        payload: { date: '2026-06-29', time: '20:00', partySize: 4, source: 'web' },
+      });
+
+    describe('POST /public/r/:slug/hold', () => {
+      it('refuse un créneau dans le délai minimum : 409, code explicite, message en français', async () => {
+        mockPublished(120);
+        vi.setSystemTime(minutesBefore(90));
+
+        const res = await holdRequest();
+
+        expect(res.statusCode).toBe(409);
+        expect(res.json()).toEqual({
+          error:
+            'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.',
+          code: 'INSUFFICIENT_LEAD_TIME',
+          minLeadTimeMinutes: 120,
+        });
+        expect(db.agenticHold.create).not.toHaveBeenCalled();
+      });
+
+      it('ne propose pas la file d’attente pour un créneau trop proche', async () => {
+        mockPublished(120);
+        vi.setSystemTime(minutesBefore(90));
+
+        const body = (await holdRequest()).json() as Record<string, unknown>;
+
+        expect(body.waitingListEnabled).toBeUndefined();
+      });
+
+      it('accepte un créneau qui commence exactement à maintenant + délai', async () => {
+        mockPublished(120);
+        vi.setSystemTime(minutesBefore(120));
+        vi.mocked(db.agenticHold.create).mockResolvedValue({
+          id: 'hold_limit',
+          holdToken: 'tok_abc',
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          status: 'ACTIVE',
+          restaurantId: RESTAURANT_ID,
+          partySize: 4,
+          slotStart: SLOT_START,
+          slotEnd: new Date(SLOT_START.getTime() + 90 * 60_000),
+          channel: 'WEB',
+          type: 'HOLD',
+          policyVersion: '2026-06-20',
+          createdAt: new Date(),
+        } as unknown as Awaited<ReturnType<typeof db.agenticHold.create>>);
+
+        const res = await holdRequest();
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json().holdId).toBe('hold_limit');
+      });
+
+      it('refuse une minute avant la limite', async () => {
+        mockPublished(120);
+        vi.setSystemTime(minutesBefore(119));
+
+        expect((await holdRequest()).statusCode).toBe(409);
+      });
+
+      it('formate le délai : 30 min, 1 h 30', async () => {
+        mockPublished(30);
+        vi.setSystemTime(minutesBefore(20));
+        expect(((await holdRequest()).json() as { error: string }).error).toContain(
+          'au moins 30 min à l’avance',
+        );
+
+        mockPublished(90);
+        vi.setSystemTime(minutesBefore(20));
+        expect(((await holdRequest()).json() as { error: string }).error).toContain(
+          'au moins 1 h 30 à l’avance',
+        );
+      });
+    });
+
+    describe('POST /public/r/:slug/confirm', () => {
+      it('répond 409 et un message en français, plus un 500 anglais, quand le créneau est devenu trop proche', async () => {
+        mockPublished(120, true);
+        vi.mocked(db.customerConsent.create).mockResolvedValue({
+          id: 'consent-lead',
+        } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
+        vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+          id: 'hold-lead',
+          holdToken: CONFIRM_HOLD_TOKEN,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 60_000),
+          restaurantId: RESTAURANT_ID,
+          partySize: 2,
+          slotStart: SLOT_START,
+          slotEnd: new Date(SLOT_START.getTime() + 90 * 60_000),
+          tableId: null,
+        } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
+        const createReservation = vi
+          .spyOn(ReservationService.prototype, 'createReservation')
+          .mockRejectedValue(
+            new PolicyValidationError(
+              'Insufficient lead time: 90min avant, minimum 120min requis',
+              'INSUFFICIENT_LEAD_TIME',
+            ),
+          );
+
+        try {
+          const res = await app.inject({
+            method: 'POST',
+            url: `/public/r/${SLUG}/confirm`,
+            payload: {
+              holdToken: CONFIRM_HOLD_TOKEN,
+              idempotencyKey: '22222222-2222-4222-8222-222222222222',
+              customer: { firstName: 'Alice', phone: '+33612345678' },
+            },
+          });
+
+          expect(res.statusCode).toBe(409);
+          expect(res.json()).toEqual({
+            error:
+              'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.',
+            code: 'INSUFFICIENT_LEAD_TIME',
+            minLeadTimeMinutes: 120,
+          });
+          expect((res.json() as { error: string }).error).not.toMatch(/Insufficient|lead time/i);
+        } finally {
+          createReservation.mockRestore();
+        }
+      });
     });
   });
 });

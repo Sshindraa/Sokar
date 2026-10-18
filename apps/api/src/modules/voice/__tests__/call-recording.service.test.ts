@@ -21,7 +21,10 @@ vi.mock('@aws-sdk/client-s3', () => {
 
 import { db } from '../../../shared/db/client';
 import {
+  purgeExpiredRecordings,
+  putPrivateObject,
   recoverPendingRecording,
+  reportStorageKeys,
   startTestCallRecording,
   storeSavedRecording,
 } from '../call-recording.service';
@@ -239,5 +242,56 @@ describe('call recording service', () => {
       }),
     ).rejects.toThrow('must use HTTPS');
     expect(s3Send).not.toHaveBeenCalled();
+  });
+});
+
+describe('call report storage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.CALL_RECORDING_ENABLED = 'true';
+    process.env.CALL_RECORDINGS_BUCKET = 'private-recordings';
+  });
+
+  afterEach(() => {
+    delete process.env.CALL_RECORDING_ENABLED;
+    delete process.env.CALL_RECORDINGS_BUCKET;
+  });
+
+  it('keeps the report next to the recording, under the same private prefix', () => {
+    expect(reportStorageKeys('call-recordings/rest-1/call-1/rec-1.mp3')).toEqual({
+      json: 'call-recordings/rest-1/call-1/report.json',
+      markdown: 'call-recordings/rest-1/call-1/report.md',
+    });
+  });
+
+  it('writes private, encrypted, non-cacheable objects', async () => {
+    await putPrivateObject('call-recordings/rest-1/call-1/report.md', '# rapport', 'text/markdown');
+
+    const command = s3Send.mock.calls[0][0] as { input: Record<string, unknown> };
+    expect(command.input).toMatchObject({
+      Bucket: 'private-recordings',
+      Key: 'call-recordings/rest-1/call-1/report.md',
+      ContentType: 'text/markdown; charset=utf-8',
+      CacheControl: 'private, no-store',
+      ServerSideEncryption: 'AES256',
+    });
+  });
+
+  it('purges the reports together with the expired recording', async () => {
+    vi.mocked(db.call.findMany).mockResolvedValueOnce([
+      { id: 'call-1', recordingStorageKey: 'call-recordings/rest-1/call-1/rec-1.mp3' },
+    ] as never);
+    vi.mocked(db.call.update).mockResolvedValue({} as never);
+
+    await purgeExpiredRecordings();
+
+    const deletedKeys = s3Send.mock.calls.map(
+      (call) => (call[0] as { input: { Key: string } }).input.Key,
+    );
+    expect(deletedKeys).toEqual([
+      'call-recordings/rest-1/call-1/rec-1.mp3',
+      'call-recordings/rest-1/call-1/report.json',
+      'call-recordings/rest-1/call-1/report.md',
+    ]);
   });
 });

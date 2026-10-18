@@ -38,7 +38,6 @@ describe('GET /health', () => {
         redis: { status: 'ok', latency_ms: 3 },
         queues: { status: 'ok', latency_ms: 8 },
         telnyx: { status: 'ok', latency_ms: 120 },
-        elevenlabs_stt: { status: 'ok', latency_ms: 90 },
         cartesia: { status: 'ok', latency_ms: 80 },
       },
       timestamp: new Date().toISOString(),
@@ -60,7 +59,6 @@ describe('GET /health', () => {
         redis: { status: 'ok', latency_ms: 3 },
         queues: { status: 'ok', latency_ms: 8 },
         telnyx: { status: 'ok', latency_ms: 120 },
-        elevenlabs_stt: { status: 'ok', latency_ms: 90 },
         cartesia: { status: 'ok', latency_ms: 80 },
       },
       timestamp: new Date().toISOString(),
@@ -82,7 +80,6 @@ describe('GET /health', () => {
         redis: { status: 'ok', latency_ms: 3 },
         queues: { status: 'ok', latency_ms: 8 },
         telnyx: { status: 'error', latency_ms: 120, error: 'telnyx 503' },
-        elevenlabs_stt: { status: 'ok', latency_ms: 90 },
         cartesia: { status: 'ok', latency_ms: 80 },
       },
       timestamp: new Date().toISOString(),
@@ -94,6 +91,28 @@ describe('GET /health', () => {
     const body = JSON.parse(res.payload);
     expect(body.status).toBe('degraded');
     expect(body.checks.telnyx.status).toBe('error');
+  });
+
+  it('returns 200 when only ElevenLabs fails (voice provider, not a core dependency)', async () => {
+    mockCheckHealth.mockResolvedValue({
+      status: 'degraded',
+      checks: {
+        db: { status: 'ok', latency_ms: 5 },
+        redis: { status: 'ok', latency_ms: 3 },
+        queues: { status: 'ok', latency_ms: 8 },
+        telnyx: { status: 'ok', latency_ms: 120 },
+        cartesia: { status: 'ok', latency_ms: 80 },
+        elevenlabs: { status: 'error', latency_ms: 90, error: 'ElevenLabs API 401: Unauthorized' },
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/health' });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.status).toBe('degraded');
+    expect(body.checks.elevenlabs.status).toBe('error');
   });
 });
 
@@ -117,7 +136,6 @@ describe('GET /healthz', () => {
         redis: { status: 'ok', latency_ms: 3 },
         queues: { status: 'ok', latency_ms: 8 },
         telnyx: { status: 'ok', latency_ms: 120 },
-        elevenlabs_stt: { status: 'ok', latency_ms: 90 },
         cartesia: { status: 'ok', latency_ms: 80 },
       },
       timestamp: new Date().toISOString(),

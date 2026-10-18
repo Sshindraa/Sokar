@@ -12,7 +12,7 @@ import {
   completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
   markVoiceTurnTtsSynthesisFirstByte,
-  recordVoiceTurnClassification,
+  observedTtsProvider,
   recordVoiceTurnEvent,
   snapshotVoiceTurnTelemetry,
   startVoiceTurn,
@@ -52,7 +52,6 @@ describe('voice turn telemetry', () => {
     const transcript = 'Je voudrais réserver demain pour deux personnes.';
 
     startVoiceTurn(session, transcript);
-    recordVoiceTurnClassification(session, 'content');
     recordVoiceTurnEvent(session, 'availability_completed', { durationMs: 125 });
 
     expect(session.currentTurn?.id).toMatch(/^[0-9a-f-]{36}$/);
@@ -68,12 +67,12 @@ describe('voice turn telemetry', () => {
       phase: 'speech',
       sequence: 1,
     });
-    expect(structured[2]?.voiceTurn).toMatchObject({
+    expect(structured[1]?.voiceTurn).toMatchObject({
       event: 'availability_completed',
       phase: 'availability',
-      sequence: 3,
+      sequence: 2,
     });
-    expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(2);
   });
 
   it('redémarre la mesure de latence à chaque tour', () => {
@@ -123,6 +122,45 @@ describe('voice turn telemetry', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('étiquette un tour ElevenLabs comme ElevenLabs, et non comme Cartesia', () => {
+    const session = makeSession();
+    startVoiceTurn(session, 'Une table pour deux ?');
+    recordVoiceTurnEvent(session, 'tts_synthesis_started', { source: 'elevenlabs_dialogue' });
+    markVoiceTurnTtsSynthesisFirstByte(session, 'elevenlabs_dialogue');
+    recordVoiceTurnEvent(session, 'tts_completed', { durationMs: 80 });
+
+    const turns = snapshotVoiceTurnTelemetry(session);
+    expect(turns[0]).toMatchObject({ ttsProvider: 'elevenlabs' });
+  });
+
+  it('étiquette le chemin HTTP et le cache selon le fournisseur configuré', () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    try {
+      for (const source of ['elevenlabs_http', 'cache', 'http_stream']) {
+        const session = makeSession();
+        startVoiceTurn(session, 'Une table pour deux ?');
+        recordVoiceTurnEvent(session, 'tts_synthesis_started', { source });
+        expect(snapshotVoiceTurnTelemetry(session)[0]).toMatchObject({ ttsProvider: 'elevenlabs' });
+      }
+      const native = makeSession();
+      startVoiceTurn(native, 'Une table ?');
+      recordVoiceTurnEvent(native, 'tts_synthesis_started', { source: 'native_fallback' });
+      expect(snapshotVoiceTurnTelemetry(native)[0]).toMatchObject({ ttsProvider: 'telnyx-native' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('donne à l’appel le fournisseur TTS le plus utilisé par ses tours, avec le modèle', () => {
+    const session = makeSession();
+    expect(observedTtsProvider(session)).toBeNull();
+    for (const source of ['elevenlabs_dialogue', 'elevenlabs_dialogue', 'native_fallback']) {
+      startVoiceTurn(session, 'Une table ?');
+      recordVoiceTurnEvent(session, 'tts_synthesis_started', { source });
+    }
+    expect(observedTtsProvider(session)).toBe('elevenlabs-eleven_v4_turbo');
   });
 
   it('conserve le premier tour LLM quand le tour suivant est déterministe', () => {

@@ -193,6 +193,100 @@ describe('ServiceCopilotService', () => {
       expect(recs[0].priority).toBe('critical');
       expect(recs[0].metrics?.minutesLate).toBe(45);
     });
+
+    it('borne les retards et exclut les expirations avant de retenir trois actions', async () => {
+      const now = new Date('2026-10-02T18:15:00.000Z');
+      const reservations = [61, 35, 25, 16].map((minutesLate) =>
+        makeReservation({
+          id: `res-${minutesLate}`,
+          state: 'CONFIRMED',
+          startsAt: new Date(now.getTime() - minutesLate * 60_000),
+        }),
+      );
+      mocks.reservation.findMany.mockImplementation(async (args: any) =>
+        args.where.state === 'CONFIRMED' ? reservations : [],
+      );
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+
+      const recs = await svc.getRecommendations('rest-1', now);
+
+      expect(mocks.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            startsAt: {
+              not: null,
+              gte: new Date(now.getTime() - 60 * 60_000),
+              lt: new Date(now.getTime() - 15 * 60_000),
+            },
+          }),
+        }),
+      );
+      expect(recs.map((rec) => rec.entityId)).toEqual(['res-35', 'res-25', 'res-16']);
+    });
+
+    it('expire un retard exactement une heure après le début du créneau', async () => {
+      const now = new Date('2026-10-02T18:15:00.000Z');
+      mocks.reservation.findMany.mockImplementation(async (args: any) =>
+        args.where.state === 'CONFIRMED'
+          ? [
+              makeReservation({
+                id: 'res-expired',
+                state: 'CONFIRMED',
+                startsAt: new Date(now.getTime() - 60 * 60_000),
+              }),
+            ]
+          : [],
+      );
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+
+      expect(await svc.getRecommendations('rest-1', now)).toEqual([]);
+    });
+
+    it('conserve un retard valide lorsque le service traverse minuit à Paris', async () => {
+      const now = new Date('2026-10-02T22:15:00.000Z'); // 00 h 15 à Paris
+      mocks.reservation.findMany.mockImplementation(async (args: any) =>
+        args.where.state === 'CONFIRMED'
+          ? [
+              makeReservation({
+                id: 'res-before-midnight',
+                state: 'CONFIRMED',
+                startsAt: new Date('2026-10-02T21:40:00.000Z'), // 23 h 40 à Paris
+              }),
+            ]
+          : [],
+      );
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+
+      const recs = await svc.getRecommendations('rest-1', now);
+
+      expect(recs).toHaveLength(1);
+      expect(recs[0]).toMatchObject({
+        kind: 'late-reservation',
+        entityId: 'res-before-midnight',
+        metrics: { minutesLate: 35 },
+      });
+    });
+
+    it('retire aussi un retard signalé dont la recommandation a expiré', async () => {
+      const now = new Date('2026-10-02T18:15:00.000Z');
+      mocks.reservation.findMany.mockResolvedValue([]);
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+      mocks.reservationAuditLog.findMany.mockImplementation(async (args: any) => {
+        if (args.where.event === 'reservation_delay_recovered') return [];
+        if (args.where.event !== 'reservation_delay_reported') return [];
+        return [
+          {
+            id: 'delay-expired',
+            reservationId: 'res-delay',
+            createdAt: new Date(now.getTime() - 4 * 60 * 60_000),
+            metadata: { delayMinutes: 40, source: 'voice' },
+            reservation: { customerName: 'Martin', startsAt: now },
+          },
+        ];
+      });
+
+      expect(await svc.getRecommendations('rest-1', now)).toEqual([]);
+    });
   });
 
   describe('table-soon-free', () => {

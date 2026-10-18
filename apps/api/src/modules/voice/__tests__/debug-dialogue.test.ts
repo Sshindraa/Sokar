@@ -7,7 +7,6 @@ import {
   logVoiceDebugText,
   recordDebugAgentSpeech,
   recordDebugCallerText,
-  recordDebugSpeechAct,
   recordDebugTool,
   settleDebugSpeech,
 } from '../stream/debug-dialogue';
@@ -45,14 +44,12 @@ describe('debug-dialogue', () => {
     const s = session('rest-test');
     recordDebugCallerText(s, 'Mon numéro est le 06 12 34 56 78');
     recordDebugCallerText(s, 'et mon mail a.b@example.com');
-    recordDebugSpeechAct(s, 'content');
     recordDebugAgentSpeech(s, "D'accord…", 'filler');
     recordDebugAgentSpeech(s, 'C’est noté.');
     recordDebugTool(s, 'takeMessage');
 
     expect(s.currentTurn?.debugDialogue).toEqual({
       callerText: 'Mon numéro est le [PHONE] et mon mail [EMAIL]',
-      speechAct: 'content',
       agentSpeech: [{ text: 'C’est noté.', status: 'pending' }],
       fillers: [{ text: "D'accord…", status: 'pending' }],
       tools: ['takeMessage'],

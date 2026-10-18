@@ -51,7 +51,7 @@ async function requireVoiceReadToken(
   }
 }
 
-type CallRow = {
+export type CallRow = {
   id: string;
   restaurantId: string;
   createdAt: Date;
@@ -63,7 +63,7 @@ type CallRow = {
   ttsProvider: string | null;
 };
 
-async function buildCallDetail(call: CallRow) {
+export async function buildCallDetail(call: CallRow) {
   const dialogueEnabled = isVoiceDebugDialogueEnabled(call.restaurantId);
   const [turns, dialogues] = await Promise.all([
     db.voiceTurnTelemetry.findMany({

@@ -5,18 +5,7 @@ import {
 import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
 import { buildSystemPrompt } from '../prompts';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
-import type { BehaviorCase, BehaviorCasesFile } from './types';
-
-/** Consigne restaurant minimale : le jeu mesure le comportement du tour structuré, pas la fiche. */
-const SYSTEM_PROMPT =
-  "Tu es l'agent vocal du restaurant Chez Sokar, à Paris. Tu prends les réservations par téléphone, en français, en vouvoyant l'appelant. Réponses courtes et naturelles.";
-
-const OPENING_HOURS = Object.fromEntries(
-  ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [
-    day,
-    { open: '12:00', close: '22:00' },
-  ]),
-);
+import type { BehaviorCase, BehaviorCasesFile, BehaviorProfile } from './types';
 
 /** Après une action exécutée, le modèle ne peut plus que parler ou terminer l'appel. */
 const AFTER_ACTION_ACTIONS = ['none', 'end_call'] as const;
@@ -38,9 +27,38 @@ function historyOf(testCase: BehaviorCase, file: BehaviorCasesFile) {
   return named;
 }
 
+/** Réglages « Style » et « Ton de voix » de l'onboarding, appliqués au prompt (drapeau de style allumé). */
+export interface BehaviorPersona {
+  profileType?: string;
+  fillerStyle?: string;
+}
+
 export interface BuildOptions {
+  /** Persona du restaurant : absent = prompt d'avant (drapeau de style éteint). */
+  persona?: BehaviorPersona;
   /** Vérification de compréhension (reading + understanding), comme le drapeau de production. */
   understanding?: boolean;
+}
+
+/**
+ * Profil du restaurant du cas : le sien, sinon le profil par défaut du fichier (Chez Sokar, tel qu'en base).
+ * Il n'existe aucune consigne « minimale » : un cas sans vraie base ne se construit pas.
+ */
+export function profileOf(testCase: BehaviorCase, file: BehaviorCasesFile): BehaviorProfile {
+  const id = testCase.profile ?? file.defaultProfile;
+  const profile = id ? file.profiles?.[id] : undefined;
+  if (!profile) {
+    throw new Error(
+      `Profil restaurant introuvable « ${id ?? '(aucun profil par défaut)'} » (cas ${testCase.id}) : ` +
+        "tous les cas passent par buildSystemPrompt avec la fiche d'un restaurant.",
+    );
+  }
+  if (!profile.name || !profile.openingHours) {
+    throw new Error(
+      `Profil « ${id} » incomplet : nom et horaires sont requis (cas ${testCase.id})`,
+    );
+  }
+  return profile;
 }
 
 export function buildRequest(
@@ -52,31 +70,53 @@ export function buildRequest(
   state.draft = { date: '', time: '', partySize: 0, customerName: '', ...testCase.draft };
   state.lastAwaiting = (testCase.awaiting ?? 'open') as typeof state.lastAwaiting;
   state.reservationCreated = testCase.reservationCreated === true;
-  const profile = testCase.profile ? file.profiles?.[testCase.profile] : undefined;
-  if (testCase.profile && !profile) {
-    throw new Error(`Profil inconnu « ${testCase.profile} » (cas ${testCase.id})`);
+  if (testCase.dayAvailability && state.draft.date) {
+    const { slots, upToSize, maxSize, noTableSizes } = testCase.dayAvailability;
+    state.dayAvailability = {
+      date: state.draft.date,
+      closed: false,
+      slotsBySize: Object.fromEntries(
+        Array.from({ length: maxSize }, (_, index) => [
+          index + 1,
+          index + 1 <= upToSize ? slots : [],
+        ]),
+      ),
+      ...(noTableSizes ? { noTableSizes } : {}),
+    };
   }
+  const profile = profileOf(testCase, file);
   const messages = buildStructuredTurnMessages({
-    // Avec un profil, la vraie consigne du restaurant (même constructeur qu'en appel).
-    systemPrompt: profile
-      ? buildSystemPrompt(
-          {
-            name: profile.name,
-            openingHours: profile.openingHours as never,
-            timezone: 'Europe/Paris',
-            // Le banc mesure le tour structuré : même consigne de base qu'en appel.
-            structuredTurn: true,
-          },
-          new Date(`${file.today}T12:00:00Z`),
-        )
-      : SYSTEM_PROMPT,
+    // Toujours la vraie base : le même constructeur qu'en appel (telnyx.pipeline.ts), mode structuré, avec la
+    // fiche du restaurant (nom, horaires, fuseau, taille de groupe) et sa consigne propre (`systemPromptExtra`).
+    systemPrompt: buildSystemPrompt(
+      {
+        name: profile.name,
+        openingHours: profile.openingHours as never,
+        timezone: profile.timezone ?? 'Europe/Paris',
+        ...(profile.maxPartySize ? { maxPartySize: profile.maxPartySize } : {}),
+        ...(profile.voiceGender ? { voiceGender: profile.voiceGender } : {}),
+        ...(profile.systemPromptExtra || options.persona
+          ? {
+              personality: {
+                ...(profile.systemPromptExtra
+                  ? { systemPromptExtra: profile.systemPromptExtra }
+                  : {}),
+                ...options.persona,
+              },
+            }
+          : {}),
+        ...(options.persona ? { personalityStyleEnabled: true } : {}),
+      },
+      new Date(`${file.today}T12:00:00Z`),
+    ),
     history: historyOf(testCase, file) as never,
     transcript: testCase.transcript,
     state,
-    openingHours: profile ? profile.openingHours : OPENING_HOURS,
+    openingHours: profile.openingHours,
     today: file.today,
     ...(testCase.dayPart ? { dayPart: testCase.dayPart } : {}),
     ...(testCase.callerFinished ? { callerFinished: true } : {}),
+    ...(testCase.recovery ? { recovery: testCase.recovery } : {}),
     ...(testCase.actionResult ? { actionResult: testCase.actionResult } : {}),
     ...(options.understanding ? { understanding: true } : {}),
   });
@@ -90,10 +130,14 @@ export function buildRequest(
         name: STRUCTURED_TURN_SCHEMA_NAME,
         strict: true,
         schema: buildStructuredTurnJsonSchema(
-          testCase.actionResult ? (AFTER_ACTION_ACTIONS as never) : undefined,
+          testCase.actions
+            ? (testCase.actions as never)
+            : testCase.actionResult
+              ? (AFTER_ACTION_ACTIONS as never)
+              : undefined,
           // Comme en appel : la relance après un silence impose turnComplete=true.
           {
-            turnCompleteOnly: testCase.callerFinished === true,
+            turnCompleteOnly: testCase.callerFinished === true || testCase.recovery !== undefined,
             ...(options.understanding ? { understanding: true } : {}),
           },
         ),

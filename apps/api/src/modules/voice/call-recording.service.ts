@@ -251,6 +251,32 @@ export async function deletePrivateRecording(storageKey: string): Promise<void> 
   await recordingClient().send(new DeleteObjectCommand({ Bucket: bucket(), Key: storageKey }));
 }
 
+/**
+ * Le rapport automatique d'un appel (JSON et Markdown) vit à côté de son enregistrement, sous le même
+ * préfixe privé : même chiffrement, même durée de conservation, supprimé avec lui.
+ */
+export function reportStorageKeys(recordingStorageKey: string): { json: string; markdown: string } {
+  const prefix = recordingStorageKey.slice(0, recordingStorageKey.lastIndexOf('/') + 1);
+  return { json: `${prefix}report.json`, markdown: `${prefix}report.md` };
+}
+
+export async function putPrivateObject(
+  storageKey: string,
+  body: string | Uint8Array,
+  contentType: string,
+): Promise<void> {
+  await recordingClient().send(
+    new PutObjectCommand({
+      Bucket: bucket(),
+      Key: storageKey,
+      Body: body,
+      ContentType: contentType.startsWith('text/') ? `${contentType}; charset=utf-8` : contentType,
+      CacheControl: 'private, no-store',
+      ServerSideEncryption: 'AES256',
+    }),
+  );
+}
+
 export async function purgeExpiredRecordings(): Promise<number> {
   if (!isCallRecordingEnabled()) return 0;
 
@@ -263,7 +289,12 @@ export async function purgeExpiredRecordings(): Promise<number> {
     });
 
     for (const call of expired) {
-      if (call.recordingStorageKey) await deletePrivateRecording(call.recordingStorageKey);
+      if (call.recordingStorageKey) {
+        await deletePrivateRecording(call.recordingStorageKey);
+        const reports = reportStorageKeys(call.recordingStorageKey);
+        await deletePrivateRecording(reports.json);
+        await deletePrivateRecording(reports.markdown);
+      }
       await db.call.update({
         where: { id: call.id },
         data: {

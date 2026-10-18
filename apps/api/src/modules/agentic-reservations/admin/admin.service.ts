@@ -1,7 +1,7 @@
 /**
  * Admin service pour l'agentic reservations.
  *
- * - getOptIn / setOptIn : toggle des flags agenticOptIn / openaiReserveEnabled
+ * - getOptIn / setOptIn : toggle MCP (mcpEnabled, et agenticOptIn à l'activation) / openaiReserveEnabled
  * - getExposureSettings / setExposureSettings : CRUD sur RestaurantExposureSettings
  * - Sécurité : OpenAI Reserve ne peut être activé que si MCP est activé
  *   (le feed OpenAI consomme la même policy que MCP, et la résa MCP est
@@ -56,7 +56,7 @@ export class AgenticAdminService {
       },
     });
     return {
-      mcp: r.agenticOptIn,
+      mcp: await this.isMcpActive(restaurantId, r.agenticOptIn),
       openaiReserve: r.openaiReserveEnabled,
       policyVersion: r.policyVersion,
     };
@@ -76,35 +76,42 @@ export class AgenticAdminService {
       },
     });
 
-    // Garde-fou : OpenAI Reserve requiert lat/lng/websiteUrl/phone/address
-    if (args.input.openaiReserve) {
+    // Garde-fou : OpenAI Reserve requiert lat/lng/websiteUrl/phone/address à son activation. Un
+    // OpenAI Reserve déjà actif ne bloque pas les autres réglages (MCP) : le flux écarte lui-même
+    // les restaurants incomplets.
+    if (args.input.openaiReserve && !current.openaiReserveEnabled) {
+      // Libellés lisibles par le restaurateur ; le code d'erreur reste inchangé pour les clients de l'API.
       const missing: string[] = [];
-      if (current.lat == null) missing.push('lat');
-      if (current.lng == null) missing.push('lng');
-      if (!current.websiteUrl) missing.push('websiteUrl');
-      if (!current.formattedAddress) missing.push('formattedAddress');
-      if (!current.phoneE164) missing.push('phoneE164');
+      if (current.lat == null || current.lng == null) missing.push('coordonnées GPS');
+      if (!current.websiteUrl) missing.push('site web');
+      if (!current.formattedAddress) missing.push('adresse');
+      if (!current.phoneE164) missing.push('téléphone');
       if (missing.length > 0) {
         throw new OptInGuardError(
-          `OpenAI Reserve requiert les champs suivants sur le restaurant : ${missing.join(', ')}`,
+          `Pour activer OpenAI Reserve, complétez les informations du restaurant : ${missing.join(', ')}.`,
           'OPENAI_RESERVE_MISSING_FIELDS',
         );
       }
     }
 
-    const mcpChanged = args.input.mcp !== current.agenticOptIn;
+    // La publication Sokar Connect pose `agenticOptIn` sans `mcpEnabled` : on compare l'état
+    // réellement actif (les deux drapeaux) pour qu'une activation resynchronise `mcpEnabled`.
+    const currentMcp = await this.isMcpActive(args.restaurantId, current.agenticOptIn);
+    const mcpChanged = args.input.mcp !== currentMcp;
     const openaiChanged = args.input.openaiReserve !== current.openaiReserveEnabled;
 
     if (!mcpChanged && !openaiChanged) return;
 
     await this.prisma.$transaction(async (tx) => {
+      // `agenticOptIn` sert aussi de condition à la page publique Connect et au widget
+      // (`PUBLIC_CONNECT_WHERE`) : couper MCP ne retire que `mcpEnabled`, sans éteindre la page.
+      // Activer MCP pose les deux drapeaux.
       await tx.restaurant.update({
         where: { id: args.restaurantId },
-        data: {
-          agenticOptIn: args.input.mcp,
-          // Si MCP est désactivé, OpenAI Reserve doit l'être aussi
-          openaiReserveEnabled: args.input.mcp ? args.input.openaiReserve : false,
-        },
+        data: args.input.mcp
+          ? { agenticOptIn: true, openaiReserveEnabled: args.input.openaiReserve }
+          : // Si MCP est désactivé, OpenAI Reserve doit l'être aussi
+            { openaiReserveEnabled: false },
       });
 
       // Synchroniser mcpEnabled sur RestaurantExposureSettings dans la même
@@ -129,7 +136,7 @@ export class AgenticAdminService {
           metadata: {
             restaurantId: args.restaurantId,
             before: {
-              mcp: current.agenticOptIn,
+              mcp: currentMcp,
               openaiReserve: current.openaiReserveEnabled,
             },
             after: {
@@ -140,6 +147,16 @@ export class AgenticAdminService {
         },
       });
     });
+  }
+
+  /** MCP n'est réservable que si l'opt-in restaurant et `exposureSettings.mcpEnabled` sont posés. */
+  private async isMcpActive(restaurantId: string, agenticOptIn: boolean): Promise<boolean> {
+    if (!agenticOptIn) return false;
+    const settings = await this.prisma.restaurantExposureSettings.findUnique({
+      where: { restaurantId },
+      select: { mcpEnabled: true },
+    });
+    return settings?.mcpEnabled ?? false;
   }
 
   async getExposureSettings(restaurantId: string): Promise<{

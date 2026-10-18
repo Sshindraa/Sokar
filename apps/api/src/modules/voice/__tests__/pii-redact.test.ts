@@ -25,6 +25,22 @@ describe('redactPii', () => {
     );
   });
 
+  it('ne prend pas une date AAAA-MM-JJ pour un numéro de téléphone (brouillon du voice-debug)', () => {
+    expect(redactPii('2026-09-30')).toBe('2026-09-30');
+    const draft = '{"date":"2026-09-30","time":"22:00","partySize":4,"customerName":"AASAM"}';
+    expect(redactPii(draft)).toBe(draft);
+    expect(redactPii('créneau 2026-09-30T19:00 puis 2026-10-01 à 12 h')).toBe(
+      'créneau 2026-09-30T19:00 puis 2026-10-01 à 12 h',
+    );
+    // Une date à côté d'un vrai numéro : seul le numéro est masqué.
+    expect(redactPii('le 2026-09-30 appelez le 0612345678 ou le 06-12-34-56-78')).toBe(
+      'le 2026-09-30 appelez le [PHONE] ou le [PHONE]',
+    );
+    expect(redactPii('date 2026-09-30, tel +33 6 12 34 56 78')).toBe(
+      'date 2026-09-30, tel [PHONE]',
+    );
+  });
+
   it('ne redacte pas les nombres courts (pas des téléphones)', () => {
     expect(redactPii('Pour 4 personnes à 19h30')).toBe('Pour 4 personnes à 19h30');
   });

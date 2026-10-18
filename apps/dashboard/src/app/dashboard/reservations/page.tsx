@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { format, parseISO } from 'date-fns';
+import { addDays, format, isSameDay, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
 import {
@@ -12,6 +12,7 @@ import {
   type WaitingListEntry,
   type WaitingListStatus,
 } from '@/types/api';
+import { ApiError } from '@/lib/api-error';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import MobileDataCard from '@/components/MobileDataCard';
@@ -27,15 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  CalendarCheck,
-  CalendarDays,
-  Check,
-  LayoutGrid,
-  ListOrdered,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, ListOrdered } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -51,6 +44,38 @@ const reservationState = (reservation: Reservation): ReservationState =>
 
 const isActiveForTable = (state: ReservationState | string) =>
   state === 'PENDING' || state === 'CONFIRMED' || state === 'SEATED';
+
+type ReservationAction = 'confirm' | 'allocate' | 'seat' | 'honor' | 'cancel' | 'no-show';
+
+function actionsForReservation(reservation: Reservation): {
+  primary: ReservationAction | null;
+  secondary: ReservationAction[];
+} {
+  const state = reservationState(reservation);
+  if (state === 'PENDING') return { primary: 'confirm', secondary: ['cancel'] };
+  if (state === 'CONFIRMED') {
+    return {
+      primary: reservation.tableId ? 'seat' : 'allocate',
+      secondary: [
+        'cancel',
+        ...(new Date(reservation.reservedAt) <= new Date() ? ['no-show' as const] : []),
+      ],
+    };
+  }
+  if (state === 'SEATED') {
+    return { primary: 'honor', secondary: ['no-show'] };
+  }
+  return { primary: null, secondary: [] };
+}
+
+const actionLabels: Record<ReservationAction, string> = {
+  confirm: 'Confirmer',
+  allocate: 'Allouer',
+  seat: 'Installer',
+  honor: 'Terminer le service',
+  cancel: 'Annuler',
+  'no-show': 'Marquer absent',
+};
 
 type Tab = 'reservations' | 'waiting-list';
 
@@ -75,16 +100,21 @@ export default function ReservationsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('reservations');
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Écran de chargement complet seulement au premier affichage ; un changement de date garde la barre
+  // de dates à l'écran et remplace seulement la liste.
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
 
   const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
   const [waitingListLoading, setWaitingListLoading] = useState(false);
+  // Jour affiché, partagé par les réservations et la file d'attente : le service du jour d'abord.
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const dateParam = format(selectedDate, 'yyyy-MM-dd');
 
   const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [allocatingId, setAllocatingId] = useState<string | null>(null);
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -93,17 +123,20 @@ export default function ReservationsPage() {
 
   const fetchReservations = useCallback(async () => {
     if (!orgId) return;
-    setLoading(true);
+    setReservationsLoading(true);
     setError('');
     try {
-      const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
+      // Sans `date`, l'API renvoie tout l'historique du compte, du plus ancien au plus récent : le service
+      // de ce soir finissait sous des centaines de lignes passées.
+      const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
       setReservations(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de charger les réservations'));
     } finally {
-      setLoading(false);
+      setReservationsLoading(false);
+      setInitialLoading(false);
     }
-  }, [get, orgId]);
+  }, [get, orgId, dateParam]);
 
   useEffect(() => {
     void fetchReservations();
@@ -114,62 +147,107 @@ export default function ReservationsPage() {
     setWaitingListLoading(true);
     setError('');
     try {
-      const date = format(selectedDate, 'yyyy-MM-dd');
-      const data = await get<unknown[]>(`restaurants/${orgId}/waiting-list?date=${date}`);
+      const data = await get<unknown[]>(`restaurants/${orgId}/waiting-list?date=${dateParam}`);
       setWaitingList(mapWaitingListEntries(Array.isArray(data) ? data : []));
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Impossible de charger la file d'attente"));
     } finally {
       setWaitingListLoading(false);
     }
-  }, [orgId, get, selectedDate]);
+  }, [orgId, get, dateParam]);
 
   useEffect(() => {
     if (activeTab !== 'waiting-list') return;
     loadWaitingList();
   }, [activeTab, loadWaitingList]);
 
-  async function updateStatus(id: string, newStatus: string) {
+  async function updateStatus(id: string, newStatus: Reservation['status']) {
+    if (pendingActionId) return;
+    setPendingActionId(id);
     try {
       setError('');
-      await patch(`reservations/${id}`, { status: newStatus });
-      setReservations((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? {
-                ...r,
-                status: newStatus as Reservation['status'],
-                state: newStatus as ReservationState,
-              }
-            : r,
-        ),
-      );
+      const updated = await patch<Reservation>(`reservations/${id}`, { status: newStatus });
+      setReservations((prev) => prev.map((r) => (r.id === id ? updated : r)));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de mettre à jour le statut'));
+    } finally {
+      setPendingActionId(null);
     }
   }
 
-  async function deleteReservation(id: string) {
-    setPendingDeleteId(id);
-    setConfirmOpen(true);
+  async function transitionState(id: string, state: 'SEATED' | 'HONORED') {
+    if (pendingActionId || !orgId) return;
+    setPendingActionId(id);
+    setError('');
+    try {
+      await patch<void>(`restaurants/${orgId}/floor-plan/reservations/${id}/state`, { state });
+      setReservations((prev) =>
+        prev.map((reservation) =>
+          reservation.id === id
+            ? { ...reservation, state, status: state === 'SEATED' ? 'SEATED' : reservation.status }
+            : reservation,
+        ),
+      );
+      try {
+        const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
+        setReservations(Array.isArray(data) ? data : []);
+      } catch {
+        setError('Statut mis à jour, mais la liste n’a pas pu être actualisée.');
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.kind === 'conflict') {
+        // La liste affichée est périmée (autre appareil) ou le créneau est terminé : on la rafraîchit.
+        setError(
+          'Cette réservation a changé entre-temps ou son créneau est terminé. Liste actualisée.',
+        );
+        try {
+          const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
+          setReservations(Array.isArray(data) ? data : []);
+        } catch {
+          /* le message ci-dessus suffit ; « Actualiser » reste disponible */
+        }
+      } else {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour la réservation.'));
+      }
+    } finally {
+      setPendingActionId(null);
+    }
   }
 
-  async function confirmDeleteReservation() {
-    if (!pendingDeleteId) return;
-    const id = pendingDeleteId;
-    setConfirmOpen(false);
-    setPendingDeleteId(null);
+  function runReservationAction(reservation: Reservation, action: ReservationAction) {
+    if (pendingActionId) return;
+    if (action === 'confirm') return void updateStatus(reservation.id, 'CONFIRMED');
+    if (action === 'allocate') return void allocateTable(reservation.id);
+    if (action === 'seat') return void transitionState(reservation.id, 'SEATED');
+    if (action === 'honor') return void transitionState(reservation.id, 'HONORED');
+    if (action === 'cancel') {
+      setPendingCancelId(reservation.id);
+      setConfirmOpen(true);
+      return;
+    }
+    if (action === 'no-show') return void updateStatus(reservation.id, 'NO_SHOW');
+  }
+
+  async function confirmCancelReservation() {
+    if (!pendingCancelId || pendingActionId) return;
+    const id = pendingCancelId;
+    setPendingActionId(id);
     try {
       setError('');
-      await del(`reservations/${id}`);
-      setReservations((prev) => prev.filter((r) => r.id !== id));
+      const updated = await patch<Reservation>(`reservations/${id}`, { status: 'CANCELLED' });
+      setReservations((prev) => prev.map((r) => (r.id === id ? updated : r)));
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de supprimer la réservation'));
+      setError(getErrorMessage(err, 'Impossible d’annuler la réservation'));
+    } finally {
+      setConfirmOpen(false);
+      setPendingCancelId(null);
+      setPendingActionId(null);
     }
   }
 
   async function allocateTable(id: string) {
-    setAllocatingId(id);
+    if (pendingActionId) return;
+    setPendingActionId(id);
     setError('');
     try {
       const updated = await post<Reservation>(`reservations/${id}/allocate-table`);
@@ -177,7 +255,7 @@ export default function ReservationsPage() {
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible d’allouer une table'));
     } finally {
-      setAllocatingId(null);
+      setPendingActionId(null);
     }
   }
 
@@ -197,6 +275,9 @@ export default function ReservationsPage() {
       const msg = getErrorMessage(err, 'Impossible de proposer une table');
       if (msg === 'no_compatible_table' || msg.includes('no_compatible_table')) {
         setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Aucune table compatible' }));
+      } else if (msg.includes('already_promoted')) {
+        setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Cette demande a déjà reçu une table' }));
+        await loadWaitingList();
       } else {
         setError(msg);
       }
@@ -218,7 +299,7 @@ export default function ReservationsPage() {
     }
   }
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -274,28 +355,83 @@ export default function ReservationsPage() {
           <span className="text-sm text-muted-foreground">
             {activeTab === 'reservations'
               ? `${reservations.length} réservation${reservations.length > 1 ? 's' : ''}`
-              : `${waitingList.length} en attente${waitingList.length > 1 ? 's' : ''}`}
+              : `${waitingList.length} en attente`}
           </span>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Jour précédent"
+          onClick={() => setSelectedDate((current) => addDays(current, -1))}
+          className="transition-all duration-200"
+        >
+          <ChevronLeft size={16} />
+        </Button>
+        <Input
+          id="reservations-date"
+          type="date"
+          aria-label="Date"
+          value={dateParam}
+          onChange={(event) => {
+            // Un champ vidé (Retour arrière, « Réinitialiser » sur iOS) ne change pas la date affichée.
+            const parsed = event.target.value ? parseISO(event.target.value) : null;
+            if (parsed && !Number.isNaN(parsed.getTime())) setSelectedDate(parsed);
+          }}
+          className="w-auto transition-all duration-200"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Jour suivant"
+          onClick={() => setSelectedDate((current) => addDays(current, 1))}
+          className="transition-all duration-200"
+        >
+          <ChevronRight size={16} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={isSameDay(selectedDate, new Date())}
+          onClick={() => setSelectedDate(new Date())}
+          className="transition-all duration-200"
+        >
+          Aujourd’hui
+        </Button>
+        <span className="text-sm capitalize text-muted-foreground">
+          {format(selectedDate, 'EEEE d MMMM yyyy', { locale: fr })}
+        </span>
       </div>
 
       {error && (
         <DataFetchError
           message={error}
           onRetry={activeTab === 'waiting-list' ? loadWaitingList : fetchReservations}
-          retrying={activeTab === 'waiting-list' ? waitingListLoading : loading}
+          retrying={activeTab === 'waiting-list' ? waitingListLoading : reservationsLoading}
         />
       )}
 
       {activeTab === 'reservations' && (
         <>
-          {reservations.length === 0 ? (
+          {reservationsLoading ? (
+            <div className="space-y-2" aria-busy="true">
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : reservations.length === 0 ? (
             error ? null : (
               <div className="sokar-empty">
                 <CalendarCheck size={40} className="opacity-30" />
-                <p className="text-sm">Aucune réservation pour le moment</p>
+                <p className="text-sm">Aucune réservation pour cette date</p>
                 <p className="text-xs opacity-60">
-                  Les réservations prises par votre assistant apparaîtront ici.
+                  Les réservations prises par téléphone, en ligne ou par un assistant IA
+                  apparaîtront ici.
                 </p>
                 <Button asChild size="sm" variant="outline" className="mt-1">
                   <Link href="/dashboard/widget">Ouvrir le widget</Link>
@@ -308,6 +444,7 @@ export default function ReservationsPage() {
               {reservations.map((res) =>
                 (() => {
                   const state = reservationState(res);
+                  const available = actionsForReservation(res);
                   return (
                     <MobileDataCard
                       key={res.id}
@@ -323,51 +460,48 @@ export default function ReservationsPage() {
                               ? 'border-l-brand'
                               : 'border-l-border'
                       }
-                      actions={[
-                        {
-                          label: 'Confirmer',
-                          icon: <Check size={14} />,
-                          colorClass: 'bg-success',
-                          onClick: () => updateStatus(res.id, 'CONFIRMED'),
-                        },
-                        {
-                          label: 'Annuler',
-                          icon: <X size={14} />,
-                          colorClass: 'bg-warning',
-                          onClick: () => updateStatus(res.id, 'CANCELLED'),
-                        },
-                        {
-                          label: 'Retirer',
-                          icon: <Trash2 size={14} />,
-                          colorClass: 'bg-destructive',
-                          onClick: () => deleteReservation(res.id),
-                        },
-                        ...(!res.tableId && isActiveForTable(state)
-                          ? [
-                              {
-                                label: 'Allouer',
-                                icon: <LayoutGrid size={14} />,
-                                colorClass: 'bg-primary',
-                                onClick: () => allocateTable(res.id),
-                              },
-                            ]
-                          : []),
-                      ]}
+                      primaryAction={
+                        available.primary
+                          ? {
+                              label:
+                                pendingActionId === res.id
+                                  ? 'En cours…'
+                                  : actionLabels[available.primary],
+                              disabled: pendingActionId !== null,
+                              onClick: () => runReservationAction(res, available.primary!),
+                            }
+                          : undefined
+                      }
+                      actions={available.secondary.map((action) => ({
+                        label: actionLabels[action],
+                        colorClass: 'bg-secondary text-secondary-foreground',
+                        onClick: () => runReservationAction(res, action),
+                      }))}
                       details={[
                         {
-                          label: 'Date',
-                          value: format(new Date(res.reservedAt), 'dd MMM HH:mm', { locale: fr }),
+                          label: 'Heure · date',
+                          value: (
+                            <>
+                              <span className="font-semibold tabular-nums text-foreground">
+                                {format(new Date(res.reservedAt), 'HH:mm')}
+                              </span>
+                              <span>
+                                {' · '}
+                                {format(new Date(res.reservedAt), 'dd MMM yyyy', { locale: fr })}
+                              </span>
+                            </>
+                          ),
                         },
                         {
                           label: 'Couverts',
-                          value: `${res.partySize} pers.`,
+                          value: <span className="tabular-nums">{res.partySize} pers.</span>,
                         },
                         {
                           label: 'Table',
                           value: res.tableId ? (
                             (res.table?.name ?? '—')
                           ) : isActiveForTable(state) ? (
-                            <Badge className="bg-warning text-warning-foreground border-warning">
+                            <Badge className="whitespace-nowrap border-warning bg-warning text-warning-foreground">
                               Sans table
                             </Badge>
                           ) : (
@@ -375,8 +509,12 @@ export default function ReservationsPage() {
                           ),
                         },
                         {
-                          label: 'Revenu',
-                          value: res.estimatedRevenue ? `${res.estimatedRevenue}€` : '—',
+                          label: 'Revenu estimé',
+                          value: res.estimatedRevenue ? (
+                            <span className="tabular-nums">{res.estimatedRevenue}€</span>
+                          ) : (
+                            '—'
+                          ),
                         },
                       ]}
                     />
@@ -388,17 +526,18 @@ export default function ReservationsPage() {
             /* ========== DESKTOP: Reservation Table ========== */
             <div className="sokar-card overflow-hidden">
               <div className="mobile-table-wrapper">
-                <Table>
+                <Table className="[&_th]:px-2 [&_td]:px-2">
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Téléphone</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Couverts</TableHead>
-                      <TableHead>Revenu estimé</TableHead>
-                      <TableHead>Statut</TableHead>
-                      <TableHead>Table</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                    <TableRow className="bg-muted/20 hover:bg-muted/20">
+                      <TableHead className="min-w-[104px]">Heure · date</TableHead>
+                      <TableHead className="min-w-[150px]">Client</TableHead>
+                      <TableHead className="w-[92px] text-center">Couverts</TableHead>
+                      <TableHead className="hidden min-w-[118px] xl:table-cell">
+                        Revenu estimé
+                      </TableHead>
+                      <TableHead className="min-w-[112px]">Statut</TableHead>
+                      <TableHead className="min-w-[96px]">Table</TableHead>
+                      <TableHead className="min-w-[196px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -411,72 +550,103 @@ export default function ReservationsPage() {
                           const state = reservationState(res);
                           return (
                             <>
-                              <TableCell className="font-medium">{res.customerName}</TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {res.customerPhone || <span className="opacity-50">—</span>}
+                              <TableCell className="py-3">
+                                <div className="flex flex-col gap-0.5">
+                                  <time
+                                    dateTime={res.reservedAt}
+                                    className="text-sm font-semibold tabular-nums text-foreground"
+                                  >
+                                    {format(new Date(res.reservedAt), 'HH:mm')}
+                                  </time>
+                                  <span className="text-xs text-muted-foreground">
+                                    {format(new Date(res.reservedAt), 'dd MMM yyyy', {
+                                      locale: fr,
+                                    })}
+                                  </span>
+                                </div>
                               </TableCell>
-                              <TableCell>
-                                {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', {
-                                  locale: fr,
-                                })}
+                              <TableCell className="max-w-[220px] py-3">
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium" title={res.customerName}>
+                                    {res.customerName}
+                                  </p>
+                                  {res.customerPhone ? (
+                                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                      {res.customerPhone}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </TableCell>
-                              <TableCell>{res.partySize}</TableCell>
-                              <TableCell className="text-muted-foreground">
+                              <TableCell className="py-3 text-center font-medium tabular-nums">
+                                {res.partySize}
+                              </TableCell>
+                              <TableCell className="hidden py-3 text-muted-foreground tabular-nums xl:table-cell">
                                 {res.estimatedRevenue ? (
                                   `${res.estimatedRevenue}€`
                                 ) : (
                                   <span className="opacity-50">—</span>
                                 )}
                               </TableCell>
-                              <TableCell>
-                                {state === 'PENDING' ? (
-                                  <StatusBadge status={state} />
-                                ) : (
-                                  <Select
-                                    value={res.status}
-                                    onValueChange={(val) => updateStatus(res.id, val)}
-                                  >
-                                    <SelectTrigger className="w-[130px] h-8 bg-transparent border-border text-foreground font-sans text-xs">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-popover border-border text-popover-foreground">
-                                      <SelectItem value="CONFIRMED">Confirmée</SelectItem>
-                                      <SelectItem value="CANCELLED">Annulée</SelectItem>
-                                      <SelectItem value="SEATED">Installée</SelectItem>
-                                      <SelectItem value="NO_SHOW">No-show</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
+                              <TableCell className="py-3">
+                                <StatusBadge status={state} />
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="py-3">
                                 {res.tableId ? (
                                   (res.table?.name ?? '—')
                                 ) : isActiveForTable(state) ? (
                                   <div className="flex items-center gap-2">
-                                    <Badge className="bg-warning text-warning-foreground border-warning">
+                                    <Badge className="whitespace-nowrap border-warning bg-warning text-warning-foreground">
                                       Sans table
                                     </Badge>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={allocatingId === res.id}
-                                      onClick={() => allocateTable(res.id)}
-                                    >
-                                      Allouer
-                                    </Button>
                                   </div>
                                 ) : (
                                   '—'
                                 )}
                               </TableCell>
-                              <TableCell className="text-right">
-                                <button
-                                  onClick={() => deleteReservation(res.id)}
-                                  className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
-                                  title="Retirer la réservation"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
+                              <TableCell className="py-3 text-right">
+                                {(() => {
+                                  const available = actionsForReservation(res);
+                                  return (
+                                    <div className="flex items-center justify-end gap-2">
+                                      {available.primary && (
+                                        <Button
+                                          size="sm"
+                                          disabled={pendingActionId !== null}
+                                          onClick={() =>
+                                            runReservationAction(res, available.primary!)
+                                          }
+                                          className="transition-all duration-200"
+                                        >
+                                          {pendingActionId === res.id
+                                            ? 'En cours…'
+                                            : actionLabels[available.primary]}
+                                        </Button>
+                                      )}
+                                      {available.secondary.length > 0 && (
+                                        <Select
+                                          onValueChange={(value) =>
+                                            runReservationAction(res, value as ReservationAction)
+                                          }
+                                          disabled={pendingActionId !== null}
+                                        >
+                                          <SelectTrigger
+                                            aria-label={`Autres actions pour ${res.customerName}`}
+                                            className="h-8 w-[105px] bg-transparent text-xs"
+                                          >
+                                            <SelectValue placeholder="Autres" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {available.secondary.map((action) => (
+                                              <SelectItem key={action} value={action}>
+                                                {actionLabels[action]}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </TableCell>
                             </>
                           );
@@ -493,19 +663,6 @@ export default function ReservationsPage() {
 
       {activeTab === 'waiting-list' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <label htmlFor="waiting-list-date" className="text-sm font-medium">
-              Date
-            </label>
-            <Input
-              id="waiting-list-date"
-              type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
-              onChange={(e) => setSelectedDate(parseISO(e.target.value))}
-              className="w-auto transition-all duration-200"
-            />
-          </div>
-
           {waitingListLoading ? (
             <div className="space-y-2">
               {[1, 2, 3, 4].map((i) => (
@@ -522,6 +679,50 @@ export default function ReservationsPage() {
                 </p>
               </div>
             )
+          ) : isMobile ? (
+            // Sur téléphone : une carte par demande, avec « Proposer une table » visible sans défilement latéral.
+            <div className="space-y-2">
+              {waitingList.map((entry) => (
+                <div key={entry.id}>
+                  <MobileDataCard
+                    title={`#${entry.position} · ${`${entry.customerFirstName} ${entry.customerLastName ?? ''}`.trim()}`}
+                    subtitle={entry.customerPhone ?? undefined}
+                    badge={<WaitingListStatusBadge status={entry.status} />}
+                    details={[
+                      { label: 'Couverts', value: entry.partySize },
+                      {
+                        label: 'Créneau',
+                        value: format(new Date(entry.slotStart), 'dd MMM HH:mm', { locale: fr }),
+                      },
+                      { label: 'Section', value: entry.preferredSectionName || '—' },
+                    ]}
+                    primaryAction={
+                      entry.status === 'PENDING'
+                        ? {
+                            label:
+                              promotingId === entry.id ? 'Proposition...' : 'Proposer une table',
+                            onClick: () => void promoteEntry(entry),
+                            disabled: promotingId === entry.id,
+                          }
+                        : undefined
+                    }
+                    actions={[
+                      {
+                        label: 'Retirer',
+                        colorClass: 'bg-destructive',
+                        onClick: () => void removeEntry(entry),
+                      },
+                    ]}
+                  />
+                  {promotedEntryId === entry.id && (
+                    <p className="mt-1 text-xs text-success">Table proposée avec succès</p>
+                  )}
+                  {entryErrors[entry.id] && (
+                    <p className="mt-1 text-xs text-destructive">{entryErrors[entry.id]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="sokar-card overflow-hidden">
               <div className="mobile-table-wrapper">
@@ -600,14 +801,15 @@ export default function ReservationsPage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        onConfirm={confirmDeleteReservation}
+        pending={pendingActionId === pendingCancelId && pendingCancelId !== null}
+        onConfirm={confirmCancelReservation}
         onCancel={() => {
           setConfirmOpen(false);
-          setPendingDeleteId(null);
+          setPendingCancelId(null);
         }}
-        title="Retirer la réservation"
-        description="Cette réservation sera clôturée et retirée de la liste opérationnelle. Son historique restera conservé."
-        confirmLabel="Retirer"
+        title="Annuler la réservation"
+        description="Cette réservation passera au statut Annulée. Son historique restera conservé."
+        confirmLabel="Annuler la réservation"
         variant="destructive"
       />
     </div>
@@ -632,6 +834,12 @@ function StatusBadge({ status }: { status: string }) {
       );
     case 'NO_SHOW':
       return <Badge variant="secondary">No-show</Badge>;
+    case 'HONORED':
+      return <Badge variant="secondary">Terminée</Badge>;
+    case 'FAILED':
+      return <Badge variant="secondary">Échouée</Badge>;
+    case 'EXPIRED':
+      return <Badge variant="secondary">Expirée</Badge>;
     case 'PENDING':
       return (
         <Badge className="bg-warning text-warning-foreground border-warning">En attente</Badge>

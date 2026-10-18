@@ -5,6 +5,7 @@
  * des faits vérifiés (disponibilité réelle, récapitulatif accepté).
  */
 import { normalizeOpeningHours } from '@sokar/shared';
+import { readbackInstruction } from './name-readback';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
 
 export type DraftField = keyof StructuredTurnDraft;
@@ -25,6 +26,11 @@ export interface StructuredTurnState {
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+  /**
+   * Début de phrase pris par la relance après silence, tant qu'elle n'a pas parlé. Si l'appelant reprend avant,
+   * le tour suivant le récupère (appel bb50c0d3 : la lettre A d'une épellation perdue ainsi).
+   */
+  unansweredFragment?: string | null;
   /** Récapitulatif dont le « oui » a déjà été refusé une fois parce qu'il avait été coupé. */
   recapCutBlockedKey: string | null;
 }
@@ -35,6 +41,28 @@ export interface DayAvailability {
   closed: boolean;
   /** Créneaux libres par taille de groupe, de 1 au maximum vocal. */
   slotsBySize: Record<number, string[]>;
+  /**
+   * Tailles de groupe qu'AUCUNE table du restaurant n'accueille, quel que soit le jour (appel 03b19223 :
+   * 7 personnes pour des tables de 6 au plus, annoncé « complet samedi »). Vide : inconnu ou toutes accueillies.
+   */
+  noTableSizes?: number[];
+}
+
+/**
+ * Tailles (de 1 à `maxSize`) qu'aucune plage d'accueil ne couvre. Même critère que la disponibilité : une table
+ * accueille N si `minCapacity <= N <= capacity`. Sans table connue, rien n'est affirmé (liste vide).
+ */
+export function sizesWithoutTable(
+  ranges: ReadonlyArray<{ capacity: number; minCapacity: number }>,
+  maxSize: number,
+): number[] {
+  if (!ranges.length) return [];
+  const sizes: number[] = [];
+  for (let size = 1; size <= maxSize; size++) {
+    if (!ranges.some((range) => range.minCapacity <= size && size <= range.capacity))
+      sizes.push(size);
+  }
+  return sizes;
 }
 
 export function createStructuredTurnState(): StructuredTurnState {
@@ -165,6 +193,13 @@ const SPELLING_AWAITING: ReadonlySet<StructuredTurnOutput['awaiting']> = new Set
   'confirmation',
 ]);
 
+/** L'agent attend un nom ou sa relecture : une lettre seule de l'appelant appartient à l'épellation. */
+export function expectsSpelledLetters(
+  awaiting: StructuredTurnOutput['awaiting'] | undefined,
+): boolean {
+  return awaiting !== undefined && SPELLING_AWAITING.has(awaiting);
+}
+
 const stripToLetters = (text: string): string =>
   text
     .normalize('NFD')
@@ -173,16 +208,17 @@ const stripToLetters = (text: string): string =>
     .toUpperCase();
 
 /**
- * Dernière suite de lettres épelées d'une phrase : des jetons d'une lettre, un chiffre
- * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Vide sans trois lettres.
+ * Suites de lettres épelées d'une phrase (trois lettres au moins chacune) : des jetons d'une lettre, un chiffre
+ * suivi d'une lettre doublant cette lettre (« a 2 k i f » = AKKIF). Un mot, ou un chiffre sans lettre derrière,
+ * coupe la suite.
  */
-export function spelledLettersOf(transcript: string): string {
+function spelledRuns(transcript: string): string[] {
   const tokens = transcript
     .toLowerCase()
     .split(/[\s,.;:!?-]+/u)
     .filter(Boolean);
+  const runs: string[] = [];
   let run = '';
-  let last = '';
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     const next = tokens[index + 1];
@@ -192,12 +228,17 @@ export function spelledLettersOf(transcript: string): string {
       run += next.repeat(Number(token));
       index++;
     } else {
-      if (run.length >= 3) last = run;
+      if (run.length >= 3) runs.push(run);
       run = '';
     }
   }
-  if (run.length >= 3) last = run;
-  return stripToLetters(last);
+  if (run.length >= 3) runs.push(run);
+  return runs.map(stripToLetters);
+}
+
+/** Dernière suite de lettres épelées d'une phrase ; vide sans trois lettres (voir `spelledRuns`). */
+export function spelledLettersOf(transcript: string): string {
+  return spelledRuns(transcript).at(-1) ?? '';
 }
 
 /** `needle` est une suite de lettres prise dans `haystack`, dans l'ordre. */
@@ -344,15 +385,45 @@ export function spelledNameFact(
         `Les lettres que l'appelant vient de donner reprennent la fin du nom que tu viens de relire (« ${previousName.trim()} ») ; ` +
         `le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne les place pas bien. ` +
         `Aligné sur ta relecture, le nom est : customerName = « ${reconciled} ». ` +
-        `Relis uniquement ce nom, lettre par lettre, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+        readbackInstruction(reconciled)
       );
     }
   }
   return (
     `Le nom que tu t'apprêtais à relire (« ${proposedName.trim()} ») ne correspond pas aux lettres que l'appelant vient d'épeler. ` +
     `Les lettres épelées font foi : customerName = « ${reconciled} ». ` +
-    `Relis uniquement ce nom, lettre par lettre, et demande si c'est bien ça (awaiting=customerNameConfirmation).`
+    readbackInstruction(reconciled)
   );
+}
+
+/**
+ * Plus de différences que cela entre le nom du modèle et les lettres épelées : ce n'est plus une lettre mal lue
+ * (un chiffre pris pour une lettre, deux lettres proches) mais un autre nom, que le code ne tranche pas.
+ */
+const MAX_SUBSTITUTIONS = 2;
+
+/**
+ * Même nombre de lettres que l'épellation, mais pas les mêmes : le modèle a lu un chiffre ou une lettre de travers
+ * (« a 2 k i f » → AAKIF). Quand l'épellation se lit sans ambiguïté, le nom que le code en tire l'emporte. Sans
+ * ambiguïté veut dire : une seule suite de lettres épelées dans la phrase, aucun nom déjà retenu avant ce tour
+ * (sinon c'est un nom assemblé sur plusieurs tours), et au plus MAX_SUBSTITUTIONS lettres de différence. Test
+ * structurel : aucun mot connu.
+ */
+function resolveSubstitution(
+  draft: StructuredTurnDraft,
+  spelled: string,
+  named: string,
+  transcript: string,
+  previousName?: string,
+): StructuredTurnDraft {
+  if (previousName?.trim() || spelledRuns(transcript).length !== 1) return draft;
+  if (editDistance(named, spelled) > MAX_SUBSTITUTIONS) return draft;
+  const original = draft.customerName.trim();
+  const upper = original === original.toLocaleUpperCase('fr-FR');
+  const customerName = upper
+    ? spelled
+    : spelled.charAt(0) + spelled.slice(1).toLocaleLowerCase('fr-FR');
+  return { ...draft, customerName };
 }
 
 /**
@@ -361,7 +432,9 @@ export function spelledNameFact(
  * u e t » → HOËT, « a 2 k i f » → AKIF) : le récapitulatif et la réservation lisent ce champ.
  * On ne corrige que ce cas précis, un nom auquel il manque une ou deux des lettres épelées.
  * Un nom plus long que l'épellation (morceaux répartis sur plusieurs tours) ou qui en est la
- * fin (faux départ suivi de la bonne épellation) reste celui du modèle.
+ * fin (faux départ suivi de la bonne épellation) reste celui du modèle. À nombre de lettres égal mais avec une
+ * ou deux lettres de travers (un chiffre lu comme une lettre), une épellation sans ambiguïté l'emporte
+ * (`resolveSubstitution`).
  */
 export function reconcileSpelledName(
   draft: StructuredTurnDraft,
@@ -383,6 +456,7 @@ export function reconcileSpelledName(
   const named = stripToLetters(draft.customerName);
   if (spelled.length < 3 || named.length < 2 || named === spelled) return draft;
   const missing = spelled.length - named.length;
+  if (missing === 0) return resolveSubstitution(draft, spelled, named, transcript, previousName);
   if (missing < 1 || missing > 2) return draft;
   if (spelled.endsWith(named) || !isSubsequence(named, spelled)) return draft;
   const original = draft.customerName.trim();
@@ -437,6 +511,104 @@ export function parseStreamedDraft(
 }
 
 /**
+ * L'appelant vient de donner l'heure et le nombre de personnes vaut encore 0 (lu dans le flux du modèle, avant
+ * `say`) : la disponibilité dépend du nombre, donc la phrase ne doit rien accepter ni répéter de l'heure ; elle se
+ * réduit à sa question. Critère de forme, sans mot : brouillon avec date et heure, heure changée à ce tour, nombre à
+ * 0, interprétation « answer ». Appels 03b19223 (« Samedi à 20 heures, ça marche. Vous êtes combien ? ») et c5d6b07d.
+ */
+export function timeGivenWithoutPartySize(streamed: string, before: { time: string }): boolean {
+  const draft = parseStreamedDraft(streamed);
+  if (!draft || draft.partySize !== 0 || !draft.date || !/^\d{2}:\d{2}$/.test(draft.time)) {
+    return false;
+  }
+  if (draft.time === before.time) return false;
+  return /"interpretation"\s*:\s*"answer"/.test(streamed);
+}
+
+/**
+ * Appel 90834d63 : « Quatre. Ah non, cinq. » arrive « 4 » puis « un non 5 ». Le modèle attendait le nom, jugeait
+ * l'énoncé douteux et redemandait le NOM : la correction du nombre de personnes était perdue, la réservation partait
+ * pour 4. Le prompt seul ne l'évite pas (mesure au banc : 25 à 60 % de reprise du nombre).
+ *
+ * Critère de structure, aucun mot : le modèle déclare le tour douteux (`understanding`), le brouillon streamé garde la
+ * taille de groupe déjà notée, on n'attendait pas ce nombre, et l'énoncé porte un nombre (chiffres) différent de cette
+ * taille. Rend le fait à donner au second passage, ou null.
+ */
+export function partySizeCorrectionFact(
+  streamed: string,
+  transcript: string,
+  known: { partySize: number },
+): string | null {
+  if (known.partySize <= 0) return null;
+  if (!/"understanding"\s*:\s*"doubtful"/.test(streamed)) return null;
+  const awaiting = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(streamed)?.[1];
+  if (!awaiting || awaiting === 'partySize') return null;
+  const draft = parseStreamedDraft(streamed);
+  if (!draft || draft.partySize !== known.partySize) return null;
+  const numbers = (transcript.match(/\d+/g) ?? [])
+    .map(Number)
+    .filter((value) => value >= 1 && value <= 99 && value !== known.partySize);
+  if (!numbers.length) return null;
+  return (
+    `Énoncé douteux : l'appelant a dit « ${transcript.trim()} », qui contient le nombre ${numbers[0]}, alors que ` +
+    `${known.partySize} personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ` +
+    `ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.`
+  );
+}
+
+/** La phrase se termine par un point d'interrogation (guillemets ou parenthèse fermante tolérés). */
+export function endsWithQuestion(phrase: string): boolean {
+  return /\?[\s"»”')]*$/u.test(phrase);
+}
+
+/**
+ * Garde-fou « seule la question est dite » (voir `timeGivenWithoutPartySize`), phrase par phrase, dans l'ordre du
+ * flux. Tant qu'il est actif, une phrase qui ne se termine pas par un point d'interrogation est retenue ; quand la
+ * question arrive, les phrases retenues sont retirées (`onDrop` les reçoit, pour le journal de débogage). Sans
+ * question à la fin, elles sont dites telles quelles : jamais de silence.
+ */
+export class QuestionOnlyGuard {
+  private deferred: string[] = [];
+  private questionSpoken = false;
+  private droppedCount = 0;
+
+  constructor(private readonly onDrop: (phrase: string) => void = () => undefined) {}
+
+  /** Phrases à dire maintenant pour cette phrase du flux. */
+  push(phrase: string, active: boolean): string[] {
+    if (!active) return [phrase];
+    if (!endsWithQuestion(phrase)) {
+      this.deferred.push(phrase);
+      return [];
+    }
+    this.drop();
+    this.questionSpoken = true;
+    return [phrase];
+  }
+
+  /** Phrases à dire en fin de flux : celles retenues sans question derrière, sinon aucune (retirées). */
+  finish(): string[] {
+    if (this.questionSpoken) {
+      this.drop();
+      return [];
+    }
+    return this.deferred.splice(0);
+  }
+
+  /** Nombre de phrases retirées : l'historique garde ce qui a été dit, pas ce que le modèle avait écrit. */
+  get dropped(): number {
+    return this.droppedCount;
+  }
+
+  private drop(): void {
+    for (const phrase of this.deferred.splice(0)) {
+      this.droppedCount++;
+      this.onDrop(phrase);
+    }
+  }
+}
+
+/**
  * Vrai quand les créneaux du jour, déjà lus pour ce nombre de personnes, ne contiennent pas
  * l'heure du brouillon : le modèle ne doit pas annoncer ce créneau comme libre (appel 1b3f85e9 :
  * « Pour 5, 15 h 30 est libre » alors que 15 h à 18 h était complet). Faux quand on ne sait pas
@@ -468,14 +640,26 @@ export function outsideOpeningHoursFact(
   if (!days.length) return null;
   const [year, month, day] = draft.date.split('-').map(Number);
   const utc = new Date(Date.UTC(year, month - 1, day));
-  const slot = days.find((entry) => entry.dayIndex === utc.getUTCDay());
-  if (!slot || slot.close <= slot.open) return null;
-  if (draft.time >= slot.open && draft.time <= slot.close) return null;
+  const periods = days.filter((entry) => entry.dayIndex === utc.getUTCDay());
+  if (!periods.length || periods.some((period) => period.close <= period.open)) return null;
   const weekday = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', timeZone: 'UTC' }).format(
     utc,
   );
+  const service = periods.find((period) => draft.time >= period.open && draft.time <= period.close);
+  if (service) {
+    // Dans le service, mais après la dernière réservation que le restaurateur a fixée.
+    const lastBooking = service.lastBooking;
+    if (!lastBooking || draft.time <= lastBooking) return null;
+    return (
+      `L'heure demandée (${draft.time}) est après la dernière réservation du ${weekday} ` +
+      `pour ce service (${lastBooking}, service ${service.open}–${service.close}). ` +
+      "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
+      `et laisse-le choisir une heure jusqu'à ${lastBooking}.`
+    );
+  }
+  const ranges = periods.map((period) => `${period.open}–${period.close}`).join(' puis ');
   return (
-    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${slot.open}–${slot.close}). ` +
+    `L'heure demandée (${draft.time}) est en dehors des horaires du ${weekday} (${ranges}). ` +
     "Ne l'accepte pas et ne demande pas encore le nombre de personnes : dis-le simplement à l'appelant " +
     'et laisse-le choisir une heure dans ces horaires.'
   );
@@ -488,18 +672,51 @@ export type ActionDecision = { allowed: true } | { allowed: false; reason: strin
  * lu au tour précédent, accepté par l'appelant selon le modèle, sur un créneau
  * vérifié. Aucune action à effet ne part sur un plan peu sûr.
  */
+/**
+ * Au-delà de ce nombre de mots, ce que le modèle n'a pas compris n'est pas un au revoir. Un au revoir mal
+ * transcrit est court (« dix nous » pour « bisous ») ; une longue phrase sans sens peut être une vraie demande.
+ * Critère de longueur seulement, aucun mot connu. RÉSERVE : le seuil repose sur UN seul appel réel (6a70dff9,
+ * deux mots) et sur des phrases inventées ; il n'a pas été étalonné sur des au revoir transcrits de travers.
+ */
+export const FAREWELL_MAX_WORDS = 6;
+
+/** Nombre de mots d'une phrase transcrite. */
+export function wordCount(text: string): number {
+  return text.split(/\s+/u).filter(Boolean).length;
+}
+
 export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number; recapHeard?: boolean },
+  context: { maxPartySize: number; recapHeard?: boolean; transcriptWords?: number },
 ): ActionDecision {
+  // Une fois la réservation créée, rien n'est en jeu : un énoncé COURT que le modèle ne comprend pas est un au
+  // revoir mal transcrit (appel 6a70dff9 : « Bisous » transcrit « dix-nous »). Un long reste un doute.
+  // Et seulement si la phrase précédente de l'agent n'attendait rien : après une question (« Autre chose ? »),
+  // un court énoncé mal compris est peut-être une vraie question, pas un au revoir.
+  const shortFarewell =
+    output.action === 'end_call' &&
+    state.reservationCreated &&
+    state.lastAwaiting === 'none' &&
+    context.transcriptWords !== undefined &&
+    context.transcriptWords <= FAREWELL_MAX_WORDS;
   // Compréhension douteuse : aucune action, pas même une vérification de disponibilité sur une valeur devinée.
-  if (output.understanding === 'doubtful' && output.action !== 'none') {
+  if (output.understanding === 'doubtful' && output.action !== 'none' && !shortFarewell) {
     return { allowed: false, reason: 'doubtful_understanding' };
   }
+  // Sans vérification de compréhension : un congé que le modèle dit lui-même ne pas avoir compris ne ferme
+  // l'appel que s'il est court.
+  if (
+    output.action === 'end_call' &&
+    output.interpretation === 'unclear' &&
+    (context.transcriptWords ?? Number.POSITIVE_INFINITY) > FAREWELL_MAX_WORDS
+  ) {
+    return { allowed: false, reason: 'long_unclear_farewell' };
+  }
   const sideEffect = output.action !== 'none' && output.action !== 'check_availability';
-  if (sideEffect && output.confidence === 'low') {
+  // Un mot mal transcrit donne une confiance faible : le congé court (conditions ci-dessus) passe aussi ce garde.
+  if (sideEffect && output.confidence === 'low' && !shortFarewell) {
     return { allowed: false, reason: 'low_confidence' };
   }
   switch (output.action) {

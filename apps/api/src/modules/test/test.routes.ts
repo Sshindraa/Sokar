@@ -6,7 +6,6 @@ import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from '../voice/prompts';
 import { CallSessionManager } from '../voice/stream/manager';
-import { isVoiceStructuredTurnEnabled } from '../voice/stream/feature-flags';
 import { logger } from '../../shared/logger/pino';
 
 const SimulateCallSchema = z.object({
@@ -14,13 +13,8 @@ const SimulateCallSchema = z.object({
   callerPhone: z.string().min(5),
   /** Optionnel : numéro du restaurant (défaut = Chez Sokar démo) */
   restaurantPhone: z.string().min(5).optional(),
-  /** Mode LLM : auto (clé provider vocal requise) ou mock (réponses fixes) */
+  /** Mode enregistré sur l'appel de test (le mode « mock » à outils n'existe plus : simple libellé). */
   mode: z.enum(['auto', 'mock']).default('auto'),
-});
-
-const SimulateUtteranceSchema = z.object({
-  callControlId: z.string().min(1),
-  transcript: z.string().min(1),
 });
 
 /**
@@ -95,7 +89,6 @@ export async function testRoutes(app: FastifyInstance) {
         ...ctx,
         openingHours: ctx.openingHours as OpeningHours,
         customerExtra,
-        structuredTurn: isVoiceStructuredTurnEnabled(ctx.id),
       });
 
       // Créer un Call record en DB
@@ -136,11 +129,6 @@ export async function testRoutes(app: FastifyInstance) {
           : null,
       });
 
-      // En mode mock, on active le flag interne sans toucher à la clé réelle.
-      if (mode === 'mock') {
-        process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
-      }
-
       return reply.send({
         test: true,
         mode,
@@ -151,27 +139,9 @@ export async function testRoutes(app: FastifyInstance) {
           name: customer?.name ?? null,
           isVip: customer?.isVip ?? false,
         },
-        nextStep: 'POST /api/test/simulate-utterance with { callControlId, transcript }',
       });
     },
   );
-
-  app.post('/api/test/simulate-utterance', async (req, reply) => {
-    const body = SimulateUtteranceSchema.parse(req.body);
-    const mgr = CallSessionManager.getInstance();
-
-    try {
-      const response = await mgr.simulateUtterance(body.callControlId, body.transcript);
-      return reply.send({
-        ok: true,
-        transcript: body.transcript,
-        response,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return reply.status(400).send({ ok: false, error: message });
-    }
-  });
 
   /**
    * GET /api/test/simulate-call/:callControlId/reservations

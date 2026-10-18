@@ -27,13 +27,13 @@ import {
 const STEP_ORDER = [
   'restaurant',
   'hours',
+  'floor',
   'knowledge',
-  'calendar',
   'phone',
+  'channels',
   'connect-identity',
   'connect-location',
   'connect-cuisine',
-  'connect-capacity',
   'connect-activation',
 ] as const;
 
@@ -64,9 +64,21 @@ export async function onboardingFunnelRoutes(app: FastifyInstance) {
           firstReservationAt: row._min.reservedAt ?? null,
         }));
 
+        const progress = perRestaurantProgress(events, timelines);
+        // tenant-scoping: global — noms des établissements du funnel, pour que l'opérateur sache chez qui agir.
+        const names = await db.restaurant.findMany({
+          where: { id: { in: progress.map((row) => row.restaurantId) } },
+          select: { id: true, name: true },
+        });
+        const nameById = new Map(names.map((row) => [row.id, row.name]));
+
         return reply.send({
           funnel: aggregateOnboardingCohort(events, timelines),
-          restaurants: perRestaurantProgress(events, timelines),
+          // Champ ajouté (additif) : `restaurantName`, null si l'établissement a été supprimé.
+          restaurants: progress.map((row) => ({
+            ...row,
+            restaurantName: nameById.get(row.restaurantId) ?? null,
+          })),
         });
       } catch (err) {
         req.log.error({ err }, 'onboarding-funnel: failed to aggregate cohort');

@@ -11,6 +11,8 @@
  */
 
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
+import { CONNECT_DEMO_SLUGS } from '@sokar/shared';
 
 // ─── Slug (param URL) ─────────────────────────────────────────
 
@@ -116,6 +118,12 @@ export const PUBLIC_CONNECT_WHERE = {
   agenticOptIn: true,
 } as const;
 
+/** Discovery excludes explicit fixtures; direct pages and test reservations remain available. */
+export const DISCOVERABLE_CONNECT_WHERE = {
+  ...PUBLIC_CONNECT_WHERE,
+  slug: { not: null, notIn: [...CONNECT_DEMO_SLUGS] },
+} satisfies Prisma.RestaurantWhereInput;
+
 export function isPublicConnectPage(restaurant: {
   slug: string | null;
   publishedAt: Date | null;
@@ -163,12 +171,20 @@ export const ConfirmInputSchema = z.object({
   marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
   source: SourceEnum.optional().default('web'),
   giftCardCode: z.string().optional(),
+  whatsappReminderConsent: z
+    .object({
+      accepted: z.boolean(),
+      version: z.literal('whatsapp-reminder-2026-10-17'),
+    })
+    .optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),
 });
 export type ConfirmInput = z.infer<typeof ConfirmInputSchema>;
 
 export type ConfirmDto = {
+  whatsappWithdrawalToken?: string;
+  managementUrl?: string;
   reservationId: string;
   status: 'confirmed';
   restaurantName: string;
@@ -195,6 +211,7 @@ export type OpeningHoursDay = {
 export type OpeningHoursSpec = OpeningHoursDay[];
 
 export type PublicRestaurantDto = {
+  whatsappReminderOptInEnabled?: boolean;
   id: string;
   slug: string;
   name: string;
@@ -219,6 +236,8 @@ export type PublicRestaurantDto = {
   noiseLevel?: string;
   acceptsReservations: boolean;
   publishedAt: string; // ISO 8601
+  // Fuseau du restaurant (IANA) : « aujourd'hui » se calcule dans ce fuseau, pas dans celui du serveur.
+  timezone?: string;
   // Métadonnées internes (utiles pour le front, pas pour le SEO)
   connectAgentic: boolean;
   // Géolocalisation (exposée dans JSON-LD GeoCoordinates)

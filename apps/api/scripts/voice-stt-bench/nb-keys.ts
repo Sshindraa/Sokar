@@ -3,12 +3,13 @@
  * production. Le 24/09, un run de banc sur le compte ElevenLabs partagé
  * prod/staging a épuisé le quota et coupé la transcription des appels réels.
  *
- * Règle : le banc lit uniquement `ELEVENLABS_BENCH_API_KEY` /
- * `CARTESIA_BENCH_API_KEY`, et refuse une clé identique à celle de prod.
+ * Règle : le banc Cartesia lit `CARTESIA_BENCH_API_KEY` et refuse une clé identique à
+ * celle de prod. Le banc ElevenLabs lit la clé unique `ELEVENLABS_API_KEY` (décision du
+ * 14/10/2026 : une seule clé partagée prod, dev, staging et banc).
  * Les valeurs ne sont jamais journalisées, seulement comparées.
  */
 
-export type BenchProviderKey = 'ELEVENLABS_BENCH_API_KEY' | 'CARTESIA_BENCH_API_KEY';
+export type BenchProviderKey = 'CARTESIA_BENCH_API_KEY';
 
 /** La durée de silence final ajoutée après chaque clip dans `nb-run.ts`. */
 export const BENCH_TRAILING_SILENCE_S = 1.6;
@@ -34,6 +35,13 @@ export function requireBenchKey(envName: BenchProviderKey, productionEnvName: st
       `${envName} est identique à ${productionEnvName}. Utilise une clé de banc dédiée, jamais la clé de production.`,
     );
   }
+  return value;
+}
+
+/** Clé ElevenLabs unique, partagée prod, dev, staging et banc (décision du 14/10/2026). */
+export function requireSharedKey(envName: 'ELEVENLABS_API_KEY'): string {
+  const value = process.env[envName]?.trim();
+  if (!value) throw new Error(`${envName} est requise pour le banc.`);
   return value;
 }
 

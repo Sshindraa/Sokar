@@ -1,7 +1,9 @@
+import { snapshotCancellationPolicy } from '../../shared/reservations/cancellation-policy';
 import { db } from '../../shared/db/client';
 import {
   Prisma,
   type Reservation,
+  type ReservationChannel,
   type ReservationState,
   type ReservationStatus,
   type Restaurant,
@@ -12,6 +14,7 @@ import { GoogleCalendarClient } from '../../shared/google-calendar/client';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import { isSlotStartPast } from '../../shared/timezone/restaurant-time';
 import {
   observeReservationMutation,
   type ReservationNotificationObservation,
@@ -39,6 +42,8 @@ export interface CreateReservationInput {
   customerName: string;
   customerPhone?: string;
   marketingAttributionToken?: string;
+  consents?: Prisma.InputJsonObject;
+  channel?: ReservationChannel;
 }
 
 interface AvailabilitySlot {
@@ -337,6 +342,8 @@ export class ReservationService {
             partySize: input.partySize,
             customerName: input.customerName,
             customerPhone: input.customerPhone,
+            ...(input.consents ? { consents: input.consents } : {}),
+            ...(input.channel ? { channel: input.channel } : {}),
             ...(customerId ? { customerId } : {}),
             // `state` est écrit explicitement : s'en remettre au défaut Prisma
             // marchait par coïncidence et laissait la porte ouverte à une
@@ -344,6 +351,10 @@ export class ReservationService {
             ...creationProjection('CONFIRMED'),
             tableId: table.id,
             estimatedRevenue: input.partySize * 35,
+            cancellationPolicySnap: snapshotCancellationPolicy(
+              restaurant.exposureSettings?.capacitySpecials,
+              'onboarding-v1',
+            ),
           },
         });
 
@@ -943,12 +954,22 @@ export class ReservationService {
     });
   }
 
+  /**
+   * `options.minLeadTimeMinutes` : délai minimum, passé par les surfaces EN LIGNE (page /book). La voix
+   * et le personnel n'en passent pas : pour eux, seul le passé est indisponible.
+   */
   static async availability(
     restaurantId: string,
     date: string,
     partySize: number,
+    options: { minLeadTimeMinutes?: number } = {},
   ): Promise<AvailabilityResult> {
-    const dto = await availability.getAvailability({ restaurantId, date, partySize });
+    const dto = await availability.getAvailability({
+      restaurantId,
+      date,
+      partySize,
+      minLeadTimeMinutes: options.minLeadTimeMinutes,
+    });
     return {
       restaurantId: dto.restaurantId,
       date: dto.date,
@@ -956,6 +977,13 @@ export class ReservationService {
       slots: dto.slots.filter((slot) => slot.available).map((slot) => slot.time),
       allSlots: dto.slots,
     };
+  }
+
+  /** Plages d'accueil des tables actives (voir `CapacityAwareAvailabilityService.tableRanges`). */
+  static async tableRanges(
+    restaurantId: string,
+  ): Promise<Array<{ capacity: number; minCapacity: number }>> {
+    return availability.tableRanges(restaurantId);
   }
 
   private static async checkSlotAvailability(
@@ -967,7 +995,8 @@ export class ReservationService {
       return { available: false, reason: 'closed' };
     }
 
-    if (startTime.getTime() <= Date.now()) {
+    // Même règle que le moteur de disponibilités : un créneau commencé n'est plus réservable.
+    if (isSlotStartPast(startTime)) {
       return { available: false, reason: 'past' };
     }
 

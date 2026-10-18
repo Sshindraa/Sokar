@@ -1,7 +1,7 @@
 /**
  * Health checks for Sokar API.
  *
- * Six independent checks: db, redis, queues, telnyx, ElevenLabs STT, cartesia.
+ * Six independent checks: db, redis, queues, telnyx, cartesia, elevenlabs.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
  * block another. Core dependencies have a slightly longer timeout to avoid
@@ -27,10 +27,11 @@
  *
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
- *    - ElevenLabs STT: `GET /v1/user` — validate the API key without a transcription
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
+ *    - ElevenLabs: `GET /v1/user/subscription` — validates the key, no audio, no characters billed
+ *                  (only when ElevenLabs synthesises the phone; otherwise `skipped`)
  *
- * 6. **Soft-fail for voice providers**: if Telnyx/ElevenLabs/Cartesia are
+ * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
  *    down but DB/Redis/queues are ok, the API can still answer
  *    non-voice requests (read dashboard, list reservations, etc.).
  *    So voice provider failure is a warning, not a 503.
@@ -40,8 +41,14 @@ import { db } from '../db/client';
 import { redisCache } from '../redis/client';
 import { queues } from '../queue/queues';
 import telnyx from '../telnyx/client';
+import { readWorkerHeartbeatAgeMs, WORKER_HEARTBEAT_STALE_MS } from './watchtower';
+import {
+  elevenLabsTtsVoiceId,
+  telephonyTtsProvider,
+} from '../../modules/voice/stream/elevenlabs-tts';
 
-export type CheckStatus = 'ok' | 'error';
+/** `skipped`: the check does not apply to the current configuration. It is not a failure. */
+export type CheckStatus = 'ok' | 'error' | 'skipped';
 
 export interface CheckResult {
   status: CheckStatus;
@@ -153,28 +160,6 @@ async function checkTelnyx(): Promise<CheckResult> {
   );
 }
 
-async function checkElevenLabsStt(): Promise<CheckResult> {
-  // The user endpoint validates the ElevenLabs key without consuming STT audio.
-  return withTimeout(
-    'elevenlabs_stt',
-    (async () => {
-      if (!process.env.ELEVENLABS_API_KEY) {
-        throw new Error('ELEVENLABS_API_KEY not configured');
-      }
-      const res = await fetch('https://api.elevenlabs.io/v1/user', {
-        method: 'GET',
-        headers: {
-          'xi-api-key': process.env.ELEVENLABS_API_KEY,
-        },
-      });
-      if (!res.ok) {
-        throw new Error(`ElevenLabs STT API ${res.status}: ${res.statusText}`);
-      }
-    })(),
-    VOICE_TIMEOUT_MS,
-  );
-}
-
 async function checkCartesia(): Promise<CheckResult> {
   // Direct GET to /voices — list available voices, no TTS generation.
   return withTimeout(
@@ -198,20 +183,76 @@ async function checkCartesia(): Promise<CheckResult> {
   );
 }
 
+async function checkElevenLabs(): Promise<CheckResult> {
+  // Only relevant when ElevenLabs synthesises the phone voice. While the switch
+  // is off, the check is skipped: no network call, no effect on the status.
+  if (telephonyTtsProvider() !== 'elevenlabs') {
+    return { status: 'skipped', latency_ms: 0 };
+  }
+  // GET on the account validates the key and reports the plan: no audio, no characters billed. The voice is not
+  // looked up, because a voice can synthesise without being readable through the metadata endpoint.
+  return withTimeout(
+    'elevenlabs',
+    (async () => {
+      const apiKey = process.env.ELEVENLABS_API_KEY;
+      if (!apiKey) {
+        throw new Error('ELEVENLABS_API_KEY not configured');
+      }
+      const voiceId = elevenLabsTtsVoiceId();
+      if (!voiceId) {
+        throw new Error('ELEVENLABS_TTS_VOICE_ID not configured');
+      }
+      const res = await fetch('https://api.elevenlabs.io/v1/user/subscription', {
+        method: 'GET',
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!res.ok) {
+        throw new Error(`ElevenLabs API ${res.status}: ${res.statusText}`);
+      }
+    })(),
+    VOICE_TIMEOUT_MS,
+  );
+}
+
+/** Battement des workers BullMQ : informatif, il ne fait pas passer l'API en 503. */
+async function checkWorkers(): Promise<CheckResult> {
+  const start = Date.now();
+  try {
+    const age = await readWorkerHeartbeatAgeMs();
+    if (age === null)
+      return { status: 'error', latency_ms: Date.now() - start, error: 'no heartbeat' };
+    if (age > WORKER_HEARTBEAT_STALE_MS) {
+      return {
+        status: 'error',
+        latency_ms: Date.now() - start,
+        error: `stale ${Math.round(age / 1000)}s`,
+      };
+    }
+    return { status: 'ok', latency_ms: Date.now() - start };
+  } catch (err) {
+    return {
+      status: 'error',
+      latency_ms: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
-const VOICE_CHECKS = ['telnyx', 'elevenlabs_stt', 'cartesia'] as const;
+const VOICE_CHECKS = ['telnyx', 'cartesia', 'elevenlabs'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, elevenlabs_stt, cartesia] = await Promise.all([
+  const [db, redis, queues, telnyx, cartesia, elevenlabs, workers] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
-    checkElevenLabsStt(),
     checkCartesia(),
+    checkElevenLabs(),
+    checkWorkers(),
   ]);
 
   const checks: Record<string, CheckResult> = {
@@ -219,8 +260,9 @@ export async function checkHealth(): Promise<HealthReport> {
     redis,
     queues,
     telnyx,
-    elevenlabs_stt,
     cartesia,
+    elevenlabs,
+    workers,
   };
 
   // Core failure = 503 (API can't serve anything).

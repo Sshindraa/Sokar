@@ -21,6 +21,9 @@
  *   opaque token (marketing click and unsubscribe). The limit blunts token
  *   brute force without blocking a real customer clicking a link twice.
  *
+ * - PUBLIC_READ — 120 req/min/IP. Public catalog and checkout status reads,
+ *   including short-lived payment confirmation polling.
+ *
  * - PUBLIC_WRITE — 20 req/min/IP. Unauthenticated writes that create or mutate
  *   state (reputation feedback submission).
  *
@@ -40,6 +43,11 @@ export const RATE_LIMIT_PROVIDER_WEBHOOK = {
 
 export const RATE_LIMIT_PUBLIC_TOKEN = {
   max: 30,
+  timeWindow: RATE_LIMIT_WINDOW,
+};
+
+export const RATE_LIMIT_PUBLIC_READ = {
+  max: 120,
   timeWindow: RATE_LIMIT_WINDOW,
 };
 

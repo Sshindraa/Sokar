@@ -271,27 +271,6 @@ describe('repli du chemin à outils (restaurants hors tour structuré)', () => {
       }
     ).fetchLlmStreaming(session, messages, { tools, maxTokens: 200, temperature: 0.7 });
 
-  it('bascule sur OpenRouter avec les outils quand le principal refuse (429)', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock
-      .mockResolvedValueOnce(new Response('slow down', { status: 429 }))
-      .mockResolvedValueOnce(sse(['Bonjour.']));
-
-    const { response, provider } = await call(mgr, session);
-
-    expect(provider).toBe('openrouter');
-    expect(response.ok).toBe(true);
-    expect(bodyOf(fetchMock.mock.calls[1])).toMatchObject({ tools, tool_choice: 'auto' });
-    expect(bodyOf(fetchMock.mock.calls[1]).response_format).toBeUndefined();
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        labels: { path: 'legacy', outcome: 'used', reason: 'rate_limited' },
-      }),
-    );
-  });
-
   it("garde le comportement historique si le repli échoue aussi : la réponse d'erreur du principal est rendue", async () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
@@ -370,6 +349,59 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     expect(
       (await voiceLlmFallbackTotal.get()).values.some((v) => v.labels.reason === 'hedge'),
     ).toBe(false);
+  });
+
+  it('le doublon part quand le principal n’envoie qu’un fragment vide puis se tait', async () => {
+    // Appel 80a153e6 du 16/10/2026 : Cerebras ouvre le flux par un fragment sans texte (rôle seul),
+    // puis le texte tarde. Ce fragment vide ne doit pas compter comme un premier fragment.
+    const encoder = new TextEncoder();
+    const emptyThenSilent = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', content: '' } }] })}\n\n`,
+            ),
+          );
+        },
+      }),
+      { status: 200 },
+    );
+    fetchMock.mockResolvedValueOnce(emptyThenSilent).mockResolvedValueOnce(sse([answer('Oui.')]));
+
+    const text = await run(CallSessionManager.getInstance());
+
+    expect(text).toBe(answer('Oui.'));
+    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
+    expect(await hedgeCount('hedge_won')).toBe(1);
+  });
+
+  it('garde le texte des fragments lus avant le premier texte', async () => {
+    const encoder = new TextEncoder();
+    const roleThenText = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', content: '' } }] })}\n\n`,
+            ),
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ choices: [{ delta: { content: answer('Ok.') } }] })}\n\ndata: [DONE]\n\n`,
+            ),
+          );
+          controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+    fetchMock.mockResolvedValueOnce(roleThenText);
+
+    const text = await run(CallSessionManager.getInstance());
+
+    expect(text).toBe(answer('Ok.'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('le principal gagne quand il finit par répondre avant le secours : le doublon est annulé', async () => {

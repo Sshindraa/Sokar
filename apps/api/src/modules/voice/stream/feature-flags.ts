@@ -11,7 +11,7 @@ export function parseRestaurantIdList(value: string | undefined): string[] {
 }
 
 /**
- * Parcours vocal moderne par défaut (tour structuré, Deepgram, mots-clés Deepgram, écoute Dialogue V2 avec
+ * Parcours vocal moderne par défaut (Deepgram, mots-clés Deepgram, écoute Dialogue V2 avec
  * filtre d'écho) pour tout restaurant, sans le lister un par un. `VOICE_V2_DISABLED_RESTAURANT_IDS` ramène un
  * restaurant à l'ancien chemin ; il n'annule pas les listes explicites, qui gardent leur effet.
  * Désactivé tant que `VOICE_V2_DEFAULT` n'est pas `true`.
@@ -23,18 +23,6 @@ export function isVoiceV2Default(
   return (
     env.VOICE_V2_DEFAULT === 'true' &&
     !parseRestaurantIdList(env.VOICE_V2_DISABLED_RESTAURANT_IDS).includes(restaurantId)
-  );
-}
-
-/** Restaurants sur le tour structuré : liste explicite, ou parcours moderne par défaut. */
-export function isVoiceStructuredTurnEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return Boolean(
-    restaurantId &&
-    (parseRestaurantIdList(env.VOICE_STRUCTURED_TURN_RESTAURANT_IDS).includes(restaurantId) ||
-      isVoiceV2Default(restaurantId, env)),
   );
 }
 
@@ -50,6 +38,66 @@ export function isVoiceUnderstandingCheckEnabled(
   return Boolean(
     restaurantId &&
     parseRestaurantIdList(env.VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
+ * Juge de fin de tour séparé (voir `structured-turn/turn-end-judge.ts`) : une requête minimale, en parallèle du
+ * passage anticipé, dit si l'appelant a fini ; son verdict remplace `turnComplete` pour fermer le tour et pour
+ * décider de répondre. Seulement pour les restaurants listés (`VOICE_TURN_JUDGE_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoiceTurnJudgeEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_TURN_JUDGE_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
+ * Ton de voix ElevenLabs v4 (balise d'expression) choisi par le modèle dans une courte liste, au plus un par
+ * réponse. Seulement pour les restaurants listés (`VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS`), vide = aucun.
+ * Sans effet hors ElevenLabs Dialogue : seul ce chemin reçoit la balise.
+ */
+export function isVoiceExpressionToneEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
+ * Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires…) donnés à
+ * l'assistant pour qu'il réponde aux questions des appelants au lieu de botter en touche. Seulement
+ * pour les restaurants listés (`VOICE_PRACTICAL_INFO_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoicePracticalInfoEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_PRACTICAL_INFO_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
+/**
+ * Style de la maison dans le prompt : les réglages « Style » et « Ton de voix » de l'onboarding
+ * (`profileType`, `fillerStyle`) modifient la façon de parler de l'assistant. Seulement pour les
+ * restaurants listés (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`), vide = aucun.
+ */
+export function isVoicePersonalityStyleEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_PERSONALITY_STYLE_RESTAURANT_IDS).includes(restaurantId),
   );
 }
 
@@ -127,10 +175,4 @@ export function resolveVoiceFeatureSnapshot(
   };
   session.voiceFeatureSnapshot = snapshot;
   return snapshot;
-}
-
-/** Les améliorations de latence coûteuses restent limitées au pilote Deepgram + Dialogue V2. */
-export function isVoiceDeepgramDialoguePilot(session: CallSession): boolean {
-  const snapshot = resolveVoiceFeatureSnapshot(session);
-  return snapshot.sttProvider === 'deepgram' && snapshot.dialogueListeningV2Enabled;
 }

@@ -107,6 +107,26 @@ export function GiftCardCashier({
     detail.card.remainingAmount > 0 &&
     (!detail.card.expiresAt || new Date(detail.card.expiresAt) > new Date()) &&
     (detail.card.type !== 'CROWDFUNDED' || Boolean(detail.card.closedAt));
+  const unusableReason = detail
+    ? detail.card.status === 'EXPIRED' ||
+      Boolean(detail.card.expiresAt && new Date(detail.card.expiresAt) <= new Date())
+      ? 'Cette carte a expiré et ne peut plus être débitée.'
+      : detail.card.status === 'REDEEMED' || detail.card.remainingAmount <= 0
+        ? 'Le solde de cette carte est épuisé.'
+        : detail.card.status === 'CANCELLED'
+          ? 'Cette carte a été annulée.'
+          : detail.card.status === 'REFUND_PENDING'
+            ? 'Le remboursement de cette carte est en cours de confirmation.'
+            : detail.card.status === 'REFUND_FAILED' || detail.card.status === 'REFUND_REVIEW'
+              ? 'Le remboursement de cette carte doit être vérifié avant tout débit.'
+              : detail.card.status === 'PAYMENT_REVIEW'
+                ? 'Le paiement de cette carte doit être vérifié avant tout débit.'
+                : detail.card.type === 'CROWDFUNDED' && !detail.card.closedAt
+                  ? 'La cagnotte doit être clôturée avant de pouvoir utiliser son solde.'
+                  : detail.card.currency.toUpperCase() !== 'EUR'
+                    ? 'Cette carte utilise une devise non prise en charge en caisse.'
+                    : 'Cette carte n’est pas active et ne peut pas être débitée.'
+    : null;
   const valid =
     usable &&
     amount > 0 &&
@@ -288,8 +308,8 @@ export function GiftCardCashier({
           )}
         </div>
       ) : (
-        <p className="text-muted-foreground">
-          Cette carte ne peut pas être débitée dans son état actuel.
+        <p role="status" className="rounded-lg border border-border bg-muted/50 p-3 text-sm">
+          {unusableReason}
         </p>
       )}
       <h3 className="font-semibold">Historique des débits</h3>

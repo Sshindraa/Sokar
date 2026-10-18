@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildPolicySnapshot,
   computeHoldExpiresAt,
@@ -174,6 +174,53 @@ describe('policies.service', () => {
           channel: 'MCP',
         }),
       ).not.toThrow();
+    });
+  });
+
+  describe('validateReservationAgainstPolicy : même règle que l’affichage des créneaux', () => {
+    const NOW = new Date('2026-07-02T13:00:00.000Z');
+    const at = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
+    const validate = (minLeadTimeMinutes: number, startsAt: Date) =>
+      validateReservationAgainstPolicy(buildPolicySnapshot({ ...baseInput, minLeadTimeMinutes }), {
+        partySize: 2,
+        startsAt,
+        channel: 'WEB',
+      });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('accepte exactement à maintenant + délai, refuse une minute avant', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(NOW);
+
+      expect(() => validate(120, at(120))).not.toThrow();
+      expect(() => validate(120, at(119))).toThrow(PolicyValidationError);
+    });
+
+    it('garde le code INSUFFICIENT_LEAD_TIME et son message (lus par le MCP et par Connect)', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(NOW);
+
+      try {
+        validate(60, at(59));
+        throw new Error('devait refuser');
+      } catch (err) {
+        expect(err).toBeInstanceOf(PolicyValidationError);
+        expect((err as PolicyValidationError).code).toBe('INSUFFICIENT_LEAD_TIME');
+        expect((err as PolicyValidationError).message).toBe(
+          'Insufficient lead time: 59min avant, minimum 60min requis',
+        );
+      }
+    });
+
+    it('un créneau qui commence maintenant est passé, même sans délai', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(NOW);
+
+      expect(() => validate(0, at(0))).toThrow(PolicyValidationError);
+      expect(() => validate(0, at(1))).not.toThrow();
     });
   });
 

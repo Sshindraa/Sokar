@@ -10,7 +10,7 @@
  * cookie tracking, pas de third-party script.
  */
 
-const API_URL = process.env.API_URL ?? 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? 'http://localhost:3001';
 
 export type AnalyticsEvent =
   | {
@@ -124,7 +124,7 @@ export type AnalyticsEvent =
  * Ne throw pas d'erreur si l'API est down (l'event est best-effort).
  */
 export function trackEvent(event: AnalyticsEvent): void {
-  // On n'attend pas la réponse, on log les erreurs
+  // On n'attend pas la réponse ; un échec analytics ne doit pas perturber l'interface.
   fetch(`${API_URL}/public/analytics/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -135,7 +135,8 @@ export function trackEvent(event: AnalyticsEvent): void {
   }).catch((err) => {
     // Pas de throw : l'event est best-effort
     if (typeof console !== 'undefined') {
-      console.error('[connect] analytics event failed', err);
+      // eslint-disable-next-line no-console -- Évite l’overlay Next.js pour un échec analytics non bloquant.
+      console.debug('[connect] analytics event failed', err);
     }
   });
 }

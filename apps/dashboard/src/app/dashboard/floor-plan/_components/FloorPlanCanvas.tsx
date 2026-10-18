@@ -1,6 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useServiceCopilotAccess } from '@/lib/use-service-copilot-access';
+
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
@@ -95,6 +105,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
 import {
   Dialog,
   DialogContent,
@@ -123,7 +134,10 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { useUndoHistory } from './useUndoHistory';
+import { WALK_IN_DEFAULT_NAME, WalkInPlacement, walkInErrorMessage } from './WalkInPlacement';
 import { useIsMobile, useMediaQuery } from '@/lib/useMediaQuery';
+
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 const DEFAULT_CANVAS_WIDTH = 1400;
 const DEFAULT_CANVAS_HEIGHT = 900;
@@ -1428,7 +1442,6 @@ function TableCard({
   // Keep one visual language for tables in both modes. The editor and Live
   // still provide different interactions, but the table itself should remain
   // recognisable when moving between them.
-  const liveCustomerName = status?.reservation?.customerName?.trim() || null;
   const liveStatusLabel = status ? statusMeta[status.status].label : null;
   const liveRailClass =
     status?.status === 'occupied'
@@ -1519,7 +1532,7 @@ function TableCard({
     <div
       ref={dragRef}
       className={cn(
-        'relative box-border min-w-0 min-h-0 select-none outline-none',
+        'relative box-border min-w-0 min-h-0 select-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'overflow-visible',
         !isOverlay && 'absolute',
         className,
@@ -1536,6 +1549,8 @@ function TableCard({
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       aria-label={title}
+      aria-description={`${displayName} · ${table.capacity} places${status ? ` · ${statusMeta[status.status].label}` : ''}`}
+      aria-pressed={onClick ? isSelected : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.(e);
@@ -1615,7 +1630,7 @@ function TableCard({
             'transition-[border-color,box-shadow] duration-200',
             isSelected &&
               !isOverlay &&
-              'border-floor-table-accent ring-2 ring-inset ring-floor-table-accent/70',
+              'border-primary ring-2 ring-primary ring-offset-2 ring-offset-background',
           )}
           style={{
             height: liveBodyHeight,
@@ -1632,21 +1647,19 @@ function TableCard({
           <div
             className={cn(
               'absolute inset-0 flex flex-col items-start justify-between text-left',
-              compact ? 'px-2 py-1.5 pr-4' : 'px-3 py-2 pr-5',
+              compact ? 'px-2 py-1.5 pr-3' : 'px-3 py-2 pr-5',
             )}
           >
-            <p className="max-w-full truncate text-[10px] font-semibold leading-none text-floor-table-text/80">
+            <p className="max-w-full truncate pr-2 text-[11px] font-bold leading-none text-floor-table-text">
               {displayName}
             </p>
+            <p className="max-w-full truncate text-[9px] font-medium leading-none text-floor-table-text/75">
+              {table.capacity} pl.
+            </p>
             <div className="min-w-0 max-w-full leading-tight">
-              {liveCustomerName && !compact ? (
-                <p className="truncate text-[10px] font-medium text-floor-table-text">
-                  {liveCustomerName}
-                </p>
-              ) : null}
               <p
                 className={cn(
-                  'flex min-w-0 items-center gap-1 truncate text-[10px] font-medium',
+                  'flex min-w-0 items-center gap-1 truncate text-[9px] font-medium',
                   referenceStatusTextClass,
                 )}
               >
@@ -1735,7 +1748,6 @@ function DraggableReservation({
         onPointerDown?.(e);
         e.stopPropagation();
       }}
-      onClick={(e) => e.stopPropagation()}
       className={cn(
         'absolute inset-0 z-20 cursor-grab rounded-[inherit] active:cursor-grabbing',
         isDragging && 'opacity-0',
@@ -2523,6 +2535,7 @@ export function FloorPlanCanvas({
   onSelectPlan?: (id: string) => void;
 }) {
   const { get, post, patch, del } = useApi();
+  const { allowed: copilotAllowed } = useServiceCopilotAccess(mode === 'service', orgId);
   const getRef = useRef(get);
   getRef.current = get;
   const patchRef = useRef(patch);
@@ -2533,6 +2546,10 @@ export function FloorPlanCanvas({
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Erreurs par source : le rafraîchissement automatique (10 s) ne doit pas effacer l'échec d'une action,
+  // et l'échec du chargement du plan ne doit jamais se lire « Aucune table dans ce plan ».
+  const [planLoadError, setPlanLoadError] = useState('');
+  const [reservationsError, setReservationsError] = useState('');
 
   // Historique undo/redo des mutations de géométrie (édition uniquement).
   // Une seule pile unifiée tables + murs : ⌘Z défait exactement la dernière
@@ -2629,10 +2646,20 @@ export function FloorPlanCanvas({
     waitingCustomerName: string;
     waitingTableName: string;
   } | null>(null);
+  useEffect(() => {
+    setDelayImpact(null);
+    setDelayRecoveries([]);
+    setCommunicationDrafts([]);
+    setAppliedDelayRecovery(null);
+    setDelayRecoveryApplied(false);
+    setDelayRecoveryReverted(false);
+  }, [orgId, copilotAllowed]);
+
   const lastInitialDelayImpactRef = useRef(initialDelayImpact);
   if (initialDelayImpact) lastInitialDelayImpactRef.current = initialDelayImpact;
-  const displayedInitialDelayImpact =
-    initialDelayImpact ?? (appliedDelayRecovery ? lastInitialDelayImpactRef.current : null);
+  const displayedInitialDelayImpact = copilotAllowed
+    ? (initialDelayImpact ?? (appliedDelayRecovery ? lastInitialDelayImpactRef.current : null))
+    : null;
   const initialDelayHandledRef = useRef<string | null>(null);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
@@ -2880,7 +2907,7 @@ export function FloorPlanCanvas({
   // 100 % ne montre qu'un quart de la salle. On cadre la zone occupée par les
   // tables (et on la centre) une fois, puis on respecte le zoom choisi par le
   // restaurateur.
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!touchCanvasLayout && !live) return;
     if (loading || error) return;
     if (serviceTab !== 'plan') return;
@@ -2907,9 +2934,8 @@ export function FloorPlanCanvas({
       viewport.scrollTop = fit.scroll.top;
       autoFittedPlanIdRef.current = planId;
     };
-    const frame = window.requestAnimationFrame(applyInitialFit);
+    applyInitialFit();
     return () => {
-      window.cancelAnimationFrame(frame);
       if (retryFrame !== null) window.cancelAnimationFrame(retryFrame);
     };
   }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);
@@ -3039,7 +3065,7 @@ export function FloorPlanCanvas({
 
   const loadFloorPlan = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setPlanLoadError('');
     try {
       const path = floorPlanId
         ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
@@ -3061,7 +3087,7 @@ export function FloorPlanCanvas({
       wallMutationVersionRef.current.clear();
       setFloorPlan(data);
     } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
+      setPlanLoadError(getErrorMessage(err, 'Impossible de charger le plan de salle.'));
     } finally {
       setLoading(false);
     }
@@ -3080,7 +3106,6 @@ export function FloorPlanCanvas({
       const controller = new AbortController();
       pollAbortRef.current = controller;
       pollInFlightRef.current = true;
-      setError('');
       try {
         const query = floorPlanId
           ? `date=${liveDate}&floorPlanId=${floorPlanId}`
@@ -3098,10 +3123,12 @@ export function FloorPlanCanvas({
               `restaurants/${orgId}/waiting-list?date=${liveDate}&status=PENDING`,
               { signal: controller.signal },
             ),
-            getRef.current<ServiceCopilotDelayRecoveryHistoryResponse>(
-              `restaurants/${orgId}/service-copilot/delay-recoveries?date=${liveDate}&limit=10`,
-              { signal: controller.signal },
-            ),
+            copilotAllowed
+              ? getRef.current<ServiceCopilotDelayRecoveryHistoryResponse>(
+                  `restaurants/${orgId}/service-copilot/delay-recoveries?date=${liveDate}&limit=10`,
+                  { signal: controller.signal },
+                )
+              : Promise.resolve({ recoveries: [] }),
             getRef.current<ServiceCopilotPulse>(
               `restaurants/${orgId}/service-copilot/pulse?date=${liveDate}`,
               { signal: controller.signal },
@@ -3110,6 +3137,7 @@ export function FloorPlanCanvas({
         if (pollAbortRef.current !== controller) return;
         if (liveDateRef.current !== liveDate) return;
         if (reservationsResult.status === 'rejected') throw reservationsResult.reason;
+        let secondaryError = '';
         setReservations(reservationsResult.value);
         if (waitingListResult.status === 'fulfilled') {
           setWaitingList(
@@ -3118,8 +3146,9 @@ export function FloorPlanCanvas({
             ),
           );
         } else {
-          setError(
-            getErrorMessage(waitingListResult.reason, "Impossible de charger la liste d'attente"),
+          secondaryError = getErrorMessage(
+            waitingListResult.reason,
+            "Impossible de charger la liste d'attente",
           );
         }
         if (delayRecoveriesResult.status === 'fulfilled') {
@@ -3129,11 +3158,9 @@ export function FloorPlanCanvas({
               : [],
           );
         } else {
-          setError(
-            getErrorMessage(
-              delayRecoveriesResult.reason,
-              'Impossible de charger l’historique des plans',
-            ),
+          secondaryError = getErrorMessage(
+            delayRecoveriesResult.reason,
+            'Impossible de charger l’historique des plans',
           );
         }
         if (pulseResult.status === 'fulfilled') {
@@ -3143,12 +3170,13 @@ export function FloorPlanCanvas({
           // est temporairement indisponible.
           setServicePulse(null);
         }
+        setReservationsError(secondaryError);
         setLastUpdatedAt(Date.now());
         setLoadedLiveDate(liveDate);
       } catch (err) {
         if (pollAbortRef.current !== controller) return;
         if (controller.signal.aborted) return;
-        setError(getErrorMessage(err, 'Impossible de charger les réservations'));
+        setReservationsError(getErrorMessage(err, 'Impossible de charger les réservations'));
       } finally {
         if (pollAbortRef.current === controller) {
           setWaitingListLoading(false);
@@ -3158,7 +3186,7 @@ export function FloorPlanCanvas({
         }
       }
     },
-    [orgId, live, liveDate, floorPlanId],
+    [copilotAllowed, orgId, live, liveDate, floorPlanId],
   );
 
   const updateReservationState = useCallback(
@@ -3181,43 +3209,44 @@ export function FloorPlanCanvas({
     [orgId, loadReservations],
   );
 
+  // Place un client sans réservation. Rejette avec un message clair : le formulaire de la table
+  // l'affiche, il n'y a donc pas de bandeau d'erreur global ici.
   const createWalkIn = useCallback(
-    async (tableId: string, partySize?: number, customerName?: string) => {
+    async (tableId: string, partySize: number, customerName?: string): Promise<void> => {
       if (!orgId) return;
+      const table = floorPlan?.tables?.find((t) => t.id === tableId);
+      const resolvedCustomerName = customerName?.trim() || WALK_IN_DEFAULT_NAME;
+      let created: { id: string };
       try {
-        const table = floorPlan?.tables?.find((t) => t.id === tableId);
-        const resolvedPartySize = partySize ?? table?.capacity ?? 2;
-        const resolvedCustomerName = customerName?.trim() || 'Walk-in';
-        const idempotencyKey = crypto.randomUUID();
-        const res = await postRef.current<{ id: string }>(
+        created = await postRef.current<{ id: string }>(
           `restaurants/${orgId}/floor-plan/walk-ins`,
           {
             tableId,
-            partySize: resolvedPartySize,
+            partySize,
             customerName: resolvedCustomerName,
-            idempotencyKey,
+            idempotencyKey: crypto.randomUUID(),
           },
         );
-        const now = new Date().toISOString();
-        setReservations((prev) => [
-          ...prev,
-          {
-            id: res.id,
-            tableId,
-            tableName: table?.name ?? null,
-            sectionName: table?.sectionName ?? null,
-            startsAt: now,
-            endsAt: now,
-            partySize: resolvedPartySize,
-            customerName: resolvedCustomerName,
-            state: 'SEATED',
-            seatedAt: now,
-          },
-        ]);
-        await loadReservations({ force: true });
       } catch (err) {
-        setError(getErrorMessage(err, 'Impossible de créer le walk-in'));
+        throw new Error(walkInErrorMessage(err));
       }
+      const now = new Date().toISOString();
+      setReservations((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          tableId,
+          tableName: table?.name ?? null,
+          sectionName: table?.sectionName ?? null,
+          startsAt: now,
+          endsAt: now,
+          partySize,
+          customerName: resolvedCustomerName,
+          state: 'SEATED',
+          seatedAt: now,
+        },
+      ]);
+      await loadReservations({ force: true });
     },
     [orgId, floorPlan?.tables, loadReservations],
   );
@@ -3269,7 +3298,7 @@ export function FloorPlanCanvas({
 
   const simulateDelayImpact = useCallback(
     async (reservationId: string) => {
-      if (!orgId) return;
+      if (!orgId || !copilotAllowed) return;
       setDelayImpactLoading(true);
       setDelayImpact(null);
       setCommunicationDrafts([]);
@@ -3292,7 +3321,7 @@ export function FloorPlanCanvas({
         setDelayImpactLoading(false);
       }
     },
-    [orgId, delayMinutes],
+    [orgId, delayMinutes, copilotAllowed],
   );
 
   const updateDelayMinutes = useCallback(
@@ -3316,7 +3345,7 @@ export function FloorPlanCanvas({
   }, [initialDelayImpact?.serviceDate, live, liveDate]);
 
   useEffect(() => {
-    if (!live || !initialDelayImpact) {
+    if (!copilotAllowed || !live || !initialDelayImpact) {
       initialDelayHandledRef.current = null;
       setReportedDelayLookupError('');
       return;
@@ -3366,12 +3395,22 @@ export function FloorPlanCanvas({
         setDelayImpactLoading(false);
       }
     })();
-  }, [initialDelayImpact, lastUpdatedAt, live, liveDate, loadedLiveDate, orgId, reservations]);
+  }, [
+    copilotAllowed,
+    initialDelayImpact,
+    lastUpdatedAt,
+    live,
+    liveDate,
+    loadedLiveDate,
+    orgId,
+    reservations,
+  ]);
 
   const applyDelayRecovery = useCallback(async () => {
     if (applyingDelayRecoveryRef.current) return;
     if (
       !orgId ||
+      !copilotAllowed ||
       !delayImpact ||
       !delayImpact.feasible ||
       !delayImpactReservationId ||
@@ -3422,6 +3461,7 @@ export function FloorPlanCanvas({
     }
   }, [
     orgId,
+    copilotAllowed,
     delayImpact,
     delayImpactReservationId,
     waitingListAcceptanceConfirmed,
@@ -3432,7 +3472,8 @@ export function FloorPlanCanvas({
   ]);
 
   const revertDelayRecovery = useCallback(async () => {
-    if (revertingDelayRecoveryRef.current || !orgId || !appliedDelayRecovery) return;
+    if (!copilotAllowed || revertingDelayRecoveryRef.current || !orgId || !appliedDelayRecovery)
+      return;
     revertingDelayRecoveryRef.current = true;
     setRevertingDelayRecovery(true);
     try {
@@ -3455,7 +3496,7 @@ export function FloorPlanCanvas({
       revertingDelayRecoveryRef.current = false;
       setRevertingDelayRecovery(false);
     }
-  }, [orgId, appliedDelayRecovery, loadReservations]);
+  }, [copilotAllowed, orgId, appliedDelayRecovery, loadReservations]);
 
   const openPersistedRecoveryRevert = useCallback(
     (recovery: ServiceCopilotDelayRecoveryHistoryItem) => {
@@ -6696,7 +6737,7 @@ export function FloorPlanCanvas({
             </div>
             {selectedServiceReservation.state === 'SEATED' &&
               selectedServiceReservation.seatedAt && (
-                <p className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                <p className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                   <Clock3 size={11} aria-hidden="true" />
                   <span>
                     À table depuis{' '}
@@ -6724,33 +6765,18 @@ export function FloorPlanCanvas({
                 )
               }
             >
-              {selectedServiceReservation.state === 'SEATED' ? 'Terminer le service' : 'Installer'}
+              {selectedServiceReservation.state === 'SEATED' ? 'Libérer la table' : 'Installer'}
             </Button>
           ) : (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                className="h-10 min-w-0 flex-1 font-medium transition-all duration-200"
-                onClick={() =>
-                  void createWalkIn(selectedServiceTable.id, selectedServiceTable.capacity)
-                }
-              >
-                ⚡ Installer ({selectedServiceTable.capacity} pers.)
-              </Button>
-              {selectedServiceTable.capacity > 2 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-10 shrink-0 px-3 text-xs transition-all duration-200"
-                  onClick={() => void createWalkIn(selectedServiceTable.id, 2)}
-                  title="Installer 2 personnes"
-                >
-                  2 pers.
-                </Button>
-              ) : null}
-            </>
+            <WalkInPlacement
+              key={selectedServiceTable.id}
+              table={{
+                id: selectedServiceTable.id,
+                name: selectedServiceTable.displayName ?? selectedServiceTable.name,
+                capacity: selectedServiceTable.capacity,
+              }}
+              onPlace={(partySize, name) => createWalkIn(selectedServiceTable.id, partySize, name)}
+            />
           )}
           {selectedServiceReservation ? (
             <Button
@@ -7160,7 +7186,7 @@ export function FloorPlanCanvas({
                   Suggérer des tables
                 </Button>
               </div>
-              {selectedServiceReservation.state === 'CONFIRMED' && (
+              {copilotAllowed && selectedServiceReservation.state === 'CONFIRMED' && (
                 <div className="space-y-2 rounded-md border border-border bg-card p-3">
                   <p className="text-xs font-semibold text-foreground">Retard annoncé</p>
                   <div className="flex items-center gap-2">
@@ -7323,19 +7349,22 @@ export function FloorPlanCanvas({
               <p className="mt-1 text-xs text-muted-foreground">
                 Aucune réservation en cours ou imminente.
               </p>
-              <Button
-                size="sm"
-                className="mt-3 w-full"
-                onClick={() =>
-                  void createWalkIn(
-                    selectedServiceTable?.id ?? '',
-                    selectedServiceTable?.capacity ?? 2,
-                  )
-                }
-                disabled={!selectedServiceTable?.id}
-              >
-                ⚡ Installer Walk-in ({selectedServiceTable?.capacity ?? 2} pers.)
-              </Button>
+              {selectedServiceTable ? (
+                <div className="mt-3">
+                  <WalkInPlacement
+                    key={selectedServiceTable.id}
+                    table={{
+                      id: selectedServiceTable.id,
+                      name: selectedServiceTable.displayName ?? selectedServiceTable.name,
+                      capacity: selectedServiceTable.capacity,
+                    }}
+                    onPlace={(partySize, name) =>
+                      createWalkIn(selectedServiceTable.id, partySize, name)
+                    }
+                    className="w-full flex-none"
+                  />
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -7949,15 +7978,16 @@ export function FloorPlanCanvas({
     );
   }
 
-  if (error && !floorPlan) {
+  if (!floorPlan) {
     return (
       <>
         <Card className="sokar-card">
           <CardContent className="p-6">
-            <div className="sokar-error">
-              <AlertCircle size={18} />
-              {error}
-            </div>
+            <DataFetchError
+              message={planLoadError || error || 'Impossible de charger le plan de salle.'}
+              onRetry={() => void loadFloorPlan()}
+              retrying={loading}
+            />
           </CardContent>
         </Card>
         {dialog}
@@ -8456,10 +8486,10 @@ export function FloorPlanCanvas({
           ) : null}
         </CardHeader>
 
-        {error ? (
+        {error || reservationsError ? (
           <div className="sokar-error m-4 text-sm">
             <AlertCircle size={16} />
-            {error}
+            {error || reservationsError}
           </div>
         ) : null}
 
@@ -8486,7 +8516,7 @@ export function FloorPlanCanvas({
           </div>
         ) : null}
 
-        {live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
+        {copilotAllowed && live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
           <section
             role="region"
             aria-label="Historique des plans de retard"

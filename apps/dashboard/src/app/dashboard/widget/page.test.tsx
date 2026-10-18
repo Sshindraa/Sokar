@@ -57,10 +57,10 @@ describe('WidgetIntegrationPage', () => {
       expect(apiMocks.get).toHaveBeenCalledWith('restaurants/org_test_123/connect');
     });
 
-    expect(await screen.findByText('Snippet à intégrer')).toBeInTheDocument();
+    expect(await screen.findByText('Code à intégrer')).toBeInTheDocument();
     expect(screen.getByText('Aperçu')).toBeInTheDocument();
 
-    const snippetInput = screen.getByLabelText('Snippet') as HTMLInputElement;
+    const snippetInput = screen.getByLabelText('Code du widget') as HTMLInputElement;
     expect(snippetInput.value).toContain('data-slug="chez-sokar-demo"');
     expect(snippetInput.value).toContain('/embed.js');
 
@@ -100,7 +100,7 @@ describe('WidgetIntegrationPage', () => {
     const retryButton = screen.getByRole('button', { name: /Réessayer/i });
     fireEvent.click(retryButton);
 
-    expect(await screen.findByText('Snippet à intégrer')).toBeInTheDocument();
+    expect(await screen.findByText('Code à intégrer')).toBeInTheDocument();
     expect(screen.queryByText('Erreur réseau')).not.toBeInTheDocument();
   });
 
@@ -115,29 +115,24 @@ describe('WidgetIntegrationPage', () => {
     apiMocks.get.mockResolvedValueOnce(validSettings);
     render(<WidgetIntegrationPage />);
 
-    const copyButton = await screen.findByRole('button', { name: /Copier le snippet/i });
+    const copyButton = await screen.findByRole('button', { name: /Copier le code/i });
     fireEvent.click(copyButton);
 
     expect(writeTextMock).toHaveBeenCalledWith(
       expect.stringContaining('data-slug="chez-sokar-demo"'),
     );
-    expect(await screen.findByText('Snippet copié')).toBeInTheDocument();
+    expect(await screen.findByText('Code copié')).toBeInTheDocument();
   });
 
-  it('met à jour le snippet et l’iframe lors de la modification des couleurs', async () => {
+  it('ne propose plus de couleurs qui ne changeraient rien', async () => {
     apiMocks.get.mockResolvedValueOnce(validSettings);
     render(<WidgetIntegrationPage />);
 
-    await screen.findByText('Snippet à intégrer');
+    await screen.findByText('Code à intégrer');
 
-    const primaryInputs = screen.getAllByDisplayValue('#0f172a');
-    fireEvent.change(primaryInputs[0], { target: { value: '#123456' } });
-
-    const snippetInput = screen.getByLabelText('Snippet') as HTMLInputElement;
-    expect(snippetInput.value).toContain('data-primary="#123456"');
-
-    const iframe = screen.getByTitle('Aperçu du widget Sokar');
-    expect(iframe).toHaveAttribute('src', expect.stringContaining('primary=123456'));
+    expect(screen.queryByText('Couleur principale')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couleur d.accent/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/snippet/i)).not.toBeInTheDocument();
   });
 
   it('affiche l’état vide si les settings sont null sans erreur', async () => {

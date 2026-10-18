@@ -12,6 +12,7 @@ import { formatEuro } from '@sokar/shared';
 import type { GiftCardPack } from '@/lib/api/gift-cards';
 import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 
 export default function GiftCardPacksPage() {
@@ -41,6 +42,8 @@ export default function GiftCardPacksPage() {
     void fetchPacks();
   }, [fetchPacks]);
 
+  const [packToDelete, setPackToDelete] = useState<GiftCardPack | null>(null);
+
   async function handleToggle(pack: GiftCardPack) {
     try {
       setError('');
@@ -52,9 +55,13 @@ export default function GiftCardPacksPage() {
   }
 
   async function handleDelete(pack: GiftCardPack) {
-    if (!confirm(`Supprimer le pack "${pack.name}" ? Cette action est irréversible.`)) {
-      return;
-    }
+    setPackToDelete(pack);
+  }
+
+  async function confirmDelete() {
+    const pack = packToDelete;
+    if (!pack) return;
+    setPackToDelete(null);
     try {
       setError('');
       await deleteGiftCardPack(pack.id);
@@ -93,7 +100,7 @@ export default function GiftCardPacksPage() {
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Packs expérience</h1>
+        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Packs cadeaux</h1>
         <Button onClick={handleCreate} size="sm">
           <Plus size={16} />
           Créer
@@ -202,6 +209,15 @@ export default function GiftCardPacksPage() {
         onOpenChange={setFormOpen}
         pack={editPack}
         onSaved={() => fetchPacks()}
+      />
+      <ConfirmDialog
+        open={packToDelete !== null}
+        title="Supprimer ce pack ?"
+        description={`Le pack « ${packToDelete?.name ?? ''} » ne sera plus proposé. Les cartes déjà vendues ne sont pas touchées. Cette action est irréversible.`}
+        confirmLabel="Supprimer"
+        variant="destructive"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPackToDelete(null)}
       />
     </div>
   );

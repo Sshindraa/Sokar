@@ -1,8 +1,14 @@
+import { PRICING_CATALOG_VERSION, TRIAL_DAYS, VAT_MENTION } from '@sokar/shared';
 import { createHash } from 'node:crypto';
 import Stripe from 'stripe';
 import { Prisma, type Plan } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
+import { queues } from '../../shared/queue/queues';
+import { buildBillingNotificationJobId } from '../../shared/queue/job-options';
+import type { BillingNotificationJobData } from './billing-notification.worker';
+import type { ActivityRecap } from './billing-notification-emails';
+import { loadActivityRecap } from './billing-activity';
 
 export const PUBLIC_BILLING_PLANS = ['essential', 'pro', 'multi-site'] as const;
 export type PublicBillingPlan = (typeof PUBLIC_BILLING_PLANS)[number];
@@ -40,10 +46,16 @@ const MULTI_SITE_ADDON_PRICE_ENV_BY_INTERVAL: Record<BillingInterval, keyof Node
   annual: 'STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL',
 };
 
-const MIN_MULTI_SITE_COUNT = 2;
+const MIN_MULTI_SITE_COUNT = 1;
 const MAX_MULTI_SITE_COUNT = 100;
 const CHECKOUT_IDEMPOTENCY_BUCKET_MS = 24 * 60 * 60 * 1000;
 const STRIPE_EVENT_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Statuses of an ended subscription. A restaurant whose subscription reached one of them is
+ * suspended: the voice agent stops answering until a new subscription starts. `past_due` is not
+ * here: Stripe retries the payment and the service keeps running meanwhile.
+ */
+const SUSPENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired', 'unpaid'];
 
 /**
  * Checkout is deliberately opt-in in production. Local development and tests
@@ -105,7 +117,7 @@ export class BillingInvalidSiteCountError extends Error {
   readonly code = 'INVALID_SITE_COUNT';
 
   constructor() {
-    super('Multi-site requires between 2 and 100 establishments');
+    super('Multi-site requires between 1 and 100 establishments');
     this.name = 'BillingInvalidSiteCountError';
   }
 }
@@ -143,7 +155,7 @@ export function resolveMultiSiteAddonPriceId(billing: BillingInterval): string |
 
 function normalizeSiteCount(plan: PublicBillingPlan, siteCount?: number): number {
   if (plan !== 'multi-site') return 1;
-  const normalized = siteCount ?? MIN_MULTI_SITE_COUNT;
+  const normalized = siteCount ?? 2;
   if (
     !Number.isInteger(normalized) ||
     normalized < MIN_MULTI_SITE_COUNT ||
@@ -223,9 +235,24 @@ export interface BillingStatus {
   cancelAtPeriodEnd: boolean;
   entitledSiteCount: number;
   accountScoped: boolean;
+  /** True once a subscription existed and ended: the voice agent no longer answers. */
+  suspended: boolean;
+  /** Present while the subscription is in its free trial. */
+  trial?: BillingTrial;
+}
+
+export interface BillingTrial {
+  startedAt: string;
+  endsAt: string;
+  totalDays: number;
+  /** Whole days left, rounded up; 0 on the last day. */
+  daysLeft: number;
+  /** What Sokar did during the trial; only when requested (dashboard), never on the call path. */
+  recap?: ActivityRecap;
 }
 
 type BillingStatusProjection = {
+  stripeSubscriptionId?: string | null;
   subscriptionStatus?: string | null;
   subscriptionPriceId?: string | null;
   subscriptionBillingInterval?: string | null;
@@ -242,6 +269,8 @@ type BillingStatusProjection = {
 export async function getBillingStatus(input: {
   restaurantId: string;
   accountId?: string;
+  /** Adds the trial activity recap (three counts): for the dashboard only. */
+  includeTrialRecap?: boolean;
 }): Promise<BillingStatus> {
   const restaurant = await db.restaurant.findUnique({
     where: { id: input.restaurantId },
@@ -289,7 +318,55 @@ export async function getBillingStatus(input: {
         ? projection.entitledSiteCount
         : 1,
     accountScoped: Boolean(accountId && accountBilling),
+    suspended: isSuspendedProjection(projection),
+    ...(projection?.subscriptionStatus === 'trialing' && periodEnd instanceof Date
+      ? {
+          trial: await buildTrial(billingAnchorId, periodEnd, input.includeTrialRecap === true),
+        }
+      : {}),
   };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+async function buildTrial(
+  restaurantId: string,
+  endsAt: Date,
+  includeRecap: boolean,
+): Promise<BillingTrial> {
+  const startedAt = new Date(endsAt.getTime() - TRIAL_DAYS * DAY_MS);
+  return {
+    startedAt: startedAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    totalDays: TRIAL_DAYS,
+    daysLeft: Math.max(0, Math.ceil((endsAt.getTime() - Date.now()) / DAY_MS)),
+    ...(includeRecap ? { recap: await loadActivityRecap(restaurantId, startedAt) } : {}),
+  };
+}
+
+function isSuspendedProjection(projection: BillingStatusProjection | null): boolean {
+  // Only a subscription that existed and ended suspends the service: accounts that never
+  // subscribed (pilots, demo restaurant, legacy) keep their current behaviour.
+  return Boolean(
+    projection?.stripeSubscriptionId &&
+    SUSPENDED_SUBSCRIPTION_STATUSES.includes(projection.subscriptionStatus ?? ''),
+  );
+}
+
+/**
+ * Whether the restaurant's service is suspended for billing reasons. Fails open: a billing
+ * lookup error must never drop a paying restaurant's calls.
+ */
+export async function isBillingSuspended(restaurantId: string): Promise<boolean> {
+  try {
+    return (await getBillingStatus({ restaurantId })).suspended;
+  } catch (error) {
+    logger.warn(
+      { err: error instanceof Error ? error.message : String(error), restaurantId },
+      '[billing] Suspension check failed, service kept running',
+    );
+    return false;
+  }
 }
 
 function stripeObjectId(value: string | { id: string } | null | undefined): string | null {
@@ -312,6 +389,8 @@ function normalizeIdempotencyKey(value: string | undefined): string | undefined 
  * tenant or another plan. Without a client key, the 24-hour bucket still
  * absorbs double-clicks and network retries during the purchase window.
  */
+export type CheckoutReturnTo = 'settings' | 'onboarding';
+
 export function buildCheckoutIdempotencyKey(input: {
   restaurantId: string;
   /** Account scope keeps two sites from creating two subscriptions. */
@@ -319,15 +398,21 @@ export function buildCheckoutIdempotencyKey(input: {
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount: number;
+  /** Absent ou `settings` : la clé reste identique à celle d'avant l'option de retour. */
+  returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
   now?: Date;
 }): string {
   const bucket = Math.floor((input.now?.getTime() ?? Date.now()) / CHECKOUT_IDEMPOTENCY_BUCKET_MS);
   const source = [
+    PRICING_CATALOG_VERSION,
     input.scopeId ?? input.restaurantId,
     input.plan,
     input.billing,
     input.siteCount,
+    // Une session déjà créée garde ses adresses de retour : celle de l'inscription ne doit pas
+    // réutiliser une session qui ramènerait vers les Réglages (ni l'inverse).
+    ...(input.returnTo === 'onboarding' ? ['return:onboarding'] : []),
     normalizeIdempotencyKey(input.idempotencyKey) ?? `auto:${bucket}`,
   ].join('|');
   return `sokar-checkout-${createHash('sha256').update(source).digest('hex').slice(0, 48)}`;
@@ -342,12 +427,179 @@ function dashboardUrl(path: string): string {
   return `${base}${path}`;
 }
 
+/** Returns the account's Stripe customer, creating it (with the VAT mention) on first use. */
+async function ensureStripeCustomer(input: {
+  restaurantId: string;
+  accountId?: string | null;
+  billingAnchor: { id: string; name: string; managerEmail: string | null };
+  existingCustomerId: string | null;
+}): Promise<string> {
+  if (input.existingCustomerId) return input.existingCustomerId;
+  const customer = await getStripe().customers.create(
+    {
+      name: input.billingAnchor.name,
+      email: normalizeEmail(input.billingAnchor.managerEmail),
+      // VAT franchise: every invoice of this customer carries the legal mention.
+      invoice_settings: { footer: VAT_MENTION },
+      metadata: {
+        restaurantId: input.restaurantId,
+        ...(input.accountId ? { accountId: input.accountId } : {}),
+      },
+    },
+    {
+      idempotencyKey: `sokar-customer-${createHash('sha256')
+        .update(input.accountId ?? input.billingAnchor.id)
+        .digest('hex')
+        .slice(0, 48)}`,
+    },
+  );
+  await db.restaurantBilling.upsert({
+    where: { restaurantId: input.billingAnchor.id },
+    create: { restaurantId: input.billingAnchor.id, stripeCustomerId: customer.id },
+    update: { stripeCustomerId: customer.id },
+  });
+  return customer.id;
+}
+
+export class BillingTrialAlreadyUsedError extends Error {
+  constructor() {
+    super('Free trial already used for this account');
+    this.name = 'BillingTrialAlreadyUsedError';
+  }
+}
+
+/**
+ * Starts the free trial on the chosen plan without Stripe Checkout (onboarding). No card is asked,
+ * so Checkout would only be a detour: the restaurant adds a card, or changes plan, from the
+ * customer portal before the end. Same Stripe settings as a Checkout trial, so the reminder,
+ * suspension and portal flows apply unchanged.
+ */
+export async function startTrial(input: {
+  restaurantId: string;
+  accountId?: string;
+  plan?: PublicBillingPlan;
+  billing?: BillingInterval;
+  siteCount?: number;
+}): Promise<{ status: 'trialing'; trialEndsAt: string }> {
+  if (!isBillingCheckoutEnabled()) throw new BillingNotConfiguredError();
+  const plan = input.plan ?? 'essential';
+  const interval = input.billing ?? 'monthly';
+  const siteCount = normalizeSiteCount(plan, input.siteCount);
+  const priceId = resolvePriceId(plan, interval);
+  const addonPriceId =
+    plan === 'multi-site' && siteCount > 1 ? resolveMultiSiteAddonPriceId(interval) : null;
+  if (!priceId || (plan === 'multi-site' && siteCount > 1 && !addonPriceId)) {
+    throw new BillingNotConfiguredError();
+  }
+
+  const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
+  if (!restaurant) throw new BillingRestaurantNotFoundError();
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
+    : null;
+  const billingAnchor = accountId
+    ? ((await db.restaurant.findFirst({
+        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      })) ?? restaurant)
+    : restaurant;
+  const billing = await db.restaurantBilling.findUnique({
+    where: { restaurantId: billingAnchor.id },
+  });
+  const current = accountBilling?.stripeSubscriptionId ? accountBilling : billing;
+  if (
+    current?.stripeSubscriptionId &&
+    ['active', 'trialing', 'past_due'].includes(current.subscriptionStatus ?? '')
+  ) {
+    throw new BillingAlreadySubscribedError();
+  }
+  // One free trial per account, as for Checkout.
+  if (accountBilling?.stripeSubscriptionId || billing?.stripeSubscriptionId) {
+    throw new BillingTrialAlreadyUsedError();
+  }
+
+  const customerId = await ensureStripeCustomer({
+    restaurantId: restaurant.id,
+    accountId,
+    billingAnchor,
+    existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
+  const metadata = {
+    restaurantId: restaurant.id,
+    ...(accountId ? { accountId } : {}),
+    plan,
+    billing: interval,
+    siteCount: String(siteCount),
+    trial: 'true',
+    source: 'onboarding',
+  };
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await getStripe().subscriptions.create(
+      {
+        customer: customerId,
+        items: [
+          { price: priceId },
+          ...(addonPriceId ? [{ price: addonPriceId, quantity: siteCount - 1 }] : []),
+        ],
+        trial_period_days: TRIAL_DAYS,
+        // No card at the end of the trial: Stripe cancels, and the deletion webhook suspends.
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        payment_settings: { save_default_payment_method: 'on_subscription' },
+        metadata,
+      },
+      { idempotencyKey: `sokar-trial-${customerId}-${plan}-${interval}-${siteCount}` },
+    );
+  } catch (error) {
+    logger.error(
+      { err: error instanceof Error ? error.message : String(error), accountId: accountId ?? null },
+      '[billing] Stripe trial subscription creation failed',
+    );
+    throw new BillingCheckoutError();
+  }
+
+  // Project now so the dashboard shows the trial at once; the webhooks confirm it afterwards.
+  const trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
+  const projection = {
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscription.id,
+    subscriptionStatus: 'trialing',
+    subscriptionPriceId: priceId,
+    subscriptionBillingInterval: interval,
+    subscriptionCurrentPeriodEnd: trialEnd,
+    subscriptionCancelAtPeriodEnd: false,
+  };
+  // Scoped to the account as well: the anchor always belongs to the caller's account.
+  await db.restaurant.updateMany({
+    where: { id: billingAnchor.id, ...(accountId ? { accountId } : {}) },
+    data: { plan: PLAN_TO_DATABASE[plan] },
+  });
+  await projectAccountBilling(billingAnchor.id, {
+    ...projection,
+    plan: PLAN_TO_DATABASE[plan],
+    entitledSiteCount: siteCount,
+    // Older than any webhook about this subscription: the webhooks still apply after this.
+    lastStripeEventCreated: subscription.created - 1,
+    lastStripeEventId: '',
+  });
+  await db.restaurantBilling.upsert({
+    where: { restaurantId: billingAnchor.id },
+    create: { restaurantId: billingAnchor.id, ...projection },
+    update: projection,
+  });
+  return {
+    status: 'trialing',
+    trialEndsAt: (trialEnd ?? new Date(Date.now() + TRIAL_DAYS * 86_400_000)).toISOString(),
+  };
+}
+
 export async function createCheckoutSession(input: {
   restaurantId: string;
   accountId?: string;
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount?: number;
+  returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
 }): Promise<{ id: string; url: string }> {
   if (!isBillingCheckoutEnabled()) {
@@ -356,8 +608,10 @@ export async function createCheckoutSession(input: {
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
   const addonPriceId =
-    input.plan === 'multi-site' ? resolveMultiSiteAddonPriceId(input.billing) : null;
-  if (!priceId || (input.plan === 'multi-site' && !addonPriceId)) {
+    input.plan === 'multi-site' && siteCount > 1
+      ? resolveMultiSiteAddonPriceId(input.billing)
+      : null;
+  if (!priceId || (input.plan === 'multi-site' && siteCount > 1 && !addonPriceId)) {
     throw new BillingNotConfiguredError();
   }
 
@@ -401,33 +655,16 @@ export async function createCheckoutSession(input: {
   ) {
     return { id: billing.checkoutSessionId, url: billing.checkoutSessionUrl };
   }
-  let customerId = accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null;
   const stripe = getStripe();
+  const customerId = await ensureStripeCustomer({
+    restaurantId: restaurant.id,
+    accountId,
+    billingAnchor,
+    existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
 
-  if (!customerId) {
-    const customer = await stripe.customers.create(
-      {
-        name: billingAnchor.name,
-        email: normalizeEmail(billingAnchor.managerEmail),
-        metadata: {
-          restaurantId: restaurant.id,
-          ...(accountId ? { accountId } : {}),
-        },
-      },
-      {
-        idempotencyKey: `sokar-customer-${createHash('sha256')
-          .update(accountId ?? billingAnchor.id)
-          .digest('hex')
-          .slice(0, 48)}`,
-      },
-    );
-    customerId = customer.id;
-    await db.restaurantBilling.upsert({
-      where: { restaurantId: billingAnchor.id },
-      create: { restaurantId: billingAnchor.id, stripeCustomerId: customerId },
-      update: { stripeCustomerId: customerId },
-    });
-  }
+  // One free trial per account: an account that already had a subscription pays from day one.
+  const trialEligible = !accountBilling?.stripeSubscriptionId && !billing?.stripeSubscriptionId;
 
   try {
     const lineItems = [
@@ -440,14 +677,25 @@ export async function createCheckoutSession(input: {
         customer: customerId,
         client_reference_id: restaurant.id,
         line_items: lineItems,
+        // The trial starts without a card; Stripe still asks for one when a payment is due.
+        ...(trialEligible ? { payment_method_collection: 'if_required' as const } : {}),
         metadata: {
           restaurantId: restaurant.id,
           ...(accountId ? { accountId } : {}),
           plan: input.plan,
           billing: input.billing,
           siteCount: String(siteCount),
+          ...(trialEligible ? { trial: 'true' } : {}),
         },
         subscription_data: {
+          ...(trialEligible
+            ? {
+                trial_period_days: TRIAL_DAYS,
+                // No card at the end of the trial: Stripe cancels the subscription, and the
+                // `customer.subscription.deleted` webhook suspends the service.
+                trial_settings: { end_behavior: { missing_payment_method: 'cancel' as const } },
+              }
+            : {}),
           metadata: {
             restaurantId: restaurant.id,
             ...(accountId ? { accountId } : {}),
@@ -457,9 +705,15 @@ export async function createCheckoutSession(input: {
           },
         },
         success_url: dashboardUrl(
-          '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
+          input.returnTo === 'onboarding'
+            ? '/onboarding?step=canaux&billing=success&session_id={CHECKOUT_SESSION_ID}'
+            : '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
         ),
-        cancel_url: dashboardUrl('/pricing?billing=cancelled'),
+        cancel_url: dashboardUrl(
+          input.returnTo === 'onboarding'
+            ? '/onboarding?step=formule&billing=cancelled'
+            : '/pricing?billing=cancelled',
+        ),
       },
       { idempotencyKey },
     );
@@ -553,6 +807,7 @@ type SupportedBillingEvent =
   | 'customer.subscription.created'
   | 'customer.subscription.updated'
   | 'customer.subscription.deleted'
+  | 'customer.subscription.trial_will_end'
   | 'invoice.paid'
   | 'invoice.payment_failed'
   | 'invoice.payment_succeeded';
@@ -695,11 +950,24 @@ function subscriptionUpdateData(subscription: SubscriptionObject, deleted: boole
     subscriptionStatus: deleted ? 'canceled' : subscription.status,
     subscriptionPriceId: priceId ?? undefined,
     ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
-    subscriptionCurrentPeriodEnd: subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000)
-      : null,
+    subscriptionCurrentPeriodEnd: subscriptionPeriodEnd(subscription),
     subscriptionCancelAtPeriodEnd: deleted ? false : subscription.cancel_at_period_end,
   };
+}
+
+/**
+ * Stripe API versions from 2025-03 moved `current_period_end` from the subscription to each
+ * item. Reading only the old field wiped the stored date, so the dashboard lost the trial
+ * countdown. During a trial the period ends with the trial.
+ */
+function subscriptionPeriodEnd(subscription: SubscriptionObject): Date | null {
+  const legacy = (subscription as { current_period_end?: number | null }).current_period_end;
+  const item = subscription.items.data[0] as { current_period_end?: number | null } | undefined;
+  const seconds =
+    legacy ??
+    item?.current_period_end ??
+    (subscription.status === 'trialing' ? subscription.trial_end : null);
+  return typeof seconds === 'number' && seconds > 0 ? new Date(seconds * 1000) : null;
 }
 
 function metadataSiteCount(metadata: Record<string, string>): number {
@@ -801,6 +1069,8 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   const billingInterval =
     metadata.billing && isBillingInterval(metadata.billing) ? metadata.billing : 'monthly';
   const siteCount = metadataSiteCount(metadata);
+  // A trial Checkout completes without payment: the subscription is `trialing`, not `active`.
+  const subscriptionStatus = metadata.trial === 'true' ? 'trialing' : 'active';
   await db.restaurant.update({
     where: { id: restaurantId },
     data: { plan: PLAN_TO_DATABASE[plan] },
@@ -811,7 +1081,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   await projectAccountBilling(restaurantId, {
     stripeCustomerId: customerId,
     stripeSubscriptionId: subscriptionId,
-    subscriptionStatus: 'active',
+    subscriptionStatus,
     subscriptionPriceId: resolvePriceId(plan, billingInterval),
     subscriptionBillingInterval: billingInterval,
     plan: PLAN_TO_DATABASE[plan],
@@ -825,7 +1095,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
       restaurantId,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
-      subscriptionStatus: 'active',
+      subscriptionStatus,
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
       subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),
@@ -834,7 +1104,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
     update: {
       stripeCustomerId: customerId ?? undefined,
       stripeSubscriptionId: subscriptionId ?? undefined,
-      subscriptionStatus: 'active',
+      subscriptionStatus,
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
       subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),
@@ -849,7 +1119,8 @@ async function handleSubscriptionEvent(
   eventType:
     | 'customer.subscription.created'
     | 'customer.subscription.updated'
-    | 'customer.subscription.deleted',
+    | 'customer.subscription.deleted'
+    | 'customer.subscription.trial_will_end',
   subscription: SubscriptionObject,
 ): Promise<boolean> {
   const metadata = subscription.metadata ?? {};
@@ -866,7 +1137,9 @@ async function handleSubscriptionEvent(
   const priceId = subscription.items.data[0]?.price?.id;
   const planFromMetadata =
     metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
-  const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
+  // The current price wins: a Stripe portal plan switch changes the price but keeps the
+  // Checkout metadata. Metadata only covers historical prices absent from the catalogue.
+  const plan = (priceId ? getPublicPlanFromPriceId(priceId) : null) ?? planFromMetadata;
   const deleted = eventType === 'customer.subscription.deleted';
   const billingData = subscriptionUpdateData(subscription, deleted);
   const siteCount = deleted ? 1 : metadataSiteCount(metadata);
@@ -897,7 +1170,71 @@ async function handleSubscriptionEvent(
     },
     update: { ...billingData, ...clearCheckoutAttempt(), ...eventCheckpoint(event) },
   });
+  await enqueueBillingNotification(eventType, restaurantId, subscription);
   return true;
+}
+
+function stripeDate(seconds: number | null | undefined): Date | null {
+  return typeof seconds === 'number' ? new Date(seconds * 1000) : null;
+}
+
+/**
+ * Trial ending (Stripe sends `trial_will_end` three days before) and service suspended (the
+ * subscription was deleted): one e-mail each per subscription, sent by the billing-notifications
+ * worker, which checks again that it still applies at send time.
+ */
+async function enqueueBillingNotification(
+  eventType: string,
+  restaurantId: string,
+  subscription: SubscriptionObject,
+): Promise<void> {
+  const since =
+    stripeDate(subscription.trial_start) ??
+    stripeDate(subscription.start_date) ??
+    stripeDate(subscription.created) ??
+    new Date();
+  let data: BillingNotificationJobData | null = null;
+  if (eventType === 'customer.subscription.trial_will_end') {
+    const trialEnd = stripeDate(subscription.trial_end);
+    if (!trialEnd) return;
+    data = {
+      kind: 'trial-ending',
+      restaurantId,
+      subscriptionId: subscription.id,
+      since: since.toISOString(),
+      trialEndsAt: trialEnd.toISOString(),
+    };
+  } else if (eventType === 'customer.subscription.deleted') {
+    const trialEnd = stripeDate(subscription.trial_end);
+    const endedAt =
+      stripeDate(subscription.ended_at) ?? stripeDate(subscription.canceled_at) ?? new Date();
+    // Ended within a day of the trial end: the trial expired without a card.
+    const endedFromTrial = Boolean(
+      trialEnd && Math.abs(endedAt.getTime() - trialEnd.getTime()) <= 24 * 60 * 60 * 1000,
+    );
+    data = {
+      kind: 'service-suspended',
+      restaurantId,
+      subscriptionId: subscription.id,
+      since: since.toISOString(),
+      endedFromTrial,
+    };
+  }
+  if (!data) return;
+  await queues.billingNotifications.add(data.kind, data, {
+    jobId: buildBillingNotificationJobId(data.kind, subscription.id),
+  });
+}
+
+/** Whether a card (or other payment method) will pay this subscription at the end of the trial. */
+export async function subscriptionHasPaymentMethod(subscriptionId: string): Promise<boolean> {
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId, {
+    expand: ['customer'],
+  });
+  if (subscription.default_payment_method || subscription.default_source) return true;
+  const customer = subscription.customer;
+  if (typeof customer === 'string' || customer.deleted) return false;
+  return Boolean(customer.invoice_settings?.default_payment_method || customer.default_source);
 }
 
 type InvoiceObject = Stripe.Invoice & {
@@ -935,10 +1272,18 @@ function invoiceBillingInterval(invoice: InvoiceObject): BillingInterval | null 
   return billingIntervalFromStripePrice(invoicePrice(invoice));
 }
 
+/**
+ * End of the service period the invoice bills. `invoice.period_end` is the end of the usage
+ * window that just closed (the invoice date for a subscription invoice), not the end of the
+ * paid period: a trial start invoice would otherwise end the trial on day one.
+ */
 function invoicePeriodEnd(invoice: InvoiceObject): Date | undefined {
-  return Number.isInteger(invoice.period_end) && invoice.period_end > 0
-    ? new Date(invoice.period_end * 1000)
-    : undefined;
+  const lineEnd = invoice.lines?.data
+    ?.map((line) => line.period?.end)
+    .filter((end): end is number => Number.isInteger(end) && end > 0)
+    .sort((a, b) => b - a)[0];
+  const seconds = lineEnd ?? invoice.period_end;
+  return Number.isInteger(seconds) && seconds > 0 ? new Date(seconds * 1000) : undefined;
 }
 
 async function findBillingForInvoice(
@@ -1005,7 +1350,10 @@ async function handleInvoiceEvent(
   const siteCount =
     metadataSiteCountOrUndefined(metadata) ?? accountBilling?.entitledSiteCount ?? 1;
   const paid = eventType !== 'invoice.payment_failed';
-  const status = paid ? 'active' : 'past_due';
+  // A trial opens with a zero invoice marked paid: the subscription is still `trialing`.
+  const trialStartInvoice =
+    paid && invoice.billing_reason === 'subscription_create' && invoice.amount_paid === 0;
+  const status = trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
   const periodEnd = invoicePeriodEnd(invoice) ?? billing?.subscriptionCurrentPeriodEnd ?? null;
   const cancelAtPeriodEnd = billing?.subscriptionCancelAtPeriodEnd ?? false;
 
@@ -1074,6 +1422,7 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<boolean
     'customer.subscription.created',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+    'customer.subscription.trial_will_end',
     'invoice.paid',
     'invoice.payment_failed',
     'invoice.payment_succeeded',

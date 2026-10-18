@@ -31,6 +31,9 @@ export const CustomerQuerySchema = z.object({
     .string()
     .regex(/^\+?[0-9]{7,15}$/)
     .optional(),
+  // Recherche libre de l'écran Clients : un nom, ou un numéro saisi comme on le tape (« 06 12 34 56 78 »,
+  // « 0612 », « +33 6… »), entier ou en partie. `phone` reste l'égalité exacte en E.164.
+  search: z.string().trim().min(1).max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

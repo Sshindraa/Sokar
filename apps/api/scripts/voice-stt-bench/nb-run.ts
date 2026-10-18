@@ -41,6 +41,7 @@ import {
   estimateBenchCost,
   formatCostEstimate,
   requireBenchKey,
+  requireSharedKey,
 } from './nb-keys';
 
 const { buildSttUrl } = require('../../dist/modules/voice/stream/stt-bridge.js') as {
@@ -318,13 +319,13 @@ async function main(): Promise<void> {
   const concurrency = Number(process.env.BENCH_CONCURRENCY ?? 6);
   const clips = NB_CORPUS.slice(0, Math.max(1, Math.min(limit, NB_CORPUS.length)));
 
-  // Garde-fou : clés de banc dédiées uniquement, jamais la clé de production.
-  const elevenLabsKey = requireBenchKey('ELEVENLABS_BENCH_API_KEY', 'ELEVENLABS_API_KEY');
+  // Garde-fou : clé Cartesia de banc dédiée ; clé ElevenLabs unique (décision du 14/10/2026).
+  const elevenLabsKey = requireSharedKey('ELEVENLABS_API_KEY');
   const ttsKey =
     ttsProvider === 'cartesia'
       ? requireBenchKey('CARTESIA_BENCH_API_KEY', 'CARTESIA_API_KEY')
       : ttsProvider === 'elevenlabs'
-        ? requireBenchKey('ELEVENLABS_BENCH_API_KEY', 'ELEVENLABS_API_KEY')
+        ? requireSharedKey('ELEVENLABS_API_KEY')
         : undefined; // `say` : synthèse locale, aucune clé.
 
   // Estimation affichée avant toute synthèse ou envoi Scribe.

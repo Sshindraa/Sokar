@@ -288,12 +288,23 @@ describe('FloorPlanCrud', () => {
     });
   });
 
-  it('affiche une erreur si le chargement échoue', async () => {
-    apiMocks.get.mockRejectedValue(new Error('network error'));
+  it('affiche une erreur avec « Réessayer » si le chargement échoue, sans formulaire', async () => {
+    apiMocks.get.mockRejectedValueOnce(new Error('network error'));
 
     render(<FloorPlanCrud />);
 
     expect(await screen.findByText('network error')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nouvelle section')).not.toBeInTheDocument();
+
+    apiMocks.get.mockResolvedValueOnce({
+      id: 'plan-1',
+      name: 'Plan',
+      sections: [{ id: 'section-1', name: 'Salle', position: 0, tables: [] }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+    expect(await screen.findByText('Salle')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nouvelle section')).toBeInTheDocument();
   });
 
   it('affiche une erreur si la création de section échoue', async () => {
@@ -415,5 +426,55 @@ describe('FloorPlanCrud', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Plan de salle' })).toBeInTheDocument();
+  });
+
+  describe('tables sans section', () => {
+    const loose = {
+      id: 't9',
+      name: 'Bar 1',
+      capacity: 2,
+      minCapacity: 1,
+      isActive: true,
+      positionX: 10,
+      positionY: 10,
+      shape: null,
+    };
+
+    it('affiche les tables dessinées dans « Plan visuel » sans section, au lieu de « Aucune section »', async () => {
+      apiMocks.get.mockResolvedValue({ id: 'fp', name: 'Plan', sections: [], tables: [loose] });
+
+      render(<FloorPlanCrud />);
+
+      const card = await screen.findByTestId('unassigned-card');
+      expect(within(card).getByText('Sans section')).toBeInTheDocument();
+      expect(within(card).getByText('Bar 1')).toBeInTheDocument();
+      expect(screen.queryByText('Aucune section dans votre plan de salle')).not.toBeInTheDocument();
+    });
+
+    it('permet de désactiver une table sans section', async () => {
+      apiMocks.get.mockResolvedValue({ id: 'fp', name: 'Plan', sections: [], tables: [loose] });
+      render(<FloorPlanCrud />);
+
+      const card = await screen.findByTestId('unassigned-card');
+      const toggle = within(card).getByRole('switch');
+      fireEvent.click(toggle);
+
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
+      expect(apiMocks.patch).toHaveBeenCalledWith('restaurants/org_test/floor-plan/tables/t9', {
+        isActive: false,
+      });
+    });
+
+    it('garde visibles les tables d’une section supprimée', async () => {
+      render(<FloorPlanCrud />);
+      await screen.findByRole('heading', { name: 'Plan de salle' });
+
+      fireEvent.click(screen.getAllByLabelText('Supprimer la section')[0]);
+      fireEvent.click(screen.getByTestId('confirm-yes'));
+
+      const card = await screen.findByTestId('unassigned-card');
+      expect(within(card).getByText('T1')).toBeInTheDocument();
+      expect(within(card).getByText('T2')).toBeInTheDocument();
+    });
   });
 });

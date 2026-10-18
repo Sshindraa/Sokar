@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { FloorPlanNotFoundError, FloorPlanService } from '../floor-plan.service';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
+import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service.js';
 
 function makePrismaMock() {
   const table = { findFirst: vi.fn() };
@@ -162,6 +163,92 @@ describe('FloorPlanService', () => {
         }),
         expect.any(Object),
       );
+    });
+
+    describe('durée de repas et disponibilité', () => {
+      const MINUTE = 60_000;
+      const place = () =>
+        svc.createWalkIn({
+          restaurantId: 'rest-1',
+          tableId: 't1',
+          partySize: 2,
+          idempotencyKey: 'k-duree',
+        });
+      const serviceMinutes = () => {
+        const { startsAt, endsAt } = mocks.reservation.create.mock.calls[0][0].data;
+        return (endsAt.getTime() - startsAt.getTime()) / MINUTE;
+      };
+      let invalidate: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        mocks.reservation.create.mockResolvedValue({ id: 'walk-new' });
+        invalidate = vi
+          .spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability')
+          .mockResolvedValue(undefined);
+        // Les espions sur le prototype et la méthode statique survivent d'un test à l'autre.
+        invalidate.mockClear();
+        vi.mocked(TableAllocationService.prototype.assertTableAvailableForSeating).mockClear();
+      });
+
+      it('bloque la table pendant la durée de repas réglée par le restaurant', async () => {
+        mocks.restaurant.findUnique.mockResolvedValue({
+          exposureSettings: { capacitySpecials: { serviceDurationMinutes: 150 } },
+        });
+
+        await place();
+
+        expect(serviceMinutes()).toBe(150);
+        const checked = vi.mocked(TableAllocationService.prototype.assertTableAvailableForSeating)
+          .mock.calls[0][0];
+        expect((checked.endsAt.getTime() - checked.startsAt.getTime()) / MINUTE).toBe(150);
+      });
+
+      it('retombe sur 2 h quand le restaurant n’a pas réglé de durée', async () => {
+        mocks.restaurant.findUnique.mockResolvedValue({
+          exposureSettings: { capacitySpecials: { default: { seats: 40, tables: 10 } } },
+        });
+        await place();
+        expect(serviceMinutes()).toBe(120);
+      });
+
+      it('retombe sur 2 h quand le restaurant n’a pas de réglages', async () => {
+        mocks.restaurant.findUnique.mockResolvedValue({ exposureSettings: null });
+        await place();
+        expect(serviceMinutes()).toBe(120);
+      });
+
+      it('le personnel n’est pas soumis au délai minimum en ligne : placer un client maintenant fonctionne', async () => {
+        mocks.restaurant.findUnique.mockResolvedValue({
+          exposureSettings: { capacitySpecials: {}, minLeadTimeMinutes: 120 },
+        });
+
+        const placed = await place();
+
+        expect(placed.id).toBe('walk-new');
+        const { startsAt } = mocks.reservation.create.mock.calls[0][0].data;
+        // Le client est assis à l'instant même (début = maintenant), pas dans 2 h.
+        expect(Math.abs(startsAt.getTime() - Date.now())).toBeLessThan(5_000);
+      });
+
+      it('nomme « Sans réservation » un client placé sans nom', async () => {
+        await place();
+        expect(mocks.reservation.create.mock.calls[0][0].data.customerName).toBe(
+          'Sans réservation',
+        );
+      });
+
+      it('invalide le cache de disponibilité : la table n’est plus proposée tout de suite', async () => {
+        await place();
+        expect(invalidate).toHaveBeenCalledTimes(1);
+        expect(invalidate).toHaveBeenCalledWith('rest-1');
+      });
+
+      it('n’invalide rien quand la requête est un rejeu idempotent', async () => {
+        mocks.reservation.create.mockRejectedValueOnce(P2002());
+        mocks.reservation.findFirst.mockResolvedValue({ id: 'existing-walk' });
+        await place();
+        expect(invalidate).not.toHaveBeenCalled();
+      });
     });
 
     it('lève TableAllocationError si la table est introuvable ou indisponible', async () => {

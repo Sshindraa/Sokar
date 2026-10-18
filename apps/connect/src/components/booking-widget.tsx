@@ -45,6 +45,7 @@ type PublicRestaurant = {
   name: string;
   connectAgentic: boolean;
   giftCardEnabled: boolean;
+  whatsappReminderOptInEnabled?: boolean;
   address: { city: string };
   sections: Array<{ id: string; name: string }>;
 };
@@ -102,6 +103,7 @@ export function BookingWidget({
   const [phone, setPhone] = useState<string>('');
   const [giftCardCode, setGiftCardCode] = useState(initialGiftCardCode ?? '');
   const [email, setEmail] = useState<string>('');
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
   const [specialRequests, setSpecialRequests] = useState<string>('');
   // Honeypot (anti-bot). Si rempli, on bloque la soumission.
   const [honeypot, setHoneypot] = useState<string>('');
@@ -145,6 +147,7 @@ export function BookingWidget({
           name: data.name,
           connectAgentic: data.connectAgentic ?? false,
           giftCardEnabled: data.giftCardEnabled ?? false,
+          whatsappReminderOptInEnabled: data.whatsappReminderOptInEnabled === true,
           address: { city: data.city ?? data.address?.city ?? '' },
           sections: data.sections ?? [],
         });
@@ -291,6 +294,14 @@ export function BookingWidget({
           },
           specialRequests: specialRequests.trim() || undefined,
           giftCardCode: giftCardCode.trim() || undefined,
+          ...(restaurant?.whatsappReminderOptInEnabled
+            ? {
+                whatsappReminderConsent: {
+                  accepted: whatsappOptIn,
+                  version: 'whatsapp-reminder-2026-10-17',
+                },
+              }
+            : {}),
           ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
         }),
       });
@@ -702,6 +713,22 @@ export function BookingWidget({
                   régler votre addition.
                 </p>
               </div>
+            )}
+
+            {restaurant?.whatsappReminderOptInEnabled && (
+              <label className="flex items-start gap-3 text-sm text-[var(--widget-primary)]">
+                <input
+                  type="checkbox"
+                  checked={whatsappOptIn}
+                  onChange={(event) => setWhatsappOptIn(event.target.checked)}
+                  disabled={loading}
+                  className="mt-1 h-4 w-4 shrink-0 transition-all duration-200"
+                />
+                <span>
+                  J’accepte de recevoir le rappel de cette réservation sur WhatsApp. Facultatif,
+                  sans publicité. Vous pouvez retirer votre accord après confirmation.
+                </span>
+              </label>
             )}
 
             {error && (

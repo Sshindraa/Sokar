@@ -140,11 +140,6 @@ export function recordDebugTool(session: CallSession, name: string): void {
   if (dialogue) dialogue.tools.push(name);
 }
 
-export function recordDebugSpeechAct(session: CallSession, speechAct: string): void {
-  const dialogue = currentDialogue(session);
-  if (dialogue) dialogue.speechAct = speechAct;
-}
-
 /** Supprime les dialogues de test arrivés à échéance (tâche quotidienne). */
 export async function purgeExpiredVoiceDebugTurns(now = new Date()): Promise<number> {
   const { db } = await import('../../../shared/db/client');

@@ -1,5 +1,6 @@
 const createTelnyx: (key: string) => import('telnyx').TelnyxClient = require('telnyx');
 import * as https from 'https';
+import { sanitizeSmsProviderError } from './sms-error';
 import {
   extractProviderMessageId,
   type NotificationProviderResult,
@@ -45,6 +46,18 @@ const telnyx = new Proxy({} as TelnyxClient, {
 
 export default telnyx;
 
+/**
+ * Expéditeur des SMS. `TELNYX_SMS_FROM` accepte un numéro rattaché à un profil de messagerie ou un
+ * identifiant alphanumérique (« SOKAR », envoi sans réponse possible) ; à défaut, le numéro d'appel.
+ * Un numéro fixe sans profil de messagerie ne peut pas envoyer de SMS : c'est l'état constaté en
+ * production le 17/10/2026, d'où cette variable distincte de `TELNYX_FROM_NUMBER`.
+ */
+export function smsSender(environment: NodeJS.ProcessEnv = process.env): string {
+  const from = environment.TELNYX_SMS_FROM?.trim() || environment.TELNYX_FROM_NUMBER?.trim();
+  if (!from) throw new Error('TELNYX_SMS_FROM or TELNYX_FROM_NUMBER is required for SMS');
+  return from;
+}
+
 export async function sendSms(
   to: string,
   text: string,
@@ -52,14 +65,21 @@ export async function sendSms(
 ): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
-  const response = await t.messages.create({
-    from: process.env.TELNYX_FROM_NUMBER!,
-    to,
-    text,
-    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
-  });
+  const response = await t.messages
+    .create({
+      from: smsSender(),
+      to,
+      text,
+      ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+      ...(process.env.TELNYX_SMS_WEBHOOK_URL
+        ? { webhook_url: process.env.TELNYX_SMS_WEBHOOK_URL, use_profile_webhooks: false }
+        : {}),
+    })
+    .catch((error: unknown) => {
+      throw sanitizeSmsProviderError(error);
+    });
   const result = normalizeTelnyxSendResponse(response, 'sms');
-  if (usage) {
+  if (usage && result.outcome === 'success') {
     await recordAcceptedMessagingUsage({
       channel: 'sms',
       provider: 'telnyx',
@@ -104,7 +124,7 @@ export async function sendWhatsApp(
     ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
   const result = normalizeTelnyxSendResponse(response, 'whatsapp');
-  if (usage) {
+  if (usage && result.outcome === 'success') {
     await recordAcceptedMessagingUsage({
       channel: 'whatsapp',
       provider: 'telnyx',
@@ -130,9 +150,9 @@ export function normalizeTelnyxSendResponse(
   response: unknown,
   channel: 'sms' | 'whatsapp' = 'sms',
 ): NotificationSendResult {
-  const providerMessageId = extractProviderMessageId(response);
+  const providerMessageId = extractProviderMessageId(response)?.trim() || undefined;
   return {
-    outcome: 'success',
+    outcome: providerMessageId ? 'success' : 'unknown',
     provider: 'telnyx',
     channel,
     ...(providerMessageId ? { providerMessageId } : {}),
@@ -196,27 +216,45 @@ export interface OutboundCallResult {
   callControlId: string;
 }
 
-export async function placeOutboundCall(
+export type OutboundCallRequest = Parameters<TelnyxClient['calls']['create']>[0];
+
+/**
+ * Paramètres de création d'un appel sortant. Telnyx exige une application d'appel (`connection_id`) : à défaut
+ * de le transmettre, on prend `TELNYX_CONNECTION_ID`, puis on refuse explicitement plutôt que d'envoyer un
+ * appel que Telnyx rejetterait sans message clair.
+ */
+export function buildOutboundCallParams(
   to: string,
   options: OutboundCallOptions,
-): Promise<OutboundCallResult> {
-  const t = getTelnyx();
+): OutboundCallRequest {
   const from = process.env.TELNYX_FROM_NUMBER;
   if (!from) {
     throw new Error('TELNYX_FROM_NUMBER is required for outbound calls');
   }
+  const connectionId = options.connectionId ?? process.env.TELNYX_CONNECTION_ID;
+  if (!connectionId) {
+    throw new Error('TELNYX_CONNECTION_ID is required for outbound calls');
+  }
 
-  const response = await t.calls.create({
+  return {
     to,
     from,
-    connection_id: options.connectionId,
+    connection_id: connectionId,
     webhook_url: options.webhookUrl,
     webhook_url_method: 'POST',
     client_state: options.clientState
       ? Buffer.from(JSON.stringify(options.clientState)).toString('base64')
       : undefined,
     timeout: options.timeoutSecs ?? 30,
-  });
+  };
+}
+
+export async function placeOutboundCall(
+  to: string,
+  options: OutboundCallOptions,
+): Promise<OutboundCallResult> {
+  const t = getTelnyx();
+  const response = await t.calls.create(buildOutboundCallParams(to, options));
 
   const callControlId = response?.data?.call_control_id ?? response?.call_control_id;
   if (!callControlId) {

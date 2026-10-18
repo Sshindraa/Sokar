@@ -2,6 +2,7 @@
   "version": 1,
   "note": "Seuils issus des rejeux du 29/09 (cas d'attente, de congé, de politesse, de redemande, de récapitulatif) ou posés avec marge (cas d'extraction) ; à confirmer au premier passage complet, le quota Cerebras ayant été épuisé avant. Les cas « midi-* » mesurent le modèle seul sur un second profil (Bouchon Lyonnais) ; l'heure hors service (« mardi à 20 heures ») est traitée par le code (outsideOpeningHoursFact), pas mesurée ici.",
   "today": "2026-09-29",
+  "defaultProfile": "chez-sokar",
   "histories": {
     "opening": [
       {
@@ -464,12 +465,131 @@
         "role": "assistant",
         "content": "Bien sûr. Pour quel jour vous voulez réserver ?"
       }
+    ],
+    "done-autre-chose": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "h o u e t"
+      },
+      {
+        "role": "assistant",
+        "content": "H, O, U, E, T. C'est bien ça ?"
+      },
+      {
+        "role": "user",
+        "content": "c'est ça"
+      },
+      {
+        "role": "assistant",
+        "content": "Donc demain à 16 h 30 pour 6 personnes, au nom de Houet. C'est bon pour vous ?"
+      },
+      {
+        "role": "user",
+        "content": "oui oui"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est réservé. Vous recevrez un SMS de confirmation. Autre chose pour vous ?"
+      }
+    ],
+    "toNameRead-assamm": [
+      {
+        "role": "user",
+        "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "vous êtes ouvert demain"
+      },
+      {
+        "role": "assistant",
+        "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+      },
+      {
+        "role": "user",
+        "content": "oui demain"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+      },
+      {
+        "role": "user",
+        "content": "plutôt à 16 heures 30"
+      },
+      {
+        "role": "assistant",
+        "content": "D'accord, je garde 16 h 30. Vous serez combien ?"
+      },
+      {
+        "role": "user",
+        "content": "6 s'il vous plaît"
+      },
+      {
+        "role": "assistant",
+        "content": "C'est libre pour 6. C'est à quel nom ?"
+      },
+      {
+        "role": "user",
+        "content": "au nom de a 2 s a 2 m"
+      },
+      {
+        "role": "assistant",
+        "content": "Je note A, S, S, A, M, M. C'est bien ça ?"
+      }
     ]
   },
   "cases": [
     {
       "id": "attend-annonce-intention",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 tour 4 : « je voudrais bien venir » coupé par l'agent",
       "history": "toHeure",
       "transcript": "je voudrais bien venir",
@@ -490,6 +610,10 @@
     {
       "id": "attend-annonce-intention-2",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
       "source": "variante de b686b241 tour 4",
       "history": "toHeure",
       "transcript": "j'aimerais bien",
@@ -507,8 +631,60 @@
       ]
     },
     {
+      "id": "attend-annonce-intention-3",
+      "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
+      "source": "variante de b686b241 tour 4 : une phrase qui introduit le nombre de personnes sans le donner",
+      "history": "toHeure+",
+      "transcript": "alors on sera",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "attend-annonce-intention-4",
+      "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-annonce-intention",
+      "source": "variante de b686b241 tour 4 : une phrase qui introduit le nom sans le donner",
+      "history": "toName",
+      "transcript": "alors c'est au nom de",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": false,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
       "id": "attend-correction-annoncee",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 9 : « demain à 14 heures non » coupé",
       "history": "toHeure",
       "transcript": "demain à 14 heures non",
@@ -529,6 +705,10 @@
     {
       "id": "attend-correction-explicite",
       "behavior": "attente",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "attend-correction-annoncee",
       "source": "variante de 8ae1e63e tour 9",
       "history": "toHeure",
       "transcript": "vers 20 heures enfin non",
@@ -548,6 +728,9 @@
     {
       "id": "repond-reponse-complete",
       "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : ne pas attendre une réponse complète",
       "history": "toHeure",
       "transcript": "à 14 heures s'il vous plaît",
@@ -579,6 +762,9 @@
     {
       "id": "repond-refus-avec-valeur",
       "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : un refus suivi de sa valeur est complet",
       "history": "toHeure",
       "transcript": "non je préfère plutôt le soir vers 20 heures",
@@ -608,8 +794,65 @@
       ]
     },
     {
+      "id": "repond-nombre-seul",
+      "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un nombre seul est une réponse complète",
+      "history": "toHeure+",
+      "transcript": "trois",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        },
+        {
+          "kind": "draft",
+          "field": "partySize",
+          "equals": 3,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "repond-oui-confirmation",
+      "behavior": "attente (témoin)",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un « oui » à la question de confirmation est complet",
+      "history": "recapAsked",
+      "transcript": "oui",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "confirmation",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "extrait-correction-heure",
       "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 10 : « plutôt à 16 heures 30 » remplace 14 h",
       "history": [
         {
@@ -667,8 +910,68 @@
       ]
     },
     {
+      "id": "extrait-correction-heure-2",
+      "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "history": [
+        {
+          "role": "user",
+          "content": "bonjour je souhaite faire une réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour vous voulez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "vous êtes ouvert demain"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, demain on est ouvert de midi à 22 heures. Vous venez demain ?"
+        },
+        {
+          "role": "user",
+          "content": "oui demain"
+        },
+        {
+          "role": "assistant",
+          "content": "D'accord, c'est noté pour demain. Vers quelle heure vous aimeriez venir ?"
+        },
+        {
+          "role": "user",
+          "content": "demain à 14 heures non"
+        },
+        {
+          "role": "assistant",
+          "content": "Bien, 14 heures demain. Vous serez combien ?"
+        }
+      ],
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:00"
+      },
+      "awaiting": "partySize",
+      "variantOf": "extrait-correction-heure",
+      "source": "variante de extrait-correction-heure : une autre heure de remplacement",
+      "transcript": "finalement 19 heures 45",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "time",
+          "equals": "19:45",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
       "id": "extrait-taille-groupe",
       "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 11",
       "history": "toHeure+",
       "transcript": "6 s'il vous plaît",
@@ -693,8 +996,35 @@
       ]
     },
     {
+      "id": "extrait-taille-groupe-2",
+      "behavior": "extraction",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "history": "toHeure+",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "variantOf": "extrait-taille-groupe",
+      "source": "variante de extrait-taille-groupe : un autre nombre",
+      "transcript": "4 s'il vous plaît",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "partySize",
+          "equals": 4,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "extrait-nom-epele",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 13 : épellation lettre par lettre",
       "history": "toName",
       "transcript": "h o u e t",
@@ -722,6 +1052,9 @@
     {
       "id": "extrait-nom-epele-double-k",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 : « a 2 k i f » = deux K",
       "history": "toName",
       "transcript": "au nom de a 2 k i f",
@@ -749,6 +1082,9 @@
     {
       "id": "conge-salut",
       "behavior": "prise de congé",
+      "family": "conge",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 16 : « salut » après « Bonne soirée »",
       "history": "done",
       "transcript": "salut",
@@ -779,6 +1115,9 @@
     {
       "id": "conge-merci",
       "behavior": "prise de congé",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : un remerciement termine l'appel",
       "history": "done",
       "transcript": "merci beaucoup",
@@ -802,6 +1141,9 @@
     {
       "id": "conge-mot-mal-compris",
       "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 6a70dff9 tour 15 : « Bisous » transcrit « dix-nous » après « Bonne soirée »",
       "history": "done",
       "draft": {
@@ -816,9 +1158,41 @@
       "samples": 12,
       "checks": [
         {
+          "kind": "hangsUp",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
           "kind": "field",
-          "path": "action",
-          "equals": "end_call",
+          "path": "awaiting",
+          "equals": "none",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "conge-mot-mal-compris-3",
+      "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "variant",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "variantOf": "conge-mot-mal-compris",
+      "source": "variante de conge-mot-mal-compris : un troisième mot sans sens après l'au revoir",
+      "transcript": "or voir",
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": true,
           "minRate": 0.85
         },
         {
@@ -832,6 +1206,10 @@
     {
       "id": "conge-mot-mal-compris-2",
       "behavior": "prise de congé (mot mal compris)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "conge-mot-mal-compris",
       "source": "témoin : un autre mot sans sens après l'au revoir",
       "history": "done",
       "draft": {
@@ -846,9 +1224,8 @@
       "samples": 12,
       "checks": [
         {
-          "kind": "field",
-          "path": "action",
-          "equals": "end_call",
+          "kind": "hangsUp",
+          "expect": true,
           "minRate": 0.85
         },
         {
@@ -860,8 +1237,150 @@
       ]
     },
     {
+      "id": "conge-phrase-longue-mal-transcrite",
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ],
+      "source": "témoin inventé : une vraie demande après l'au revoir, mal transcrite, trop longue pour être un au revoir",
+      "transcript": "a tendez j'ai ou blié de vous dire que nous serons un de plus pour le même soir"
+    },
+    {
+      "id": "conge-phrase-longue-sans-sens",
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ],
+      "source": "témoin inventé : une longue phrase sans sens après l'au revoir ; mesuré à travers le moteur (il refuse tout congé que le modèle dit ne pas comprendre)",
+      "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup"
+    },
+    {
+      "id": "conge-phrase-longue-relance",
+      "behavior": "prise de congé (phrase longue mal comprise)",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
+      "history": "done",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "none",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.9
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.9
+        }
+      ],
+      "source": "second passage après le refus d'un congé sur une longue phrase sans sens : le schéma n'autorise que « none », le modèle doit redemander",
+      "transcript": "vous aviez dit la rue de la panne pour un tour ce ouais merci à la tasse du coup",
+      "actionResult": "Action end_call non exécutée (doubtful_understanding). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.",
+      "actions": ["none"]
+    },
+    {
+      "id": "conge-question-courte-apres-autre-chose",
+      "behavior": "prise de congé (question en attente)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
+      "source": "témoin inventé : après « Autre chose pour vous ? », une vraie question courte mal transcrite ; le moteur ne doit pas raccrocher (mesuré à travers le moteur)",
+      "history": "done-autre-chose",
+      "transcript": "ses ou le parking",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "open",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": false,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "conge-non-merci-apres-autre-chose",
+      "behavior": "prise de congé (question en attente, témoin)",
+      "family": "conge",
+      "measures": "engine",
+      "origin": "control",
+      "source": "témoin : après « Autre chose pour vous ? », un refus clair doit toujours raccrocher (mesuré à travers le moteur)",
+      "history": "done-autre-chose",
+      "transcript": "non merci c'est tout",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6,
+        "customerName": "Houet"
+      },
+      "awaiting": "open",
+      "reservationCreated": true,
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "hangsUp",
+          "expect": true,
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
       "id": "nouvelle-demande-apres-resa",
       "behavior": "prise de congé (témoin)",
+      "family": "conge",
+      "measures": "model",
+      "origin": "control",
       "source": "témoin : une nouvelle demande ne termine pas l'appel",
       "history": "done",
       "transcript": "ah attendez j'ai une autre réservation à faire",
@@ -885,6 +1404,9 @@
     {
       "id": "date-dans-question",
       "behavior": "redemande à vide",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241/8ae1e63e tour 2 : « vous êtes ouvert demain » avant toute date",
       "history": "opening",
       "transcript": "vous êtes ouvert demain",
@@ -902,6 +1424,9 @@
     {
       "id": "recap-court",
       "behavior": "récapitulatif",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 8ae1e63e tour 14 : récapitulatif de 10 s puis 5 s",
       "history": "toRecap",
       "transcript": "c'est ça",
@@ -928,6 +1453,9 @@
     {
       "id": "au-revoir-selon-heure",
       "behavior": "politesse",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
       "source": "appel b686b241 : « Bonne soirée » à 15 h 09",
       "history": "done-dernier",
       "transcript": "oui c'est tout",
@@ -953,6 +1481,9 @@
     {
       "id": "pas-de-dispo-sans-effectif",
       "behavior": "disponibilité",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
       "source": "#288 : ne pas annoncer un horaire libre avant le nombre de personnes",
       "history": "toHeure",
       "transcript": "est-ce que c'est possible de venir à 18 heures",
@@ -970,8 +1501,84 @@
       ]
     },
     {
+      "id": "pas-d-accord-horaire-sans-effectif",
+      "behavior": "disponibilité",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 03b19223 : l'appelant répond « pour 20 heures » à la question de l'heure, nombre de personnes inconnu ; l'agent a dit « Samedi à 20 heures, ça marche. Vous êtes combien ? » malgré l'interdiction nommée (deuxième fois) ; l'état contient les créneaux du samedi déjà lus (préchargement)",
+      "history": [
+        {
+          "role": "user",
+          "content": "bonjour je voudrais faire vous êtes ouvert dimanche soir"
+        },
+        {
+          "role": "assistant",
+          "content": "Non, on est fermé le dimanche. On rouvre samedi soir jusqu'à 23 heures, ou mardi midi. Vous voulez réserver pour l'un de ces jours ?"
+        },
+        {
+          "role": "user",
+          "content": "oui bah pour samedi s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Samedi, c'est noté. À quelle heure vous aimeriez venir ?"
+        }
+      ],
+      "transcript": "pour 20 heures",
+      "draft": {
+        "date": "2026-10-03"
+      },
+      "awaiting": "time",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "c'est possible|c'est libre|ça marche|disponible|c'est noté",
+          "expect": false,
+          "minRate": 0.8
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["partySize"],
+          "minRate": 0.95
+        }
+      ],
+      "dayAvailability": {
+        "slots": [
+          "12:00",
+          "12:30",
+          "13:00",
+          "13:30",
+          "14:00",
+          "14:30",
+          "15:00",
+          "15:30",
+          "16:00",
+          "16:30",
+          "17:00",
+          "17:30",
+          "18:00",
+          "18:30",
+          "19:00",
+          "19:30",
+          "20:00",
+          "20:30",
+          "21:00",
+          "21:30",
+          "22:00"
+        ],
+        "upToSize": 6,
+        "maxSize": 12,
+        "noTableSizes": [7, 8, 9, 10, 11, 12]
+      }
+    },
+    {
       "id": "pas-de-repetition-mot-pour-mot",
       "behavior": "répétition",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "#293 : ne pas recopier sa dernière question",
       "history": "toHeure",
       "transcript": "et vous avez une terrasse",
@@ -991,6 +1598,10 @@
     {
       "id": "midi-jour-ferme",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
       "profile": "midi",
       "history": "opening",
@@ -1015,6 +1626,10 @@
     {
       "id": "midi-dimanche-ferme",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi",
       "profile": "midi",
       "history": "opening",
@@ -1033,6 +1648,10 @@
     {
       "id": "midi-samedi-soir-ouvert",
       "behavior": "horaires d'un autre profil",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "appel a8012c5c",
       "source": "fiche du restaurant de démonstration Bouchon Lyonnais : mardi à vendredi 12 h–14 h 30, samedi 12 h–23 h, fermé dimanche et lundi (témoin : le samedi soir est ouvert, ne pas refuser à tort)",
       "profile": "midi",
       "history": "opening",
@@ -1051,6 +1670,9 @@
     {
       "id": "recap-fragment-apres-silence",
       "behavior": "pas de récapitulatif redit",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 1b3f85e9 tour 14 : « donc » puis silence, l'agent a relu tout le récapitulatif (« Je vous ai lu le récapitulatif : … ») — cause réelle : refus « slot_not_verified » puis relecture (corrigé par #307) ; reste ~20 % de relectures des détails, jugées bénignes",
       "history": "recapAsked",
       "transcript": "donc",
@@ -1090,6 +1712,9 @@
     {
       "id": "recap-fragment-attente",
       "behavior": "pas de récapitulatif redit",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 1b3f85e9 tour 14 : « donc » juste après le récapitulatif : la phrase est inachevée",
       "history": "recapAsked",
       "transcript": "donc",
@@ -1111,7 +1736,12 @@
       ]
     },
     {
+      "id": "epele-sans-preambule",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "extrait-nom-epele-double-k",
       "history": "toName",
       "draft": {
         "date": "2026-09-30",
@@ -1120,7 +1750,6 @@
       },
       "awaiting": "customerName",
       "samples": 20,
-      "id": "epele-sans-preambule",
       "source": "« a 2 k i f » sans préambule : le modèle perdait le double K (15 % de AKKIF avant la règle du chiffre doublant la lettre, 100 % après)",
       "transcript": "a 2 k i f",
       "valueSpans": {
@@ -1147,6 +1776,9 @@
     {
       "id": "epele-apres-mot-entendu",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 5cebe456 tour 15 (30/09) : « hoët h o u e t » enregistré HOËT",
       "history": "toName",
       "transcript": "hoët h o u e t",
@@ -1174,6 +1806,10 @@
     {
       "id": "epele-apres-mot-entendu-intro",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "epele-apres-mot-entendu",
       "source": "appel 5cebe456 tours 14-15 recollés",
       "history": "toName",
       "transcript": "c'est au nom de hoët h o u e t",
@@ -1201,6 +1837,9 @@
     {
       "id": "correction-epellation-complete",
       "behavior": "extraction",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
       "source": "appel 5cebe456 tour 16 : l'appelant re-épelle après une lecture fausse",
       "history": "toNameRead",
       "transcript": "non h o u e t",
@@ -1229,6 +1868,9 @@
     {
       "id": "epellation-en-cours-pas-fini",
       "behavior": "fin de tour",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 5cebe456 tour 16 : « h o u e » jugé fini, le t arrive 0,6 s après",
       "history": "toNameRead",
       "transcript": "non h o u e",
@@ -1249,8 +1891,252 @@
       ]
     },
     {
+      "id": "juge-debut-abandonne-question",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 03b19223 17:58:13 : l'appelant a dit « Bonjour, euh je voulais savoir si vous êtes ouvert dimanche soir ? », transcrit en deux morceaux déformés ; le juge a dit « inachevé » (2,98 s de silence), la demande est complète à la fin",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "bonjour je voudrais faire vous êtes ouvert dimanche soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-2",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un début repris, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "euh je voulais je voudrais savoir si vous avez de la place samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-3",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un début abandonné, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "bonjour alors je pensais enfin est-ce que vous êtes ouverts demain midi",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-debut-abandonne-question-4",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "variant",
+      "source": "variante de 03b19223 : un mot coupé, puis une question complète",
+      "variantOf": "juge-debut-abandonne-question",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "oui allô je voudrais réser euh vous faites des menus enfants",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-nombre",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une réponse courte et complète à la question du nombre",
+      "history": "toHeure+",
+      "transcript": "deux",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-heure",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une réponse courte et complète à la question de l'heure",
+      "history": "toHeure",
+      "transcript": "vers vingt heures",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-reponse-courte-merci",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : un mot de politesse après la réservation",
+      "history": "done",
+      "transcript": "merci au revoir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète à l'ordre des mots déformé par la transcription",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "il reste de la place demain soir hein vous avez",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite-2",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète à la grammaire déformée par la transcription",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "vous ferme à quelle heure samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-question-mal-transcrite-3",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une question complète en fin d'une phrase bien transcrite",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "dimanche midi vous êtes ouvert ou pas",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "juge-demande-complete",
+      "behavior": "fin de tour : demande complète",
+      "family": "attente",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une demande complète en une seule phrase",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "est-ce que ça serait possible d'avoir une table pour six personnes samedi soir",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "turnComplete",
+          "equals": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
       "id": "exclamation-apres-recap-pas-de-relecture",
       "behavior": "répétition",
+      "family": "repetition",
+      "measures": "model",
+      "origin": "real",
       "source": "appel 5cebe456 tours 18-19 : « waouh » puis une phrase hors sujet relisent deux fois le récapitulatif",
       "history": "toRecapHouet",
       "transcript": "waouh",
@@ -1273,6 +2159,9 @@
     {
       "id": "appel-bf3893ae-enonce-incoherent",
       "behavior": "énoncé incohérent",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
       "source": "appel bf3893ae tour 2 (30/09) : transcription Deepgram « vous êtes 20 demain », l'appelant hésitait. Le modèle a retenu 20 h (interpretation=answer, confidence=high) et dit « c'est noté ». Vérité non établie : deux modèles audio se contredisent, écoute humaine à faire.",
       "history": "bf3893ae",
       "transcript": "vous êtes 20 demain",
@@ -1307,9 +2196,713 @@
           "minRate": 0.9
         }
       ]
+    },
+    {
+      "id": "correction-nombre-douteuse",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 90834d63 (02/10), tour 6 : l'appelant dit « Quatre. Ah non, cinq. » ; transcription « 4 » puis « un non 5 » (l'écoute audio donne la vérité). Le modèle a répondu « je n'ai pas bien saisi » en reposant la question du nom : le 5 est perdu, réservation créée pour 4 (aucun garde-fou ne l'a vu, le récapitulatif disait 4 et l'appelant a confirmé).",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "on serait bienvenu à 14 heures 30"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "4"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 5",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:30",
+        "partySize": 4
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 5
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b5\\b|cinq|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-2",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : même correction transcrite proprement, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "plutôt à 13 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "2"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "ah non 3",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "13:00",
+        "partySize": 2
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 3
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b3\\b|trois|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-3",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : transcription déformée comme la réelle, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "à 14 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "5"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 6",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:00",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 6
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b6\\b|six|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-4",
+      "behavior": "correction du nombre de personnes douteuse",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "variante de 90834d63 : correction avec un mot de plus, autres nombres",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "plutôt à 13 heures"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "3"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "euh non 4 plutôt",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "13:00",
+        "partySize": 3
+      },
+      "awaiting": "customerName",
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "anyOf",
+          "of": [
+            {
+              "kind": "draft",
+              "field": "partySize",
+              "equals": 4
+            },
+            {
+              "kind": "say",
+              "pattern": "\\b4\\b|quatre|personnes",
+              "expect": true
+            }
+          ],
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "correction-nombre-douteuse-second-passage",
+      "behavior": "second passage : nombre à redemander",
+      "family": "extraction",
+      "measures": "model",
+      "origin": "variant",
+      "variantOf": "correction-nombre-douteuse",
+      "source": "appel 90834d63 : le second passage du garde-fou (partySizeCorrectionFact) reçoit le fait ; mesure si la phrase redemande le nombre. Le fait est celui que produit le moteur (test d'égalité).",
+      "history": [
+        {
+          "role": "user",
+          "content": "oui bonsoir je vous appelle pour effectuer une petite réservation s'il vous plaît"
+        },
+        {
+          "role": "assistant",
+          "content": "Avec plaisir. Pour quel jour pensez-vous ?"
+        },
+        {
+          "role": "user",
+          "content": "demain midi plutôt"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, on ouvre à midi demain. À quelle heure vous seriez dispo ?"
+        },
+        {
+          "role": "user",
+          "content": "on serait bienvenu à 14 heures 30"
+        },
+        {
+          "role": "assistant",
+          "content": "Pour combien de personnes ?"
+        },
+        {
+          "role": "user",
+          "content": "4"
+        },
+        {
+          "role": "assistant",
+          "content": "C'est noté. Sous quel nom je mets la réservation ?"
+        }
+      ],
+      "transcript": "un non 5",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "14:30",
+        "partySize": 4
+      },
+      "awaiting": "customerName",
+      "actionResult": "Énoncé douteux : l'appelant a dit « un non 5 », qui contient le nombre 5, alors que 4 personnes sont déjà notées. Ce nombre est peut-être la correction du nombre de personnes : ne passe pas à la question suivante, redemande-lui le nombre de personnes (une seule question, awaiting=partySize), brouillon inchangé.",
+      "actions": ["none"],
+      "samples": 12,
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "\\b5\\b|cinq|personnes|combien",
+          "expect": true,
+          "minRate": 0.9
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.9
+        }
+      ]
+    },
+    {
+      "id": "relance-parole-non-comprise",
+      "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel c5d6b07d : « euh… trois », parole détectée sans aucun mot reconnu ; le moteur dit aujourd'hui une phrase codée",
+      "profile": "midi",
+      "history": "toHeure",
+      "transcript": "",
+      "recovery": "unheard",
+      "draft": {
+        "date": "2026-09-30"
+      },
+      "awaiting": "time",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "time",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relance-silence",
+      "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel cdc95509 : l'appelant se tait après la question du nom ; le moteur dit aujourd'hui une phrase codée",
+      "profile": "midi",
+      "history": "toName",
+      "transcript": "",
+      "recovery": "silence",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30",
+        "partySize": 6
+      },
+      "awaiting": "customerName",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerName",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relance-silence-apres-heure",
+      "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "variant",
+      "profile": "midi",
+      "history": "toHeure+",
+      "recovery": "silence",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "16:30"
+      },
+      "awaiting": "partySize",
+      "samples": 8,
+      "variantOf": "relance-silence",
+      "source": "variante de relance-silence : l'appelant se tait après la question du nombre de personnes",
+      "transcript": "",
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "partySize",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relance-apres-accueil",
+      "behavior": "relance sans énoncé",
+      "family": "relance",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 126f433a : après l'accueil, l'appelant ne dit rien d'intelligible",
+      "profile": "midi",
+      "history": [
+        {
+          "role": "assistant",
+          "content": "Bonjour, ici Chez Sokar. Je vous écoute."
+        }
+      ],
+      "transcript": "",
+      "recovery": "opening",
+      "awaiting": "open",
+      "samples": 8,
+      "checks": [
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "open",
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "action",
+          "equals": "none",
+          "minRate": 0.95
+        },
+        {
+          "kind": "draftUnchanged",
+          "fields": ["date", "time", "partySize", "customerName"],
+          "minRate": 0.95
+        },
+        {
+          "kind": "say",
+          "pattern": "\\S",
+          "expect": true,
+          "minRate": 0.95
+        }
+      ]
+    },
+    {
+      "id": "relecture-doubles-lettres",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "real",
+      "source": "appel 8043662c : nom ASSAMM épelé « a deux s a deux m » (transcription juste) : la relecture doit être celle du code, lettre par lettre ; le modèle écrivait le nom avec une lettre en moins (ASSAM)",
+      "history": "toName",
+      "transcript": "au nom de a 2 s a 2 m",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAMM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerNameConfirmation",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "relecture-doubles-lettres-2",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "engine",
+      "origin": "variant",
+      "variantOf": "relecture-doubles-lettres",
+      "source": "variante de 8043662c : un autre nom épelé avec une lettre double (MASSON)",
+      "history": "toName",
+      "transcript": "m a 2 s o n",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5
+      },
+      "awaiting": "customerName",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "MASSON",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        },
+        {
+          "kind": "field",
+          "path": "awaiting",
+          "equals": "customerNameConfirmation",
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "correction-un-seul-m",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : après la relecture « A, deux S, A, deux M », l'appelant corrige « un seul M » : le nom doit changer",
+      "history": "toNameRead-assamm",
+      "transcript": "non un seul m",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5,
+        "customerName": "ASSAMM"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "correction-un-seul-m-2",
+      "behavior": "relecture du nom",
+      "family": "epellation",
+      "measures": "model",
+      "origin": "control",
+      "source": "témoin : une autre façon de corriger une lettre en trop après la relecture",
+      "history": "toNameRead-assamm",
+      "transcript": "c'est pas deux m c'est un seul m à la fin",
+      "draft": {
+        "date": "2026-09-30",
+        "time": "12:30",
+        "partySize": 5,
+        "customerName": "ASSAMM"
+      },
+      "awaiting": "customerNameConfirmation",
+      "checks": [
+        {
+          "kind": "draft",
+          "field": "customerName",
+          "equals": "ASSAM",
+          "minRate": 0.85
+        },
+        {
+          "kind": "readsBack",
+          "expect": true,
+          "minRate": 0.85
+        }
+      ]
+    },
+    {
+      "id": "sms-desactive-pas-de-promesse",
+      "behavior": "compte rendu de création",
+      "family": "horaires",
+      "measures": "model",
+      "origin": "real",
+      "source": "appel 8043662c : « Un SMS de confirmation vous sera envoyé » dit à la fin alors que le compte rendu affirmait l'envoi sans regarder le réglage du restaurant ; ici le réglage est désactivé. Le contrôle écarte toute mention du SMS (une mention négative correcte est aussi comptée : il mesure surtout l'absence de promesse, un motif qui ne sert qu'à interdire cette dérive)",
+      "history": "toRecapHouet",
+      "transcript": "oui s'il vous plaît",
+      "draft": {
+        "date": "2026-10-01",
+        "time": "18:30",
+        "partySize": 5,
+        "customerName": "HOUET"
+      },
+      "awaiting": "confirmation",
+      "reservationCreated": true,
+      "actionResult": "Réservation confirmée pour HOUET, le 2026-10-01 à 18:30, pour 5 personne(s). Le SMS de confirmation est désactivé pour ce restaurant : aucun SMS n'est envoyé au client.",
+      "checks": [
+        {
+          "kind": "say",
+          "pattern": "sms",
+          "expect": false,
+          "minRate": 0.8
+        }
+      ]
     }
   ],
   "profiles": {
+    "chez-sokar": {
+      "name": "Chez Sokar",
+      "timezone": "Europe/Paris",
+      "maxPartySize": 7,
+      "voiceGender": "masculine",
+      "openingHours": {
+        "mon": null,
+        "tue": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "wed": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "thu": {
+          "open": "12:00",
+          "close": "22:00"
+        },
+        "fri": {
+          "open": "12:00",
+          "close": "23:00"
+        },
+        "sat": {
+          "open": "12:00",
+          "close": "23:00"
+        },
+        "sun": null
+      }
+    },
     "midi": {
       "name": "Chez Sokar — Bouchon Lyonnais",
       "openingHours": {
@@ -1333,7 +2926,8 @@
           "open": "12:00",
           "close": "23:00"
         }
-      }
+      },
+      "voiceGender": "masculine"
     }
   },
   "spanPool": {

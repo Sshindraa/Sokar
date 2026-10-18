@@ -27,6 +27,8 @@ export type MobileDataCardProps = {
   onClick?: () => void;
   /** Optional background actions revealed on swipe-left */
   actions?: MobileDataCardAction[];
+  /** Next useful action, visible without opening the overflow menu. */
+  primaryAction?: MobileDataCardAction & { disabled?: boolean };
 };
 
 export default function MobileDataCard({
@@ -37,6 +39,7 @@ export default function MobileDataCard({
   accentClass,
   onClick,
   actions,
+  primaryAction,
 }: MobileDataCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -48,12 +51,13 @@ export default function MobileDataCard({
   const isSwiping = useRef(false);
 
   const maxOffset = actions ? actions.length * 68 : 0;
+  const actionSignature = actions?.map((action) => action.label).join('|');
 
-  // Reset offset if actions list changes
+  // Reset offset if the available actions change, without closing on every parent render.
   useEffect(() => {
     setOffsetX(0);
     setActionsOpen(false);
-  }, [actions]);
+  }, [actionSignature]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!actions || actions.length === 0) return;
@@ -115,13 +119,17 @@ export default function MobileDataCard({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-card/60">
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card">
       {/* Swipe actions rendered in background */}
       {actions && actions.length > 0 && (
-        <div className="absolute right-0 top-0 bottom-0 flex items-stretch z-0">
+        <div
+          aria-hidden={offsetX === 0}
+          className="absolute right-0 top-0 bottom-0 flex items-stretch z-0"
+        >
           {actions.map((act, idx) => (
             <button
               key={idx}
+              tabIndex={offsetX < 0 ? 0 : -1}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic(15);
@@ -151,7 +159,7 @@ export default function MobileDataCard({
           transition: isDragging ? 'none' : 'transform 240ms cubic-bezier(0.16, 1, 0.3, 1)',
         }}
         className={cn(
-          'rounded-xl border border-transparent bg-transparent p-3.5 transition-colors duration-200 active:bg-accent touch-manipulation relative z-10 select-none',
+          'rounded-xl border border-transparent bg-background p-3.5 transition-colors duration-200 active:bg-accent touch-manipulation relative z-10 select-none',
           accentClass && `border-l-2 ${accentClass}`,
           onClick && 'cursor-pointer',
         )}
@@ -197,6 +205,21 @@ export default function MobileDataCard({
               </div>
             ))}
           </div>
+        )}
+
+        {primaryAction && (
+          <button
+            type="button"
+            disabled={primaryAction.disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              primaryAction.onClick(event);
+            }}
+            className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-all duration-200 disabled:opacity-50"
+          >
+            {primaryAction.icon}
+            {primaryAction.label}
+          </button>
         )}
 
         {actionsOpen && actions && actions.length > 0 ? (

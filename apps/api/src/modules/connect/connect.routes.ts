@@ -19,6 +19,11 @@ import type { FastifyInstance } from 'fastify';
 import type { Table } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import {
+  isReservationManagementEnabled,
+  reservationManagementUrl,
+} from '../reservations/reservation-management';
+import { createWhatsAppReminderConsent, withdrawWhatsAppReminderConsent } from './whatsapp-consent';
 import { slugifyCity, slugifyCuisine } from '@sokar/shared';
 import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { db } from '../../shared/db/client';
@@ -33,6 +38,14 @@ import {
 } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import { isSlotStartPast } from '../../shared/timezone/restaurant-time';
+import {
+  DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES,
+  INSUFFICIENT_LEAD_TIME,
+  isSlotTooSoon,
+  leadTimeRefusal,
+  loadMinLeadTimeMinutes,
+} from '../../shared/reservations/lead-time';
 import {
   CancelWaitingListTokenSchema,
   WaitingListJoinInputSchema,
@@ -44,6 +57,7 @@ import { IdempotencyService } from '../agentic-reservations/core/idempotency.ser
 import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
 import {
   buildPolicySnapshot,
+  PolicyValidationError,
   type PolicySnapshot,
 } from '../agentic-reservations/core/policies.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -64,7 +78,7 @@ import {
   AvailabilityQuerySchema,
   ConfirmInputSchema,
   HoldInputSchema,
-  PUBLIC_CONNECT_WHERE,
+  DISCOVERABLE_CONNECT_WHERE,
   SlugParamSchema,
   normalizeConnectSource,
   type Source,
@@ -168,7 +182,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
-      return reply.send(restaurant);
+      return reply.send({
+        ...restaurant,
+        whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
+      });
     },
   );
 
@@ -224,7 +241,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     { config: { rateLimit: { max: RATE_LIMIT_SITEMAP_MAX, timeWindow: '1 minute' } } },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
-        where: PUBLIC_CONNECT_WHERE,
+        where: DISCOVERABLE_CONNECT_WHERE,
         select: {
           slug: true,
           updatedAt: true,
@@ -280,7 +297,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
-          ...PUBLIC_CONNECT_WHERE,
+          ...DISCOVERABLE_CONNECT_WHERE,
           city: { not: null },
         },
         select: { city: true, cuisineType: true },
@@ -333,7 +350,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const allCities = await db.restaurant.findMany({
-        where: { ...PUBLIC_CONNECT_WHERE, city: { not: null } },
+        where: { ...DISCOVERABLE_CONNECT_WHERE, city: { not: null } },
         select: { city: true, cuisineType: true },
       });
       const cityRow = allCities.find((r) => slugifyCity(r.city ?? '') === params.slug);
@@ -386,7 +403,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       const restaurantsRaw = await db.restaurant.findMany({
         where: {
-          ...PUBLIC_CONNECT_WHERE,
+          ...DISCOVERABLE_CONNECT_WHERE,
           city: cityName,
           ...(cuisineFilter && cuisineName ? { cuisineType: { has: cuisineName } } : {}),
         },
@@ -468,11 +485,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
+      // Surface en ligne : le délai minimum du restaurant marque indisponibles les créneaux trop proches.
       const dto = await availability.getAvailability({
         restaurantId: restaurant.id,
         date: queryParse.data.date,
         partySize: queryParse.data.partySize,
         preferredSectionId: queryParse.data.preferredSectionId,
+        minLeadTimeMinutes: await loadMinLeadTimeMinutes(db, restaurant.id),
       });
 
       return reply.send(dto);
@@ -550,6 +569,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const slotStart = zonedTimeToUtc(bodyParse.data.date, bodyParse.data.time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
 
+      // Même règle que l'affichage : un créneau trop proche ne se bloque pas.
+      if (isSlotTooSoon(slotStart, policy.minLeadTimeMinutes)) {
+        return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));
+      }
+
       try {
         const hold = await holds.createHold({
           restaurantId: restaurant.id,
@@ -626,6 +650,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const bodyParse = ConfirmInputSchema.safeParse(req.body);
       if (!bodyParse.success) {
         return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
+      if (
+        bodyParse.data.whatsappReminderConsent?.accepted &&
+        process.env.WHATSAPP_CONSENT_ENABLED !== 'true'
+      ) {
+        return reply
+          .status(409)
+          .send({ error: 'Le rappel WhatsApp n’est pas disponible actuellement.' });
       }
 
       // Honeypot anti-bot : si le champ website est rempli, c'est un bot.
@@ -714,6 +746,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       // RGPD consent (channel=WEB, context=web_booking_intent)
       const ipHash = req.ip ? hashIp(req.ip) : undefined;
+      const whatsappConsent = createWhatsAppReminderConsent(
+        bodyParse.data.whatsappReminderConsent?.accepted === true,
+        ipHash,
+      );
       await consents.recordConsent({
         restaurantId: restaurant.id,
         customerId: null,
@@ -752,6 +788,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         holdId: hold.id,
         customerPhone: bodyParse.data.customer.phone,
         customerName,
+        ...(bodyParse.data.whatsappReminderConsent
+          ? { whatsappReminderConsent: bodyParse.data.whatsappReminderConsent.accepted }
+          : {}),
       });
 
       try {
@@ -773,6 +812,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             giftCardCode: bodyParse.data.giftCardCode,
             giftCardReservationAmount: Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
             consents: {
+              ...whatsappConsent.consents,
               reservationProcessing: true,
               transactionalSms: true,
               transactionalEmail: !!bodyParse.data.customer.email,
@@ -818,8 +858,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           reservationId: result.reservationId,
         });
 
+        const managed = isReservationManagementEnabled()
+          ? await db.reservation.findUnique({
+              where: { id: result.reservationId, restaurantId: restaurant.id },
+            })
+          : null;
         return reply.send({
           reservationId: result.reservationId,
+          ...(managed ? { managementUrl: reservationManagementUrl(managed) } : {}),
           status: 'confirmed',
           state: result.state,
           reused: result.reused,
@@ -829,6 +875,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           partySize: hold.partySize,
           source,
           giftCardApplication: result.giftCardApplication,
+          ...(!result.reused && whatsappConsent.withdrawalToken
+            ? { whatsappWithdrawalToken: whatsappConsent.withdrawalToken }
+            : {}),
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
@@ -845,6 +894,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           time: localTime,
           partySize: hold.partySize,
         });
+        // Créneau devenu trop proche entre le hold et la confirmation : un refus clair, pas un 500.
+        if (err instanceof PolicyValidationError && err.code === INSUFFICIENT_LEAD_TIME) {
+          return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));
+        }
         const message = err instanceof Error ? err.message : 'Internal error';
         if (message.toLowerCase().includes('idempot')) {
           return reply.status(409).send({ error: message });
@@ -926,6 +979,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       if (!slot) {
         return reply.status(400).send({ error: 'invalid_slot' });
       }
+      // Un créneau passé est « indisponible » pour le moteur, mais il n'est pas « complet » : la liste
+      // d'attente n'a de sens que pour un créneau à venir.
+      if (isSlotStartPast(slotStart)) {
+        return reply.status(400).send({ error: 'invalid_slot' });
+      }
+      // Surface en ligne : un créneau dans le délai minimum ne se réserve pas, donc ne s'attend pas non plus.
+      const minLeadTimeMinutes =
+        settings?.minLeadTimeMinutes ?? DEFAULT_ONLINE_MIN_LEAD_TIME_MINUTES;
+      if (isSlotTooSoon(slotStart, minLeadTimeMinutes)) {
+        return reply.status(409).send(leadTimeRefusal(minLeadTimeMinutes));
+      }
       if (slot.available) {
         return reply.status(409).send({ error: 'slot_now_available' });
       }
@@ -992,6 +1056,41 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         logger.error({ err, slug: slugParse.data.slug }, 'connect waiting-list join failed');
         return reply.status(500).send({ error: 'Internal error' });
       }
+    },
+  );
+
+  // Retrait du rappel WhatsApp : jeton dedie, sans modifier la reservation.
+  app.post(
+    '/public/r/:slug/whatsapp-consent/withdraw',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const params = SlugParamSchema.safeParse(req.params);
+      const body = z
+        .object({
+          reservationId: z.string().min(1).max(100),
+          token: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .safeParse(req.body);
+      if (!params.success || !body.success)
+        return reply.status(400).send({ error: 'Invalid request' });
+      // tenant-scoping: global — resolve the public slug only; consent access then requires
+      // the matching restaurant, reservation ID and withdrawal token (no booking data exposed).
+      const restaurant = await db.restaurant.findUnique({
+        where: { slug: params.data.slug },
+        select: { id: true },
+      });
+      if (!restaurant) return reply.status(404).send({ error: 'Not found' });
+      const outcome = await withdrawWhatsAppReminderConsent(
+        db,
+        restaurant.id,
+        body.data.reservationId,
+        body.data.token,
+      );
+      if (outcome === 'not_found') return reply.status(404).send({ error: 'Not found' });
+      if (outcome === 'conflict') return reply.status(409).send({ error: 'Veuillez réessayer.' });
+      return reply.send({ status: 'withdrawn' });
     },
   );
 

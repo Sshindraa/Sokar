@@ -6,7 +6,10 @@ import {
   type StructuredTurnOutput,
 } from '../stream/structured-turn/schema';
 import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
-import { isVoiceUnderstandingCheckEnabled } from '../stream/feature-flags';
+import {
+  isVoiceExpressionToneEnabled,
+  isVoiceUnderstandingCheckEnabled,
+} from '../stream/feature-flags';
 import {
   applyProposedDraft,
   authorizeStructuredAction,
@@ -16,6 +19,7 @@ import {
   outsideOpeningHoursFact,
   reconcileSpelledName,
   requestedSlotConflict,
+  sizesWithoutTable,
   spelledLettersOf,
   spelledNameFact,
   todayInTimezone,
@@ -163,6 +167,82 @@ describe('vérification de compréhension', () => {
   });
 });
 
+describe('ton de voix (balise d’expression ElevenLabs)', () => {
+  it('schéma : tone vient juste avant say, seulement avec le drapeau, dans une liste courte', () => {
+    const on = buildStructuredTurnJsonSchema(undefined, { tone: true });
+    const keys = Object.keys(on.properties);
+    expect(keys.indexOf('tone')).toBe(keys.indexOf('say') - 1);
+    expect(on.required).toContain('tone');
+    expect((on.properties as unknown as Record<string, { enum?: string[] }>).tone.enum).toEqual([
+      'none',
+      'cheerful',
+      'apologetic',
+      'amused',
+      'reassuring',
+    ]);
+    const off = buildStructuredTurnJsonSchema();
+    expect(Object.keys(off.properties)).not.toContain('tone');
+    expect(off.required).not.toContain('tone');
+  });
+
+  it('parse : garde un ton de la liste, ignore les autres', () => {
+    const withTone = output({ tone: 'apologetic' });
+    expect(parseStructuredTurnOutput(JSON.stringify(withTone))).toEqual(withTone);
+    const bad = { ...output(), tone: 'warm' };
+    expect(parseStructuredTurnOutput(JSON.stringify(bad))).not.toHaveProperty('tone');
+  });
+
+  it("le prompt n'ajoute les consignes de ton que sous le drapeau, sans phrase à imiter", () => {
+    const input = {
+      systemPrompt: 'Tu es un agent.',
+      history: [],
+      transcript: 'bonjour',
+      state: createStructuredTurnState(),
+    };
+    const off = buildStructuredTurnMessages(input)[0].content as string;
+    const on = buildStructuredTurnMessages({ ...input, tone: true })[0].content as string;
+    expect(off).not.toContain('TON DE VOIX');
+    expect(on).toContain('TON DE VOIX');
+    const block = on.slice(on.indexOf('TON DE VOIX'), on.indexOf('ÉTAT VÉRIFIÉ'));
+    expect(block).not.toMatch(/[«»]/);
+  });
+
+  it('drapeau par restaurant : vide = aucun', () => {
+    const env = { VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS: 'a, b' } as NodeJS.ProcessEnv;
+    expect(isVoiceExpressionToneEnabled('a', env)).toBe(true);
+    expect(isVoiceExpressionToneEnabled('c', env)).toBe(false);
+    expect(isVoiceExpressionToneEnabled(undefined, env)).toBe(false);
+    expect(isVoiceExpressionToneEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+describe('consigne de suite du second passage', () => {
+  const systemOf = (actionResult: string, formulation = false) =>
+    String(
+      buildStructuredTurnMessages({
+        systemPrompt: 'Système.',
+        history: [],
+        transcript: 'vers vingt heures',
+        state: createStructuredTurnState(),
+        actionResult,
+        formulation,
+      })[0]?.content,
+    );
+
+  it("une consigne de suite n'est pas un résultat d'action à annoncer", () => {
+    const system = systemOf("Tu redemandes ce qui est déjà retenu : l'heure (20:00).", true);
+    expect(system).toContain('CONSIGNE DE SUITE');
+    expect(system).not.toContain("RÉSULTAT D'ACTION (déjà exécutée");
+    expect(system).not.toContain('Annonce le résultat');
+  });
+
+  it('un résultat d’action garde son gabarit', () => {
+    const system = systemOf('Réservation créée.');
+    expect(system).toContain("RÉSULTAT D'ACTION");
+    expect(system).toContain('Annonce le résultat');
+  });
+});
+
 describe('applyProposedDraft', () => {
   const today = '2026-09-26';
 
@@ -188,6 +268,103 @@ describe('applyProposedDraft', () => {
         today,
       }).draft,
     ).toEqual(blank);
+  });
+});
+
+describe('authorizeStructuredAction : congé après la réservation', () => {
+  const draft = { date: '2026-09-27', time: '20:00', partySize: 2, customerName: 'Houet' };
+  const created = () => ({ ...createStructuredTurnState(), reservationCreated: true });
+  const decide = (
+    state: ReturnType<typeof createStructuredTurnState>,
+    extra: Partial<ReturnType<typeof output>>,
+    transcriptWords?: number,
+  ) =>
+    authorizeStructuredAction(state, output({ action: 'end_call', ...extra }), draft, {
+      maxPartySize: 7,
+      ...(transcriptWords !== undefined ? { transcriptWords } : {}),
+    });
+
+  it('un énoncé court que le modèle ne comprend pas est un au revoir mal transcrit : on raccroche', () => {
+    expect(decide(created(), { understanding: 'doubtful' }, 2)).toEqual({ allowed: true });
+    expect(decide(created(), { understanding: 'doubtful' }, 6)).toEqual({ allowed: true });
+  });
+
+  it('un mot mal transcrit donne une confiance faible : le congé court passe quand même', () => {
+    // Mesuré à travers le moteur : sans cela « dix nous » ne raccrochait jamais (0 % sur 12 tirages).
+    expect(decide(created(), { understanding: 'doubtful', confidence: 'low' }, 2)).toEqual({
+      allowed: true,
+    });
+    expect(decide(created(), { confidence: 'low', interpretation: 'unclear' }, 2)).toEqual({
+      allowed: true,
+    });
+  });
+
+  it('la confiance faible refuse toujours un congé long, ou après une question, ou sans réservation', () => {
+    expect(decide(created(), { confidence: 'low' }, 9)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+    expect(decide({ ...created(), lastAwaiting: 'open' }, { confidence: 'low' }, 2)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+    expect(decide(createStructuredTurnState(), { confidence: 'low' }, 2)).toEqual({
+      allowed: false,
+      reason: 'low_confidence',
+    });
+  });
+
+  it('un énoncé long jugé douteux n’est pas un au revoir : refusé', () => {
+    expect(decide(created(), { understanding: 'doubtful' }, 7)).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+    // Nombre de mots inconnu : prudence, refusé.
+    expect(decide(created(), { understanding: 'doubtful' })).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+  });
+
+  it('après une question ouverte de l’agent (« Autre chose ? »), un court énoncé douteux est peut-être une vraie question : refusé', () => {
+    for (const lastAwaiting of ['open', 'date', 'confirmation', 'customerName'] as const) {
+      const state = { ...created(), lastAwaiting };
+      expect(decide(state, { understanding: 'doubtful' }, 2)).toEqual({
+        allowed: false,
+        reason: 'doubtful_understanding',
+      });
+    }
+    // Un congé que le modèle a compris reste autorisé après une question ouverte.
+    expect(decide({ ...created(), lastAwaiting: 'open' }, { understanding: 'clear' }, 2)).toEqual({
+      allowed: true,
+    });
+  });
+
+  it('sans réservation créée, un doute reste un doute : rien ne se ferme', () => {
+    expect(decide(createStructuredTurnState(), { understanding: 'doubtful' }, 2)).toEqual({
+      allowed: false,
+      reason: 'doubtful_understanding',
+    });
+  });
+
+  it('l’exception ne vaut que pour le congé, pas pour une autre action', () => {
+    for (const action of ['check_availability', 'take_message', 'transfer'] as const) {
+      expect(decide(created(), { action, understanding: 'doubtful' }, 2)).toEqual({
+        allowed: false,
+        reason: 'doubtful_understanding',
+      });
+    }
+  });
+
+  it('sans vérification de compréhension : un congé long que le modèle dit ne pas avoir compris est refusé', () => {
+    expect(decide(created(), { interpretation: 'unclear' }, 12)).toEqual({
+      allowed: false,
+      reason: 'long_unclear_farewell',
+    });
+    expect(decide(created(), { interpretation: 'unclear' }, 2)).toEqual({ allowed: true });
+    expect(decide(created(), { interpretation: 'end_call', understanding: 'clear' }, 12)).toEqual({
+      allowed: true,
+    });
   });
 });
 
@@ -316,6 +493,47 @@ describe('outsideOpeningHoursFact', () => {
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '11:00' })).not.toBeNull();
   });
 
+  it('reconnaît aussi les heures hors service entre le déjeuner et le dîner', () => {
+    const splitHours = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        services: [
+          { open: '12:00', close: '14:30' },
+          { open: '19:00', close: '22:30' },
+        ],
+      },
+    };
+    expect(outsideOpeningHoursFact(splitHours, { date: '2026-10-06', time: '16:00' })).toContain(
+      '(12:00–14:30 puis 19:00–22:30)',
+    );
+    expect(outsideOpeningHoursFact(splitHours, { date: '2026-10-06', time: '20:00' })).toBeNull();
+  });
+
+  it('refuse une heure après la dernière réservation fixée du service', () => {
+    const withLastBooking = {
+      tue: {
+        open: '12:00',
+        close: '22:30',
+        slots: [
+          { open: '12:00', close: '14:30', lastBooking: '14:00' },
+          { open: '19:00', close: '22:30', lastBooking: '21:30' },
+        ],
+      },
+    };
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '22:00' }),
+    ).toContain('après la dernière réservation du mardi pour ce service (21:30');
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '14:30' }),
+    ).toContain("jusqu'à 14:00");
+    expect(
+      outsideOpeningHoursFact(withLastBooking, { date: '2026-10-06', time: '21:30' }),
+    ).toBeNull();
+    // Sans dernière réservation fixée, le comportement historique est conservé.
+    expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();
+  });
+
   it('reste muet quand tout est compatible ou inconnu', () => {
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '12:00' })).toBeNull();
     expect(outsideOpeningHoursFact(hours, { date: '2026-10-06', time: '14:30' })).toBeNull();
@@ -426,6 +644,39 @@ describe('reconcileSpelledName', () => {
     expect(fact('Hoët', 'h o u e t', 'date')).toBeNull();
   });
 
+  it('a clear spelling wins over the model name even at equal length (a digit read as a letter)', () => {
+    // « a 2 k i f » : le modèle lit parfois le « 2 » comme un second A (même longueur, une lettre fausse).
+    expect(
+      reconcileSpelledName(draft('AAKIF'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('AKKIF');
+    expect(
+      reconcileSpelledName(draft('Aakif'), 'au nom de a 2 k i f', 'customerName').customerName,
+    ).toBe('Akkif');
+    // Toutes les lectures enregistrées d'un même énoncé aboutissent aux mêmes lettres.
+    for (const read of ['A2KIF', 'AKIF', 'AAKIF', 'AKKIF', 'Akkif']) {
+      const fixed = reconcileSpelledName(draft(read), 'au nom de a 2 k i f', 'customerName');
+      expect(fixed.customerName.toUpperCase()).toBe('AKKIF');
+    }
+    expect(spelledNameFact('AAKIF', 'a 2 k i f', 'customerName')).toContain(
+      'customerName = « AKKIF »',
+    );
+  });
+
+  it('keeps the model name when the spelling is ambiguous or the names are too different', () => {
+    // Deux épellations dans la phrase : laquelle est la bonne n'est pas une question de code.
+    expect(
+      reconcileSpelledName(draft('HOUET'), 'h o u e t non h a u e t', 'customerName').customerName,
+    ).toBe('HOUET');
+    // Même longueur mais un autre nom : le modèle sait peut-être ce qu'il fait.
+    expect(reconcileSpelledName(draft('MARTI'), 'h o u e t', 'customerName').customerName).toBe(
+      'MARTI',
+    );
+    // Un nom déjà connu avant ce tour (assemblé sur plusieurs tours) n'est pas remplacé à longueur égale.
+    expect(
+      reconcileSpelledName(draft('AAKIF'), 'a 2 k i f', 'customerName', 'DURAND').customerName,
+    ).toBe('AAKIF');
+  });
+
   it('does nothing when no name was being asked for', () => {
     expect(reconcileSpelledName(draft('Hoët'), 'h o u e t', 'date').customerName).toBe('Hoët');
   });
@@ -486,5 +737,46 @@ describe('reprise de la fin du nom après la relecture (épellation partielle)',
     expect(fact).toContain('HOUET');
     expect(fact).toContain('HOUTE');
     expect(spelledNameFact('HOUET', 'e t', 'customerNameConfirmation', 'HOUT')).toBeNull();
+  });
+});
+
+describe('aucune table pour ce nombre, distinct de « complet ce jour-là » (appel 03b19223)', () => {
+  const ranges = [
+    { capacity: 2, minCapacity: 1 },
+    { capacity: 4, minCapacity: 1 },
+    { capacity: 6, minCapacity: 2 },
+  ];
+
+  it('liste les tailles qu’aucune table n’accueille, avec le critère de la disponibilité', () => {
+    expect(sizesWithoutTable(ranges, 10)).toEqual([7, 8, 9, 10]);
+    // Une table qui n’accueille qu’à partir de 4 laisse un trou en dessous.
+    expect(sizesWithoutTable([{ capacity: 6, minCapacity: 4 }], 7)).toEqual([1, 2, 3, 7]);
+    // Aucune table connue : rien n’est affirmé.
+    expect(sizesWithoutTable([], 10)).toEqual([]);
+  });
+
+  it('le dit au modèle par une ligne « aucune table », et « aucun » reste pour le jour complet', () => {
+    const state = createStructuredTurnState();
+    state.draft = { date: '2026-10-03', time: '20:00', partySize: 7, customerName: '' };
+    state.dayAvailability = {
+      date: '2026-10-03',
+      closed: false,
+      slotsBySize: { 1: ['20:00'], 2: [], 3: [], 4: ['20:00'], 5: [], 6: [], 7: [], 8: [] },
+      noTableSizes: [7, 8],
+    };
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: 'Prompt',
+      history: [],
+      transcript: 'on sera sept',
+      state,
+    });
+    const verified = JSON.parse(String(system.content).split('ÉTAT VÉRIFIÉ : ')[1].split('\n')[0]);
+    expect(verified.dayAvailability.freeSlotsByPartySize).toEqual({
+      '1': '20:00',
+      '2-3': 'aucun',
+      '4': '20:00',
+      '5-6': 'aucun',
+      '7-8': 'aucune table',
+    });
   });
 });

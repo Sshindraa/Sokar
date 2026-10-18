@@ -100,7 +100,7 @@ export type NotificationProviderMetricResult =
   | 'reconciled_unknown';
 
 export function recordNotificationProviderResult(
-  provider: 'telnyx' | 'resend',
+  provider: 'telnyx' | 'resend' | 'meta',
   channel: 'sms' | 'whatsapp' | 'email',
   result: NotificationProviderMetricResult,
 ): void {
@@ -278,6 +278,18 @@ export const voiceNoiseSuppressionTotal = new Counter({
   labelNames: ['engine', 'outcome'] as const,
   registers: [getRegistry()],
 });
+/**
+ * Échecs d'un tour TTS en contexte (WebSocket). `outcome` : `http_fallback` (aucun son encore envoyé,
+ * la réponse repart par le chemin HTTP), `audio_cut` (la réponse s'arrête en cours de route, sans repli),
+ * `skipped` (l'appel n'attendait plus de voix). Le repli HTTP ne se supprime qu'au vu de ce compteur.
+ */
+export const voiceTtsContextFailureTotal = new Counter({
+  name: 'sokar_voice_tts_context_failure_total',
+  help: 'Échecs du TTS en contexte (WebSocket) par fournisseur et issue',
+  labelNames: ['provider', 'outcome'] as const,
+  registers: [getRegistry()],
+});
+
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
   // de distinguer nos séries des métriques système dans un dashboard.
@@ -570,6 +582,18 @@ export const voiceStructuredSpeculationLaunchTotal = new Counter({
   name: 'sokar_voice_structured_speculation_launch_total',
   help: 'Structured-turn speculative requests: started, or capped by the per-turn launch limit',
   labelNames: ['result'] as const,
+  registers: [getRegistry()],
+});
+export const voiceTurnJudgeTotal = new Counter({
+  name: 'sokar_voice_turn_judge_total',
+  help: 'Turn-end judge verdicts: complete, incomplete, or unavailable (timeout, error, invalid) which falls back to turnComplete',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+export const voiceTurnJudgeDurationMs = new Histogram({
+  name: 'sokar_voice_turn_judge_duration_ms',
+  help: 'Duration of the separate turn-end judge request (ms), judged or not',
+  buckets: [50, 100, 200, 300, 500, 800, 1500],
   registers: [getRegistry()],
 });
 export const voiceSemanticAgreementTotal = new Counter({
@@ -932,6 +956,7 @@ export function __resetMetrics(): void {
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  voiceTtsContextFailureTotal.reset();
   voiceSttAudioMessagesTotal.reset();
   voiceSttChunkBytes.reset();
   voiceSttProviderAudioMessagesTotal.reset();

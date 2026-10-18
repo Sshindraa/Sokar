@@ -21,6 +21,25 @@ function canWriteCustomerNotes(siteRole: string | undefined): boolean {
   return siteRole === 'OWNER' || siteRole === 'MANAGER';
 }
 
+/**
+ * Filtre de recherche : le nom (sans tenir compte de la casse) ou le numéro. Les numéros sont stockés en
+ * E.164 (« +33612345678 ») alors qu'on tape « 06 12 34 56 78 » : on compare les chiffres, avec et sans le
+ * 0 de tête, pour qu'une saisie française entière ou partielle retrouve le client.
+ */
+export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereInput[] {
+  const filters: Prisma.CustomerWhereInput[] = [
+    { name: { contains: search, mode: 'insensitive' } },
+  ];
+  const digits = search.replace(/\D/g, '');
+  if (digits.length >= 2) {
+    const variants = new Set([digits, digits.replace(/^0+/, '')]);
+    for (const variant of variants) {
+      if (variant.length >= 2) filters.push({ phone: { contains: variant } });
+    }
+  }
+  return filters;
+}
+
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
     '/customers',
@@ -28,8 +47,16 @@ export async function customerRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const query = CustomerQuerySchema.parse(req.query);
       const restaurantId = req.restaurantId;
-      const where: Prisma.CustomerWhereInput = { restaurantId };
+      // Profils archivés exclus : un client effacé au titre du RGPD (nom « ANON », téléphone « erased:… »)
+      // et un profil source déjà fusionné ne sont plus des clients. Le CRM et la segmentation
+      // appliquent déjà la même règle ; le total suit puisqu'il partage ce `where`.
+      const where: Prisma.CustomerWhereInput = {
+        restaurantId,
+        archivedAt: null,
+        mergedIntoId: null,
+      };
       if (query.phone) where.phone = query.phone;
+      if (query.search) where.OR = buildCustomerSearchFilter(query.search);
 
       const [customers, total, restaurant] = await Promise.all([
         db.customer.findMany({

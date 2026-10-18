@@ -20,6 +20,18 @@
 - Deploy scripts fail-fast if a critical `.env` is missing (API, dashboard, connect).
 - `packages/database/.env` is the only intentional duplicate: Prisma CLI does not follow symlinks and does not read `.env.local` from the root.
 
+### Recherche d'établissement Google Places
+
+- La recherche facultative d'établissement utilise `GOOGLE_PLACES_API_KEY` côté API uniquement.
+  Activer Places API (New) et restreindre la clé à cette API et aux IP des serveurs; ne jamais la
+  exposer dans `NEXT_PUBLIC_*` ou le navigateur.
+- L'API onboarding reste fermée tant que `GOOGLE_PLACES_ONBOARDING_ENABLED` n'est pas explicitement
+  à `true`; sa valeur d'exemple est `false`.
+- Les résultats de Places ont des règles d'attribution et de conservation propres à Google Maps.
+  Avant activation en production, valider les conditions EEE, la conservation des champs importés,
+  l'attribution, l'usage conjoint avec la carte OpenStreetMap de Connect et les mentions publiques
+  de conditions d'utilisation et de confidentialité.
+
 ## MCP et OAuth
 
 - `OAUTH_ISSUER_URL` est une URL validée au démarrage. En son absence, `API_URL` sert d'issuer ;
@@ -32,14 +44,14 @@
 
 ## Files
 
-| File                         | Role                                                              |
-| ---------------------------- | ----------------------------------------------------------------- |
-| `.env.local` (root)          | `DATABASE_URL`, `REDIS_URL`, `POSTGRES_PASSWORD`                  |
-| `packages/database/.env`     | `DATABASE_URL` for Prisma CLI (`db:push`, `db:seed`, `db:studio`) |
-| `apps/connect/.env`          | Connect dev vars (`SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`)   |
-| `apps/api/.env` (prod)       | All API vars (Telnyx, ElevenLabs, Cartesia, DB, Redis, etc.)      |
-| `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
-| `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
+| File                         | Role                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `.env.local` (root)          | `DATABASE_URL`, `REDIS_URL`, `POSTGRES_PASSWORD`                                  |
+| `packages/database/.env`     | `DATABASE_URL` for Prisma CLI (`db:push`, `db:seed`, `db:studio`)                 |
+| `apps/connect/.env`          | Connect dev vars (`SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `PUBLIC_API_URL`) |
+| `apps/api/.env` (prod)       | All API vars (Telnyx, Deepgram, Cartesia, DB, Redis, etc.)                        |
+| `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                                     |
+| `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`                     |
 
 ## Base de données locale
 
@@ -77,6 +89,21 @@ Git et ne doivent jamais être créés dans le dépôt ou copiés dans le naviga
 La production utilise un secret live séparé ; le workflow de production ne
 réutilise pas la clé staging.
 
+### Numéros Telnyx (admin Provisioning)
+
+L'attribution d'un numéro à un restaurant (`POST /admin/provisioning/:id/assign-phone`) relie
+le numéro à l'application voix Telnyx avec `TELNYX_CONNECTION_ID` (l'identifiant de
+l'application Call Control qui envoie les appels à `/voice/telnyx`). Sans cette variable, ou si
+le numéro est saisi à la main plutôt que choisi dans l'inventaire, le numéro est attribué dans
+Sokar mais ne reçoit aucun appel : la page Provisioning affiche alors un avertissement et il
+faut le relier dans le portail Telnyx. `TELNYX_APP_ID` figure dans les exemples mais n'est lu
+par aucun code ; il désigne probablement le même identifiant, à confirmer dans le portail avant
+de les fusionner.
+
+La liste des numéros vient du compte Telnyx (toutes les pages). Sans `TELNYX_API_KEY`, un jeu de
+numéros fictifs n'est proposé qu'en développement ; ailleurs, la liste est vide et la page
+l'indique.
+
 ### Alerting de production
 
 Les secrets GitHub de l’environnement `production` (et, si souhaité, `staging`)
@@ -85,6 +112,71 @@ peuvent fournir `SENTRY_DSN`, `ALERT_EMAIL_TO`, `ALERT_WEBHOOK_URL` et
 afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
+
+### Régulation Resend (préparation locale du 16 octobre 2026)
+
+Le transport partagé régule les créations et les lectures d'e-mails : un départ au
+plus toutes les 150 ms, coordonné par Redis entre API et workers. Il attend au plus
+5 secondes avant de refuser une requête qui n'a pas encore contacté Resend.
+Une panne Redis refuse également l'admission ; aucun envoi différé ne survient après
+ce refus. Les jobs persistants conservent leurs mécanismes de reprise existants ;
+un appel direct (dont la notification démo) peut rester en échec, sans reprise ajoutée.
+Un timeout fournisseur reste ambigu : pas de rejeu automatique ajouté par le transport.
+
+Par défaut, la coordination utilise `redisCache` de l'environnement. Si plusieurs
+environnements partagent la même équipe Resend, définir **le même**
+`RESEND_RATE_LIMIT_REDIS_URL` (URL Redis secrète, même base logique) dans chaque
+processus API/worker concerné. Le raccordement préparé localement transmet le secret
+GitHub `RESEND_RATE_LIMIT_REDIS_URL` via les deux workflows et
+`scripts/ops/sync-alerting-config.sh`. Une valeur absente conserve l'existant ; une
+valeur fournie doit désigner explicitement une base (`redis[s]://hôte:port/numéro`),
+sans espaces, fragment, paramètres ni caractères nécessitant une citation dotenv.
+Encoder les caractères réservés des identifiants dans l'URL.
+
+Constat du 16 octobre 2026 après autorisation : secret **de dépôt** configuré
+(le workflow staging n'est lié à aucun environnement GitHub), valeur commune ajoutée
+aux deux `.env` API, permissions 0600. Coordination sur la base cache 1 du Redis
+existant, clé de régulation dédiée ; bases sessions/files et clés métier inchangées.
+Test isolé sur le serveur avec deux clients lisant ces configurations : 30 admissions,
+espacement minimum 150 ms, clé temporaire supprimée, aucun appel Resend.
+Mise à jour après livraison : PR #463 fusionnée, commit `e5eb3520` livré en staging
+puis production après CI et smoke tests verts. API et workers en ligne, santé
+base/Redis/files OK. Clé staging distincte créée sur confirmation spécifique,
+Sending access limité à `sokar.tech`, secret `RESEND_API_KEY_STAGING` et `.env`
+staging configurés ; clé production et allowlist inchangées. Le nouvel artefact
+staging a groupé deux alertes dans un e-mail accepté vers l'adresse de test
+fournisseur, puis supprimé leur répétition. Admission production vérifiée sans
+appel fournisseur. Les erreurs et jobs historiques ne sont ni purgés ni corrigés.
+Voir `docs/runbooks/resend-alert-regulation.md` pour la qualification et le retour arrière.
+
+Retour arrière de cette préparation : les trois entrées de coordination étaient
+absentes avant l'opération. Retirer uniquement la variable ajoutée des deux `.env`
+et le secret de dépôt homonyme, après vérification qu'ils n'ont pas été modifiés
+depuis. Ne pas restaurer un `.env` complet ni effacer les autres paramètres.
+Ne pas le déduire de la clé API : plusieurs clés peuvent partager la limite d'une
+équipe. Les appels hors de ce transport (console, scripts externes) ne sont pas régulés.
+La marge sous 10 req/s ne garantit pas l'absence de 429 et n'augmente aucun quota.
+
+Le worker `system-health` groupe les findings éligibles du tick dans un e-mail.
+Rappel e-mail après deux heures par `(kind, identifier, severity)` ; une autre file
+ou une escalade critique possède une entrée distincte. Même après un bref retour
+à la normale, une réapparition de la même combinaison reste soumise à ce délai.
+Logs/Sentry, webhook et SMS conservent une cadence de 30 minutes, distincte du
+résultat e-mail. Une tentative refusée n'acquiert pas le rappel de deux heures :
+seulement un verrou court de 60 secondes, puis réévaluation au tick suivant.
+Les autres émetteurs d'alertes, dont `alert-evaluation`, gardent leur cadence actuelle.
+Aucune file historique n'est purgée ni rejouée, aucun incident n'est corrigé par ce regroupement.
+
+### Notification des demandes de démonstration
+
+`DEMO_REQUEST_NOTIFY_TO` (adresses séparées par des virgules) reçoit une notification pour chaque
+demande envoyée depuis `/demo`. Sans valeur, aucune notification n'est envoyée : la demande reste
+enregistrée et apparaît comme « Notification non envoyée » dans `/dashboard/admin/demo-requests`.
+L'envoi utilise `RESEND_API_KEY` et `EMAIL_FROM`. Le destinataire est choisi par le responsable
+commercial avant l'ouverture de la vitrine. Il se définit comme secret GitHub
+`DEMO_REQUEST_NOTIFY_TO` des environnements staging et production ; le script
+`scripts/ops/sync-demo-request-config.sh` le copie dans le `.env` de l'API à chaque
+déploiement, sans l'afficher. Sans secret, la configuration existante est conservée.
 
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
 notification client et ne peuvent pas limiter la consommation d'un restaurant.
@@ -130,15 +222,28 @@ la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEX
 Les variables suivantes sont nécessaires uniquement pour le contrôle marketing CRM en local ou en
 staging contrôlé. Elles ne doivent jamais être committées ni exposées au dashboard :
 
-| Variable                         | Rôle et défaut sûr                                                                                                                                    |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                |
-| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                    |
-| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                               |
-| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                           |
-| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                            |
-| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                              |
-| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner). |
+| Variable                         | Rôle et défaut sûr                                                                                                                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
+| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
+| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
+| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
+| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
+| `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
+| `TELNYX_WHATSAPP_FROM`           | Expediteur WhatsApp dedie requis, distinct de la configuration voix ; aucun repli implicite sur `TELNYX_FROM_NUMBER`. Voir `whatsapp-reservation-activation.md`.                                                                   |
+| `WHATSAPP_PROVIDER`              | `telnyx` par defaut ; `meta` selectionne la Cloud API directe, sans modifier les SMS/voix.                                                                                                                                         |
+| `WHATSAPP_CONSENT_ENABLED`       | `false` par defaut ; autorise la collecte facultative de l'accord pour le rappel dans les deux parcours web. Ne declenche pas d'envoi a lui seul.                                                                                  |
+| `RESERVATION_MANAGEMENT_ENABLED` | `false` par defaut. Page personnelle et lien dans la confirmation SMS/web ; requiert cle et routage Dashboard qualifies. Voir `reservation-management.md`.                                                                         |
+| `RESERVATION_MANAGEMENT_SECRET`  | Secret dedie aleatoire 32 octets, encode en 64 caracteres hexadecimaux, `key_env` uniquement. Identique API/workers, stable entre releases ; rotation = invalidation des liens existants. Aucun secret reel configure dans ce lot. |
+| `META_WHATSAPP_ACCESS_TOKEN`     | Secret du compte Meta direct (`key_env` uniquement), absent tant que le compte n'est pas qualifie. Ne pas utiliser la cle Telnyx.                                                                                                  |
+| `META_WHATSAPP_PHONE_NUMBER_ID`  | Identifiant Meta du numero, pas le numero de telephone ni le WABA.                                                                                                                                                                 |
+| `META_WHATSAPP_GRAPH_VERSION`    | Version Graph explicite au format `vN.N`, a qualifier avant activation ; pas de selection automatique de version.                                                                                                                  |
+| `META_WHATSAPP_WEBHOOK_ENABLED`  | `false` par defaut. Active uniquement les callbacks signes `/webhooks/meta/whatsapp`, pas les envois.                                                                                                                              |
+| `META_WHATSAPP_APP_SECRET`       | Secret d'application Meta, `key_env` uniquement ; HMAC SHA-256 du corps brut obligatoire.                                                                                                                                          |
+| `META_WHATSAPP_VERIFY_TOKEN`     | Secret aleatoire de verification de l'abonnement GET, `key_env` uniquement. Ne jamais copier une URL contenant ce secret dans les logs ou captures.                                                                                |
+| `META_WHATSAPP_WABA_ID`          | Identifiant du compte WhatsApp autorise pour les callbacks ; filtre cumule avec `META_WHATSAPP_PHONE_NUMBER_ID`.                                                                                                                   |
+| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                                                                                                           |
+| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner).                                                                              |
 
 ### POS, paiements et CRM groupe en qualification
 
@@ -152,7 +257,8 @@ suivis tant qu'un pilote n'a pas produit ses preuves externes :
 | `CUSTOMER_GROUPS_ENABLED`      | `false`    | API d'identité de groupe Multi-site, sous consentement ; aucun rapprochement automatique ni campagne inter-sites n'est activé.                                                   |
 | `REPUTATION_ENABLED`           | `false`    | Demandes de feedback post-visite et récupération locale ; aucun envoi ni fournisseur d'avis n'est déclenché par le socle.                                                        |
 | `LOYALTY_ENABLED`              | `false`    | Catalogue d'avantages et grants à code hashé ; aucun point, envoi, POS ou débit n'est déclenché par le socle.                                                                    |
-| `EXPERIENCES_ENABLED`          | `false`    | Catalogue, sessions, capacité et réservations d'expériences ; aucun paiement, widget, téléphone ou canal événementiel externe n'est déclenché par le socle.                      |
+| `EXPERIENCES_ENABLED`          | `false`    | Catalogue et gestion interne des expériences, sessions et réservations.                                                                                                          |
+| `EXPERIENCE_BOOKING_ENABLED`   | `false`    | Parcours public de réservation et paiement intégral Stripe Connect ; exige aussi `EXPERIENCES_ENABLED=true`.                                                                     |
 | `EVENTS_ENABLED`               | `false`    | Catalogue, sessions, tarifs, jauges, billets, check-in et liste d'attente ; aucun paiement, facture fiscale, notification ou canal de distribution n'est déclenché par le socle. |
 | `DISTRIBUTION_ENABLED`         | `false`    | Connexions, snapshots, runs, liens et inbox webhook provider-neutral ; aucun OAuth, secret fournisseur, webhook public ou appel Google/Meta/API n'est déclenché par le socle.    |
 
@@ -193,7 +299,7 @@ VOICE_LLM_HEDGE_MS="700"
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
-Secours du tour structuré (restaurants de `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`) :
+Secours du tour structuré :
 si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
 réseau, circuit ouvert), la même requête JSON Schema stricte part vers
 OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
@@ -244,6 +350,10 @@ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
 # Métrique : sokar_voice_silence_guard_total{outcome=held|released_after_silence|released_at_cap}.
 VOICE_STT_SILENCE_GUARD_MS="350"
 VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
+# Pendant une épellation (nom attendu), la garde est plus longue : les pauses entre deux groupes de lettres
+# durent souvent plus d'une seconde (appel 8043662c : « …assam un » jugé fini à 428 ms de silence, le « a »
+# suivant perdu). Défaut 1200 ms ; 0 : la garde normale. Le report maximal est alors d'au moins ce délai + 600 ms.
+VOICE_STT_SPELLING_SILENCE_GUARD_MS="1200"
 # Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
 # que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
 # elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
@@ -284,10 +394,52 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # vérification de disponibilité) et le modèle redemande. Aucune liste de phrases : le jugement est celui du
 # modèle, dans le contexte. Change le schéma et le prompt de ces restaurants : activer d'abord Chez Sokar.
 VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS=""
+# Juge de fin de tour séparé (restaurants listés, vide = aucun) : une requête minimale (dernière question de
+# l'agent, parole de l'appelant, sortie {complete}) tourne en parallèle du passage anticipé ; son verdict
+# remplace `turnComplete` pour fermer le tour (clôture sémantique) et pour décider de répondre. Délai dépassé
+# ou erreur : `turnComplete` du modèle, comme sans le juge. Métriques : sokar_voice_turn_judge_total{outcome},
+# sokar_voice_turn_judge_duration_ms. Banc A/B : voir Journal du 2026-10-02. Activer d'abord Chez Sokar.
+VOICE_TURN_JUDGE_RESTAURANT_IDS=""
+# Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires, menu), saisis à
+# l'étape « Votre restaurant en pratique » de l'onboarding et ajoutés au prompt de l'assistant pour les
+# restaurants listés (identifiants séparés par des virgules). Vide = aucun : le prompt est alors identique
+# à avant. Sans fait pour une question, l'assistant ne devine pas et propose le gérant. Activer d'abord
+# Chez Sokar et comparer les appels avec questions pratiques avant d'élargir.
+VOICE_PRACTICAL_INFO_RESTAURANT_IDS=""
+# Style de la maison : les réglages « Style » (bistrot, semi-gastro, gastronomique) et « Ton de voix »
+# (chaleureux, naturel, formel) de l'étape « Consignes & démo » modifient la façon de parler de
+# l'assistant, pour les restaurants listés. Vide = aucun : prompt identique à avant. Le réglage par
+# défaut (bistrot, naturel) n'ajoute rien. Mesuré le 08/10/2026 (scripts/voice-style-ab.ts) : formel
+# et gastronomique nettement plus soignés, chaleureux peu distinct du défaut.
+# Coût observé (09/10/2026, juge = modèle de production, 6 comparaisons) : la maison gastronomique formelle est
+# jugée plus soignée que le défaut mais moins naturelle (4 contre 2). Pour un son le plus naturel, le réglage par
+# défaut (bistrot, naturel) reste la recommandation ; la maison est un choix du restaurant.
+VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
+# Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
+VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
 VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
+# Contexte Cartesia (une connexion par réponse) : faux par défaut, le chemin HTTP reste la référence.
+VOICE_TTS_CONTEXT_V2_ENABLED="false"
+# Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : faux en production, ne pas activer sans
+# écoute validée. Prioritaire sur le contexte Cartesia ; sans ELEVENLABS_API_KEY, repli automatique.
+VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+# Restaurants autorisés (ids séparés par des virgules). Il faut le drapeau ci-dessus à true ET le
+# restaurant dans cette liste : la liste seule ne suffit pas, le drapeau seul non plus. Vide = aucun.
+VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
+# Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique),
+# restaurant par restaurant. Sans effet hors ElevenLabs Dialogue. Vide = aucun.
+VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
+# Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
+# ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
+# Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait
+# refuser la connexion (code 1008) : chaque tour retombe alors sur le repli. Vérifier avant de poser.
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_ID=""
+# ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID=""
+# La langue de l'appel (`language_code`) et l'alignement par caractère (`sync_alignment`) sont toujours
+# envoyés : ils n'ont pas de variable.
 ```
 
 Relance quand l'appelant n'est pas entendu (appel c5d6b07d du 28 septembre : « euh…
@@ -304,7 +456,57 @@ sont activés pour le restaurant.
 VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS=""
 # Silence après une question de l'agent avant « Vous êtes toujours là ? » (3000–20000).
 VOICE_NO_INPUT_TIMEOUT_MS="7000"
+# La relance est formulée par le modèle à partir d'un fait (parole non comprise, silence, silence après
+# l'accueil), sans phrase codée ; la phrase « Pardon, je n'ai pas bien entendu… » ne sert plus que de dernier
+# recours (modèle indisponible, réponse vide ou qui demande une action). "false" ou "0" la rétablit seule.
+# Journal : [voice] No-input recovery, source=model|fixed.
+VOICE_RECOVERY_BY_MODEL="true"
+# Attente maximale de la phrase du modèle avant la phrase codée, abandon de la requête (500–5000, défaut 2000).
+# Mesuré : médiane 430 ms, un pic à 2,98 s sur 10 relances ; le hedge à 700 ms et la bascule à 2,5 s de première
+# réponse existaient déjà, mais aucune borne ne couvrait la relance entière. Journal : source=fixed_timeout.
+VOICE_RECOVERY_MAX_WAIT_MS="2000"
+# Genre de la voix par défaut (masculine | feminine), à lire dans les métadonnées de la voix chez le fournisseur
+# (ElevenLabs : champ labels.gender de ELEVENLABS_TTS_VOICE_ID). Quel que soit le fournisseur de synthèse.
+# Le prompt dit alors au modèle « Ta voix est … » pour qu'il accorde ce qui le qualifie (« Désolé » ou « Désolée »).
+# Vide : rien n'est dit. Ignoré pour un restaurant qui a sa propre voix (genre inconnu).
+# À changer avec la voix : un genre qui ne correspond plus à la voix fait accorder au mauvais genre.
+# Ancien nom CARTESIA_VOICE_GENDER : encore lu si VOICE_GENDER est absent ou vide.
+VOICE_GENDER=""
 ```
+
+#### Synthèse vocale du téléphone : Cartesia ou ElevenLabs
+
+Le choix du fournisseur de synthèse des appels est une variable. Cartesia reste le défaut ; la bascule et le retour
+arrière se font par ces seules variables, sans nouveau déploiement de code.
+
+```bash
+# cartesia (défaut) | elevenlabs
+VOICE_TTS_PROVIDER="cartesia"
+# Obligatoires seulement avec VOICE_TTS_PROVIDER=elevenlabs (en production : clé ≥20 caractères et voix).
+# ELEVENLABS_API_KEY : clé de production, fournie par l'environnement, jamais écrite dans le dépôt.
+# ELEVENLABS_TTS_VOICE_ID : identifiant de la voix ElevenLabs, à fournir au déploiement.
+# Défaut eleven_v4_turbo, le modèle mesuré au banc.
+ELEVENLABS_TTS_MODEL="eleven_v4_turbo"
+# Chemin WebSocket des tours en contexte (latence de dialogue), distinct et désactivé par défaut.
+VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+```
+
+- Le téléphone (tours HTTP, message d'accueil en cache) suit `VOICE_TTS_PROVIDER`. Le format de sortie est le G.711
+  natif de Telnyx (`alaw_8000` ou `ulaw_8000`) : aucun transcodage. La clé de cache commence par `elevenlabs|`.
+- `/health` contrôle ElevenLabs (clé et voix, par `GET /v1/voices/{id}`, sans audio) seulement avec
+  `VOICE_TTS_PROVIDER=elevenlabs` ; hors bascule, le check est `skipped`. Une panne passe `status` à
+  `degraded` sans 503, comme Telnyx et Cartesia.
+- `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
+  octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
+  arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
+- Le chemin WebSocket exige deux conditions : `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` ET le restaurant dans
+  `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`. Le drapeau seul ne bascule personne, et la liste seule non plus :
+  sans le drapeau, le restaurant reste sur la voix HTTP. Pour l'arrêter ou retirer un restaurant, modifier la
+  variable puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
+- `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
+  utilisent encore Cartesia.
+- Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur
+  `elevenlabs` ; le modèle indiqué dans cette comptabilité reste `ELEVENLABS_DIALOGUE_MODEL`.
 
 Les consignes `system` (prompt, langue, contexte de disponibilité) sont
 fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
@@ -327,10 +529,10 @@ VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 # Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
 # ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
 DEEPGRAM_API_HOST="api.deepgram.com"
-# Parcours vocal moderne par défaut : tour structuré, Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés
-# Deepgram et écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false
-# (seules les listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion ramène un restaurant à l'ancien
-# chemin (outils, Scribe) mais n'annule pas ses listes explicites. Le hedging suit le tour structuré.
+# Parcours vocal moderne par défaut : Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés Deepgram et
+# écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false (seules les
+# listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion retire ces trois réglages à un restaurant
+# (Scribe, sans Dialogue V2) mais n'annule pas ses listes explicites. Le tour structuré est toujours actif.
 VOICE_V2_DEFAULT="false"
 VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
@@ -476,6 +678,16 @@ Latence d'environ 4 s par tour, sans importance pour un job hebdomadaire. Les ap
 coût. Ces annotations restent des
 jugements de modèle et ne constituent pas une vérité humaine.
 
+> **Retiré le 3 octobre 2026.** Le shadow TurnPlan in-band, l'autorité TurnPlan, les tours
+> différés et le taux de shadow déterministe reposaient sur le mode à outils : leur code est
+> supprimé. `VOICE_TURN_PLAN_SHADOW_ENABLED`, `VOICE_TURN_PLAN_AUTHORITY_ENABLED`,
+> `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` et `VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` n'ont
+> plus d'effet et les métriques `sokar_voice_turn_plan_*` ne sont plus alimentées par les appels.
+> Le flag n'est plus lu nulle part, et il n'est plus posé par le workflow staging ni par
+> `sync-runtime-flags.sh`. Les paragraphes qui suivent décrivent l'ancien comportement et valent
+> pour l'historique des mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
+> `SPECULATIVE_LLM_ENABLED` / `SPECULATIVE_LLM_RESTAURANT_IDS` (pré-réflexion du chemin à outils).
+
 Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
 `false` le désactive partout. Il ajoute un outil interne à la completion vocale
 Cerebras/Qwen existante pour recevoir la proposition structurée avec la réponse
@@ -522,11 +734,11 @@ continue de comparer le plan à l'état déterministe seul. Décisions comptées
 `sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
 l'accord par dimension sur des appels réels.
 
-`VOICE_STRUCTURED_TURN_RESTAURANT_IDS` (IDs séparés par des virgules ; vide = aucun) fait
-passer les restaurants listés sur le **tour structuré** : un seul appel au modèle, en JSON
-Schema strict, comprend le tour (interprétation, brouillon, attente, action) et formule la
-réponse ; `say` est lu en streaming. Aucune règle lexicale du chemin historique ne
-s'applique à ces restaurants. Le code valide le format et la plausibilité des valeurs
+Le **tour structuré** est le seul parcours de dialogue vocal : le mode à outils (appel de
+fonctions, extracteurs lexicaux, relances déterministes, fillers, TurnPlan en autorité ou en
+shadow in-band) a été supprimé le 3 octobre 2026, et `VOICE_STRUCTURED_TURN_RESTAURANT_IDS`
+n'existe plus. Un seul appel au modèle, en JSON Schema strict, comprend le tour (interprétation,
+brouillon, attente, action) et formule la réponse ; `say` est lu en streaming. Le code valide le format et la plausibilité des valeurs
 (date dans l'horizon, heure, couverts, nom), exécute les actions autorisées
 (disponibilité réelle ; réservation seulement après un récapitulatif lu au tour précédent
 et accepté, sur un créneau vérifié ; message ; transfert ; fin d'appel) et rend leur
@@ -647,6 +859,14 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
 réseau de l'environnement et y poser la même valeur en variable d'environnement.
 
+`CALL_REPORT_ENABLED` (défaut `false`) construit après chaque appel d'un restaurant de
+`CALL_RECORDING_TEST_RESTAURANT_IDS` un rapport (JSON + Markdown) stocké à côté de l'enregistrement :
+transcriptions après coup Deepgram (Nova-3 et Whisper, environ 1 centime par appel), journaux de l'API
+lus dans `CALL_REPORT_LOG_DIR` (défaut `/var/log/sokar`, rotation 14 jours). Exige
+`CALL_RECORDING_ENABLED=true` et `DEEPGRAM_API_KEY` (le démarrage le vérifie) ; sans
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` le rapport est réduit. Aucun effet sur l'appel. Voir
+[`call-reports.md`](call-reports.md).
+
 Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
 user_explicit|user_tentative|correction}` ; les anciens `slots` restent lus comme `set` affirmé.
 Sous autorité, `set` remplit seulement un champ vide. `replace` corrige un fait d'origine
@@ -659,15 +879,18 @@ de réservation et la disponibilité. La provenance est stockée dans
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
-## Voice STT (ElevenLabs Scribe)
+## Voice STT (Deepgram)
 
-Deepgram Nova-3 est disponible en canary uniquement : `VOICE_STT_PROVIDER` vaut `scribe`
-par défaut, et `VOICE_STT_PROVIDER=deepgram` ne l'active que pour les identifiants présents
-dans `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV). La liste est résolue au début du Media Stream
-et reste figée pendant l'appel. Une erreur avant la première ouverture Deepgram bascule une
-seule fois vers Scribe ; aucune bascule provider n'a lieu au milieu d'un appel. La clé
-`DEEPGRAM_API_KEY` doit être présente dans l'environnement de l'API pour les restaurants
-canary. Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
+Deepgram Nova-3 est le fournisseur de reconnaissance en production : `VOICE_STT_PROVIDER=deepgram`,
+avec `VOICE_V2_DEFAULT=true` tous les restaurants y passent ; sans `VOICE_V2_DEFAULT`, seuls les
+identifiants de `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV) l'utilisent. Le fournisseur est résolu au début
+du Media Stream et reste figé pendant l'appel. **Il n'y a plus de secours vers ElevenLabs Scribe** : si
+Deepgram ne s'ouvre pas (clé refusée, clé absente, réseau), l'appel suit le chemin « reconnaissance
+indisponible » existant (reconnexions à 500 ms, 1 s puis 2 s, échéance de 15 s, puis le message vocal et le
+transfert ; un refus d'authentification est terminal tout de suite). La clé `DEEPGRAM_API_KEY` est
+obligatoire en production avec `VOICE_STT_PROVIDER=deepgram` ; `ELEVENLABS_API_KEY` n'est exigée que si
+`VOICE_STT_PROVIDER=scribe` (option conservée pour les bancs et les essais, plus utilisée en production).
+Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
 
 Le codec Telnyx reste PCMA par défaut. `VOICE_TELNYX_CODEC=L16` conserve le
 comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
@@ -689,9 +912,12 @@ La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullab
 passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
 et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
-### Clé et quota (état temporaire au 24/09/2026)
+### ElevenLabs : clé et quota (historique, état du 24/09/2026)
 
-La production et le staging partagent actuellement une seule clé ElevenLabs sur un
+ElevenLabs ne sert plus à la reconnaissance en production (voir plus haut). Le worker de suivi de solde ci-dessous
+lit encore `ELEVENLABS_API_KEY` : sans cette clé il échoue chaque heure.
+
+La production et le staging partageaient une seule clé ElevenLabs sur un
 compte gratuit. Le solde communiqué est de 6 172 caractères sur 10 000, avec une
 réinitialisation le 25/10/2026. Cette configuration est temporaire : la cible est un
 compte payant avec une clé distincte par environnement.
@@ -704,11 +930,12 @@ envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAl
 Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
 dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
 
-Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
+Les bancs utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du 14/10/2026,
+partagée prod, dev, staging et banc). Les autres clés de banc restent dédiées :
 
 | Variable                     | Usage                                                                                        |
 | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| **ELEVENLABS_BENCH_API_KEY** | Clé dédiée du banc STT, différente de ELEVENLABS_API_KEY                                     |
+| **ELEVENLABS_API_KEY**       | Clé unique : prod, dev, staging et bancs STT/TTS (décision du 14/10/2026)                    |
 | **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
 | **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
 | **CEREBRAS_BENCH_API_KEY**   | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                        |
@@ -821,3 +1048,107 @@ cleaned up 2026-09-21). Use the opt-in for staging only, never for production.
 - Tests locaux uniquement : `GIFT_CARD_FINANCE_TEST_DATABASE_URL`, base dédiée sur localhost.
 
 Voir [activation et qualification des cartes cadeaux](gift-card-financial-safety.md).
+
+### Réservation publique des expériences
+
+`EXPERIENCE_BOOKING_ENABLED` reste à `false` par défaut dans tous les environnements. Son ouverture
+ne suffit pas seule : `EXPERIENCES_ENABLED` doit aussi être activé, la page Sokar Connect doit être
+publiée, le compte Stripe Connect du restaurant doit autoriser les encaissements et versements, et
+Sokar doit avoir renseigné la commission de ce restaurant. Le réglage opérateur accepte un taux
+fractionnaire (`0.05` = 5 %) via `PATCH /api/internal/experiences/payment-config`; `null` retire le
+taux et bloque à nouveau le paiement. La route exige `requireSokarOperator`.
+
+La page publique utilise Stripe Checkout sur le compte connecté ; les places sont retenues pendant
+35 minutes et la réservation n'est confirmée que par webhook signé. Une annulation depuis le
+dashboard déclenche un remboursement total idempotent. Le webhook Connect doit transmettre les
+événements `checkout.session.completed`, `checkout.session.expired`, `refund.created`,
+`refund.updated` et `refund.failed` pour les comptes connectés ; conserver les secrets de webhook
+dans `STRIPE_WEBHOOK_SECRET`, jamais dans le dépôt.
+
+Avant d'ouvrir un pilote réel, faire la migration uniquement en staging, jouer les scénarios payé,
+abandonné, expiré, webhook rejoué, capacité concurrente et remboursement échoué avec des comptes et
+clés Stripe de test. La politique d'annulation côté client, les conditions de vente, le traitement
+TVA/facture, les emails de confirmation/notification et le rapprochement quotidien restent à
+qualifier. Garder le flag fermé tant que ces éléments et le parcours staging ne sont pas validés.
+
+## Fournisseurs de staging : trois blocs indépendants
+
+Staging n'envoie aucun e-mail, ne prend aucun appel et ne passe aucun appel de test tant que les réglages de
+chaque bloc ne sont pas fournis. Le workflow de staging transmet ces réglages à
+`scripts/ops/sync-staging-provider-config.sh`, qui les écrit dans le `.env` de staging. Le workflow de
+production ne lit aucun de ces réglages : une valeur de staging ne peut pas atteindre la production.
+
+Chaque bloc se valide seul. Un bloc ne conditionne pas les autres.
+
+### Bloc 1 : e-mail
+
+| Réglage                | Où le renseigner                        | Lu par         | Utilité                                                                    |
+| ---------------------- | --------------------------------------- | -------------- | -------------------------------------------------------------------------- |
+| `RESEND_API_KEY`       | secret `RESEND_API_KEY_STAGING`         | `shared/email` | Clé d'envoi Resend, dédiée à staging et limitée à l'envoi                  |
+| `EMAIL_FROM`           | variable `EMAIL_FROM_STAGING`           | `shared/email` | Expéditeur déjà vérifié : `noreply@sokar.tech` (production)                |
+| `EMAIL_TEST_ALLOWLIST` | variable `EMAIL_TEST_ALLOWLIST_STAGING` | `shared/email` | Seuls ces destinataires reçoivent un e-mail. Campagne : `hamza@sokar.tech` |
+
+Règles :
+
+- Un envoi vers une adresse hors liste n'appelle pas Resend et échoue sans relance. L'adresse n'est jamais journalisée.
+- Sans `EMAIL_TEST_ALLOWLIST`, il n'y a aucune restriction. Ne jamais retirer la liste tant qu'une campagne de test est en cours.
+
+### Bloc 2 : voix entrante
+
+| Réglage                | Où le renseigner                        | Lu par                       | Utilité                                                                   |
+| ---------------------- | --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `TELNYX_API_KEY`       | secret `TELNYX_API_KEY_STAGING`         | `shared/telnyx/client`       | Clé d'API Telnyx, dédiée à staging                                        |
+| `TELNYX_PUBLIC_KEY`    | secret `TELNYX_PUBLIC_KEY_STAGING`      | `voice/telnyx.guard`         | Vérifie la signature des webhooks. Sans elle, les événements sont rejetés |
+| `TELNYX_CONNECTION_ID` | variable `TELNYX_CONNECTION_ID_STAGING` | `admin/provisioning.service` | Application d'appel Telnyx de staging, rattachée au numéro de test        |
+
+Hors `.env` (à vérifier avec l'équipe) : `ELEVENLABS_API_KEY` (transcription), une clé LLM
+(`CEREBRAS_API_KEY` ou `OPENROUTER_API_KEY`), et `VOICE_DISABLED=false`, réglage critique à décider.
+
+Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.sokar.tech/voice/telnyx`.
+Le numéro de test est rattaché à cette application (provisioning, `assign-phone`). Ce numéro n'est jamais un
+numéro de production, ni le numéro public affiché sur le site.
+
+### Bloc 3 : appel de test sortant (provisioning)
+
+| Réglage                | Où le renseigner                        | Lu par                              | Utilité                                                                                    |
+| ---------------------- | --------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------ |
+| `TELNYX_FROM_NUMBER`   | secret `TELNYX_FROM_NUMBER_STAGING`     | `shared/telnyx/client`              | Numéro émetteur de l'appel de test (format E.164)                                          |
+| `TELNYX_SMS_FROM`      | optionnel                               | `shared/telnyx/client`              | Expéditeur SMS (numéro du profil de messagerie ou `SOKAR`) ; défaut : `TELNYX_FROM_NUMBER` |
+| `EMAIL_REPLY_TO`       | optionnel                               | `shared/email`                      | Adresse de réponse des e-mails ; défaut : `hello@sokar.tech`                               |
+| `TELNYX_CONNECTION_ID` | variable `TELNYX_CONNECTION_ID_STAGING` | `shared/telnyx/client`              | Application d'appel utilisée pour l'appel sortant (même que le bloc 2)                     |
+| `PUBLIC_API_URL`       | variable `PUBLIC_API_URL_STAGING`       | `admin/provisioning`, `restaurants` | Base des URL de webhook. Sans elle, le repli est la production                             |
+
+Le code de l'appel de test est corrigé dans cette livraison : `connection_id` est transmis, le webhook est
+`${PUBLIC_API_URL}/voice/telnyx`, et le message de test est joué au décroché puis l'appel est raccroché.
+Côté Telnyx, l'application de staging doit disposer d'un profil vocal sortant autorisant les destinations
+de test ; à confirmer dans le portail.
+
+### Règles de fourniture
+
+- Secrets : `pbpaste | gh secret set NOM --repo Sshindraa/Sokar`. Variables : `gh variable set NOM --repo Sshindraa/Sokar --body "valeur"`.
+  Aucune valeur ne transite par le chat ni par le dépôt.
+- Une variable vide ne modifie rien. Le script refuse une valeur hors format et n'affiche jamais de valeur.
+- Les réglages prennent effet au déploiement de staging qui suit un merge sur `main`.
+
+### Vérifications
+
+- `GET https://api-staging.sokar.tech/health` : `telnyx` à `ok` (bloc 2).
+- Le bloc 1 se vérifie par un envoi de test vers `hamza@sokar.tech` uniquement.
+- Le bloc 3 se vérifie par un appel de test réel, validé par le gérant (`validate-test-call`).
+
+### Identité opérateur staging
+
+`SOKAR_OPERATOR_USER_IDS_STAGING` est une variable GitHub dédiée aux identités de l’instance Clerk Development. Le workflow staging l’utilise en priorité, avec repli sur `SOKAR_OPERATOR_USER_IDS` pour les installations existantes. La production continue à utiliser uniquement `SOKAR_OPERATOR_USER_IDS`. Un identifiant Clerk de production ne désigne pas automatiquement le même compte en développement ; ne pas ajouter de compte à une liste sans autorisation explicite. Aucun identifiant personnel ne doit être consigné dans le dépôt.
+
+## Personal reservation SMS
+
+`RESERVATION_MANAGEMENT_ENABLED` defaults to false. `RESERVATION_MANAGEMENT_SECRET` is a stable key_env secret of 32 random bytes encoded as 64 hex characters, shared by API/workers. `TELNYX_SMS_FROM` optionally selects a dedicated SMS sender (for example the alphanumeric sender already configured in the messaging profile); when unset, the historical `TELNYX_FROM_NUMBER` is preserved. Voice always keeps its existing sender. See `reservation-management.md`.
+
+`TELNYX_SMS_WEBHOOK_URL` optionally overrides delivery callbacks per SMS with `use_profile_webhooks=false`, so a staging test does not report to the shared production profile webhook. It must point to the signed `/sms/telnyx/inbound` route on the intended environment. An accepted request/message ID is not proof of handset delivery; require the matching signed `message.finalized` receipt with `delivered` status and the tester’s reception report.
+
+`RESERVATION_SELF_CANCELLATION_ENABLED` defaults to false and requires personal
+reservation management to be enabled. Enable on staging only after qualification.
+This enables free cancellation before the frozen onboarding deadline, not payment
+collection or refunds. No migration is required. Turn it off to restore phone contact.
+
+`RESERVATION_SELF_MODIFICATION_ENABLED` defaults to false. It enables signed, explicitly confirmed same-day time/party-size modifications from personal reservation links. Requires `RESERVATION_MANAGEMENT_ENABLED` and reliable frozen free-cancellation terms; independent of the cancellation flag. The original reservation stays allocated until a successful atomic replacement. No additional SMS, payment or migration.

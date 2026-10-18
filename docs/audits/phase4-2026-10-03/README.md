@@ -1,0 +1,13 @@
+# Sokar — phase 4, finition de Réservations
+
+Les vues gardent les onglets, le tableau desktop et les cartes mobiles. La lecture commence maintenant par l’heure, puis le client, les couverts, le statut et la table. Le téléphone reste sous le nom ; le revenu est qualifié d’« estimé » et sort du tableau quand la largeur manque.
+
+| Écran     | Avant                                                                                                       | Après                                             | Résultat observé                                                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop   | [Phase 2](/Users/hamza/Projects/Sokar/docs/audits/phase2-2026-10-03/reservations-desktop-liste-remplie.png) | [Phase 4](reservations-desktop-liste-remplie.png) | Heure dominante, date complète en dessous, coordonnées rapprochées du nom ; les six statuts et les actions restent en place.          |
+| iPad      | [Phase 2](/Users/hamza/Projects/Sokar/docs/audits/phase2-2026-10-03/reservations-ipad-liste-remplie.png)    | [Phase 4](reservations-ipad-liste-remplie.png)    | Les colonnes secondaires se replient ; statut et actions essentielles tiennent dans la vue.                                           |
+| Téléphone | [Phase 2](/Users/hamza/Projects/Sokar/docs/audits/phase2-2026-10-03/reservations-mobile-liste-remplie.png)  | [Phase 4](reservations-mobile-liste-remplie.png)  | Heure visible avant la date ; couverts, table, statut et prochaine action se repèrent rapidement. Le revenu est explicitement estimé. |
+
+Cas vérifiés : [nom long desktop](reservations-desktop-nom-long.png), [nom long iPad](reservations-ipad-nom-long.png), [nom long téléphone](reservations-mobile-nom-long.png), [liste courte](reservations-mobile-liste-courte.png), [liste vide](reservations-desktop-liste-vide.png) et [erreur de chargement](reservations-mobile-erreur.png). Le nom long est tronqué visuellement dans les colonnes étroites mais reste présent en entier dans son attribut de titre ; sur mobile, l’ordre et les autres détails ne bougent pas.
+
+Les captures utilisent les réponses fictives interceptées par Playwright, sans requête API inattendue. [Manifeste et dimensions](manifest.json). Pour les reproduire avec un dashboard local sur `http://localhost:3100` : `UI_CAPTURE_PHASE=phase4 node apps/dashboard/scripts/capture-ui-phase0.mjs` depuis la racine.

@@ -30,8 +30,6 @@ const { mockMgr } = vi.hoisted(() => ({
     delete: vi.fn(),
     transition: vi.fn().mockReturnValue(true),
     handleBargeIn: vi.fn(),
-    processUtterance: vi.fn(),
-    processUtteranceStreaming: vi.fn().mockResolvedValue(''),
   },
 }));
 
@@ -45,10 +43,7 @@ vi.mock('../stream/stt-bridge', () => ({
   sendAudioToStt: vi.fn(),
   closeStt: vi.fn(),
   connectStt: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('../stream/fillers-cache', () => ({
-  playFiller: vi.fn().mockResolvedValue(undefined),
+  sttProviderId: vi.fn(() => 'deepgram'),
 }));
 
 vi.mock('../tts-cache', () => ({
@@ -106,8 +101,10 @@ import { buildInitialGreeting, registerMediaStreamRoutes } from '../stream/handl
 import { sendAudioToStt, closeStt } from '../stream/stt-bridge';
 
 describe('buildInitialGreeting', () => {
-  it('accueille naturellement sans identité virtuelle ni notice d’enregistrement', () => {
-    expect(buildInitialGreeting('Chez Michel')).toBe('Bonjour, ici Chez Michel. Je vous écoute.');
+  it('présente Léa, l’assistante IA, dès le décroché (règlement européen sur l’IA, article 50)', () => {
+    expect(buildInitialGreeting('Chez Michel')).toBe(
+      "Bonjour, ici Chez Michel, je suis Léa, l'assistante IA. Je vous écoute.",
+    );
   });
 });
 
@@ -252,6 +249,61 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     expect(session.telnyxWs).toBeDefined();
     // transition vers SPEAKING (pour le greeting)
     expect(mockMgr.transition).toHaveBeenCalledWith(session, 'SPEAKING');
+    ws.close();
+  });
+
+  it.each([
+    ['appel Telnyx', false, 1],
+    ['démonstration navigateur (aucun leg Telnyx à enregistrer)', true, 0],
+  ])(
+    'événement `start` (%s) : enregistrement de test démarré %i fois',
+    async (_label, demo, calls) => {
+      const { startTestCallRecording } = await import('../call-recording.service');
+      vi.mocked(startTestCallRecording).mockClear();
+      const session = { ...makeMockSession(), ...(demo ? { demo: true } : {}) };
+      mockMgr.get.mockReturnValue(session);
+
+      const ws = await connectWs(port, 'cc-ws-1');
+      await sendAndWait(ws, {
+        event: 'start',
+        start: {
+          call_control_id: 'cc-ws-1',
+          call_session_id: 'cs-ws-1',
+          from: 'x',
+          to: 'y',
+          media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+        },
+      });
+      await delay(100);
+
+      expect(startTestCallRecording).toHaveBeenCalledTimes(calls);
+      expect(mockMgr.transition).toHaveBeenCalledWith(session, 'SPEAKING'); // l'accueil est joué dans les deux cas
+      ws.close();
+    },
+  );
+
+  it("événement `start` : journalise le lien callControlId ↔ callLegId pour le rapport d'appel", async () => {
+    const { logger } = await import('../../../shared/logger/pino');
+    const session = makeMockSession();
+    mockMgr.get.mockReturnValue(session);
+
+    const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'start',
+      start: {
+        call_control_id: 'cc-ws-1',
+        call_session_id: 'cs-ws-1',
+        from: '+33****0001',
+        to: '+33****0000',
+        media_format: { encoding: 'PCMA', sample_rate: 8000, channels: 1 },
+      },
+    });
+    await delay(100);
+
+    expect(logger.info).toHaveBeenCalledWith(
+      { callId: 'cc-ws-1', callLegId: session.callLegId },
+      '[voice-report] call linked',
+    );
     ws.close();
   });
 

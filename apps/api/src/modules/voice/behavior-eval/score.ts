@@ -1,4 +1,10 @@
-import { reconcileSpelledName } from '../stream/structured-turn/fact-guards';
+import {
+  authorizeStructuredAction,
+  createStructuredTurnState,
+  reconcileSpelledName,
+  wordCount,
+} from '../stream/structured-turn/fact-guards';
+import { sayReadsLetters } from '../stream/structured-turn/name-readback';
 import type { StructuredTurnDraft } from '../stream/structured-turn/schema';
 import type {
   BehaviorCase,
@@ -132,6 +138,28 @@ export function holds(
       return new RegExp(predicate.pattern, 'iu').test(sayOf(output)) === predicate.expect;
     case 'noRepeatOf':
       return !normalize(lastSentence(sayOf(output))).includes(normalize(predicate.text));
+    case 'readsBack': {
+      // Cas `engine` : le nom est celui du brouillon après le garde-fou d'épellation, comme le moteur le vérifie.
+      const name = outputDraft(output, testCase, guarded)?.customerName;
+      return (
+        (typeof name === 'string' && name !== '' && sayReadsLetters(sayOf(output), name)) ===
+        predicate.expect
+      );
+    }
+    case 'hangsUp': {
+      const state = {
+        ...createStructuredTurnState(),
+        reservationCreated: testCase.reservationCreated === true,
+        lastAwaiting: (testCase.awaiting ?? 'none') as never,
+      };
+      const decision = authorizeStructuredAction(
+        state,
+        output as never,
+        inputDraft(testCase) as never,
+        { maxPartySize: 99, transcriptWords: wordCount(testCase.transcript) },
+      );
+      return (output.action === 'end_call' && decision.allowed) === predicate.expect;
+    }
   }
 }
 
@@ -146,6 +174,14 @@ function describe(predicate: SamplePredicate): string {
     }
     case 'fieldIn':
       return `${predicate.path} ∈ ${JSON.stringify(predicate.values)}`;
+    case 'readsBack':
+      return predicate.expect
+        ? 'la phrase lit les lettres du nom, isolées et dans l’ordre'
+        : 'la phrase ne relit pas le nom';
+    case 'hangsUp':
+      return predicate.expect
+        ? 'raccroche (à travers le moteur)'
+        : 'ne raccroche pas (à travers le moteur)';
     case 'draft':
       return `draft.${predicate.field} = ${JSON.stringify(predicate.equals)}`;
     case 'draftUnchanged':
@@ -155,6 +191,32 @@ function describe(predicate: SamplePredicate): string {
     case 'noRepeatOf':
       return `ne recopie pas « ${predicate.text} »`;
   }
+}
+
+/**
+ * Un contrôle de tirage (tous les genres sauf la longueur moyenne, qui est une moyenne et non un oui/non).
+ * Sert à la réussite d'un tirage entier, pour la comparaison A/B.
+ */
+function checkHolds(
+  check: Exclude<BehaviorCheck, { kind: 'sayWords' }>,
+  output: Output,
+  testCase: BehaviorCase,
+  guarded: boolean,
+): boolean {
+  return check.kind === 'anyOf'
+    ? check.of.some((predicate) => holds(predicate, output, testCase, guarded))
+    : holds(check, output, testCase, guarded);
+}
+
+/**
+ * Le tirage tient-il TOUS les contrôles du cas ? Cas `engine` : après garde-fous du code, sinon sortie brute.
+ * Les contrôles de longueur moyenne n'ont pas de sens pour un tirage seul : ils sont ignorés.
+ */
+export function drawSucceeds(testCase: BehaviorCase, output: Output): boolean {
+  const guarded = testCase.measures === 'engine';
+  return testCase.checks.every(
+    (check) => check.kind === 'sayWords' || checkHolds(check, output, testCase, guarded),
+  );
 }
 
 function scoreCheck(check: BehaviorCheck, outputs: Output[], testCase: BehaviorCase): CheckResult {
@@ -170,32 +232,32 @@ function scoreCheck(check: BehaviorCheck, outputs: Output[], testCase: BehaviorC
       passed: counts.length > 0 && mean <= check.maxMean,
     };
   }
-  if (check.kind === 'anyOf') {
-    const held = (output: Output, guarded: boolean) =>
-      check.of.some((predicate) => holds(predicate, output, testCase, guarded));
-    return done(
-      check.of.map(describe).join(' OU '),
-      rate(outputs, (output) => held(output, false)),
-      check.minRate,
-      rate(outputs, (output) => held(output, true)),
-    );
-  }
   return done(
-    describe(check),
-    rate(outputs, (output) => holds(check, output, testCase, false)),
+    check.kind === 'anyOf' ? check.of.map(describe).join(' OU ') : describe(check),
+    rate(outputs, (output) => checkHolds(check, output, testCase, false)),
     check.minRate,
-    rate(outputs, (output) => holds(check, output, testCase, true)),
+    rate(outputs, (output) => checkHolds(check, output, testCase, true)),
+    testCase.measures,
   );
 }
 
-function done(description: string, value: number, required: number, guarded?: number): CheckResult {
+function done(
+  description: string,
+  raw: number,
+  required: number,
+  guarded: number,
+  measures: BehaviorCase['measures'],
+): CheckResult {
+  const differs = Math.abs(guarded - raw) > 1e-9;
+  // Cas `model` : le chiffre est la sortie brute. Cas `engine` : celui d'après les garde-fous, avec le brut à côté.
+  const value = measures === 'engine' ? guarded : raw;
   return {
     description,
     rate: value,
     required,
     passed: value >= required,
-    // Seulement quand les garde-fous changent le résultat : sinon le chiffre brut suffit.
-    ...(guarded !== undefined && Math.abs(guarded - value) > 1e-9 ? { guardedRate: guarded } : {}),
+    // Seulement quand les garde-fous changent le résultat : sinon un seul chiffre suffit.
+    ...(differs ? (measures === 'engine' ? { rawRate: raw } : { guardedRate: guarded }) : {}),
   };
 }
 
@@ -211,6 +273,8 @@ export function scoreCase(testCase: BehaviorCase, samples: (Output | null)[]): C
   return {
     id: testCase.id,
     behavior: testCase.behavior,
+    family: testCase.family,
+    measures: testCase.measures,
     split: splitOf(testCase),
     valid: outputs.length,
     samples: samples.length,
@@ -313,7 +377,7 @@ export function formatReport(results: CaseResult[]): string {
   for (const result of results) {
     const mark = result.informational ? '·' : result.passed ? '✓' : '✗';
     lines.push(
-      `${mark} ${result.id} [${result.behavior}] ${result.valid}/${result.samples} réponses valides` +
+      `${mark} ${result.id} [${result.family} · mesure ${result.measures === 'engine' ? 'le moteur' : 'le modèle'}] ${result.valid}/${result.samples} réponses valides` +
         (result.informational ? ' (informatif)' : ''),
     );
     for (const check of result.checks) {
@@ -325,9 +389,11 @@ export function formatReport(results: CaseResult[]): string {
       const checkMark = result.informational ? '·' : check.passed ? '✓' : '✗';
       // Le brut est le chiffre qui compte ; l'écart avec l'après garde-fous est ce que le code rattrape.
       const guarded =
-        check.guardedRate === undefined
-          ? ''
-          : ` [brut ; après garde-fous : ${(check.guardedRate * 100).toFixed(0)} %]`;
+        check.guardedRate !== undefined
+          ? ` [brut ; après garde-fous : ${(check.guardedRate * 100).toFixed(0)} %]`
+          : check.rawRate !== undefined
+            ? ` [après garde-fous ; brut du modèle : ${(check.rawRate * 100).toFixed(0)} %]`
+            : '';
       lines.push(`    ${checkMark} ${check.description}${measured}${guarded}`);
     }
   }
@@ -336,44 +402,5 @@ export function formatReport(results: CaseResult[]): string {
   lines.push('', `${blocking.length - failed.length}/${blocking.length} comportements tenus`);
   const informational = results.length - blocking.length;
   if (informational) lines.push(`${informational} cas informatifs (non bloquants)`);
-  return lines.join('\n');
-}
-
-/** Écarts entre deux exécutions, cas par cas puis par indicateur : pour juger un changement. */
-export function compareRuns(
-  before: { results: CaseResult[]; summary: BehaviorSummary },
-  after: { results: CaseResult[]; summary: BehaviorSummary },
-): string {
-  const lines: string[] = [];
-  const previous = new Map(before.results.map((result) => [result.id, result]));
-  for (const result of after.results) {
-    const old = previous.get(result.id);
-    if (!old) {
-      lines.push(`+ ${result.id} : nouveau`);
-      continue;
-    }
-    result.checks.forEach((check, index) => {
-      const oldCheck = old.checks[index];
-      if (!oldCheck) return;
-      const delta = check.rate - oldCheck.rate;
-      if (Math.abs(delta) < 0.005) return;
-      lines.push(
-        `${delta > 0 ? '▲' : '▼'} ${result.id} : ${check.description} : ` +
-          `${(oldCheck.rate * 100).toFixed(0)} % → ${(check.rate * 100).toFixed(0)} %`,
-      );
-    });
-  }
-  for (const id of previous.keys()) {
-    if (!after.results.some((result) => result.id === id)) lines.push(`- ${id} : retiré`);
-  }
-  lines.push('', 'Indicateurs :');
-  for (const split of ['calibration', 'holdout'] as const) {
-    const pair = (
-      name: keyof Pick<SplitSummary, 'falseAcceptRate' | 'fidelityRate' | 'noiseRobustness'>,
-    ) => `${name} ${percent(before.summary[split][name])} → ${percent(after.summary[split][name])}`;
-    lines.push(
-      `  ${split} : ${pair('falseAcceptRate')} ; ${pair('fidelityRate')} ; ${pair('noiseRobustness')}`,
-    );
-  }
   return lines.join('\n');
 }

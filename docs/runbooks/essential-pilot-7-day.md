@@ -5,19 +5,44 @@
 > pour deux restaurants ; il ne constitue pas une preuve tant que les fiches de pilote et les
 > métriques réelles ne sont pas jointes. Voir [`../release/evidence/essential-checkout-opening-2026-09-22.md`](../release/evidence/essential-checkout-opening-2026-09-22.md).
 
-Ce pilote valide la boucle commerciale et l'exploitation quotidienne d'Essential à 199 €/mois. Il
+Ce pilote observe le premier paiement, les usages et l'exploitation quotidienne d'Essential à 199 €/mois. Il
 porte sur deux restaurants consentants pendant sept jours consécutifs. Il ne doit pas être élargi à
 un troisième restaurant avant la revue GO/NO-GO des deux premiers.
 
+Ces deux places limitent la charge du lancement. Le premier restaurant peut démarrer dès que
+ses conditions d'entrée sont satisfaites, sans attendre le second ni un quota d'entretiens.
+Vérifier que son besoin correspond à Essential ; une autre formule exige une décision commerciale
+explicite, sans changement automatique de prix ou de droits.
+
+Les sept jours constituent une première observation opérationnelle. Ils ne sont ni une période
+d'essai gratuite, ni une nouvelle durée contractuelle, ni une preuve de fidélisation ou de
+rentabilité durable. Présenter séparément période d'observation et conditions d'abonnement.
+La démonstration publique reste un exemple simulé ; la recette interne et l'installation réelle
+sont nécessaires avant les appels clients. Les entretiens et la landing peuvent avancer en parallèle.
+
+## Suivi commercial minimal
+
+Utiliser le [relevé restreint METRIC-01](commercial-follow-up.md) pour relier opportunité, demande,
+démo réalisée, identité confirmée, compte, restaurant, activation et facture. Les identités et pièces
+restent hors du dépôt. Le funnel d'onboarding est un diagnostic technique incluant des essais,
+pas un décompte de conversions. L'appel de validation/J0 et toute réservation contrôlée restent
+identifiés comme tests et exclus des usages clients et conversions ; aucun succès client n'est
+inféré de `firstCallAt`. Le premier paiement exige une facture live encaissée vérifiée, pas le seul
+statut d'abonnement. Le bilan sépare les unités compte/établissement/facture et les inconnus.
+
 ## Conditions d'entrée
 
-- [ ] Deux restaurants ont accepté le pilote et désigné un responsable joignable pendant le service.
+- [ ] Le restaurant concerné a accepté le pilote et désigné un responsable joignable pendant le service.
 - [ ] L'accord et la date de début sont conservés dans la fiche d'audit interne, sans téléphone,
       nom de client ou transcript brut dans le dépôt.
 - [ ] Chaque restaurant a terminé l'onboarding : identité, horaires, numéro, renvoi/webhook et
       appel de validation confirmés dans le parcours normal.
-- [ ] Le propriétaire a souscrit Essential via Checkout ; `GET /billing/status` confirme le plan,
-      la cadence et la prochaine échéance.
+- [ ] VOICE-01 est qualifié selon la [matrice interne](../audits/2026-10-13-commercial-demo-validation.md) ;
+      l'installation OPS-01 du restaurant et son secours humain sont vérifiés, preuves restreintes jointes.
+      Une animation publique ou le seul appel initial de validation ne suffit pas.
+- [ ] Le propriétaire a souscrit Essential via Checkout ; une facture d'abonnement live réellement
+      encaissée est vérifiée selon le [suivi commercial](commercial-follow-up.md). `GET /billing/status`
+      confirme séparément le plan, les droits, la cadence et la prochaine échéance du restaurant concerné.
 - [ ] Les huit prix Stripe live sont conformes (`verify-stripe-catalog.mjs` : 8/8) et les événements
       de facturation requis sont actifs sur le webhook live.
 - [ ] Le tableau de bord Prometheus/Grafana, Sentry et l'accès opérateur aux KPIs sont vérifiés
@@ -67,10 +92,11 @@ coordonnées client restent hors du dépôt.
   service. Aucun client réel ne sert de cas de test dédié.
 - **J0** : effectuer un appel contrôlé avec l'accord du restaurant, puis vérifier la réservation
   dans le dashboard et dans le KPI agrégé. Marquer le début du compteur de sept jours.
-- **J1 à J6** : relever les cinq sources chaque jour, noter les incidents et conserver le lien vers
+- **J1 à J6** : relever les six sources chaque jour, noter les incidents et conserver le lien vers
   l'alerte ou le ticket interne. Une donnée manquante est `UNKNOWN`, jamais zéro.
 - **J7** : prendre le snapshot final, vérifier la facture et le portail, recueillir l'avis du
-  responsable, puis rédiger la décision GO/NO-GO.
+  responsable, puis rédiger la décision opérationnelle GO/NO-GO. Poursuivre séparément l'observation
+  d'usage et des coûts ; vérifier le renouvellement lorsqu'une échéance suivante est réellement encaissée.
 
 ## Arrêt immédiat et reprise
 

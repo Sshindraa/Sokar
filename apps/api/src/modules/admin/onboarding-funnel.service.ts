@@ -14,13 +14,13 @@
 export const ONBOARDING_STEP_ORDER = [
   'restaurant',
   'hours',
+  'floor',
   'knowledge',
-  'calendar',
   'phone',
+  'channels',
   'connect-identity',
   'connect-location',
   'connect-cuisine',
-  'connect-capacity',
   'connect-activation',
 ] as const;
 

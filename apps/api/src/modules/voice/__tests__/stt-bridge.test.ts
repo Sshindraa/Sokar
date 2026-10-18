@@ -14,7 +14,6 @@ import {
   STT_AUDIO_BUFFER_MAX,
   handleSttMessage,
   handleNormalizedSttMessage,
-  setSttSpellingProfile,
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
@@ -32,6 +31,7 @@ import {
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
+import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
 import { encodeTelnyxFromPcm16 } from '../stream/telnyx-codec';
@@ -627,15 +627,6 @@ describe('handleSttMessage', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  it('active le profil d’épellation sans envoyer de commande non supportée par Scribe', () => {
-    const session = makeSession();
-    const ws = makeWsMock();
-    session.sttWs = ws;
-    setSttSpellingProfile(session, true);
-    expect(session.sttTurnConfig?.spellingActive).toBe(true);
-    expect(ws.send).not.toHaveBeenCalled();
-  });
-
   describe('fin de tour hybride', () => {
     beforeEach(() => {
       process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
@@ -678,16 +669,6 @@ describe('handleSttMessage', () => {
       expect(isSmartEndpointEnabled(session)).toBe(true);
       delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
       expect(isSmartEndpointEnabled(session)).toBe(false);
-    });
-
-    it('utilise un silence Scribe de 0,5 s seulement quand le flag est actif', () => {
-      const session = makeSession();
-      setSttSpellingProfile(session, false);
-      expect(session.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.5);
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      const legacy = makeSession({ callControlId: 'cc-stt-legacy' });
-      setSttSpellingProfile(legacy, false);
-      expect(legacy.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.95);
     });
 
     it('envoie immédiatement une phrase complète', () => {
@@ -1078,6 +1059,79 @@ describe('Deepgram final dispatch', () => {
       vi.advanceTimersByTime(700);
       expect(ws.send).not.toHaveBeenCalled();
       vi.useRealTimers();
+    });
+
+    describe('pendant une épellation (appel 8043662c)', () => {
+      // Les pauses entre deux groupes de lettres durent souvent plus d'une seconde : une fin de tour forcée à 350 ms
+      // de silence coupe l'épellation (« …assam un » jugé fini, le « a » suivant perdu).
+      function spellingSession(partial: string, silentMs: number) {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'customerName';
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: partial });
+        speaking(session, Date.now() - silentMs);
+        return { session, ws };
+      }
+      afterEach(() => vi.useRealTimers());
+
+      it('retient la fin de tour jugée par le modèle jusqu’à une vraie pause (1,2 s), pas 428 ms', () => {
+        const text = "c'est en nom de de assam un";
+        const { session, ws } = spellingSession(text, 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(false);
+        vi.advanceTimersByTime(300);
+        expect(ws.send).not.toHaveBeenCalled();
+        // La pause dépasse 1,2 s : l'épellation est bien finie.
+        vi.advanceTimersByTime(500);
+        expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      });
+
+      it('retient aussi la partielle figée d’une réponse courte (« a 2 »), et reprend quand l’appelant continue', () => {
+        const { session, ws } = spellingSession('a 2', 100);
+        vi.advanceTimersByTime(500);
+        expect(ws.send).not.toHaveBeenCalled();
+        // L'appelant continue : la partielle change, le report est abandonné.
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: 'a 2 s a 2 m' });
+        vi.advanceTimersByTime(1_000);
+        expect(ws.send).not.toHaveBeenCalled();
+      });
+
+      it('ne change rien hors d’une épellation : la garde normale de 350 ms', () => {
+        vi.useFakeTimers();
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'time';
+        const text = 'plutôt midi 30';
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: text });
+        speaking(session, Date.now() - 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(true);
+        expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'Finalize' }));
+      });
+
+      it('une réponse qui n’est pas de l’épellation (« oui c’est ça ») après la relecture garde la garde normale', () => {
+        vi.useFakeTimers();
+        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+        const { session } = deepgramSession();
+        const ws = makeWsMock();
+        session.sttWs = ws;
+        session.state = 'LISTENING';
+        session.conversation.pendingQuestion = 'customerName';
+        session.structuredTurn = {
+          ...createStructuredTurnState(),
+          lastAwaiting: 'customerNameConfirmation',
+        };
+        const text = "oui c'est ça";
+        handleNormalizedSttMessage(session, { type: 'partial', transcript: text });
+        speaking(session, Date.now() - 428);
+        expect(finalizeOnSemanticEndOfTurn(session, text, true)).toBe(true);
+      });
     });
 
     it('ne change rien quand la garde est désactivée ou sans voix mesurée', () => {
@@ -1856,5 +1910,194 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('assemblage des segments autour d’une épellation (appel 3ba7c66f)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', 'true');
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function deepgramSession() {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    session.conversation.nameCollection.state = 'collecting';
+    return { session, onEvent };
+  }
+  const ends = (onEvent: ReturnType<typeof vi.fn>) =>
+    onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'UtteranceEnd')
+      .map((event) => ({ transcript: event.transcript, trigger: event.finalTrigger }));
+  const segment = (
+    session: CallSession,
+    transcript: string,
+    speechFinal: boolean,
+    extra: { fromFinalize?: boolean } = {},
+  ) =>
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript,
+      speechFinal,
+      ...extra,
+    });
+
+  it('un segment inachevé avant l’épellation part avec elle, et ne se recolle pas au tour suivant', async () => {
+    const { session, onEvent } = deepgramSession();
+    // « ce serait bien au nom de » : final non terminal, puis UtteranceEnd (le texte est retenu comme inachevé).
+    segment(session, 'ce serait bien au nom de', false);
+    handleNormalizedSttMessage(session, { type: 'utterance_end' });
+    expect(session.sttSemanticHold?.transcript).toContain('au nom de');
+
+    // L'épellation arrive dans un autre segment : le segment retenu fait partie du même tour.
+    segment(session, 'de assam a 2 s a m', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent)).toEqual([
+      { transcript: 'ce serait bien au nom de assam a 2 s a m', trigger: 'spelling_hold' },
+    ]);
+    expect(session.sttSemanticHold).toBeNull();
+
+    // Le tour suivant ne porte que ce que l'appelant vient de dire.
+    session.conversation.nameCollection.state = 'idle';
+    segment(session, 'non non', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent).map((entry) => entry.transcript)).toEqual([
+      'ce serait bien au nom de assam a 2 s a m',
+      'non non',
+    ]);
+  });
+
+  it('une lettre qui interrompt l’agent se recolle à l’épellation retenue, même si le dialogue n’attend plus le nom', async () => {
+    const { session, onEvent } = deepgramSession();
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    segment(session, 'a 2 s', true, { fromFinalize: true });
+    expect(session.pendingSttEndOfTurn?.transcript).toBe('a 2 s');
+
+    // Entre-temps le modèle a répondu sans attendre le nom (doute) : la collecte n'est plus active.
+    session.conversation.nameCollection.state = 'idle';
+    session.state = 'SPEAKING';
+    segment(session, 'a', true);
+
+    expect(handleBargeIn).toHaveBeenCalledOnce();
+    // Ni la lettre seule ni l'épellation retenue ne partent dans le désordre.
+    expect(ends(onEvent)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent)).toEqual([{ transcript: 'a 2 s a', trigger: 'spelling_hold' }]);
+  });
+
+  it('une lettre isolée sans épellation retenue reste un tour à part', async () => {
+    const { session, onEvent } = deepgramSession();
+    session.conversation.nameCollection.state = 'idle';
+    segment(session, 'a', true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ends(onEvent).map((entry) => entry.transcript)).toEqual(['a']);
+  });
+});
+
+describe('mot seul peu sûr : ni interruption, ni tour (appel f2200632)', () => {
+  function greetingSession() {
+    const session = makeSession();
+    session.voiceFeatureSnapshot = {
+      sttProvider: 'deepgram',
+      dialogueListeningV2Enabled: true,
+      deepgramModel: 'nova-3',
+      deepgramNumeralsEnabled: true,
+      deepgramPunctuateEnabled: false,
+      deepgramKeytermsEnabled: false,
+    };
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    session.state = 'SPEAKING';
+    session.greetingPlaying = true;
+    const handleBargeIn = vi
+      .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
+      .mockImplementation(() => undefined);
+    return { session, onEvent, handleBargeIn };
+  }
+  const rouge = [{ word: 'rouge', confidence: 0.278, start: 0.48, end: 0.88 }];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('une partielle « rouge » à 0,28 ne coupe pas l’accueil', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, { type: 'partial', transcript: 'rouge', words: rouge });
+    expect(handleBargeIn).not.toHaveBeenCalled();
+  });
+
+  it('une partielle de plusieurs mots coupe l’accueil, même peu sûre', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'je voudrais réserver',
+      words: [
+        { word: 'je', confidence: 0.3, start: 0, end: 0.1 },
+        { word: 'voudrais', confidence: 0.3, start: 0.1, end: 0.3 },
+        { word: 'réserver', confidence: 0.3, start: 0.3, end: 0.6 },
+      ],
+    });
+    expect(handleBargeIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('une partielle d’un mot sûr coupe l’accueil', () => {
+    const { session, handleBargeIn } = greetingSession();
+    handleNormalizedSttMessage(session, {
+      type: 'partial',
+      transcript: 'allô',
+      words: [{ word: 'allô', confidence: 0.92, start: 0, end: 0.3 }],
+    });
+    expect(handleBargeIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('le même mot validé comme texte final n’ouvre aucun tour, même hors accueil', () => {
+    const { session, onEvent, handleBargeIn } = greetingSession();
+    session.state = 'LISTENING';
+    session.greetingPlaying = false;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'rouge',
+      words: rouge,
+      speechFinal: true,
+      speechEndOffsetMs: 880,
+    });
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+    expect(handleBargeIn).not.toHaveBeenCalled();
+  });
+
+  it('un mot sûr reste un tour', () => {
+    const { session, onEvent } = greetingSession();
+    session.state = 'LISTENING';
+    session.greetingPlaying = false;
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'oui',
+      words: [{ word: 'oui', confidence: 0.95, start: 0.1, end: 0.4 }],
+      speechFinal: true,
+      speechEndOffsetMs: 400,
+    });
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
   });
 });

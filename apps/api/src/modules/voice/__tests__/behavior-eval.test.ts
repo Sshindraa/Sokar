@@ -7,7 +7,6 @@ import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { casesForSuite, generatePerturbations, PERTURB_SAMPLES } from '../behavior-eval/perturb';
 import {
-  compareRuns,
   formatReport,
   MIN_VALID_RATE,
   scoreAll,
@@ -20,6 +19,9 @@ import type { BehaviorCase, BehaviorCasesFile } from '../behavior-eval/types';
 const baseCase = (checks: BehaviorCase['checks']): BehaviorCase => ({
   id: 'cas',
   behavior: 'test',
+  family: 'attente',
+  measures: 'model',
+  origin: 'control',
   source: 'test',
   history: [],
   transcript: 'bonjour',
@@ -349,23 +351,6 @@ describe('indicateurs agrégés', () => {
     const split = splitOf(victim);
     expect(after[split].variants.ablation).toBe(before[split].variants.ablation - 1);
   });
-
-  it('compareRuns montre les écarts de taux par cas et par indicateur', () => {
-    const a = scoreAll(
-      variants,
-      respond(() => ({ draft: {} })),
-    );
-    const b = scoreAll(
-      variants,
-      respond(() => ({ draft: {}, confidence: 'low' })),
-    );
-    const report = compareRuns(
-      { results: a, summary: summarize(a) },
-      { results: b, summary: summarize(b) },
-    );
-    expect(report).toContain('▲');
-    expect(report).toContain('falseAcceptRate');
-  });
 });
 
 describe('sortie brute et après garde-fous', () => {
@@ -425,9 +410,9 @@ describe('indépendance du banc', () => {
   );
   const normalize = (text: string) =>
     text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/g, ' ');
-  // Le prompt réel reçu par le modèle, dans les deux modes, consignes de compréhension comprises.
-  const prompts = [true, false].map((structuredTurn) => {
-    const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours, structuredTurn });
+  // Le prompt réel reçu par le modèle, consignes de compréhension comprises.
+  const prompts = [true, false].map(() => {
+    const base = buildSystemPrompt({ name: 'Chez Test', openingHours: hours });
     const [system] = buildStructuredTurnMessages({
       systemPrompt: base,
       history: [],

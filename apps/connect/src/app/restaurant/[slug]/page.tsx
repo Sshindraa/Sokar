@@ -17,16 +17,18 @@
  */
 
 import type { Metadata } from 'next';
+import { isConnectDemoSlug } from '@sokar/shared';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { headers } from 'next/headers';
 import { fetchPublicRestaurant, fetchPublishedSlugs, fetchAvailability } from '@/lib/api-client';
+import { fetchPublicExperiences } from '@/lib/api/experiences';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView, trackEvent } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
 import { PageViewTracker } from '@/components/page-view-tracker';
 import { isValidSlug } from '@/lib/widget-colors';
+import { todayInTimezone } from '@/lib/restaurant-day';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
@@ -85,25 +87,32 @@ export async function generateMetadata({
 
   const cuisine = restaurant.cuisineTypes[0] ?? 'Restaurant';
   const canonical = `${SITE_URL}/restaurant/${restaurant.slug}`;
+  const isDemo = isConnectDemoSlug(restaurant.slug);
+  const title = isDemo
+    ? `${restaurant.name} — Démonstration Sokar`
+    : `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`;
+  const description = isDemo
+    ? 'Établissement fictif de démonstration Sokar. Les réservations servent uniquement aux essais.'
+    : `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`;
 
   return {
     // La marque est ajoutée par le template du layout (`%s | Sokar`) : la
     // répéter ici produisait « … | Sokar | Sokar » sur chaque fiche.
-    title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`,
-    description: `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`,
+    title,
+    description,
     alternates: { canonical },
     openGraph: {
       type: 'website',
-      title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`,
-      description: `Réservez une table chez ${restaurant.name} via Sokar.`,
+      title,
+      description,
       url: canonical,
       images: restaurant.images.cover ? [{ url: restaurant.images.cover }] : [],
     },
     robots: {
-      index: !isPreview,
+      index: !isPreview && !isConnectDemoSlug(restaurant.slug),
       follow: true,
       googleBot: {
-        index: !isPreview,
+        index: !isPreview && !isConnectDemoSlug(restaurant.slug),
         follow: true,
         'max-snippet': -1,
         'max-image-preview': 'large',
@@ -166,9 +175,6 @@ export default async function RestaurantPage({
     notFound();
   }
 
-  // Read CSP nonce from middleware (audit sécurité Phase 2)
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
-
   // Track page_view côté client (en ISR, le server-side ne s'exécute qu'au revalidate)
   // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
 
@@ -206,7 +212,8 @@ export default async function RestaurantPage({
 
   // Disponibilités inline (Phase 2) : aperçu des créneaux du jour pour
   // éviter le clic supplémentaire vers /book. ISR 30s côté API (cache Next 30s).
-  const today = new Date().toISOString().slice(0, 10);
+  // Le jour CHEZ le restaurant, pas le jour UTC (entre minuit et 2 h à Paris, ce dernier retarde d'un jour).
+  const today = todayInTimezone(restaurant.timezone);
   const previewPartySize = 2;
   const availability = await fetchAvailability(
     restaurant.slug,
@@ -215,6 +222,13 @@ export default async function RestaurantPage({
   );
   const availableSlots = availability?.slots.filter((s) => s.available).slice(0, 4) ?? [];
   const previewShown = availableSlots.length > 0;
+  let hasBookableExperiences = false;
+  try {
+    const experienceCatalog = await fetchPublicExperiences(restaurant.slug);
+    hasBookableExperiences = experienceCatalog.experiences.length > 0;
+  } catch {
+    // The public experience module is independently feature-gated.
+  }
 
   // Track availability_preview_shown (fire-and-forget, best-effort)
   if (previewShown) {
@@ -246,13 +260,14 @@ export default async function RestaurantPage({
 
   return (
     <>
-      <ReservationJsonLd jsonLd={jsonLd} nonce={nonce} />
-      <script
-        type="application/ld+json"
-        nonce={nonce}
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
+      {!isConnectDemoSlug(restaurant.slug) && <ReservationJsonLd jsonLd={jsonLd} />}
+      {!isConnectDemoSlug(restaurant.slug) && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      )}
 
       <main id="main-content" className="mx-auto max-w-4xl px-6 py-12">
         <PageViewTracker
@@ -264,6 +279,12 @@ export default async function RestaurantPage({
           utmMedium={sp.utm_medium}
           utmCampaign={sp.utm_campaign}
         />
+        {isConnectDemoSlug(restaurant.slug) && (
+          <p className="mb-6 rounded-xl border border-border bg-muted p-6 text-foreground">
+            Établissement de démonstration — les réservations servent uniquement aux essais. Cette
+            fiche ne correspond pas à un restaurant réel.
+          </p>
+        )}
         <article>
           <header className="mb-8">
             <h1 className="text-3xl font-bold text-ink sm:text-4xl">
@@ -465,6 +486,21 @@ export default async function RestaurantPage({
               Voir les disponibilités
             </BookCtaLink>
           </section>
+
+          {hasBookableExperiences && (
+            <section className="mb-8 rounded-xl border border-border bg-background p-6">
+              <h2 className="mb-2 text-xl font-semibold text-ink">Ateliers et événements</h2>
+              <p className="text-sm text-muted-foreground">
+                Découvrez les expériences proposées par le restaurant et réservez votre date.
+              </p>
+              <Link
+                href={`/restaurant/${restaurant.slug}/experiences`}
+                className="mt-4 inline-flex items-center justify-center rounded-lg bg-ink px-5 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-ink/90"
+              >
+                Découvrir les expériences
+              </Link>
+            </section>
+          )}
 
           <section className="rounded-xl border border-border bg-background p-6">
             <h2 className="mb-3 text-xl font-semibold text-ink">Questions fréquentes</h2>

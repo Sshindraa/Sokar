@@ -203,6 +203,54 @@ function statusForError(error: unknown): number {
   return 400;
 }
 
+/** Messages français pour les refus d'état d'une campagne (le texte du service reste un code interne). */
+const CAMPAIGN_CONFLICT_MESSAGES: Record<string, string> = {
+  AUDIENCE_EMPTY: 'Aucun destinataire n’a donné son consentement : il n’y a rien à préparer.',
+  CAMPAIGN_NOT_DRAFT: 'Cette campagne n’est plus un brouillon.',
+  CAMPAIGN_NOT_CANCELLABLE: 'Cette campagne ne peut plus être annulée.',
+  CAMPAIGN_NOT_READY: 'Cette campagne n’est pas encore prête à partir.',
+  CAMPAIGN_ALREADY_RUNNING: 'Cette campagne est déjà en cours d’envoi.',
+  CAMPAIGN_NOT_DUE: 'Cette campagne n’est pas encore à l’heure de son envoi.',
+};
+
+/** Réponse 409 lisible pour un refus d'état connu ; `null` pour toute autre erreur. */
+function campaignConflict(error: unknown): { error: string; message: string } | null {
+  if (!(error instanceof Error)) return null;
+  const message = CAMPAIGN_CONFLICT_MESSAGES[error.message];
+  return message ? { error: error.message, message } : null;
+}
+
+/**
+ * Faute de saisie dans le message ou les réglages d'une règle / d'une campagne : le service lève des
+ * erreurs anglaises internes, que le restaurateur ne peut pas lire. `null` pour toute autre erreur.
+ */
+function marketingContentProblem(error: unknown): string | null {
+  if (error instanceof z.ZodError) {
+    return 'Certains réglages ne sont pas valides. Vérifiez le message et les délais.';
+  }
+  if (!(error instanceof Error)) return null;
+  const text = error.message;
+  if (text === 'marketing template must include {{unsubscribeUrl}}') {
+    return 'Le message doit contenir {{unsubscribeUrl}} : le lien de désinscription est obligatoire.';
+  }
+  const variable = /^template variable is not allow-listed: (.+)$/.exec(text);
+  if (variable) return `Le message utilise une variable inconnue : ${variable[1]}.`;
+  if (text === 'email campaign requires a subject') return 'Indiquez un objet pour l’e-mail.';
+  if (text === 'subject must contain at most 200 characters') {
+    return 'L’objet est trop long (200 caractères au maximum).';
+  }
+  if (text === 'subject is only supported for email campaigns') {
+    return 'L’objet ne sert que pour les e-mails : videz-le pour un SMS ou un message WhatsApp.';
+  }
+  if (/^bodyTemplate must contain between 1 and \d+ characters$/.test(text)) {
+    return 'Le message est vide ou trop long.';
+  }
+  if (text === 'timezone must be a valid IANA timezone') {
+    return 'Le fuseau horaire n’est pas valide. Exemple : Europe/Paris.';
+  }
+  return null;
+}
+
 /** Channel-specific permission and durable campaign control plane. */
 export async function marketingRoutes(app: FastifyInstance) {
   app.get(
@@ -295,14 +343,21 @@ export async function marketingRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { type } = AutomationTypeParamsSchema.parse(request.params);
       const body = AutomationUpsertSchema.parse(request.body);
-      const automation = await upsertMarketingAutomation({
-        restaurantId: request.restaurantId!,
-        type,
-        channel: body.channel,
-        config: body.config,
-        enabled: body.enabled,
-      });
-      return reply.send({ data: automation });
+      try {
+        const automation = await upsertMarketingAutomation({
+          restaurantId: request.restaurantId!,
+          type,
+          channel: body.channel,
+          config: body.config,
+          enabled: body.enabled,
+        });
+        return reply.send({ data: automation });
+      } catch (error) {
+        const problem = marketingContentProblem(error);
+        if (problem)
+          return reply.status(400).send({ error: 'INVALID_AUTOMATION', message: problem });
+        throw error;
+      }
     },
   );
 
@@ -352,6 +407,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'SEGMENT_NOT_FOUND' });
         if (status === 413) return reply.status(status).send({ error: 'AUDIENCE_TOO_LARGE' });
+        const problem = marketingContentProblem(error);
+        if (problem) return reply.status(400).send({ error: 'INVALID_CAMPAIGN', message: problem });
         throw error;
       }
     },
@@ -508,6 +565,8 @@ export async function marketingRoutes(app: FastifyInstance) {
       } catch (error) {
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -527,6 +586,8 @@ export async function marketingRoutes(app: FastifyInstance) {
       } catch (error) {
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },

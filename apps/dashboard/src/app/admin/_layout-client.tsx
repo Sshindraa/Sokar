@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   ChevronRight,
+  Inbox,
   LayoutDashboard,
   Moon,
   Radio,
@@ -28,6 +29,7 @@ const adminNavigation = [
   { href: '/admin/health', label: 'Santé des restaurants', icon: Activity },
   { href: '/admin/provisioning', label: 'Provisioning', icon: Radio },
   { href: '/admin/onboarding', label: 'Onboarding — cohorte', icon: Route },
+  { href: '/admin/demo-requests', label: 'Demandes de démo', icon: Inbox },
 ] as const;
 
 function AdminThemeToggle() {
@@ -55,11 +57,16 @@ function isNavigationActive(pathname: string, href: string) {
 function AdminAccessGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { get, isSignedIn } = useApi();
+  const { get, isSignedIn } = useApi({ requireSession: true });
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (isSignedIn === undefined) {
+      setAllowed(null);
+      return;
+    }
 
     if (!isSignedIn) {
       setAllowed(false);
@@ -105,10 +112,9 @@ function AdminAccessGate({ children }: { children: ReactNode }) {
 
 function AdminShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { theme } = useDashboardTheme();
 
   return (
-    <div className={cn(theme, 'sokar-page min-h-screen bg-background text-foreground')}>
+    <div className="sokar-page min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-4 left-4 z-40 hidden w-64 flex-col rounded-[1.4rem] border border-border bg-card/90 p-3 shadow-2xl shadow-background/40 backdrop-blur-xl md:flex">
         <Link
           href="/admin"

@@ -21,11 +21,12 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import { buildFixedGreeting } from '../agent-identity';
 import '@fastify/websocket';
 import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
-import { sendAudioToStt, closeStt, connectStt } from './stt-bridge';
+import { sendAudioToStt, closeStt, connectStt, sttProviderId } from './stt-bridge';
 import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { decodeTelnyxToPcm16, telnyxCodecProfile } from './telnyx-codec';
 import { L16EndianProbe, WidebandProbe } from './wideband';
@@ -41,9 +42,11 @@ import { startTestCallRecording } from '../call-recording.service';
 import { startNoiseSuppression } from '../noise-suppression';
 import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
 import { finalizeVoiceCall } from '../call-finalization.service';
+import { observedTtsProvider } from './turn-telemetry';
 import { callFinalizationDependencies } from '../call-finalization.dependencies';
 import { getVoiceLlmRuntimeInfo } from '../llm-provider';
 import { voiceWidebandDetectedTotal } from '../../../shared/observability/metrics';
+import { resolveStyledGreeting } from './styled-greeting';
 
 /**
  * Finalisation métier d'un appel depuis le stream : le WebSocket peut se
@@ -72,6 +75,7 @@ function finalizeSessionCall(
           session.currentTurn?.llmProvider ??
           session.voiceTurnHistory?.find((turn) => turn.llmProvider)?.llmProvider ??
           null,
+        ttsProvider: observedTtsProvider(session),
         to: session.to,
         customerPhone: session.from,
       },
@@ -85,7 +89,7 @@ function finalizeSessionCall(
 }
 
 export function buildInitialGreeting(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return buildFixedGreeting(restaurantName);
 }
 
 /**
@@ -226,8 +230,11 @@ function finishL16Endian(session: CallSession): void {
   logL16Endian(session, (session.l16EndianProbe ?? new L16EndianProbe()).finish());
 }
 
-/** Gère chaque message du WebSocket Telnyx et retourne la session mise à jour. */
-function handleTelnyxMessage(
+/**
+ * Gère chaque message du WebSocket Telnyx et retourne la session mise à jour.
+ * Exporté pour la démonstration navigateur, qui parle le même protocole.
+ */
+export function handleTelnyxMessage(
   msg: TelnyxStreamMessage,
   callId: string,
   socket: WebSocket,
@@ -270,6 +277,13 @@ function handleTelnyxMessage(
         };
       }
 
+      // Les journaux portent le callControlId, la base le callSid : cette ligne les relie pour le rapport
+      // automatique de l'appel (call-report). Journal seul, sans effet sur l'appel.
+      logger.info(
+        { callId: session.callControlId, callLegId: session.callLegId },
+        '[voice-report] call linked',
+      );
+
       resolveVoiceFeatureSnapshot(session);
 
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
@@ -279,14 +293,16 @@ function handleTelnyxMessage(
       session.onSttEvent = (event: SttEvent) => handleSttEvent(event, session, mgr);
       connectStt(session)
         .then(() => {
-          writeDebugLog(`[stream] ElevenLabs ready for ${start.call_control_id}`);
-          logger.info({ callId: start.call_control_id }, '[stream] ElevenLabs ready');
+          const provider = sttProviderId(session);
+          writeDebugLog(`[stream] STT (${provider}) ready for ${start.call_control_id}`);
+          logger.info({ callId: start.call_control_id, provider }, '[stream] STT ready');
         })
         .catch((err) => {
-          writeDebugLog(`[stream] ElevenLabs failed to connect`, err);
+          const provider = sttProviderId(session);
+          writeDebugLog(`[stream] STT (${provider}) failed to connect`, err);
           logger.error(
-            { err, callId: start.call_control_id },
-            `[stream] ElevenLabs failed to connect: ${(err as Error).message}`,
+            { err, callId: start.call_control_id, provider },
+            `[stream] STT failed to connect: ${(err as Error).message}`,
           );
           captureException(err as Error, {
             tags: { service: 'handler', action: 'elevenlabs-ready' },
@@ -297,27 +313,43 @@ function handleTelnyxMessage(
       // Jouer le message d'accueil immédiatement (ne dépend pas de ElevenLabs)
       const restaurantName = extractRestaurantName(session.systemPrompt);
 
-      const greeting = buildInitialGreeting(restaurantName);
-
-      writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
+      // Réglage « Style » / « Ton » non défaut : accueil composé par le modèle (cache Redis), sinon l'accueil fixe.
+      const fixedGreeting = buildInitialGreeting(restaurantName);
+      const greetingPromise: Promise<string> = session.greetingStyle
+        ? resolveStyledGreeting(restaurantName, session.greetingStyle).then(
+            (styled) => styled ?? fixedGreeting,
+          )
+        : Promise.resolve(fixedGreeting);
       // Avant l'accueil : l'audio de l'appelant doit être nettoyé dès ses premiers mots.
-      startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
+      // Démonstration navigateur : pas de leg Telnyx, donc ni suppression de bruit ni enregistrement.
+      if (!session.demo) {
+        startNoiseSuppression(session).catch(() => undefined); // ne lève jamais ; garde-fou seulement
+      }
+      session.greetingText = fixedGreeting;
+      session.greetingPlaying = true;
+      // Dès le décroché : l'accueil et ses interruptions doivent figurer dans l'enregistrement.
+      if (!session.demo) {
+        startTestCallRecording(session).catch((err) => {
+          logger.error(
+            { err, callId: session.callControlId },
+            '[stream] Failed to start test call recording',
+          );
+          captureException(err as Error, {
+            tags: { service: 'handler', action: 'test-recording-start' },
+            extra: { callId: session.callControlId },
+          });
+        });
+      }
       mgr.transition(session, 'SPEAKING');
-      speakTtsStreamed(session, greeting)
+      greetingPromise
+        .then((greeting) => {
+          session.greetingText = greeting;
+          writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
+          return speakTtsStreamed(session, greeting);
+        })
         .then(async () => {
           writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
-          try {
-            await startTestCallRecording(session);
-          } catch (err) {
-            logger.error(
-              { err, callId: session.callControlId },
-              '[stream] Failed to start test call recording',
-            );
-            captureException(err as Error, {
-              tags: { service: 'handler', action: 'test-recording-start' },
-              extra: { callId: session.callControlId },
-            });
-          }
+          session.greetingPlaying = false;
           mgr.transition(session, 'LISTENING');
         })
         .catch((err) => {
@@ -330,6 +362,7 @@ function handleTelnyxMessage(
             tags: { service: 'handler', action: 'greeting-tts' },
             extra: { callId: session.callControlId },
           });
+          session.greetingPlaying = false;
           mgr.transition(session, 'LISTENING');
         });
 

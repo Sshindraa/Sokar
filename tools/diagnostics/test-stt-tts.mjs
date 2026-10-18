@@ -11,7 +11,7 @@ const EL_KEY = process.env.ELEVENLABS_BENCH_API_KEY || '';
 const CA_KEY = process.env.CARTESIA_BENCH_API_KEY || '';
 const LLM_KEY = process.env.CEREBRAS_BENCH_API_KEY || '';
 const CEREBRAS_BASE_URL = process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1';
-const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
+const CA_VOICE = process.env.CARTESIA_VOICE_ID || '90358bc7-3328-4b93-a942-d0447d7d4b5c';
 const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
 const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.6';
 const VOICE_MODEL = process.env.VOICE_LLM_MODEL || 'qwen-3.8-27b';
@@ -237,7 +237,7 @@ async function main() {
     console.log('    ELEVENLABS_BENCH_API_KEY="cle"');
     console.log('    CARTESIA_BENCH_API_KEY="cle"');
     console.log('    CEREBRAS_BENCH_API_KEY="cle"');
-    console.log('    CARTESIA_VOICE_ID="f786b574-daa5-4673-aa0c-cbe3e8534c02"');
+    console.log('    CARTESIA_VOICE_ID="90358bc7-3328-4b93-a942-d0447d7d4b5c"');
     console.log('');
     console.log('  Sinon, vous pouvez tester le pipeline de logique métier sans audio :');
     console.log('    curl -X POST http://localhost:4000/api/test/simulate-call \\');

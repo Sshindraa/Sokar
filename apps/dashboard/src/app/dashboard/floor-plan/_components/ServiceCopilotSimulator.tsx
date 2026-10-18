@@ -1,5 +1,7 @@
 'use client';
 
+import { ServiceCopilotAccess } from '@/components/ServiceCopilotAccess';
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
@@ -138,38 +140,45 @@ function ScenarioCard({ scenario, isBest }: { scenario: SimulationScenario; isBe
         </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
-          {scenario.actions.map((action, idx) =>
-            action.type === 'link' && action.href ? (
-              <Link
-                key={idx}
-                href={action.href}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-all duration-200 hover:bg-accent"
-              >
-                {action.label}
-              </Link>
-            ) : action.type === 'api' ? (
-              <Button
-                key={idx}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => {
-                  // Les actions API sont volontairement non exécutées ici ;
-                  // la simulation reste une prévisualisation read-only.
-                }}
-              >
-                {action.label}
-              </Button>
-            ) : null,
-          )}
+          {scenario.actions
+            // La page Réservations n'a pas de formulaire de création qui lise ces paramètres : le lien
+            // « Créer la réservation » mènerait à une simple liste. Il reste masqué tant que ce n'est pas branché.
+            .filter(
+              (action) =>
+                !(action.type === 'link' && action.href?.startsWith('/dashboard/reservations?')),
+            )
+            .map((action, idx) =>
+              action.type === 'link' && action.href ? (
+                <Link
+                  key={idx}
+                  href={action.href}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-all duration-200 hover:bg-accent"
+                >
+                  {action.label}
+                </Link>
+              ) : action.type === 'api' ? (
+                <Button
+                  key={idx}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => {
+                    // Les actions API sont volontairement non exécutées ici ;
+                    // la simulation reste une prévisualisation read-only.
+                  }}
+                >
+                  {action.label}
+                </Button>
+              ) : null,
+            )}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-export function ServiceCopilotSimulator({
+function ServiceCopilotSimulatorContent({
   orgId,
   selectedFloorPlanId,
 }: ServiceCopilotSimulatorProps) {
@@ -478,5 +487,13 @@ export function ServiceCopilotSimulator({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+export function ServiceCopilotSimulator(props: ServiceCopilotSimulatorProps) {
+  return (
+    <ServiceCopilotAccess fallback={null}>
+      <ServiceCopilotSimulatorContent {...props} />
+    </ServiceCopilotAccess>
   );
 }

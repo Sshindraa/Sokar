@@ -120,6 +120,26 @@ function isValidE164(phone: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(phone.trim());
 }
 
+/** Code renvoyé par l'API quand le créneau est dans le délai minimum de réservation du restaurant. */
+const INSUFFICIENT_LEAD_TIME = 'INSUFFICIENT_LEAD_TIME';
+
+/**
+ * Un 409 peut vouloir dire « créneau pris » ou « créneau trop proche ». Dans le second cas, l'API
+ * fournit déjà le message en français (« … au moins 2 h à l'avance ») : on l'affiche tel quel au lieu
+ * du faux « vient d'être réservé ». `null` si ce n'est pas un refus de délai.
+ */
+async function leadTimeMessageOf(res: Response): Promise<string | null> {
+  if (res.status !== 409) return null;
+  try {
+    const body = (await res.json()) as { code?: unknown; error?: unknown };
+    return body.code === INSUFFICIENT_LEAD_TIME && typeof body.error === 'string'
+      ? body.error
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Mappe une erreur HTTP/ réseau en message utilisateur français.
  * Gère notamment le 409 (slot déjà pris).
@@ -277,7 +297,8 @@ export function ReservationWidget() {
       });
 
       if (holdRes.status === 409) {
-        setError("Ce créneau vient d'être réservé. Veuillez en choisir un autre.");
+        const tooSoon = await leadTimeMessageOf(holdRes);
+        setError(tooSoon ?? "Ce créneau vient d'être réservé. Veuillez en choisir un autre.");
         setStep('slots');
         // Rafraîchit la disponibilité
         setSlots((prev) =>
@@ -314,6 +335,17 @@ export function ReservationWidget() {
       });
 
       if (!confirmRes.ok) {
+        const tooSoon = await leadTimeMessageOf(confirmRes);
+        if (tooSoon) {
+          // Le créneau est devenu trop proche entre le hold et la confirmation : retour aux horaires.
+          setError(tooSoon);
+          setStep('slots');
+          setSlots((prev) =>
+            prev.map((s) => (s.time === selectedTime ? { ...s, available: false } : s)),
+          );
+          setSelectedTime('');
+          return;
+        }
         setError(mapApiError(confirmRes.status, 'La confirmation a échoué. Veuillez réessayer.'));
         return;
       }

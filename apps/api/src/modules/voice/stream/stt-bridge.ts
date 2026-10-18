@@ -11,10 +11,9 @@ import { speculateStructuredTurn } from './structured-turn/engine';
 import {
   isNameCollectionBlocking,
   isVoiceDialogueIncompleteTranscript,
-} from './conversation-controller';
+} from './conversation-state';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
-import { isSpeculativeLlmEnabled } from './speculation';
 import { describeTranscript } from './pii-redact';
 import {
   voiceProviderErrorsTotal,
@@ -47,7 +46,14 @@ import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 import { voiceConfig } from '../../../env';
 import { filterAssistantEcho, hasBargeInWordThreshold } from './assistant-echo';
+import {
+  describeInterruptionEvidence,
+  hasInterruptionEvidence,
+  isNoiseTurn,
+} from './barge-in-evidence';
+import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
+import { resumeInterruptedGreeting } from './greeting-resume';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -143,7 +149,7 @@ function ensureSttAvailabilityDeadline(session: CallSession): void {
     triggerSttUnavailable(
       session,
       'connection',
-      'ElevenLabs Scribe did not become available before the connection deadline',
+      'Speech-to-text did not become available before the connection deadline',
     );
   }, STT_UNAVAILABLE_DEADLINE_MS);
 }
@@ -154,7 +160,6 @@ function handleSttConnectionFailure(
   createSocket: SttWebSocketFactory,
 ): void {
   if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
-  if (fallbackToScribeAtOpening(session, createSocket)) return;
   if (!session.ended && session.sttProviderOpenedOnce) {
     flushDeepgramFinalPartsForSafety(session);
   }
@@ -183,45 +188,6 @@ function handleSttConnectionFailure(
       // The connection attempt records its own failure and schedules the next retry.
     });
   }, delay);
-}
-
-/** Deepgram may fall back only before its first successful socket open. */
-function fallbackToScribeAtOpening(
-  session: CallSession,
-  createSocket: SttWebSocketFactory,
-): boolean {
-  const adapter = session.sttAdapter;
-  if (
-    adapter?.id !== 'deepgram' ||
-    session.sttProviderOpenedOnce ||
-    session.sttOpeningFallbackAttempted ||
-    session.ended
-  ) {
-    return false;
-  }
-
-  session.sttOpeningFallbackAttempted = true;
-  session.sttAdapter = createScribeSttAdapter({ model: configuredModel(session) });
-  session.sttModel = session.sttAdapter.model;
-  session.sttConnectionAudioStartedAt = undefined;
-  session.sttConnectionAudioBytesSent = 0;
-  session.sttDeepgramFinalParts = [];
-  session.sttDeepgramPendingInterim = false;
-  session.sttDeepgramFinalizeRequested = false;
-  session.sttDeepgramPartials = undefined;
-  clearDeepgramStallTimer(session);
-  session.sttConsecutiveFailures = 0;
-  logger.warn(
-    { callId: session.callControlId, failedProvider: 'deepgram_stt' },
-    '[stt] Initial Deepgram connection failed; falling back to Scribe',
-  );
-  connectStt(session, undefined, createSocket).catch(() => {
-    logger.warn(
-      { callId: session.callControlId, provider: 'elevenlabs_stt' },
-      '[stt] Opening fallback connection failed',
-    );
-  });
-  return true;
 }
 
 /** A failed forced-French handshake restores the old auto-detect socket when possible. */
@@ -392,16 +358,6 @@ export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
   vadSilenceThresholdSecs: 0.95,
   minSpeechDurationMs: 80,
   minSilenceDurationMs: 220,
-};
-
-/**
- * Scribe ne permet pas de modifier la VAD sur une socket active. Ce profil
- * est conservé pour la prochaine connexion et la grâce côté application.
- */
-export const SPELLING_STT_TURN_CONFIG: SttTurnConfig = {
-  vadSilenceThresholdSecs: 1.2,
-  minSpeechDurationMs: 80,
-  minSilenceDurationMs: 180,
 };
 export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
@@ -649,6 +605,11 @@ function createSttAdapter(session: CallSession, provider: SttProviderId): SttPro
     : createScribeSttAdapter({ model: configuredModel(session) });
 }
 
+/** Fournisseur de reconnaissance de la session (« deepgram », « scribe »), pour les journaux. */
+export function sttProviderId(session: CallSession): SttProviderAdapter['id'] {
+  return sttAdapterForSession(session).id;
+}
+
 function sttAdapterForSession(session: CallSession): SttProviderAdapter {
   return (session.sttAdapter ??= createSttAdapter(
     session,
@@ -735,25 +696,6 @@ function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurn
     ...(previous ?? {}),
     ...(next ?? {}),
   };
-}
-
-/**
- * Scribe ne propose pas de reconfiguration sur une socket active. On mémorise
- * le profil métier pour une prochaine connexion et pour la grâce de fin de tour.
- */
-export function setSttSpellingProfile(session: CallSession, active: boolean): void {
-  // Changement d'état du pipeline de fin de tour : on ne garde pas d'audio en
-  // attente, sinon il serait attribué à un profil VAD qui n'est plus le bon.
-  flushSttChunkBuffer(session);
-  const state = ensureSttTurnConfig(session);
-  if (active && !state.spellingActive) {
-    state.previous = cloneSttTurnConfig(state.applied ?? state.base);
-  }
-  state.spellingActive = active;
-  state.desired = cloneSttTurnConfig(
-    active ? SPELLING_STT_TURN_CONFIG : (state.previous ?? state.base),
-  );
-  if (!active) state.previous = null;
 }
 
 function clearPendingSttEndOfTurn(session: CallSession): void {
@@ -1026,6 +968,26 @@ function isSpellingTurn(session: CallSession, transcript: string): boolean {
       session.conversation.pendingQuestion === 'customerName') &&
     !(confirmingSpelling && !looksLikeSpelledLetters(transcript))
   );
+}
+
+/**
+ * Un segment d'épellation est retenu et le nouveau texte est lui aussi fait de lettres : c'est la suite de la même
+ * épellation, que le dialogue attende encore le nom ou non. Appel 3ba7c66f : le modèle avait répondu sans attendre
+ * le nom (doute), `isSpellingTurn` était faux, et le « a » qui interrompait l'agent partait seul AVANT le segment
+ * retenu (« a 2 s »), puis était écarté par lui. Structurel : aucune liste de mots.
+ */
+function continuesHeldSpelling(session: CallSession, transcript: string): boolean {
+  const held = session.pendingSttEndOfTurn;
+  return (
+    Boolean(held) &&
+    looksLikeSpelledLetters(held!.transcript) &&
+    looksLikeSpelledLetters(transcript)
+  );
+}
+
+/** Le texte se recolle à l'épellation en cours : profil d'épellation actif, ou suite de lettres d'un segment retenu. */
+function spellingContinues(session: CallSession, transcript: string): boolean {
+  return isSpellingTurn(session, transcript) || continuesHeldSpelling(session, transcript);
 }
 
 function schedulePendingSttEndOfTurn(
@@ -1415,12 +1377,39 @@ function isTranscriptWithoutCallerVoice(
   return true;
 }
 
+/**
+ * Un mot seul, peu sûr et bref ne coupe pas l'agent (appel f2200632 : « rouge » à 0,28 a coupé
+ * l'accueil). Pendant l'accueil, l'exigence est plus forte.
+ */
+function lacksInterruptionEvidence(
+  session: CallSession,
+  transcript: string,
+  words: readonly SttWord[] | undefined,
+): boolean {
+  const evidence = describeInterruptionEvidence(transcript, words);
+  const greeting = session.greetingPlaying === true;
+  if (hasInterruptionEvidence(evidence, { greeting })) return false;
+  logger.info(
+    {
+      callId: session.callControlId,
+      greeting,
+      wordCount: evidence.wordCount,
+      minWordConfidence: evidence.minConfidence,
+      voiceMs: evidence.voiceMs,
+    },
+    '[barge-in] Refused: a single weak word is not enough to interrupt',
+  );
+  return true;
+}
+
 function handleBargeInFromTranscript(
   session: CallSession,
   mgr: CallSessionManager,
   transcript: string,
+  words?: readonly SttWord[],
 ): void {
   if (session.state !== 'SPEAKING' || !transcript.trim()) return;
+  if (lacksInterruptionEvidence(session, transcript, words)) return;
   const lowSignalReason = lowSignalTranscriptReason(transcript);
   if (lowSignalReason) {
     logger.debug(
@@ -1433,8 +1422,16 @@ function handleBargeInFromTranscript(
     );
     return;
   }
+  const evidence = describeInterruptionEvidence(transcript, words);
   logger.info(
-    { callId: session.callControlId, ...describeTranscript(transcript.trim()) },
+    {
+      callId: session.callControlId,
+      ...describeTranscript(transcript.trim()),
+      greeting: session.greetingPlaying === true,
+      wordCount: evidence.wordCount,
+      minWordConfidence: evidence.minConfidence,
+      voiceMs: evidence.voiceMs,
+    },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
   );
   session.sttAfterBargeIn = true;
@@ -1446,7 +1443,11 @@ function handleBargeInFromTranscript(
   mgr.handleBargeIn(session);
 }
 
-function emitPartialTranscript(session: CallSession, transcript: string): void {
+function emitPartialTranscript(
+  session: CallSession,
+  transcript: string,
+  words?: readonly SttWord[],
+): void {
   let cleanTranscript = transcript.trim();
   let allowBargeIn = true;
   if (!cleanTranscript) return;
@@ -1466,7 +1467,12 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     if (allowBargeIn)
-      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+      handleBargeInFromTranscript(
+        session,
+        CallSessionManager.getInstance(),
+        cleanTranscript,
+        words,
+      );
     const hold = session.sttSemanticHold;
     if (hold) {
       if (hold.timer) clearTimeout(hold.timer);
@@ -1490,7 +1496,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   }
 
   const mgr = CallSessionManager.getInstance();
-  if (allowBargeIn) handleBargeInFromTranscript(session, mgr, cleanTranscript);
+  if (allowBargeIn) handleBargeInFromTranscript(session, mgr, cleanTranscript, words);
 
   const semanticHold = session.sttSemanticHold;
   if (semanticHold?.timer) {
@@ -1502,7 +1508,7 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
 
   if (!session.turnTranscript.trim() && !semanticHold) {
     // La suite d'une épellation se recolle au segment retenu ; tout autre début de parole le clôt.
-    if (!(session.pendingSttEndOfTurn && isSpellingTurn(session, cleanTranscript)))
+    if (!(session.pendingSttEndOfTurn && spellingContinues(session, cleanTranscript)))
       flushPendingSttEndOfTurn(session);
     session.turnPartials = [];
     session.onSttEvent?.({ type: 'UtteranceStart' });
@@ -1515,20 +1521,6 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   const partials = (session.turnPartials ??= []);
   if (partials.at(-1) !== cleanTranscript) partials.push(cleanTranscript);
   if (partials.length > MAX_TURN_PARTIALS) partials.splice(0, partials.length - MAX_TURN_PARTIALS);
-
-  const wordCount = cleanTranscript.split(/\s+/u).filter(Boolean).length;
-  const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
-  if (
-    isSpeculativeEnabled &&
-    !isNameCollectionBlocking(session) &&
-    session.conversation?.pendingQuestion !== 'customerName' &&
-    wordCount >= 3 &&
-    wordCount <= 20 &&
-    cleanTranscript !== session.speculativeTranscript
-  ) {
-    session.speculativeTranscript = cleanTranscript;
-    session.onSttEvent?.({ type: 'InterimHighConfidence', transcript: cleanTranscript });
-  }
 }
 
 function dispatchCommittedTranscript(
@@ -1572,7 +1564,12 @@ function dispatchCommittedTranscript(
     isVoiceDialogueIncompleteTranscript(cleanTranscript)
   ) {
     if (allowBargeIn)
-      handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+      handleBargeInFromTranscript(
+        session,
+        CallSessionManager.getInstance(),
+        cleanTranscript,
+        words,
+      );
     holdIncompleteDialogueTranscript(session, cleanTranscript, words, languageCode, timing);
     return;
   }
@@ -1593,23 +1590,65 @@ function dispatchCommittedTranscript(
     return;
   }
 
+  // Un mot seul, peu sûr et bref est un bruit : pas de tour, l'agent continue d'écouter. Si ce bruit
+  // a coupé l'accueil (coupure sur l'audio seul), l'accueil reprend où il s'était arrêté.
+  if (
+    isNoiseTurn(describeInterruptionEvidence(cleanTranscript, words), {
+      letterExpected: expectsSpelledLetters(session.structuredTurn?.lastAwaiting),
+      transcript: cleanTranscript,
+    })
+  ) {
+    logger.info(
+      {
+        callId: session.callControlId,
+        agentSpeaking: session.state === 'SPEAKING',
+        ...describeTranscript(cleanTranscript),
+      },
+      '[stt] Ignoring a single weak word: noise, not a turn',
+    );
+    resetSttTurnDiagnostics(session);
+    resumeInterruptedGreeting(session);
+    return;
+  }
+  // Pendant la parole de l'agent, un mot seul sans preuve ne l'a pas coupé : il n'ouvre pas de tour non plus.
+  if (
+    session.state === 'SPEAKING' &&
+    session.greetingPlaying &&
+    lacksInterruptionEvidence(session, cleanTranscript, words)
+  ) {
+    resetSttTurnDiagnostics(session);
+    return;
+  }
+
   // Le partial est normalement le premier signal de barge-in, mais Scribe
   // peut engager un transcript sans partial observable sur une connexion
   // courte. Le commit doit donc rester suffisant pour interrompre le TTS.
   if (allowBargeIn)
-    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript);
+    handleBargeInFromTranscript(session, CallSessionManager.getInstance(), cleanTranscript, words);
+  session.greetingInterrupted = false;
 
-  if (isSpellingTurn(session, cleanTranscript)) {
+  if (spellingContinues(session, cleanTranscript)) {
     const held = session.pendingSttEndOfTurn;
-    const mergedWords = [...(held?.words ?? []), ...(words ?? [])];
+    // Un segment inachevé retenu avant l'épellation (« ce serait bien au nom de ») fait partie du même tour : sans
+    // cela il restait dans le tampon et se recollait au tour suivant (appel 3ba7c66f : « … non non »).
+    const previous = clearSemanticHold(session);
+    const joinPrevious = (next: string): string =>
+      previous
+        ? isVoiceDialogueIncompleteTranscript(previous.transcript)
+          ? mergeIncompleteDialogueTranscript(previous.transcript, next)
+          : mergeSttTranscripts(previous.transcript, next)
+        : next;
+    const mergedWords = [...(previous?.words ?? []), ...(held?.words ?? []), ...(words ?? [])];
+    const mergedLanguage = languageCode ?? held?.languageCode ?? previous?.languageCode;
+    const mergedTiming = mergeSttTiming(mergeSttTiming(previous?.timing, held?.timing), timing);
     // Lettres recollées telles quelles : pas de dédoublonnage de recouvrement (« l » + « l e »).
     session.pendingSttEndOfTurn = {
-      transcript: held ? `${held.transcript} ${cleanTranscript}` : cleanTranscript,
+      transcript: held
+        ? `${joinPrevious(held.transcript)} ${cleanTranscript}`
+        : joinPrevious(cleanTranscript),
       ...(mergedWords.length ? { words: mergedWords } : {}),
-      ...((languageCode ?? held?.languageCode)
-        ? { languageCode: (languageCode ?? held?.languageCode) as string }
-        : {}),
-      ...(held?.timing || timing ? { timing: mergeSttTiming(held?.timing, timing) } : {}),
+      ...(mergedLanguage ? { languageCode: mergedLanguage } : {}),
+      ...(mergedTiming ? { timing: mergedTiming } : {}),
       createdAt: Date.now(),
     };
     const spellingDelay =
@@ -1780,6 +1819,16 @@ export function deepgramSilenceGuardMs(env: NodeJS.ProcessEnv = process.env): nu
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_000 ? parsed : 350;
 }
 
+/**
+ * Silence réel exigé avant une fin de tour forcée PENDANT UNE ÉPELLATION. Les pauses entre deux groupes de
+ * lettres durent souvent plus d'une seconde (appel 8043662c : « …assam un » jugé fini à 428 ms de silence, le « a »
+ * suivant perdu ; appel 3ba7c66f : « a 2 » finalisé par la partielle figée à 360 ms). 0 : la garde normale.
+ */
+export function deepgramSpellingSilenceGuardMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_STT_SPELLING_SILENCE_GUARD_MS ?? 1_200);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 3_000 ? parsed : 1_200;
+}
+
 /** Report maximal cumulé de la garde : au-delà, le comportement d'avant reprend (bruit, écho). */
 export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS ?? 1_500);
@@ -1901,14 +1950,22 @@ function requestDeepgramFinalize(
   ) {
     return false;
   }
-  // Garde de silence : une fin de tour forcée ne tombe pas pendant que l'appelant parle encore.
-  const guardMs = deepgramSilenceGuardMs();
+  // Garde de silence : une fin de tour forcée ne tombe pas pendant que l'appelant parle encore. Pendant une
+  // épellation, la pause entre deux groupes de lettres peut dépasser une seconde : la garde est plus longue.
+  const baseGuardMs = deepgramSilenceGuardMs();
+  const spelling =
+    baseGuardMs > 0 &&
+    isSpellingTurn(session, fields.expectedText ?? session.sttDeepgramPartials?.lastText ?? '');
+  const guardMs = spelling ? Math.max(baseGuardMs, deepgramSpellingSilenceGuardMs()) : baseGuardMs;
+  const maxDeferMs = spelling
+    ? Math.max(deepgramSilenceGuardMaxDeferMs(), guardMs + 600)
+    : deepgramSilenceGuardMaxDeferMs();
   if (guardMs > 0) {
     const now = Date.now();
     const silentMs = callerSilenceMs(session, now);
     const heldSince = fields.heldSince ?? now;
     if (silentMs < guardMs) {
-      if (now - heldSince < deepgramSilenceGuardMaxDeferMs()) {
+      if (now - heldSince < maxDeferMs) {
         voiceSilenceGuardTotal.inc({ outcome: 'held' });
         const previous = silenceGuardTimers.get(session);
         if (previous) clearTimeout(previous);
@@ -2016,7 +2073,7 @@ export function handleNormalizedSttMessage(
           }
         }
       }
-      emitPartialTranscript(session, event.transcript);
+      emitPartialTranscript(session, event.transcript, event.words);
       return;
     case 'plain_commit':
       if (event.transcript.trim()) session.sttConsecutiveFailures = 0;
@@ -2207,9 +2264,6 @@ export function connectStt(
       ? (process.env.DEEPGRAM_API_KEY ?? '')
       : (process.env.ELEVENLABS_API_KEY ?? '');
   if (!apiKey) {
-    if (fallbackToScribeAtOpening(session, createSocket)) {
-      return Promise.resolve();
-    }
     if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
       return Promise.resolve();
     }
@@ -2380,10 +2434,6 @@ export function connectStt(
       if (statusCode === 401 || statusCode === 403) {
         voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'auth' });
         if (!opened) reject(error);
-        if (fallbackToScribeAtOpening(session, createSocket)) {
-          ws.terminate();
-          return;
-        }
         if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
           ws.terminate();
           return;

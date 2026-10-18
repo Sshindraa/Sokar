@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
+import { normalizeOpeningHours } from '@sokar/shared';
+import { summarizeReservationChannels } from './reservation-channels';
 
 const PeriodSchema = z.enum(['today', '7d', '30d']).default('7d');
 
@@ -75,6 +77,29 @@ function buildBuckets(period: z.infer<typeof PeriodSchema>, start: Date): Analyt
   });
 }
 
+/**
+ * Une réservation acquise reste comptée tout au long du service : confirmée, puis installée à table
+ * (SEATED), puis honorée (HONORED). Ne compter que CONFIRMED faisait baisser les chiffres du Pilotage à
+ * mesure que l'équipe marquait les tables installées, et faussait le ticket moyen (les réservations
+ * passées et bien menées finissent HONORED).
+ */
+const COUNTED_RESERVATION_STATES = ['CONFIRMED', 'SEATED', 'HONORED'] as const;
+
+function isCountedReservation(reservation: { state: string }): boolean {
+  return (COUNTED_RESERVATION_STATES as readonly string[]).includes(reservation.state);
+}
+
+/**
+ * Jour AAAA-MM-JJ dans le fuseau du serveur (Europe/Paris), le même que `getDay()` et `setHours()`.
+ * `toISOString()` donne la date UTC : minuit à Paris étant 22 h ou 23 h UTC la veille, chaque jour
+ * affiché était décalé d'une date.
+ */
+export function toLocalDateKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function numberFromDecimal(value: unknown): number {
   if (value === null || value === undefined) return 0;
   return Number(value);
@@ -97,6 +122,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
           confirmedRevenue: true,
           state: true,
           createdAt: true,
+          channel: true,
+          source: true,
+          callId: true,
         },
       }),
       db.call.count({ where: { ...where, outcome: { not: null } } }),
@@ -108,9 +136,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       }),
     ]);
 
-    const confirmedReservations = reservations.filter(
-      (reservation) => reservation.state === 'CONFIRMED',
-    );
+    const confirmedReservations = reservations.filter(isCountedReservation);
     const totalReservations = confirmedReservations.length;
     const covers = confirmedReservations.reduce(
       (sum, reservation) => sum + reservation.partySize,
@@ -121,7 +147,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
         sum + numberFromDecimal(reservation.confirmedRevenue ?? reservation.estimatedRevenue),
       0,
     );
-    const conversionRate = totalCalls > 0 ? Math.round((totalReservations / totalCalls) * 100) : 0;
+    // Appels qui ont abouti à une réservation : seules celles rattachées à un appel (callId, unique)
+    // comptent. Diviser toutes les réservations (site, Google, assistants IA, équipe) par les appels
+    // donnait des taux absurdes (40 réservations en ligne pour 10 appels : « 400 % »).
+    const callReservations = confirmedReservations.filter((reservation) =>
+      Boolean(reservation.callId),
+    ).length;
+    const conversionRate =
+      totalCalls > 0 ? Math.min(100, Math.round((callReservations / totalCalls) * 100)) : 0;
     const answeredRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
 
     // ─── Revenue Engine: revenue_recovered ──────────────────────────────
@@ -144,6 +177,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       answered_rate: answeredRate,
       estimated_revenue: Math.round(estimatedRevenue),
       revenue_recovered: revenueRecovered,
+      by_channel: summarizeReservationChannels(confirmedReservations),
     });
   });
 
@@ -170,7 +204,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
         select: { createdAt: true },
       }),
       db.reservation.findMany({
-        where: { restaurantId, createdAt: { gte: start }, state: 'CONFIRMED' },
+        where: {
+          restaurantId,
+          createdAt: { gte: start },
+          state: { in: [...COUNTED_RESERVATION_STATES] },
+        },
         select: {
           createdAt: true,
           partySize: true,
@@ -269,16 +307,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
       select: { openingHours: true },
     });
 
-    const openingHours = restaurant.openingHours as Record<
-      string,
-      { open: string; close: string } | null
-    > | null;
-    if (!openingHours || typeof openingHours !== 'object') {
+    const rawOpeningHours = restaurant.openingHours;
+    if (!rawOpeningHours || typeof rawOpeningHours !== 'object') {
       return reply.send({
         days: [],
         summary: { underbookedDays: 0, totalOpenDays: 0, revenueAtRisk: 0 },
       });
     }
+    const openingHours = normalizeOpeningHours(rawOpeningHours);
 
     // Fenêtre : 7 prochains jours à partir d'aujourd'hui
     const today = new Date();
@@ -290,7 +326,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const upcomingReservations = await db.reservation.findMany({
       where: {
         restaurantId,
-        state: 'CONFIRMED',
+        state: { in: [...COUNTED_RESERVATION_STATES] },
         reservedAt: { gte: today, lt: weekEnd },
       },
       select: { reservedAt: true, partySize: true, estimatedRevenue: true, confirmedRevenue: true },
@@ -302,7 +338,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const historicalReservations = await db.reservation.findMany({
       where: {
         restaurantId,
-        state: 'CONFIRMED',
+        state: { in: [...COUNTED_RESERVATION_STATES] },
         reservedAt: { gte: historyStart, lt: today },
       },
       select: { partySize: true, estimatedRevenue: true, confirmedRevenue: true },
@@ -336,12 +372,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
-      const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
-      const slot = openingHours[dayKey];
+      const periods = openingHours.filter((period) => period.dayIndex === date.getDay());
 
-      if (!slot || !slot.open || !slot.close) {
+      if (periods.length === 0) {
         days.push({
-          date: date.toISOString().split('T')[0],
+          date: toLocalDateKey(date),
           dayName: dayLabels[date.getDay()],
           isOpen: false,
           openTime: null,
@@ -375,11 +410,11 @@ export async function dashboardRoutes(app: FastifyInstance) {
         : 0;
 
       days.push({
-        date: date.toISOString().split('T')[0],
+        date: toLocalDateKey(date),
         dayName: dayLabels[date.getDay()],
         isOpen: true,
-        openTime: slot.open,
-        closeTime: slot.close,
+        openTime: periods[0].open,
+        closeTime: periods[periods.length - 1].close,
         reservationCount,
         covers,
         isUnderbooked,
@@ -421,6 +456,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
         // On ne compte que les réservations qui ont eu le temps d'arriver
         // (reservedAt dans le passé)
         reservedAt: { lt: new Date() },
+        // ... et qui étaient réellement attendues : les annulées, échouées ou expirées gonflaient le
+        // dénominateur et faisaient paraître le taux de no-show artificiellement bas.
+        state: { in: ['CONFIRMED', 'SEATED', 'HONORED', 'NO_SHOW'] },
       },
       select: {
         state: true,

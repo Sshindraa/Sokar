@@ -1,11 +1,10 @@
 # Runbook — Stripe Billing (abonnements Sokar)
 
-> **Statut : ACTIF — réconcilié le 22 septembre 2026.**
-> Le catalogue applicatif et les pages publiques affichent Essential 199 €/mois et Pro 299 €/mois.
-> Multi-site reste à 249 €/mois + 99 €/site supplémentaire. Les huit prix Stripe live sont
-> réconciliés avec cette grille et le checkout Essential est ouvert en production. La preuve de
-> l'ouverture et le seul bloqueur restant (deux pilotes Essential sur sept jours) sont dans
-> [`../release/evidence/essential-checkout-opening-2026-09-22.md`](../release/evidence/essential-checkout-opening-2026-09-22.md).
+> **Grille des nouvelles souscriptions — 14 octobre 2026.**
+> Essential 199 €/mois, Pro 299 €/mois, Multi-site 299 €/mois (premier établissement inclus)
+>
+> - 99 €/établissement supplémentaire ; remise annuelle de 10 %. Les anciens prix et
+>   abonnements sont conservés sans migration. La configuration doit être vérifiée avant ouverture.
 
 ## Parcours
 
@@ -30,6 +29,48 @@ période.
 
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
+## Essai gratuit et suspension
+
+Décision du 16 octobre 2026 : un premier abonnement commence par **14 jours offerts, sans carte**
+(`TRIAL_DAYS`, `packages/shared/src/plan.ts`).
+
+- Checkout : `payment_method_collection: if_required`, `subscription_data.trial_period_days` et
+  `trial_settings.end_behavior.missing_payment_method: cancel`. Un compte qui a déjà eu un abonnement
+  (`stripeSubscriptionId` présent) paie dès le premier jour : un seul essai par compte.
+- La session porte `metadata.trial=true` : le webhook `checkout.session.completed` enregistre
+  `trialing`, pas `active`.
+- Onboarding : un seul bouton, « Démarrer mon essai gratuit » (`POST /billing/trial`), démarre
+  l'essai sur la formule choisie (formule, cadence, nombre d'établissements) sans passer par
+  Checkout, puisqu'aucune carte n'est demandée (abonnement Stripe créé par l'API, mêmes réglages,
+  metadata `source=onboarding`). Aucun compte n'utilise donc Sokar hors essai ou abonnement. 409 si
+  un abonnement est en cours ou si l'essai a déjà servi.
+- Pendant l'essai, le restaurateur ajoute sa carte depuis le portail (« Gérer l'abonnement »). Le
+  dashboard affiche un bandeau les 5 derniers jours.
+- Sans carte au jour 15, Stripe supprime l'abonnement (`customer.subscription.deleted`) : le compte
+  passe `canceled`. **Suspension** : un compte dont l'abonnement a existé puis s'est terminé
+  (`canceled`, `incomplete_expired`, `unpaid`) est suspendu. Aucune session vocale : la ligne du
+  restaurant pouvant encore être renvoyée vers Sokar, Sokar décroche, lit « Bonjour, vous êtes bien
+  chez … Nous ne pouvons pas prendre votre appel pour le moment… » puis raccroche
+  (`voice/suspended-call.ts`). Le dashboard affiche « Réactiver mon assistant » ; e-mail de coupure,
+  dashboard et réglages rappellent de désactiver le renvoi. `past_due` ne suspend pas : Stripe
+  retente le paiement.
+- Les comptes qui n'ont jamais eu d'abonnement (pilotes, Chez Sokar, comptes antérieurs à l'essai
+  direct) ne sont pas suspendus.
+- Réactivation : un nouveau Checkout depuis `/pricing`, sans nouvel essai. Le webhook repasse le
+  compte `active` et l'agent décroche à nouveau.
+- Échec de lecture du statut : le service continue (fail-open), un appel n'est jamais coupé à cause
+  d'une erreur de base de données.
+- E-mails (file `billing-notifications`, une fois par abonnement et par type) :
+  - **J-3** sur `customer.subscription.trial_will_end` : bilan de l'essai (appels décrochés,
+    réservations, couverts) et lien « Ajouter ma carte ». Sans appel reçu, l'e-mail signale un renvoi
+    de ligne probablement absent. Rien n'est envoyé si une carte est déjà enregistrée ou si l'essai
+    est déjà converti.
+  - **Coupure** sur `customer.subscription.deleted` : l'assistant ne répond plus, bilan, lien
+    « Réactiver mon assistant » (`/pricing`). Rien n'est envoyé si le compte a été réactivé entre-temps.
+  - Destinataire : `managerEmail`, sinon l'adresse du propriétaire du compte. Aucune adresse dans les
+    journaux ; coût suivi en `billing_notification`.
+  - Le point de réception Stripe de l'abonnement doit écouter `customer.subscription.trial_will_end`.
+
 ## Configuration
 
 Créer les huit prix récurrents dans le compte Stripe correspondant à l'environnement (six prix de base et deux add-ons Multi-site), puis renseigner dans `apps/api/.env` :
@@ -48,26 +89,25 @@ STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL=price_...
 Les valeurs doivent être des identifiants Stripe `price_...`. Pour la migration cible, les montants
 attendus sont :
 
-| Prix                             | Mensuel HT | Annuel HT (-20 %) |
+| Prix                             | Mensuel HT | Annuel HT (-10 %) |
 | -------------------------------- | ---------: | ----------------: |
-| Essential                        |   199,00 € |        1 910,40 € |
-| Pro                              |   299,00 € |        2 870,40 € |
-| Multi-site (base)                |   249,00 € |        2 390,40 € |
-| Multi-site (site supplémentaire) |    99,00 € |          950,40 € |
+| Essential                        |   199,00 € |        2 149,20 € |
+| Pro                              |   299,00 € |        3 229,20 € |
+| Multi-site (base)                |   299,00 € |        3 229,20 € |
+| Multi-site (site supplémentaire) |    99,00 € |        1 069,20 € |
 
 Les prix `MULTI_SITE` couvrent la base ; les prix `MULTI_SITE_ADDON` couvrent chaque établissement
-supplémentaire. Le checkout reçoit `siteCount` (2 par défaut, maximum 100) et ajoute une ligne
-Stripe par établissement supplémentaire. Tant qu'une valeur manque, l'API renvoie
+supplémentaire. Le checkout reçoit `siteCount` (minimum 1, 2 par défaut, maximum 100) et ajoute une ligne
+Stripe pour les établissements supplémentaires, quantité `siteCount - 1` (aucune ligne addon pour un seul établissement). Tant qu'une valeur manque, l'API renvoie
 `503 BILLING_NOT_CONFIGURED` et aucune session n'est créée. La commande
-`scripts/ops/sync-stripe-prices.sh` ne crée pas ces prix et ne valide pas leur montant : elle ne
-recopie que des `priceId` déjà créés et vérifiés dans Stripe.
+`scripts/ops/sync-stripe-prices.sh` ne crée pas ces prix ; elle contrôle le catalogue lorsque le checkout est ouvert avant de publier les `priceId`.
 
 Les identifiants de prix sont conservés comme variables GitHub Actions non secrètes (`STRIPE_STAGING_*` et `STRIPE_PRODUCTION_*`). Chaque déploiement les synchronise dans le fichier `.env` du VPS avant le build ; une variable manquante ou invalide bloque le déploiement au lieu de publier une API partiellement configurée. La clé Stripe (`STRIPE_SECRET_KEY`) reste, elle, un secret géré séparément.
 
 ### Contrôle automatique du catalogue
 
 `scripts/ops/verify-stripe-catalog.mjs` lit chaque `price_...` côté Stripe et compare montant, devise,
-cadence et état au catalogue produit (199/299/249 + 99 €, annuel −20 %). Il est en **lecture seule**
+cadence et état au catalogue partagé `packages/shared/src/pricing-catalog.cjs` (199/299/299 + 99 €, annuel −10 %). Il est en **lecture seule**
 côté Stripe. `scripts/ops/sync-stripe-prices.sh` propage toujours les `priceId`, y compris quand le
 checkout reste fermé : cette synchronisation ne crée pas de session et évite qu'une activation future
 ne redémarre avec les anciens tarifs. Dès que `BILLING_CHECKOUT_ENABLED=true`, le script vérifie le
@@ -79,13 +119,15 @@ node --env-file=apps/api/.env scripts/ops/verify-stripe-catalog.mjs
 # → tableau des huit prix, puis « N prix non conformes » et code retour 1 en cas d'écart
 ```
 
-Les montants annuels sont contrôlés eux aussi ; `STRIPE_EXPECTED_<SUFFIXE>` (par exemple
-`STRIPE_EXPECTED_PRO_ANNUAL=287040`) permet de les surcharger le jour où la grille change, sans
-toucher au script.
+Les montants annuels sont contrôlés eux aussi, sans surcharge de montant par environnement.
+L’affichage public arrondit uniquement l’équivalent mensuel ; l’inscription et Checkout
+présentent le montant exact. Pour N sites : 29900 + (N−1)×9900 centimes par mois,
+322920 + (N−1)×106920 centimes par an. La version du catalogue entre dans la clé
+Checkout pour qu’un nouveau parcours ne réutilise pas une session de l’ancienne grille.
 
-### Provisionnement idempotent de la grille v2
+### Provisionnement idempotent de la grille v3
 
-Les prix Stripe étant immuables, `scripts/ops/provision-stripe-catalog.mjs` crée la grille v2 sur
+Les prix Stripe étant immuables, `scripts/ops/provision-stripe-catalog.mjs` crée la grille v3 sur
 les produits existants, avec une `lookup_key` stable, sans modifier ni archiver les anciens prix.
 Les souscriptions historiques conservent donc leur prix ; seules les nouvelles souscriptions
 utilisent les nouveaux `priceId` après synchronisation. La commande lit les huit
@@ -96,15 +138,94 @@ utilisent les nouveaux `priceId` après synchronisation. La commande lit les hui
 # Aperçu sans mutation (avec les priceId source dans l'environnement)
 node --env-file=apps/api/.env scripts/ops/provision-stripe-catalog.mjs
 
-# Compte test : crée ou réutilise les huit prix, puis affiche les variables à synchroniser
+# Compte test : réutilise les trois mensuels inchangés et crée ou retrouve les cinq nouveaux prix, puis affiche les variables à synchroniser
 node --env-file=apps/api/.env scripts/ops/provision-stripe-catalog.mjs --apply --env
 ```
 
 La création est protégée par `--apply`. Avec une clé `sk_live_`, elle exige en plus
-`--allow-live` et `STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V2`; cette double
+`--allow-live` et `STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V3`; cette double
 garde évite de créer un catalogue live par erreur. Reporter ensuite les huit valeurs dans les
 variables GitHub de l'environnement concerné, lancer `verify-stripe-catalog.mjs`, puis seulement
 déployer. Ne jamais archiver les prix historiques tant qu'une souscription peut encore les référencer.
+
+## Catalogue Stripe test/live du 14 octobre 2026
+
+Les huit prix de chaque environnement ont été relus côté Stripe : montants exacts, EUR,
+HT, cadence, état actif, association à l’offre et même produit pour les deux cadences.
+Les cinq prix de la nouvelle grille sont créés de manière additive ; les trois mensuels
+inchangés gardent leur identifiant. Cinq Checkout annuels sandbox (Essential, Pro et
+Multi-site 1/2/3 établissements) confirment les sous-totaux attendus ; ils ont été expirés
+sans paiement ni création d’abonnement.
+
+| Variable (suffixe STRIPE*PRICE*) | Test                             | Production                       |
+| -------------------------------- | -------------------------------- | -------------------------------- |
+| ESSENTIAL_MONTHLY                | `price_1UI9zCHCZZuqZF0hNqTNnY1v` | `price_1UICsZH4TS0ZYIJnPcPew0Co` |
+| ESSENTIAL_ANNUAL                 | `price_1UQELbHCZZuqZF0hQD3CBkH3` | `price_1UQELvH4TS0ZYIJn1QbFxGef` |
+| PRO_MONTHLY                      | `price_1UI9zEHCZZuqZF0hpNCsSA6e` | `price_1UICsbH4TS0ZYIJn3HyLxaul` |
+| PRO_ANNUAL                       | `price_1UQELbHCZZuqZF0hAFXMqgaS` | `price_1UQELvH4TS0ZYIJnd1OyrkKZ` |
+| MULTI_SITE_MONTHLY               | `price_1UQELcHCZZuqZF0h0g3J1et9` | `price_1UQELwH4TS0ZYIJnAfVOMIDv` |
+| MULTI_SITE_ANNUAL                | `price_1UQELcHCZZuqZF0hodbuPFHe` | `price_1UQELwH4TS0ZYIJnpTL6GIVh` |
+| MULTI_SITE_ADDON_MONTHLY         | `price_1UI9zGHCZZuqZF0hC3xNNmsW` | `price_1UICseH4TS0ZYIJn0z9WoP0d` |
+| MULTI_SITE_ADDON_ANNUAL          | `price_1UQELdHCZZuqZF0hBBUgrRNS` | `price_1UQELxH4TS0ZYIJnof7S3O3p` |
+
+### Contrôle du 16 octobre 2026
+
+- `verify-stripe-catalog.mjs` exécuté sur le VPS avec le `.env` staging (`sk_test_`) puis prod
+  (`sk_live_`, lecture seule) : 8/8 conformes dans chaque environnement. Les `priceId` déployés
+  sont exactement ceux du tableau ci-dessus.
+- Rejeu sandbox mensuel sur un client test jetable : Checkout et aperçu de facture
+  (`invoices.createPreview`) donnent Essential 199,00 €, Pro 299,00 €, Multi-site 3 sites 497,00 €
+  (299 + 2 × 99). Sessions expirées sans paiement, client supprimé, aucun abonnement créé.
+- Portail, **compte test uniquement** (accord de Hamza : « Oui, active le changement de formule
+  dans le portail client Stripe, en test d'abord. ») : la configuration par défaut
+  `bpc_1UD3ilHCZZuqZF0hp2KK2EqF` a maintenant `subscription_update` activé avec
+  `default_allowed_updates: ["price"]`, `proration_behavior: create_prorations` et les produits
+  Essential et Pro (mensuel + annuel). Multi-site est exclu : un abonnement à deux lignes (base +
+  addon) ne passe pas par le portail, et `siteCount` vient de la metadata Checkout ; pas de
+  `quantity` pour la même raison. Retour arrière : `enabled: false`,
+  `default_allowed_updates: []`, `proration_behavior: none`. Le live n'est pas modifié.
+- Correctif requis avant toute ouverture en live : `handleSubscriptionEvent` donnait la priorité à
+  `metadata.plan` (posée par Checkout) sur le prix. Un changement Essential → Pro dans le portail
+  change le prix sans toucher la metadata, et le compte restait en Essential. Rejeu sandbox
+  Essential → Pro sur un client jetable : l'événement réel `customer.subscription.updated` porte le
+  prix Pro et `metadata.plan=essential` ; prochaine facture −199 € (prorata) + 299 € + 299 €.
+  Rejoué contre le handler local : `STARTER` sans correctif, `PRO` avec. Le prix résolu passe
+  désormais en premier, la metadata ne sert plus qu'aux prix historiques. Test unitaire ajouté.
+  Client et abonnement de test supprimés. Le correctif doit être déployé en staging avant de
+  rejouer le parcours depuis le dashboard, puis avant toute activation live.
+- Portail **live** (accord de Hamza, après déploiement de #460 en staging et production sur
+  `b73075bc`) : le compte live n'avait aucune configuration de portail. Configuration créée par
+  appel Stripe et devenue la configuration par défaut du compte :
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`, repérée par sa metadata `sokar_key` = `portal-v1`. Mêmes réglages qu'en test : changement de prix Essential et Pro (mensuel +
+  annuel, `create_prorations`), Multi-site exclu, pas de `quantity` ; mise à jour carte et
+  coordonnées, historique des factures, résiliation en fin de période avec motif. Retour arrière :
+  `subscription_update.enabled: false` sur cette configuration. Aucun abonné live à ce jour : pas de
+  rejeu de bout en bout en live.
+- Contrôle live sans paiement (client jetable, `invoices.createPreview`, aucun moyen de paiement ni
+  abonnement, client supprimé) : Essential 199,00 € / 2 149,20 €, Pro 299,00 € / 3 229,20 €,
+  Multi-site 3 sites 497,00 € / 5 367,60 € (mensuel / annuel). Session de portail live créée sur
+  `bpc_1URDivH4TS0ZYIJntZnMNCxw`. Aucune TVA n'est calculée, volontairement : Sokar est en franchise
+  en base de TVA (décision du 16 octobre 2026). Les factures portent « TVA non applicable, art. 293 B
+  du CGI » via `invoice_settings.footer` du client Stripe (`VAT_MENTION`, PR #462 ; clients
+  existants mis à jour en live et en test). À revoir si le statut TVA change.
+- Abonnés existants : aucune ligne `RestaurantBilling` de production n'a de
+  `stripeSubscriptionId`. Aucun abonnement historique n'est à migrer ; la règle reste de ne jamais
+  migrer ni archiver un ancien prix sans décision explicite.
+
+### Rollback de cette grille
+
+Le rollback applicatif ne restaure pas les variables Stripe. Avant de revenir à la release
+précédente, remettre les cinq variables GitHub et `.env` ci-dessous, puis redémarrer l’API
+avec les artefacts précédents suivant `rollback.md`. Les trois mensuels réutilisés restent
+identiques. Ne jamais migrer les abonnements ni archiver les prix lors du rollback.
+
+| Suffixe                 | Ancien test                      | Ancien production                |
+| ----------------------- | -------------------------------- | -------------------------------- |
+| ESSENTIAL_ANNUAL        | `price_1UI9zDHCZZuqZF0hes92HYpo` | `price_1UICsaH4TS0ZYIJnL3W0Dtvx` |
+| PRO_ANNUAL              | `price_1UI9zEHCZZuqZF0hVpM3e17h` | `price_1UICscH4TS0ZYIJnAX8zHdza` |
+| MULTI_SITE_MONTHLY      | `price_1UI9zFHCZZuqZF0hiCaVcLrY` | `price_1UICscH4TS0ZYIJnGUALBfl0` |
+| MULTI_SITE_ANNUAL       | `price_1UI9zFHCZZuqZF0hWveFh12a` | `price_1UICsdH4TS0ZYIJnRMkPCYYz` |
+| MULTI_SITE_ADDON_ANNUAL | `price_1UI9zHHCZZuqZF0h3AsrGxXZ` | `price_1UICseH4TS0ZYIJnZMkSr5b7` |
 
 ## Réconciliation du catalogue — porte P1_ESSENTIAL
 
@@ -115,8 +236,8 @@ de contrôle a retourné `8/8 conformes` avant l'ouverture du checkout.
 Pour une nouvelle grille, conserver la séquence ci-dessous en lecture seule puis
 mettre à jour la preuve de release ; ne jamais modifier un Price existant.
 
-1. Créer dans Stripe (mode test d'abord, puis live) les huit prix récurrents aux montants du tableau
-   ci-dessus, en EUR, intervalles `month`/`year` et `interval_count = 1`.
+1. Réutiliser les prix mensuels Essential, Pro et addon inchangés. Créer dans Stripe (test puis live)
+   le nouveau mensuel Multi-site et les quatre annuels aux montants du tableau ci-dessus, en EUR, intervalles `month`/`year` et `interval_count = 1`.
 2. Renseigner les huit variables GitHub Actions (`STRIPE_STAGING_*`, `STRIPE_PRODUCTION_*`) avec les
    `priceId` obtenus — jamais la clé secrète.
 3. Vérifier avant tout déploiement : `node --env-file=apps/api/.env scripts/ops/verify-stripe-catalog.mjs`.
@@ -233,10 +354,11 @@ La vérification du webhook signé a ensuite utilisé un événement test `custo
 
 Une lecture Stripe en mode read-only du 7 septembre 2026 confirme que les quatre prix annuels alors
 actifs en production (mode live) et staging (mode test) restent ceux de l'ancien catalogue :
-Essential 1 430,40 €/an, Pro 2 390,40 €/an, Multi-site 2 390,40 €/an et add-on Multi-site
-950,40 €/an par établissement supplémentaire. Cette preuve historique ne valide pas la nouvelle
+Essential 1 430,40 €/an, Pro 3 229,20 €/an, Multi-site 3 229,20 €/an et add-on Multi-site
+1 069,20 €/an par établissement supplémentaire. Cette preuve historique ne valide pas la nouvelle
 grille 199/299 ; elle doit être remplacée après création des nouveaux prix, synchronisation des
 `priceId`, Checkout, facture, taxes, prorata, période de grâce et renouvellement en sandbox.
+Remplacée par le contrôle du 16 octobre 2026 ci-dessus pour les prix, le Checkout et la facture.
 
 ## Test sans paiement
 

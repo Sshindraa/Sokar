@@ -21,3 +21,21 @@ export function getPlanSignupHref(plan: PublicPlan, yearly: boolean, siteCount =
 
   return `/register?${params.toString()}`;
 }
+
+export function getPlanDemoHref(plan: PublicPlan, yearly: boolean, siteCount = 2): string {
+  return getPlanSignupHref(plan, yearly, siteCount).replace('/register?', '/demo?');
+}
+
+export function readPricingSelection(search: string) {
+  const params = new URLSearchParams(search);
+  const plan = (Object.keys(PLAN_SLUGS) as PublicPlan[]).find(
+    (label) => PLAN_SLUGS[label] === params.get('plan'),
+  );
+  if (!plan) return null;
+  const count = Number(params.get('sites'));
+  return {
+    plan,
+    yearly: params.get('billing') !== 'monthly',
+    siteCount: Number.isInteger(count) && count >= 1 && count <= 100 ? count : 2,
+  };
+}

@@ -279,27 +279,32 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
       const isSimulation =
         requestMethod === 'POST' && pathname.includes('/service-copilot/simulate');
       const isTablePatch = requestMethod === 'PATCH' && pathname.includes('/floor-plan/tables/');
-      const response = isSimulation
-        ? simulationResponse(route.request().postDataJSON() as SimulationRequest)
-        : isTablePatch
-          ? patchedTableResponse(
-              currentFloorPlan,
-              pathname,
-              route.request().postDataJSON() as Record<string, unknown>,
-            )
-          : pathname.endsWith('/floor-plans')
-            ? demoFloorPlans
-            : pathname.includes(`/floor-plans/${demoFloorPlan.id}`)
-              ? currentFloorPlan
-              : pathname.includes('/floor-plan/reservations')
-                ? []
-                : pathname.includes('/waiting-list')
+      const response = pathname.endsWith('/entitlements')
+        ? {
+            restaurantId: process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID || 'e2e-demo-restaurant',
+            capabilities: { 'floorPlan.copilot': true },
+          }
+        : isSimulation
+          ? simulationResponse(route.request().postDataJSON() as SimulationRequest)
+          : isTablePatch
+            ? patchedTableResponse(
+                currentFloorPlan,
+                pathname,
+                route.request().postDataJSON() as Record<string, unknown>,
+              )
+            : pathname.endsWith('/floor-plans')
+              ? demoFloorPlans
+              : pathname.includes(`/floor-plans/${demoFloorPlan.id}`)
+                ? currentFloorPlan
+                : pathname.includes('/floor-plan/reservations')
                   ? []
-                  : pathname.includes('/service-copilot/delay-recoveries')
-                    ? { recoveries: [] }
-                    : pathname.includes('/service-copilot/pulse')
-                      ? demoServicePulse
-                      : null;
+                  : pathname.includes('/waiting-list')
+                    ? []
+                    : pathname.includes('/service-copilot/delay-recoveries')
+                      ? { recoveries: [] }
+                      : pathname.includes('/service-copilot/pulse')
+                        ? demoServicePulse
+                        : null;
 
       await route.fulfill({
         status: response ? 200 : 404,
@@ -307,6 +312,34 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
         body: JSON.stringify(response ?? { error: 'Route démo non mockée' }),
       });
     });
+  });
+
+  test('Essential conserve la salle et le placement sans charger les fonctions avancées', async ({
+    page,
+  }) => {
+    let advancedRequests = 0;
+    await page.route('**/api/proxy/entitlements', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          restaurantId: process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID || 'e2e-demo-restaurant',
+          capabilities: { 'floorPlan.copilot': false },
+        }),
+      }),
+    );
+    page.on('request', (request) => {
+      if (/service-copilot\/(?!pulse)/.test(request.url())) advancedRequests++;
+    });
+    await page.addInitScript(() => localStorage.setItem('theme', 'light'));
+    await page.goto('/dashboard/floor-plan?view=service-live&floorPlanId=e2e-floor-plan');
+    await expect(page.getByLabel('Date du service')).toBeVisible();
+    // L'écran de service ne porte ni annonce de formule ni « vérification du copilote » : le plan reste en haut.
+    await expect(page.getByRole('button', { name: 'T1 · 2 places' })).toBeVisible();
+    await expect(page.getByText('Le copilote de service accompagne la formule Pro.')).toHaveCount(
+      0,
+    );
+    expect(advancedRequests).toBe(0);
   });
 
   test('passe de Live service à Salle édition, Sections & tables puis Plan visuel', async ({

@@ -1,7 +1,9 @@
+import { PRICING_CATALOG } from '@sokar/shared';
+
 export const PLANS = {
-  ESSENTIAL: { label: 'Essential', price: 199 },
-  PRO: { label: 'Pro', price: 299 },
-  MULTI_SITE: { label: 'Multi-site', price: 249 },
+  ESSENTIAL: { label: 'Essential', price: PRICING_CATALOG.essential.monthlyCents / 100 },
+  PRO: { label: 'Pro', price: PRICING_CATALOG.pro.monthlyCents / 100 },
+  MULTI_SITE: { label: 'Multi-site', price: PRICING_CATALOG['multi-site'].monthlyCents / 100 },
 } as const;
 
 // Legacy mapping — DB still uses STARTER / PREMIUM until migration
@@ -12,10 +14,10 @@ export const PLAN_LABEL_MAP: Record<string, string> = {
 };
 
 export const PLAN_PRICE_MAP: Record<string, number> = {
-  ESSENTIAL: 199,
-  STARTER: 199,
-  PRO: 299,
-  PREMIUM: 249, // Multi-site base price remains 249€ + 99€/site
+  ESSENTIAL: PRICING_CATALOG.essential.monthlyCents / 100,
+  STARTER: PRICING_CATALOG.essential.monthlyCents / 100,
+  PRO: PRICING_CATALOG.pro.monthlyCents / 100,
+  PREMIUM: PRICING_CATALOG['multi-site'].monthlyCents / 100,
 };
 
 export const INTERNAL_CALL_ALERT_THRESHOLD = 3000;
@@ -28,7 +30,7 @@ export const DEFAULT_MAX_PARTY_SIZE = 7;
 // Follow Cartesia's latest stable Sonic 3.6 snapshot automatically.
 // Change this deliberately if reproducible voice behavior becomes a release gate.
 export const CARTESIA_MODEL = 'sonic-3.6';
-export const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
+export const DEFAULT_CARTESIA_VOICE_ID = '90358bc7-3328-4b93-a942-d0447d7d4b5c';
 
 // ─── Phase 2 — TTS Cache ─────────────────────────────────────────────────
 export const TTS_CACHE_TTL_SECONDS = 86_400 * 7; // 7 jours

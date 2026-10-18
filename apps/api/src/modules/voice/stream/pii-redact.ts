@@ -8,15 +8,24 @@ import { createHash } from 'node:crypto';
  */
 
 const PHONE_REGEX = /\+?\d[\d\s().-]{8,}\d/g;
+/** Date ISO AAAA-MM-JJ (brouillon de réservation) : dix caractères de chiffres et de tirets, comme un numéro. */
+const ISO_DATE_REGEX = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g;
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
 /**
  * Redacte les PII d'une chaîne pour les debug logs.
- * - Numéros de téléphone → [PHONE]
+ * - Numéros de téléphone → [PHONE] (une date AAAA-MM-JJ n'en est pas un)
  * - Emails → [EMAIL]
  */
 export function redactPii(text: string): string {
-  return text.replace(PHONE_REGEX, '[PHONE]').replace(EMAIL_REGEX, '[EMAIL]');
+  // Les dates sont mises de côté (jeton sans chiffre ni tiret) pendant le masquage des numéros, puis remises.
+  const dates: string[] = [];
+  const sheltered = text.replace(ISO_DATE_REGEX, (date) => {
+    dates.push(date);
+    return `\uE000${dates.length - 1}\uE001`;
+  });
+  const redacted = sheltered.replace(PHONE_REGEX, '[PHONE]').replace(EMAIL_REGEX, '[EMAIL]');
+  return redacted.replace(/\uE000(\d+)\uE001/g, (_, index: string) => dates[Number(index)] ?? '');
 }
 
 /**

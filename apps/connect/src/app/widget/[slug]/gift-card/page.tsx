@@ -7,6 +7,7 @@
  * Design aligné avec le widget de réservation (cream bg, glassmorphism, display font).
  */
 
+import type { Metadata } from 'next';
 import { type CSSProperties } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchWidgetRestaurant } from '@/lib/api-client';
@@ -15,6 +16,11 @@ import { trackEventAsync } from '@/lib/tracking';
 import { toHexColor } from '@/lib/widget-colors';
 
 export const dynamic = 'force-dynamic';
+
+// Formulaire d'achat : utile à la personne qui offre, sans intérêt pour les moteurs de recherche.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 type SearchParams = {
   embedded?: string;

@@ -1,23 +1,47 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
-import { requireOrg } from '../../plugins/clerk';
+import { normalizePhone } from '@sokar/shared';
+import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
 import {
+  getOnboardingPlaceDetails,
+  isOnboardingPlacesEnabled,
+  searchOnboardingPlaces,
+} from './onboarding-places.service';
+import {
   applyOnboardingTransition,
   computeOnboardingState,
   DEFAULT_HOURS,
+  hasConfiguredRules,
   hasUsablePhone,
   normalizeTasks,
-  ONBOARDING_STEPS,
   type OnboardingTask,
   type OnboardingTaskState,
   UpdateOnboardingSchema,
 } from './onboarding.service';
+import { OpeningHoursSchema } from './opening-hours.schema';
+import {
+  hasAnsweredPracticalInfo,
+  mergePracticalInfo,
+  normalizePracticalInfo,
+  PracticalInfoUpdateSchema,
+  syncManagedFeatures,
+} from './practical-info';
+import {
+  applyQuickFloorSetup,
+  loadFloorStats,
+  loadFloorSummary,
+  QuickFloorSetupSchema,
+} from './onboarding-floor.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
+import { toRestaurantResponse } from './restaurant-response';
+import { isVoicePersonalityStyleEnabled } from '../voice/stream/feature-flags';
+import { resolveStyledGreeting } from '../voice/stream/styled-greeting';
 import { computeConnectScore } from '../connect/connect-score.service';
 import {
   createCustomHostname,
@@ -36,6 +60,13 @@ import {
 import { normalizeVoiceLocale } from '../voice/stream/voice-language';
 import { CARTESIA_MODEL } from '@sokar/config';
 import { redisCache } from '../../shared/redis/client';
+import { isVoicePipelineEnabled } from '../../shared/configcat';
+import {
+  LIVE_DEMO_MAX_DURATION_SEC,
+  buildLiveDemoWsUrl,
+  issueLiveDemoTicket,
+  liveDemoUnavailableReason,
+} from '../voice/demo/live-demo';
 import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
 import {
   assertClerkOrganizationMember,
@@ -65,10 +96,7 @@ const RestaurantProfileSchema = z.object({
   managerPhone: z.string().regex(/^\+?[0-9]{10,15}$/),
   managerEmail: z.string().email(),
   phoneNumber: z.string().min(5),
-  openingHours: z.record(
-    z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
-    z.union([z.object({ open: z.string(), close: z.string() }), z.null()]),
-  ),
+  openingHours: OpeningHoursSchema,
   googleCalendarId: z.string().nullable().optional(),
   giftCardMinimumAmount: z.number().int().min(0).optional(),
   giftCardEnabled: z.boolean().optional(),
@@ -78,6 +106,8 @@ const CreateRestaurantSchema = RestaurantProfileSchema;
 
 const CreateSiteSchema = z.object({
   name: z.string().trim().min(2).max(100),
+  // Ligne publique du site (le « Téléphone du site » saisi dans le dashboard), enregistrée dans
+  // `phoneE164`. Ce n'est pas le numéro Sokar : celui-ci est attribué par un opérateur.
   phoneNumber: z.string().trim().min(5).max(32),
   managerPhone: z.string().trim().max(32).default(''),
   managerEmail: z
@@ -133,9 +163,25 @@ const CapacitySpecialsSchema = z
   })
   .passthrough();
 
-const UpdateRestaurantSchema = RestaurantProfileSchema.extend({
-  capacitySpecials: CapacitySpecialsSchema.optional(),
-}).partial();
+// Le numéro Sokar (`phoneNumber`) aiguille les appels entrants : seul un opérateur Sokar l'attribue
+// (POST /admin/provisioning/:id/assign-phone). Le restaurateur ne peut pas le modifier ici ; un
+// `phoneNumber` envoyé est ignoré.
+const UpdateRestaurantSchema = RestaurantProfileSchema.omit({ phoneNumber: true })
+  .extend({
+    phoneE164: z.string().trim().max(32).optional().nullable(),
+    googlePlaceId: z.string().trim().max(200).optional().nullable(),
+    capacitySpecials: CapacitySpecialsSchema.optional(),
+  })
+  .partial();
+
+const OnboardingPlaceSearchSchema = z.object({
+  query: z.string().trim().min(2).max(120),
+  sessionToken: z.string().uuid(),
+});
+const OnboardingPlaceDetailsSchema = z.object({
+  placeId: z.string().trim().min(5).max(200),
+  sessionToken: z.string().uuid(),
+});
 
 const UpdateConnectSchema = z.object({
   slug: z
@@ -176,9 +222,10 @@ const PostImageSchema = z.object({
 
 function onboardingPayload(
   restaurant: RestaurantWithIncludes,
-  state = computeOnboardingState(restaurant),
+  state: ReturnType<typeof computeOnboardingState>,
 ) {
   return {
+    readiness: state.readiness,
     onboardingDone: state.onboardingDone,
     voiceOnboardingDone: state.voiceOnboardingDone,
     connectOnboardingDone: state.connectOnboardingDone,
@@ -189,7 +236,7 @@ function onboardingPayload(
     firstCallAt: restaurant.firstCallAt,
     currentStep: state.currentStep,
     completedCount: state.completedCount,
-    totalCount: ONBOARDING_STEPS.length,
+    totalCount: state.totalCount,
     progress: state.progress,
     voiceProgress: state.voiceProgress,
     connectProgress: state.connectProgress,
@@ -200,12 +247,15 @@ function onboardingPayload(
       name: restaurant.name,
       managerPhone: restaurant.managerPhone,
       managerEmail: restaurant.managerEmail,
+      phoneE164: restaurant.phoneE164,
+      googlePlaceId: restaurant.googlePlaceId,
       phoneNumber: restaurant.phoneNumber,
       phoneAssigned: hasUsablePhone(restaurant.phoneNumber),
       openingHours: restaurant.openingHours,
       googleCalendarId: restaurant.googleCalendarId,
       googleConnected: Boolean(restaurant.googleRefreshToken),
       personality: restaurant.personality,
+      practicalInfo: normalizePracticalInfo(restaurant.practicalInfo),
       // Sokar Connect
       slug: restaurant.slug,
       description: restaurant.description,
@@ -234,7 +284,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
       include: { personality: true, exposureSettings: true, images: true },
     });
 
-    const state = computeOnboardingState(restaurant);
+    const floorStats = await loadFloorStats(app.db, restaurantId);
+    const state = computeOnboardingState({ ...restaurant, floorStats });
     const completedAt =
       state.onboardingDone && !restaurant.onboardingCompletedAt
         ? new Date()
@@ -251,7 +302,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
       include: { personality: true, exposureSettings: true, images: true },
     });
 
-    return reply.send(onboardingPayload(updated, computeOnboardingState(updated)));
+    return reply.send(
+      onboardingPayload(updated, computeOnboardingState({ ...updated, floorStats })),
+    );
   };
 
   const patchOnboarding = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -290,11 +343,54 @@ export async function restaurantRoutes(app: FastifyInstance) {
       });
     }
 
-    const currentState = computeOnboardingState(restaurant);
+    const floorStats = await loadFloorStats(app.db, restaurantId);
+    if (body.action === 'complete' && body.task === 'floor' && floorStats.tableCount === 0) {
+      return reply.status(409).send({
+        code: 'NO_TABLES',
+        error: 'Ajoutez au moins une table : sans table, Sokar ne peut proposer aucun créneau.',
+      });
+    }
+    if (
+      body.action === 'complete' &&
+      body.task === 'floor' &&
+      !hasConfiguredRules(restaurant.exposureSettings?.capacitySpecials)
+    ) {
+      return reply.status(409).send({
+        code: 'NO_RULES',
+        error: 'Enregistrez vos règles de réservation, dont la durée d’un repas.',
+      });
+    }
+    if (
+      body.action === 'complete' &&
+      body.task === 'floor' &&
+      !hasAnsweredPracticalInfo(restaurant.practicalInfo, restaurant.ambiance)
+    ) {
+      return reply.status(409).send({
+        code: 'NO_PRACTICAL_INFO',
+        error:
+          'Répondez aux questions pratiques (terrasse, parking, accessibilité, animaux, menu enfant, privatisation) : vos clients les posent avant de réserver.',
+      });
+    }
+
+    const currentState = computeOnboardingState({ ...restaurant, floorStats });
+    if (body.action === 'complete' && body.task === 'channels' && !currentState.readiness.ready) {
+      return reply.status(409).send({
+        code: 'NOT_READY_TO_BOOK',
+        error:
+          'Complétez les horaires, les tables et les règles de réservation avant de continuer vers Sokar Connect.',
+      });
+    }
     if (body.action === 'activate' && !currentState.onboardingDone) {
       return reply.status(409).send({
         error:
           "La mise en service ne peut pas être activée tant que l'onboarding n'est pas complet.",
+      });
+    }
+    if (body.action === 'activate' && !currentState.readiness.ready) {
+      return reply.status(409).send({
+        code: 'NOT_READY_TO_BOOK',
+        error:
+          'Vos clients ne peuvent pas encore réserver : complétez les horaires, les tables et les règles de réservation.',
       });
     }
 
@@ -317,7 +413,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         },
       };
     }
-    const nextState = computeOnboardingState({ ...restaurant, onboardingTasks: tasks });
+    const nextState = computeOnboardingState({ ...restaurant, floorStats, onboardingTasks: tasks });
     const updated = await app.db.restaurant.update({
       where: { id: restaurantId },
       data: {
@@ -342,7 +438,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       include: { personality: true, exposureSettings: true, images: true },
     });
 
-    const updatedState = computeOnboardingState(updated);
+    const updatedState = computeOnboardingState({ ...updated, floorStats });
     const event = ONBOARDING_EVENT_BY_ACTION[body.action];
     if (event) {
       trackOnboardingEvent({
@@ -383,7 +479,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(onboardingPayload(updated, updatedState));
   };
 
-  app.post('/restaurants', { preHandler: requireOrg() }, async (req, reply) => {
+  // Création directe d'un restaurant avec son numéro : réservée aux opérateurs Sokar. Les
+  // restaurateurs passent par l'inscription (POST /api/auth/sync), qui pose un numéro provisoire.
+  app.post('/restaurants', { preHandler: requireSokarOperator() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
       const restaurant = await app.db.restaurant.create({
@@ -394,7 +492,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
         { name: 'nightly', data: { restaurantId: restaurant.id } },
       );
-      return reply.status(201).send(restaurant);
+      return reply.status(201).send(toRestaurantResponse(restaurant));
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === 'P2002') {
         return reply.status(409).send({ error: 'Phone number already registered' });
@@ -407,6 +505,66 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/api/restaurant/onboarding', { preHandler: requireOrg() }, getOnboarding);
   app.patch('/restaurant/onboarding', { preHandler: requireOrg() }, patchOnboarding);
   app.patch('/api/restaurant/onboarding', { preHandler: requireOrg() }, patchOnboarding);
+
+  const getOnboardingFloor = async (req: FastifyRequest, reply: FastifyReply) => {
+    const restaurantId = req.restaurantId;
+    const [tables, stats] = await Promise.all([
+      loadFloorSummary(app.db, restaurantId),
+      loadFloorStats(app.db, restaurantId),
+    ]);
+    return reply.send({ tables, stats });
+  };
+
+  const putOnboardingFloor = async (req: FastifyRequest, reply: FastifyReply) => {
+    const restaurantId = req.restaurantId;
+    const body = QuickFloorSetupSchema.parse(req.body ?? {});
+    const result = await applyQuickFloorSetup(app.db, restaurantId, body);
+    const tables = await loadFloorSummary(app.db, restaurantId);
+    return reply.send({ tables, ...result });
+  };
+
+  const putOnboardingPractical = async (req: FastifyRequest, reply: FastifyReply) => {
+    const restaurantId = req.restaurantId;
+    const body = PracticalInfoUpdateSchema.parse(req.body ?? {});
+    const current = await app.db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: { practicalInfo: true, ambiance: true },
+    });
+    const practicalInfo = mergePracticalInfo(
+      normalizePracticalInfo(current.practicalInfo),
+      body.practicalInfo,
+    );
+    const updated = await app.db.restaurant.update({
+      where: { id: restaurantId },
+      data: {
+        practicalInfo: practicalInfo as unknown as Prisma.InputJsonValue,
+        ambiance: syncManagedFeatures(current.ambiance, body.practicalInfo),
+        ...(body.dietary ? { dietary: body.dietary } : {}),
+      },
+      select: { practicalInfo: true, ambiance: true, dietary: true, phoneNumber: true, slug: true },
+    });
+    // L'assistant vocal lit ces faits depuis le contexte en cache, la page Connect depuis le sien.
+    await invalidateRestaurantContextCache(updated.phoneNumber);
+    if (updated.slug) {
+      await app.redisCache.del(`connect:restaurant:${updated.slug}`).catch(() => {});
+    }
+    return reply.send({
+      practicalInfo: normalizePracticalInfo(updated.practicalInfo),
+      ambiance: updated.ambiance,
+      dietary: updated.dietary,
+    });
+  };
+
+  app.get('/restaurant/onboarding/floor', { preHandler: requireOrg() }, getOnboardingFloor);
+  app.get('/api/restaurant/onboarding/floor', { preHandler: requireOrg() }, getOnboardingFloor);
+  app.put('/restaurant/onboarding/floor', { preHandler: requireOrg() }, putOnboardingFloor);
+  app.put('/api/restaurant/onboarding/floor', { preHandler: requireOrg() }, putOnboardingFloor);
+  app.put('/restaurant/onboarding/practical', { preHandler: requireOrg() }, putOnboardingPractical);
+  app.put(
+    '/api/restaurant/onboarding/practical',
+    { preHandler: requireOrg() },
+    putOnboardingPractical,
+  );
 
   // Site selector source of truth for the multi-site dashboard. The active
   // site is still enforced by requireOrg() on every subsequent route.
@@ -479,7 +637,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
           isPrimary: false,
           siteStatus: 'ACTIVE',
           name: input.name,
-          phoneNumber: input.phoneNumber,
+          // Numéro Sokar provisoire, comme à l'inscription : un opérateur attribue le vrai numéro
+          // (provisioning). La ligne saisie par le restaurateur est sa ligne publique.
+          phoneNumber: `+000site-${randomUUID()}`,
+          phoneE164: normalizePhone(input.phoneNumber),
           managerPhone: input.managerPhone,
           managerEmail: input.managerEmail,
           openingHours: input.openingHours as Prisma.InputJsonValue,
@@ -668,10 +829,12 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     return reply.send(
-      await app.db.restaurant.findUniqueOrThrow({
-        where: { id },
-        include: { personality: true, exposureSettings: true },
-      }),
+      toRestaurantResponse(
+        await app.db.restaurant.findUniqueOrThrow({
+          where: { id },
+          include: { personality: true, exposureSettings: true },
+        }),
+      ),
     );
   });
 
@@ -690,7 +853,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
             phoneNumber: true,
           },
         });
-        return reply.send(restaurant);
+        return reply.send({
+          ...restaurant,
+          whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
+        });
       } catch (err) {
         app.log.error({ err }, 'Restaurant fetch failed');
         return reply.status(404).send({ error: 'Restaurant not found' });
@@ -741,6 +907,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         return reply.send({
           ...restaurant,
           sections: defaultFloorPlan?.sections ?? [],
+          whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
         });
       } catch (err) {
         app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
@@ -789,7 +956,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (updated.slug) {
       await app.redisCache.del(`connect:restaurant:${updated.slug}`).catch(() => {});
     }
-    return reply.send(updated);
+    return reply.send(toRestaurantResponse(updated));
   });
 
   // ─── Personnalité de l'agent vocal ─────────────────────────────
@@ -822,20 +989,31 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const restaurant = await app.db.restaurant.findUniqueOrThrow({ where: { id } });
     await invalidateRestaurantContextCache(restaurant.phoneNumber);
 
+    // Accueil composé pour ce style : prêt avant le prochain appel (jamais bloquant en cas d'échec).
+    if (isVoicePersonalityStyleEnabled(restaurant.id)) {
+      await resolveStyledGreeting(
+        restaurant.name,
+        { profileType: personality.profileType, fillerStyle: personality.fillerStyle },
+        { attempts: 2, timeoutMs: 4_000 },
+      ).catch(() => null);
+    }
+
     return reply.send(personality);
   });
 
-  // ─── Appel test onboarding : le gérant entend l'IA sur SON propre numéro ──
+  // ─── Appel test onboarding : vérifie la ligne publique du restaurant ───────
   // Le déclenchement est journalisé comme appel en attente ; la validation
   // intervient uniquement après confirmation explicite du gérant.
 
   const TestCallSchema = z.object({
-    phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
+    // Compatibilité avec les anciennes versions du dashboard. Le serveur utilise phoneE164.
+    phoneNumber: z.string().optional(),
   });
+  const TestCallPhoneSchema = z.string().regex(/^\+[1-9]\d{9,14}$/);
 
   const postTestCall = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
-    const body = TestCallSchema.parse(req.body ?? {});
+    TestCallSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
       include: { personality: true },
@@ -845,20 +1023,29 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(409).send({
         code: 'NO_PHONE_ASSIGNED',
         error:
-          "Aucun numéro Sokar attribué à ce restaurant. L'équipe Sokar doit d'abord vous attribuer un numéro dédié. Contactez le support si l'attribution tarde.",
+          "Aucun numéro Sokar attribué à ce restaurant. L'appel test vérifie que le renvoi arrive jusqu'à ce numéro : l'équipe Sokar doit d'abord vous en attribuer un. Vous pouvez continuer les autres étapes en attendant, et contacter le support si l'attribution tarde.",
+      });
+    }
+
+    const restaurantPhone = TestCallPhoneSchema.safeParse(
+      normalizePhone(restaurant.phoneE164?.trim() ?? ''),
+    );
+    if (!restaurantPhone.success) {
+      return reply.status(409).send({
+        code: 'NO_RESTAURANT_PHONE',
+        error: 'Renseignez le numéro public du restaurant au format international.',
       });
     }
 
     const baseUrl = process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
-    const webhookUrl = `${baseUrl}/voice/stream`;
+    const webhookUrl = `${baseUrl}/voice/telnyx`;
 
     try {
-      const { callControlId } = await placeOutboundCall(body.phoneNumber, {
+      const { callControlId } = await placeOutboundCall(restaurantPhone.data, {
         webhookUrl,
         clientState: {
           kind: 'onboarding_test_call',
           restaurantId,
-          targetManagerPhone: body.phoneNumber,
         },
         timeoutSecs: 30,
       });
@@ -887,10 +1074,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         message: 'Appel test déclenché. Confirmez sa réception après avoir entendu l’assistant.',
       });
     } catch (err: unknown) {
-      logger.error(
-        { err, restaurantId, target: body.phoneNumber },
-        '[onboarding] test call failed',
-      );
+      logger.error({ err, restaurantId }, '[onboarding] test call failed');
       return reply.status(502).send({
         code: 'TELNYX_FAILED',
         error:
@@ -913,11 +1097,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   const DEMO_SCRIPTS: Record<string, (name: string) => string> = {
     reservation: (name) =>
-      `Bonjour, ${name}. Oui, une table pour quatre personnes ce vendredi à dix-neuf heures, c'est noté. À vendredi !`,
-    cancellation: (name) =>
-      `Bonjour, ${name}. Bien sûr, j'annule votre réservation de ce soir. Souhaitez-vous la reporter à une autre date ?`,
+      `Bonjour, ici ${name}. Je regarde les disponibilités pour deux personnes ce soir. Vous souhaiteriez venir vers quelle heure ?`,
+    cancellation: (name) => `Bonjour, ici ${name}. Bien sûr. À quel nom est la réservation ?`,
     menu: (name) =>
-      `Bonjour, ${name}. Ce soir, en plat du jour, nous avons un confit de canard avec pommes sarladaises. Souhaitez-vous réserver une table ?`,
+      `Bonjour, ici ${name}. Je peux regarder ça avec vous. Vous cherchez plutôt un plat ou une entrée végétarienne ?`,
   };
 
   const postDemoCall = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -943,8 +1126,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     // Cache Redis 5 min : évite un 2e call Cartesia (~1s) quand l'utilisateur
-    // rejoue le même scénario ou change puis revient. La clé inclut le
-    // scriptId + le speakingRate pour invalider si la personnalité change.
+    // rejoue le même scénario. Le hash du texte invalide aussi le cache dès
+    // qu'un script change ; la variante couvre voix, locale et réglages.
     const speed = restaurant.personality?.speakingRate
       ? Number(restaurant.personality.speakingRate)
       : undefined;
@@ -967,7 +1150,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
       generationConfig,
       pronunciationDictId: restaurant.personality?.pronunciationDictId ?? undefined,
     });
-    const cacheKey = `demo-call:${restaurantId}:${body.scriptId}:${CARTESIA_MODEL}:${CARTESIA_NORMALIZATION}:${cacheVariant}`;
+    const scriptHash = createHash('sha256').update(transcript).digest('hex').slice(0, 12);
+    const cacheKey = `demo-call:${restaurantId}:${body.scriptId}:${scriptHash}:${CARTESIA_MODEL}:${CARTESIA_NORMALIZATION}:${cacheVariant}`;
     const cached = await redisCache.getBuffer(cacheKey);
     if (cached) {
       // Hit cache : on track l'event quand même (l'utilisateur a écouté)
@@ -1026,6 +1210,47 @@ export async function restaurantRoutes(app: FastifyInstance) {
             : String(err instanceof Error ? err.message : err),
       });
     }
+  };
+
+  // ─── Démonstration en direct (appel navigateur, pipeline vocal réel) ────
+  // Émet un ticket à usage unique : le WebSocket `/voice/demo-stream/:ticket` est public, c'est ce
+  // ticket (émis ici, après authentification) qui l'autorise. Aucune écriture métier n'est faite
+  // pendant la démonstration : les réservations et messages sont simulés par la session `demo`.
+  const postLiveDemo = async (req: FastifyRequest, reply: FastifyReply) => {
+    const restaurantId = req.restaurantId;
+
+    const unavailable = liveDemoUnavailableReason();
+    if (unavailable || !(await isVoicePipelineEnabled(restaurantId))) {
+      return reply.status(503).send({
+        code: 'LIVE_DEMO_UNAVAILABLE',
+        error:
+          "L'appel en direct n'est pas disponible pour le moment. Vous pouvez écouter l'aperçu pré-enregistré.",
+      });
+    }
+
+    const issued = await issueLiveDemoTicket(redisCache, restaurantId);
+    if (!issued.ok) {
+      return reply.status(429).send({
+        code: 'LIVE_DEMO_DAILY_LIMIT',
+        error:
+          "Vous avez atteint le nombre d'appels d'essai pour aujourd'hui. Réessayez demain ou écoutez l'aperçu pré-enregistré.",
+      });
+    }
+
+    trackOnboardingEvent({
+      event: 'onboarding_demo_call_played',
+      restaurantId,
+      userId: req.userId,
+      task: 'knowledge',
+      metadata: { mode: 'live' },
+    }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
+
+    const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+    return reply.send({
+      ticket: issued.ticket,
+      wsUrl: buildLiveDemoWsUrl(publicUrl, issued.ticket),
+      maxDurationSec: LIVE_DEMO_MAX_DURATION_SEC,
+    });
   };
 
   const patchConnect = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -1208,7 +1433,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     return reply.send({
-      restaurant: updatedRestaurant,
+      restaurant: toRestaurantResponse(updatedRestaurant),
       exposureSettings: updatedSettings,
     });
   };
@@ -1269,6 +1494,57 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
 
+  const postOnboardingPlaceSearch = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!isOnboardingPlacesEnabled()) {
+      return reply.status(503).send({
+        error:
+          'La recherche de restaurant n’est pas disponible. Vous pouvez saisir les informations manuellement.',
+      });
+    }
+    const body = OnboardingPlaceSearchSchema.parse(req.body);
+    try {
+      const suggestions = await searchOnboardingPlaces(body.query, body.sessionToken);
+      return reply.send({ suggestions });
+    } catch (err) {
+      app.log.warn(
+        { reason: err instanceof Error ? err.message : 'unknown' },
+        '[onboarding] Google Places search failed',
+      );
+      return reply.status(502).send({ error: 'La recherche est temporairement indisponible.' });
+    }
+  };
+
+  const postOnboardingPlaceDetails = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!isOnboardingPlacesEnabled()) {
+      return reply.status(503).send({
+        error:
+          'La recherche de restaurant n’est pas disponible. Vous pouvez saisir les informations manuellement.',
+      });
+    }
+    const body = OnboardingPlaceDetailsSchema.parse(req.body);
+    try {
+      const place = await getOnboardingPlaceDetails(body.placeId, body.sessionToken);
+      return reply.send(place);
+    } catch (err) {
+      app.log.warn(
+        { reason: err instanceof Error ? err.message : 'unknown' },
+        '[onboarding] Google Places details failed',
+      );
+      return reply.status(502).send({ error: 'Les informations du lieu sont indisponibles.' });
+    }
+  };
+
+  app.post(
+    '/restaurant/onboarding/places/autocomplete',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    postOnboardingPlaceSearch,
+  );
+  app.post(
+    '/restaurant/onboarding/places/details',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    postOnboardingPlaceDetails,
+  );
+
   app.post(
     '/restaurant/onboarding/demo-call',
     { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
@@ -1278,6 +1554,17 @@ export async function restaurantRoutes(app: FastifyInstance) {
     '/api/restaurant/onboarding/demo-call',
     { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     postDemoCall,
+  );
+
+  app.post(
+    '/restaurant/onboarding/live-demo',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    postLiveDemo,
+  );
+  app.post(
+    '/api/restaurant/onboarding/live-demo',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    postLiveDemo,
   );
 
   app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);

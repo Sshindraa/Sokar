@@ -8,7 +8,6 @@ import {
   handleSttMessage,
   resumeSttAfterOpen,
   sendAudioToStt,
-  setSttSpellingProfile,
 } from '../stream/stt-bridge';
 import {
   getSttChunkMs,
@@ -217,16 +216,6 @@ describe('vidage du tampon sur les transitions', () => {
     const sent = sentAudio(session.sttWs);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toEqual(frame(1));
-  });
-
-  it('changement de profil d’épellation : le tampon part', () => {
-    const session = makeSession('PCMU');
-    session.sttWs = makeWsMock();
-    sendFrame(session, frame(1));
-
-    setSttSpellingProfile(session, true);
-
-    expect(sentAudio(session.sttWs)).toEqual([frame(1)]);
   });
 
   it('fin de tour : le tampon part avant le traitement du tour', () => {

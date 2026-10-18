@@ -1,0 +1,119 @@
+{
+  "capturedAt": "2026-10-02T23:19:35.468Z",
+  "baseline": "Archive de la variante visuelle phase 5 avant annulation ; ne représente pas l’interface courante",
+  "browser": "Playwright Chromium",
+  "referenceClock": "2026-10-02T18:15:00.000Z",
+  "timezone": "Europe/Paris",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000
+    },
+    "ipad": {
+      "width": 1024,
+      "height": 768
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    },
+    "mobile-hauteur-reduite": {
+      "width": 390,
+      "height": 500
+    }
+  },
+  "screenshots": [
+    {
+      "filename": "widget-desktop-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "desktop",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-desktop-coordonnees.png",
+      "screen": "widget",
+      "viewport": "desktop",
+      "state": "coordonnees",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-ipad-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "ipad",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-ipad-coordonnees.png",
+      "screen": "widget",
+      "viewport": "ipad",
+      "state": "coordonnees",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-creneau-selectionne.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "creneau-selectionne",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-coordonnees.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "coordonnees",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-creneau-indisponible.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "creneau-indisponible",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-jour-complet.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "jour-complet",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-erreur-disponibilite.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "erreur-disponibilite",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-sans-contenu-optionnel.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "sans-contenu-optionnel",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-integre.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "integre",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-reservation-confirmee.png",
+      "screen": "widget",
+      "viewport": "mobile",
+      "state": "reservation-confirmee",
+      "route": "/book/chez-sokar-demo"
+    },
+    {
+      "filename": "widget-mobile-formulaire-vue-reduite.png",
+      "screen": "widget",
+      "viewport": "mobile-hauteur-reduite",
+      "state": "formulaire-vue-reduite",
+      "route": "/book/chez-sokar-demo"
+    }
+  ],
+  "unexpectedApiRequests": []
+}

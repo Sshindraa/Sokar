@@ -14,6 +14,10 @@ import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 import { isPublicConnectPage } from '../connect/connect.types';
+import { normalizeOpeningHours, isConnectDemoSlug } from '@sokar/shared';
+
+// Fixture synthétique de prisma/seed.ts : jamais une destination de transfert réelle.
+const DEMO_SEED_MANAGER_PHONE = '+33601020304';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -44,6 +48,10 @@ interface CachedRestaurantContext {
   readonly formattedAddress: string | null;
   readonly city: string | null;
   readonly cuisineType: string[];
+  /** Contextes en cache d'avant ces champs : `loadContext` les recalcule sous 5 min. */
+  readonly practicalInfo?: unknown;
+  readonly dietary?: string[];
+  readonly ambiance?: string[];
   readonly openingHours: unknown;
   readonly carrier: string;
   readonly smsConfirmEnabled: boolean;
@@ -117,6 +125,9 @@ function toCachedRestaurantContext(restaurant: {
   formattedAddress: string | null;
   city: string | null;
   cuisineType: string[];
+  practicalInfo: unknown;
+  dietary: string[];
+  ambiance: string[];
   openingHours: unknown;
   carrier: string;
   smsConfirmEnabled: boolean;
@@ -133,13 +144,20 @@ function toCachedRestaurantContext(restaurant: {
     agenticOptIn: restaurant.agenticOptIn,
     onlineReservationsActive: isPublicConnectPage(restaurant),
     plan: restaurant.plan,
-    managerPhone: restaurant.managerPhone,
+    managerPhone:
+      isConnectDemoSlug(restaurant.slug ?? '') &&
+      restaurant.managerPhone === DEMO_SEED_MANAGER_PHONE
+        ? ''
+        : restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
     phoneNumber: restaurant.phoneNumber,
     timezone: restaurant.timezone,
     formattedAddress: restaurant.formattedAddress ?? null,
     city: restaurant.city ?? null,
     cuisineType: restaurant.cuisineType ?? [],
+    practicalInfo: restaurant.practicalInfo ?? {},
+    dietary: restaurant.dietary ?? [],
+    ambiance: restaurant.ambiance ?? [],
     openingHours: restaurant.openingHours,
     carrier: restaurant.carrier,
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
@@ -151,6 +169,54 @@ function toCachedRestaurantContext(restaurant: {
   };
 }
 
+const RESTAURANT_CONTEXT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  publishedAt: true,
+  agenticOptIn: true,
+  plan: true,
+  managerPhone: true,
+  managerEmail: true,
+  phoneNumber: true,
+  timezone: true,
+  formattedAddress: true,
+  city: true,
+  cuisineType: true,
+  practicalInfo: true,
+  dietary: true,
+  ambiance: true,
+  openingHours: true,
+  carrier: true,
+  smsConfirmEnabled: true,
+  googleCalendarId: true,
+  giftCardMinimumAmount: true,
+  exposureSettings: {
+    select: {
+      maxPartySize: true,
+      connectPublished: true,
+    },
+  },
+  personality: {
+    select: {
+      id: true,
+      restaurantId: true,
+      profileType: true,
+      speakingRate: true,
+      volume: true,
+      pitchShift: true,
+      fillerStyle: true,
+      microphoneThreshold: true,
+      targetLatencyMs: true,
+      systemPromptExtra: true,
+      voiceIdCa: true,
+      pronunciationDictId: true,
+      emotion: true,
+      updatedAt: true,
+    },
+  },
+} as const;
+
 export async function invalidateRestaurantContextCache(phoneNumber: string | null | undefined) {
   if (!phoneNumber) return;
   await redisCache.del(`phone:${phoneNumber}`);
@@ -160,54 +226,22 @@ export class RestaurantService {
   static async loadContext(phoneNumberId: string): Promise<CachedRestaurantContext> {
     const cacheKey = `phone:${phoneNumberId}`;
     const cached = await getCachedContext(cacheKey);
-    if (cached) return cached as CachedRestaurantContext;
+    if (cached) {
+      const context = cached as CachedRestaurantContext;
+      if (
+        isConnectDemoSlug(context.slug ?? '') &&
+        context.managerPhone === DEMO_SEED_MANAGER_PHONE
+      ) {
+        return { ...context, managerPhone: '' };
+      }
+      return context;
+    }
 
+    // tenant-scoping: global — résolution du tenant lui-même par son numéro Sokar unique (routage
+    // d'un appel entrant) : il n'existe pas encore de `restaurantId` à filtrer.
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { phoneNumber: phoneNumberId },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        publishedAt: true,
-        agenticOptIn: true,
-        plan: true,
-        managerPhone: true,
-        managerEmail: true,
-        phoneNumber: true,
-        timezone: true,
-        formattedAddress: true,
-        city: true,
-        cuisineType: true,
-        openingHours: true,
-        carrier: true,
-        smsConfirmEnabled: true,
-        googleCalendarId: true,
-        giftCardMinimumAmount: true,
-        exposureSettings: {
-          select: {
-            maxPartySize: true,
-            connectPublished: true,
-          },
-        },
-        personality: {
-          select: {
-            id: true,
-            restaurantId: true,
-            profileType: true,
-            speakingRate: true,
-            volume: true,
-            pitchShift: true,
-            fillerStyle: true,
-            microphoneThreshold: true,
-            targetLatencyMs: true,
-            systemPromptExtra: true,
-            voiceIdCa: true,
-            pronunciationDictId: true,
-            emotion: true,
-            updatedAt: true,
-          },
-        },
-      },
+      select: RESTAURANT_CONTEXT_SELECT,
     });
     const context = toCachedRestaurantContext(restaurant);
 
@@ -219,6 +253,23 @@ export class RestaurantService {
 
     await setCachedContext(cacheKey, contextWithPlan, REDIS_CTX_TTL_SECONDS);
     return contextWithPlan;
+  }
+
+  /**
+   * Contexte vocal d'un restaurant identifié par son id, sans cache. Sert à la démonstration
+   * d'onboarding : le restaurant n'a pas encore de numéro Sokar, et la personnalité vient d'être
+   * modifiée, donc un contexte en cache serait périmé.
+   */
+  static async loadContextById(restaurantId: string): Promise<CachedRestaurantContext> {
+    // tenant-scoping: global — `Restaurant` est le tenant lui-même : la clé primaire est celle du
+    // restaurant authentifié (ticket de démonstration émis pour `req.restaurantId`).
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: RESTAURANT_CONTEXT_SELECT,
+    });
+    const context = toCachedRestaurantContext(restaurant);
+    const effectivePlan = await getRestaurantPlanOverride(restaurant.id, context.plan);
+    return effectivePlan === context.plan ? context : { ...context, plan: effectivePlan };
   }
 
   static async checkMarginHealth(restaurantId: string): Promise<boolean> {
@@ -250,18 +301,16 @@ export class RestaurantService {
     return true;
   }
 
-  static isOpen(
-    ctx: { openingHours: Record<string, { open: string; close: string } | null> },
-    date: string,
-    time: string,
-  ): boolean {
-    const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  static isOpen(ctx: { openingHours: unknown }, date: string, time: string): boolean {
     const d = new Date(`${date}T${time}`);
-    const slot = ctx.openingHours[dayMap[d.getDay()]];
-    if (!slot) return false;
-    const [oh, om] = slot.open.split(':').map(Number);
-    const [ch, cm] = slot.close.split(':').map(Number);
     const mins = d.getHours() * 60 + d.getMinutes();
-    return mins >= oh * 60 + om && mins < ch * 60 + cm;
+    return normalizeOpeningHours(ctx.openingHours).some((period) => {
+      if (period.dayIndex !== d.getDay()) return false;
+      const [openHour, openMinute] = period.open.split(':').map(Number);
+      const [closeHour, closeMinute] = period.close.split(':').map(Number);
+      const opensAt = openHour * 60 + openMinute;
+      const closesAt = closeHour * 60 + closeMinute;
+      return mins >= opensAt && mins < closesAt;
+    });
   }
 }
