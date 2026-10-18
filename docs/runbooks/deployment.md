@@ -45,7 +45,7 @@ l'API.
 - CI/CD: `.github/workflows/deploy-staging.yml` triggered on `main` push (after CI green).
 - GitHub secrets: `STAGING_SSH_KEY`, `STAGING_HOST`, `STAGING_USER`.
 - Script on VPS: `scripts/deploy.sh --env staging`.
-- Dry-run (staging only) : ne pas l'utiliser pour l'instant. `deploy.sh --dry-run` exécute `git pull` sur le checkout snapshot, qui échoue, et réinstalle le wrapper privilégié avant de sortir.
+- Dry-run (staging only) : `deploy.sh --dry-run` ne modifie rien sur le VPS (voir la section ci-dessous).
 - Déploiement manuel : lancer le workflow, jamais `git pull` à la main sur le VPS.
   ```zsh
   # Staging : relance le workflow sur main (smoke tests inclus)
@@ -80,7 +80,11 @@ ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging 
 
 ## Dry-run (staging only)
 
-Indisponible tant que `deploy.sh` ne protège pas le mode dry-run : il exécute `git pull` et réinstalle `/usr/local/sbin/sokar-deploy-root` avant de sortir. Ne pas lancer la commande `--dry-run` sur le VPS d'ici la correction.
+```zsh
+ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging --dry-run"
+```
+
+En dry-run, le script ne fait ni `git pull` ni `checkout` (il construit le checkout courant), ne réinstalle pas `/usr/local/sbin/sokar-deploy-root` et ne migre, ne redémarre ni ne touche à Nginx. Il peut en revanche installer les dépendances et compiler dans des dossiers isolés, supprimés en fin de run. Validé le 18/10 sur staging : sortie 0, aucun changement sur le wrapper, le checkout ou la release.
 
 ## Smoke tests
 
