@@ -13,6 +13,7 @@ import {
   ReservationSlotUnavailableError,
 } from '../core/reservation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
+import * as confirmationOutbox from '../../../shared/outbox/reservation-confirmation';
 
 type HoldRow = {
   id: string;
@@ -337,6 +338,41 @@ const policy = buildPolicySnapshot({
 });
 
 describe('reservation.service', () => {
+  it('requests a transactional web confirmation only on first creation, not replay', async () => {
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(true);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      const input = {
+        restaurantId: 'r-1',
+        partySize: 2,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+        customerName: 'Example',
+        customerPhone: '+33600000000',
+        channel: 'WEB' as const,
+        policy,
+        actor: 'connect:web',
+      };
+      const key = {
+        scope: 'web',
+        key: 'confirmation',
+        payloadHash: hashPayload({ startsAt }),
+        ttlSeconds: 300,
+      };
+      const first = await fakes.reservationsService.createReservation(input, key);
+      await fakes.reservationsService.createReservation(input, key);
+      expect(intent).toHaveBeenCalledTimes(1);
+      expect(intent).toHaveBeenCalledWith(
+        expect.objectContaining({ reservationAuditLog: expect.any(Object) }),
+        expect.objectContaining({ id: first.reservationId, state: 'CONFIRMED' }),
+      );
+    } finally {
+      intent.mockRestore();
+    }
+  });
   it('crée une réservation avec hold synthétique consommé et audit', async () => {
     const fakes = makeFakes();
     const startsAt = new Date(Date.now() + 3_600_000);

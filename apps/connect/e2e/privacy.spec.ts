@@ -1,5 +1,27 @@
 import { test, expect } from '@playwright/test';
 
+for (const width of [390, 820, 1440]) {
+  test(`public privacy notice stays readable and nontechnical at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/privacy');
+    const article = page.getByRole('article', { name: 'Politique de confidentialité' });
+    await expect(article.getByText('Gestion des comptes', { exact: true })).toBeVisible();
+    await expect(article).toContainText('hors de l’Espace économique européen');
+    await expect(article).toContainText('sans purge automatique');
+    await expect(article).not.toContainText(
+      /Clerk|Resend|Google Workspace|Cerebras|OpenRouter|Respan|PostgreSQL|Redis/,
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    for (const href of await page
+      .locator('nav a[href^="#"]')
+      .evaluateAll((links) => links.map((link) => link.getAttribute('href')!))) {
+      await expect(page.locator(href)).toHaveCount(1);
+    }
+  });
+}
+
 test('privacy renders with the request CSP nonce after hydration', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));

@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
     confirmationToken?: unknown;
     proposalToken?: unknown;
     partySize?: unknown;
+    date?: unknown;
   } | null;
   try {
     const text = await req.text();
@@ -50,6 +51,12 @@ export async function POST(req: NextRequest) {
         body.partySize > 50)
     )
       return Response.json({ error: 'Nombre de personnes invalide.' }, { status: 400, headers });
+    if (
+      body.action === 'modification_options' &&
+      body.date !== undefined &&
+      (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date))
+    )
+      return Response.json({ error: 'Date invalide.' }, { status: 400, headers });
     const forwardedFor = req.headers.get('x-forwarded-for');
     const response = await fetch(
       `${process.env.API_URL || 'http://127.0.0.1:4000'}/public/reservation-management`,
@@ -65,7 +72,9 @@ export async function POST(req: NextRequest) {
           ...(body.action === 'modify'
             ? { confirmed: true, proposalToken: body.proposalToken }
             : {}),
-          ...(body.action === 'modification_options' ? { partySize: body.partySize } : {}),
+          ...(body.action === 'modification_options'
+            ? { partySize: body.partySize, ...(body.date !== undefined ? { date: body.date } : {}) }
+            : {}),
           ...(body.action === 'cancel'
             ? { confirmed: true, confirmationToken: body.confirmationToken }
             : {}),

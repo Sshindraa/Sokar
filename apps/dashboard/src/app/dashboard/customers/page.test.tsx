@@ -182,7 +182,10 @@ describe('CustomersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /afficher plus de clients \(2 sur 3\)/i }));
 
     expect(await screen.findByText('Client 03')).toBeInTheDocument();
-    expect(mocks.get).toHaveBeenLastCalledWith('customers?limit=50&offset=2');
+    // CRM capability checks can finish after pagination; only customer-list request order matters.
+    expect(mocks.get.mock.calls.filter(([path]) => path.startsWith('customers?')).at(-1)).toEqual([
+      'customers?limit=50&offset=2',
+    ]);
     expect(screen.getAllByText(/^Client 0\d$/)).toHaveLength(3);
     expect(screen.queryByRole('button', { name: /afficher plus/i })).not.toBeInTheDocument();
   });

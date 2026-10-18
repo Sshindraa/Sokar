@@ -5,6 +5,7 @@ import { db } from '../../db/client';
 import { queues } from '../queues';
 import { lookupResendEmail } from '../../email';
 import { lookupTelnyxMessage } from '../../telnyx/client';
+import { lookupMetaStatus } from '../../whatsapp/meta-status';
 import {
   recordNotificationClaimEvent,
   recordNotificationProviderResult,
@@ -75,6 +76,7 @@ function getDefaultDependencies(): ReconciliationDependencies {
     claimStore: redisQueue,
     lookupProviderMessage: async ({ provider, providerMessageId }) => {
       if (provider === 'resend') return lookupResendEmail(providerMessageId);
+      if (provider === 'meta') return lookupMetaStatus(redisQueue, providerMessageId);
       return lookupTelnyxMessage(providerMessageId);
     },
     deadLetterQueue: queues.deadLetter,

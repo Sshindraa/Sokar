@@ -27,3 +27,4 @@ export * from './utils/slugify';
 export * from './pricing-catalog.cjs';
 
 export * from './connect-demo';
+export * from './privacy';

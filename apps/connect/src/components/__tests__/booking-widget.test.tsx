@@ -51,6 +51,42 @@ describe('BookingWidget waiting list flow', () => {
     });
   }
 
+  it.each([false, true])(
+    'affiche un choix WhatsApp non précoché seulement si disponible (%s)',
+    async (enabled) => {
+      setFetchSequence([
+        jsonResponse({
+          id: 'rest-1',
+          slug,
+          name: 'Chez Sokar',
+          connectAgentic: false,
+          sections: [],
+          whatsappReminderOptInEnabled: enabled,
+        }),
+        jsonResponse({
+          date: todayIso(),
+          partySize: 2,
+          slots: [{ time: '19:00', available: true }],
+        }),
+      ]);
+      render(<BookingWidget slug={slug} />);
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /confirmer la réservation/i }),
+        ).toBeInTheDocument(),
+      );
+      const choice = screen.queryByRole('checkbox', { name: /rappel.*WhatsApp/i });
+      if (enabled) expect(choice).not.toBeChecked();
+      else expect(choice).not.toBeInTheDocument();
+    },
+  );
+
   it('shows the network error without presenting a false empty state', async () => {
     setFetchSequence([
       jsonResponse({

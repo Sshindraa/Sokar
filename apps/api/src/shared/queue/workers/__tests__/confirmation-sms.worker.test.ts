@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 
@@ -29,6 +29,7 @@ vi.mock('../helper', () => ({
 import { sendReminder, type SendResult } from '../../../messaging/sender';
 import {
   processConfirmationSmsJob,
+  isReminderDue,
   type ConfirmationSmsDependencies,
   type ConfirmationSmsJobData,
 } from '../confirmation-sms.worker';
@@ -82,7 +83,9 @@ const reservation = {
   state: 'CONFIRMED',
   confirmationStatus: 'NOT_REQUIRED',
   confirmationSentAt: null as Date | null,
-  restaurant: { id: 'rest-1', name: 'Chez Sokar' },
+  restaurant: { id: 'rest-1', name: 'Chez Sokar', timezone: 'Europe/Paris' },
+  consents: { transactionalWhatsapp: true } as Record<string, unknown>,
+  channel: 'WEB',
 };
 
 function makeJob(): Job<ConfirmationSmsJobData> {
@@ -125,7 +128,63 @@ function makeReconciliationQueue() {
 describe('confirmation-sms.worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T12:00:00Z'));
     vi.mocked(sendReminder).mockResolvedValue({ channel: 'sms', success: true });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ['2026-03-28T23:30:00Z', '2026-03-29T17:00:00Z', 'Europe/Paris', false],
+    ['2026-03-28T12:00:00Z', '2026-03-29T17:00:00Z', 'Europe/Paris', true],
+    ['2026-10-24T12:00:00Z', '2026-10-25T18:00:00Z', 'Europe/Paris', true],
+    ['2026-07-01T00:30:00Z', '2026-07-01T18:00:00Z', 'America/New_York', true],
+  ])('calcule demain dans le fuseau du restaurant (%s, %s)', (now, slot, timezone, due) => {
+    expect(isReminderDue(new Date(slot), timezone, new Date(now))).toBe(due);
+  });
+
+  it('relit toutes les donnees et affiche l heure locale apres modification pendant le scan', async () => {
+    const { deps, db } = makeDependencies();
+    db.reservation.findMany.mockResolvedValue([reservation]);
+    db.reservation.findUnique.mockResolvedValue({
+      ...reservation,
+      customerPhone: '+33600000002',
+      reservedAt: new Date('2026-07-02T18:30:00Z'),
+      partySize: 4,
+    } as never);
+    await processConfirmationSmsJob(
+      { data: { kind: 'scan' } } as Job<ConfirmationSmsJobData>,
+      deps,
+    );
+    expect(sendReminder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+33600000002',
+        time: '20:30',
+        partySize: 4,
+      }),
+    );
+    expect(deps.formatDate).toHaveBeenCalledWith(
+      expect.any(Date),
+      'fr-FR',
+      expect.objectContaining({ timeZone: 'Europe/Paris' }),
+    );
+  });
+
+  it.each([
+    { channel: 'PHONE' },
+    { customerPhone: null },
+    { reservedAt: new Date('2026-07-04T18:30:00Z') },
+    { consents: { transactionalWhatsapp: false } },
+  ])('ne rappelle pas une reservation devenue ineligible pendant le scan (%j)', async (changes) => {
+    const { deps, db } = makeDependencies();
+    db.reservation.findMany.mockResolvedValue([reservation]);
+    db.reservation.findUnique.mockResolvedValue({ ...reservation, ...changes } as never);
+    await processConfirmationSmsJob(
+      { data: { kind: 'scan' } } as Job<ConfirmationSmsJobData>,
+      deps,
+    );
+    expect(sendReminder).not.toHaveBeenCalled();
+    expect(db.reservation.update).not.toHaveBeenCalled();
   });
 
   it('déduplique deux exécutions pour la même réservation', async () => {
@@ -235,9 +294,53 @@ describe('confirmation-sms.worker', () => {
     await processConfirmationSmsJob(makeJob(), deps);
 
     expect(sendReminder).toHaveBeenCalledWith(
-      expect.objectContaining({ reservationId: reservation.id }),
+      expect.objectContaining({
+        reservationId: reservation.id,
+        whatsappOptIn: true,
+        reservationChannel: 'WEB',
+      }),
       expect.objectContaining({ claimStore: deps.claimStore }),
     );
     expect(claims.size).toBe(0);
+  });
+
+  it.each([true, false, 'true', null])(
+    'lit strictement le consentement de la réservation (%s)',
+    async (value) => {
+      const { deps } = makeDependencies({
+        ...reservation,
+        consents: { transactionalWhatsapp: value },
+      });
+      deps.manageReminderClaims = true;
+      await processConfirmationSmsJob(makeJob(), deps);
+      if (value === true) {
+        expect(sendReminder).toHaveBeenCalledWith(
+          expect.objectContaining({ whatsappOptIn: true }),
+          expect.any(Object),
+        );
+      } else {
+        expect(sendReminder).not.toHaveBeenCalled();
+        expect(deps.db.reservation.update).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('n’envoie aucun rappel téléphonique même si un accord est présent', async () => {
+    const { deps } = makeDependencies({ ...reservation, channel: 'PHONE' });
+    await processConfirmationSmsJob(makeJob(), deps);
+    expect(sendReminder).not.toHaveBeenCalled();
+    expect(deps.db.reservation.update).not.toHaveBeenCalled();
+  });
+
+  it('ne marque pas comme envoyé un rappel ignoré', async () => {
+    const { deps } = makeDependencies();
+    deps.manageReminderClaims = true;
+    vi.mocked(sendReminder).mockResolvedValue({
+      channel: 'whatsapp',
+      success: false,
+      skipped: 'whatsapp_unavailable',
+    });
+    await processConfirmationSmsJob(makeJob(), deps);
+    expect(deps.db.reservation.update).not.toHaveBeenCalled();
   });
 });

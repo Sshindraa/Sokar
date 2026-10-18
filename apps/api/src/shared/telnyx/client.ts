@@ -72,10 +72,7 @@ export async function sendSms(
       text,
       ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
       ...(process.env.TELNYX_SMS_WEBHOOK_URL
-        ? {
-            webhook_url: process.env.TELNYX_SMS_WEBHOOK_URL,
-            use_profile_webhooks: false,
-          }
+        ? { webhook_url: process.env.TELNYX_SMS_WEBHOOK_URL, use_profile_webhooks: false }
         : {}),
     })
     .catch((error: unknown) => {

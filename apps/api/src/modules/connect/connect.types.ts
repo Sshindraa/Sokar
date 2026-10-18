@@ -171,12 +171,20 @@ export const ConfirmInputSchema = z.object({
   marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
   source: SourceEnum.optional().default('web'),
   giftCardCode: z.string().optional(),
+  whatsappReminderConsent: z
+    .object({
+      accepted: z.boolean(),
+      version: z.literal('whatsapp-reminder-2026-10-17'),
+    })
+    .optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),
 });
 export type ConfirmInput = z.infer<typeof ConfirmInputSchema>;
 
 export type ConfirmDto = {
+  whatsappWithdrawalToken?: string;
+  managementUrl?: string;
   reservationId: string;
   status: 'confirmed';
   restaurantName: string;
@@ -203,6 +211,7 @@ export type OpeningHoursDay = {
 export type OpeningHoursSpec = OpeningHoursDay[];
 
 export type PublicRestaurantDto = {
+  whatsappReminderOptInEnabled?: boolean;
   id: string;
   slug: string;
   name: string;

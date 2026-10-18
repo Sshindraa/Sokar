@@ -4,7 +4,7 @@ Plan suivi : [seo-acquisition-execution-plan.md](../runbooks/seo-acquisition-exe
 La section 2 est la référence des statuts actuels. Les sections 3 à 10 conservent les observations
 historiques datées ; un constat antérieur ne remet pas en TODO une livraison ultérieure.
 La section 10.21 consigne la correction des dépendances décidée par Hamza ; contrôles datés du 14 octobre.
-La section 10.22 documente le lot local du 15 octobre, ensuite livré via #440–#442 ; les suites et réserves sont détaillées en §10.36–10.41.
+La section 10.22 documente le lot local du 15 octobre : préparé et vérifié localement, non commité, non déployé.
 
 ## 1. Résultat obtenu et périmètre traité
 
@@ -26,7 +26,7 @@ Décision du 15 octobre : concentrer l’acquisition sur l’accueil `sokar.tech
 La landing dédiée est retirée du lot ; sa route devient une redirection permanente vers `/` en
 local et reste hors sitemap. Les précisions utiles rejoignent les sept réponses de la FAQ existante.
 Le hero, les sections, polices, couleurs, animations, tarifs et CTA de l’accueil sont conservés.
-Préparé localement, puis livré avec les réserves consignées en §10.36–10.41.
+Préparé localement, non commité, non déployé ; production inchangée par cette décision.
 
 ## 2. Tickets — référence actuelle
 
@@ -1359,78 +1359,42 @@ hors marque pertinent. Les totaux incluent des clics non détaillés : ne pas af
 un total hors marque nul. Données antérieures à la livraison, aucune attribution de gain.
 Sitemap lu le 14/10, succès, quatre URLs : aucune nouvelle soumission nécessaire.
 
-### 10.36 — Réserves juridiques et suivi Search Console (15/10/2026)
+### 10.35 Recette finale des réserves techniques — livrée le 15/10/2026
 
-Les livraisons #440–#442 sont déjà en production ; aucune nouvelle recette technique
-ou lecture GSC n'a été faite dans cette étape. À la dernière lecture, GSC s'arrêtait
-au 13/10 : aucune mesure postérieure aux livraisons, donc aucun avant/après ni effet
-SEO attribuable. Première comparaison indicative prévue pour les semaines complètes
-16–22/10 PT et 2–8/10 PT, à élargir si les volumes restent faibles.
+**État final local après déploiement**, complément de preuve non encore commité.
+#441 et #442 fusionnées ; source production `3699e6da`. CI main `38733835822`,
+staging `38734664480` et production `38735057706` : succès. Le nouveau test de
+rendu privacy est vert en CI, ainsi que CodeQL après passage à un parseur DOM.
 
-La version de travail des mentions légales reste privée et incomplète. Hamza ne veut
-pas publier son identité personnelle ; ne pas inventer une société future ni présenter
-le seul nom commercial comme une identification finalisée. Situation TVA à vérifier
-séparément. L'hébergeur OVH SAS est confirmé ; ses coordonnées ne prouvent pas à elles
-seules l'entité exacte du contrat. Aucun document d'identité ni détail personnel n'est
-ajouté au dépôt.
+Release production `20261015T123042Z`, prédécesseur `20261015T120048Z` ; staging
+`20261015T122746Z` (snapshot `0ae798d6`, source #442), prédécesseur `20261015T115647Z`.
+META et empreintes enregistrées dans `sokar-seo-reserves/releases-final.txt`.
+Retour applicatif explicite production depuis `/opt/sokar` :
+`bash scripts/deploy.sh --env prod --confirm-production rollback 20261015T120048Z`.
+Staging depuis `/opt/sokar-staging` :
+`bash scripts/deploy.sh --env staging rollback 20261015T115647Z`.
+Sans restauration DB. Ces commandes ne restaurent pas automatiquement un vhost Nginx.
+Le vhost antérieur à #441 est conservé dans `staging-vhost-before.conf` si nécessaire.
 
-### 10.37 — Messagerie et brouillon juridique (15/10/2026)
+Recette publique réalisée :
 
-Les alias hello/contact/support/privacy ont été testés entre les boîtes de Hamza ; les
-réponses conservent le nom Sokar et l'adresse destinataire. Ce contrôle ponctuel ne
-prouve pas la délivrabilité chez tous les fournisseurs. Aucun courriel prospect n'a
-été envoyé. Les faits du brouillon légal restent privés et soumis à validation ; aucun
-texte tiers ni forme sociale future n'est transposé.
+- Staging : HTTP 200 accueil/démo/privacy ; `noindex, nofollow` sur les 12 réponses
+  représentatives (dont santé API, assets et erreurs 404). Exposition publique conservée.
+- Production : accueil HTTP 200, aucun `X-Robots-Tag` noindex ajouté ; privacy HTTP 200.
+- Deux environnements : 14 scripts inline du document privacy portent le nonce de la
+  CSP de réponse ; cache privé/no-store. Aucun élargissement de la politique CSP.
+- Dans Brave, sessions neuves démo → lien confidentialité : page visible et stable,
+  aucune erreur console observée, aucun formulaire envoyé. Captures et arbres AX conservés.
+- Aucune retouche hero/styles/animations/tarifs, aucune nouvelle landing. Contrôles
+  Lighthouse antérieurs conservés, non réexécutés pour ce correctif.
 
-### 10.38 — Relecture de la vitrine avant les corrections locales (15/10/2026)
+Preuves locales : `/Users/hamza/.codex/visualizations/2026/10/15/sokar-seo-reserves/`
+(`public-after.json`, `privacy-nonces-after.json`, `production-privacy-final.png`,
+`staging-privacy-final.png`, JSON des workflows et META). Les fixtures Nginx isolées
+avec réponses 308/503 restent distinguées des réponses réelles observées.
 
-La revue navigateur a relevé des liens légaux/sociaux sans destination, l'ancre
-Services absente de l'accueil, l'absence de contact direct et des informations de
-demande de démo manquantes dans la politique alors servie. Les tableaux de prix
-expliquaient déjà quotas et modalités : aucun défaut de prix n'a été conclu. L'aperçu
-est resté explicitement simulé ; aucun témoignage ni résultat réel n'a été inventé.
-
-### 10.39 — Confidentialité démo et suivi manuel préparés localement (15/10/2026)
-
-Connect `/privacy` décrit les données, finalités, destinataires connus, droits et
-conservation des demandes de démo, sans affirmer une conformité globale. La page
-dashboard `/legal` expose les coordonnées professionnelles confirmées, demeure
-explicitement incomplète et porte `noindex`. Contact et navigation vers les bonnes
-destinations ont été ajoutés ; aucun formulaire n'a été soumis.
-
-Hamza valide un rappel de revue après douze mois sans échange. Le suivi reste manuel :
-la date d'interaction doit être vérifiée, les copies e-mail/sauvegardes examinées et
-aucune suppression automatique n'est promise. Resend/Google Workspace, leurs garanties
-et la première revue effective de conservation restent à confirmer.
-
-### 10.40 — Présentation des pages juridiques (15/10/2026)
-
-Les pages `/privacy` et `/legal` ont reçu une hiérarchie de lecture et des sommaires
-adaptatifs, sans changement de fond des réserves. Typechecks et format réussis ; la
-recette navigateur n'a couvert que les dimensions réellement observées, pas tous les
-formats annoncés. Mentions et garanties fournisseurs demeurent ouvertes.
-
-### 10.41 — Contact public et liens sociaux (15/10/2026)
-
-L'adresse `hello@sokar.tech` est visible sur accueil et démo à la place des liens
-sociaux vides. Aucun message n'a été envoyé. L'aperçu reste simulé faute de preuve
-réelle ; aucune référence client, mesure ou témoignage n'a été ajouté.
-
-### 10.42 — Administration, marge et suivi des demandes de démo (16/10/2026)
-
-Lot local regroupé : cockpit admin avec file d'actions et états explicites ; page
-Marge avec période/export cohérents, distinction des coûts tarifés, détail par
-établissement et corrections documentées ; suivi opérateur des demandes de démo avec
-date du dernier échange et rappel à douze mois. La nouvelle colonne Prisma est nullable
-et additive : aucune date historique inventée, suppression automatique ou migration
-destructive. Tests API/dashboard, typechecks, lint et vérifications visuelles ciblées
-ont réussi ; `pnpm verify:prepush`, tests Connect/typecheck, scan Gitleaks et contrôle
-de diff ont aussi réussi avant le transfert sur la branche propre. Les runbooks de
-conservation et de suivi commercial décrivent les opérations manuelles.
-
-Réserves avant publication : identité de l'éditeur absente à la demande de Hamza,
-situation TVA différée, garanties/régions Resend et Google Workspace non vérifiées,
-et première exécution de la revue de conservation non confirmée. Ne pas présenter les
-pages comme des validations juridiques ou RGPD. La migration doit être exécutée et
-contrôlée par le pipeline de livraison avant la recette admin ; aucun `db push` global
-ou rattrapage de l'historique Prisma local n'est inclus.
+**Restes :** mentions légales non finalisées, identité légale non autorisée à publier ;
+aucune donnée personnelle du PDF publiée. Liens sociaux facultatifs. GSC : référence
+historique décrite en §10.34 ; indexation de la nouvelle version, canonical retenu et
+clics hors marque à observer ultérieurement, sans résultat ni délai garanti.
+Checkout original et travaux voix/onboarding conservés. Pas de changement de leurs sources.

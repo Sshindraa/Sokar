@@ -22,7 +22,7 @@ test('local fictional preview is interactive without requesting booking data', a
   await expect(page.getByText('Restaurant Exemple')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Modifier ou annuler' })).toBeHidden();
   await expect(page.locator('summary').filter({ hasText: /^Modifier ou annuler$/ })).toBeVisible();
-  await expect(page.getByText(/Réservation fictive/)).toBeVisible();
+  await expect(page.getByText('Aperçu de démonstration')).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Appeler le restaurant', includeHidden: true }),
   ).toBeDisabled();
@@ -183,6 +183,10 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await expect(management).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Tab');
+  await expect(manage).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(phone).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(preferences).toBeFocused();
   await expect(preferences).toHaveCSS('outline-style', 'solid');
   await expect(preferences).toHaveCSS('outline-width', '2px');
@@ -193,7 +197,9 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Space');
   await expect(page.getByRole('switch')).toBeHidden();
-  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(phone).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
   await expect(manage).toBeFocused();
   await expect(manage).toHaveCSS('outline-style', 'solid');
   await expect(manage).toHaveCSS('outline-width', '2px');
@@ -203,7 +209,7 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await expect(phone).toHaveCSS('opacity', '1');
   if (testInfo.project.name === 'desktop-1440') {
     for (const action of [calendarButton, directions, phone]) {
-      const property = action === phone ? 'backgroundColor' : 'textDecorationColor';
+      const property = 'textDecorationColor';
       const initial = await action.evaluate(
         (n, property) => getComputedStyle(n)[property],
         property,
@@ -222,7 +228,7 @@ test('personal booking link survives reload and withdrawal is explicit', async (
         .toBe(initial);
     }
   }
-  await expect(page.getByRole('heading', { name: 'Ma réservation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ma réservation' })).toBeAttached();
   await expect(page.getByText('Restaurant Exemple')).toBeVisible();
   await page.getByText('Préférences de rappel', { exact: true }).click();
   await expect(page.getByRole('switch')).toBeChecked();
@@ -422,28 +428,46 @@ test('personal modification keeps the current carton through selection and revie
     .filter({ hasText: /^Modifier ou annuler$/ })
     .click();
   await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
-  await page.getByLabel('Nombre de personnes').focus();
-  await page.getByLabel('Nombre de personnes').selectOption('3');
-  await expect(page.getByRole('radio', { name: '20:00' })).toBeVisible();
-  await expect(page.getByLabel('Nombre de personnes')).toBeFocused();
-  await page.getByRole('radio', { name: '20:00' }).check();
-  await page.getByRole('radio', { name: '20:00' }).press('ArrowRight');
-  await expect(page.getByRole('radio', { name: '21:00' })).toBeChecked();
-  await page.getByRole('radio', { name: '21:00' }).press('ArrowLeft');
-  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  const refreshedOptions = page.waitForResponse((response) => {
+    if (
+      !response.url().includes('/api/reservation-management') ||
+      response.request().method() !== 'POST'
+    )
+      return false;
+    const body = response.request().postDataJSON();
+    return body.action === 'modification_options' && body.partySize === 3;
+  });
+  await page.getByRole('button', { name: '3 personnes', exact: true }).click();
+  await (await refreshedOptions).finished();
+  await expect(page.getByRole('group', { name: 'Créneaux horaires' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
+  const early = page.getByRole('button', { name: 'Choisir le créneau 20h00' });
+  const late = page.getByRole('button', { name: 'Choisir le créneau 21h00' });
+  await early.focus();
+  await expect(early).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(early).toHaveAttribute('aria-pressed', 'true');
+  await late.focus();
+  await late.press('Space');
+  await expect(late).toHaveAttribute('aria-pressed', 'true');
+  await early.press('Space');
+  await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   expect(modifications).toBe(0);
-  await expect(page.locator('dl')).toContainText('19:30');
-  await expect(page.getByRole('dialog')).toContainText('20:00 · 3 personnes');
+  await expect(page.locator('dl').first()).toContainText('19:30');
+  await expect(page.getByRole('dialog')).toContainText('20h00');
+  await expect(page.getByRole('dialog')).toContainText('3 personnes');
   await page.screenshot({
     path: testInfo.outputPath('reservation-modification-review.png'),
     fullPage: true,
   });
   await page.getByRole('button', { name: 'Confirmer la modification' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('dl')).toContainText('20:00');
+  await expect(page.locator('dl').first()).toContainText('20:00');
   expect(modifications).toBe(1);
   await page.reload();
-  await expect(page.locator('dl')).toContainText('20:00');
+  await expect(page.locator('dl').first()).toContainText('20:00');
   expect(modifications).toBe(1);
 });
 
@@ -489,10 +513,10 @@ test('a taken modification slot leaves the current booking intact', async ({ pag
     .filter({ hasText: /^Modifier ou annuler$/ })
     .click();
   await page.getByRole('button', { name: 'Modifier la réservation', exact: true }).click();
-  await page.getByRole('radio', { name: '20:00' }).check();
-  await page.getByRole('button', { name: 'Vérifier ce changement' }).click();
+  await page.getByRole('button', { name: 'Choisir le créneau 20h00' }).click();
+  await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   await page.getByRole('button', { name: 'Confirmer la modification' }).click();
   await expect(page.getByRole('alert')).toContainText('réservation initiale est conservée');
-  await page.getByRole('button', { name: 'Conserver ma réservation' }).click();
-  await expect(page.locator('dl')).toContainText('19:30');
+  await page.getByRole('button', { name: 'Quitter sans modifier' }).click();
+  await expect(page.locator('dl').first()).toContainText('19:30');
 });

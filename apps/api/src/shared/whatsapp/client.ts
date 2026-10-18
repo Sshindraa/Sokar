@@ -9,7 +9,7 @@
  *
  * Prérequis (.env) :
  * - TELNYX_API_KEY : déjà présent (utilisé pour SMS + voice)
- * - TELNYX_FROM_NUMBER : déjà présent (numéro WhatsApp-enabled via embedded signup)
+ * - TELNYX_WHATSAPP_FROM : numéro WhatsApp dédié validé via embedded signup
  * - WHATSAPP_ENABLED : flag "true" pour activer WhatsApp (sinon fallback SMS)
  *
  * Setup côté Telnyx Mission Control :
@@ -20,13 +20,13 @@
  * 5. Set WHATSAPP_ENABLED=true dans .env
  */
 
-const createTelnyx: (key: string) => TelnyxClient = require('telnyx');
 import {
   extractProviderMessageId,
   type NotificationProviderResult,
   type NotificationSendResult,
 } from '../queue/notification-idempotency';
 import { lookupTelnyxMessage } from '../telnyx/client';
+import { isMetaWhatsAppConfigured, sendMetaWhatsAppTemplate } from './meta-client';
 import {
   recordAcceptedMessagingUsage,
   type MessagingUsageContext,
@@ -48,30 +48,19 @@ interface TelnyxWhatsappTemplateMessage {
   };
 }
 
-interface TelnyxClient {
-  messages: {
-    sendWhatsapp: (payload: TelnyxWhatsappTemplateMessage) => Promise<unknown>;
-    retrieve: (id: string) => Promise<unknown>;
-  };
-}
-
-let _telnyx: TelnyxClient | null = null;
-
-function getTelnyx(): TelnyxClient {
-  if (!_telnyx) {
-    if (!process.env.TELNYX_API_KEY) {
-      throw new Error('TELNYX_API_KEY is required');
-    }
-    _telnyx = createTelnyx(process.env.TELNYX_API_KEY);
-  }
-  return _telnyx;
-}
-
 // Résolu une fois au boot du module, pas à chaque sendReminder.
 const WHATSAPP_ENABLED = process.env.WHATSAPP_ENABLED === 'true';
 
 export function isWhatsAppConfigured(): boolean {
-  return WHATSAPP_ENABLED && Boolean(process.env.TELNYX_API_KEY && process.env.TELNYX_FROM_NUMBER);
+  if (getWhatsAppProvider() === 'meta') return WHATSAPP_ENABLED && isMetaWhatsAppConfigured();
+  if (process.env.WHATSAPP_PROVIDER && process.env.WHATSAPP_PROVIDER !== 'telnyx') return false;
+  return (
+    WHATSAPP_ENABLED && Boolean(process.env.TELNYX_API_KEY && process.env.TELNYX_WHATSAPP_FROM)
+  );
+}
+
+export function getWhatsAppProvider(): 'meta' | 'telnyx' {
+  return process.env.WHATSAPP_PROVIDER === 'meta' ? 'meta' : 'telnyx';
 }
 
 /**
@@ -89,10 +78,13 @@ export async function sendWhatsAppTemplate(
   params: string[],
   usage?: MessagingUsageContext,
 ): Promise<void | NotificationSendResult> {
-  const t = getTelnyx();
-  const from = process.env.TELNYX_FROM_NUMBER!;
-
-  const response = await t.messages.sendWhatsapp({
+  if (getWhatsAppProvider() === 'meta') {
+    return sendMetaWhatsAppTemplate(to, templateName, languageCode, params, usage);
+  }
+  const key = process.env.TELNYX_API_KEY;
+  const from = process.env.TELNYX_WHATSAPP_FROM;
+  if (!key || !from) throw new Error('WhatsApp sender and API key are required');
+  const payload: TelnyxWhatsappTemplateMessage = {
     from,
     to,
     whatsapp_message: {
@@ -111,15 +103,30 @@ export async function sendWhatsAppTemplate(
         ],
       },
     },
+  };
+  // The installed Telnyx v2 SDK has no sendWhatsapp method. Never retry an
+  // ambiguous HTTP request here: the reminder claims own reconciliation.
+  const response = await fetch('https://api.telnyx.com/v2/messages/whatsapp', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15_000),
+    redirect: 'error',
   });
-  const providerMessageId = extractProviderMessageId(response);
+  if (!response.ok) {
+    // Do not propagate provider bodies: they can contain recipient data.
+    throw Object.assign(new Error('WhatsApp provider request failed'), {
+      statusCode: response.status,
+    });
+  }
+  const providerMessageId = extractProviderMessageId(await response.json());
   const result: NotificationSendResult = {
-    outcome: 'success',
+    outcome: providerMessageId ? 'success' : 'unknown',
     provider: 'telnyx',
     channel: 'whatsapp',
     ...(providerMessageId ? { providerMessageId } : {}),
   };
-  if (usage) {
+  if (usage && result.outcome === 'success') {
     await recordAcceptedMessagingUsage({
       channel: 'whatsapp',
       provider: 'telnyx',
@@ -133,6 +140,10 @@ export async function sendWhatsAppTemplate(
 /** Telnyx exposes the same message status endpoint for SMS and WhatsApp. */
 export async function lookupWhatsAppMessage(
   providerMessageId: string,
+  provider: 'meta' | 'telnyx' = getWhatsAppProvider(),
 ): Promise<NotificationProviderResult> {
+  // Cloud API has no equivalent of Telnyx's GET message status endpoint.
+  // Keep ambiguous sends blocked for manual review, never query Telnyx for them.
+  if (provider === 'meta') return 'unknown';
   return lookupTelnyxMessage(providerMessageId);
 }
