@@ -225,7 +225,7 @@ Ne pas disperser ces règles dans le dashboard et l'API. L'API décide ; l'inter
 
 **État local au 14 septembre 2026 :** le catalogue applicatif et les surfaces publiques sont
 alignés sur Essential 199 € et Pro 299 € ; le mapping Stripe reste volontairement ouvert. Le script
-`scripts/ops/sync-stripe-prices.sh` ne crée pas de prix et ne vérifie pas leur montant : il ne fait
+`scripts/ops/sync-env.sh stripe-prices` ne crée pas de prix et ne vérifie pas leur montant : il ne fait
 que recopier des identifiants `price_...` déjà validés dans l'environnement cible.
 
 Mettre à jour dans une seule release coordonnée :

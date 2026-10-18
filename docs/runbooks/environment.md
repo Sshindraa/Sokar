@@ -81,7 +81,7 @@ historique** dans `_prisma_migrations`. `prisma migrate status` liste donc les 7
 La clé Development est stockée dans le secret GitHub Actions `CLERK_SECRET_KEY`
 (préfixe `sk_test_`). Le workflow `Deploy Staging` valide le préfixe, transfère
 temporairement le secret vers le VPS avec des permissions strictes, puis appelle
-`scripts/ops/sync-clerk-secret.sh`, qui met à jour atomiquement les deux fichiers
+`scripts/ops/sync-env.sh clerk`, qui met à jour atomiquement les deux fichiers
 privés du VPS et supprime le fichier de transport :
 `/opt/sokar-staging/apps/api/.env` et
 `/opt/sokar-staging/apps/dashboard/.env`. Ces fichiers ne sont pas suivis par
@@ -128,7 +128,7 @@ environnements partagent la même équipe Resend, définir **le même**
 `RESEND_RATE_LIMIT_REDIS_URL` (URL Redis secrète, même base logique) dans chaque
 processus API/worker concerné. Le raccordement préparé localement transmet le secret
 GitHub `RESEND_RATE_LIMIT_REDIS_URL` via les deux workflows et
-`scripts/ops/sync-alerting-config.sh`. Une valeur absente conserve l'existant ; une
+`scripts/ops/sync-env.sh alerting`. Une valeur absente conserve l'existant ; une
 valeur fournie doit désigner explicitement une base (`redis[s]://hôte:port/numéro`),
 sans espaces, fragment, paramètres ni caractères nécessitant une citation dotenv.
 Encoder les caractères réservés des identifiants dans l'URL.
@@ -175,7 +175,7 @@ enregistrée et apparaît comme « Notification non envoyée » dans `/dashboard
 L'envoi utilise `RESEND_API_KEY` et `EMAIL_FROM`. Le destinataire est choisi par le responsable
 commercial avant l'ouverture de la vitrine. Il se définit comme secret GitHub
 `DEMO_REQUEST_NOTIFY_TO` des environnements staging et production ; le script
-`scripts/ops/sync-demo-request-config.sh` le copie dans le `.env` de l'API à chaque
+`scripts/ops/sync-env.sh demo-request` le copie dans le `.env` de l'API à chaque
 déploiement, sans l'afficher. Sans secret, la configuration existante est conservée.
 
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
@@ -195,7 +195,7 @@ Le dashboard restaurant et l'espace opérateur ont des URLs et des layouts disti
 
 Les pages `/admin/*` et les routes API `/admin/*` exigent un identifiant Clerk présent dans
 `SOKAR_OPERATOR_USER_IDS`, une liste CSV injectée uniquement dans l'environnement de l'API par
-`scripts/ops/sync-operator-allowlist.sh` depuis la variable GitHub Actions de l'environnement.
+`scripts/ops/sync-env.sh operator` depuis la variable GitHub Actions de l'environnement.
 En développement local, `apps/api/.env` autorise explicitement l'utilisateur de démonstration
 `dev-user`; cette valeur ne doit jamais être utilisée en production. Un membre de restaurant qui
 ouvre une ancienne URL `/dashboard/admin/*` est renvoyé vers son dashboard.
@@ -210,7 +210,7 @@ Sans ce secret, la route répond `503`; elle ne doit jamais être ajoutée à un
 doit être généré et injecté uniquement par le secret manager (au moins 32
 caractères), jamais dans le dépôt, le navigateur ou les payloads Connect. Les
 workflows staging et production le synchronisent vers `apps/api/.env` via
-`scripts/ops/sync-reservation-token.sh`. Le pipeline vocal n'en a pas besoin :
+`scripts/ops/sync-env.sh reservation`. Le pipeline vocal n'en a pas besoin :
 il appelle `ReservationService` dans le processus API.
 
 Pour la télémétrie Service Copilot, définir `SERVICE_COPILOT_TELEMETRY_SECRET` dans l’environnement
@@ -684,7 +684,7 @@ jugements de modèle et ne constituent pas une vérité humaine.
 > `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` et `VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` n'ont
 > plus d'effet et les métriques `sokar_voice_turn_plan_*` ne sont plus alimentées par les appels.
 > Le flag n'est plus lu nulle part, et il n'est plus posé par le workflow staging ni par
-> `sync-runtime-flags.sh`. Les paragraphes qui suivent décrivent l'ancien comportement et valent
+> `sync-env.sh runtime-flags`. Les paragraphes qui suivent décrivent l'ancien comportement et valent
 > pour l'historique des mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
 > `SPECULATIVE_LLM_ENABLED` / `SPECULATIVE_LLM_RESTAURANT_IDS` (pré-réflexion du chemin à outils).
 
@@ -704,7 +704,7 @@ vérification qu'aucune session vocale n'était active. Le workflow de productio
 laisse les flags runtime absents inchangés ; cette activation persiste dans le
 fichier d'environnement jusqu'à sa désactivation explicite. Pour changer un
 flag vocal en production, synchroniser sa valeur avec
-`scripts/ops/sync-runtime-flags.sh prod`, attendre zéro session active, puis
+`scripts/ops/sync-env.sh runtime-flags prod`, attendre zéro session active, puis
 recharger `sokar-api` avec `pm2 reload sokar-api --update-env`.
 Les compteurs globaux de validité, décision de policy et accord sont exposés à
 Prometheus et présentés dans le dashboard Grafana `Sokar — Voice & SLO`. Ils
@@ -722,7 +722,7 @@ taux global masque qu'une seule dimension diverge.
 coupé) ne s'applique qu'aux restaurants listés dans
 `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` (IDs séparés par des virgules, `*` pour tous ;
 vide = aucun). Cette liste n'est pas un booléen : elle ne passe pas par
-`sync-runtime-flags.sh` et se pose directement dans le fichier d'environnement de l'API,
+`sync-env.sh runtime-flags` et se pose directement dans le fichier d'environnement de l'API,
 avant le reload. Pour ces restaurants, l'autorité donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
 après la réponse vocale : il complète date, heure, couverts et intention seulement quand
 ces champs étaient vides avant le tour et n'ont pas été posés par le déterministe ; il ne
@@ -1075,7 +1075,7 @@ qualifier. Garder le flag fermé tant que ces éléments et le parcours staging 
 
 Staging n'envoie aucun e-mail, ne prend aucun appel et ne passe aucun appel de test tant que les réglages de
 chaque bloc ne sont pas fournis. Le workflow de staging transmet ces réglages à
-`scripts/ops/sync-staging-provider-config.sh`, qui les écrit dans le `.env` de staging. Le workflow de
+`scripts/ops/sync-env.sh provider`, qui les écrit dans le `.env` de staging. Le workflow de
 production ne lit aucun de ces réglages : une valeur de staging ne peut pas atteindre la production.
 
 Chaque bloc se valide seul. Un bloc ne conditionne pas les autres.

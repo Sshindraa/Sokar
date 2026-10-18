@@ -31,7 +31,7 @@ et worker. Ne pas utiliser une cle API comme identifiant de limite : plusieurs
 cles peuvent partager la limite d'une equipe.
 
 Les deux workflows transmettent ce secret optionnel au script
-`scripts/ops/sync-alerting-config.sh`. L'absence de valeur conserve l'existant.
+`scripts/ops/sync-env.sh alerting`. L'absence de valeur conserve l'existant.
 Une valeur fournie doit utiliser `redis:` ou `rediss:`, une base explicite, sans
 espace, fragment, query ni caractere dangereux dotenv. Encoder les caracteres
 reserves des identifiants. Les fichiers runtime restent en 0600, hors Git ; aucune

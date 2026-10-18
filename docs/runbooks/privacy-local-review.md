@@ -72,7 +72,7 @@ avec rappels à deux heures. Sources/tests dans `shared/email`, `shared/observab
 Configuration et limites : `docs/runbooks/environment.md`, section Régulation Resend.
 Raccordement de configuration également préparé localement :
 `.github/workflows/deploy-staging.yml`, `.github/workflows/deploy-prod.yml`,
-`scripts/ops/sync-alerting-config.sh` et
+`scripts/ops/sync-env.sh alerting` et
 `apps/api/src/shared/email/__tests__/deployment-config.test.ts` (8 tests de synchronisation).
 Mise à jour du 16 octobre : lot ops isolé livré par la PR #463 (`e5eb3520`), CI puis
 staging/smoke et production verts. Coordination Redis commune configurée ; clé
