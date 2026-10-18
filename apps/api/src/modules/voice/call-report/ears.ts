@@ -41,6 +41,18 @@ const isLetter = (token: string): boolean => /^\p{L}$/u.test(token);
 const hasDigit = (token: string): boolean => /\d/.test(token);
 
 /**
+ * Lettre collée à un nombre (« 18 h 30 », « 8 h ») qui ne fait pas partie d'une épellation : abréviation d'unité,
+ * que la voix prononce en toutes lettres (« heures »). Ce n'est pas une lettre isolée mal dite ou mal entendue.
+ */
+function isUnitLetter(tokens: readonly string[], index: number): boolean {
+  return (
+    isLetter(tokens[index] ?? '') &&
+    !isSpelledAt(tokens, index) &&
+    (hasDigit(tokens[index - 1] ?? '') || hasDigit(tokens[index + 1] ?? ''))
+  );
+}
+
+/**
  * Le jeton fait-il partie d'une épellation ? Une suite de jetons d'un seul caractère qui compte
  * deux lettres voisines (« h o u e t », « a m ») ou au moins trois lettres. Une lettre seule
  * (« il a », « à 8 h ») n'en est pas une.
@@ -145,7 +157,13 @@ export function compareEars(input: {
       // Seuls les jetons qui diffèrent comptent (le contexte autour ne décide pas du genre d'écart).
       const core = divergenceRuns(liveTokens, slice.tokens, alignTokens(liveTokens, slice.tokens));
       for (const run of core) {
-        if ([...run.ref, ...run.hyp].some(isLetter)) isolatedLetter = true;
+        const refLetter = run.ref.some(
+          (token, i) => isLetter(token) && !isUnitLetter(liveTokens, run.refStart + i),
+        );
+        const hypLetter = run.hyp.some(
+          (token, i) => isLetter(token) && !isUnitLetter(slice.tokens, run.hypStart + i),
+        );
+        if (refLetter || hypLetter) isolatedLetter = true;
         const liveDigits = run.ref.filter(hasDigit).join(' ');
         const otherDigits = run.hyp.filter(hasDigit).join(' ');
         if (liveDigits && otherDigits) numberChange ||= liveDigits !== otherDigits;
