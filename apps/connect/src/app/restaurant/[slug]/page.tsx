@@ -158,11 +158,15 @@ export default async function RestaurantPage({
     utm_medium?: string;
     utm_campaign?: string;
     preview?: string;
+    testBooking?: string;
   }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
   const isPreview = sp.preview === '1';
+  // Parcours d'essai lancé depuis l'onboarding : le widget n'enregistre rien.
+  const isTestBooking = sp.testBooking === '1';
+  const bookQuerySuffix = `${sp.source ? `&utm=${sp.source}` : ''}${isTestBooking ? '&testBooking=1' : ''}`;
 
   // Valider le slug (anti-injection — audit sécurité Phase 2)
   if (!isValidSlug(slug)) {
@@ -270,15 +274,23 @@ export default async function RestaurantPage({
       )}
 
       <main id="main-content" className="mx-auto max-w-4xl px-6 py-12">
-        <PageViewTracker
-          restaurantId={restaurant.id}
-          restaurantSlug={restaurant.slug}
-          city={restaurant.address.city}
-          source={sp.source}
-          utmSource={sp.utm_source}
-          utmMedium={sp.utm_medium}
-          utmCampaign={sp.utm_campaign}
-        />
+        {!isTestBooking && (
+          <PageViewTracker
+            restaurantId={restaurant.id}
+            restaurantSlug={restaurant.slug}
+            city={restaurant.address.city}
+            source={sp.source}
+            utmSource={sp.utm_source}
+            utmMedium={sp.utm_medium}
+            utmCampaign={sp.utm_campaign}
+          />
+        )}
+        {isTestBooking && (
+          <p className="mb-6 rounded-xl border border-border bg-muted p-6 text-foreground">
+            Mode test : vous voyez votre page comme vos clients. Une réservation faite depuis ce
+            parcours n’est pas enregistrée.
+          </p>
+        )}
         {isConnectDemoSlug(restaurant.slug) && (
           <p className="mb-6 rounded-xl border border-border bg-muted p-6 text-foreground">
             Établissement de démonstration — les réservations servent uniquement aux essais. Cette
@@ -305,9 +317,10 @@ export default async function RestaurantPage({
             {/* CTA principal — au-dessus de la ligne de flottaison (acceptance T5) */}
             <div className="mt-6">
               <BookCtaLink
-                href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                href={`/book/${restaurant.slug}?source=restaurant${bookQuerySuffix}`}
                 restaurantId={restaurant.id}
                 restaurantSlug={restaurant.slug}
+                track={!isTestBooking}
                 source={sp.source}
                 className="inline-flex items-center justify-center rounded-lg bg-ink px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ink/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
@@ -360,7 +373,7 @@ export default async function RestaurantPage({
                   {availableSlots.map((slot) => (
                     <Link
                       key={slot.time}
-                      href={`/book/${restaurant.slug}?source=restaurant&date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${sp.source ? `&utm=${sp.source}` : ''}`}
+                      href={`/book/${restaurant.slug}?source=restaurant&date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${bookQuerySuffix}`}
                       className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:border-blue hover:bg-blue/5"
                     >
                       {slot.time}
@@ -368,7 +381,7 @@ export default async function RestaurantPage({
                   ))}
                 </div>
                 <Link
-                  href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                  href={`/book/${restaurant.slug}?source=restaurant${bookQuerySuffix}`}
                   className="mt-3 inline-block text-sm text-blue underline hover:no-underline"
                 >
                   Voir tous les créneaux et tailles de table
@@ -378,7 +391,7 @@ export default async function RestaurantPage({
               <p className="text-sm text-muted-foreground">
                 Aucun créneau disponible pour aujourd&apos;hui (table de {previewPartySize}).{' '}
                 <Link
-                  href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                  href={`/book/${restaurant.slug}?source=restaurant${bookQuerySuffix}`}
                   className="text-blue underline hover:no-underline"
                 >
                   Vérifier un autre jour
@@ -477,9 +490,10 @@ export default async function RestaurantPage({
             <h2 className="mb-3 text-xl font-semibold text-ink">Réservation</h2>
             <p className="text-ink">Réservation en ligne avec confirmation rapide.</p>
             <BookCtaLink
-              href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+              href={`/book/${restaurant.slug}?source=restaurant${bookQuerySuffix}`}
               restaurantId={restaurant.id}
               restaurantSlug={restaurant.slug}
+              track={!isTestBooking}
               source={sp.source}
               className="mt-4 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:bg-muted"
             >

@@ -91,7 +91,7 @@ it('publie puis montre la diffusion sans clore l’étape', async () => {
   ).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Réserver sur ma page/ })).toHaveAttribute(
     'href',
-    expect.stringContaining('/restaurant/chez-emile'),
+    expect.stringMatching(/\/restaurant\/chez-emile\?testBooking=1$/),
   );
   expect(screen.getByText(/data-slug="chez-emile"/)).toBeInTheDocument();
   // Sans conditions modifiées ni IA activée, rien d'autre n'est écrit.

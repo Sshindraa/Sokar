@@ -120,3 +120,34 @@ describe('indexabilité des fiches', () => {
     expect(meta.robots).toMatchObject({ index, follow: true, googleBot: { index } });
   });
 });
+
+describe('parcours de réservation test depuis l’onboarding', () => {
+  async function markup(searchParams: Record<string, string>) {
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    mocks.fetchPublicRestaurant.mockResolvedValue(restaurant);
+    mocks.fetchAvailability.mockResolvedValue({ slots: [] });
+    const page = await RestaurantPage({
+      params: Promise.resolve({ slug: 'chez-sokar-demo' }),
+      searchParams: Promise.resolve(searchParams),
+    });
+    return renderToStaticMarkup(page);
+  }
+
+  const bookHrefs = (html: string) =>
+    [...html.matchAll(/href="(\/book\/[^"]+)"/g)].map(([, href]) => href);
+
+  it('transmet testBooking=1 à tous les liens de réservation et le signale', async () => {
+    const html = await markup({ testBooking: '1' });
+    const hrefs = bookHrefs(html);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toContain('testBooking=1');
+    expect(html).toContain('Mode test');
+  });
+
+  it('ne change rien sans le paramètre', async () => {
+    const html = await markup({});
+    expect(bookHrefs(html).length).toBeGreaterThan(0);
+    expect(html).not.toContain('testBooking');
+    expect(html).not.toContain('Mode test');
+  });
+});

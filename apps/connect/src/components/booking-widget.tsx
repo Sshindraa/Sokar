@@ -69,6 +69,8 @@ type Props = {
   embedded?: boolean;
   primaryColor?: string;
   accentColor?: string;
+  /** Parcours d'essai de l'onboarding : rien n'est créé ni envoyé. */
+  testBooking?: boolean;
 };
 
 function todayIso(): string {
@@ -90,6 +92,7 @@ export function BookingWidget({
   embedded = false,
   primaryColor = '#0F172A',
   accentColor = '#0284C7',
+  testBooking = false,
 }: Props) {
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick');
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
@@ -127,13 +130,14 @@ export function BookingWidget({
   // Record a campaign click when the public booking widget opens. This is
   // best-effort and intentionally does not block or reveal attribution data.
   useEffect(() => {
+    if (testBooking) return;
     if (!marketingAttributionToken || marketingAttributionToken.length < 20) return;
     void fetchWithTimeout(`${API_URL}/marketing/attribution/click`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: marketingAttributionToken }),
     }).catch(() => undefined);
-  }, [marketingAttributionToken]);
+  }, [marketingAttributionToken, testBooking]);
 
   // Load restaurant info once
   useEffect(() => {
@@ -245,6 +249,17 @@ export function BookingWidget({
     }
     if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
       setError('Numéro de téléphone invalide (format international +33...)');
+      return;
+    }
+    if (testBooking) {
+      setConfirmResult({
+        reservationId: '',
+        restaurantName: restaurant?.name ?? '',
+        date,
+        time: selectedTime,
+        partySize,
+      });
+      setStep('done');
       return;
     }
     setLoading(true);
@@ -459,9 +474,19 @@ export function BookingWidget({
 
   return (
     <div style={widgetStyle}>
+      {testBooking && step !== 'done' && (
+        <p role="note" className="mb-4 rounded-xl border border-border bg-muted p-4 text-sm">
+          Réservation test : rien ne sera enregistré et aucun message ne sera envoyé.
+        </p>
+      )}
       {step === 'done' ? (
         confirmResult ? (
-          <ConfirmationView result={confirmResult} slug={slug} embedded={embedded} />
+          <ConfirmationView
+            result={confirmResult}
+            slug={slug}
+            embedded={embedded}
+            testBooking={testBooking}
+          />
         ) : waitingListResult ? (
           <div
             role="status"
@@ -847,15 +872,17 @@ export function BookingWidget({
                 // Réutilisée pour hold + confirm → protège contre le double submit.
                 setIdempotencyKey(crypto.randomUUID());
                 if (restaurant) {
-                  trackEvent({
-                    event: 'availability_slot_selected',
-                    restaurantId: restaurant.id,
-                    restaurantSlug: restaurant.slug,
-                    date,
-                    time,
-                    partySize,
-                    source,
-                  });
+                  if (!testBooking) {
+                    trackEvent({
+                      event: 'availability_slot_selected',
+                      restaurantId: restaurant.id,
+                      restaurantSlug: restaurant.slug,
+                      date,
+                      time,
+                      partySize,
+                      source,
+                    });
+                  }
                 }
               }}
             />

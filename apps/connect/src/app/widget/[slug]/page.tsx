@@ -31,6 +31,7 @@ type SearchParams = {
   partySize?: string;
   from?: string;
   giftCardCode?: string;
+  testBooking?: string;
 };
 
 export default async function WidgetPage({
@@ -54,6 +55,8 @@ export default async function WidgetPage({
   }
 
   const isEmbedded = sp.embedded === '1';
+  // Parcours d'essai de l'onboarding : ni réservation, ni message, ni statistique.
+  const isTestBooking = sp.testBooking === '1';
   const primary = toHexColor(sp.primary, '#0F172A');
   const accent = toHexColor(sp.accent, '#0284C7');
   const source = normalizeBookingSource(sp.source);
@@ -63,19 +66,21 @@ export default async function WidgetPage({
   const date = sp.date;
   const time = sp.time;
 
-  void trackEventAsync({
-    event: 'widget_page_view',
-    restaurantId: restaurant.id,
-    restaurantSlug: restaurant.slug,
-    source,
-  });
+  if (!isTestBooking) {
+    void trackEventAsync({
+      event: 'widget_page_view',
+      restaurantId: restaurant.id,
+      restaurantSlug: restaurant.slug,
+      source,
+    });
+  }
 
   return (
     <main id="main-content" className="mx-auto max-w-xl px-4 py-6 sm:px-6">
       {!isEmbedded && (
         <div className="mb-4">
           <Link
-            href={`/restaurant/${restaurant.slug}`}
+            href={`/restaurant/${restaurant.slug}${isTestBooking ? '?testBooking=1' : ''}`}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-blue transition-all duration-200 hover:gap-2.5"
           >
             <ArrowLeft size={16} />
@@ -97,6 +102,7 @@ export default async function WidgetPage({
         embedded={isEmbedded}
         primaryColor={primary}
         accentColor={accent}
+        testBooking={isTestBooking}
       />
     </main>
   );

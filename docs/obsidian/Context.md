@@ -21,7 +21,6 @@
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
 - [ ] Onboarding v2 : #404–#411 livrés; téléphone et en ligne restent requis, attribution du numéro manuelle avant ouverture. En local : proposition de formule après appel test, équipe/rôles à valider avec un compte Clerk. Décider l'attribution Telnyx automatique et le compte Stripe unique après l'audit phase 1.6; paiement après onboarding. UI locale à valider.
-- [ ] Onboarding en ligne : bouton « Annuler la réservation test » dans l’étape Règles et diffusion (aujourd’hui le restaurateur réserve sur sa vraie page puis annule à la main).
 - [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 - [ ] Banc voix : décider phase 1b et annoter humainement `bf3893ae` (`truthStatus: unverified`); ablation/substitution ne discriminent pas.

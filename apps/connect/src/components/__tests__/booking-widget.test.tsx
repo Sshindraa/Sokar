@@ -384,6 +384,40 @@ describe('BookingWidget waiting list flow', () => {
     expect(body.giftCardReservationAmount).toBeUndefined();
   });
 
+  it('simule la confirmation en mode test, sans hold ni confirm', async () => {
+    setFetchSequence([
+      jsonResponse({
+        id: 'rest-1',
+        slug,
+        name: 'Chez Sokar',
+        connectAgentic: false,
+        city: 'Paris',
+        sections: [],
+      }),
+      jsonResponse({ date: todayIso(), partySize: 2, slots: [{ time: '19:00', available: true }] }),
+    ]);
+    render(<BookingWidget slug={slug} marketingAttributionToken={'x'.repeat(40)} testBooking />);
+    expect(screen.getByText(/Réservation test : rien ne sera enregistré/)).toBeInTheDocument();
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: 'Marie' } });
+    fireEvent.change(screen.getByLabelText(/^Téléphone/i), { target: { value: '+33612345678' } });
+    fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+
+    expect(await screen.findByText('Réservation confirmée')).toBeInTheDocument();
+    expect(screen.getByText(/Réservation test : rien n’a été enregistré/)).toBeInTheDocument();
+    expect(screen.queryByText(/Code de réservation/)).not.toBeInTheDocument();
+    const postUrls = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([, init]) => init?.method === 'POST')
+      .map(([url]) => String(url));
+    expect(postUrls).toEqual([]);
+  });
+
   describe('créneau trop proche (délai minimum du restaurant)', () => {
     const TOO_SOON_MESSAGE =
       'Ce créneau est trop proche : ce restaurant accepte les réservations au moins 2 h à l’avance.';

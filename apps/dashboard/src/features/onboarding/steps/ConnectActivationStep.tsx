@@ -432,10 +432,10 @@ export function ConnectActivationStep({ onComplete, onNavigate }: StepProps) {
       <Panel
         icon={Ticket}
         title="Faites une réservation test"
-        description="Réservez comme un client : la réservation arrive dans vos réservations. Pensez à l’annuler ensuite."
+        description="Faites le parcours d’un client, jusqu’à la confirmation. Rien n’est enregistré et aucun message n’est envoyé."
       >
         <Button asChild variant="outline" className="rounded-full transition-all duration-200">
-          <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+          <a href={`${publicUrl}?testBooking=1`} target="_blank" rel="noopener noreferrer">
             Réserver sur ma page <ExternalLink size={15} aria-hidden="true" />
           </a>
         </Button>

@@ -24,10 +24,12 @@ export function ConfirmationView({
   result,
   slug,
   embedded = false,
+  testBooking = false,
 }: {
   result: ConfirmDto;
   slug: string;
   embedded?: boolean;
+  testBooking?: boolean;
 }) {
   const [withdrawn, setWithdrawn] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -73,13 +75,22 @@ export function ConfirmationView({
         </strong>{' '}
         le <strong>{result.date}</strong> à <strong>{result.time}</strong>.
       </p>
-      <p className="mt-3 text-sm text-muted-foreground">
-        Code de réservation :{' '}
-        <code className="rounded bg-muted px-1 py-0.5 text-xs">{result.reservationId}</code>
-      </p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Les notifications dépendent des options du restaurant.
-      </p>
+      {testBooking ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Réservation test : rien n’a été enregistré et aucun message n’a été envoyé. Vos clients
+          voient cet écran après avoir réservé.
+        </p>
+      ) : (
+        <>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Code de réservation :{' '}
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">{result.reservationId}</code>
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Les notifications dépendent des options du restaurant.
+          </p>
+        </>
+      )}
       {result.managementUrl && (
         <a
           href={result.managementUrl}
@@ -115,7 +126,7 @@ export function ConfirmationView({
       )}
       {!embedded && (
         <Link
-          href={`/restaurant/${slug}`}
+          href={`/restaurant/${slug}${testBooking ? '?testBooking=1' : ''}`}
           className="mt-6 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted"
         >
           ← Retour à la fiche
