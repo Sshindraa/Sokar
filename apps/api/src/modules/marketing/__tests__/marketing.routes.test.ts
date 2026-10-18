@@ -231,6 +231,77 @@ describe('marketing control plane routes', () => {
     });
   });
 
+  it('explique en français pourquoi une campagne vide ne se prépare pas', async () => {
+    const app = await getApp();
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      status: MarketingCampaignStatus.DRAFT,
+      audienceCount: 0,
+    } as never);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/campaigns/campaign-1/prepare',
+      headers: AUTH,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'AUDIENCE_EMPTY',
+      message: 'Aucun destinataire n’a donné son consentement : il n’y a rien à préparer.',
+    });
+  });
+
+  it('refuse une règle sans lien de désinscription avec un message lisible, pas une erreur 500', async () => {
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/marketing/automations/DORMANT',
+      headers: AUTH,
+      payload: {
+        enabled: true,
+        channel: 'SMS',
+        config: { bodyTemplate: 'Bonjour {{customer.firstName}}, vous nous manquez.' },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: 'INVALID_AUTOMATION',
+      message:
+        'Le message doit contenir {{unsubscribeUrl}} : le lien de désinscription est obligatoire.',
+    });
+    expect(db.marketingAutomation.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuse une règle e-mail sans objet et un fuseau horaire inconnu', async () => {
+    const app = await getApp();
+    const noSubject = await app.inject({
+      method: 'PUT',
+      url: '/marketing/automations/DORMANT',
+      headers: AUTH,
+      payload: {
+        enabled: false,
+        channel: 'EMAIL',
+        config: { bodyTemplate: 'Bonjour {{unsubscribeUrl}}' },
+      },
+    });
+    expect(noSubject.statusCode).toBe(400);
+    expect(noSubject.json().message).toBe('Indiquez un objet pour l’e-mail.');
+
+    const badZone = await app.inject({
+      method: 'PUT',
+      url: '/marketing/automations/DORMANT',
+      headers: AUTH,
+      payload: {
+        enabled: false,
+        channel: 'SMS',
+        config: { bodyTemplate: 'Bonjour {{unsubscribeUrl}}', timezone: 'Paris/France' },
+      },
+    });
+    expect(badZone.statusCode).toBe(400);
+    expect(badZone.json().message).toBe(
+      'Le fuseau horaire n’est pas valide. Exemple : Europe/Paris.',
+    );
+  });
+
   it('returns a rendered campaign preview without creating provider messages', async () => {
     const app = await getApp();
     vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({

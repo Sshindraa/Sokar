@@ -1,7 +1,16 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { ArrowRight, Bot, CalendarCheck, Mail, Mic, PhoneCall, Utensils } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  CalendarCheck,
+  Mail,
+  Mic,
+  PhoneCall,
+  Sparkles,
+  Utensils,
+} from 'lucide-react';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
@@ -9,6 +18,7 @@ import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
 import { HOME_METADATA } from '@/app/marketing-metadata';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
 
 export const metadata = HOME_METADATA;
 
@@ -158,20 +168,25 @@ export default function HomePage() {
               </div>
 
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20">
-                  <Mic size={13} />
-                  Sokar active votre standard
-                  <ArrowRight size={12} />
-                </p>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20 transition-all duration-200 hover:bg-white/12 hover:text-white"
+                >
+                  <Sparkles size={13} aria-hidden="true" />
+                  14 jours offerts, sans carte bancaire
+                  <ArrowRight size={12} aria-hidden="true" />
+                </Link>
 
                 <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  Un assistant téléphonique pour vos réservations
+                  {BRAND_TITLE}
                 </h1>
 
-                <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
-                  Sokar répond aux appels de votre restaurant, consulte vos disponibilités et
-                  enregistre les réservations. Vous gardez votre numéro : seuls les appels que vous
-                  transférez passent par Sokar.
+                <p className="mx-auto mt-5 max-w-2xl text-lg font-medium leading-7 text-white/[0.86] md:text-xl">
+                  {BRAND_SLOGAN}
+                </p>
+
+                <p className="mx-auto mt-3 max-w-2xl text-sm text-white/[0.55] md:text-base">
+                  Téléphone, réservation en ligne et plan de salle, réunis.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
@@ -186,7 +201,7 @@ export default function HomePage() {
                     href="/register"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
-                    Créer votre compte
+                    Essayer 14 jours gratuits
                     <ArrowRight size={14} />
                   </Link>
                 </div>
@@ -245,8 +260,7 @@ export default function HomePage() {
               <span className="text-lg font-bold text-white font-display">Sokar</span>
             </Link>
             <p className="text-xs text-white/40 leading-relaxed font-sans max-w-xs">
-              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la
-              gestion des appels de votre restaurant.
+              {BRAND_TITLE}. {BRAND_SLOGAN}
             </p>
             <a
               href="mailto:hello@sokar.tech"

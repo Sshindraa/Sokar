@@ -9,10 +9,24 @@ type SwitchProps = {
   disabled?: boolean;
   id?: string;
   className?: string;
+  /** Nom lu par les lecteurs d'écran quand aucun libellé visible n'est relié à l'interrupteur. */
+  'aria-label'?: string;
+  'aria-labelledby'?: string;
 };
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ checked, onCheckedChange, disabled, id, className }, ref) => {
+  (
+    {
+      checked,
+      onCheckedChange,
+      disabled,
+      id,
+      className,
+      'aria-label': ariaLabel,
+      'aria-labelledby': ariaLabelledBy,
+    },
+    ref,
+  ) => {
     return (
       <button
         ref={ref}
@@ -20,6 +34,8 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         id={id}
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         disabled={disabled}
         onClick={() => onCheckedChange(!checked)}
         className={cn(

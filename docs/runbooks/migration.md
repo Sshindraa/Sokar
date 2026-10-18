@@ -182,9 +182,12 @@ observable et du RTO d'une restauration vierge ; le RTO production complet
 | 2026-09-07 | `20260907T020001Z.dump` | 20 h 05     | 4,00 s | 32 / 73 / 117                | —        |
 | 2026-09-22 | `20260921T020001Z.dump` | 20 h 40     | 4,90 s | 91 / 343 / 345               | —        |
 
-Les deux index critiques `agentic_holds_restaurant_id_slot_start_idx` et
+Les index critiques `agentic_holds_restaurant_id_slot_start_idx` et
 `one_active_hold_per_slot` (index partiel anti-double-booking) ont été vérifiés
-présents lors de la répétition du 22 septembre.
+présents lors de la répétition du 22 septembre. Depuis la migration
+`20261018120000_agentic_hold_per_table`, `one_active_hold_per_slot` est remplacé par
+`one_active_hold_per_table_slot` (une table, un hold actif par heure) et
+`one_active_hold_per_slot_no_table` (holds historiques sans table).
 
 ## Limites connues
 

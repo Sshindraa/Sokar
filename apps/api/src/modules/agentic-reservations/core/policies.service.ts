@@ -1,3 +1,4 @@
+import { snapshotCancellationPolicy } from '../../../shared/reservations/cancellation-policy.js';
 /**
  * Policies service pour l'agentic reservations.
  *
@@ -50,6 +51,9 @@ export type CancellationPolicySnap = {
   feeAmount?: number;
   feeCurrency?: string;
   version: string;
+  source?: string;
+  selfService?: string;
+  terms?: string;
 };
 
 export type NoShowPolicySnap = {
@@ -174,12 +178,7 @@ function isNoShowPolicyKind(v: string | undefined): v is NoShowPolicyKind {
  */
 export function buildPolicySnapshot(input: RestaurantPolicyInput): PolicySnapshot {
   return {
-    cancellation: {
-      freeUntilMinutesBefore: DEFAULT_FREE_CANCELLATION_MINUTES,
-      feeAmount: undefined,
-      feeCurrency: 'EUR',
-      version: input.policyVersion,
-    },
+    cancellation: snapshotCancellationPolicy(input.capacitySpecials, input.policyVersion),
     noShow: {
       kind: isNoShowPolicyKind(input.noShowPolicy ?? undefined)
         ? (input.noShowPolicy as NoShowPolicyKind)

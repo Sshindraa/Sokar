@@ -5,9 +5,20 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useServiceCopilotAccess } from '@/lib/use-service-copilot-access';
 
-export function ServiceCopilotAccess({ children }: { children: ReactNode }) {
+export function ServiceCopilotAccess({
+  children,
+  fallback,
+}: {
+  children: ReactNode;
+  /**
+   * Rendu à la place du bloc d'état quand l'accès n'est pas (encore) accordé. Sur l'écran de service,
+   * on passe `null` : ni « Vérification… » qui décale le plan, ni publicité permanente en haut du service.
+   */
+  fallback?: ReactNode;
+}) {
   const access = useServiceCopilotAccess();
   if (access.allowed) return <>{children}</>;
+  if (fallback !== undefined) return <>{fallback}</>;
   return (
     <div className="rounded-2xl border border-border bg-card p-6 text-sm">
       {access.loading ? (

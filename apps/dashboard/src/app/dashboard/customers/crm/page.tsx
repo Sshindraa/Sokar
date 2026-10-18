@@ -16,7 +16,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type CustomerMetricSnapshot = {
@@ -78,6 +80,10 @@ export default function CrmPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [lock, setLock] = useState<FeatureLock | null>(null);
+  // Filtres réellement envoyés au serveur : ils ne changent qu'au clic sur « Rechercher » ou au choix VIP,
+  // pas à chaque frappe (sinon le tableau clignote et la liste se recharge pour rien).
+  const [applied, setApplied] = useState({ search: '', isVip: 'all', minHonored365d: '' });
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -88,10 +94,12 @@ export default function CrmPage() {
       if (cursor) setLoadingMore(true);
       else setLoading(true);
       setError('');
+      setLock(null);
       const params = new URLSearchParams();
-      if (search.trim()) params.set('search', search.trim());
-      if (isVip !== 'all') params.set('isVip', isVip);
-      if (minHonored365d.trim()) params.set('minHonored365d', minHonored365d.trim());
+      if (applied.search.trim()) params.set('search', applied.search.trim());
+      if (applied.isVip !== 'all') params.set('isVip', applied.isVip);
+      if (applied.minHonored365d.trim())
+        params.set('minHonored365d', applied.minHonored365d.trim());
       params.set('limit', '50');
       if (cursor) params.set('cursor', cursor);
       try {
@@ -100,14 +108,15 @@ export default function CrmPage() {
         setCustomers((previous) => (cursor ? [...previous, ...page] : page));
         setNextCursor(response.nextCursor ?? null);
       } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Impossible de charger le CRM Pro'));
+        setLock(featureLockFromError(err));
+        setError(getErrorMessage(err, 'Impossible de charger le CRM Pro.'));
         if (!cursor) setCustomers([]);
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [get, isVip, minHonored365d, orgId, search],
+    [applied, get, orgId],
   );
 
   useEffect(() => {
@@ -116,10 +125,18 @@ export default function CrmPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void load();
+    setApplied({ search, isVip, minHonored365d });
   }
 
-  const forbidden = error.toLowerCase().includes('formule') || error.includes('CAPABILITY');
+  function clearFilters() {
+    setSearch('');
+    setIsVip('all');
+    setMinHonored365d('');
+    setApplied({ search: '', isVip: 'all', minHonored365d: '' });
+  }
+
+  const hasFilters =
+    applied.search.trim() !== '' || applied.isVip !== 'all' || applied.minHonored365d.trim() !== '';
 
   return (
     <div className="space-y-6">
@@ -175,7 +192,11 @@ export default function CrmPage() {
                 aria-label="Filtre VIP"
                 className="h-10 w-full bg-transparent text-foreground outline-none"
                 value={isVip}
-                onChange={(event) => setIsVip(event.target.value as 'all' | 'true' | 'false')}
+                onChange={(event) => {
+                  const value = event.target.value as 'all' | 'true' | 'false';
+                  setIsVip(value);
+                  setApplied((previous) => ({ ...previous, isVip: value }));
+                }}
               >
                 <option value="all">Tous les clients</option>
                 <option value="true">VIP uniquement</option>
@@ -201,35 +222,62 @@ export default function CrmPage() {
         </CardContent>
       </Card>
 
-      {error ? (
+      {lock ? (
+        <div className="space-y-3">
+          <FeatureLockCard lock={lock} feature="CRM Pro" />
+          <Button asChild variant="outline" size="sm" className="transition-all duration-200">
+            <Link href="/dashboard/customers">
+              <ArrowRight size={14} />
+              Retour aux clients
+            </Link>
+          </Button>
+        </div>
+      ) : error ? (
         <Card className="border-destructive/40">
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-destructive">
             <AlertCircle className="mt-0.5 shrink-0" size={18} />
             <div className="space-y-2">
-              <p>{error}</p>
-              {forbidden ? (
-                <p className="text-muted-foreground">
-                  Le CRM avancé est inclus dans la formule Pro. Votre fichier client de base reste
-                  disponible dans l’espace Clients.
-                </p>
-              ) : null}
-              <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+              <p role="alert">{error}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="transition-all duration-200"
+                onClick={() => void load()}
+              >
                 <RefreshCw size={14} />
                 Réessayer
               </Button>
             </div>
           </CardContent>
         </Card>
-      ) : loading ? (
+      ) : loading && customers.length === 0 ? (
         <LoadingRows />
       ) : customers.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-14 text-center">
             <Users className="text-muted-foreground" size={36} />
-            <p className="font-medium">Aucun profil ne correspond à ces filtres</p>
-            <p className="text-sm text-muted-foreground">
-              Les profils s&apos;enrichissent après les appels et les visites honorées.
-            </p>
+            {hasFilters ? (
+              <>
+                <p className="font-medium">Aucun profil ne correspond à ces filtres</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 transition-all duration-200"
+                  onClick={clearFilters}
+                >
+                  Effacer les filtres
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="font-medium">Aucun profil CRM pour le moment</p>
+                <p className="text-sm text-muted-foreground">
+                  Les profils s&apos;enrichissent après les appels et les visites honorées.
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -267,9 +315,12 @@ export default function CrmPage() {
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">
+                            <Link
+                              href={`/dashboard/customers/crm/${customer.id}`}
+                              className="font-medium transition-all duration-200 hover:underline"
+                            >
                               {customer.name || 'Client sans nom'}
-                            </span>
+                            </Link>
                             {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">

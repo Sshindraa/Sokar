@@ -6,6 +6,30 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Globe, CheckCircle2, AlertCircle, Loader2, Copy, X } from 'lucide-react';
 import { useApi } from '@/lib/api';
+import { toApiError } from '@/lib/api-error';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+
+/**
+ * Domaine tel que le restaurateur le colle : « https://Reserve.MonResto.fr/ » devient « reserve.monresto.fr ».
+ * L'API n'accepte qu'un nom d'hôte nu ; sans cette normalisation, une adresse copiée depuis la barre du
+ * navigateur était refusée par une validation sans explication.
+ */
+export function normalizeDomainInput(value: string): string {
+  return value
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+}
+
+const DOMAIN_PATTERN = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+async function apiErrorFrom(res: Response, fallback: string): Promise<Error> {
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const error = toApiError(res.status, data);
+  return error.message ? error : new Error(fallback);
+}
 
 type CustomDomainStatus =
   | 'pending'
@@ -35,6 +59,7 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<{
     cnameValid: boolean;
@@ -44,9 +69,17 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
   const [copied, setCopied] = useState(false);
 
   async function saveDomain() {
-    setSaving(true);
     setError(null);
     setVerifyResult(null);
+    const normalized = normalizeDomainInput(domain);
+    if (!DOMAIN_PATTERN.test(normalized)) {
+      setError(
+        'Saisissez le nom de domaine seul, par exemple reserve.monrestaurant.fr (sans https:// ni /).',
+      );
+      return;
+    }
+    setDomain(normalized);
+    setSaving(true);
     try {
       const res = await fetch(`/api/proxy/restaurants/${restaurantId}/connect`, {
         method: 'PATCH',
@@ -54,12 +87,9 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
           'Content-Type': 'application/json',
           ...(siteId ? { 'X-Sokar-Site-ID': siteId } : {}),
         },
-        body: JSON.stringify({ customDomain: domain || null }),
+        body: JSON.stringify({ customDomain: normalized }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? 'Erreur lors de la sauvegarde');
-      }
+      if (!res.ok) throw await apiErrorFrom(res, 'Erreur lors de la sauvegarde');
       // Recharger pour refléter le nouveau statut
       window.location.reload();
     } catch (err) {
@@ -78,10 +108,7 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
         method: 'POST',
         headers: siteId ? { 'X-Sokar-Site-ID': siteId } : undefined,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? 'Erreur lors de la vérification');
-      }
+      if (!res.ok) throw await apiErrorFrom(res, 'Erreur lors de la vérification');
       const data = await res.json();
       setVerifyResult({
         cnameValid: data.cnameValid,
@@ -108,16 +135,14 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
         },
         body: JSON.stringify({ customDomain: null }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? 'Erreur lors de la suppression');
-      }
+      if (!res.ok) throw await apiErrorFrom(res, 'Erreur lors de la suppression');
       setDomain('');
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
       setRemoving(false);
+      setRemoveConfirmOpen(false);
     }
   }
 
@@ -173,8 +198,9 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
               <Button
                 variant="outline"
                 size="sm"
-                onClick={removeDomain}
+                onClick={() => setRemoveConfirmOpen(true)}
                 disabled={removing || saving}
+                aria-label="Retirer le domaine personnalisé"
                 className="transition-all duration-200"
               >
                 {removing ? (
@@ -312,6 +338,17 @@ export function CustomDomainCard({ restaurantId, customDomain, customDomainStatu
           </div>
         )}
       </CardContent>
+
+      <ConfirmDialog
+        open={removeConfirmOpen}
+        title="Retirer le domaine personnalisé ?"
+        description={`« ${customDomain ?? ''} » ne mènera plus à votre page de réservation. Vos clients devront utiliser l’adresse Sokar. Vous pourrez le configurer à nouveau plus tard.`}
+        confirmLabel="Retirer le domaine"
+        variant="destructive"
+        pending={removing}
+        onConfirm={() => void removeDomain()}
+        onCancel={() => setRemoveConfirmOpen(false)}
+      />
     </Card>
   );
 }

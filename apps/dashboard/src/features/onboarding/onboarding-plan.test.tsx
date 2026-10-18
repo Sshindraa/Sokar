@@ -72,22 +72,27 @@ it('reprend le choix gardé par le navigateur quand l’adresse ne l’a plus', 
   expect(screen.getByLabelText('Nombre d’établissements')).toHaveValue(4);
 });
 
-it('envoie le choix à Stripe en demandant le retour vers l’inscription', async () => {
+const startButton = () => screen.getByRole('button', { name: /Démarrer mon essai gratuit/ });
+
+it('démarre l’essai sur la formule choisie, sans passer par Stripe', async () => {
   setSearch('?subscribe_plan=essential&billing=monthly');
-  renderPlan();
+  mocks.post.mockResolvedValueOnce({ status: 'trialing' });
+  const onContinue = renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
+  fireEvent.click(startButton());
 
-  await waitFor(() => expect(assign).toHaveBeenCalledWith('https://checkout.stripe.test/cs_1'));
-  expect(mocks.post).toHaveBeenCalledWith('billing/checkout-session', {
+  await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+  expect(mocks.post).toHaveBeenCalledWith('billing/trial', {
     plan: 'essential',
     billing: 'monthly',
-    returnTo: 'onboarding',
   });
+  expect(assign).not.toHaveBeenCalled();
+  expect(window.localStorage.getItem('sokar:onboarding:plan-dismissed:restaurant-1')).toBe('1');
 });
 
 it('transmet le nombre d’établissements du Multi-site, borné entre 2 et 100', async () => {
+  mocks.post.mockResolvedValueOnce({ status: 'trialing' });
   renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
   fireEvent.click(radio(/^Multi-site/));
@@ -98,40 +103,44 @@ it('transmet le nombre d’établissements du Multi-site, borné entre 2 et 100'
   expect(input).toHaveValue(100);
   fireEvent.change(input, { target: { value: '6' } });
 
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
+  fireEvent.click(startButton());
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalled());
   expect(mocks.post).toHaveBeenCalledWith(
-    'billing/checkout-session',
+    'billing/trial',
     expect.objectContaining({ plan: 'multi-site', siteCount: 6 }),
   );
 });
 
-it('affiche l’erreur du paiement et laisse continuer sans payer', async () => {
-  mocks.post.mockRejectedValue(new Error('La souscription en ligne sera bientôt disponible.'));
-  const onContinue = renderPlan();
+it('ne propose qu’un seul bouton', async () => {
+  renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
-
-  fireEvent.click(screen.getByRole('button', { name: /Payer et continuer/ }));
-
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'La souscription en ligne sera bientôt disponible.',
-  );
-  expect(assign).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: /Payer et continuer/ })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
-  expect(onContinue).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('button', { name: /plus tard/i })).not.toBeInTheDocument();
+  expect(startButton()).toBeEnabled();
 });
 
-it('« Plus tard » continue et retient le choix pour ne pas reproposer l’écran', async () => {
+it('continue quand un essai ou un abonnement existe déjà', async () => {
+  mocks.post.mockRejectedValueOnce(Object.assign(new Error('déjà'), { status: 409 }));
   const onContinue = renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
 
-  fireEvent.click(screen.getByRole('button', { name: 'Plus tard' }));
+  fireEvent.click(startButton());
 
-  expect(onContinue).toHaveBeenCalledTimes(1);
-  expect(window.localStorage.getItem('sokar:onboarding:plan-dismissed:restaurant-1')).toBe('1');
-  expect(mocks.post).not.toHaveBeenCalled();
+  await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+});
+
+it('reste sur l’écran et permet de réessayer si l’essai ne peut pas démarrer', async () => {
+  mocks.post.mockRejectedValueOnce(
+    Object.assign(new Error('Impossible de démarrer l’essai.'), { status: 502 }),
+  );
+  const onContinue = renderPlan();
+  await screen.findByRole('radiogroup', { name: 'Formule' });
+
+  fireEvent.click(startButton());
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de démarrer l’essai.');
+  expect(onContinue).not.toHaveBeenCalled();
+  expect(startButton()).toBeEnabled();
 });
 
 it('annonce qu’un abonnement actif est déjà en place, sans proposer de repayer', async () => {
@@ -149,13 +158,6 @@ it('propose quand même le choix si le statut de facturation est illisible', asy
   renderPlan();
 
   expect(await screen.findByRole('radiogroup', { name: 'Formule' })).toBeInTheDocument();
-});
-
-it('rassure après un paiement annulé chez Stripe', async () => {
-  setSearch('?step=formule&billing=cancelled');
-  renderPlan();
-
-  expect(await screen.findByText(/rien n’a été débité/)).toBeInTheDocument();
 });
 
 it('indique le chargement pendant la vérification de la formule', () => {

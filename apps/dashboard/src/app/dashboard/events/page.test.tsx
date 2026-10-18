@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import EventsPage from './page';
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
@@ -221,5 +222,40 @@ describe('EventsPage', () => {
     expect(
       screen.getByText('Le paiement et la vente en ligne seront disponibles prochainement.'),
     ).toBeInTheDocument();
+  });
+
+  it('dit calmement que le module n’est pas encore ouvert, sans « Réessayer » ni bouton de création', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'EVENTS_DISABLED' }));
+    render(<EventsPage />);
+
+    expect(
+      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Créer un événement' })).toBeNull();
+  });
+
+  it('n’affiche pas l’identifiant technique du fuseau horaire', async () => {
+    render(<EventsPage />);
+    await screen.findByText(/heure de Paris/);
+
+    expect(screen.queryByText(/Europe\/Paris/)).toBeNull();
+    expect(screen.getByText(/heure de Paris/)).toBeInTheDocument();
+  });
+
+  it('ne propose pas d’enregistrer une commande tant que l’événement est en brouillon', async () => {
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('events?'))
+        return Promise.resolve({ data: [{ ...event, status: 'DRAFT' }] });
+      if (path.startsWith('event-orders')) return Promise.resolve({ data: [] });
+      if (path.startsWith('event-tickets')) return Promise.resolve({ data: [] });
+      if (path.includes('/sessions')) return Promise.resolve({ data: [session] });
+      if (path.includes('/ticket-types')) return Promise.resolve({ data: [ticketType] });
+      return Promise.resolve({ data: [] });
+    });
+    render(<EventsPage />);
+
+    await screen.findAllByRole('button', { name: 'Activer l’événement' });
+    expect(screen.queryByText('Enregistrer une commande')).toBeNull();
   });
 });

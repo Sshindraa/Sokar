@@ -28,7 +28,7 @@
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
- *    - ElevenLabs: `GET /v1/voices/{id}` — read the phone voice, no audio generated
+ *    - ElevenLabs: `GET /v1/user/subscription` — validates the key, no audio, no characters billed
  *                  (only when ElevenLabs synthesises the phone; otherwise `skipped`)
  *
  * 6. **Soft-fail for voice providers**: if Telnyx/Cartesia are
@@ -41,6 +41,7 @@ import { db } from '../db/client';
 import { redisCache } from '../redis/client';
 import { queues } from '../queue/queues';
 import telnyx from '../telnyx/client';
+import { readWorkerHeartbeatAgeMs, WORKER_HEARTBEAT_STALE_MS } from './watchtower';
 import {
   elevenLabsTtsVoiceId,
   telephonyTtsProvider,
@@ -188,7 +189,8 @@ async function checkElevenLabs(): Promise<CheckResult> {
   if (telephonyTtsProvider() !== 'elevenlabs') {
     return { status: 'skipped', latency_ms: 0 };
   }
-  // GET on the voice validates the key AND the voice ID, and generates no audio.
+  // GET on the account validates the key and reports the plan: no audio, no characters billed. The voice is not
+  // looked up, because a voice can synthesise without being readable through the metadata endpoint.
   return withTimeout(
     'elevenlabs',
     (async () => {
@@ -200,16 +202,40 @@ async function checkElevenLabs(): Promise<CheckResult> {
       if (!voiceId) {
         throw new Error('ELEVENLABS_TTS_VOICE_ID not configured');
       }
-      const res = await fetch(
-        `https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}`,
-        { method: 'GET', headers: { 'xi-api-key': apiKey } },
-      );
+      const res = await fetch('https://api.elevenlabs.io/v1/user/subscription', {
+        method: 'GET',
+        headers: { 'xi-api-key': apiKey },
+      });
       if (!res.ok) {
         throw new Error(`ElevenLabs API ${res.status}: ${res.statusText}`);
       }
     })(),
     VOICE_TIMEOUT_MS,
   );
+}
+
+/** Battement des workers BullMQ : informatif, il ne fait pas passer l'API en 503. */
+async function checkWorkers(): Promise<CheckResult> {
+  const start = Date.now();
+  try {
+    const age = await readWorkerHeartbeatAgeMs();
+    if (age === null)
+      return { status: 'error', latency_ms: Date.now() - start, error: 'no heartbeat' };
+    if (age > WORKER_HEARTBEAT_STALE_MS) {
+      return {
+        status: 'error',
+        latency_ms: Date.now() - start,
+        error: `stale ${Math.round(age / 1000)}s`,
+      };
+    }
+    return { status: 'ok', latency_ms: Date.now() - start };
+  } catch (err) {
+    return {
+      status: 'error',
+      latency_ms: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────────────
@@ -219,13 +245,14 @@ const VOICE_CHECKS = ['telnyx', 'cartesia', 'elevenlabs'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, cartesia, elevenlabs] = await Promise.all([
+  const [db, redis, queues, telnyx, cartesia, elevenlabs, workers] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
     checkCartesia(),
     checkElevenLabs(),
+    checkWorkers(),
   ]);
 
   const checks: Record<string, CheckResult> = {
@@ -235,6 +262,7 @@ export async function checkHealth(): Promise<HealthReport> {
     telnyx,
     cartesia,
     elevenlabs,
+    workers,
   };
 
   // Core failure = 503 (API can't serve anything).

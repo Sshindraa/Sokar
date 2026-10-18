@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, Lock } from 'lucide-react';
+import { TRIAL_DAYS } from '@sokar/shared';
+import { TrialStartTimeline } from '@/features/billing/trial';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
 import { Button } from '@/components/ui/button';
 import { useApi } from '@/lib/api';
@@ -42,8 +44,9 @@ const euros = (amount: string | number, unit: string) => `${amount} €/${unit}
 
 /**
  * Écran « Choisissez votre formule », proposé juste après la validation de l'appel test. Il reprend
- * la formule choisie sur la page Tarifs (gardée pendant l'inscription), mène à Stripe, qui ramène
- * ici. Le paiement n'est pas imposé : « Plus tard » mène à l'écran des canaux.
+ * la formule choisie sur la page Tarifs (gardée pendant l'inscription). Un seul bouton démarre
+ * l'essai gratuit sur cette formule, sans carte et sans passer par Stripe : la carte s'ajoute plus
+ * tard depuis le dashboard. Aucun compte n'utilise donc Sokar hors essai ou abonnement.
  */
 export function OnboardingPlan({
   restaurantId,
@@ -58,8 +61,7 @@ export function OnboardingPlan({
   const [siteCount, setSiteCount] = useState(2);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
-  const [cancelled, setCancelled] = useState(false);
-  const [paying, setPaying] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Le choix de la page Tarifs (adresse, sinon mémoire du navigateur) préremplit l'écran.
@@ -70,7 +72,6 @@ export function OnboardingPlan({
       setBilling(choice.billing);
       if (choice.siteCount) setSiteCount(choice.siteCount);
     }
-    setCancelled(new URLSearchParams(window.location.search).get('billing') === 'cancelled');
   }, []);
 
   useEffect(() => {
@@ -93,31 +94,30 @@ export function OnboardingPlan({
   const subscribed = ACTIVE_STATUSES.includes(status?.subscriptionStatus ?? '');
   const yearly = billing === 'annual';
 
-  async function handlePay() {
-    if (paying) return;
-    setPaying(true);
+  async function handleStartTrial() {
+    if (startingTrial) return;
+    setStartingTrial(true);
     setError(null);
     try {
-      const session = await post<{ url?: string }>('billing/checkout-session', {
+      await post('billing/trial', {
         plan,
         billing,
-        returnTo: 'onboarding',
         ...(plan === 'multi-site' ? { siteCount } : {}),
       });
-      if (!session.url) throw new Error('La page de paiement est indisponible.');
-      clearStoredPlanChoice();
-      window.location.assign(session.url);
     } catch (reason: unknown) {
-      setError(
-        reason instanceof Error && reason.message
-          ? reason.message
-          : 'Impossible de préparer le paiement. Réessayez ou continuez, vous pourrez payer plus tard.',
-      );
-      setPaying(false);
+      const status = (reason as { status?: number }).status;
+      // 409 : un abonnement ou un essai existe déjà. Rien à démarrer, on continue.
+      if (status !== 409) {
+        setError(
+          reason instanceof Error && reason.message
+            ? reason.message
+            : 'Impossible de démarrer l’essai. Réessayez dans un instant.',
+        );
+        setStartingTrial(false);
+        return;
+      }
     }
-  }
-
-  function handleLater() {
+    clearStoredPlanChoice();
     dismissPlanPrompt(restaurantId);
     onContinue();
   }
@@ -158,15 +158,6 @@ export function OnboardingPlan({
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6">
-      {cancelled && (
-        <p
-          role="status"
-          className="rounded-2xl bg-muted/50 px-5 py-3 text-sm text-muted-foreground"
-        >
-          Le paiement a été annulé : rien n’a été débité. Vous pouvez réessayer ou continuer.
-        </p>
-      )}
-
       <div
         role="group"
         aria-label="Cadence de facturation"
@@ -258,6 +249,13 @@ export function OnboardingPlan({
         </label>
       )}
 
+      <div className="max-w-xl rounded-2xl border border-border bg-card p-5">
+        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          Comment se passe l’essai
+        </p>
+        <TrialStartTimeline totalDays={TRIAL_DAYS} />
+      </div>
+
       {error && (
         <p
           role="alert"
@@ -267,29 +265,20 @@ export function OnboardingPlan({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Button
           type="button"
-          onClick={() => void handlePay()}
-          disabled={paying}
-          className="h-11 rounded-full transition-all duration-200"
+          onClick={() => void handleStartTrial()}
+          disabled={startingTrial}
+          className="h-11 rounded-full px-6 transition-all duration-200"
         >
-          {paying ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-          {paying ? 'Redirection…' : 'Payer et continuer'}
-          {!paying && <ArrowRight size={15} aria-hidden="true" />}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={handleLater}
-          disabled={paying}
-          className="h-11 rounded-full text-muted-foreground transition-all duration-200"
-        >
-          Plus tard
+          {startingTrial ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
+          {startingTrial ? 'Démarrage de l’essai…' : 'Démarrer mon essai gratuit'}
+          {!startingTrial && <ArrowRight size={15} aria-hidden="true" />}
         </Button>
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Paiement sécurisé par Stripe. Vous pourrez modifier votre formule dans vos réglages.
+          Sans carte bancaire. Formule modifiable à tout moment pendant l’essai.
         </p>
       </div>
     </div>

@@ -48,6 +48,11 @@ function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
 
 function makePrisma() {
   const tx = {
+    restaurant: { findUnique: vi.fn().mockResolvedValue({ smsConfirmEnabled: true }) },
+    outboxEvent: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: 'event-confirmation' }),
+    },
     reservation: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -69,6 +74,35 @@ function makePrisma() {
 describe('ReservationLifecycleService', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('queues confirmation atomically when a pending WEB booking is approved', async () => {
+    const { prisma, tx } = makePrisma();
+    const previous = makeReservation({
+      state: 'PENDING',
+      channel: 'WEB',
+      customerPhone: '+33600000000',
+    });
+    const current = { ...previous, state: 'CONFIRMED' };
+    tx.reservation.findUnique.mockResolvedValue(previous);
+    tx.reservation.update.mockResolvedValue(current);
+    vi.spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability').mockResolvedValue(
+      undefined,
+    );
+    await new ReservationLifecycleService(prisma).transition({
+      reservationId: previous.id,
+      restaurantId: previous.restaurantId,
+      toState: 'CONFIRMED',
+      actor: 'manager',
+    });
+    expect(tx.outboxEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          topic: 'reservation-confirmation',
+          payload: { reservationId: previous.id },
+        }),
+      }),
+    );
   });
 
   it('scopes the row, projects cancellation, audits it and invalidates capacity', async () => {

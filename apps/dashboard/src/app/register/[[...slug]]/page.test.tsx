@@ -30,14 +30,14 @@ describe('récapitulatif avant paiement', () => {
     expect(screen.getByLabelText('Nombre d’établissements')).toHaveValue(count);
     expect(
       screen.getByLabelText('Récapitulatif de facturation').textContent?.replace(/\s/g, ' '),
-    ).toContain(`${amount} € HT facturés par an, engagement de 12 mois.`);
+    ).toContain(`${amount} € facturés par an, engagement de 12 mois.`);
   });
   it('recalcule le montant mensuel exact après un changement de nombre', () => {
     window.history.replaceState({}, '', '/register?plan=multi-site&billing=monthly&sites=1');
     render(<RegisterPage />);
     fireEvent.change(screen.getByLabelText('Nombre d’établissements'), { target: { value: '3' } });
     expect(screen.getByLabelText('Récapitulatif de facturation')).toHaveTextContent(
-      '497 € HT facturés chaque mois.',
+      '497 € facturés chaque mois.',
     );
   });
 });

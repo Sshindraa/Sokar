@@ -20,6 +20,9 @@ import {
 } from '../notification-idempotency';
 import { recordNotificationProviderResult } from '../../observability/metrics';
 import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
+import { isSlotStartPast, utcToZonedParts } from '../../timezone/restaurant-time';
+import { buildConfirmationText } from '../../messaging/confirmation-text';
+import { reservationManagementUrl } from '../../../modules/reservations/reservation-management';
 
 export interface OutboundConfirmJobData {
   reservationId: string;
@@ -69,7 +72,18 @@ export async function processOutboundConfirmJob(
   const data = job.data;
   const reservation = await deps.db.reservation.findUnique({
     where: { id: data.reservationId },
-    select: { id: true, restaurantId: true, status: true, state: true },
+    select: {
+      id: true,
+      restaurantId: true,
+      status: true,
+      state: true,
+      customerPhone: true,
+      reservedAt: true,
+      createdAt: true,
+      startsAt: true,
+      partySize: true,
+      restaurant: { select: { name: true, timezone: true, smsConfirmEnabled: true } },
+    },
   });
 
   // Une réservation non confirmée ou terminale ne doit pas déclencher un SMS
@@ -82,6 +96,22 @@ export async function processOutboundConfirmJob(
     );
     return;
   }
+
+  const startsAt = reservation.startsAt ?? reservation.reservedAt;
+  if (
+    !reservation.customerPhone ||
+    !reservation.restaurant.smsConfirmEnabled ||
+    isSlotStartPast(startsAt)
+  ) {
+    log.info({ reservationId: data.reservationId }, 'confirmation SMS skipped: no longer eligible');
+    return;
+  }
+
+  // Queue payloads can predate edits. Render the current booking in its restaurant timezone.
+  const local = utcToZonedParts(startsAt, reservation.restaurant.timezone);
+  const date = startsAt.toLocaleDateString('fr-FR', {
+    timeZone: reservation.restaurant.timezone,
+  });
 
   const alreadyAudited = await deps.db.reservationAuditLog.findFirst({
     where: { reservationId: data.reservationId, event: CONFIRMATION_SMS_SENT_EVENT },
@@ -113,7 +143,13 @@ export async function processOutboundConfirmJob(
   }
 
   try {
-    const message = `Reservation confirmee - ${data.restaurantName} ${data.date} ${data.time} ${data.partySize}pers. Annulation: appelez le restaurant.`;
+    const message = buildConfirmationText(
+      reservation.restaurant.name,
+      date,
+      local.time,
+      reservation.partySize,
+      reservationManagementUrl(reservation),
+    );
     const usageContext: MessagingUsageContext | undefined = reservation.restaurantId
       ? {
           restaurantId: reservation.restaurantId,
@@ -123,7 +159,7 @@ export async function processOutboundConfirmJob(
         }
       : undefined;
     const result = normalizeNotificationSendResult(
-      await deps.sendSms(data.customerPhone, message, usageContext),
+      await deps.sendSms(reservation.customerPhone, message, usageContext),
       'telnyx',
       'sms',
     );

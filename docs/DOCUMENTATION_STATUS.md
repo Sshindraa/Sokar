@@ -142,8 +142,8 @@ une archive par défaut.
 - API `/usage/current` et `/usage/history` : volumes courants, historique six mois et état explicite
   `UNLIMITED` sans blocage client. L'ancienne page `/dashboard/usage` est un alias opérateur vers
   `/admin/margin` ; les coûts restent réservés aux opérations.
-- Catalogue applicatif Essential 199 €, Pro 299 € et Multi-site 249 € + 99 €/site ; le catalogue
-  Stripe actif reste l'ancien 149/249 € jusqu'à la migration externe contrôlée.
+- Catalogue Essential 199 €, Pro 299 € et Multi-site 299 € + 99 €/site, aligné entre le code et
+  Stripe test et live (grille du 14 octobre 2026, contrôle du 16 octobre).
 - Socle multi-site, RGPD, observabilité, sauvegarde, rollback et quality gates.
 - Provisioning admin : finalisation protégée par les preuves séparées de numéro, webhook, renvoi
   opérateur et appel test ; un déclenchement reste `TEST_CALL_PENDING` jusqu'à la confirmation du

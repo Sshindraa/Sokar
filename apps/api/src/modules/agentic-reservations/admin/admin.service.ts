@@ -80,15 +80,15 @@ export class AgenticAdminService {
     // OpenAI Reserve déjà actif ne bloque pas les autres réglages (MCP) : le flux écarte lui-même
     // les restaurants incomplets.
     if (args.input.openaiReserve && !current.openaiReserveEnabled) {
+      // Libellés lisibles par le restaurateur ; le code d'erreur reste inchangé pour les clients de l'API.
       const missing: string[] = [];
-      if (current.lat == null) missing.push('lat');
-      if (current.lng == null) missing.push('lng');
-      if (!current.websiteUrl) missing.push('websiteUrl');
-      if (!current.formattedAddress) missing.push('formattedAddress');
-      if (!current.phoneE164) missing.push('phoneE164');
+      if (current.lat == null || current.lng == null) missing.push('coordonnées GPS');
+      if (!current.websiteUrl) missing.push('site web');
+      if (!current.formattedAddress) missing.push('adresse');
+      if (!current.phoneE164) missing.push('téléphone');
       if (missing.length > 0) {
         throw new OptInGuardError(
-          `OpenAI Reserve requiert les champs suivants sur le restaurant : ${missing.join(', ')}`,
+          `Pour activer OpenAI Reserve, complétez les informations du restaurant : ${missing.join(', ')}.`,
           'OPENAI_RESERVE_MISSING_FIELDS',
         );
       }

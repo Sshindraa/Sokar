@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import CustomerDuplicatesPage from './page';
 
 const apiMocks = vi.hoisted(() => ({
@@ -91,12 +92,15 @@ describe('CustomerDuplicatesPage', () => {
 
   it('prévisualise une paire, exige la résolution puis envoie une clé idempotente', async () => {
     render(<CustomerDuplicatesPage />);
-    expect(await screen.findByText('Deux profils rapprochés')).toBeInTheDocument();
+    expect(await screen.findByText('Deux profils qui se ressemblent')).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
     expect(await screen.findByText('Préférences en conflit')).toBeInTheDocument();
+    // Pas d'identifiant interne ni de clé technique à l'écran ; les valeurs sont attribuées à un nom.
+    expect(screen.queryByText(/customer-a|customer-b|preferred_language/)).toBeNull();
+    expect(screen.getByText('Langue préférée')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Résolution preferred_language' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Valeur à garder : Langue préférée' }), {
       target: { value: 'latest' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer la fusion' }));
@@ -111,15 +115,65 @@ describe('CustomerDuplicatesPage', () => {
         { headers: { 'Idempotency-Key': expect.any(String) } },
       ),
     );
-    expect(await screen.findByText(/Fusion confirmée/)).toBeInTheDocument();
+    expect(await screen.findByText(/Fusion effectuée/)).toBeInTheDocument();
   });
 
-  it('signale une erreur de formule sans lancer la lecture des profils', async () => {
-    apiMocks.get.mockRejectedValue(new Error('CAPABILITY_NOT_INCLUDED'));
+  it('signale une formule non incluse, sans « Réessayer » ni panneau de fusion vide', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<CustomerDuplicatesPage />);
-    expect(await screen.findByText('CAPABILITY_NOT_INCLUDED')).toBeInTheDocument();
+
     expect(
-      screen.getByText(/détection et la fusion sont incluses dans le CRM Pro/),
+      await screen.findByText('Cette fonctionnalité n’est pas incluse dans votre formule.'),
     ).toBeInTheDocument();
+    expect(screen.queryByText('CAPABILITY_NOT_INCLUDED')).toBeNull();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
+    expect(screen.queryByText('Aperçu de fusion')).toBeNull();
+  });
+
+  it('propose de réessayer après une panne, sans panneau de fusion vide', async () => {
+    apiMocks.get.mockRejectedValueOnce(toApiError(503, {}));
+    render(<CustomerDuplicatesPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('momentanément indisponible');
+    expect(screen.queryByText('Aperçu de fusion')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
+    expect(await screen.findByText('Deux profils qui se ressemblent')).toBeInTheDocument();
+  });
+
+  it('traduit un refus de fusion au lieu d’afficher un code', async () => {
+    apiMocks.post.mockImplementation((path: string) => {
+      if (path.includes('merge-preview')) {
+        return Promise.reject(toApiError(409, { error: 'CUSTOMER_NOT_ACTIVE' }));
+      }
+      return Promise.resolve({});
+    });
+    render(<CustomerDuplicatesPage />);
+    await screen.findByText('Deux profils qui se ressemblent');
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Ce profil a déjà été fusionné ou archivé. Actualisez la liste.',
+    );
+    expect(screen.queryByText('CUSTOMER_NOT_ACTIVE')).toBeNull();
+  });
+
+  it('amène à l’aperçu de fusion quand il s’affiche sous la liste (petits écrans)', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi
+      .fn()
+      .mockReturnValue({ matches: false }) as unknown as typeof window.matchMedia;
+    try {
+      render(<CustomerDuplicatesPage />);
+      await screen.findByText('Deux profils qui se ressemblent');
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Garder ce profil' })[0]);
+
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
   });
 });

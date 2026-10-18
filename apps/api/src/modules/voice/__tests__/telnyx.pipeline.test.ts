@@ -52,6 +52,11 @@ vi.mock('../../../shared/configcat', () => ({
   },
 }));
 
+vi.mock('../../billing/billing.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../billing/billing.service')>()),
+  isBillingSuspended: vi.fn(async () => false),
+}));
+
 // Mock telnyxFetch (used for direct answer call instead of BullMQ queue)
 vi.mock('../../../shared/telnyx/http-agent', () => ({
   telnyxFetch: vi.fn(
@@ -70,6 +75,7 @@ import { RestaurantService } from '../../restaurants/restaurant.service';
 import { CustomerService } from '../../customers/customer.service';
 import { isVoicePipelineEnabled } from '../../../shared/configcat';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
+import { isBillingSuspended } from '../../billing/billing.service';
 import { CallSessionManager } from '../stream/manager';
 
 const mockLoadContext = vi.mocked(RestaurantService.loadContext);
@@ -79,6 +85,7 @@ const mockBuildVipPromptExtra = vi.mocked(CustomerService.buildVipPromptExtra);
 const mockIncrementVisit = vi.mocked(CustomerService.incrementVisit);
 const mockIsVoicePipelineEnabled = vi.mocked(isVoicePipelineEnabled);
 const mockTelnyxFetch = vi.mocked(telnyxFetch);
+const mockIsBillingSuspended = vi.mocked(isBillingSuspended);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -352,6 +359,31 @@ describe('POST /voice/telnyx — call.initiated', () => {
     // With Promise.all, lookupOrCreate runs in parallel with isVoicePipelineEnabled.
     // The guard still prevents session creation and answer call.
     expect(mockTelnyxFetch).not.toHaveBeenCalled();
+    expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
+  });
+
+  it('plays a short message instead of a voice session when the subscription has ended', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockIsBillingSuspended.mockResolvedValueOnce(true);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ result: 'ok' });
+    expect(mockIsBillingSuspended).toHaveBeenCalledWith('rest-1');
+    expect(mockTelnyxFetch).toHaveBeenCalledTimes(1);
+    const [path, init] = mockTelnyxFetch.mock.calls[0] as [string, { body: string }];
+    expect(path).toBe('/v2/calls/cc-1/actions/answer');
+    const state = JSON.parse(
+      Buffer.from(JSON.parse(init.body).client_state, 'base64').toString('utf8'),
+    );
+    expect(state).toEqual({ kind: 'billing_suspended_call', name: 'Le Bistrot' });
     expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
   });
 

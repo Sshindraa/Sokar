@@ -9,6 +9,11 @@ Statut : **ACTIF — catalogue local 199/299, validations externes et pilotes ou
 > cette version sont historiques ; le catalogue à annoncer est Essential 199 €
 > et Pro 299 €. Le profil scoped `core-operator-foundations` est déjà promu pour
 > les fondations sûres, tandis que le gel commercial complet reste actif.
+>
+> Mise à jour du 16 octobre 2026 : Stripe test et live facturent la grille du 14 octobre
+> (Essential 199 €, Pro 299 €, Multi-site 299 € + 99 €/site, remise annuelle 10 %). Les montants
+> annuels et la base Multi-site 249 € du tableau ci-dessous sont historiques ; montants en vigueur
+> dans [`runbooks/stripe-billing.md`](../runbooks/stripe-billing.md).
 
 Ce registre fixe ce qui peut être annoncé dès le premier lancement, qui porte la preuve, le prix affiché et la condition d’activation. Une fonctionnalité peut rester dans l’offre initiale tout en étant activée avec accompagnement ou sur une cohorte pilote. Aucune ligne ne constitue une garantie avant que la preuve indiquée soit signée.
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { adjustmentScopeLabel, adjustmentStatusText, usageDimensionLabel } from './margin-labels';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -399,7 +400,8 @@ export function AdjustmentReviewDialog(props: {
           <DialogHeader>
             <DialogTitle>Détail de la correction</DialogTitle>
             <DialogDescription>
-              {restaurantName ?? adjustment?.scopeKey} · {adjustment?.status}
+              {adjustment ? adjustmentScopeLabel(adjustment.scopeKey, restaurantName) : ''} ·{' '}
+              {adjustment ? adjustmentStatusText(adjustment.status) : ''}
             </DialogDescription>
           </DialogHeader>
           {adjustment && (
@@ -407,7 +409,7 @@ export function AdjustmentReviewDialog(props: {
               <div>
                 <dt className="text-muted-foreground">Dimension</dt>
                 <dd className="mt-1 break-words font-medium">
-                  {adjustment.category} · {adjustment.provider} · {adjustment.unit}
+                  {usageDimensionLabel(adjustment.category, adjustment.provider)}
                 </dd>
               </div>
               <div>

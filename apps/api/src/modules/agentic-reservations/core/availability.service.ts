@@ -13,12 +13,27 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { isConnectDemoSlug } from '@sokar/shared';
 import type { RestaurantPolicyInput } from './policies.service.js';
 import { buildPolicySnapshot } from './policies.service.js';
 import {
   CapacityAwareAvailabilityService,
   zonedTimeToUtc,
 } from '../../floor-plan/availability-capacity-aware.service.js';
+
+/**
+ * Les établissements fictifs de démonstration (`CONNECT_DEMO_SLUGS`) ne sortent pas d'une recherche
+ * ouverte : un assistant IA ne doit pas les proposer à un vrai client. Ils restent accessibles quand
+ * on les nomme exactement (« Chez Sokar »), ce qui sert aux essais et aux relecteurs d'annuaire.
+ */
+export function isHiddenDemoRestaurant(
+  restaurant: { name: string; slug: string | null },
+  restaurantName?: string,
+): boolean {
+  if (!restaurant.slug || !isConnectDemoSlug(restaurant.slug)) return false;
+  const requested = restaurantName?.trim().toLocaleLowerCase('fr-FR');
+  return !requested || requested !== restaurant.name.trim().toLocaleLowerCase('fr-FR');
+}
 
 /** Garde-fou : nombre max de candidats restaurant à évaluer par recherche */
 const SEARCH_CANDIDATES_MAX = 200;
@@ -176,6 +191,7 @@ export class AvailabilityService {
       lastScannedId = c.id;
       const addr = c.formattedAddress?.toLowerCase() ?? '';
       if (lowerCity.length > 0 && !addr.includes(lowerCity)) continue;
+      if (isHiddenDemoRestaurant(c, args.restaurantName)) continue;
       if (args.restaurantName) restaurantMatches.push({ restaurantId: c.id, name: c.name });
       const check = await this.checkAvailability({
         restaurantId: c.id,
@@ -263,6 +279,7 @@ export class AvailabilityService {
     return candidates
       .filter((restaurant) => {
         const address = restaurant.formattedAddress?.toLowerCase() ?? '';
+        if (isHiddenDemoRestaurant(restaurant, args.restaurantName)) return false;
         return lowerCity.length === 0 || address.includes(lowerCity);
       })
       .map((restaurant) => {

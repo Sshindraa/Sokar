@@ -22,6 +22,7 @@ import {
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { recordDebugCallerText } from './debug-dialogue';
+import { telephonyTtsProvider, ttsProviderWithModel } from './elevenlabs-tts';
 
 export type VoiceTurnPhase =
   | 'speech'
@@ -71,11 +72,35 @@ export type VoiceTurnEvent =
 
 export type VoiceTurnEventFields = Record<string, boolean | number | string | null | undefined>;
 
-/** Fournisseur TTS d'un tour, d'après la source remontée par le pipeline de synthèse. */
+/**
+ * Fournisseur TTS d'un tour, d'après la source remontée par le pipeline de synthèse. Le cache et le
+ * chemin HTTP générique servent l'audio du fournisseur configuré (`VOICE_TTS_PROVIDER`).
+ */
 function ttsProviderLabel(source: unknown): string {
   if (source === 'native_fallback') return 'telnyx-native';
-  if (source === 'elevenlabs_dialogue') return 'elevenlabs';
-  return 'cartesia';
+  if (typeof source === 'string' && source.startsWith('elevenlabs')) return 'elevenlabs';
+  if (typeof source === 'string' && source.startsWith('cartesia')) return 'cartesia';
+  return telephonyTtsProvider();
+}
+
+/**
+ * Fournisseur TTS de l'appel : celui qui a servi le plus de tours (le premier en cas d'égalité), avec son
+ * modèle. `null` si aucun tour n'a parlé : la finalisation retombe alors sur le fournisseur configuré.
+ */
+export function observedTtsProvider(session: CallSession): string | null {
+  const counts = new Map<string, number>();
+  for (const turn of session.voiceTurnHistory ?? []) {
+    if (turn.ttsProvider) counts.set(turn.ttsProvider, (counts.get(turn.ttsProvider) ?? 0) + 1);
+  }
+  const current = session.currentTurn;
+  if (current?.ttsProvider && !session.voiceTurnHistory?.some((turn) => turn.id === current.id)) {
+    counts.set(current.ttsProvider, (counts.get(current.ttsProvider) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [provider, count] of counts) {
+    if (best === null || count > (counts.get(best) ?? 0)) best = provider;
+  }
+  return best === null ? null : ttsProviderWithModel(best);
 }
 
 function transcriptFingerprint(transcript: string): string {

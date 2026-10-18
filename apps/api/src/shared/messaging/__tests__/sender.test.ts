@@ -4,6 +4,7 @@ vi.mock('../../telnyx/client', () => ({
   sendSms: vi.fn(),
 }));
 vi.mock('../../whatsapp/client', () => ({
+  getWhatsAppProvider: vi.fn(() => 'telnyx'),
   isWhatsAppConfigured: vi.fn(),
   sendWhatsAppTemplate: vi.fn(),
 }));
@@ -20,7 +21,11 @@ vi.mock('../../logger/pino', () => ({
 import { trackMessagingEvent } from '../../../modules/analytics/events.service';
 import { logger } from '../../logger/pino';
 import { sendReminder } from '../sender';
-import { isWhatsAppConfigured, sendWhatsAppTemplate } from '../../whatsapp/client';
+import {
+  getWhatsAppProvider,
+  isWhatsAppConfigured,
+  sendWhatsAppTemplate,
+} from '../../whatsapp/client';
 import { sendSms } from '../../telnyx/client';
 import {
   buildNotificationClaimKey,
@@ -78,18 +83,15 @@ const params = {
   date: 'jeudi 2 juillet 2026',
   time: '19:00',
   partySize: 2,
+  whatsappOptIn: true,
+  reservationChannel: 'WEB',
 };
 
-describe('messaging sender notification outcomes', () => {
+describe('WhatsApp-only reservation reminders', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(isWhatsAppConfigured).mockReturnValue(false);
-    vi.mocked(sendSms).mockResolvedValue({
-      outcome: 'success',
-      provider: 'telnyx',
-      channel: 'sms',
-      providerMessageId: 'sms-1',
-    });
+    vi.mocked(getWhatsAppProvider).mockReturnValue('telnyx');
+    vi.mocked(isWhatsAppConfigured).mockReturnValue(true);
     vi.mocked(sendWhatsAppTemplate).mockResolvedValue({
       outcome: 'success',
       provider: 'telnyx',
@@ -98,141 +100,122 @@ describe('messaging sender notification outcomes', () => {
     });
   });
 
-  it('conserve le claim SMS après succès et ne double pas l’appel', async () => {
-    const { store } = makeClaimStore();
-    const { queue, jobs } = makeReconciliationQueue();
-
-    const first = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-    const second = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(first).toMatchObject({ channel: 'sms', success: true, outcome: 'success' });
-    expect(second).toMatchObject({ channel: 'sms', success: true, outcome: 'success' });
-    expect(sendSms).toHaveBeenCalledTimes(1);
-    expect(jobs).toHaveLength(0);
-    expect(
-      await getNotificationClaim(
-        store,
-        buildNotificationClaimKey('reservation-reminder-sms', 'res-1'),
-      ),
-    ).toMatchObject({
-      status: 'success',
-      providerMessageId: 'sms-1',
+  it.each([undefined, false])('skips without explicit agreement (%s)', async (whatsappOptIn) => {
+    expect(await sendReminder({ ...params, whatsappOptIn })).toMatchObject({
+      skipped: 'no_whatsapp_consent',
+      success: false,
     });
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+    expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it('autorise le fallback SMS après un échec certain WhatsApp', async () => {
-    vi.mocked(isWhatsAppConfigured).mockReturnValue(true);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({
+  it.each(['PHONE', 'MCP', undefined])(
+    'never reminds a non-web booking (%s)',
+    async (reservationChannel) => {
+      expect(await sendReminder({ ...params, reservationChannel })).toMatchObject({
+        skipped: 'non_web_booking',
+      });
+      expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+      expect(sendSms).not.toHaveBeenCalled();
+    },
+  );
+
+  it('skips unavailable WhatsApp without creating a claim or SMS', async () => {
+    vi.mocked(isWhatsAppConfigured).mockReturnValue(false);
+    const { store, values } = makeClaimStore();
+    expect(await sendReminder(params, { claimStore: store })).toMatchObject({
+      skipped: 'whatsapp_unavailable',
+    });
+    expect(values.size).toBe(0);
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates accepted WhatsApp reminders without sending SMS', async () => {
+    const { store } = makeClaimStore();
+    await sendReminder(params, { claimStore: store });
+    expect(await sendReminder(params, { claimStore: store })).toMatchObject({
+      success: true,
+      channel: 'whatsapp',
+    });
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(trackMessagingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'whatsapp', success: true }),
+    );
+  });
+
+  it('retries an explicit refusal only on WhatsApp', async () => {
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValueOnce({
       outcome: 'failure_certain',
       provider: 'telnyx',
       channel: 'whatsapp',
     });
     const { store } = makeClaimStore();
-    const { queue } = makeReconciliationQueue();
-
-    const result = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(result).toMatchObject({ channel: 'sms', success: true, outcome: 'success' });
-    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
-    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(await sendReminder(params, { claimStore: store })).toMatchObject({
+      outcome: 'failure_certain',
+      channel: 'whatsapp',
+    });
     expect(
       await getNotificationClaim(
         store,
-        buildNotificationClaimKey('reservation-reminder-whatsapp', 'res-1'),
+        buildNotificationClaimKey('reservation-reminder-whatsapp', params.reservationId),
       ),
     ).toBeNull();
-    expect(
-      await getNotificationClaim(
-        store,
-        buildNotificationClaimKey('reservation-reminder-sms', 'res-1'),
-      ),
-    ).toMatchObject({ status: 'success' });
+    await sendReminder(params, { claimStore: store });
+    expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(2);
+    expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it('ne bascule pas vers SMS après un résultat WhatsApp unknown', async () => {
-    vi.mocked(isWhatsAppConfigured).mockReturnValue(true);
-    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({
-      outcome: 'unknown',
-      provider: 'telnyx',
+  it('never falls back to SMS after a thrown provider refusal', async () => {
+    vi.mocked(sendWhatsAppTemplate).mockRejectedValue(
+      Object.assign(new Error('provider refusal'), { statusCode: 400 }),
+    );
+    expect(await sendReminder(params)).toMatchObject({
+      outcome: 'failure_certain',
       channel: 'whatsapp',
-      providerMessageId: 'whatsapp-unknown',
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('preserves unknown Meta claims across a provider switch', async () => {
+    vi.mocked(getWhatsAppProvider).mockReturnValue('meta');
+    vi.mocked(sendWhatsAppTemplate).mockResolvedValue({
+      provider: 'meta',
+      channel: 'whatsapp',
+      outcome: 'unknown',
+      providerMessageId: 'wamid-unknown',
     });
     const { store } = makeClaimStore();
     const { queue, jobs } = makeReconciliationQueue();
-
-    const first = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-    const second = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(first).toMatchObject({ channel: 'whatsapp', outcome: 'unknown', success: false });
-    expect(second).toMatchObject({ channel: 'whatsapp', outcome: 'unknown', success: false });
+    await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
+    vi.mocked(getWhatsAppProvider).mockReturnValue('telnyx');
+    expect(
+      await sendReminder(params, { claimStore: store, reconciliationQueue: queue }),
+    ).toMatchObject({ provider: 'meta', outcome: 'unknown' });
     expect(sendWhatsAppTemplate).toHaveBeenCalledTimes(1);
     expect(sendSms).not.toHaveBeenCalled();
     expect(jobs).toHaveLength(1);
-    expect(
-      await getNotificationClaim(
-        store,
-        buildNotificationClaimKey('reservation-reminder-whatsapp', 'res-1'),
-      ),
-    ).toMatchObject({
-      status: 'unknown',
-      providerMessageId: 'whatsapp-unknown',
-    });
   });
 
-  it('conserve le claim SMS et bloque le renvoi après reset réseau', async () => {
-    vi.mocked(sendSms).mockRejectedValueOnce(
-      Object.assign(new Error('socket reset'), { code: 'ECONNRESET' }),
+  it('preserves a historical SMS unknown claim without sending either channel', async () => {
+    const { store, values } = makeClaimStore();
+    values.set(
+      buildNotificationClaimKey('reservation-reminder-sms', params.reservationId),
+      JSON.stringify({
+        version: 1,
+        status: 'unknown',
+        provider: 'telnyx',
+        channel: 'sms',
+        updatedAt: new Date().toISOString(),
+        providerMessageId: 'old-sms',
+      }),
     );
-    const { store } = makeClaimStore();
-    const { queue, jobs } = makeReconciliationQueue();
-
-    const first = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-    const second = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(first).toMatchObject({ channel: 'sms', outcome: 'unknown', success: false });
-    expect(second).toMatchObject({ channel: 'sms', outcome: 'unknown', success: false });
-    expect(sendSms).toHaveBeenCalledTimes(1);
-    expect(jobs).toHaveLength(1);
-    expect(logger.error).not.toHaveBeenCalled();
-  });
-
-  it('libère le claim SMS après un refus certain et permet un retry', async () => {
-    vi.mocked(sendSms).mockResolvedValueOnce({
-      outcome: 'failure_certain',
-      provider: 'telnyx',
+    expect(await sendReminder(params, { claimStore: store })).toMatchObject({
       channel: 'sms',
+      outcome: 'unknown',
     });
-    const { store } = makeClaimStore();
-    const { queue } = makeReconciliationQueue();
-
-    const first = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-    const second = await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(first).toMatchObject({ channel: 'sms', outcome: 'failure_certain', success: false });
-    expect(second).toMatchObject({ channel: 'sms', outcome: 'success', success: true });
-    expect(sendSms).toHaveBeenCalledTimes(2);
-  });
-
-  it('conserve des clés distinctes pour WhatsApp et SMS', async () => {
-    const { store } = makeClaimStore();
-    const { queue } = makeReconciliationQueue();
-
-    await sendReminder(params, { claimStore: store, reconciliationQueue: queue });
-
-    expect(
-      await getNotificationClaim(
-        store,
-        buildNotificationClaimKey('reservation-reminder-whatsapp', 'res-1'),
-      ),
-    ).toBeNull();
-    expect(
-      await getNotificationClaim(
-        store,
-        buildNotificationClaimKey('reservation-reminder-sms', 'res-1'),
-      ),
-    ).toMatchObject({ channel: 'sms' });
-    expect(trackMessagingEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'reminder_sent', channel: 'sms', success: true }),
-    );
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendWhatsAppTemplate).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });

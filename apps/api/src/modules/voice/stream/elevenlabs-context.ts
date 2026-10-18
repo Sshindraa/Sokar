@@ -88,7 +88,8 @@ function wait(ms: number): Promise<void> {
 
 /**
  * Tour TTS ElevenLabs en contexte, même contrat que `CartesiaContextTurn` (voir `context-tts.ts`).
- * Actif seulement pour les restaurants où `isElevenLabsDialogueEnabled` est vrai : le chemin par défaut ne le touche pas.
+ * Actif seulement pour les restaurants listés dans `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`, avec
+ * `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` : le chemin par défaut ne le touche pas.
  *
  * Chaque phrase part dans `inputs`. `flush` vaut vrai quand la phrase se termine par une ponctuation
  * forte, pour qu'elle soit générée tout de suite ; le reste attend la phrase suivante ou `close_socket`,
@@ -188,17 +189,19 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
     };
   }
 
-  push(transcript: string): void {
+  push(transcript: string, options: { tone?: string } = {}): void {
     if (this.finishedInput || this.finishedOutput || this.cancelled || !transcript) return;
     // Les segments se concatènent sans séparateur implicite : on en ajoute un entre deux mots.
     const needsSpace =
       this.lastTranscript && !/\s$/.test(this.lastTranscript) && !/^[,.;:!?]/.test(transcript);
     const joinedTranscript = `${needsSpace ? ' ' : ''}${transcript}`;
     this.lastTranscript = joinedTranscript;
+    // La balise ne part qu'à la voix : le texte relevé (interruption, historique) reste celui de say.
     this.pushedText += joinedTranscript;
+    const tag = options.tone && /^[a-z]+$/.test(options.tone) ? `[${options.tone}] ` : '';
     this.sendOrQueue({
       kind: 'text',
-      text: joinedTranscript,
+      text: `${tag}${joinedTranscript}`,
       flush: SENTENCE_END.test(joinedTranscript),
     });
   }

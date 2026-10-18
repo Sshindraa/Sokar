@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import NoShowWidget from '../NoShowWidget';
 
 const mockGet = vi.fn();
@@ -107,18 +107,16 @@ describe('NoShowWidget', () => {
 
     expect(screen.getByText(/120 réservations/)).toBeInTheDocument();
     expect(screen.getByText('Taux')).toBeInTheDocument();
-    expect(screen.getByText(/6.7%/)).toBeInTheDocument();
+    expect(screen.getByText('6,7 %')).toBeInTheDocument();
     expect(screen.getByText(/8 no-shows sur 120/)).toBeInTheDocument();
 
     expect(screen.getByText('CA estimé perdu')).toBeInTheDocument();
     expect(screen.getByText(/1\s234\s€/)).toBeInTheDocument();
 
-    expect(screen.getByText('Réservations sauvées par SMS')).toBeInTheDocument();
-    expect(screen.getByText(/-2.3 pts/)).toBeInTheDocument();
-    expect(screen.getByText('4.0%')).toBeInTheDocument();
-    expect(screen.getByText('12.5%')).toBeInTheDocument();
-    expect(screen.getByText(/avec SMS/)).toBeInTheDocument();
-    expect(screen.getByText(/sans/)).toBeInTheDocument();
+    expect(screen.getByText('Effet du rappel SMS')).toBeInTheDocument();
+    expect(screen.getByText('2,3 pts')).toBeInTheDocument();
+    expect(screen.getByText('de no-shows en moins grâce au SMS')).toBeInTheDocument();
+    expect(screen.getByText('4,0 % avec SMS · 12,5 % sans')).toBeInTheDocument();
   });
 
   it('affiche "Pas encore mesurable" quand le calcul impact est impossible', async () => {
@@ -152,11 +150,47 @@ describe('NoShowWidget', () => {
       expect(screen.getByText('No-shows')).toBeInTheDocument();
     });
 
-    // Taux global à 0.0% et CA perdu à 0 €
-    expect(screen.getByText('0.0%')).toBeInTheDocument();
+    // Taux global à 0,0 % et CA perdu à 0 €
+    expect(screen.getByText('0,0 %')).toBeInTheDocument();
     expect(screen.getByText(/0\s€/)).toBeInTheDocument();
     // Impact SMS non calculable → "Pas encore mesurable"
     expect(screen.getByText('Pas encore mesurable')).toBeInTheDocument();
+  });
+
+  it('dit « aucun gain mesuré » quand les no-shows sont plus nombreux avec le SMS', async () => {
+    mockGet.mockResolvedValue(
+      makeStats({
+        impact: -2,
+        withSms: makeSmsGroup({ total: 50, noShows: 6, rate: 12 }),
+        withoutSms: makeSmsGroup({ total: 40, noShows: 4, rate: 10 }),
+      }),
+    );
+    render(<NoShowWidget />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aucun gain mesuré')).toBeInTheDocument();
+    });
+    expect(screen.getByText('2,0 pts de no-shows en plus avec le SMS')).toBeInTheDocument();
+    expect(screen.queryByText(/de no-shows en moins/)).not.toBeInTheDocument();
+  });
+
+  it('signale une panne au lieu de disparaître, avec un bouton pour réessayer', async () => {
+    mockGet.mockRejectedValueOnce(new Error('boom'));
+    mockGet.mockResolvedValueOnce(makeStats());
+    render(<NoShowWidget />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Les statistiques de no-show sont momentanément indisponibles.'),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('No-shows')).toBeInTheDocument();
+    });
+    expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
   it('appelle le endpoint dashboard/no-show-stats', async () => {

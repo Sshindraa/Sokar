@@ -8,6 +8,7 @@ import {
   annualPriceCents,
   formatPriceCents,
   formatMonthlyEquivalent,
+  VAT_MENTION,
 } from '@sokar/shared';
 import { featuresIntroducedIn, type FeatureStatus, type PlanLabel } from '@/app/pricing-catalog';
 
@@ -66,19 +67,18 @@ export const PLANS: PricingPlan[] = [
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
     promise: 'Vos appels et vos réservations, au même endroit.',
-    description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
+    description: 'Plus aucune réservation perdue, même en plein service.',
     features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
     promise: 'Gardez la main quand le service change.',
-    description:
-      'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
+    description: 'Le copilote de service propose, votre équipe décide.',
     demoFirst: true,
-    inherits: 'Tout le socle Essential',
+    inherits: 'Tout Essential, plus :',
     features: toFeatureLines('Pro'),
-    note: 'Découvrez le copilote en démonstration avant de choisir. Une estimation ne vaut pas une table libre. En complément : préparation de segments et brouillons marketing, sans envoi.',
+    note: 'Démonstration du copilote avant de choisir.',
   },
   {
     label: 'Multi-site',
@@ -86,10 +86,10 @@ export const PLANS: PricingPlan[] = [
     sitePrice: String(PRICING_CATALOG['multi-site-addon'].monthlyCents / 100),
     demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
-    description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
-    inherits: 'Essential et le copilote Pro par établissement',
+    description: 'Plusieurs adresses, un seul espace.',
+    inherits: 'Tout Pro, pour chaque établissement, plus :',
     features: toFeatureLines('Multi-site'),
-    note: 'Une présentation précède le choix du copilote pour vos équipes. Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles.',
+    note: 'Présentation avant de choisir.',
   },
 ];
 
@@ -111,7 +111,7 @@ export const FAQS = [
   },
   {
     question: 'Combien coûte Sokar ?',
-    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro à ${PLAN_PRICES_EUR.PRO} € HT/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} € HT/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',

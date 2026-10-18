@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { useApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { sortForFollowUp, stepLabel, type RestaurantProgress } from './cohort';
 
 interface StepFunnel {
   step: string;
@@ -38,16 +39,6 @@ interface CohortFunnel {
     p90Hours: number | null;
   };
   overallCompletionRate: number;
-}
-
-interface RestaurantProgress {
-  restaurantId: string;
-  startedAt: string;
-  lastEventAt: string;
-  completedSteps: number;
-  blockedSteps: number;
-  firstReservationAt: string | null;
-  hoursToFirstReservation: number | null;
 }
 
 interface CohortResponse {
@@ -110,6 +101,7 @@ export default function AdminOnboardingPage() {
       setData(res);
     } catch (err: unknown) {
       setData(null);
+      // Message traduit par la couche d'erreurs (jamais le texte anglais de l'API).
       setError(
         err instanceof Error ? err.message : "Erreur lors du chargement du funnel d'onboarding",
       );
@@ -163,9 +155,17 @@ export default function AdminOnboardingPage() {
         <Card className="border-destructive/40">
           <CardContent className="flex items-start gap-3 pt-6">
             <AlertCircle size={18} className="mt-0.5 text-destructive" />
-            <div>
+            <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">Funnel indisponible</p>
               <p className="text-sm text-muted-foreground">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchCohort}
+                className="transition-all duration-200"
+              >
+                Réessayer
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -190,7 +190,12 @@ export default function AdminOnboardingPage() {
   }
 
   const { funnel, restaurants } = data;
+  const sortedRestaurants = sortForFollowUp(restaurants);
   const waiting = restaurants.filter((row) => !row.firstReservationAt);
+  const latestSignal = waiting.reduce<string | null>(
+    (latest, row) => (latest === null || row.lastEventAt > latest ? row.lastEventAt : latest),
+    null,
+  );
 
   return (
     <div className="flex flex-col gap-6 p-6 md:p-8">
@@ -219,8 +224,8 @@ export default function AdminOnboardingPage() {
           label="Sans réservation"
           value={String(funnel.timeToFirstReservation.pending)}
           hint={
-            waiting.length > 0 && waiting[0]
-              ? `Dernier signal : ${formatDate(waiting[0].lastEventAt)}`
+            latestSignal
+              ? `Dernier signal : ${formatDate(latestSignal)}`
               : 'Tous les parcours ont réservé'
           }
           icon={<AlertCircle size={16} />}
@@ -247,7 +252,9 @@ export default function AdminOnboardingPage() {
             <TableBody>
               {funnel.steps.map((step) => (
                 <TableRow key={step.step}>
-                  <TableCell className="font-medium text-foreground">{step.step}</TableCell>
+                  <TableCell className="font-medium text-foreground">
+                    {stepLabel(step.step)}
+                  </TableCell>
                   <TableCell className="text-right">{step.started}</TableCell>
                   <TableCell className="text-right">{step.completed}</TableCell>
                   <TableCell className="text-right">{step.skipped}</TableCell>
@@ -289,10 +296,10 @@ export default function AdminOnboardingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {restaurants.map((row) => (
+              {sortedRestaurants.map((row) => (
                 <TableRow key={row.restaurantId}>
-                  <TableCell className="font-mono text-xs text-foreground">
-                    {row.restaurantId.slice(0, 8)}
+                  <TableCell className="text-sm font-medium text-foreground">
+                    {row.restaurantName ?? 'Établissement supprimé'}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(row.startedAt)}

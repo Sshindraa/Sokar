@@ -12,13 +12,35 @@ vi.mock('@/lib/api', () => ({
   useApi: () => mocks,
 }));
 
+const media = vi.hoisted(() => ({ compact: false }));
+
 vi.mock('@/lib/useMediaQuery', () => ({
-  useIsMobile: () => false,
+  useMediaQuery: () => media.compact,
+  useIsMobile: () => media.compact,
 }));
+
+function makeCall(index: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id: `call-${index}`,
+    callSid: `sid-${index}`,
+    durationSec: 60,
+    transcript: `Bonjour, je voudrais réserver une table pour ${index} personnes ce soir.`,
+    intent: 'RESERVATION',
+    outcome: 'RESERVED',
+    carrier: 'telnyx',
+    recordingStatus: 'NOT_REQUESTED',
+    recordingStartedAt: null,
+    recordingEndedAt: null,
+    recordingExpiresAt: null,
+    createdAt: '2026-10-16T18:30:00.000Z',
+    ...overrides,
+  };
+}
 
 describe('CallsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    media.compact = false;
   });
 
   it('propose un nouvel essai sans afficher une liste vide après une panne API', async () => {
@@ -38,5 +60,61 @@ describe('CallsPage', () => {
       expect(screen.getByText('Aucun appel enregistré')).toBeInTheDocument();
     });
     expect(mocks.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("n'affiche pas « 0 appel » au-dessus du message d'erreur", async () => {
+    mocks.get.mockRejectedValueOnce(new Error('Panne'));
+    render(<CallsPage />);
+    await screen.findByRole('alert');
+    expect(screen.queryByText(/\d+ appels?$/)).not.toBeInTheDocument();
+  });
+
+  it('charge les appels suivants quand le total dépasse la page affichée, sans doublon', async () => {
+    mocks.get
+      .mockResolvedValueOnce({ data: [makeCall(1), makeCall(2)], total: 3 })
+      .mockResolvedValueOnce({ data: [makeCall(2), makeCall(3)], total: 3 });
+
+    render(<CallsPage />);
+
+    expect(await screen.findByText('3 appels')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /afficher plus d'appels \(2 sur 3\)/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Bonjour, je voudrais réserver/)).toHaveLength(3);
+    });
+    expect(mocks.get).toHaveBeenLastCalledWith('calls?restaurantId=org_test&limit=100&offset=2');
+    expect(screen.queryByRole('button', { name: /afficher plus/i })).not.toBeInTheDocument();
+  });
+
+  it('ouvre la transcription complète au clic', async () => {
+    const long = `${'Bonjour. '.repeat(20)}Fin de l'appel.`;
+    mocks.get.mockResolvedValueOnce({ data: [makeCall(1, { transcript: long })], total: 1 });
+
+    render(<CallsPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /lire la transcription/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent("Fin de l'appel.");
+    expect(dialog).toHaveTextContent("Transcription de l'appel");
+  });
+
+  it("n'affiche plus l'opérateur télécom, et dit « Transcription » en français", async () => {
+    mocks.get.mockResolvedValueOnce({ data: [makeCall(1)], total: 1 });
+    render(<CallsPage />);
+    await screen.findByText('1 appel');
+    expect(screen.queryByText('telnyx')).not.toBeInTheDocument();
+    expect(screen.queryByText('Opérateur')).not.toBeInTheDocument();
+    expect(screen.queryByText('Transcript')).not.toBeInTheDocument();
+    expect(screen.getByText('Transcription')).toBeInTheDocument();
+  });
+
+  it('passe en cartes sous 1024 px, iPad compris', async () => {
+    media.compact = true;
+    mocks.get.mockResolvedValueOnce({ data: [makeCall(1)], total: 1 });
+    render(<CallsPage />);
+    await screen.findByText('1 appel');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /lire la transcription/i })).toBeInTheDocument();
   });
 });

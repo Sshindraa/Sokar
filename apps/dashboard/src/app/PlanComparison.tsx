@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Tableau comparatif des formules. Chaque cellule dit si la fonctionnalité est incluse, et son statut :
- * « Disponible » ou « Prévu ». Le statut se lit en texte, pas seulement en couleur.
+ * inclus, ou « Bientôt » si elle n'est pas encore livrée. Le statut se lit en texte, pas seulement en couleur.
  */
 export default function PlanComparison() {
   return (
@@ -19,8 +19,8 @@ export default function PlanComparison() {
           Comparer les formules
         </h3>
         <p className="text-sm leading-relaxed text-white/50">
-          Disponible : activable aujourd’hui pour les comptes de la formule. Prévu : en cours de
-          développement, sans date garantie.
+          Bientôt : en cours de développement, sans date garantie. Tout le reste est disponible
+          aujourd’hui.
         </p>
       </div>
 
@@ -75,11 +75,13 @@ function FeatureCell({ feature, included }: { feature: CatalogFeature; included:
       <Check
         size={14}
         aria-hidden="true"
-        className={cn(available ? 'text-pricing-accent' : 'text-white/40')}
+        className={cn(available ? 'text-pricing-accent' : 'text-white/30')}
       />
-      <span className={cn('text-xs font-semibold', available ? 'text-white' : 'text-white/50')}>
-        {available ? 'Disponible' : 'Prévu'}
-      </span>
+      {available ? (
+        <span className="sr-only">Inclus</span>
+      ) : (
+        <span className="text-xs font-semibold text-white/50">Bientôt</span>
+      )}
     </span>
   );
 }

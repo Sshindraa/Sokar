@@ -1,56 +1,42 @@
 'use client';
 
-import { ANNUAL_DISCOUNT_PERCENT, pricingTotalCents, formatMonthlyEquivalent } from '@sokar/shared';
+import {
+  ANNUAL_DISCOUNT_PERCENT,
+  TRIAL_DAYS,
+  VAT_MENTION,
+  pricingTotalCents,
+  formatMonthlyEquivalent,
+} from '@sokar/shared';
 import { useState } from 'react';
 import Link from 'next/link';
 import { PLANS, DISPLAY_PRICE, type PlanFeatureLine } from '@/app/constants';
 import { getPlanSignupHref, getPlanDemoHref, type PublicPlan } from '@/app/pricing-links';
-import type { FeatureStatus } from '@/app/pricing-catalog';
 import PlanComparison from '@/app/PlanComparison';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
-/** Espace insécable entre le montant et l'unité (« 159 €/mois »), comme en typographie française. */
-const euros = (amount: string | number, unit: 'mois' | 'site') =>
-  `${amount}\u00a0€\u00a0HT/${unit}`;
-
-function StatusBadge({ status }: { status: FeatureStatus }) {
-  const available = status === 'disponible';
-  return (
-    <span
-      className={cn(
-        'ml-2 inline-block rounded-full border px-2 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wider',
-        available
-          ? 'border-pricing-accent/30 bg-pricing-accent/10 text-pricing-accent'
-          : 'border-white/15 text-white/50',
-      )}
-    >
-      {available ? 'Disponible' : 'Prévu'}
-    </span>
-  );
-}
+/** Espace insécable entre le montant et l'unité (« 89 €/site »), comme en typographie française. */
+const euros = (amount: string | number, unit: 'mois' | 'site') => `${amount}\u00a0€/${unit}`;
 
 function FeatureItem({ feature }: { feature: PlanFeatureLine }) {
-  const available = feature.status === 'disponible';
+  const planned = feature.status === 'prévu';
   return (
-    <li className="flex items-start gap-3 text-sm text-white/70">
-      <span
-        className={cn(
-          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
-          available
-            ? 'border-pricing-accent/40 bg-pricing-accent/10'
-            : 'border-white/15 bg-white/[0.04]',
-        )}
-      >
-        <Check
-          size={12}
-          className={available ? 'text-pricing-accent' : 'text-white/40'}
-          strokeWidth={3}
-        />
-      </span>
+    <li
+      className={cn('flex items-start gap-3 text-sm', planned ? 'text-white/45' : 'text-white/75')}
+    >
+      <Check
+        size={15}
+        aria-hidden="true"
+        strokeWidth={2.5}
+        className={cn('mt-0.5 shrink-0', planned ? 'text-white/25' : 'text-pricing-accent')}
+      />
       <span>
         {feature.label}
-        <StatusBadge status={feature.status} />
+        {planned && (
+          <span className="ml-2 inline-block rounded-full border border-white/15 px-1.5 py-px align-middle text-[10px] font-semibold text-white/50">
+            Bientôt
+          </span>
+        )}
       </span>
     </li>
   );
@@ -123,11 +109,8 @@ export default function PricingPlans({
         </span>
       </div>
 
-      <p className="mb-8 text-center text-sm text-white/70">
-        {yearly
-          ? 'Équivalents mensuels arrondis. Facturation annuelle, engagement de 12 mois. Montant exact indiqué avant paiement.'
-          : 'Paiement mensuel, résiliation à la fin de la période en cours.'}{' '}
-        Tous les prix sont hors taxes.
+      <p className="mb-10 text-center text-sm text-white/60">
+        {TRIAL_DAYS} jours offerts, sans carte bancaire · {VAT_MENTION}
       </p>
       {/*
       Cards Grid. En md+, chaque carte est une sous-grille de 5 lignes
@@ -144,7 +127,7 @@ export default function PricingPlans({
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 lg:row-span-5 lg:grid lg:grid-rows-subgrid',
+                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 md:p-8 lg:row-span-5 lg:grid lg:grid-rows-subgrid',
                 plan.featured
                   ? 'border-pricing-accent/25 bg-white/[0.08] shadow-[0_0_40px_hsl(var(--pricing-accent)_/_0.15)] hover:shadow-[0_0_60px_hsl(var(--pricing-accent)_/_0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
@@ -163,80 +146,29 @@ export default function PricingPlans({
                 </div>
               )}
 
-              {/* 1. Header */}
-              <div className="relative z-10 mb-6 flex min-h-7 items-center justify-between">
-                <p className="text-sm font-semibold tracking-wide text-white/80">{plan.label}</p>
-                {plan.featured && (
-                  <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-pricing-accent border border-pricing-accent/30 rounded-full bg-pricing-accent/10">
-                    Recommandé
-                  </span>
-                )}
+              {/* 1. En-tête */}
+              <div className="relative z-10 mb-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white/55">
+                  {plan.label}
+                </p>
+                <p className="mt-3 text-xl font-semibold leading-snug text-white">{plan.promise}</p>
               </div>
 
-              {/* 2. Price */}
-              <div className="relative z-10 mb-3">
-                {yearly && (
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-pricing-accent/30 bg-pricing-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-pricing-accent">
-                      -{ANNUAL_DISCOUNT_PERCENT}% annuel
-                    </span>
-                    <span className="text-xs font-semibold text-white/45 line-through">
-                      {euros(plan.price, 'mois')}
-                      {plan.sitePrice ? ` + ${euros(plan.sitePrice, 'site')}` : ''}
-                    </span>
-                  </div>
-                )}
-                <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
-                  <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
+              {/* 2. Prix */}
+              <div className="relative z-10 mb-6">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-5xl font-extrabold leading-none tracking-tight text-white">
                     {yearlyPrice}
                   </span>
-                  <span className="text-sm font-semibold text-white/60">€ HT/mois</span>
-                  {yearlySitePrice && (
-                    <span className="text-sm font-semibold text-white/60">
-                      + {euros(yearlySitePrice, 'site')}
-                    </span>
-                  )}
+                  <span className="text-sm font-semibold text-white/60">€/mois</span>
                 </div>
-
-                {plan.sitePrice && (
-                  <div className="relative z-10 mb-4 text-sm text-white/80">
-                    <label htmlFor="pricing-sites">Nombre d’établissements</label>
-                    <select
-                      id="pricing-sites"
-                      value={siteCount}
-                      onChange={(event) => setSiteCount(Number(event.target.value))}
-                      className="ml-2 rounded-lg border border-white/20 bg-black p-2 text-white transition-all duration-200"
-                    >
-                      {Array.from({ length: 100 }, (_, i) => i + 1).map((count) => (
-                        <option key={count} value={count}>
-                          {count}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-2">
-                      Premier établissement inclus, puis {yearlySitePrice} € HT/mois par adresse
-                      supplémentaire.
-                    </p>
-                    <p className="mt-2 font-semibold">
-                      Total pour {siteCount} {siteCount === 1 ? 'établissement' : 'établissements'}{' '}
-                      :{' '}
-                      {formatMonthlyEquivalent(
-                        pricingTotalCents('multi-site', yearly, siteCount),
-                        yearly,
-                      )}{' '}
-                      € HT/mois.
-                    </p>
-                  </div>
-                )}
-                <p className="relative z-10 mb-3 text-sm text-white/80">
-                  {yearly ? 'Facturé annuellement.' : 'Facturé chaque mois.'}
+                <p className="mt-2 text-xs text-white/50">
+                  {yearly ? 'Facturé à l’année, engagement 12 mois' : 'Sans engagement'}
                 </p>
               </div>
+
               {/* 3. Description */}
-              <p className="relative z-10 mb-8 text-sm leading-relaxed text-white/50">
-                <strong className="mb-3 block text-lg font-semibold text-white">
-                  {plan.promise}
-                </strong>
+              <p className="relative z-10 mb-6 text-sm leading-relaxed text-white/55">
                 {plan.description}
               </p>
 
@@ -249,41 +181,71 @@ export default function PricingPlans({
                 )}
                 aria-label={`${plan.demoFirst ? 'Découvrir' : 'Choisir'} ${plan.label}`}
                 className={cn(
-                  'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
+                  'relative z-10 inline-flex h-fit w-full items-center justify-center gap-2 self-start rounded-full py-3 text-center text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
                   plan.featured
                     ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'
-                    : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
+                    : 'border border-white/20 text-white hover:border-white/30 hover:bg-white/10',
                 )}
               >
                 {plan.demoFirst ? 'Découvrir' : 'Choisir'} {plan.label}
                 <ArrowUpRight size={14} />
               </Link>
 
-              {/* 5. Features : formule précédente, puis fonctionnalités introduites ici, avec leur statut */}
-              <div className="relative z-10 mt-8">
-                <ul className="space-y-4">
-                  {plan.inherits && (
-                    <li className="flex items-start gap-3 text-sm text-white/70">
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
-                        <Check size={12} className="text-pricing-accent" strokeWidth={3} />
-                      </span>
-                      {plan.inherits}
-                    </li>
-                  )}
-                  {plan.features.map((feature) => (
-                    <FeatureItem key={feature.label} feature={feature} />
-                  ))}
-                </ul>
-                {plan.note && (
-                  <p className="relative z-10 mt-5 text-sm leading-relaxed text-white/70">
-                    {plan.note}
-                  </p>
+              {/* 5. Contenu : formule précédente, puis ce que la formule ajoute ; le non livré en dernier */}
+              <div className="relative z-10 mt-7 border-t border-white/10 pt-6">
+                {plan.sitePrice && yearlySitePrice && (
+                  <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white/70">
+                    <p>+ {euros(yearlySitePrice, 'site')} par adresse supplémentaire</p>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <label htmlFor="pricing-sites" className="text-white/60">
+                        Nombre d’établissements
+                      </label>
+                      <select
+                        id="pricing-sites"
+                        value={siteCount}
+                        onChange={(event) => setSiteCount(Number(event.target.value))}
+                        className="rounded-lg border border-white/20 bg-black px-2 py-1 text-white transition-all duration-200"
+                      >
+                        {Array.from({ length: 100 }, (_, i) => i + 1).map((count) => (
+                          <option key={count} value={count}>
+                            {count}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="mt-2 font-semibold text-white">
+                      Total pour {siteCount} {siteCount === 1 ? 'établissement' : 'établissements'}{' '}
+                      :{' '}
+                      {formatMonthlyEquivalent(
+                        pricingTotalCents('multi-site', yearly, siteCount),
+                        yearly,
+                      )}{' '}
+                      €/mois
+                    </p>
+                  </div>
                 )}
+                {plan.inherits && (
+                  <p className="mb-4 text-sm font-semibold text-white">{plan.inherits}</p>
+                )}
+                <ul className="space-y-3">
+                  {[...plan.features]
+                    .sort((a, b) => Number(a.status === 'prévu') - Number(b.status === 'prévu'))
+                    .map((feature) => (
+                      <FeatureItem key={feature.label} feature={feature} />
+                    ))}
+                </ul>
+                {plan.note && <p className="mt-5 text-xs text-white/45">{plan.note}</p>}
               </div>
             </div>
           );
         })}
       </div>
+
+      {yearly && (
+        <p className="mt-6 text-center text-xs text-white/40">
+          Équivalents mensuels arrondis ; montant exact indiqué avant paiement.
+        </p>
+      )}
 
       {showComparison && (
         <div className="mt-20 w-full">

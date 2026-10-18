@@ -12,7 +12,12 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createContextTtsTurn } from '../context-tts';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import { isVoiceTurnJudgeEnabled, isVoiceUnderstandingCheckEnabled } from '../feature-flags';
+import {
+  isVoiceExpressionToneEnabled,
+  isVoiceTurnJudgeEnabled,
+  isVoiceUnderstandingCheckEnabled,
+} from '../feature-flags';
+import { isElevenLabsDialogueEnabledFor } from '../elevenlabs-dialogue-context';
 import {
   markVoiceTurnLlmFirstPhrase,
   markVoiceTurnLlmFirstToken,
@@ -63,7 +68,11 @@ import {
   isSlotVerified,
 } from './fact-guards';
 import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
-import { startTurnEndJudge } from './turn-end-judge';
+import {
+  awaitCallerAfterJudgeDisagreement,
+  startTurnEndJudge,
+  type JudgeDisagreementOutcome,
+} from './turn-end-judge';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import {
@@ -76,7 +85,7 @@ import { PhraseSplitter, SayStreamExtractor } from './say-stream';
 
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
-  options: { turnCompleteOnly?: boolean; understanding?: boolean } = {},
+  options: { turnCompleteOnly?: boolean; understanding?: boolean; tone?: boolean } = {},
 ) {
   return {
     type: 'json_schema' as const,
@@ -160,6 +169,10 @@ interface PassResult {
   correctionFact?: string;
   /** Verdict du juge de fin de tour pour ce passage (absent : juge non actif sur ce passage). */
   judge?: 'complete' | 'incomplete' | 'unavailable';
+  /** `turnComplete` du modèle avant le verdict du juge (présent quand le juge est actif). */
+  modelComplete?: boolean;
+  /** Issue d'un désaccord juge « inachevé » / modèle « fini » (absent : pas de désaccord). */
+  disagreement?: JudgeDisagreementOutcome;
 }
 
 /**
@@ -188,6 +201,25 @@ const INCOMPLETE_TURN_MAX_DEFERRALS = 5;
 
 /** Dite si la relance après un silence ne produit toujours aucune phrase. */
 export const CALLER_FINISHED_FALLBACK = 'Oui, je vous écoute ?';
+
+/**
+ * Début de phrase d'une relance après silence qui n'a pas encore parlé : il revient au tour qui la dépasse, et
+ * l'entrée d'historique que la relance avait ajoutée (sans réponse) est retirée pour ne pas la compter deux fois.
+ */
+function reclaimUnansweredFragment(
+  session: CallSession,
+  state: StructuredTurnState,
+): string | null {
+  const fragment = state.unansweredFragment ?? null;
+  state.unansweredFragment = null;
+  if (!fragment) return null;
+  const last = session.history.at(-1);
+  if (last?.role === 'user' && last.content === fragment) {
+    session.history.pop();
+    session.turnCount--;
+  }
+  return fragment;
+}
 
 const incompleteTurnTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 
@@ -236,6 +268,29 @@ function armIncompleteTurnTimer(
   const timer = setTimeout(fire, remaining);
   timer.unref?.();
   incompleteTurnTimers.set(session, timer);
+  precomputeSilentCallerReply(session, mgr, fragment);
+}
+
+/**
+ * Prépare pendant l'attente la réponse que le minuteur demandera si l'appelant se tait : même requête,
+ * lancée tout de suite par la spéculation. Si l'appelant se tait, `runPass` la reprend (clé identique) et
+ * la réponse part sans nouvel appel au modèle ; s'il reprend la parole, une nouvelle spéculation ou le tour
+ * suivant l'abandonne. Rien n'est dit ni exécuté ici. Appel bb50c0d3 du 16/10/2026 : environ 1 s d'attente
+ * puis un passage complet (jusqu'à 1,5 s) après chaque phrase finie jugée inachevée.
+ */
+function precomputeSilentCallerReply(
+  session: CallSession,
+  mgr: CallSessionManager,
+  fragment: string,
+): void {
+  if (!isStructuredSpeculationEnabled()) return;
+  const state = session.structuredTurn;
+  if (!state) return;
+  const today = todayInTimezone(session.timezone || 'Europe/Paris');
+  const { messages, format } = passRequest(session, state, fragment, [...session.history], today, {
+    callerFinished: true,
+  });
+  startSpeculation(session, mgr, messages, format);
 }
 
 /** Attente maximale d'une lecture de créneaux en cours au début d'un tour. */
@@ -331,6 +386,10 @@ function passRequest(
   } = {},
 ) {
   const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
+  // Le ton n'a d'effet que sur la voix ElevenLabs Dialogue : ailleurs, le modèle ne le choisit pas.
+  const tone =
+    isVoiceExpressionToneEnabled(session.restaurantId) &&
+    isElevenLabsDialogueEnabledFor(session.restaurantId);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
     history,
@@ -340,6 +399,7 @@ function passRequest(
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
     ...(understanding ? { understanding } : {}),
+    ...(tone ? { tone } : {}),
     ...extra,
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
@@ -349,6 +409,7 @@ function passRequest(
     {
       turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
       ...(understanding ? { understanding } : {}),
+      ...(tone ? { tone } : {}),
     },
   );
   return { messages, format };
@@ -439,13 +500,16 @@ export async function runStructuredTurn(
 ): Promise<void> {
   const state = (session.structuredTurn ??= createStructuredTurnState());
   clearIncompleteTurnTimer(session);
-  // Un début de phrase retenu au tour précédent est la même prise de parole.
-  const transcript = [state.pendingFragment, rawTranscript]
+  // Un début de phrase retenu au tour précédent est la même prise de parole. S'il était parti avec une
+  // relance après silence restée muette (l'appelant a repris avant elle), il revient ici.
+  const carried = state.pendingFragment ?? reclaimUnansweredFragment(session, state);
+  const transcript = [carried, rawTranscript]
     .filter((part): part is string => Boolean(part?.trim()))
     .join(' ')
     .trim();
   state.pendingFragment = null;
   if (!transcript) return;
+  if (options.callerFinished) state.unansweredFragment = transcript;
   const turnId = session.currentTurn?.id;
   const abortController = new AbortController();
   session.abortController = abortController;
@@ -487,6 +551,15 @@ export async function runStructuredTurn(
     };
   }
   const spokenPhrases: string[] = [];
+  // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
+  // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
+  let replyTone: string | null = null;
+  let toneSent = false;
+  const toneForNextPhrase = (): { tone?: string } => {
+    if (toneSent || !replyTone || replyTone === 'none') return {};
+    toneSent = true;
+    return { tone: replyTone };
+  };
   let contextDebugEntry: DebugSpeechEntry | null = null;
   const flushSpeech = async () => {
     if (contextTts && spokenPhrases.length) {
@@ -532,6 +605,8 @@ export async function runStructuredTurn(
   const speakPhrase = (phrase: string) => {
     if (!isLive()) return;
     if (!firstPhraseSpoken) {
+      // La relance a parlé : son début de phrase a reçu sa réponse.
+      if (options.callerFinished) state.unansweredFragment = null;
       firstPhraseSpoken = true;
       markVoiceTurnLlmFirstPhrase(session, turnId);
       mgr.transition(session, 'SPEAKING');
@@ -549,7 +624,10 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)));
+      contextTts.push(
+        cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)),
+        toneForNextPhrase(),
+      );
       return;
     }
     ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
@@ -637,6 +715,7 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      replyTone ??= /"tone"\s*:\s*"([a-z]+)"/.exec(extractor.raw)?.[1] ?? null;
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
       if (!actionResult && !slotConflict && action === 'none') {
@@ -714,10 +793,10 @@ export async function runStructuredTurn(
     // Premier passage : reprendre la requête déjà lancée sur la partielle stable
     // si elle est identique ; sinon (ou en cas d'échec) appel normal.
     let text: string | null = null;
-    const speculative =
-      !actionResult && !finished
-        ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
-        : null;
+    // Aussi pour la relance après un silence : sa réponse a pu être préparée pendant l'attente.
+    const speculative = !actionResult
+      ? takeSpeculation(session, messages, format, onDelta, abortController.signal)
+      : null;
     if (speculative) {
       speculationUsed = true;
       text = await speculative.catch(() => null);
@@ -733,6 +812,18 @@ export async function runStructuredTurn(
     await judgeSettled;
     drainSaid();
     const modelComplete = output.turnComplete;
+    // Désaccord (le juge attend la suite, le modèle a fini) : le silence réel de l'appelant tranche (voir
+    // turnJudgeDisagreementSilenceMs). La réponse déjà prête part sans nouvelle requête au modèle.
+    // Verdict brut du juge, pour les journaux : une réponse partie au silence reste un désaccord « inachevé ».
+    const judgeVerdict = judged;
+    let disagreement: JudgeDisagreementOutcome | undefined;
+    if (judged === false && modelComplete && !finished) {
+      disagreement = await awaitCallerAfterJudgeDisagreement(session, startedAt, isLive);
+      if (disagreement === 'silent') {
+        judged = true;
+        drainSaid();
+      }
+    }
     if (typeof judged === 'boolean') output = { ...output, turnComplete: judged };
     if (judged === true && !modelComplete && spokenPhrases.length === 0 && !slotConflict) {
       // Le modèle jugeait l'appelant inachevé (say vide, par consigne) mais le juge dit qu'il a fini : réponse à refaire.
@@ -776,11 +867,13 @@ export async function runStructuredTurn(
       ...(judging
         ? {
             judge:
-              typeof judged !== 'boolean'
+              typeof judgeVerdict !== 'boolean'
                 ? ('unavailable' as const)
-                : judged
+                : judgeVerdict
                   ? ('complete' as const)
                   : ('incomplete' as const),
+            modelComplete,
+            ...(disagreement ? { disagreement } : {}),
           }
         : {}),
     };
@@ -897,7 +990,13 @@ export async function runStructuredTurn(
         turnComplete: false,
         interpretation: first.output.interpretation,
         confidence: first.output.confidence,
-        ...(first.judge ? { judge: first.judge } : {}),
+        ...(first.judge
+          ? {
+              judge: first.judge,
+              modelComplete: first.modelComplete,
+              ...(first.disagreement ? { judgeDisagreement: first.disagreement } : {}),
+            }
+          : {}),
       });
       mgr.transition(session, 'LISTENING');
       armIncompleteTurnTimer(session, mgr, transcript, startedAt);
@@ -957,7 +1056,13 @@ export async function runStructuredTurn(
           : decision.reason,
       prefetchedDay: Boolean(state.dayAvailability),
       speculated: speculationUsed,
-      ...(first.judge ? { judge: first.judge } : {}),
+      ...(first.judge
+        ? {
+            judge: first.judge,
+            modelComplete: first.modelComplete,
+            ...(first.disagreement ? { judgeDisagreement: first.disagreement } : {}),
+          }
+        : {}),
     });
     // Texte reçu et sortie brute du modèle, pour comprendre une erreur de compréhension (appel de test
     // du 30/09 : « vous êtes 20 demain » enregistré comme 20 h). Restaurants de test uniquement.
@@ -1181,5 +1286,7 @@ export async function runStructuredTurn(
     // Réponse coupée ou échouée : ce qui n'a pas été fixé l'est ici.
     settleDebugSpeech(contextDebugEntry, contextTts?.framesSent ?? 0, false);
     if (session.ttsContext === contextTts) session.ttsContext = null;
+    // Relance terminée sans être dépassée : son début de phrase est traité, même si elle s'est tue.
+    if (options.callerFinished && isCurrentResponse()) state.unansweredFragment = null;
   }
 }

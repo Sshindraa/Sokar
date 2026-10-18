@@ -83,4 +83,18 @@ describe('ServiceCopilotAccess — droits effectifs', () => {
     await act(async () => resolveOld(rights('site-b', true)));
     expect(screen.queryByText('Actions du copilote')).not.toBeInTheDocument();
   });
+
+  it('ne montre ni vérification ni annonce quand le fallback est vide (écran de service)', async () => {
+    mocks.get.mockResolvedValue(rights('site-a', false));
+    const { container } = render(
+      <ServiceCopilotAccess fallback={null}>
+        <Content />
+      </ServiceCopilotAccess>,
+    );
+
+    expect(screen.queryByText(/Vérification de l’accès/)).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.get).toHaveBeenCalled());
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/Le copilote de service accompagne/)).not.toBeInTheDocument();
+  });
 });

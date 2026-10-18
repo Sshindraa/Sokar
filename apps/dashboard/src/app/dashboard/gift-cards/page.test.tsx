@@ -100,4 +100,26 @@ describe('GiftCardsPage', () => {
     });
     expect(mocks.listGiftCards).toHaveBeenCalledTimes(2);
   });
+
+  it('ne relance pas la liste à chaque lettre : la recherche part à la validation', async () => {
+    mocks.listGiftCards.mockReset();
+    mocks.listGiftCards.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+    render(<GiftCardsPage />);
+    const field = await screen.findByPlaceholderText(/Rechercher par nom/);
+    const callsBefore = mocks.listGiftCards.mock.calls.length;
+
+    fireEvent.change(field, { target: { value: 'Marie' } });
+
+    // La page et le champ restent en place, aucune requête n'est partie.
+    expect(screen.getByPlaceholderText(/Rechercher par nom/)).toHaveValue('Marie');
+    expect(mocks.listGiftCards.mock.calls.length).toBe(callsBefore);
+
+    fireEvent.submit(field.closest('form') as HTMLFormElement);
+    await waitFor(() =>
+      expect(mocks.listGiftCards).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'Marie', offset: 0 }),
+      ),
+    );
+    expect(screen.getByPlaceholderText(/Rechercher par nom/)).toBeInTheDocument();
+  });
 });

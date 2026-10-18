@@ -27,17 +27,23 @@ une preuve de délivrabilité, de revenu encaissé ou d'isolation multi-identit�
 
 ## Prix : actuel et cible
 
-| Offre      | Catalogue local affiché | Catalogue Stripe actif observé | Condition avant facturation du nouveau montant                                                   |
-| ---------- | ----------------------: | -----------------------------: | ------------------------------------------------------------------------------------------------ |
-| Essential  |              199 €/mois |                     149 €/mois | Créer/synchroniser les nouveaux `priceId`, rejouer Checkout/facture et valider les entitlements. |
-| Pro        |              299 €/mois |                     249 €/mois | Même porte, avec preuve des fonctions CRM/marketing Pro et de l'activation fournisseur.          |
-| Multi-site |  249 €/mois + 99 €/site |                    même grille | Finir la preuve d'isolation et aligner le packaging groupes avec le CRM partagé.                 |
+Contrôle du 16 octobre 2026 : le catalogue local et les huit prix Stripe actifs (test et live)
+sont alignés. L'écart 149/249 € signalé précédemment est résolu depuis la grille du 14 octobre.
 
-Le catalogue local est codé dans `packages/config/src/constants.ts`, `packages/shared/src/plan.ts`,
-`apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`. Le runbook Stripe
-utilise huit Price IDs d'environnement qui pointent encore vers l'ancien catalogue observé. Le
-checkout doit rester fermé jusqu'à ce que les nouveaux prix soient créés, synchronisés et rejoués
-avec la facture et le portail ; changer le texte marketing seul créerait une divergence.
+| Offre      | Prix HT/mois                        | Annuel HT (−10 %)            | Stripe test et live                        |
+| ---------- | ----------------------------------- | ---------------------------- | ------------------------------------------ |
+| Essential  | 199 €                               | 2 149,20 €                   | conforme, Checkout et facture test rejoués |
+| Pro        | 299 €                               | 3 229,20 €                   | conforme, Checkout et facture test rejoués |
+| Multi-site | 299 € (1er site inclus) + 99 €/site | 3 229,20 € + 1 069,20 €/site | conforme, Checkout et facture test rejoués |
+
+Le catalogue local est codé dans `packages/shared/src/pricing-catalog.cjs`, repris par
+`packages/config/src/constants.ts`, `packages/shared/src/plan.ts`,
+`apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`.
+`scripts/ops/verify-stripe-catalog.mjs` contrôle les huit `priceId` contre ce catalogue à chaque
+déploiement. Les preuves et la procédure sont dans
+[`runbooks/stripe-billing.md`](./runbooks/stripe-billing.md). Le prix facturé ne vaut pas preuve
+fonctionnelle : la vente de Pro reste conditionnée aux preuves CRM/marketing et à l'activation
+fournisseur ci-dessous.
 
 Au 12 septembre 2026, Zenchef affiche publiquement Reserve 129 €, Manage 169 € et Grow 249 € par
 mois, avec plusieurs options payantes. Cette référence vient de la

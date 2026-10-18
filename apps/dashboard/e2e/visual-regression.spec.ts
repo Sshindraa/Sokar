@@ -85,9 +85,9 @@ const PAGES: VisualPage[] = [
   {
     name: 'homepage',
     url: '/',
-    // Le hero de la homepage contient le h1 "L'IA devient le nouveau levier".
+    // Le hero de la homepage contient le h1 « Le chef de rang numérique de votre restaurant ».
     // On attend ce heading pour s'assurer que le hero est rendu.
-    waitFor: 'h1:has-text("nouveau levier")',
+    waitFor: 'h1:has-text("chef de rang")',
     settleMs: 2000,
   },
   {
@@ -152,9 +152,7 @@ test.describe('Régression visuelle — pages critiques', () => {
         ).toBe(true);
         await pwPage.getByRole('switch').click();
         await pwPage.getByLabel('Nombre d’établissements').selectOption('3');
-        await expect(
-          pwPage.getByText('Total pour 3 établissements : 497 € HT/mois.'),
-        ).toBeVisible();
+        await expect(pwPage.getByText('Total pour 3 établissements : 497 €/mois.')).toBeVisible();
         await expect(pwPage.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
           'href',
           '/demo?plan=multi-site&billing=monthly&sites=3',
