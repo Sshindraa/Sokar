@@ -17,6 +17,7 @@
 - [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation ; valider la promesse « Support prioritaire 7j/7 ».
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23) ; essai gratuit 14 jours sans carte, suspension automatique à la fin (16/10). France entière ; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle ; deux pilotes, recette avant activation.
 - [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client ; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
+- [ ] RGPD TTS : ElevenLabs conserve le texte des phrases de l'agent (noms, numéros, heures) ; `enable_logging=false` est réservé à l'Enterprise. Sous-traitant, DPA et politique de confidentialité à trancher avant toute mise en production (décision en attente).
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging ; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
