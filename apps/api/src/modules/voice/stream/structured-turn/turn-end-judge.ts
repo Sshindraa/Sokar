@@ -12,6 +12,7 @@
  */
 import type { CallSession, ChatMessage } from '../types';
 import type { CallSessionManager } from '../manager';
+import { callerSilenceMs } from '../caller-voice-activity';
 import { logger } from '../../../../shared/logger/pino';
 import {
   voiceTurnJudgeDurationMs,
@@ -43,6 +44,50 @@ export const TURN_END_JUDGE_FORMAT = {
 export function turnEndJudgeTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.VOICE_TURN_JUDGE_TIMEOUT_MS ?? 800);
   return Number.isFinite(parsed) && parsed >= 200 && parsed <= 3_000 ? parsed : 800;
+}
+
+/**
+ * Désaccord : le juge attend la suite alors que le modèle a jugé l'appelant fini et que sa réponse est prête.
+ * Banc du 16/10 (Cerebras) : le juge seul a raison sur « demain à 14 heures non » (une correction arrive), le
+ * modèle seul sur un début abandonné suivi d'une question complète (« bonjour je voudrais faire vous êtes ouvert
+ * dimanche soir », 1/6 contre 3/3). En production, 10 « inachevé » sur 15 n'ont été suivis d'aucune parole :
+ * 1,5 à 4,6 s de silence, puis une nouvelle requête au modèle. Ni l'un ni l'autre ne tranche : c'est le silence
+ * réel de l'appelant qui décide. Silence de cette durée depuis sa dernière voix : la réponse prête part ; voix
+ * reprise : le verdict du juge tient. 0 désactive (le juge l'emporte, comme avant).
+ */
+export function turnJudgeDisagreementSilenceMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS ?? 1_200);
+  if (parsed === 0) return 0;
+  return Number.isFinite(parsed) && parsed >= 400 && parsed <= 3_000 ? parsed : 1_200;
+}
+
+export type JudgeDisagreementOutcome = 'silent' | 'resumed' | 'no_audio' | 'disabled' | 'aborted';
+
+/** Moins d'audio suivi que cela : le détecteur de voix ne permet pas de constater un silence. */
+const MIN_TRACKED_AUDIO_MS = 500;
+const DISAGREEMENT_POLL_MS = 20;
+
+/**
+ * Attend, après un désaccord, que l'appelant se taise assez longtemps (`silent`) ou reprenne la parole depuis
+ * `sinceMs`, la réception de sa phrase (`resumed`). Sans audio suivi, rien n'est constaté (`no_audio`) : le juge
+ * l'emporte. Une voix faible ou un bruit compte comme une reprise : dans le doute, on garde l'attente du juge.
+ */
+export async function awaitCallerAfterJudgeDisagreement(
+  session: CallSession,
+  sinceMs: number,
+  shouldContinue: () => boolean,
+): Promise<JudgeDisagreementOutcome> {
+  const silenceMs = turnJudgeDisagreementSilenceMs();
+  if (silenceMs === 0) return 'disabled';
+  const voice = session.callerVoice;
+  if (!voice || (voice.trackedMs ?? 0) < MIN_TRACKED_AUDIO_MS) return 'no_audio';
+  while (shouldContinue()) {
+    const lastVoiceAt = session.callerVoice?.lastVoiceAt;
+    if (lastVoiceAt !== undefined && lastVoiceAt > sinceMs) return 'resumed';
+    if (callerSilenceMs(session) >= silenceMs) return 'silent';
+    await new Promise((resolve) => setTimeout(resolve, DISAGREEMENT_POLL_MS));
+  }
+  return 'aborted';
 }
 
 export function lastAgentQuestion(history: ChatMessage[]): string | undefined {

@@ -26,6 +26,11 @@ export interface StructuredTurnState {
   reservationCreated: boolean;
   /** Début de phrase jugé inachevé par le modèle, recollé au tour suivant. */
   pendingFragment: string | null;
+  /**
+   * Début de phrase pris par la relance après silence, tant qu'elle n'a pas parlé. Si l'appelant reprend avant,
+   * le tour suivant le récupère (appel bb50c0d3 : la lettre A d'une épellation perdue ainsi).
+   */
+  unansweredFragment?: string | null;
   /** Récapitulatif dont le « oui » a déjà été refusé une fois parce qu'il avait été coupé. */
   recapCutBlockedKey: string | null;
 }
@@ -187,6 +192,13 @@ const SPELLING_AWAITING: ReadonlySet<StructuredTurnOutput['awaiting']> = new Set
   'customerNameConfirmation',
   'confirmation',
 ]);
+
+/** L'agent attend un nom ou sa relecture : une lettre seule de l'appelant appartient à l'épellation. */
+export function expectsSpelledLetters(
+  awaiting: StructuredTurnOutput['awaiting'] | undefined,
+): boolean {
+  return awaiting !== undefined && SPELLING_AWAITING.has(awaiting);
+}
 
 const stripToLetters = (text: string): string =>
   text

@@ -82,6 +82,11 @@ describe('forwardedHeaders — proxy Next.js', () => {
     expect(headers['Idempotency-Key']).toBe('merge-123');
   });
 
+  it("forward X-Identity-Token : sans lui l'export RGPD d'un client échoue toujours", () => {
+    const headers = forwardedHeaders(mockReq({ 'x-identity-token': 'jeton-verifie' }));
+    expect(headers['X-Identity-Token']).toBe('jeton-verifie');
+  });
+
   it('omet les headers absents (pas de valeur vide)', () => {
     const headers = forwardedHeaders(mockReq({}));
     expect(headers).toEqual({});

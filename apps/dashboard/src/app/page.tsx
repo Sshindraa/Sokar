@@ -1,7 +1,16 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import { ArrowRight, Bot, CalendarCheck, Mic, PhoneCall, Utensils } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  CalendarCheck,
+  Mail,
+  Mic,
+  PhoneCall,
+  Sparkles,
+  Utensils,
+} from 'lucide-react';
 import localFont from 'next/font/local';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
@@ -9,6 +18,7 @@ import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
 import { HOME_METADATA } from '@/app/marketing-metadata';
+import { BRAND_SLOGAN, BRAND_TITLE } from '@sokar/shared';
 
 export const metadata = HOME_METADATA;
 
@@ -158,20 +168,25 @@ export default function HomePage() {
               </div>
 
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20">
-                  <Mic size={13} />
-                  Sokar active votre standard
-                  <ArrowRight size={12} />
-                </p>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/[0.76] shadow-2xl shadow-black/20 transition-all duration-200 hover:bg-white/12 hover:text-white"
+                >
+                  <Sparkles size={13} aria-hidden="true" />
+                  14 jours offerts, sans carte bancaire
+                  <ArrowRight size={12} aria-hidden="true" />
+                </Link>
 
                 <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  Un assistant téléphonique pour vos réservations
+                  {BRAND_TITLE}
                 </h1>
 
-                <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/[0.62] md:text-base">
-                  Sokar répond aux appels de votre restaurant, consulte vos disponibilités et
-                  enregistre les réservations. Vous gardez votre numéro : seuls les appels que vous
-                  transférez passent par Sokar.
+                <p className="mx-auto mt-5 max-w-2xl text-lg font-medium leading-7 text-white/[0.86] md:text-xl">
+                  {BRAND_SLOGAN}
+                </p>
+
+                <p className="mx-auto mt-3 max-w-2xl text-sm text-white/[0.55] md:text-base">
+                  Téléphone, réservation en ligne et plan de salle, réunis.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
@@ -186,7 +201,7 @@ export default function HomePage() {
                     href="/register"
                     className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
-                    Créer votre compte
+                    Essayer 14 jours gratuits
                     <ArrowRight size={14} />
                   </Link>
                 </div>
@@ -195,7 +210,10 @@ export default function HomePage() {
           </div>
         </section>
 
-        <div className="relative w-full overflow-visible border-t border-white/5 bg-black/80">
+        <div
+          id="services"
+          className="relative w-full scroll-mt-24 overflow-visible border-t border-white/5 bg-black/80"
+        >
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(210,244,255,0.16),transparent_24rem),radial-gradient(circle_at_80%_42%,rgba(236,255,244,0.12),transparent_24rem),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28rem)]" />
           {/* backdrop-blur removed: was 4 instances here, replaced with bg-black/80 below */}
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[length:96px_96px] opacity-70" />
@@ -242,51 +260,15 @@ export default function HomePage() {
               <span className="text-lg font-bold text-white font-display">Sokar</span>
             </Link>
             <p className="text-xs text-white/40 leading-relaxed font-sans max-w-xs">
-              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la
-              gestion des appels de votre restaurant.
+              {BRAND_TITLE}. {BRAND_SLOGAN}
             </p>
-            <div className="flex items-center gap-3 mt-2">
-              {[
-                {
-                  name: 'Twitter',
-                  href: '#',
-                  icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'Facebook',
-                  href: '#',
-                  icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'Instagram',
-                  href: '#',
-                  icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.281.63 4.07C.333 4.835.132 5.705.072 6.983.015 8.263 0 8.67 0 12s.015 3.737.072 5.017c.06 1.278.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.078 2.126 1.384.765.297 1.635.499 2.913.558C8.333 23.985 8.74 24 12 24s3.737-.015 5.017-.072c1.278-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.078-1.335 1.384-2.126.297-.765.499-1.635.558-2.913.06-1.28.072-1.687.072-5.017s-.015-3.737-.072-5.017c-.06-1.278-.262-2.148-.557-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.635-.499-2.913-.558C15.667.015 15.26 0 12 0zm0 2.162c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.415.562.217.96.477 1.378.896.419.42.679.819.896 1.378.164.422.36 1.057.414 2.227.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.054 1.17-.249 1.805-.415 2.227-.217.562-.477.96-.896 1.378-.42.419-.819.679-1.378.896-.422.164-1.057.36-2.227.414-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.17-.054-1.805-.249-2.227-.415-.562-.217-.96-.477-1.378-.896-.419-.42-.679-.819-.896-1.378-.164-.422-.36-1.057-.414-2.227-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.054-1.17.249-1.805.415-2.227.217-.562.477-.96.896-1.378.42-.419.819-.679 1.378-.896.422-.164 1.057-.36 2.227-.414 1.266-.058 1.646-.07 4.85-.07zM12 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm7.846-10.405a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z" />
-                    </svg>
-                  ),
-                },
-              ].map((social) => (
-                <a
-                  key={social.name}
-                  aria-label={social.name}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10"
-                >
-                  {social.icon}
-                </a>
-              ))}
-            </div>
+            <a
+              href="mailto:hello@sokar.tech"
+              className="inline-flex min-h-[44px] w-fit items-center gap-2 text-sm text-muted-foreground underline underline-offset-4 transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Mail size={14} aria-hidden="true" />
+              hello@sokar.tech
+            </a>
           </div>
 
           <div className="flex flex-col gap-3">
@@ -330,13 +312,13 @@ export default function HomePage() {
               Légal
             </h4>
             <a
-              href="#"
+              href="/legal"
               className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
             >
               Mentions Légales
             </a>
             <a
-              href="#"
+              href="/privacy"
               className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
             >
               Confidentialité

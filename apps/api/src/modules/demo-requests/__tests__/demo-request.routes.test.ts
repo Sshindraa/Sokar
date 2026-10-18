@@ -140,7 +140,11 @@ describe('demo-request.routes', () => {
       process.env.DEMO_REQUEST_NOTIFY_TO = 'ops@sokar.test, sales@sokar.test';
       const app = await getApp();
       vi.mocked(db.demoRequest.create).mockResolvedValue(demoRequest() as never);
-      vi.mocked(sendEmail).mockResolvedValue(undefined);
+      vi.mocked(sendEmail).mockResolvedValue({
+        outcome: 'success',
+        provider: 'resend',
+        channel: 'email',
+      } as never);
       vi.mocked(db.demoRequest.update).mockResolvedValue(demoRequest() as never);
 
       const res = await app.inject({
@@ -159,6 +163,27 @@ describe('demo-request.routes', () => {
         where: { id: 'dr_1' },
         data: { notifiedAt: expect.any(Date) },
       });
+    });
+
+    it("ne marque pas la notification quand l'envoi est refusé, et garde la demande", async () => {
+      process.env.DEMO_REQUEST_NOTIFY_TO = 'ops@sokar.test';
+      const app = await getApp();
+      vi.mocked(db.demoRequest.create).mockResolvedValue(demoRequest() as never);
+      vi.mocked(sendEmail).mockResolvedValue({
+        outcome: 'failure_certain',
+        provider: 'resend',
+        channel: 'email',
+      } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/demo-requests',
+        payload: VALID_BODY,
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(db.demoRequest.create).toHaveBeenCalledTimes(1);
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
     });
 
     it("garde la demande même si l'envoi de notification échoue, sans marquer l'envoi", async () => {
@@ -214,6 +239,50 @@ describe('demo-request.routes', () => {
 
       expect(res.statusCode).toBe(403);
       expect(db.demoRequest.findMany).not.toHaveBeenCalled();
+    });
+
+    it('expose uniquement des compteurs opérateur sans les coordonnées des demandes', async () => {
+      const app = await getApp();
+      vi.mocked(db.demoRequest.groupBy).mockResolvedValue([
+        { status: 'NEW', _count: { _all: 2 } },
+        { status: 'CONTACTED', _count: { _all: 1 } },
+      ] as never);
+      vi.mocked(db.demoRequest.count).mockResolvedValue(1);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/admin/demo-requests/summary',
+        headers: OPERATOR_HEADERS,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        total: 3,
+        byStatus: { NEW: 2, CONTACTED: 1, DEMO_DONE: 0, CLOSED: 0 },
+        notificationUnconfirmed: 1,
+      });
+      expect(JSON.stringify(res.json())).not.toContain('contactEmail');
+      expect(db.demoRequest.groupBy).toHaveBeenCalledWith({
+        by: ['status'],
+        _count: { _all: true },
+      });
+      expect(db.demoRequest.count).toHaveBeenCalledWith({ where: { notifiedAt: null } });
+    });
+
+    it('réserve le résumé des demandes aux opérateurs', async () => {
+      const app = await getApp();
+
+      const unauthorized = await app.inject({ method: 'GET', url: '/admin/demo-requests/summary' });
+      const forbidden = await app.inject({
+        method: 'GET',
+        url: '/admin/demo-requests/summary',
+        headers: { ...OPERATOR_HEADERS, 'x-test-not-operator': '1' },
+      });
+
+      expect(unauthorized.statusCode).toBe(401);
+      expect(forbidden.statusCode).toBe(403);
+      expect(db.demoRequest.groupBy).not.toHaveBeenCalled();
+      expect(db.demoRequest.count).not.toHaveBeenCalled();
     });
 
     it('liste les demandes les plus récentes, filtrables par statut', async () => {
@@ -272,6 +341,106 @@ describe('demo-request.routes', () => {
         url: '/admin/demo-requests/absent',
         headers: OPERATOR_HEADERS,
         payload: { status: 'CLOSED' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('enregistre la date réelle du dernier échange pour un opérateur', async () => {
+      const app = await getApp();
+      const occurredAt = new Date('2026-10-14T09:00:00.000Z');
+      vi.mocked(db.demoRequest.findUnique).mockResolvedValue(demoRequest() as never);
+      vi.mocked(db.demoRequest.update).mockResolvedValue(
+        demoRequest({ lastInteractionAt: occurredAt }) as never,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/dr_1/interaction',
+        headers: OPERATOR_HEADERS,
+        payload: { occurredAt: occurredAt.toISOString() },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.lastInteractionAt).toBe(occurredAt.toISOString());
+      expect(db.demoRequest.update).toHaveBeenCalledWith({
+        where: { id: 'dr_1' },
+        data: { lastInteractionAt: occurredAt },
+      });
+    });
+
+    it('refuse de dater un échange dans le futur sans toucher à la base', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/dr_1/interaction',
+        headers: OPERATOR_HEADERS,
+        payload: { occurredAt: '2999-01-01T00:00:00.000Z' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'VALIDATION_ERROR' });
+      expect(db.demoRequest.findUnique).not.toHaveBeenCalled();
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('réserve aussi l’enregistrement du dernier échange aux opérateurs', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/dr_1/interaction',
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(db.demoRequest.findUnique).not.toHaveBeenCalled();
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('refuse l’enregistrement à un compte authentifié qui n’est pas opérateur', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/dr_1/interaction',
+        headers: { ...OPERATOR_HEADERS, 'x-test-not-operator': '1' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(db.demoRequest.findUnique).not.toHaveBeenCalled();
+      expect(db.demoRequest.update).not.toHaveBeenCalled();
+    });
+
+    it('utilise l’heure serveur quand aucun horodatage n’est fourni', async () => {
+      const app = await getApp();
+      vi.mocked(db.demoRequest.findUnique).mockResolvedValue(demoRequest() as never);
+      vi.mocked(db.demoRequest.update).mockResolvedValue(
+        demoRequest({ lastInteractionAt: new Date() }) as never,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/dr_1/interaction',
+        headers: OPERATOR_HEADERS,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.demoRequest.update).toHaveBeenCalledWith({
+        where: { id: 'dr_1' },
+        data: { lastInteractionAt: expect.any(Date) },
+      });
+    });
+
+    it('répond 404 si la demande à mettre à jour n’existe plus', async () => {
+      const app = await getApp();
+      vi.mocked(db.demoRequest.findUnique).mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/demo-requests/absent/interaction',
+        headers: OPERATOR_HEADERS,
       });
 
       expect(res.statusCode).toBe(404);

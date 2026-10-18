@@ -1,7 +1,7 @@
 /**
  * Tests for the health check module.
  *
- * Strategy: each check (db, redis, queues, telnyx, cartesia) is
+ * Strategy: each check (db, redis, queues, telnyx, cartesia, elevenlabs) is
  * mocked at the module boundary so we can drive success/failure/timeout
  * scenarios deterministically. We don't hit real providers in unit tests.
  */
@@ -21,6 +21,8 @@ vi.mock('../../../src/shared/db/client', () => ({
 
 vi.mock('../../../src/shared/redis/client', () => ({
   redisCache: {
+    // Battement des workers récent : le contrôle `workers` passe.
+    get: vi.fn(async () => String(Date.now())),
     ping: vi.fn().mockResolvedValue('PONG'),
   },
   redisSession: {},
@@ -103,14 +105,16 @@ afterEach(() => {
 });
 
 describe('checkHealth — happy path', () => {
-  it('returns ok when all 5 checks pass', async () => {
+  it('returns ok when every active check passes', async () => {
     const result = await checkHealth();
     expect(result.status).toBe('ok');
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(Object.keys(result.checks)).toEqual(
-      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'cartesia']),
+      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'cartesia', 'elevenlabs']),
     );
-    for (const name of Object.keys(result.checks)) {
+    // ElevenLabs n'est pas le fournisseur du téléphone dans ce test : il est ignoré.
+    expect(result.checks.elevenlabs.status).toBe('skipped');
+    for (const name of Object.keys(result.checks).filter((n) => n !== 'elevenlabs')) {
       expect(result.checks[name].status).toBe('ok');
       expect(typeof result.checks[name].latency_ms).toBe('number');
       expect(result.checks[name].latency_ms).toBeGreaterThanOrEqual(0);
@@ -241,4 +245,102 @@ describe('checkHealth — parallelism', () => {
     // Allow some headroom for scheduling overhead.
     expect(elapsed).toBeLessThan(800);
   }, 5000);
+});
+
+describe('checkHealth — ElevenLabs (synthèse du téléphone)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('reste ignoré tant que le téléphone est sur Cartesia, sans appel réseau', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', '');
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs).toEqual({ status: 'skipped', latency_ms: 0 });
+    expect(result.status).toBe('ok');
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalledWith(
+      expect.stringContaining('api.elevenlabs.io'),
+      expect.anything(),
+    );
+  });
+
+  it('vérifie la clé par GET sur le compte, avec l’en-tête xi-api-key', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('ok');
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
+      'https://api.elevenlabs.io/v1/user/subscription',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { 'xi-api-key': 'unit-test-placeholder-credential' },
+      }),
+    );
+  });
+
+  it('ne dégrade pas le statut quand la voix n’est pas lisible par métadonnées (voix hors compte)', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'YxrwjAKoUKULGd0g8K9Y');
+    globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
+      if (typeof url === 'string' && url.includes('/v1/voices/')) {
+        return { ok: false, status: 400, statusText: 'Bad Request' } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK' } as Response;
+    });
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('ok');
+    expect(result.status).toBe('ok');
+  });
+
+  it('signale une clé refusée en degraded, sans dégrader le code HTTP des checks cœur', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+    globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
+      if (typeof url === 'string' && url.includes('elevenlabs')) {
+        return { ok: false, status: 401, statusText: 'Unauthorized' } as Response;
+      }
+      return { ok: true, status: 200, statusText: 'OK' } as Response;
+    });
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('error');
+    expect(result.checks.elevenlabs.error).toMatch(/ElevenLabs API 401/);
+    expect(result.status).toBe('degraded');
+    expect(result.checks.db.status).toBe('ok');
+  });
+
+  it('signale une clé absente sans appeler ElevenLabs', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', '');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', 'voix-test');
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('error');
+    expect(result.checks.elevenlabs.error).toMatch(/ELEVENLABS_API_KEY/);
+    expect(vi.mocked(globalThis.fetch)).not.toHaveBeenCalledWith(
+      expect.stringContaining('api.elevenlabs.io'),
+      expect.anything(),
+    );
+  });
+
+  it('signale une voix absente sans appeler ElevenLabs', async () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    vi.stubEnv('ELEVENLABS_API_KEY', 'unit-test-placeholder-credential');
+    vi.stubEnv('ELEVENLABS_TTS_VOICE_ID', '');
+
+    const result = await checkHealth();
+
+    expect(result.checks.elevenlabs.status).toBe('error');
+    expect(result.checks.elevenlabs.error).toMatch(/ELEVENLABS_TTS_VOICE_ID/);
+  });
 });

@@ -213,3 +213,23 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
     expect(rewrite).toContain('/restaurant/CHEZMARIO');
   });
 });
+
+describe('privacy CSP bootstrap', () => {
+  it('forwards the response nonce to Next rendering through the request CSP', () => {
+    const first = middleware(makeRequest('/privacy'));
+    const second = middleware(makeRequest('/privacy'));
+    const nonce = first.headers.get('x-middleware-request-x-nonce');
+    expect(nonce).toBeTruthy();
+    expect(first.headers.get('x-middleware-request-content-security-policy')).toBe(
+      `script-src 'nonce-${nonce}'`,
+    );
+    expect(getCsp(first)).toContain(`'nonce-${nonce}'`);
+    expect(getCsp(first)).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+    expect(second.headers.get('x-middleware-request-x-nonce')).not.toBe(nonce);
+  });
+
+  it('does not change the request policy of other routes', () => {
+    const response = middleware(makeRequest('/restaurant/chez-sokar-demo'));
+    expect(response.headers.get('x-middleware-request-content-security-policy')).toBeNull();
+  });
+});

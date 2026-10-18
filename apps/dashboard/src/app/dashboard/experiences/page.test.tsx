@@ -1,5 +1,6 @@
-import { act, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import ExperiencesPage from './page';
 
 // La page charge ses données en plusieurs requêtes : sous charge (pré-push, CI), 1 s par défaut ne suffit pas.
@@ -117,7 +118,7 @@ describe('ExperiencesPage', () => {
     render(<ExperiencesPage />);
 
     expect(
-      await screen.findByRole('heading', { name: 'Expériences & événements' }),
+      await screen.findByRole('heading', { name: 'Expériences à réserver' }),
     ).toBeInTheDocument();
     expect((await screen.findAllByText('Dégustation de vins')).length).toBeGreaterThan(0);
     expect(await screen.findByText(/Alice Martin/)).toBeInTheDocument();
@@ -127,7 +128,7 @@ describe('ExperiencesPage', () => {
 
   it('charge chaque donnée une seule fois à l’ouverture', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences & événements' });
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Modifier' })).toBeEnabled());
     // Laisse passer un éventuel second chargement lancé après le premier rendu.
     await act(async () => {
@@ -135,7 +136,7 @@ describe('ExperiencesPage', () => {
     });
 
     expect(apiMocks.get.mock.calls.map(([path]) => path).sort()).toEqual([
-      'experience-reservations?limit=100',
+      'experience-reservations?experienceId=experience-1&limit=100',
       'experiences/experience-1/sessions?status=OPEN&limit=100',
       'experiences/payment-readiness',
       'experiences?limit=100',
@@ -238,7 +239,7 @@ describe('ExperiencesPage', () => {
 
   it('convertit le prix saisi en euros en centimes pour l’API', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences & événements' });
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
 
     await clickWhenEnabled('Créer une expérience');
     expect(screen.queryByLabelText('Clé')).not.toBeInTheDocument();
@@ -269,7 +270,7 @@ describe('ExperiencesPage', () => {
 
   it('ouvre une session avec les dates converties en ISO', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences & événements' });
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
     await clickWhenEnabled('Ajouter une date');
     fireEvent.click(await screen.findByRole('button', { name: 'Ajouter la date' }));
 
@@ -286,8 +287,14 @@ describe('ExperiencesPage', () => {
 
   it('annule une réservation et garde le message de capacité libérée', async () => {
     render(<ExperiencesPage />);
-    await screen.findByRole('heading', { name: 'Expériences & événements' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
+    await screen.findByRole('heading', { name: 'Expériences à réserver' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la réservation' }));
+
+    // Annuler rembourse le client : une confirmation est demandée avant tout appel.
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Annuler cette réservation ?');
+    expect(apiMocks.post).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler la réservation' }));
 
     await waitFor(() =>
       expect(apiMocks.post).toHaveBeenCalledWith(
@@ -295,6 +302,31 @@ describe('ExperiencesPage', () => {
       ),
     );
     expect(await screen.findByText('Réservation d’expérience annulée.')).toBeInTheDocument();
+  });
+
+  it('affiche un remboursement échoué à côté des réservations, pas comme un échec de chargement', async () => {
+    apiMocks.post.mockRejectedValueOnce(toApiError(409, { error: 'EXPERIENCE_REFUND_FAILED' }));
+    render(<ExperiencesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la réservation' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Annuler la réservation',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Le remboursement a échoué');
+    expect(screen.queryByText('Impossible de charger les expériences')).toBeNull();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
+  });
+
+  it('reconnaît un module hors formule à la nature de l’erreur, pas à son texte', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
+    render(<ExperiencesPage />);
+
+    expect(
+      await screen.findByText('Accès réservé aux formules Pro et Multi-site'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
   });
 
   it('modifie une offre sans changer sa clé ni son statut', async () => {
@@ -412,9 +444,7 @@ describe('ExperiencesPage', () => {
   });
 
   it('explique le verrouillage quand la fondation est désactivée', async () => {
-    apiMocks.get.mockRejectedValue(
-      new Error('Les expériences restent désactivées jusqu’à la qualification du pilote.'),
-    );
+    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'EXPERIENCES_DISABLED' }));
     render(<ExperiencesPage />);
     expect(await screen.findByText('Expériences bientôt disponibles')).toBeInTheDocument();
     expect(screen.getByText(/Vos données ne sont pas modifiées/)).toBeInTheDocument();

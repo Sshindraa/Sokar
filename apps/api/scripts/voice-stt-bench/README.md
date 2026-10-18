@@ -49,11 +49,12 @@ résumé chiffré est commité (journal, description de PR).
 
 ## Garde-fous fournisseur
 
-Les scripts de banc utilisent des clés dédiées (`ELEVENLABS_BENCH_API_KEY` et
-`CARTESIA_BENCH_API_KEY`) et exigent un plafond `BENCH_MAX_CREDITS` avant toute requête.
-Ils refusent les clés de production. Les étapes de synthèse et transcription consomment
+Les scripts de banc utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du
+14/10/2026 : une seule clé partagée prod, dev, staging et banc) et une clé Cartesia dédiée
+`CARTESIA_BENCH_API_KEY`, qui refuse une clé de production. Ils exigent un plafond
+`BENCH_MAX_CREDITS` avant toute requête. Les étapes de synthèse et transcription consomment
 les fournisseurs ; `evaluate.ts` reste hors ligne. Aucun banc ne doit être lancé sans
-validation explicite du budget et du compte dédié.
+validation explicite du budget.
 
 ## Deuxième transcription (expérience, hors production)
 
@@ -115,8 +116,7 @@ condition et par variante.
 ```bash
 cd apps/api
 
-# ELEVENLABS_BENCH_API_KEY doit déjà être présent dans le shell ou apps/api/.env.
-# Le script refuse une clé absente ou identique à ELEVENLABS_API_KEY.
+# ELEVENLABS_API_KEY doit déjà être présent dans apps/api/.env (clé unique).
 pnpm --filter api build
 
 # F réduit : 8 phrases, propre/bruit, plus 3 contrôles bruit-seul B/F
@@ -302,8 +302,7 @@ ce n'est pas une mesure.
 
 ```bash
 # Valeur factice locale uniquement, jamais une clé fournisseur; rien ne part sur le réseau.
-read -rs ELEVENLABS_BENCH_API_KEY
-export ELEVENLABS_BENCH_API_KEY
+export ELEVENLABS_API_KEY=local-mock-key
 node --import tsx scripts/voice-stt-bench/nb-mock-scribe.ts &
 BENCH_TTS_PROVIDER=say BENCH_STT_URL=ws://127.0.0.1:8799 BENCH_LIMIT=2 \
   node --env-file=.env --import tsx scripts/voice-stt-bench/nb-run.ts \
@@ -316,9 +315,10 @@ pnpm exec tsx scripts/voice-stt-bench/nb-score.ts scripts/voice-stt-bench/.data/
 Run complet A-D : 31 clips × 4 conditions × 6 sessions = **744 sessions**, ~2 600 s
 d'audio streamé (~43 min) silence final compris. Au tarif observé du compte
 gratuit ElevenLabs (~1 crédit/seconde), cela représente ~2 600 crédits, soit
-environ un quart du quota mensuel de 10 000. Le banc **ne doit pas** tourner sur
-la clé de production : le 24/09, un run sur ce compte a épuisé le quota partagé
-prod/staging. Prévoir une clé dédiée `ELEVENLABS_BENCH_API_KEY`.
+environ un quart du quota mensuel de 10 000. Décision du 14/10/2026 : le banc utilise la clé ElevenLabs unique, partagée avec la
+prod et le staging. Le 24/09, un run sur ce quota partagé l'a épuisé et a coupé la
+transcription des appels réels : gardez le plafond et vérifiez le quota restant avant
+un run complet.
 
 Le run F complet envoie 186 sessions parlées et 6 contrôles bruit-seul B/F,
 soit **192 sessions Scribe**. `say` est local et gratuit côté TTS. L'estimation

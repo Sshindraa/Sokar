@@ -43,3 +43,10 @@ it('ouvre l’écran des canaux', async () => {
   );
   expect(redirect).toHaveBeenCalledWith('/onboarding?step=canaux');
 });
+
+it('ouvre l’écran de formule', async () => {
+  await expect(
+    OnboardingStepPage({ params: Promise.resolve({ step: 'formule' }) }),
+  ).rejects.toThrow('redirect');
+  expect(redirect).toHaveBeenCalledWith('/onboarding?step=formule');
+});

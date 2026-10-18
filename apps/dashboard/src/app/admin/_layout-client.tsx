@@ -57,11 +57,16 @@ function isNavigationActive(pathname: string, href: string) {
 function AdminAccessGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { get, isSignedIn } = useApi();
+  const { get, isSignedIn } = useApi({ requireSession: true });
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (isSignedIn === undefined) {
+      setAllowed(null);
+      return;
+    }
 
     if (!isSignedIn) {
       setAllowed(false);

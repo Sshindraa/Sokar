@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  defaultTtsProvider,
   deriveCallIntent,
   finalizeVoiceCall,
   pickDuration,
@@ -281,6 +282,21 @@ describe('finalizeVoiceCall — idempotence et ordre des événements', () => {
     expect(late.updatedFields).toContain('durationSec');
     expect(late.intent).toBe('RESERVATION');
     expect(late.outcome).toBe('NO_ACTION');
+  });
+
+  it('étiquette par défaut le TTS configuré, et non Cartesia, quand aucun tour n’a parlé', () => {
+    vi.stubEnv('VOICE_TTS_PROVIDER', 'elevenlabs');
+    try {
+      expect(defaultTtsProvider()).toBe('elevenlabs-eleven_v4_turbo');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    vi.stubEnv('VOICE_TTS_PROVIDER', '');
+    try {
+      expect(defaultTtsProvider()).toMatch(/^cartesia-/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('ne réécrit pas une transcription plus courte ni une durée absente', async () => {

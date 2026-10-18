@@ -122,12 +122,15 @@ export function OnboardingChannels({
   steps,
   readiness,
   phoneAssigned,
+  notice,
   onOpen,
 }: {
   steps: OnboardingStep[];
   readiness?: ReservationReadiness;
   /** Le restaurant a-t-il son numéro Sokar ? Sans lui, l'étape Appels ne peut pas se terminer. */
   phoneAssigned: boolean;
+  /** Message d'accueil, par exemple la confirmation d'un paiement au retour de Stripe. */
+  notice?: string;
   onOpen: (key: OnboardingTaskKey) => void;
 }) {
   const phone = trackProgress(steps, 'phone');
@@ -137,6 +140,11 @@ export function OnboardingChannels({
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-6">
+      {notice && (
+        <p role="status" className="rounded-2xl bg-muted/50 px-5 py-3 text-sm font-medium">
+          {notice}
+        </p>
+      )}
       <section
         aria-label="Votre salle"
         className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-full bg-muted/50 px-5 py-3 text-sm"

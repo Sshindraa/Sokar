@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useApi } from '../../lib/api';
+import { DataFetchError } from '@/components/DataFetchError';
 import { getErrorMessage } from '@/types/api';
 
 interface EmptySlotDay {
@@ -74,6 +75,7 @@ export default function EmptySlotsWidget() {
   const [data, setData] = useState<EmptySlotsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!orgId) {
@@ -82,6 +84,8 @@ export default function EmptySlotsWidget() {
     }
     let mounted = true;
     async function fetchEmptySlots() {
+      setError('');
+      setLoading(true);
       try {
         const res = await get<EmptySlotsResponse>('dashboard/empty-slots');
         if (mounted) setData(res);
@@ -95,7 +99,7 @@ export default function EmptySlotsWidget() {
     return () => {
       mounted = false;
     };
-  }, [get, orgId]);
+  }, [get, orgId, reloadKey]);
 
   if (!orgId) return null;
   if (loading) {
@@ -111,7 +115,19 @@ export default function EmptySlotsWidget() {
     );
   }
 
-  if (error || !data) return null;
+  // Une panne ne doit pas ressembler à « aucun jour à renforcer » : le widget l'annonce et propose de réessayer.
+  if (error) {
+    return (
+      <section aria-label="Jours creux">
+        <DataFetchError
+          message={error}
+          onRetry={() => setReloadKey((key) => key + 1)}
+          retrying={loading}
+        />
+      </section>
+    );
+  }
+  if (!data) return null;
   if (data.days.length === 0) return null;
 
   const { summary } = data;

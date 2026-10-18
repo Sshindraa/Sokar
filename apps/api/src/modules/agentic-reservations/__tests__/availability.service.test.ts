@@ -13,7 +13,7 @@
  * ne couvre pas tous les modèles de ce service).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AvailabilityService } from '../core/availability.service';
+import { AvailabilityService, isHiddenDemoRestaurant } from '../core/availability.service';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 
 const RESTAURANT_ID = 'rest-1';
@@ -514,5 +514,22 @@ describe('AvailabilityService.checkAvailability — créneaux passés', () => {
   it('un créneau à venir reste disponible, aujourd’hui comme demain', async () => {
     expect((await check(paris('19:00'))).available).toBe(true);
     expect((await check(paris('12:00', '2026-07-03'))).available).toBe(true);
+  });
+});
+
+describe('isHiddenDemoRestaurant', () => {
+  const demo = { name: 'Chez Sokar', slug: 'chez-sokar-demo' };
+  const demoBranch = { name: 'Chez Sokar — Sushi Bar', slug: 'chez-sokar-sushi-lyon' };
+  const real = { name: 'Le Bistrot', slug: 'le-bistrot-lyon' };
+
+  it('masque les établissements de démo dans une recherche ouverte', () => {
+    expect(isHiddenDemoRestaurant(demo)).toBe(true);
+    expect(isHiddenDemoRestaurant(demoBranch, 'Chez Sokar')).toBe(true);
+    expect(isHiddenDemoRestaurant(real)).toBe(false);
+  });
+
+  it('les montre quand on les nomme exactement, pour les essais et les relecteurs', () => {
+    expect(isHiddenDemoRestaurant(demo, ' chez sokar ')).toBe(false);
+    expect(isHiddenDemoRestaurant(demoBranch, 'Chez Sokar — Sushi Bar')).toBe(false);
   });
 });

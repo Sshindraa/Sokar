@@ -51,6 +51,7 @@ import {
   hasInterruptionEvidence,
   isNoiseTurn,
 } from './barge-in-evidence';
+import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
 
@@ -1591,7 +1592,12 @@ function dispatchCommittedTranscript(
 
   // Un mot seul, peu sûr et bref est un bruit : pas de tour, l'agent continue d'écouter. Si ce bruit
   // a coupé l'accueil (coupure sur l'audio seul), l'accueil reprend où il s'était arrêté.
-  if (isNoiseTurn(describeInterruptionEvidence(cleanTranscript, words))) {
+  if (
+    isNoiseTurn(describeInterruptionEvidence(cleanTranscript, words), {
+      letterExpected: expectsSpelledLetters(session.structuredTurn?.lastAwaiting),
+      transcript: cleanTranscript,
+    })
+  ) {
     logger.info(
       {
         callId: session.callControlId,

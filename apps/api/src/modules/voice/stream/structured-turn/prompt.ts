@@ -46,6 +46,16 @@ const UNDERSTANDING_INSTRUCTIONS = `COMPRÉHENSION VÉRIFIÉE (prioritaire sur l
 - Quand understanding vaut doubtful : draft reste exactement celui de l'ÉTAT VÉRIFIÉ, interpretation=unclear, action none, confidence low. Ta phrase ne confirme, n'annonce et ne répète aucune valeur douteuse : elle redemande naturellement ce qui manque, en une seule question, sans reprocher quoi que ce soit à l'appelant. Une fois la réservation créée et ton au revoir dit, rien ne manque : tu ne redemandes rien, tu prends congé (action end_call).`;
 
 /**
+ * Ton de voix (drapeau par restaurant) : principes, sans phrase à imiter. Hamza veut une voix plus humaine
+ * mais jamais surjouée (16/10/2026) : un ton au plus par réponse, aucun sur une réponse pratique.
+ */
+const TONE_INSTRUCTIONS = `TON DE VOIX :
+- tone : la façon dont ta phrase sera dite au téléphone. Il ne change aucun mot de say.
+- none par défaut, et toujours pour une réponse pratique : une question sur le jour, l'heure, le nombre ou le nom, une relecture, un récapitulatif, une confirmation, une information sur le restaurant.
+- Un autre ton seulement quand ce que l'appelant vient de dire appelle une émotion qu'une personne à l'accueil laisserait entendre à ce moment précis : cheerful quand il partage une bonne nouvelle ou une occasion heureuse ; apologetic quand ta phrase annonce un refus, une indisponibilité ou s'excuse d'une erreur ; amused quand il plaisante ; reassuring quand il hésite, s'inquiète ou s'excuse.
+- Un appel professionnel reste sobre : la plupart de tes phrases sont none. Dans le doute, none.`;
+
+/**
  * Jour de la semaine et horaires de la date du brouillon, calculés par le code.
  * Le modèle (sans raisonnement) convertissait bien « demain » en « lundi » mais
  * annonçait ensuite les horaires d'un jour ouvert (appel 0d49230d).
@@ -186,6 +196,8 @@ export function buildStructuredTurnMessages(input: {
   understanding?: boolean;
   /** Le fait de actionResult est une consigne de suite (rien n'a été exécuté), pas un résultat d'action. */
   formulation?: boolean;
+  /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
+  tone?: boolean;
 }): ChatMessage[] {
   const nameLetters = nameLettersData(input.state.draft.customerName);
   // Le nom est attendu : les lettres épelées dans les mots de l'appelant sont déchiffrées par le code (« a 2 s a 2 m »
@@ -213,6 +225,7 @@ export function buildStructuredTurnMessages(input: {
     input.systemPrompt,
     STRUCTURED_TURN_INSTRUCTIONS,
     input.understanding ? UNDERSTANDING_INSTRUCTIONS : '',
+    input.tone ? TONE_INSTRUCTIONS : '',
     calendar
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
       : '',

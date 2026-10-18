@@ -37,6 +37,12 @@ Le catalogue applicatif est maintenant :
 - **Multi-site : 249 € de base + 99 € par établissement supplémentaire**,
   jusqu'à décision de packaging groupe.
 
+> Mise à jour du 16 octobre 2026 : grille du 14 octobre en vigueur, Multi-site 299 € de base
+> (premier établissement inclus) + 99 € par établissement supplémentaire, remise annuelle 10 %.
+> Stripe test et live sont réconciliés (8/8 prix conformes) : voir
+> [`runbooks/stripe-billing.md`](../runbooks/stripe-billing.md). Les phrases suivantes sur le
+> catalogue Stripe non réconcilié sont historiques.
+
 Les constantes partagées, les pages tarifaires et le calcul ROI utilisent ces
 montants. Le catalogue Stripe externe n'est pas encore réconcilié avec 199/299
 et le checkout de production reste fermé par

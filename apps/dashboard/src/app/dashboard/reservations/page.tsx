@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { format, parseISO } from 'date-fns';
+import { addDays, format, isSameDay, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
 import {
@@ -12,6 +12,7 @@ import {
   type WaitingListEntry,
   type WaitingListStatus,
 } from '@/types/api';
+import { ApiError } from '@/lib/api-error';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import MobileDataCard from '@/components/MobileDataCard';
@@ -27,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CalendarCheck, CalendarDays, ListOrdered } from 'lucide-react';
+import { CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, ListOrdered } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -99,11 +100,16 @@ export default function ReservationsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('reservations');
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Écran de chargement complet seulement au premier affichage ; un changement de date garde la barre
+  // de dates à l'écran et remplace seulement la liste.
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
 
   const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
   const [waitingListLoading, setWaitingListLoading] = useState(false);
+  // Jour affiché, partagé par les réservations et la file d'attente : le service du jour d'abord.
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const dateParam = format(selectedDate, 'yyyy-MM-dd');
 
   const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -117,17 +123,20 @@ export default function ReservationsPage() {
 
   const fetchReservations = useCallback(async () => {
     if (!orgId) return;
-    setLoading(true);
+    setReservationsLoading(true);
     setError('');
     try {
-      const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
+      // Sans `date`, l'API renvoie tout l'historique du compte, du plus ancien au plus récent : le service
+      // de ce soir finissait sous des centaines de lignes passées.
+      const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
       setReservations(Array.isArray(data) ? data : []);
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de charger les réservations'));
     } finally {
-      setLoading(false);
+      setReservationsLoading(false);
+      setInitialLoading(false);
     }
-  }, [get, orgId]);
+  }, [get, orgId, dateParam]);
 
   useEffect(() => {
     void fetchReservations();
@@ -138,15 +147,14 @@ export default function ReservationsPage() {
     setWaitingListLoading(true);
     setError('');
     try {
-      const date = format(selectedDate, 'yyyy-MM-dd');
-      const data = await get<unknown[]>(`restaurants/${orgId}/waiting-list?date=${date}`);
+      const data = await get<unknown[]>(`restaurants/${orgId}/waiting-list?date=${dateParam}`);
       setWaitingList(mapWaitingListEntries(Array.isArray(data) ? data : []));
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Impossible de charger la file d'attente"));
     } finally {
       setWaitingListLoading(false);
     }
-  }, [orgId, get, selectedDate]);
+  }, [orgId, get, dateParam]);
 
   useEffect(() => {
     if (activeTab !== 'waiting-list') return;
@@ -181,13 +189,26 @@ export default function ReservationsPage() {
         ),
       );
       try {
-        const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
+        const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
         setReservations(Array.isArray(data) ? data : []);
       } catch {
         setError('Statut mis à jour, mais la liste n’a pas pu être actualisée.');
       }
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de mettre à jour la réservation'));
+      if (err instanceof ApiError && err.kind === 'conflict') {
+        // La liste affichée est périmée (autre appareil) ou le créneau est terminé : on la rafraîchit.
+        setError(
+          'Cette réservation a changé entre-temps ou son créneau est terminé. Liste actualisée.',
+        );
+        try {
+          const data = await get<Reservation[]>(`reservations?date=${dateParam}`);
+          setReservations(Array.isArray(data) ? data : []);
+        } catch {
+          /* le message ci-dessus suffit ; « Actualiser » reste disponible */
+        }
+      } else {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour la réservation.'));
+      }
     } finally {
       setPendingActionId(null);
     }
@@ -254,6 +275,9 @@ export default function ReservationsPage() {
       const msg = getErrorMessage(err, 'Impossible de proposer une table');
       if (msg === 'no_compatible_table' || msg.includes('no_compatible_table')) {
         setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Aucune table compatible' }));
+      } else if (msg.includes('already_promoted')) {
+        setEntryErrors((prev) => ({ ...prev, [entry.id]: 'Cette demande a déjà reçu une table' }));
+        await loadWaitingList();
       } else {
         setError(msg);
       }
@@ -275,7 +299,7 @@ export default function ReservationsPage() {
     }
   }
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -331,28 +355,83 @@ export default function ReservationsPage() {
           <span className="text-sm text-muted-foreground">
             {activeTab === 'reservations'
               ? `${reservations.length} réservation${reservations.length > 1 ? 's' : ''}`
-              : `${waitingList.length} en attente${waitingList.length > 1 ? 's' : ''}`}
+              : `${waitingList.length} en attente`}
           </span>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Jour précédent"
+          onClick={() => setSelectedDate((current) => addDays(current, -1))}
+          className="transition-all duration-200"
+        >
+          <ChevronLeft size={16} />
+        </Button>
+        <Input
+          id="reservations-date"
+          type="date"
+          aria-label="Date"
+          value={dateParam}
+          onChange={(event) => {
+            // Un champ vidé (Retour arrière, « Réinitialiser » sur iOS) ne change pas la date affichée.
+            const parsed = event.target.value ? parseISO(event.target.value) : null;
+            if (parsed && !Number.isNaN(parsed.getTime())) setSelectedDate(parsed);
+          }}
+          className="w-auto transition-all duration-200"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Jour suivant"
+          onClick={() => setSelectedDate((current) => addDays(current, 1))}
+          className="transition-all duration-200"
+        >
+          <ChevronRight size={16} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={isSameDay(selectedDate, new Date())}
+          onClick={() => setSelectedDate(new Date())}
+          className="transition-all duration-200"
+        >
+          Aujourd’hui
+        </Button>
+        <span className="text-sm capitalize text-muted-foreground">
+          {format(selectedDate, 'EEEE d MMMM yyyy', { locale: fr })}
+        </span>
       </div>
 
       {error && (
         <DataFetchError
           message={error}
           onRetry={activeTab === 'waiting-list' ? loadWaitingList : fetchReservations}
-          retrying={activeTab === 'waiting-list' ? waitingListLoading : loading}
+          retrying={activeTab === 'waiting-list' ? waitingListLoading : reservationsLoading}
         />
       )}
 
       {activeTab === 'reservations' && (
         <>
-          {reservations.length === 0 ? (
+          {reservationsLoading ? (
+            <div className="space-y-2" aria-busy="true">
+              {[1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-12 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : reservations.length === 0 ? (
             error ? null : (
               <div className="sokar-empty">
                 <CalendarCheck size={40} className="opacity-30" />
-                <p className="text-sm">Aucune réservation pour le moment</p>
+                <p className="text-sm">Aucune réservation pour cette date</p>
                 <p className="text-xs opacity-60">
-                  Les réservations prises par votre assistant apparaîtront ici.
+                  Les réservations prises par téléphone, en ligne ou par un assistant IA
+                  apparaîtront ici.
                 </p>
                 <Button asChild size="sm" variant="outline" className="mt-1">
                   <Link href="/dashboard/widget">Ouvrir le widget</Link>
@@ -584,19 +663,6 @@ export default function ReservationsPage() {
 
       {activeTab === 'waiting-list' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <label htmlFor="waiting-list-date" className="text-sm font-medium">
-              Date
-            </label>
-            <Input
-              id="waiting-list-date"
-              type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
-              onChange={(e) => setSelectedDate(parseISO(e.target.value))}
-              className="w-auto transition-all duration-200"
-            />
-          </div>
-
           {waitingListLoading ? (
             <div className="space-y-2">
               {[1, 2, 3, 4].map((i) => (
@@ -613,6 +679,50 @@ export default function ReservationsPage() {
                 </p>
               </div>
             )
+          ) : isMobile ? (
+            // Sur téléphone : une carte par demande, avec « Proposer une table » visible sans défilement latéral.
+            <div className="space-y-2">
+              {waitingList.map((entry) => (
+                <div key={entry.id}>
+                  <MobileDataCard
+                    title={`#${entry.position} · ${`${entry.customerFirstName} ${entry.customerLastName ?? ''}`.trim()}`}
+                    subtitle={entry.customerPhone ?? undefined}
+                    badge={<WaitingListStatusBadge status={entry.status} />}
+                    details={[
+                      { label: 'Couverts', value: entry.partySize },
+                      {
+                        label: 'Créneau',
+                        value: format(new Date(entry.slotStart), 'dd MMM HH:mm', { locale: fr }),
+                      },
+                      { label: 'Section', value: entry.preferredSectionName || '—' },
+                    ]}
+                    primaryAction={
+                      entry.status === 'PENDING'
+                        ? {
+                            label:
+                              promotingId === entry.id ? 'Proposition...' : 'Proposer une table',
+                            onClick: () => void promoteEntry(entry),
+                            disabled: promotingId === entry.id,
+                          }
+                        : undefined
+                    }
+                    actions={[
+                      {
+                        label: 'Retirer',
+                        colorClass: 'bg-destructive',
+                        onClick: () => void removeEntry(entry),
+                      },
+                    ]}
+                  />
+                  {promotedEntryId === entry.id && (
+                    <p className="mt-1 text-xs text-success">Table proposée avec succès</p>
+                  )}
+                  {entryErrors[entry.id] && (
+                    <p className="mt-1 text-xs text-destructive">{entryErrors[entry.id]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="sokar-card overflow-hidden">
               <div className="mobile-table-wrapper">

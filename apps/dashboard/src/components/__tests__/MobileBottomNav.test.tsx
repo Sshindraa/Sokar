@@ -13,6 +13,13 @@ vi.mock('next/navigation', () => ({
   useRouter: () => routerState,
 }));
 
+const roleState = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock('@/features/sites/site-context', () => ({
+  useSiteSelection: () => ({
+    activeSite: roleState.value ? { id: 'site', role: roleState.value } : undefined,
+  }),
+}));
+
 vi.mock('@/features/theme/dashboard-theme', () => ({
   useDashboardTheme: () => ({
     theme: 'dark',
@@ -62,6 +69,7 @@ describe('MobileBottomNav', () => {
   beforeEach(() => {
     pathnameState.value = '/dashboard';
     searchParamsState.value = '';
+    roleState.value = undefined;
     vi.clearAllMocks();
 
     // Mock ResizeObserver
@@ -311,5 +319,36 @@ describe('MobileBottomNav', () => {
     pathnameState.value = '/dashboard/reservations';
     rerender(<MobileBottomNav />);
     expect(screen.queryByRole('dialog', { name: /Plus/i })).not.toBeInTheDocument();
+  });
+
+  describe('équipe de service', () => {
+    it('ne montre que les réservations et le service en salle, sans menu « Plus »', () => {
+      roleState.value = 'STAFF';
+      render(<MobileBottomNav />);
+
+      expect(screen.getByRole('link', { name: /Réservations/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.queryAllByText('Pilotage')).toHaveLength(0);
+      expect(screen.queryAllByText('Clients')).toHaveLength(0);
+      expect(screen.queryByRole('button', { name: /Plus/ })).not.toBeInTheDocument();
+      expect(screen.queryByText('Réglages')).not.toBeInTheDocument();
+    });
+
+    it('ne propose pas la modification du plan de salle', () => {
+      roleState.value = 'STAFF';
+      pathnameState.value = '/dashboard/floor-plan';
+      render(<MobileBottomNav />);
+
+      expect(screen.getByRole('link', { name: /Live/ })).toBeInTheDocument();
+      expect(screen.queryAllByText('Édition')).toHaveLength(0);
+    });
+
+    it('un responsable garde le menu complet', () => {
+      roleState.value = 'MANAGER';
+      render(<MobileBottomNav />);
+
+      expect(screen.getAllByText('Pilotage').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Clients').length).toBeGreaterThan(0);
+    });
   });
 });

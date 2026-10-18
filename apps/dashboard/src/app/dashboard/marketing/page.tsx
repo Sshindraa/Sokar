@@ -15,7 +15,11 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useApi } from '@/lib/api';
+import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -212,7 +216,95 @@ function statusClass(status: string): string {
 }
 
 function readinessLabel(value: boolean): string {
-  return value ? 'Prêt' : 'À configurer';
+  return value ? 'Prêt' : 'Bientôt disponible';
+}
+
+/** Explication lisible d'un incident de campagne : le code interne ne dit rien au restaurateur. */
+function campaignErrorLabel(code: string): string {
+  const labels: Record<string, string> = {
+    MARKETING_QUEUE_ENQUEUE_UNKNOWN: 'Envoi non démarré, vous pouvez réessayer',
+    STALE_CLAIM_MANUAL_REVIEW: 'Vérification manuelle en cours',
+    LEASE_EXPIRED: 'Envoi interrompu, reprise automatique',
+    WORKER_INTERRUPTED: 'Envoi interrompu, reprise automatique',
+    AUTOMATION_ALREADY_DISPATCHED: 'Campagne déjà envoyée pour cette règle',
+    NO_CONTACT_OR_UNAVAILABLE: 'Aucun destinataire consentant joignable',
+    LEGACY_REACTIVATION_AUDIENCE_EMPTY: 'Aucun destinataire consentant joignable',
+  };
+  return labels[code] ?? 'Un incident est survenu';
+}
+
+/** Statut de coût du rapport ; `null` quand le montant parle de lui-même. */
+function costStatusLabel(status: string): string | null {
+  if (status === 'PARTIAL') return 'partiel';
+  if (status === 'UNPRICED' || status === 'NOT_AVAILABLE') return 'estimation indisponible';
+  return null;
+}
+
+const TIMEZONES: Array<[string, string]> = [
+  ['Europe/Paris', 'Paris (métropole)'],
+  ['Europe/Brussels', 'Bruxelles'],
+  ['Europe/Zurich', 'Zurich'],
+  ['Europe/London', 'Londres'],
+  ['America/Martinique', 'Martinique'],
+  ['America/Guadeloupe', 'Guadeloupe'],
+  ['America/Cayenne', 'Guyane'],
+  ['Indian/Reunion', 'La Réunion'],
+  ['Indian/Mayotte', 'Mayotte'],
+  ['Pacific/Tahiti', 'Polynésie française'],
+  ['Pacific/Noumea', 'Nouvelle-Calédonie'],
+];
+
+type DraftField =
+  | 'bodyTemplate'
+  | 'subject'
+  | 'delayHours'
+  | 'inactiveDays'
+  | 'daysBefore'
+  | 'sendHour';
+type DraftErrors = Partial<Record<DraftField, string>>;
+
+function integerInRange(raw: string, min: number, max: number): boolean {
+  if (!/^\d+$/.test(raw.trim())) return false;
+  const value = Number(raw);
+  return value >= min && value <= max;
+}
+
+/** Contrôle avant l'envoi à l'API : un message en français par champ, jamais un nombre vide envoyé comme 0. */
+function validateDraft(type: AutomationType, draft: Draft): DraftErrors {
+  const errors: DraftErrors = {};
+  if (!draft.bodyTemplate.trim()) {
+    errors.bodyTemplate = 'Écrivez le message à envoyer.';
+  } else if (!draft.bodyTemplate.includes('{{unsubscribeUrl}}')) {
+    errors.bodyTemplate =
+      'Le message doit contenir {{unsubscribeUrl}} : le lien de désinscription est obligatoire.';
+  }
+  if (draft.channel === 'EMAIL' && !draft.subject.trim()) {
+    errors.subject = 'Indiquez un objet pour l’e-mail.';
+  }
+  if (type === 'AFTER_FIRST_HONORED' && !integerInRange(draft.delayHours, 0, 168)) {
+    errors.delayHours = 'Entre 0 et 168 heures.';
+  }
+  if (type === 'DORMANT' && !integerInRange(draft.inactiveDays, 30, 365)) {
+    errors.inactiveDays = 'Entre 30 et 365 jours.';
+  }
+  if (type === 'BIRTHDAY') {
+    if (!integerInRange(draft.daysBefore, 0, 30)) errors.daysBefore = 'Entre 0 et 30 jours.';
+    if (!integerInRange(draft.sendHour, 0, 23)) errors.sendHour = 'Entre 0 et 23 h.';
+  }
+  return errors;
+}
+
+function draftsEqual(left: Draft, right: Draft): boolean {
+  return (Object.keys(left) as Array<keyof Draft>).every((key) => left[key] === right[key]);
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="text-xs font-normal text-destructive">
+      {message}
+    </p>
+  );
 }
 
 export default function MarketingPage() {
@@ -231,6 +323,12 @@ export default function MarketingPage() {
   const [action, setAction] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Le chargement initial a échoué : on n'affiche ni règles par défaut, ni « 0/3 », ni liste vide.
+  const [loadError, setLoadError] = useState<{ message: string; lock: FeatureLock | null } | null>(
+    null,
+  );
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AutomationType, DraftErrors>>>({});
+  const [campaignToCancel, setCampaignToCancel] = useState<Campaign | null>(null);
 
   const load = useCallback(async () => {
     if (!orgId) {
@@ -239,6 +337,7 @@ export default function MarketingPage() {
     }
     setLoading(true);
     setError('');
+    setLoadError(null);
     try {
       const [automationResponse, campaignResponse, providerResponse] = await Promise.all([
         get<{ data: Automation[] }>('marketing/automations'),
@@ -261,7 +360,10 @@ export default function MarketingPage() {
         readiness && typeof readiness.sendsEnabled === 'boolean' ? readiness : null,
       );
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger le marketing Pro'));
+      setLoadError({
+        message: getErrorMessage(err, 'Impossible de charger le marketing Pro.'),
+        lock: featureLockFromError(err),
+      });
     } finally {
       setLoading(false);
     }
@@ -273,13 +375,39 @@ export default function MarketingPage() {
 
   function updateDraft(type: AutomationType, patch: Partial<Draft>) {
     setDrafts((previous) => ({ ...previous, [type]: { ...previous[type], ...patch } }));
+    setFieldErrors((previous) => ({ ...previous, [type]: undefined }));
+    setNotice('');
   }
 
+  /** Brouillon enregistré (ou valeurs de départ) : sert à repérer les modifications en attente. */
+  function baselineFor(type: AutomationType): Draft {
+    const saved = automations.find((automation) => automation.type === type);
+    return saved ? draftFromAutomation(saved) : emptyDraft(type);
+  }
+
+  const dirtyTypes = AUTOMATION_ORDER.filter(
+    (type) => !draftsEqual(drafts[type], baselineFor(type)),
+  );
+  const hasUnsavedChanges = dirtyTypes.length > 0;
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasUnsavedChanges]);
+
   async function saveAutomation(type: AutomationType) {
+    if (loadError) return;
     const draft = drafts[type];
-    setSaving(type);
+    const problems = validateDraft(type, draft);
     setError('');
     setNotice('');
+    setFieldErrors((previous) => ({ ...previous, [type]: problems }));
+    if (Object.keys(problems).length > 0) return;
+    setSaving(type);
     const config: Record<string, unknown> = {
       bodyTemplate: draft.bodyTemplate,
       subject: draft.channel === 'EMAIL' ? draft.subject || null : null,
@@ -334,6 +462,12 @@ export default function MarketingPage() {
     }
   }
 
+  async function confirmCancelCampaign() {
+    if (!campaignToCancel) return;
+    await campaignAction(campaignToCancel, 'cancel');
+    setCampaignToCancel(null);
+  }
+
   async function loadReport(campaignId: string) {
     setAction(`report:${campaignId}`);
     setError('');
@@ -364,6 +498,27 @@ export default function MarketingPage() {
           ))}
         </div>
         <Skeleton className="h-64 rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <div className="flex items-center gap-2">
+            <Megaphone className="h-6 w-6 text-primary" />
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing Pro</h1>
+          </div>
+        </header>
+        {loadError.lock ? (
+          <FeatureLockCard lock={loadError.lock} feature="Marketing Pro" />
+        ) : (
+          <DataFetchError
+            message={`${loadError.message} Vos règles enregistrées n’ont pas été modifiées.`}
+            onRetry={() => void load()}
+          />
+        )}
       </div>
     );
   }
@@ -412,10 +567,8 @@ export default function MarketingPage() {
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle className="text-base">Readiness des canaux</CardTitle>
-                <CardDescription>
-                  État des variables de configuration, sans afficher de secret.
-                </CardDescription>
+                <CardTitle className="text-base">État des canaux</CardTitle>
+                <CardDescription>L’équipe Sokar ouvre les envois canal par canal.</CardDescription>
               </div>
               <Badge
                 className={
@@ -424,14 +577,9 @@ export default function MarketingPage() {
                     : 'bg-warning/15 text-warning'
                 }
               >
-                Envois {providerReadiness.sendsEnabled ? 'activables' : 'verrouillés'}
+                {providerReadiness.sendsEnabled ? 'Envois activés' : 'Envois bientôt disponibles'}
               </Badge>
             </div>
-            {providerReadiness.sendGate?.missing?.length ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Porte globale à renseigner : {providerReadiness.sendGate.missing.join(', ')}
-              </p>
-            ) : null}
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-3">
             {(
@@ -446,19 +594,6 @@ export default function MarketingPage() {
                   <span className="font-medium">{label}</span>
                   <Badge variant="secondary">{readinessLabel(channel.configured)}</Badge>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Callback : {channel.callbackConfigured ? 'configuré' : 'à configurer'}
-                </p>
-                {((channel.missing ?? []).length > 0 ||
-                  (channel.callbackMissing ?? []).length > 0) && (
-                  <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                    {[...(channel.missing ?? []), ...(channel.callbackMissing ?? [])].map(
-                      (variable) => (
-                        <li key={variable}>À renseigner : {variable}</li>
-                      ),
-                    )}
-                  </ul>
-                )}
               </div>
             ))}
           </CardContent>
@@ -491,6 +626,7 @@ export default function MarketingPage() {
           {AUTOMATION_ORDER.map((type) => {
             const draft = drafts[type];
             const saved = automations.find((automation) => automation.type === type);
+            const dirty = dirtyTypes.includes(type);
             return (
               <Card key={type} className="flex flex-col">
                 <CardHeader className="pb-4">
@@ -530,7 +666,13 @@ export default function MarketingPage() {
                         value={draft.subject}
                         onChange={(event) => updateDraft(type, { subject: event.target.value })}
                         placeholder="Une attention pour vous"
+                        aria-invalid={Boolean(fieldErrors[type]?.subject)}
+                        aria-describedby={`${type}-subject-error`}
                         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                      />
+                      <FieldError
+                        id={`${type}-subject-error`}
+                        message={fieldErrors[type]?.subject}
                       />
                     </label>
                   )}
@@ -540,7 +682,13 @@ export default function MarketingPage() {
                       value={draft.bodyTemplate}
                       onChange={(event) => updateDraft(type, { bodyTemplate: event.target.value })}
                       rows={4}
+                      aria-invalid={Boolean(fieldErrors[type]?.bodyTemplate)}
+                      aria-describedby={`${type}-body-error`}
                       className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                    />
+                    <FieldError
+                      id={`${type}-body-error`}
+                      message={fieldErrors[type]?.bodyTemplate}
                     />
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -555,7 +703,13 @@ export default function MarketingPage() {
                           onChange={(event) =>
                             updateDraft(type, { delayHours: event.target.value })
                           }
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          aria-invalid={Boolean(fieldErrors[type]?.delayHours)}
+                          aria-describedby={`${type}-delayHours-error`}
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                        />
+                        <FieldError
+                          id={`${type}-delayHours-error`}
+                          message={fieldErrors[type]?.delayHours}
                         />
                       </label>
                     )}
@@ -570,7 +724,13 @@ export default function MarketingPage() {
                           onChange={(event) =>
                             updateDraft(type, { inactiveDays: event.target.value })
                           }
-                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                          aria-invalid={Boolean(fieldErrors[type]?.inactiveDays)}
+                          aria-describedby={`${type}-inactiveDays-error`}
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                        />
+                        <FieldError
+                          id={`${type}-inactiveDays-error`}
+                          message={fieldErrors[type]?.inactiveDays}
                         />
                       </label>
                     )}
@@ -586,7 +746,13 @@ export default function MarketingPage() {
                             onChange={(event) =>
                               updateDraft(type, { daysBefore: event.target.value })
                             }
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            aria-invalid={Boolean(fieldErrors[type]?.daysBefore)}
+                            aria-describedby={`${type}-daysBefore-error`}
+                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                          />
+                          <FieldError
+                            id={`${type}-daysBefore-error`}
+                            message={fieldErrors[type]?.daysBefore}
                           />
                         </label>
                         <label className="space-y-1 text-xs font-medium">
@@ -599,28 +765,51 @@ export default function MarketingPage() {
                             onChange={(event) =>
                               updateDraft(type, { sendHour: event.target.value })
                             }
-                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
+                            aria-invalid={Boolean(fieldErrors[type]?.sendHour)}
+                            aria-describedby={`${type}-sendHour-error`}
+                            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                          />
+                          <FieldError
+                            id={`${type}-sendHour-error`}
+                            message={fieldErrors[type]?.sendHour}
                           />
                         </label>
                       </>
                     )}
                     <label className="col-span-2 space-y-1 text-xs font-medium">
-                      Fuseau IANA
-                      <input
+                      Fuseau horaire
+                      <select
                         value={draft.timezone}
                         onChange={(event) => updateDraft(type, { timezone: event.target.value })}
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal"
-                      />
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm font-normal outline-none transition-all duration-200 focus:ring-2 focus:ring-ring"
+                      >
+                        {TIMEZONES.some(([value]) => value === draft.timezone) ? null : (
+                          <option value={draft.timezone}>{draft.timezone}</option>
+                        )}
+                        {TIMEZONES.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                    <span className="text-xs text-muted-foreground">
-                      {saved
-                        ? `v${saved.version} · évaluée ${formatDate(saved.lastEvaluatedAt)}`
-                        : 'Pas encore enregistrée'}
+                    <span
+                      className={cn(
+                        'text-xs',
+                        dirty ? 'font-medium text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {dirty
+                        ? 'Modifications non enregistrées'
+                        : saved
+                          ? `v${saved.version} · évaluée ${formatDate(saved.lastEvaluatedAt)}`
+                          : 'Pas encore enregistrée'}
                     </span>
                     <Button
                       size="sm"
+                      variant={dirty ? 'default' : 'outline'}
                       onClick={() => void saveAutomation(type)}
                       disabled={saving === type}
                       className="transition-all duration-200"
@@ -691,7 +880,9 @@ export default function MarketingPage() {
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Mise à jour {formatDate(campaign.updatedAt)}
-                        {campaign.lastErrorCode ? ` · ${campaign.lastErrorCode}` : ''}
+                        {campaign.lastErrorCode
+                          ? ` · ${campaignErrorLabel(campaign.lastErrorCode)}`
+                          : ''}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
                         <span>
@@ -710,10 +901,15 @@ export default function MarketingPage() {
                           conversions
                         </span>
                       </div>
+                      {campaign.status === 'DRAFT' && campaign.audienceCount === 0 && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Aucun destinataire consentant pour le moment : rien à préparer.
+                        </p>
+                      )}
                       {report && (
                         <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs sm:grid-cols-5">
                           <span>
-                            Ouvertures/clics <strong>{report.delivery.clicked}</strong>
+                            Clics <strong>{report.delivery.clicked}</strong>
                           </span>
                           <span>
                             Réservations <strong>{report.attribution.reservationsCreated}</strong>
@@ -723,11 +919,15 @@ export default function MarketingPage() {
                           </span>
                           <span>
                             CA confirmé{' '}
-                            <strong>{report.attribution.confirmedRevenue.toFixed(2)} €</strong>
+                            <strong>{formatEur(report.attribution.confirmedRevenue)}</strong>
                           </span>
                           <span>
                             Coût messages <strong>{formatEur(report.cost.amount)}</strong>{' '}
-                            <span className="text-muted-foreground">({report.cost.status})</span>
+                            {costStatusLabel(report.cost.status) ? (
+                              <span className="text-muted-foreground">
+                                ({costStatusLabel(report.cost.status)})
+                              </span>
+                            ) : null}
                           </span>
                         </div>
                       )}
@@ -737,7 +937,9 @@ export default function MarketingPage() {
                         <Button
                           size="sm"
                           onClick={() => void campaignAction(campaign, 'prepare')}
-                          disabled={action === `prepare:${campaign.id}`}
+                          disabled={
+                            action === `prepare:${campaign.id}` || campaign.audienceCount === 0
+                          }
                           className="transition-all duration-200"
                         >
                           <Check className="mr-1 h-3.5 w-3.5" /> Préparer
@@ -747,11 +949,11 @@ export default function MarketingPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => void campaignAction(campaign, 'cancel')}
+                          onClick={() => setCampaignToCancel(campaign)}
                           disabled={action === `cancel:${campaign.id}`}
                           className="transition-all duration-200"
                         >
-                          Annuler
+                          Annuler la campagne
                         </Button>
                       )}
                       <Button
@@ -784,6 +986,17 @@ export default function MarketingPage() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={campaignToCancel !== null}
+        title="Annuler cette campagne ?"
+        description="Les messages non envoyés ne partiront pas. Cette action est définitive."
+        confirmLabel="Annuler la campagne"
+        cancelLabel="Garder la campagne"
+        pending={campaignToCancel !== null && action === `cancel:${campaignToCancel.id}`}
+        onConfirm={() => void confirmCancelCampaign()}
+        onCancel={() => setCampaignToCancel(null)}
+      />
     </div>
   );
 }

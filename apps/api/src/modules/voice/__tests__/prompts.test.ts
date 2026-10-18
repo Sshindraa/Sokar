@@ -573,13 +573,23 @@ describe('genre de la voix', () => {
   });
 
   it('vient du réglage de la voix par défaut, et jamais d’une voix propre au restaurant (genre inconnu)', () => {
-    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'masculine' })).toBe('masculine');
-    expect(agentVoiceGender({}, { CARTESIA_VOICE_GENDER: 'Feminine ' })).toBe('feminine');
+    expect(agentVoiceGender(null, { VOICE_GENDER: 'masculine' })).toBe('masculine');
+    expect(agentVoiceGender({}, { VOICE_GENDER: 'Feminine ' })).toBe('feminine');
     expect(
-      agentVoiceGender({ voiceIdCa: 'voix-du-restaurant' }, { CARTESIA_VOICE_GENDER: 'masculine' }),
+      agentVoiceGender({ voiceIdCa: 'voix-du-restaurant' }, { VOICE_GENDER: 'masculine' }),
     ).toBeUndefined();
     expect(agentVoiceGender(null, {})).toBeUndefined();
-    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'autre' })).toBeUndefined();
+    expect(agentVoiceGender(null, { VOICE_GENDER: 'autre' })).toBeUndefined();
+  });
+
+  it('lit encore l’ancien nom du réglage, mais le nouveau l’emporte, même quand il est vide', () => {
+    expect(agentVoiceGender(null, { CARTESIA_VOICE_GENDER: 'feminine' })).toBe('feminine');
+    expect(
+      agentVoiceGender(null, { VOICE_GENDER: 'masculine', CARTESIA_VOICE_GENDER: 'feminine' }),
+    ).toBe('masculine');
+    expect(agentVoiceGender(null, { VOICE_GENDER: '', CARTESIA_VOICE_GENDER: 'feminine' })).toBe(
+      'feminine',
+    );
   });
 });
 

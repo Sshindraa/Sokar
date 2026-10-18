@@ -125,6 +125,7 @@ function SegmentedSlider({
           ))}
         </div>
         <input
+          aria-label={label}
           type="range"
           min={0}
           max={labels.length - 1}
@@ -382,7 +383,10 @@ export default function DemoSection() {
         </h2>
         <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
           Exemple de l&apos;interface de pilotage Sokar. Les indicateurs et la conversation
-          ci-dessous sont simulés : ils ne proviennent pas d&apos;un restaurant réel.
+          ci-dessous sont simulés : restaurant, disponibilités et résultats fictifs. Cette animation
+          est sans audio ni conversation vocale interactive ; elle ne mesure pas la fiabilité
+          réelle. Aucun appel, réservation, SMS, transfert ou facturation n’est déclenché. Les
+          réglages modifient seulement cet aperçu, sans son.
         </p>
       </div>
 
@@ -391,11 +395,11 @@ export default function DemoSection() {
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />
           <div className="grid grid-cols-2 gap-3.5">
-            <ShowcaseMetricCard label="Appels traités" value="412" icon={PhoneCall} />
-            <ShowcaseMetricCard label="Tables réservées" value="189" icon={CalendarCheck} />
+            <ShowcaseMetricCard label="Appels fictifs" value="412" icon={PhoneCall} />
+            <ShowcaseMetricCard label="Réservations fictives" value="189" icon={CalendarCheck} />
             <div className="col-span-2">
               <ShowcaseMetricCard
-                label="Taux de réponse"
+                label="Indicateur fictif"
                 value="98%"
                 icon={TrendingUp}
                 isDial

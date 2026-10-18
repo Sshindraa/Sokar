@@ -47,20 +47,18 @@ describe('PricingSection', () => {
     const { container } = render(<PricingSection />);
     const text = container.textContent ?? '';
 
-    expect(text).toContain('299\u00a0€\u00a0HT/mois + 99\u00a0€\u00a0HT/site');
-    expect(text).toContain('+ 89\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 89\u00a0€/site par adresse supplémentaire');
+    expect(text).not.toContain('HT');
     expect(text).not.toContain('Économisez');
   });
 
   it('précise le paiement annuel et distingue le mensuel', () => {
     render(<PricingSection />);
-    expect(
-      screen.getByText(/Équivalents mensuels arrondis. Facturation annuelle/),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText('Facturé annuellement.')).toHaveLength(3);
+    expect(screen.getByText(/Équivalents mensuels arrondis/)).toBeInTheDocument();
+    expect(screen.getAllByText('Facturé à l’année, engagement 12 mois')).toHaveLength(3);
     fireEvent.click(screen.getByRole('switch'));
-    expect(screen.queryByText(/engagement de 12 mois/)).not.toBeInTheDocument();
-    expect(screen.getAllByText('Facturé chaque mois.')).toHaveLength(3);
+    expect(screen.queryByText(/engagement 12 mois/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Sans engagement')).toHaveLength(3);
   });
 
   it('calcule le total multi-site et transmet le nombre sélectionné', () => {
@@ -74,7 +72,7 @@ describe('PricingSection', () => {
     );
     fireEvent.click(screen.getByRole('switch'));
     expect(screen.getByText(/Total pour 3 établissements : 447/)).toBeInTheDocument();
-    expect(screen.queryByText(/,\d{2}.*€ HT/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/,\d{2}.*€\/mois/)).not.toBeInTheDocument();
   });
 
   it('masque le prix barré et les économies en mensuel', () => {
@@ -84,8 +82,22 @@ describe('PricingSection', () => {
 
     const text = container.textContent ?? '';
     expect(screen.getAllByText('299')[0]).toBeInTheDocument();
-    expect(text).toContain('+ 99\u00a0€\u00a0HT/site');
+    expect(text).toContain('+ 99\u00a0€/site');
     expect(text).not.toContain('Économisez');
     expect(text).not.toContain('-10% annuel');
+  });
+
+  it('ne marque que le non livré, d’un simple « Bientôt »', () => {
+    render(<PricingSection />);
+
+    expect(screen.queryByText('Disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Prévu')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Bientôt').length).toBeGreaterThan(0);
+  });
+
+  it('ne présente aucune formule comme « Recommandé »', () => {
+    render(<PricingSection />);
+
+    expect(screen.queryByText('Recommandé')).not.toBeInTheDocument();
   });
 });

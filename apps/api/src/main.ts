@@ -11,9 +11,12 @@ import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logg
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
+import { reservationManagementRoutes } from './modules/reservations/reservation-management.routes';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
+import { metaWhatsAppWebhookRoutes } from './modules/whatsapp/meta-webhook.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
+import { teamRoutes } from './modules/restaurants/team.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
 import { customerCrmRoutes } from './modules/customers/customer-crm.routes';
 import { customerSegmentRoutes } from './modules/customers/customer-segment.routes';
@@ -63,6 +66,7 @@ import { registerClerk } from './plugins/clerk';
 import fastifyWebsocket from '@fastify/websocket';
 import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
 import { registerLiveDemoStreamRoute } from './modules/voice/demo/demo-stream';
+import { startWatchtower, startWorkerHeartbeat } from './shared/health/watchtower';
 import { checkHealth } from './shared/health/checks';
 import { registerJobSchedulers } from './shared/queue/schedulers';
 
@@ -104,7 +108,7 @@ export async function buildApp() {
         censor: REDACT_CENSOR,
       },
     } as never,
-    childLoggerFactory: (loggerInstance, bindings, _opts, rawReq) => {
+    childLoggerFactory: (loggerInstance, bindings, opts, rawReq) => {
       const headerId = (rawReq as { headers?: Record<string, unknown> }).headers?.['x-request-id'];
       const headerStr = Array.isArray(headerId) ? headerId[0] : headerId;
       const requestId =
@@ -112,7 +116,7 @@ export async function buildApp() {
       bindings.request_id = requestId;
       // Stash on the raw request so the onRequest hook / handlers can read it.
       (rawReq as { requestId?: string }).requestId = requestId;
-      return loggerInstance.child(bindings);
+      return loggerInstance.child(bindings, opts);
     },
     // Versioning des endpoints publics Connect (Phase 6) :
     // /public/v1/* est un alias de /public/* (transition progressive).
@@ -218,9 +222,12 @@ export async function buildApp() {
 
   await app.register(telnyxVoiceRoutes);
   await app.register(smsInboundRoutes);
+  await app.register(reservationManagementRoutes);
   await app.register(whatsappWebhookRoutes);
+  await app.register(metaWhatsAppWebhookRoutes);
   await app.register(marketingProviderRoutes);
   await app.register(restaurantRoutes);
+  await app.register(teamRoutes);
   await app.register(customerRoutes);
   await app.register(customerCrmRoutes);
   await app.register(customerSegmentRoutes);
@@ -316,6 +323,8 @@ async function start() {
     if (typeof process.send === 'function') {
       process.send('ready');
     }
+    // Workers arrêtés, ligne téléphonique hors service : alerte par e-mail (watchtower.ts).
+    startWatchtower();
   } catch (err) {
     logger.error(err);
     logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
@@ -324,7 +333,8 @@ async function start() {
   }
 
   // Pré-génération des greetings audio par restaurant au boot.
-  // Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+  // Le greeting "Bonjour, ici {restaurant}, je suis Léa, l'assistante IA. Je vous écoute." est la
+  // première
   // chose que le client entend. Sans cache, il faut ~400-800ms pour le
   // synthétiser via Cartesia. Pré-généré → cache hit instantané au runtime.
   // Fire-and-forget : ne bloque pas l'API.
@@ -349,7 +359,10 @@ async function start() {
   if (env.RUN_WORKERS_IN_PROCESS === 'true') {
     setImmediate(() => {
       import('./workers/index')
-        .then(() => registerJobSchedulers())
+        .then(() => {
+          startWorkerHeartbeat();
+          return registerJobSchedulers();
+        })
         .catch((err) => logger.error({ err }, 'Worker bootstrap failed (in-process mode)'));
     });
   }

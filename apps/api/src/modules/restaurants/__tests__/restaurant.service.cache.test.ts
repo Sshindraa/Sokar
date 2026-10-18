@@ -81,6 +81,50 @@ describe('RestaurantService context cache', () => {
     expect(db.restaurant.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
+  it('ne fournit jamais le numéro de secours fictif du seed au pipeline de la démo', async () => {
+    const { db } = await import('../../../shared/db/client');
+    const { getCachedContext } = await import('../../../shared/redis/client');
+    const { RestaurantService } = await import('../restaurant.service');
+    vi.mocked(getCachedContext).mockResolvedValue(null);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...restaurantFromDb,
+      slug: 'chez-sokar-demo',
+      managerPhone: '+33601020304',
+    } as never);
+    const result = await RestaurantService.loadContext('pn-demo');
+    expect(result.managerPhone).toBe('');
+  });
+
+  it('protège aussi le contexte démo déjà présent dans Redis', async () => {
+    const { getCachedContext } = await import('../../../shared/redis/client');
+    const { RestaurantService } = await import('../restaurant.service');
+    vi.mocked(getCachedContext).mockResolvedValue({
+      ...restaurantFromDb,
+      slug: 'chez-sokar-demo',
+      managerPhone: '+33601020304',
+    } as never);
+    expect((await RestaurantService.loadContext('pn-demo')).managerPhone).toBe('');
+  });
+
+  it.each([
+    ['restaurant réel', 'chez-cache', '+33601020304'],
+    ['secours démo configuré', 'chez-sokar-demo', '+33600000000'],
+  ])(
+    'conserve le numéro du %s sans exclusion approximative',
+    async (_label, slug, managerPhone) => {
+      const { db } = await import('../../../shared/db/client');
+      const { getCachedContext } = await import('../../../shared/redis/client');
+      const { RestaurantService } = await import('../restaurant.service');
+      vi.mocked(getCachedContext).mockResolvedValue(null);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+        ...restaurantFromDb,
+        slug,
+        managerPhone,
+      } as never);
+      expect((await RestaurantService.loadContext('pn-other')).managerPhone).toBe(managerPhone);
+    },
+  );
+
   it('cache uniquement le contexte utile au voice pipeline avec TTL court et sans secrets', async () => {
     const { db } = await import('../../../shared/db/client');
     const { getCachedContext, setCachedContext } = await import('../../../shared/redis/client');

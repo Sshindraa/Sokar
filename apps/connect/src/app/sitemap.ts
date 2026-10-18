@@ -15,6 +15,7 @@
  */
 
 import type { MetadataRoute } from 'next';
+import { isConnectDemoSlug } from '@sokar/shared';
 import { fetchSitemapSources } from '@/lib/api-client';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
@@ -27,12 +28,14 @@ export const dynamic = 'force-dynamic';
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { restaurants: slugs, cities } = await fetchSitemapSources();
 
-  const restaurantUrls: MetadataRoute.Sitemap = slugs.map((entry) => ({
-    url: `${SITE_URL}/restaurant/${entry.slug}`,
-    lastModified: new Date(entry.updatedAt ?? entry.publishedAt),
-    changeFrequency: 'daily' as const,
-    priority: 0.8,
-  }));
+  const restaurantUrls: MetadataRoute.Sitemap = slugs
+    .filter((entry) => !isConnectDemoSlug(entry.slug))
+    .map((entry) => ({
+      url: `${SITE_URL}/restaurant/${entry.slug}`,
+      lastModified: new Date(entry.updatedAt ?? entry.publishedAt),
+      changeFrequency: 'daily' as const,
+      priority: 0.8,
+    }));
 
   // Pages ville indexables (≥5 restos dans la ville)
   const cityUrls: MetadataRoute.Sitemap = cities.map((city) => ({

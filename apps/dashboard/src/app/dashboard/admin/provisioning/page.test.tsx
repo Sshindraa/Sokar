@@ -35,7 +35,7 @@ function status(overrides: Overrides) {
     testCallControlId: null,
     forwardingCode: null,
     steps: {
-      assignment: { completed: assigned, phoneNumber: '' },
+      assignment: { completed: assigned, phoneNumber: '', voiceAppLink: null as string | null },
       webhook: { completed: false, webhookUrl: '' },
       forwarding: { completed: false, configuredAt: null, ussdCode: null },
       testCall: { completed: false, validatedAt: null },
@@ -208,5 +208,129 @@ describe('restaurantsAwaitingNumber et formatWaitingTime', () => {
     expect(formatWaitingTime(3 * HOUR)).toBe('3 h');
     expect(formatWaitingTime(24 * HOUR)).toBe('1 jour');
     expect(formatWaitingTime(50 * HOUR)).toBe('2 jours');
+  });
+});
+
+describe('page Provisioning : lien avec l’application voix et inventaire Telnyx', () => {
+  type Link = 'linked' | 'failed' | 'skipped_no_connection_id' | 'skipped_manual_number' | null;
+
+  function assignedWithLink(voiceAppLink: Link) {
+    const base = status({ restaurantId: 'a', hasAssignedPhone: true });
+    return {
+      ...base,
+      steps: { ...base.steps, assignment: { completed: true, phoneNumber: '', voiceAppLink } },
+    };
+  }
+
+  function serveWith(
+    restaurants: ReturnType<typeof status>[],
+    numbers: { source: 'telnyx' | 'dev-fallback' | 'unavailable'; items?: unknown[] },
+  ) {
+    mocks.get.mockImplementation(async (path: string) =>
+      path === 'admin/provisioning/available-numbers'
+        ? { ok: true, numbers: numbers.items ?? [], source: numbers.source }
+        : { ok: true, count: restaurants.length, restaurants },
+    );
+  }
+
+  it('avertit quand le numéro attribué n’est pas relié à l’application voix', async () => {
+    serveWith([assignedWithLink('skipped_no_connection_id')], { source: 'telnyx' });
+    render(<AdminProvisioningPage />);
+
+    const alert = await screen.findByText(/TELNYX_CONNECTION_ID n’est pas défini/);
+    expect(alert).toBeVisible();
+    expect(alert).toHaveTextContent('Reliez-le dans le portail Telnyx');
+  });
+
+  it('avertit aussi d’un refus de Telnyx et d’un numéro saisi à la main', async () => {
+    serveWith([assignedWithLink('failed')], { source: 'telnyx' });
+    const { unmount } = render(<AdminProvisioningPage />);
+    expect(await screen.findByText(/Telnyx a refusé de relier ce numéro/)).toBeVisible();
+    unmount();
+
+    serveWith([assignedWithLink('skipped_manual_number')], { source: 'telnyx' });
+    render(<AdminProvisioningPage />);
+    expect(await screen.findByText(/Numéro saisi à la main/)).toBeVisible();
+  });
+
+  it('un lien jamais vérifié (ancien numéro) est signalé plutôt que présumé bon', async () => {
+    serveWith([assignedWithLink(null)], { source: 'telnyx' });
+    render(<AdminProvisioningPage />);
+
+    expect(await screen.findByText(/n’a jamais été vérifié/)).toBeVisible();
+  });
+
+  it('n’avertit pas quand le numéro est bien relié', async () => {
+    serveWith([assignedWithLink('linked')], { source: 'telnyx' });
+    render(<AdminProvisioningPage />);
+
+    await screen.findByText('Attribué');
+    expect(screen.queryByText(/Reliez-le dans le portail Telnyx/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/n’a jamais été vérifié/)).not.toBeInTheDocument();
+  });
+
+  it('prévient quand l’inventaire Telnyx est indisponible, sans proposer de numéros', async () => {
+    serveWith([status({ restaurantId: 'a' })], { source: 'unavailable' });
+    render(<AdminProvisioningPage />);
+
+    expect(await screen.findByText(/L’inventaire Telnyx est indisponible/)).toBeVisible();
+    expect(screen.queryByText(/Inventaire Telnyx disponible/)).not.toBeInTheDocument();
+  });
+
+  it('dit que le compte Telnyx est vide plutôt que d’afficher une liste vide muette', async () => {
+    serveWith([status({ restaurantId: 'a' })], { source: 'telnyx', items: [] });
+    render(<AdminProvisioningPage />);
+
+    expect(await screen.findByText(/Le compte Telnyx ne contient aucun numéro/)).toBeVisible();
+  });
+
+  it('n’envoie pas l’identifiant Telnyx d’un autre numéro que celui saisi à la main', async () => {
+    serveWith([status({ restaurantId: 'a' })], {
+      source: 'telnyx',
+      items: [{ id: 'tx-1', phoneNumber: '+33111111111', assignedToRestaurantId: null }],
+    });
+    mocks.post.mockResolvedValue({
+      ok: true,
+      message: 'Numéro attribué.',
+      status: status({ restaurantId: 'a', hasAssignedPhone: true }),
+    });
+    render(<AdminProvisioningPage />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'tx-1' } });
+    // L'opérateur remplace le numéro choisi par un autre, tapé à la main.
+    fireEvent.change(screen.getByPlaceholderText('+33451221528'), {
+      target: { value: '+33222222222' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Attribuer le numéro/ }));
+
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('admin/provisioning/a/assign-phone', {
+        phoneNumber: '+33222222222',
+        telnyxPhoneNumberId: undefined,
+      }),
+    );
+  });
+
+  it('envoie l’identifiant Telnyx quand le numéro choisi dans l’inventaire est conservé', async () => {
+    serveWith([status({ restaurantId: 'a' })], {
+      source: 'telnyx',
+      items: [{ id: 'tx-1', phoneNumber: '+33111111111', assignedToRestaurantId: null }],
+    });
+    mocks.post.mockResolvedValue({
+      ok: true,
+      message: 'ok',
+      status: status({ restaurantId: 'a', hasAssignedPhone: true }),
+    });
+    render(<AdminProvisioningPage />);
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'tx-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Attribuer le numéro/ }));
+
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('admin/provisioning/a/assign-phone', {
+        phoneNumber: '+33111111111',
+        telnyxPhoneNumberId: 'tx-1',
+      }),
+    );
   });
 });

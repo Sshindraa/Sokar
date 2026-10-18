@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage, type Call, type CallListResponse } from '@/types/api';
-import { useIsMobile } from '@/lib/useMediaQuery';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
   Table,
@@ -17,6 +17,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { PhoneCall, Clock, MessageSquare } from 'lucide-react';
 import { formatDate } from '@sokar/shared';
 import { DataFetchError } from '@/components/DataFetchError';
@@ -28,6 +35,23 @@ function formatDuration(seconds: number | null): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+const CALL_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
+const PAGE_SIZE = 100;
+const TRANSCRIPT_PREVIEW_LENGTH = 60;
+
+function transcriptPreview(transcript: string): string {
+  return transcript.length > TRANSCRIPT_PREVIEW_LENGTH
+    ? `${transcript.slice(0, TRANSCRIPT_PREVIEW_LENGTH)}…`
+    : transcript;
 }
 
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
@@ -107,19 +131,23 @@ function RecordingPlayer({ call, siteId }: { call: CallItem; siteId?: string }) 
 
 export default function CallsPage() {
   const { get, orgId, siteId } = useApi();
-  const isMobile = useIsMobile();
+  // Sous 1024 px (iPad compris), un tableau de colonnes larges déborde : la liste en cartes prend le relais.
+  const isCompact = useMediaQuery('(max-width: 1023px)');
 
   const [calls, setCalls] = useState<CallItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState('');
+  const [transcriptCall, setTranscriptCall] = useState<CallItem | null>(null);
 
   const fetchCalls = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
     setError('');
     try {
-      const data = await get<CallListResponse>(`calls?restaurantId=${orgId}&limit=100`);
+      const data = await get<CallListResponse>(`calls?restaurantId=${orgId}&limit=${PAGE_SIZE}`);
       setCalls(Array.isArray(data?.data) ? data.data : []);
       setTotal(typeof data?.total === 'number' ? data.total : 0);
     } catch (err: unknown) {
@@ -132,6 +160,28 @@ export default function CallsPage() {
   useEffect(() => {
     void fetchCalls();
   }, [fetchCalls]);
+
+  // L'en-tête annonce le total réel : sans suite, les appels plus anciens seraient inaccessibles.
+  const loadMore = useCallback(async () => {
+    if (!orgId) return;
+    setLoadingMore(true);
+    setMoreError('');
+    try {
+      const data = await get<CallListResponse>(
+        `calls?restaurantId=${orgId}&limit=${PAGE_SIZE}&offset=${calls.length}`,
+      );
+      const next = Array.isArray(data?.data) ? data.data : [];
+      setCalls((current) => {
+        const known = new Set(current.map((call) => call.id));
+        return [...current, ...next.filter((call) => !known.has(call.id))];
+      });
+      if (typeof data?.total === 'number') setTotal(data.total);
+    } catch (err: unknown) {
+      setMoreError(getErrorMessage(err, 'Impossible de charger les appels suivants'));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [get, orgId, calls.length]);
 
   if (loading) {
     return (
@@ -153,9 +203,11 @@ export default function CallsPage() {
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Appels</h1>
-        <span className="text-sm text-muted-foreground">
-          {total} appel{total > 1 ? 's' : ''}
-        </span>
+        {!error && (
+          <span className="text-sm text-muted-foreground">
+            {total} appel{total > 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
       {error && <DataFetchError message={error} onRetry={fetchCalls} retrying={loading} />}
@@ -172,20 +224,14 @@ export default function CallsPage() {
             </Button>
           </div>
         )
-      ) : isMobile ? (
+      ) : isCompact ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">
           {calls.map((call) => (
             <div key={call.id} className="space-y-2">
               <MobileDataCard
                 title={IntentLabel({ intent: call.intent })}
-                subtitle={formatDate(call.createdAt, 'fr-FR', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                subtitle={formatDate(call.createdAt, 'fr-FR', CALL_DATE_FORMAT)}
                 badge={<OutcomeBadge outcome={call.outcome} />}
                 accentClass={
                   call.outcome === 'RESERVED'
@@ -198,20 +244,25 @@ export default function CallsPage() {
                 }
                 details={[
                   { label: 'Durée', value: formatDuration(call.durationSec) },
-                  { label: 'Opérateur', value: call.carrier || '—' },
                   ...(call.transcript
-                    ? [
-                        {
-                          label: 'Transcript',
-                          value:
-                            call.transcript.length > 60
-                              ? call.transcript.slice(0, 60) + '…'
-                              : call.transcript,
-                        },
-                      ]
+                    ? [{ label: 'Transcription', value: transcriptPreview(call.transcript) }]
                     : []),
                 ]}
               />
+              {call.transcript ? (
+                <div className="px-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTranscriptCall(call)}
+                    className="transition-all duration-200"
+                  >
+                    <MessageSquare size={14} />
+                    Lire la transcription
+                  </Button>
+                </div>
+              ) : null}
               {call.recordingStatus !== 'NOT_REQUESTED' ? (
                 <div className="px-1">
                   <RecordingPlayer call={call} siteId={siteId} />
@@ -231,22 +282,15 @@ export default function CallsPage() {
                   <TableHead>Durée</TableHead>
                   <TableHead>Intention</TableHead>
                   <TableHead>Issue</TableHead>
-                  <TableHead>Opérateur</TableHead>
                   <TableHead>Enregistrement</TableHead>
-                  <TableHead>Transcript</TableHead>
+                  <TableHead>Transcription</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {calls.map((call) => (
                   <TableRow key={call.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium whitespace-nowrap">
-                      {formatDate(call.createdAt, 'fr-FR', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {formatDate(call.createdAt, 'fr-FR', CALL_DATE_FORMAT)}
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -260,20 +304,22 @@ export default function CallsPage() {
                     <TableCell>
                       <OutcomeBadge outcome={call.outcome} />
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{call.carrier || '—'}</TableCell>
                     <TableCell>
                       <RecordingPlayer call={call} siteId={siteId} />
                     </TableCell>
                     <TableCell className="max-w-xs">
                       {call.transcript ? (
-                        <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <MessageSquare size={14} />
-                          <span className="truncate block max-w-[200px]">
-                            {call.transcript.length > 60
-                              ? call.transcript.slice(0, 60) + '…'
-                              : call.transcript}
+                        <button
+                          type="button"
+                          onClick={() => setTranscriptCall(call)}
+                          aria-label={`Lire la transcription de l'appel du ${formatDate(call.createdAt, 'fr-FR')}`}
+                          className="inline-flex max-w-full items-center gap-1 rounded-md text-left text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <MessageSquare size={14} className="shrink-0" />
+                          <span className="block max-w-[200px] truncate">
+                            {transcriptPreview(call.transcript)}
                           </span>
-                        </span>
+                        </button>
                       ) : (
                         <span className="opacity-50">—</span>
                       )}
@@ -285,6 +331,35 @@ export default function CallsPage() {
           </div>
         </div>
       )}
+
+      {calls.length > 0 && calls.length < total && (
+        <div className="flex flex-col items-center gap-2">
+          {moreError && <p className="text-sm text-destructive">{moreError}</p>}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+            className="transition-all duration-200"
+          >
+            {loadingMore ? 'Chargement…' : `Afficher plus d'appels (${calls.length} sur ${total})`}
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={!!transcriptCall} onOpenChange={(open) => !open && setTranscriptCall(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Transcription de l&apos;appel</DialogTitle>
+            <DialogDescription>
+              {transcriptCall && formatDate(transcriptCall.createdAt, 'fr-FR', CALL_DATE_FORMAT)}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-background p-4 text-sm leading-relaxed">
+            {transcriptCall?.transcript}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

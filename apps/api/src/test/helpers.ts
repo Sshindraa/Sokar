@@ -17,8 +17,21 @@ vi.mock('../plugins/clerk', () => ({
       req.clerkOrganizationId = 'test-rest-1';
       const requestedRole = req.headers?.['x-test-site-role'];
       req.siteRole =
-        requestedRole === 'STAFF' || requestedRole === 'MANAGER' ? requestedRole : 'OWNER';
+        requestedRole === 'STAFF' || requestedRole === 'MANAGER' || requestedRole === 'READ_ONLY'
+          ? requestedRole
+          : 'OWNER';
       req.userId = 'test-user-1';
+      // La politique de rôles est celle du vrai requireOrg, appliquée seulement à la demande : les
+      // tests qui envoient un rôle pour tester une route ne doivent pas être arrêtés avant elle.
+      if (req.headers?.['x-test-enforce-role-policy']) {
+        const { evaluateRolePolicy } = await import('../modules/restaurants/role-policy');
+        const decision = evaluateRolePolicy({
+          role: req.siteRole,
+          method: req.method,
+          route: req.routeOptions?.url,
+        });
+        if (!decision.allowed) return reply.status(403).send({ error: decision.code });
+      }
     };
   },
   requireSokarOperator: () => {
@@ -449,6 +462,8 @@ vi.mock('../shared/db/client', () => {
     demoRequest: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      groupBy: vi.fn(),
+      count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -677,7 +692,9 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
       upsert: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     restaurantAccountBilling: {
       findUnique: vi.fn(),

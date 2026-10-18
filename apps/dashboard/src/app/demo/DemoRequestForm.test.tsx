@@ -5,7 +5,7 @@ import DemoRequestForm from './DemoRequestForm';
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: { children: ReactNode; href: string }) => (
-    <a href={href} {...props}>
+    <a data-next-link="" href={href} {...props}>
       {children}
     </a>
   ),
@@ -81,6 +81,20 @@ describe('DemoRequestForm', () => {
       'href',
       '/privacy',
     );
+    // /privacy belongs to Connect: use a document navigation, never the dashboard RSC router.
+    expect(screen.getByRole('link', { name: 'politique de confidentialité' })).not.toHaveAttribute(
+      'data-next-link',
+    );
+  });
+
+  it('conserve la source connue dans pageVersion, sans conserver une query arbitraire', async () => {
+    window.history.replaceState({}, '', '/demo?source=assistant-telephonique');
+    fetchMock.mockResolvedValue(jsonResponse({ data: { id: 'dr_1' } }, 201));
+    render(<DemoRequestForm />);
+    fillRequiredFields();
+    fireEvent.click(submitButton());
+    await screen.findByText('Demande bien enregistrée');
+    expect(sentBodies()[0].pageVersion).toBe('demo-assistant-tel-v1');
   });
 
   it('envoie la demande et garde la confirmation affichée', async () => {

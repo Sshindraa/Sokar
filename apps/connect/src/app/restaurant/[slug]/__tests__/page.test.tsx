@@ -27,7 +27,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-import RestaurantPage from '../page';
+import RestaurantPage, { generateMetadata } from '../page';
 
 const restaurant: PublicRestaurantDto = {
   id: 'r1',
@@ -103,5 +103,20 @@ describe('page restaurant Connect : « aujourd’hui »', () => {
     await render({ timezone: 'Europe/Paris' });
 
     expect(askedDate()).toBe('2026-07-02');
+  });
+});
+
+describe('indexabilité des fiches', () => {
+  it.each([
+    ['chez-sokar-demo', false],
+    ['chez-sokar-bistrot-paris', false],
+    ['chez-sokar', true],
+  ])('%s index=%s, sans exclusion par préfixe', async (slug, index) => {
+    mocks.fetchPublicRestaurant.mockResolvedValue({ ...restaurant, slug });
+    const meta = await generateMetadata({
+      params: Promise.resolve({ slug }),
+      searchParams: Promise.resolve({}),
+    });
+    expect(meta.robots).toMatchObject({ index, follow: true, googleBot: { index } });
   });
 });

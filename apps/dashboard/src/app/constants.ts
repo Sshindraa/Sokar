@@ -8,11 +8,16 @@ import {
   annualPriceCents,
   formatPriceCents,
   formatMonthlyEquivalent,
+  VAT_MENTION,
 } from '@sokar/shared';
+import { featuresIntroducedIn, type FeatureStatus, type PlanLabel } from '@/app/pricing-catalog';
 
 export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
-  { sender: 'assistant', text: 'Bonjour ! Avec plaisir. Pour combien de personnes ce soir ?' },
+  {
+    sender: 'assistant',
+    text: 'Bienvenue au Bistrot Exemple, restaurant fictif. Pour combien de personnes ce soir ?',
+  },
   { sender: 'client', text: 'Nous serons 4 personnes.' },
   {
     sender: 'assistant',
@@ -26,57 +31,54 @@ export const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Au nom de Martin.' },
   {
     sender: 'assistant',
-    text: "C'est réservé M. Martin ! Vous allez recevoir un SMS de confirmation à l'instant. À ce soir !",
+    text: 'Exemple terminé : une table pour 4 à 20h00 au nom de Martin. Réservation simulée, aucun SMS envoyé.',
   },
   { sender: 'client', text: 'Parfait, merci beaucoup. Au revoir !' },
   { sender: 'assistant', text: 'Merci à vous, au revoir et bon appétit !' },
 ];
 
+export interface PlanFeatureLine {
+  label: string;
+  status: FeatureStatus;
+}
+
 export interface PricingPlan {
-  label: 'Essential' | 'Pro' | 'Multi-site';
+  label: PlanLabel;
   /** Prix mensuel sans engagement, en euros. */
   price: string;
   /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
   sitePrice?: string;
   description: string;
   promise: string;
+  /** Formule précédente incluse en entier, affichée en tête de liste. */
+  inherits?: string;
   note?: string;
   demoFirst?: boolean;
-  features: string[];
+  /** Fonctionnalités introduites par cette formule, avec leur statut. */
+  features: PlanFeatureLine[];
   featured?: boolean;
 }
+
+const toFeatureLines = (plan: PlanLabel): PlanFeatureLine[] =>
+  featuresIntroducedIn(plan).map(({ label, status }) => ({ label, status }));
 
 export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
     promise: 'Vos appels et vos réservations, au même endroit.',
-    description: 'Pour une équipe qui veut préparer le service et garder son attention en salle.',
-    features: [
-      'Un assistant pour les réservations par téléphone',
-      'Les réservations téléphone, web et en salle dans un planning commun',
-      'Votre page Connect et votre widget de réservation',
-      'Plan de salle et liste d’attente pour organiser les couverts',
-      'Un fichier client et le suivi des absences',
-      'Un numéro dédié, configuré lors de la mise en service',
-    ],
+    description: 'Plus aucune réservation perdue, même en plein service.',
+    features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
     promise: 'Gardez la main quand le service change.',
-    description:
-      'Retards, tables bientôt disponibles, clients en attente : Sokar vous propose des actions, votre équipe décide.',
+    description: 'Le copilote de service propose, votre équipe décide.',
     demoFirst: true,
-    features: [
-      'Tout le socle Essential',
-      'Des suggestions pour traiter les retards',
-      'Une estimation des tables bientôt disponibles, avec indication de fiabilité',
-      'Des rapprochements entre tables et clients en attente',
-      'L’analyse d’une réorganisation et l’application d’un plan validé par l’équipe',
-      'L’historique des plans de retard et un retour arrière sous conditions',
-    ],
-    note: 'Découvrez le copilote en démonstration avant de choisir. Une estimation ne vaut pas une table libre. En complément : préparation de segments et brouillons marketing, sans envoi.',
+    inherits: 'Tout Essential, plus :',
+    features: toFeatureLines('Pro'),
+    note: 'Démonstration du copilote avant de choisir.',
   },
   {
     label: 'Multi-site',
@@ -84,16 +86,10 @@ export const PLANS: PricingPlan[] = [
     sitePrice: String(PRICING_CATALOG['multi-site-addon'].monthlyCents / 100),
     demoFirst: true,
     promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
-    description: 'Pour retrouver les réservations de plusieurs adresses depuis un même espace.',
-    features: [
-      'Essential et le copilote Pro par établissement',
-      'Passage d’une adresse à l’autre dans votre espace',
-      'Planning et fichier client propres à chaque restaurant',
-      'Horaires et règles de réservation par adresse',
-      'Un numéro dédié par établissement',
-      'Une facturation réunie au niveau du groupe',
-    ],
-    note: 'Une présentation précède le choix du copilote pour vos équipes. Le partage des profils clients et la comparaison consolidée des résultats ne sont pas encore disponibles.',
+    description: 'Plusieurs adresses, un seul espace.',
+    inherits: 'Tout Pro, pour chaque établissement, plus :',
+    features: toFeatureLines('Multi-site'),
+    note: 'Présentation avant de choisir.',
   },
 ];
 
@@ -101,35 +97,35 @@ export const FAQS = [
   {
     question: "Comment fonctionne l'assistant vocal Sokar ?",
     answer:
-      "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat.",
+      'Vous gardez le numéro de votre restaurant et renvoyez les appels choisis vers votre numéro dédié Sokar. L’assistant consulte les disponibilités du carnet Sokar et enregistre la réservation avec le créneau et le nombre de couverts. Votre équipe la retrouve dans son tableau de bord.',
   },
   {
     question: "Avec quels outils Sokar s'intègre-t-il ?",
     answer:
-      "Sokar peut se connecter à Google Agenda pour consulter vos disponibilités et ajouter les réservations à votre planning. Nous ne proposons pas encore de synchronisation avec d'autres logiciels de réservation, comme ZenChef, TheFork ou Lightspeed.",
+      'Les réservations prises par Sokar sont enregistrées dans son carnet, avec les réservations en ligne et celles saisies par votre équipe. Google Agenda peut être connecté selon votre configuration. Une synchronisation avec Zenchef, TheFork ou votre caisse n’est pas annoncée comme disponible : vérifiez avec nous votre organisation avant activation.',
   },
   {
     question: 'Quel type de restaurant peut utiliser Sokar ?',
     answer:
-      "Tous. Des bistrots de quartier aux restaurants étoilés, Sokar s'adapte à votre flux d'appels. Il gère les réservations simples comme les demandes spécifiques (allergies, anniversaire, table en terrasse, etc.).",
+      'Sokar s’adresse aux restaurants qui prennent des réservations de tables et souhaitent réunir leurs appels, réservations web et saisies en salle dans un même carnet. Nous vérifions avec vous les horaires, services et règles nécessaires à votre établissement. Les commandes à emporter et les réponses garanties sur les allergènes ne font pas partie de ce parcours.',
   },
   {
     question: 'Combien coûte Sokar ?',
-    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} € HT/mois, Pro à ${PLAN_PRICES_EUR.PRO} € HT/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} € HT/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} € HT/mois par établissement supplémentaire. Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',
-    answer: `Nos forfaits mensuels sont totalement sans engagement, vous êtes libre d'arrêter quand vous le souhaitez. Si vous optez pour la facturation annuelle, vous vous engagez pour 12 mois et bénéficiez d'une réduction de ${ANNUAL_DISCOUNT_PERCENT}% sur l'ensemble de vos mensualités.`,
+    answer: `Le mensuel est sans engagement de durée. La facturation annuelle engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Les équivalents mensuels affichés sont arrondis ; le montant exact à payer est indiqué avant paiement.`,
   },
   {
     question: "Comment se passe l'installation ?",
     answer:
-      "Tout se fait à distance, sans aucun matériel à installer. Nous configurons votre agent vocal selon vos horaires, votre carte, et vos consignes. Vous gardez votre numéro de téléphone existant, sur lequel le transfert d'appel est activé.",
+      'Vous gardez votre numéro. Nous préparons vos horaires, services et règles, puis le renvoi vers Sokar et le numéro de secours pour joindre votre équipe. Un appel de test vérifie la voix, la réservation dans le carnet et le secours avant activation. Vous pouvez désactiver le renvoi depuis votre ligne.',
   },
   {
     question: 'Mes données et celles de mes clients sont-elles protégées ?',
     answer:
-      "Oui. Chaque restaurant dispose de son propre espace isolé. Notre politique de confidentialité détaille les données traitées, les sous-traitants et leur localisation. Vous pouvez demander l'export ou l'effacement de vos données.",
+      'Chaque restaurant dispose de son propre espace. La politique de confidentialité décrit les données traitées et les droits que vous pouvez exercer. Vous pouvez nous contacter pour toute question sur vos données.',
   },
 ];
 

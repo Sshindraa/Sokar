@@ -91,6 +91,7 @@ describe('billing.routes - checkout, portail et statut', () => {
       cancelAtPeriodEnd: true,
       entitledSiteCount: 1,
       accountScoped: true,
+      suspended: false,
     });
     expect(JSON.stringify(response.json())).not.toContain('cus_private');
     expect(JSON.stringify(response.json())).not.toContain('sub_private');
@@ -224,6 +225,80 @@ describe('billing.routes - checkout, portail et statut', () => {
       create: { restaurantId: 'test-rest-1', stripeCustomerId: 'cus_test' },
       update: { stripeCustomerId: 'cus_test' },
     });
+    const customerCreate = (
+      globalThis as unknown as { __sokarStripeCustomerCreate: { mock: { calls: unknown[][] } } }
+    ).__sokarStripeCustomerCreate;
+    expect(customerCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        invoice_settings: { footer: 'TVA non applicable, art. 293 B du CGI' },
+      }),
+    );
+  });
+
+  describe('retour vers l’inscription (returnTo)', () => {
+    type CheckoutCreate = { mock: { calls: unknown[][] } };
+    const checkoutCreate = () =>
+      (globalThis as unknown as { __sokarStripeCheckoutSessionCreate: CheckoutCreate })
+        .__sokarStripeCheckoutSessionCreate;
+
+    async function checkout(payload: Record<string, unknown>) {
+      process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'test-rest-1',
+        name: 'Bistrot du Coin',
+        managerEmail: 'manager@example.com',
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+      const app = await getApp();
+      return app.inject({
+        method: 'POST',
+        url: '/billing/checkout-session',
+        headers: { authorization: 'Bearer test' },
+        payload: { plan: 'pro', billing: 'monthly', ...payload },
+      });
+    }
+
+    it('ramène vers l’inscription, pas vers les Réglages qui sont derrière la barrière', async () => {
+      const response = await checkout({ returnTo: 'onboarding' });
+
+      expect(response.statusCode).toBe(200);
+      const params = checkoutCreate().mock.calls.at(-1)?.[0] as {
+        success_url: string;
+        cancel_url: string;
+      };
+      expect(params.success_url).toMatch(/\/onboarding\?step=canaux&billing=success&session_id=/);
+      expect(params.success_url).not.toContain('/dashboard/settings');
+      expect(params.cancel_url).toMatch(/\/onboarding\?step=formule&billing=cancelled$/);
+    });
+
+    it('sans returnTo, les adresses de retour restent celles d’avant', async () => {
+      const response = await checkout({});
+
+      expect(response.statusCode).toBe(200);
+      const params = checkoutCreate().mock.calls.at(-1)?.[0] as {
+        success_url: string;
+        cancel_url: string;
+      };
+      expect(params.success_url).toMatch(/\/dashboard\/settings\?billing=success&session_id=/);
+      expect(params.cancel_url).toMatch(/\/pricing\?billing=cancelled$/);
+    });
+
+    it('refuse une valeur de retour inconnue', async () => {
+      expect((await checkout({ returnTo: 'https://exemple.test' })).statusCode).toBe(400);
+    });
+
+    it('ne réutilise pas une session créée avec d’autres adresses de retour', () => {
+      const base = {
+        restaurantId: 'test-rest-1',
+        plan: 'pro' as const,
+        billing: 'monthly' as const,
+        siteCount: 1,
+        idempotencyKey: 'fixe',
+      };
+      const settings = buildCheckoutIdempotencyKey(base);
+      expect(buildCheckoutIdempotencyKey({ ...base, returnTo: 'settings' })).toBe(settings);
+      expect(buildCheckoutIdempotencyKey({ ...base, returnTo: 'onboarding' })).not.toBe(settings);
+    });
   });
 
   it('sélectionne le prix annuel et transmet la cadence à Stripe', async () => {
@@ -253,11 +328,284 @@ describe('billing.routes - checkout, portail et statut', () => {
       expect.objectContaining({
         line_items: [{ price: 'price_pro_annual_test', quantity: 1 }],
         metadata: expect.objectContaining({ billing: 'annual' }),
-        subscription_data: {
+        subscription_data: expect.objectContaining({
           metadata: expect.objectContaining({ billing: 'annual' }),
-        },
+        }),
       }),
     );
+  });
+
+  it('offre 14 jours d’essai sans carte sur un premier abonnement', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-trial',
+      name: 'Bistrot Essai',
+      managerEmail: 'essai@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        payment_method_collection: 'if_required',
+        subscription_data: expect.objectContaining({
+          trial_period_days: 14,
+          trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        }),
+      }),
+    );
+  });
+
+  it('ne réoffre pas d’essai à un compte qui a déjà eu un abonnement', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-returning',
+      name: 'Bistrot de Retour',
+      managerEmail: 'retour@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-returning',
+      stripeCustomerId: 'cus_returning',
+      stripeSubscriptionId: 'sub_ended',
+      subscriptionStatus: 'canceled',
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    const params = checkoutCreate.mock.calls.at(-1)?.[0] as {
+      payment_method_collection?: string;
+      subscription_data: Record<string, unknown>;
+    };
+    expect(params.payment_method_collection).toBeUndefined();
+    expect(params.subscription_data.trial_period_days).toBeUndefined();
+  });
+
+  it('signale un compte suspendu après la fin de son abonnement', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_ended',
+      subscriptionStatus: 'canceled',
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(
+      expect.objectContaining({ subscriptionStatus: 'canceled', suspended: true }),
+    );
+  });
+
+  it('expose le déroulé et le bilan de l’essai', async () => {
+    const endsAt = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000 - 60_000);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_trial',
+      subscriptionStatus: 'trialing',
+      subscriptionCurrentPeriodEnd: endsAt,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+    vi.mocked(db.call.count).mockResolvedValueOnce(47);
+    (db.reservation as unknown as { aggregate: unknown }).aggregate = vi
+      .fn()
+      .mockResolvedValue({ _count: { _all: 18 }, _sum: { partySize: 52 } });
+    vi.mocked(db.reservation.count).mockResolvedValueOnce(15);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().trial).toEqual({
+      startedAt: new Date(endsAt.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      endsAt: endsAt.toISOString(),
+      totalDays: 14,
+      daysLeft: 9,
+      recap: { calls: 47, reservations: 18, covers: 52, phoneReservations: 15 },
+    });
+  });
+
+  describe('POST /billing/trial (« Plus tard » de l’onboarding)', () => {
+    type CreateMock = { mock: { calls: unknown[][] } };
+    const subscriptionCreate = () =>
+      (globalThis as unknown as { __sokarStripeSubscriptionCreate: CreateMock })
+        .__sokarStripeSubscriptionCreate;
+
+    beforeEach(() => {
+      process.env.STRIPE_PRICE_ESSENTIAL_MONTHLY = 'price_essential_monthly_test';
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'test-rest-1',
+        name: 'Bistrot du Coin',
+        managerEmail: 'manager@example.com',
+        accountId: null,
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    });
+
+    it('démarre 14 jours d’essai sur Essential, sans carte ni Checkout', async () => {
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/billing/trial',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        status: 'trialing',
+        trialEndsAt: new Date((1_792_000_000 + 14 * 24 * 60 * 60) * 1000).toISOString(),
+      });
+      expect(subscriptionCreate().mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({
+          customer: 'cus_test',
+          items: [{ price: 'price_essential_monthly_test' }],
+          trial_period_days: 14,
+          trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+          metadata: expect.objectContaining({
+            restaurantId: 'test-rest-1',
+            plan: 'essential',
+            trial: 'true',
+          }),
+        }),
+      );
+      expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId: 'test-rest-1' },
+          update: expect.objectContaining({
+            stripeSubscriptionId: 'sub_trial_test',
+            subscriptionStatus: 'trialing',
+          }),
+        }),
+      );
+    });
+
+    it('démarre l’essai sur la formule et la cadence choisies', async () => {
+      process.env.STRIPE_PRICE_MULTI_SITE_ANNUAL = 'price_multi_annual_test';
+      process.env.STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL = 'price_addon_annual_test';
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/billing/trial',
+        headers: { authorization: 'Bearer test' },
+        payload: { plan: 'multi-site', billing: 'annual', siteCount: 3 },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(subscriptionCreate().mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({
+          items: [
+            { price: 'price_multi_annual_test' },
+            { price: 'price_addon_annual_test', quantity: 2 },
+          ],
+          metadata: expect.objectContaining({
+            plan: 'multi-site',
+            billing: 'annual',
+            siteCount: '3',
+          }),
+        }),
+      );
+    });
+
+    it('refuse un second essai sur le même compte', async () => {
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        stripeCustomerId: 'cus_old',
+        stripeSubscriptionId: 'sub_ended',
+        subscriptionStatus: 'canceled',
+      } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/billing/trial',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error).toBe('BILLING_TRIAL_ALREADY_USED');
+    });
+
+    it('refuse quand un abonnement est déjà en cours', async () => {
+      vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        stripeCustomerId: 'cus_now',
+        stripeSubscriptionId: 'sub_now',
+        subscriptionStatus: 'trialing',
+      } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/billing/trial',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error).toBe('BILLING_ALREADY_SUBSCRIBED');
+    });
+  });
+
+  it('ne suspend pas un compte qui n’a jamais eu d’abonnement', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'STARTER',
+      accountId: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(expect.objectContaining({ suspended: false }));
   });
 
   it('ancre le Checkout secondaire sur le compte et le site principal', async () => {

@@ -112,6 +112,36 @@ describe('billing.service - Stripe subscription webhooks', () => {
     );
   });
 
+  it('enregistre un Checkout d’essai comme période d’essai, pas comme abonnement actif', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    const handled = await handleBillingWebhook({
+      type: 'checkout.session.completed',
+      id: 'evt_checkout_trial',
+      created: 100,
+      data: {
+        object: {
+          mode: 'subscription',
+          id: 'cs_trial',
+          client_reference_id: 'test-rest-1',
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          payment_status: 'no_payment_required',
+          metadata: { restaurantId: 'test-rest-1', plan: 'pro', billing: 'monthly', trial: 'true' },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+        update: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+      }),
+    );
+  });
+
   it('projette le quota multi-site au niveau du compte', async () => {
     process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
     vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
@@ -222,6 +252,35 @@ describe('billing.service - Stripe subscription webhooks', () => {
     ).rejects.toBeInstanceOf(BillingWebhookInProgressError);
     expect(db.restaurant.update).not.toHaveBeenCalled();
     expect(db.stripeWebhookEvent.update).not.toHaveBeenCalled();
+  });
+
+  it('suit le prix après un changement de formule depuis le portail Stripe', async () => {
+    // Le portail change le prix mais laisse la metadata posée par Checkout.
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    const handled = await handleBillingWebhook({
+      type: 'customer.subscription.updated',
+      id: 'evt_portal_upgrade',
+      created: 600,
+      data: {
+        object: {
+          id: 'sub_test',
+          customer: 'cus_test',
+          metadata: { restaurantId: 'test-rest-1', plan: 'essential', billing: 'monthly' },
+          status: 'active',
+          cancel_at_period_end: false,
+          current_period_end: 1_800_000_000,
+          items: { data: [{ price: { id: 'price_pro_monthly_test' } }] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: 'test-rest-1' },
+      data: { plan: 'PRO' },
+    });
   });
 
   it('ignore un événement plus ancien que le dernier checkpoint de facturation', async () => {
@@ -369,5 +428,196 @@ describe('billing.service - Stripe subscription webhooks', () => {
         update: expect.objectContaining({ subscriptionStatus: 'active', entitledSiteCount: 4 }),
       }),
     );
+  });
+
+  it('garde la période d’essai sur la facture à 0 € qui ouvre l’essai', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: 'sub_trial',
+      subscriptionStatus: 'trialing',
+      lastStripeEventCreated: null,
+      lastStripeEventId: null,
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: null } as never);
+
+    const handled = await handleBillingWebhook({
+      type: 'invoice.paid',
+      id: 'evt_invoice_trial',
+      created: 600,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          billing_reason: 'subscription_create',
+          amount_paid: 0,
+          metadata: {},
+          lines: { data: [{ price: { id: 'price_pro_monthly_test' } }] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'trialing' }),
+      }),
+    );
+  });
+});
+
+describe('billing.service - e-mails de fin d’essai et de coupure', () => {
+  const trialStart = 1_792_000_000;
+  const trialEnd = trialStart + 14 * 24 * 60 * 60;
+
+  function subscriptionEvent(type: string, overrides: Record<string, unknown> = {}) {
+    return {
+      type,
+      id: `evt_${type}`,
+      created: trialEnd - 100,
+      data: {
+        object: {
+          id: 'sub_trial',
+          customer: 'cus_test',
+          status: 'trialing',
+          trial_start: trialStart,
+          trial_end: trialEnd,
+          cancel_at_period_end: false,
+          current_period_end: trialEnd,
+          metadata: { restaurantId: 'test-rest-1', plan: 'essential', billing: 'monthly' },
+          items: { data: [{ price: { id: 'price_unknown' } }] },
+          ...overrides,
+        },
+      },
+    } as never;
+  }
+
+  async function addCalls() {
+    const { queues } = await import('../../../shared/queue/queues');
+    return vi.mocked(queues.billingNotifications.add);
+  }
+
+  it('garde la fin d’essai quand Stripe ne la porte plus que sur l’article (API 2025-03+)', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.created', {
+        current_period_end: undefined,
+        items: { data: [{ price: { id: 'price_unknown' }, current_period_end: trialEnd }] },
+      }),
+    );
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          subscriptionStatus: 'trialing',
+          subscriptionCurrentPeriodEnd: new Date(trialEnd * 1000),
+        }),
+      }),
+    );
+  });
+
+  it('prend la fin de période de la ligne facturée, pas la date de la facture d’essai', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_trial',
+    } as never);
+
+    await handleBillingWebhook({
+      type: 'invoice.paid',
+      id: 'evt_trial_invoice',
+      created: trialStart,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_trial',
+          billing_reason: 'subscription_create',
+          amount_paid: 0,
+          metadata: {},
+          period_end: trialStart,
+          lines: { data: [{ period: { start: trialStart, end: trialEnd } }] },
+        },
+      },
+    } as never);
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          subscriptionStatus: 'trialing',
+          subscriptionCurrentPeriodEnd: new Date(trialEnd * 1000),
+        }),
+      }),
+    );
+  });
+
+  it('programme le rappel de fin d’essai à réception de trial_will_end', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    const add = await addCalls();
+    add.mockClear();
+
+    await handleBillingWebhook(subscriptionEvent('customer.subscription.trial_will_end'));
+
+    expect(add).toHaveBeenCalledWith(
+      'trial-ending',
+      expect.objectContaining({
+        kind: 'trial-ending',
+        restaurantId: 'test-rest-1',
+        subscriptionId: 'sub_trial',
+        trialEndsAt: new Date(trialEnd * 1000).toISOString(),
+        since: new Date(trialStart * 1000).toISOString(),
+      }),
+      { jobId: 'billing-notification_trial-ending_sub_trial' },
+    );
+  });
+
+  it('prévient de la coupure quand l’essai se termine sans carte', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    const add = await addCalls();
+    add.mockClear();
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.deleted', {
+        status: 'canceled',
+        ended_at: trialEnd + 60,
+      }),
+    );
+
+    expect(add).toHaveBeenCalledWith(
+      'service-suspended',
+      expect.objectContaining({ kind: 'service-suspended', endedFromTrial: true }),
+      { jobId: 'billing-notification_service-suspended_sub_trial' },
+    );
+  });
+
+  it('distingue une résiliation après la période d’essai', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    const add = await addCalls();
+    add.mockClear();
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.deleted', {
+        status: 'canceled',
+        ended_at: trialEnd + 60 * 24 * 60 * 60,
+      }),
+    );
+
+    expect(add).toHaveBeenCalledWith(
+      'service-suspended',
+      expect.objectContaining({ endedFromTrial: false }),
+      expect.anything(),
+    );
+  });
+
+  it('ne programme rien pour une simple mise à jour d’abonnement', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    const add = await addCalls();
+    add.mockClear();
+
+    await handleBillingWebhook(subscriptionEvent('customer.subscription.updated'));
+
+    expect(add).not.toHaveBeenCalled();
   });
 });

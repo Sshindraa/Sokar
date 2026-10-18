@@ -134,6 +134,7 @@ function wait(ms: number): Promise<void> {
  * HTTP qui demeure actif tant que le flag est absent.
  */
 export class CartesiaContextTurn {
+  readonly provider = 'cartesia' as const;
   private readonly contextId = randomUUID();
   private readonly pendingInputs: Array<{ transcript: string; shouldContinue: boolean }> = [];
   private readonly audioFrames: Buffer[] = [];

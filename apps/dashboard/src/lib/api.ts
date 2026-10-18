@@ -3,6 +3,7 @@
 import { useAuth, useOrganization } from '@clerk/nextjs';
 import { useCallback } from 'react';
 import { useSiteSelection } from '@/features/sites/site-context';
+import { toApiError } from '@/lib/api-error';
 
 const PROXY = '/api/proxy';
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -25,14 +26,14 @@ type ApiRequestOptions = {
  * - orgId/siteId automatiques depuis Clerk et le sélecteur multi-site
  * - Gestion d'erreur centralisée
  */
-export function useApi() {
+export function useApi(options: { requireSession?: boolean } = {}) {
   const { activeSiteId } = useSiteSelection();
-  // The environment flag is stable for the whole client bundle. Without Clerk
-  // keys we expose a no-op API client so local UI previews can render.
+  // Les options de session sont fixes pour chaque composant appelant. Sans Clerk
+  // on expose un client de preview local.
   // En staging demo mode (NEXT_PUBLIC_DEMO_RESTAURANT_ID défini), on force le
-  // mode demo même si Clerk est présent — pas de session requise.
+  // mode démo, sauf pour le contrôle opérateur qui exige la vraie session.
   const clerk =
-    hasClerkKey && !demoOrgId
+    hasClerkKey && (!demoOrgId || options.requireSession)
       ? // eslint-disable-next-line react-hooks/rules-of-hooks
         useClerkContext()
       : {
@@ -83,12 +84,8 @@ export function useApi() {
       }
 
       if (!res.ok) {
-        const errorMsg =
-          (typeof data.message === 'string' && data.message.trim() ? data.message : null) ||
-          (typeof data.error === 'string' && data.error.trim() ? data.error : null) ||
-          (typeof data.detail === 'string' && data.detail.trim() ? data.detail : null) ||
-          `Erreur ${res.status}`;
-        throw Object.assign(new Error(errorMsg), { status: res.status });
+        // Message français, code et statut : voir lib/api-error.ts.
+        throw toApiError(res.status, data);
       }
 
       return data as T;
