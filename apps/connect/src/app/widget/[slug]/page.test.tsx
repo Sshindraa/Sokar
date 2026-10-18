@@ -53,8 +53,18 @@ describe('page widget : réservation test', () => {
     );
   });
 
-  it('traite une valeur qui n’a pas la forme d’un jeton comme absente', async () => {
+  it('reste en mode test avec une valeur mal formée, transmise telle quelle', async () => {
     const html = await markup({ testBooking: '1' });
+    expect(mocks.trackEventAsync).not.toHaveBeenCalled();
+    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBe('1');
+    expect(html).toContain('href="/restaurant/chez-sokar?testBooking=1"');
+  });
+
+  it.each([
+    ['vide', ''],
+    ['de plus de 100 caractères', 'a'.repeat(101)],
+  ])('traite une valeur %s comme absente', async (_label, value) => {
+    const html = await markup({ testBooking: value });
     expect(mocks.trackEventAsync).toHaveBeenCalledOnce();
     expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBeUndefined();
     expect(html).toContain('href="/restaurant/chez-sokar"');

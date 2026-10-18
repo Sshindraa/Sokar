@@ -236,8 +236,8 @@ export default async function RestaurantPage({
     // The public experience module is independently feature-gated.
   }
 
-  // Track availability_preview_shown (fire-and-forget, best-effort)
-  if (previewShown) {
+  // Track availability_preview_shown (fire-and-forget, best-effort) — jamais en réservation test
+  if (previewShown && !isTestBooking) {
     trackEvent({
       event: 'availability_preview_shown',
       restaurantId: restaurant.id,

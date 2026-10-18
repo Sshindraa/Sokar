@@ -30,6 +30,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
+import { trackEvent } from '@/lib/tracking';
 import RestaurantPage, { generateMetadata } from '../page';
 
 const restaurant: PublicRestaurantDto = {
@@ -125,10 +126,12 @@ describe('indexabilité des fiches', () => {
 });
 
 describe('parcours de réservation test depuis l’onboarding', () => {
-  async function markup(searchParams: Record<string, string>) {
+  beforeEach(() => vi.clearAllMocks());
+
+  async function markup(searchParams: Record<string, string>, slots: unknown[] = []) {
     const { renderToStaticMarkup } = await import('react-dom/server');
     mocks.fetchPublicRestaurant.mockResolvedValue(restaurant);
-    mocks.fetchAvailability.mockResolvedValue({ slots: [] });
+    mocks.fetchAvailability.mockResolvedValue({ slots });
     const page = await RestaurantPage({
       params: Promise.resolve({ slug: 'chez-sokar-demo' }),
       searchParams: Promise.resolve(searchParams),
@@ -152,11 +155,35 @@ describe('parcours de réservation test depuis l’onboarding', () => {
     expect(mocks.PageViewTracker).not.toHaveBeenCalled();
   });
 
-  it('ignore une valeur qui n’a pas la forme d’un jeton', async () => {
+  it('reste en mode test avec une valeur mal formée : bandeau et valeur transmise à l’API', async () => {
     const html = await markup({ testBooking: '1' });
+    const hrefs = bookHrefs(html);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toContain('testBooking=1');
+    expect(html).toContain(banner);
+    expect(mocks.PageViewTracker).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['vide', ''],
+    ['de plus de 100 caractères', 'a'.repeat(101)],
+  ])('traite une valeur %s comme absente', async (_label, value) => {
+    const html = await markup({ testBooking: value });
     expect(bookHrefs(html).length).toBeGreaterThan(0);
     expect(html).not.toContain('testBooking');
     expect(html).not.toContain('Réservation test');
+  });
+
+  it('ne compte pas l’aperçu des disponibilités en mode test', async () => {
+    await markup({ testBooking: token }, [{ time: '19:30', available: true }]);
+    expect(trackEvent).not.toHaveBeenCalled();
+  });
+
+  it('compte l’aperçu des disponibilités hors mode test', async () => {
+    await markup({}, [{ time: '19:30', available: true }]);
+    expect(trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'availability_preview_shown' }),
+    );
   });
 
   it('ne change rien sans le paramètre', async () => {
