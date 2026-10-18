@@ -42,6 +42,12 @@ import {
   type UsageDetailsRow,
   UsageDetailsDialog,
 } from './adjustment-dialogs';
+import {
+  adjustmentScopeLabel,
+  adjustmentStatusText,
+  isMonthKey,
+  usageDimensionLabel,
+} from './margin-labels';
 
 type MarginStatus = 'PRICED' | 'UNPRICED' | 'MIXED' | 'NO_USAGE';
 
@@ -121,9 +127,7 @@ function statusVariant(status: MarginStatus): 'default' | 'secondary' | 'destruc
 }
 
 function adjustmentStatusLabel(status: AdjustmentStatus): string {
-  if (status === 'OPEN') return 'À valider';
-  if (status === 'APPROVED') return 'Approuvée';
-  return 'Rejetée';
+  return adjustmentStatusText(status);
 }
 
 function adjustmentStatusVariant(
@@ -137,6 +141,9 @@ function adjustmentStatusVariant(
 export default function AdminMarginPage() {
   const { get, post } = useApi();
   const [month, setMonth] = useState(currentMonthKey);
+  // Saisie du mois : sur Firefox et Safari le champ est du texte libre, on n'interroge l'API qu'une fois le mois complet.
+  const [monthDraft, setMonthDraft] = useState(month);
+  const [exporting, setExporting] = useState(false);
   const [report, setReport] = useState<MarginReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +240,38 @@ export default function AdminMarginPage() {
     await Promise.all([loadReport(), loadAdjustments()]);
   }
 
+  // Téléchargement par requête (et non par simple lien) : un échec s'affiche ici au lieu de quitter le tableau
+  // de bord pour une page de JSON brut.
+  async function downloadExport() {
+    setExporting(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/proxy/admin/usage/accounting-export.csv?month=${encodeURIComponent(month)}`,
+      );
+      if (!response.ok) {
+        throw new Error(
+          response.status === 401
+            ? 'Votre session a expiré. Reconnectez-vous pour continuer.'
+            : response.status === 403
+              ? 'Cet export est réservé à l’équipe Sokar.'
+              : 'L’export n’a pas pu être généré. Réessayez dans un instant.',
+        );
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `suivi-interne-${month}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (downloadError: unknown) {
+      setError(downloadError instanceof Error ? downloadError.message : 'L’export a échoué.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function refresh() {
     void loadReport();
     void loadAdjustments();
@@ -266,8 +305,12 @@ export default function AdminMarginPage() {
             aria-label="Période du rapport"
             className="w-40"
             max={currentMonth}
-            value={month}
-            onChange={(event) => setMonth(event.target.value || currentMonth)}
+            value={monthDraft}
+            onChange={(event) => {
+              const value = event.target.value;
+              setMonthDraft(value);
+              if (isMonthKey(value) && value <= currentMonth) setMonth(value);
+            }}
           />
           <Button
             variant="outline"
@@ -284,13 +327,9 @@ export default function AdminMarginPage() {
               Ce mois-ci
             </Button>
           )}
-          <Button asChild variant="outline">
-            <a
-              href={`/api/proxy/admin/usage/accounting-export.csv?month=${encodeURIComponent(month)}`}
-            >
-              <Download aria-hidden="true" />
-              Télécharger le suivi interne
-            </a>
+          <Button variant="outline" onClick={() => void downloadExport()} disabled={exporting}>
+            <Download aria-hidden="true" />
+            {exporting ? 'Préparation…' : 'Télécharger le suivi interne'}
           </Button>
           <Button variant="outline" onClick={refresh} disabled={loading || adjustmentLoading}>
             <RefreshCw
@@ -496,9 +535,15 @@ export default function AdminMarginPage() {
                     <TableBody>
                       {adjustments.map((adjustment) => (
                         <TableRow key={adjustment.id}>
-                          <TableCell className="font-medium">{adjustment.scopeKey}</TableCell>
+                          <TableCell className="font-medium">
+                            {adjustmentScopeLabel(
+                              adjustment.scopeKey,
+                              rows.find((row) => row.restaurantId === adjustment.restaurantId)
+                                ?.restaurantName,
+                            )}
+                          </TableCell>
                           <TableCell>
-                            {adjustment.category}/{adjustment.provider}/{adjustment.unit}
+                            {usageDimensionLabel(adjustment.category, adjustment.provider)}
                           </TableCell>
                           <TableCell>
                             {adjustment.periodStart.slice(0, 10)} →{' '}

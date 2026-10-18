@@ -334,10 +334,11 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
     await page.addInitScript(() => localStorage.setItem('theme', 'light'));
     await page.goto('/dashboard/floor-plan?view=service-live&floorPlanId=e2e-floor-plan');
     await expect(page.getByLabel('Date du service')).toBeVisible();
-    await expect(
-      page.getByText('Le copilote de service accompagne la formule Pro.').first(),
-    ).not.toBeVisible();
+    // L'écran de service ne porte ni annonce de formule ni « vérification du copilote » : le plan reste en haut.
     await expect(page.getByRole('button', { name: 'T1 · 2 places' })).toBeVisible();
+    await expect(page.getByText('Le copilote de service accompagne la formule Pro.')).toHaveCount(
+      0,
+    );
     expect(advancedRequests).toBe(0);
   });
 

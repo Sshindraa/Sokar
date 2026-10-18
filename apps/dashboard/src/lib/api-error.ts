@@ -106,6 +106,10 @@ const CODE_MESSAGES: Record<string, string> = {
     'Les préférences ont changé. Relancez l’aperçu et choisissez une résolution pour chaque conflit.',
   MERGE_IDEMPOTENCY_KEY_REUSED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
   MERGE_SERIALIZATION_RETRY_EXHAUSTED: 'La fusion n’a pas pu aboutir. Réessayez dans un instant.',
+  // Suivi des coûts (opérateur)
+  USAGE_ADJUSTMENT_CONFLICT: 'Une correction identique existe déjà.',
+  USAGE_ADJUSTMENT_STATE_CONFLICT:
+    'Un autre opérateur a déjà tranché cette correction. Actualisez la page.',
   // Attentions clients
   LOYALTY_CUSTOMER_NOT_ELIGIBLE: 'Ce client ne remplit pas la condition de cette attention.',
   LOYALTY_GRANT_LIMIT_REACHED:

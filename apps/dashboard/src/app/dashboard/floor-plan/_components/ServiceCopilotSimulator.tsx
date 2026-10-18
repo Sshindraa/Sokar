@@ -492,7 +492,7 @@ function ServiceCopilotSimulatorContent({
 
 export function ServiceCopilotSimulator(props: ServiceCopilotSimulatorProps) {
   return (
-    <ServiceCopilotAccess>
+    <ServiceCopilotAccess fallback={null}>
       <ServiceCopilotSimulatorContent {...props} />
     </ServiceCopilotAccess>
   );

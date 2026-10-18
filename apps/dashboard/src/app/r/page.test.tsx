@@ -208,7 +208,7 @@ describe('Ma reservation', () => {
     await waitFor(() => expect(continueButton).toBeEnabled());
     fireEvent.click(continueButton);
     expect(screen.getByRole('dialog')).toHaveTextContent('Mardi 20 octobre');
-    expect(screen.getByRole('dialog')).toHaveTextContent('Jeudi 22 octobre');
+    expect(screen.getByRole('dialog')).toHaveTextContent(new RegExp(french, 'i'));
     fireEvent.click(screen.getByRole('button', { name: 'Confirmer la modification' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getByText('19:30')).toBeInTheDocument();
