@@ -353,64 +353,6 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                 <ChevronDown className="h-3 w-3" aria-hidden="true" />
               </summary>
               <div className={styles.details}>
-                {reservation.whatsappReminder.visible && (
-                  <details className={styles.preferences} aria-busy={busy}>
-                    <summary
-                      className={cn(styles.preferencesToggle, 'transition-all duration-200')}
-                    >
-                      <span>Préférences de rappel</span>
-                      <ChevronDown
-                        className={cn(styles.chevron, 'h-3.5 w-3.5')}
-                        aria-hidden="true"
-                      />
-                    </summary>
-                    <div className="mt-4 flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <label
-                          htmlFor="whatsapp-reminder"
-                          className="flex items-center gap-2 text-sm"
-                        >
-                          <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" /> Rappel
-                          WhatsApp
-                        </label>
-                        <p
-                          id="reminder-description"
-                          className="mt-2 max-w-56 text-xs leading-relaxed text-muted-foreground"
-                        >
-                          {reservation.whatsappReminder.enabled
-                            ? 'Rappel autorisé.'
-                            : 'Rappel désactivé.'}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                        <span
-                          className="flex h-4 w-4 items-center justify-center"
-                          aria-live="polite"
-                        >
-                          {busy && (
-                            <Loader2 className="h-4 w-4 animate-spin" aria-label="Enregistrement" />
-                          )}
-                        </span>
-                        <Switch
-                          id="whatsapp-reminder"
-                          aria-describedby="reminder-description"
-                          checked={reservation.whatsappReminder.enabled}
-                          onCheckedChange={() => void withdraw()}
-                          disabled={busy || !reservation.whatsappReminder.enabled}
-                          className="transition-all duration-200"
-                        />
-                      </div>
-                    </div>
-                    {withdrawn && (
-                      <p
-                        role="status"
-                        className="mt-4 text-xs leading-relaxed text-muted-foreground"
-                      >
-                        Votre accord a été retiré. Un rappel déjà en cours peut encore arriver.
-                      </p>
-                    )}
-                  </details>
-                )}
                 {reservation.modification?.available && !terminal && (
                   <ReservationModification
                     key={renderedToken}
@@ -503,6 +445,64 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
                     </p>
                   )}
                 </section>
+                {reservation.whatsappReminder.visible && (
+                  <details className={styles.preferences} aria-busy={busy}>
+                    <summary
+                      className={cn(styles.preferencesToggle, 'transition-all duration-200')}
+                    >
+                      <span>Préférences de rappel</span>
+                      <ChevronDown
+                        className={cn(styles.chevron, 'h-3.5 w-3.5')}
+                        aria-hidden="true"
+                      />
+                    </summary>
+                    <div className="mt-4 flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <label
+                          htmlFor="whatsapp-reminder"
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" /> Rappel
+                          WhatsApp
+                        </label>
+                        <p
+                          id="reminder-description"
+                          className="mt-2 max-w-56 text-xs leading-relaxed text-muted-foreground"
+                        >
+                          {reservation.whatsappReminder.enabled
+                            ? 'Rappel autorisé.'
+                            : 'Rappel désactivé.'}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                        <span
+                          className="flex h-4 w-4 items-center justify-center"
+                          aria-live="polite"
+                        >
+                          {busy && (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-label="Enregistrement" />
+                          )}
+                        </span>
+                        <Switch
+                          id="whatsapp-reminder"
+                          aria-describedby="reminder-description"
+                          checked={reservation.whatsappReminder.enabled}
+                          onCheckedChange={() => void withdraw()}
+                          disabled={busy || !reservation.whatsappReminder.enabled}
+                          className="transition-all duration-200"
+                        />
+                      </div>
+                    </div>
+                    {withdrawn && (
+                      <p
+                        role="status"
+                        className="mt-4 text-xs leading-relaxed text-muted-foreground"
+                      >
+                        Votre accord a été retiré. Un rappel déjà en cours peut encore arriver.
+                      </p>
+                    )}
+                  </details>
+                )}
               </div>
             </details>
           </>

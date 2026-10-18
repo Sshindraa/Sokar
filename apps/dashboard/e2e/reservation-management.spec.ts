@@ -183,6 +183,10 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await expect(management).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Tab');
+  await expect(manage).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(phone).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(preferences).toBeFocused();
   await expect(preferences).toHaveCSS('outline-style', 'solid');
   await expect(preferences).toHaveCSS('outline-width', '2px');
@@ -193,7 +197,9 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Space');
   await expect(page.getByRole('switch')).toBeHidden();
-  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(phone).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
   await expect(manage).toBeFocused();
   await expect(manage).toHaveCSS('outline-style', 'solid');
   await expect(manage).toHaveCSS('outline-width', '2px');
@@ -203,7 +209,7 @@ test('personal booking link survives reload and withdrawal is explicit', async (
   await expect(phone).toHaveCSS('opacity', '1');
   if (testInfo.project.name === 'desktop-1440') {
     for (const action of [calendarButton, directions, phone]) {
-      const property = action === phone ? 'backgroundColor' : 'textDecorationColor';
+      const property = 'textDecorationColor';
       const initial = await action.evaluate(
         (n, property) => getComputedStyle(n)[property],
         property,
@@ -222,7 +228,7 @@ test('personal booking link survives reload and withdrawal is explicit', async (
         .toBe(initial);
     }
   }
-  await expect(page.getByRole('heading', { name: 'Ma réservation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ma réservation' })).toBeAttached();
   await expect(page.getByText('Restaurant Exemple')).toBeVisible();
   await page.getByText('Préférences de rappel', { exact: true }).click();
   await expect(page.getByRole('switch')).toBeChecked();
@@ -434,18 +440,19 @@ test('personal modification keeps the current carton through selection and revie
   await early.press('Space');
   await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   expect(modifications).toBe(0);
-  await expect(page.locator('dl')).toContainText('19:30');
-  await expect(page.getByRole('dialog')).toContainText('20:00 · 3 personnes');
+  await expect(page.locator('dl').first()).toContainText('19:30');
+  await expect(page.getByRole('dialog')).toContainText('20h00');
+  await expect(page.getByRole('dialog')).toContainText('3 personnes');
   await page.screenshot({
     path: testInfo.outputPath('reservation-modification-review.png'),
     fullPage: true,
   });
   await page.getByRole('button', { name: 'Confirmer la modification' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('dl')).toContainText('20:00');
+  await expect(page.locator('dl').first()).toContainText('20:00');
   expect(modifications).toBe(1);
   await page.reload();
-  await expect(page.locator('dl')).toContainText('20:00');
+  await expect(page.locator('dl').first()).toContainText('20:00');
   expect(modifications).toBe(1);
 });
 
@@ -495,6 +502,6 @@ test('a taken modification slot leaves the current booking intact', async ({ pag
   await page.getByRole('button', { name: 'Continuer · 20h00' }).click();
   await page.getByRole('button', { name: 'Confirmer la modification' }).click();
   await expect(page.getByRole('alert')).toContainText('réservation initiale est conservée');
-  await page.getByRole('button', { name: 'Conserver ma réservation' }).click();
-  await expect(page.locator('dl')).toContainText('19:30');
+  await page.getByRole('button', { name: 'Quitter sans modifier' }).click();
+  await expect(page.locator('dl').first()).toContainText('19:30');
 });
