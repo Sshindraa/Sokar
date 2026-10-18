@@ -312,9 +312,12 @@ Constats du compte de production le 18 octobre 2026, en lecture seule :
   `~/.codex/private/sokar/contracts/elevenlabs-dpa-downloaded-2026-10-18.html`.
 - SHA-256 : `64b840ba641fdd9647564b6ab00f1fd037b9e93899f9fc01ef390f832e97617b`.
 - Page HTML de 352 947 octets, mention « Last Updated: 8 April 2026 ».
-- À vérifier : sous-traitants ultérieurs sur compliance.elevenlabs.io ; la TVA
-  facturée laisse penser que le compte n'est pas identifié comme entreprise
-  (nom, adresse ou numéro de TVA). Aucun réglage ni donnée de facturation modifié.
+- Informations de facturation (portail Stripe) mises à jour le 18 octobre 2026
+  avec l'accord de Hamza : nom « Hamza AKKIF EI – SOKAR », adresse du siège
+  inchangée (SIRET 106 740 202 00010). Aucun numéro de TVA intracommunautaire à
+  ce jour ; la TVA reste donc facturée. Moyen de paiement non modifié.
+- À vérifier : sous-traitants ultérieurs sur compliance.elevenlabs.io. La double
+  authentification du compte est désactivée : à activer.
 
 ## Références vérifiées le 16 octobre 2026
 
