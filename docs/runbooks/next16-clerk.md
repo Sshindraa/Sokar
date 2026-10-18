@@ -81,7 +81,19 @@ Sources : [migration Next 16](https://nextjs.org/docs/app/guides/upgrading/versi
   en mémoire depuis staging : `/dashboard`, `/onboarding`, `/admin` et
   `/dashboard/admin/margin` renvoient en 307 vers `/login` sans session ; formulaire Clerk
   réel et redirection Google chargés.
-- Restent non validés : nouvelle connexion, organisation active hors démo, déconnexion
-  puis reconnexion et compte restaurant sans privilège opérateur. L’utilisateur termine
-  lui-même la connexion dans le navigateur. La PR reste en brouillon ; aucune fusion
-  et aucun déploiement production.
+- Connexion Google réelle réussie avec le compte existant : établissement de test retrouvé,
+  reprise de l’onboarding existant, persistance après rechargement et dans un second onglet.
+  Le proxy `/api/auth/sync` a répondu 200. L’accès opérateur fonctionne également.
+- Déconnexion via le menu Sokar réussie : retour `/login`, puis accès `/admin` refusé dans
+  le second onglet après rechargement.
+- Reconnexion non validée : chargement bloqué sur `/login/sso-callback` et erreurs répétées
+  Cloudflare Turnstile `300030` dans les logs navigateur. Les URLs Clerk de staging ont été
+  ajoutées à l’injection locale (pas seulement les deux clés) ; le blocage persiste. Ne pas
+  conclure à une régression Next 16 : la comparaison avec Next 15 n’a pas validé un cycle
+  OAuth complet. Ne pas désactiver la protection anti-robot pour terminer la recette.
+  La famille `300*` correspond à un échec de challenge selon la
+  [documentation Cloudflare](https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/error-codes/).
+- Compte restaurant sans privilège opérateur : pas de second compte réel qualifié ;
+  le refus 403 est couvert par `clerk.operator.test.ts` et les contrôles CI existants.
+- Décision : garder la PR en brouillon jusqu’à une reconnexion réelle complète sans blocage.
+  Aucune fusion et aucun déploiement production.
