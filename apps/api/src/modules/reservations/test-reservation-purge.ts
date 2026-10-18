@@ -17,6 +17,7 @@ export async function purgeTestReservations(
   let total = 0;
 
   for (;;) {
+    // tenant-scoping: global — purge système des réservations test de tous les restaurants (bornée par isTest).
     const batch = await db.reservation.findMany({
       where: { isTest: true, createdAt: { lt: cutoff } },
       select: { id: true },
@@ -27,9 +28,11 @@ export async function purgeTestReservations(
     const ids = batch.map((row) => row.id);
     const deleted = await db.$transaction(async (tx) => {
       await tx.reservationAuditLog.deleteMany({ where: { reservationId: { in: ids } } });
+      // tenant-scoping: global — purge système des réservations test de tous les restaurants (bornée aux ids de réservations test sélectionnés).
       await tx.outboxEvent.deleteMany({
         where: { aggregateType: 'reservation', aggregateId: { in: ids } },
       });
+      // tenant-scoping: global — purge système des réservations test de tous les restaurants (bornée par isTest).
       const result = await tx.reservation.deleteMany({ where: { id: { in: ids }, isTest: true } });
       return result.count;
     });
