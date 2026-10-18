@@ -38,6 +38,7 @@ type HoldRow = {
   status: 'ACTIVE' | 'CONSUMED' | 'EXPIRED' | 'RELEASED';
   policyVersion: string;
   reservationId: string | null;
+  tableId: string | null;
   createdAt: Date;
 };
 
@@ -45,9 +46,8 @@ function makeFakes() {
   const holds = new Map<string, HoldRow>();
   const audits: Record<string, unknown>[] = [];
 
-  // Simule la contrainte unique partielle : si on tente un create avec
-  // un (restaurantId, slotStart, partySize, status=ACTIVE, type=HOLD) déjà
-  // présent, on jette P2002.
+  // Simule les contraintes uniques partielles : une table ne porte qu'un hold actif par heure de début ;
+  // sans table, un seul par (restaurantId, slotStart, partySize). Sinon on jette P2002.
   const prisma = {
     $transaction: async (fn: unknown) =>
       (fn as unknown as (tx: PrismaClient) => Promise<unknown>)(prisma as unknown as PrismaClient),
@@ -58,9 +58,16 @@ function makeFakes() {
         if (type === 'HOLD' && status === 'ACTIVE') {
           for (const h of holds.values()) {
             const dSlotStart = data.slotStart;
+            const dTableId = (data.tableId as string | null | undefined) ?? null;
+            const sameScope =
+              dTableId !== null
+                ? h.tableId === dTableId
+                : h.tableId === null &&
+                  h.restaurantId === data.restaurantId &&
+                  h.partySize === data.partySize;
             if (
-              h.restaurantId === data.restaurantId &&
-              h.partySize === data.partySize &&
+              sameScope &&
+              h.type === 'HOLD' &&
               dSlotStart instanceof Date &&
               h.slotStart.getTime() === dSlotStart.getTime() &&
               h.status === 'ACTIVE'
@@ -89,6 +96,7 @@ function makeFakes() {
           status,
           policyVersion: data.policyVersion as string,
           reservationId: (data.reservationId as string | null | undefined) ?? null,
+          tableId: (data.tableId as string | null | undefined) ?? null,
           createdAt: new Date(),
         };
         holds.set(id, row);
@@ -118,6 +126,7 @@ function makeFakes() {
               continue;
           }
           if (where.partySize !== undefined && h.partySize !== where.partySize) continue;
+          if (where.tableId !== undefined && h.tableId !== where.tableId) continue;
           if (where.restaurantId !== undefined && h.restaurantId !== where.restaurantId) continue;
           if (where.type !== undefined && h.type !== where.type) continue;
           if (ok) return h;
@@ -147,6 +156,7 @@ function makeFakes() {
         for (const h of holds.values()) {
           if (where.restaurantId !== undefined && h.restaurantId !== where.restaurantId) continue;
           if (where.partySize !== undefined && h.partySize !== where.partySize) continue;
+          if (where.tableId !== undefined && h.tableId !== where.tableId) continue;
           if (where.slotStart !== undefined) {
             const slotStart = where.slotStart;
             if (slotStart instanceof Date && h.slotStart.getTime() !== slotStart.getTime())
@@ -388,6 +398,36 @@ describe('hold.service', () => {
       const h1 = await fakes.service.createHold({ ...base, partySize: 2, tableId: 't-2' });
       const h2 = await fakes.service.createHold({ ...base, partySize: 4, tableId: 't-3' });
       expect(h1.id).not.toBe(h2.id);
+    });
+
+    it('autorise 2 holds de même heure et même nombre de couverts sur deux tables différentes', async () => {
+      const policy = buildPolicySnapshot({
+        policyVersion: '2026-06-20',
+        maxPartySize: 12,
+        minLeadTimeMinutes: 30,
+        requireManualValidation: false,
+        quoteTtlSeconds: 300,
+        holdTtlSeconds: 420,
+        noShowPolicy: 'warning',
+        notificationChannels: ['sms'],
+        capacitySpecials: {},
+      });
+      const base = {
+        restaurantId: 'r-1',
+        partySize: 2,
+        slotStart: new Date('2026-06-22T19:00:00Z'),
+        slotEnd: new Date('2026-06-22T21:00:00Z'),
+        channel: 'MCP' as const,
+        policy,
+        actor: 'agent:test',
+      };
+      const first = await fakes.service.createHold({ ...base, tableId: 't-1' });
+      const second = await fakes.service.createHold({ ...base, tableId: 't-2' });
+      expect(first.id).not.toBe(second.id);
+      // La même table reste protégée.
+      await expect(fakes.service.createHold({ ...base, tableId: 't-1' })).rejects.toThrow(
+        HoldConflictError,
+      );
     });
 
     it('autorise 2 quotes simultanés (ne bloquent pas la capacité)', async () => {

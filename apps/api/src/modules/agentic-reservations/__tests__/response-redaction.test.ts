@@ -48,8 +48,12 @@ describe('response-redaction', () => {
       expect(redactPiiInString(`token=${long}`)).toContain('[REDACTED_HEX]');
     });
     it('préserve les dates ISO (ne pas confondre avec des téléphones)', () => {
-      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).not.toContain('[REDACTED_PHONE]');
-      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).toContain('2026-06-23T17:30:00.000Z');
+      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).not.toContain(
+        '[REDACTED_PHONE]',
+      );
+      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).toContain(
+        '2026-06-23T17:30:00.000Z',
+      );
       expect(redactPiiInString('date=2026-06-24')).not.toContain('[REDACTED_PHONE]');
       expect(redactPiiInString('date=2026-06-24')).toContain('2026-06-24');
     });

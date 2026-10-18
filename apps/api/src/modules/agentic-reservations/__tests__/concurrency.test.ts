@@ -340,6 +340,168 @@ describeIntegration('concurrency — partial unique index enforcement', () => {
   });
 });
 
+describeIntegration('concurrency — un créneau gardé bloque une table, pas le restaurant', () => {
+  const TABLE_COUNT = 3;
+  let multiRestaurantId: string;
+  let multiTableIds: string[];
+
+  beforeAll(async () => {
+    multiRestaurantId = `resto-test-multi-table-${randomUUID()}`;
+    const floorPlanId = `floor-plan-test-multi-table-${randomUUID()}`;
+    await prisma.restaurant.create({
+      data: {
+        id: multiRestaurantId,
+        name: 'Resto Test Multi Tables',
+        slug: multiRestaurantId,
+        managerPhone: '+33600000001',
+        managerEmail: 'multi@example.com',
+        phoneNumber: `+332${Date.now().toString().slice(-8)}`,
+        openingHours: {
+          monday: { open: '00:00', close: '23:59' },
+          tuesday: { open: '00:00', close: '23:59' },
+          wednesday: { open: '00:00', close: '23:59' },
+          thursday: { open: '00:00', close: '23:59' },
+          friday: { open: '00:00', close: '23:59' },
+          saturday: { open: '00:00', close: '23:59' },
+          sunday: { open: '00:00', close: '23:59' },
+        },
+        agenticOptIn: true,
+      },
+    });
+    await prisma.floorPlan.create({
+      data: {
+        id: floorPlanId,
+        restaurantId: multiRestaurantId,
+        name: 'Plan multi tables',
+        isDefault: true,
+        isActive: true,
+      },
+    });
+    multiTableIds = [];
+    for (let index = 0; index < TABLE_COUNT; index++) {
+      const id = `table-test-multi-${index}-${randomUUID()}`;
+      multiTableIds.push(id);
+      await prisma.table.create({
+        data: {
+          id,
+          floorPlanId,
+          name: `Table ${index + 1}`,
+          capacity: 2,
+          minCapacity: 1,
+          isActive: true,
+        },
+      });
+    }
+  });
+
+  function holdOnce(slotStart: Date, partySize = 2) {
+    return holds
+      .createHold({
+        restaurantId: multiRestaurantId,
+        partySize,
+        slotStart,
+        slotEnd: new Date(slotStart.getTime() + 90 * 60 * 1000),
+        channel: 'MCP',
+        policy,
+        actor: 'agent:multi-table-test',
+      })
+      .then((hold) => ({ outcome: 'ok' as const, hold }))
+      .catch((err) => {
+        if (err instanceof HoldConflictError) return { outcome: 'conflict' as const };
+        throw err;
+      });
+  }
+
+  it('deux clients, même heure et mêmes couverts : chacun obtient sa table', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 1, 19, 0, 0));
+    const first = await holdOnce(slotStart);
+    const second = await holdOnce(slotStart);
+
+    expect(first.outcome).toBe('ok');
+    expect(second.outcome).toBe('ok');
+    if (first.outcome === 'ok' && second.outcome === 'ok') {
+      expect(first.hold.tableId).not.toBe(second.hold.tableId);
+    }
+  });
+
+  it('30 requêtes simultanées pour 3 tables : exactement 3 holds, sur 3 tables distinctes', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 2, 19, 0, 0));
+    const results = await Promise.all(Array.from({ length: 30 }, () => holdOnce(slotStart)));
+
+    const oks = results.filter((result) => result.outcome === 'ok');
+    expect(oks).toHaveLength(TABLE_COUNT);
+    expect(results.filter((result) => result.outcome === 'conflict')).toHaveLength(
+      30 - TABLE_COUNT,
+    );
+    const tables = new Set(
+      oks.map((result) => (result.outcome === 'ok' ? result.hold.tableId : '')),
+    );
+    expect(tables.size).toBe(TABLE_COUNT);
+  }, 30_000);
+
+  it('une même table ne porte jamais deux holds actifs à la même heure (index en base)', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 3, 19, 0, 0));
+    const base = {
+      restaurantId: multiRestaurantId,
+      type: 'HOLD' as const,
+      partySize: 2,
+      slotStart,
+      slotEnd: new Date(slotStart.getTime() + 90 * 60 * 1000),
+      channel: 'MCP' as const,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      policyVersion: 'test',
+      tableId: multiTableIds[0],
+    };
+    await prisma.agenticHold.create({ data: base });
+
+    await expect(
+      prisma.agenticHold.create({ data: { ...base, partySize: 4 } }),
+    ).rejects.toMatchObject({
+      code: 'P2002',
+    });
+    // Une autre table, même heure, même nombre de couverts : accepté.
+    await expect(
+      prisma.agenticHold.create({ data: { ...base, tableId: multiTableIds[1] } }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('un hold historique sans table garde l’ancienne règle (un par heure et couverts)', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 4, 19, 0, 0));
+    const base = {
+      restaurantId: multiRestaurantId,
+      type: 'HOLD' as const,
+      partySize: 2,
+      slotStart,
+      slotEnd: new Date(slotStart.getTime() + 90 * 60 * 1000),
+      channel: 'MCP' as const,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      policyVersion: 'test',
+      tableId: null,
+    };
+    await prisma.agenticHold.create({ data: base });
+    await expect(prisma.agenticHold.create({ data: base })).rejects.toMatchObject({
+      code: 'P2002',
+    });
+  });
+
+  it('un hold expiré libère sa table pour le suivant', async () => {
+    const slotStart = new Date(Date.UTC(2099, 8, 5, 19, 0, 0));
+    const results = await Promise.all(
+      Array.from({ length: TABLE_COUNT }, () => holdOnce(slotStart)),
+    );
+    expect(results.every((result) => result.outcome === 'ok')).toBe(true);
+    const one = results[0];
+    if (one?.outcome !== 'ok') throw new Error('hold attendu');
+
+    expect((await holdOnce(slotStart)).outcome).toBe('conflict');
+    await prisma.agenticHold.update({
+      where: { id: one.hold.id },
+      data: { status: 'EXPIRED', expiresAt: new Date(Date.now() - 1000) },
+    });
+    expect((await holdOnce(slotStart)).outcome).toBe('ok');
+  });
+});
+
 describeIntegration('idempotency — partial unique index on (scope, key)', () => {
   it('mêmes scope+key : 1 seule résa créée, N renvoient le même résultat', async () => {
     const scope = computeIdempotencyScope({

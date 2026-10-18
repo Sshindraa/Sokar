@@ -1,10 +1,16 @@
 /**
  * Hold service : crée et consomme les AgenticHold (quote + hold).
  *
- * Concurrence : la contrainte partielle SQL `one_active_hold_per_slot`
- * (définie dans la migration 20260621004000_agentic_p0_constraints) garantit
- * qu'il n'y a qu'un seul hold actif par (restaurant, slot, party_size).
- * On capte la P2002 (unique violation) et on la traduit en HoldConflictError.
+ * Concurrence : les contraintes partielles SQL `one_active_hold_per_table_slot`
+ * (une table ne porte qu'un hold actif par heure de début) et
+ * `one_active_hold_per_slot_no_table` (holds historiques sans table : un par
+ * restaurant, heure et nombre de couverts) sont définies par la migration
+ * 20261018120000_agentic_hold_per_table. Deux clients qui demandent la même
+ * heure pour le même nombre de couverts obtiennent donc chacun une table
+ * différente tant qu'il en reste ; seule la dernière table libre est disputée.
+ * On capte la P2002 (unique violation) : si l'allocation était automatique,
+ * on relance l'allocation (une autre table est peut-être libre), sinon on
+ * traduit en HoldConflictError.
  *
  * TTL : les expiresAt sont calculés par policies.service. Le worker
  * `expire-hold` (BullMQ) passera les holds à EXPIRED après expiration.
@@ -153,7 +159,10 @@ export class HoldService {
     preferredSectionId?: string;
   }): Promise<AgenticHold> {
     const expiresAt = computeHoldExpiresAt(args.policy);
-    const maxAttempts = 2;
+    // Une relance de plus quand la table est choisie automatiquement : si deux requêtes visent la même
+    // table au même instant, la perdante doit retomber sur une autre table libre plutôt qu'échouer.
+    const maxAttempts = args.tableId ? 2 : 4;
+    let attemptedTableId: string | null = args.tableId ?? null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -175,6 +184,7 @@ export class HoldService {
               throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
             }
             tableId = table.id;
+            attemptedTableId = tableId;
           } else {
             // Un `tableId` fourni par un caller est une préférence validée,
             // pas une preuve de disponibilité. Rejouer le même contrôle que
@@ -199,13 +209,15 @@ export class HoldService {
             }
           }
 
+          // Un hold actif sur la MÊME table à la même heure bloque ; un autre hold de même heure et même
+          // nombre de couverts sur une autre table ne gêne pas.
           const existingHold = await tx.agenticHold.findFirst({
             where: {
               restaurantId: args.restaurantId,
-              partySize: args.partySize,
               slotStart: args.slotStart,
               type: 'HOLD' as HoldType,
               status: 'ACTIVE' as HoldStatus,
+              ...(tableId ? { tableId } : { partySize: args.partySize, tableId: null }),
             },
           });
           if (existingHold) {
@@ -243,29 +255,32 @@ export class HoldService {
         }
 
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          const conflictScope = attemptedTableId
+            ? { tableId: attemptedTableId }
+            : { partySize: args.partySize, tableId: null };
           const expiredConflict = await this.prisma.agenticHold.findFirst({
             where: {
               restaurantId: args.restaurantId,
-              partySize: args.partySize,
               slotStart: args.slotStart,
               type: 'HOLD' as HoldType,
               status: 'ACTIVE' as HoldStatus,
               expiresAt: { lt: new Date() },
+              ...conflictScope,
             },
             select: { id: true },
           });
-          if (!expiredConflict) {
-            throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+          if (expiredConflict) {
+            await this.expireOverdueForSlot({
+              restaurantId: args.restaurantId,
+              slotStart: args.slotStart,
+              now: new Date(),
+            });
+            continue;
           }
-
-          await this.expireOverdueForSlot({
-            restaurantId: args.restaurantId,
-            partySize: args.partySize,
-            slotStart: args.slotStart,
-            now: new Date(),
-          });
-
-          continue;
+          // Table prise entre-temps par une autre requête : en allocation automatique, une autre
+          // table est peut-être libre, on relance l'allocation.
+          if (!args.tableId && attempt < maxAttempts - 1) continue;
+          throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
         }
 
         // Sous forte contention, Prisma peut expirer l'attente d'une
@@ -276,11 +291,13 @@ export class HoldService {
           const activeHold = await this.prisma.agenticHold.findFirst({
             where: {
               restaurantId: args.restaurantId,
-              partySize: args.partySize,
               slotStart: args.slotStart,
               type: 'HOLD' as HoldType,
               status: 'ACTIVE' as HoldStatus,
               expiresAt: { gt: new Date() },
+              ...(attemptedTableId
+                ? { tableId: attemptedTableId }
+                : { partySize: args.partySize, tableId: null }),
             },
             select: { id: true },
           });
@@ -540,7 +557,6 @@ export class HoldService {
 
   private async expireOverdueForSlot(args: {
     restaurantId: string;
-    partySize: number;
     slotStart: Date;
     now: Date;
   }): Promise<void> {
@@ -548,7 +564,6 @@ export class HoldService {
       const overdue = await tx.agenticHold.findMany({
         where: {
           restaurantId: args.restaurantId,
-          partySize: args.partySize,
           slotStart: args.slotStart,
           type: 'HOLD' as HoldType,
           status: 'ACTIVE' as HoldStatus,
