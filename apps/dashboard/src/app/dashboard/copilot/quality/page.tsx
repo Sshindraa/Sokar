@@ -243,7 +243,7 @@ function CopilotQualityContent() {
         )}
       </div>
 
-      {loading && <SummarySkeleton />}
+      {loading && !summary && <SummarySkeleton />}
 
       {!loading && error && (
         <section className="flex flex-col gap-4 rounded-2xl border border-destructive/25 bg-destructive/[0.04] p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -264,18 +264,18 @@ function CopilotQualityContent() {
         </section>
       )}
 
-      {!loading && !error && summary && metrics && (
+      {!error && summary && metrics && (
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <QualityMetric
-              label="Recommandations suivies"
+              label="Recommandations reçues"
               value={metrics.recommendations}
-              detail="signaux distincts sur la période"
+              detail="proposées sur la période, suivies ou non"
             />
             <QualityMetric
-              label="Décisions appliquées"
+              label="Mises en œuvre"
               value={metrics.actions}
-              detail={`${metrics.actionRate} % des recommandations suivies`}
+              detail={`${summary.totals.applied} appliquées · ${summary.totals.reverted} annulées ensuite (${metrics.actionRate} % des recommandations)`}
               tone="success"
             />
             <QualityMetric
