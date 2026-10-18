@@ -144,25 +144,25 @@ jobs:
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
-              bash scripts/ops/sync-alerting-config.sh staging
+              bash scripts/ops/sync-env.sh alerting staging
             fi
             if [ -n "${DEMO_REQUEST_NOTIFY_TO:-}" ]; then
-              bash scripts/ops/sync-demo-request-config.sh staging
+              bash scripts/ops/sync-env.sh demo-request staging
             fi
             if [ -n "${RESEND_API_KEY:-}${EMAIL_FROM:-}${EMAIL_TEST_ALLOWLIST:-}${PUBLIC_API_URL:-}${TELNYX_API_KEY:-}${TELNYX_PUBLIC_KEY:-}${TELNYX_CONNECTION_ID:-}${TELNYX_FROM_NUMBER:-}" ]; then
-              bash scripts/ops/sync-staging-provider-config.sh
+              bash scripts/ops/sync-env.sh provider staging
             fi
             if [ -n "${RESERVATION_SERVICE_TOKEN:-}" ]; then
-              bash scripts/ops/sync-reservation-token.sh staging
+              bash scripts/ops/sync-env.sh reservation staging
             fi
-            bash scripts/ops/sync-operator-allowlist.sh staging
+            bash scripts/ops/sync-env.sh operator staging
             test -s "$CLERK_SECRET_FILE"
             chmod 0600 "$CLERK_SECRET_FILE"
             CLERK_SECRET_KEY=$(cat "$CLERK_SECRET_FILE")
             export CLERK_SECRET_KEY
-            bash scripts/ops/sync-clerk-secret.sh staging
-            bash scripts/ops/sync-stripe-prices.sh staging
-            bash scripts/ops/sync-runtime-flags.sh staging
+            bash scripts/ops/sync-env.sh clerk staging
+            bash scripts/ops/sync-env.sh stripe-prices staging
+            bash scripts/ops/sync-env.sh runtime-flags staging
             SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
 
       - name: Remove remote Clerk secret transport file
