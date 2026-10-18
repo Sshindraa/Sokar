@@ -11,7 +11,8 @@ vi.mock('../plugins/clerk', () => ({
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
       }
-      req.restaurantId = 'test-rest-1';
+      const testRestaurantId = req.headers?.['x-test-restaurant-id'];
+      req.restaurantId = typeof testRestaurantId === 'string' ? testRestaurantId : 'test-rest-1';
       req.siteId = 'test-rest-1';
       req.accountId = 'test-account-1';
       req.clerkOrganizationId = 'test-rest-1';
