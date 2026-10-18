@@ -52,7 +52,9 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 }
 
 export default function GiftCardsPage() {
-  const createRequested = useSearchParams().get('create') === '1';
+  const searchParams = useSearchParams();
+  const createRequested = searchParams.get('create') === '1';
+  const stripeSettingsRequested = searchParams.get('settings') === 'stripe';
   const {
     listGiftCards,
     getGiftCardStats,
@@ -104,7 +106,7 @@ export default function GiftCardsPage() {
     const settings = document.getElementById('gift-card-stripe-connect');
     if (!settings) return;
     settings.setAttribute('open', '');
-    settings.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    settings.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -155,6 +157,19 @@ export default function GiftCardsPage() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // Lien « Configurer Stripe » d'une autre page : on ouvre directement le réglage concerné.
+  useEffect(() => {
+    if (!stripeSettingsRequested || !loadedOnce) return;
+    openStripeSettings();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('settings');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [stripeSettingsRequested, loadedOnce, openStripeSettings]);
 
   useEffect(() => {
     if (!createRequested || loading || error) return;
@@ -565,7 +580,7 @@ export default function GiftCardsPage() {
           )}
           {detailCard && (
             <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
                   <p className="text-xs text-muted-foreground">Code</p>
                   <p className="font-mono">{detailCard.code}</p>

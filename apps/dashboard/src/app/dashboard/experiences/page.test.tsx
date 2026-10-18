@@ -136,7 +136,7 @@ describe('ExperiencesPage', () => {
     });
 
     expect(apiMocks.get.mock.calls.map(([path]) => path).sort()).toEqual([
-      'experience-reservations?limit=100',
+      'experience-reservations?experienceId=experience-1&limit=100',
       'experiences/experience-1/sessions?status=OPEN&limit=100',
       'experiences/payment-readiness',
       'experiences?limit=100',
