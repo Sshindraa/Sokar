@@ -355,7 +355,7 @@ export default function ReservationsPage() {
           <span className="text-sm text-muted-foreground">
             {activeTab === 'reservations'
               ? `${reservations.length} réservation${reservations.length > 1 ? 's' : ''}`
-              : `${waitingList.length} en attente${waitingList.length > 1 ? 's' : ''}`}
+              : `${waitingList.length} en attente`}
           </span>
         </div>
       </div>
@@ -679,6 +679,50 @@ export default function ReservationsPage() {
                 </p>
               </div>
             )
+          ) : isMobile ? (
+            // Sur téléphone : une carte par demande, avec « Proposer une table » visible sans défilement latéral.
+            <div className="space-y-2">
+              {waitingList.map((entry) => (
+                <div key={entry.id}>
+                  <MobileDataCard
+                    title={`#${entry.position} · ${`${entry.customerFirstName} ${entry.customerLastName ?? ''}`.trim()}`}
+                    subtitle={entry.customerPhone ?? undefined}
+                    badge={<WaitingListStatusBadge status={entry.status} />}
+                    details={[
+                      { label: 'Couverts', value: entry.partySize },
+                      {
+                        label: 'Créneau',
+                        value: format(new Date(entry.slotStart), 'dd MMM HH:mm', { locale: fr }),
+                      },
+                      { label: 'Section', value: entry.preferredSectionName || '—' },
+                    ]}
+                    primaryAction={
+                      entry.status === 'PENDING'
+                        ? {
+                            label:
+                              promotingId === entry.id ? 'Proposition...' : 'Proposer une table',
+                            onClick: () => void promoteEntry(entry),
+                            disabled: promotingId === entry.id,
+                          }
+                        : undefined
+                    }
+                    actions={[
+                      {
+                        label: 'Retirer',
+                        colorClass: 'bg-destructive',
+                        onClick: () => void removeEntry(entry),
+                      },
+                    ]}
+                  />
+                  {promotedEntryId === entry.id && (
+                    <p className="mt-1 text-xs text-success">Table proposée avec succès</p>
+                  )}
+                  {entryErrors[entry.id] && (
+                    <p className="mt-1 text-xs text-destructive">{entryErrors[entry.id]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="sokar-card overflow-hidden">
               <div className="mobile-table-wrapper">

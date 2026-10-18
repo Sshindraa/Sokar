@@ -30,7 +30,9 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useApi } from '@/lib/api';
+import { featureLockFromError } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
 
 type ExperienceStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
@@ -123,19 +125,11 @@ function eurosToCents(value: string): number | null {
   return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
 }
 
-function getAccessBlock(message: string): ExperienceAccessBlock {
-  if (message.includes('CAPABILITY_NOT_INCLUDED')) return 'plan';
-  const normalized = message
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-  if (
-    message.includes('EXPERIENCES_DISABLED') ||
-    normalized.includes('experiences restent desactivees')
-  ) {
-    return 'pilot';
-  }
-  return null;
+/** Module hors formule ou pas encore ouvert, d'après la nature de l'erreur (pas son texte). */
+function getAccessBlock(err: unknown): ExperienceAccessBlock {
+  const lock = featureLockFromError(err);
+  if (!lock) return null;
+  return lock.kind === 'not-included' ? 'plan' : 'pilot';
 }
 
 function statusLabel(status: ExperienceStatus | SessionStatus | ReservationStatus): string {
@@ -189,6 +183,10 @@ export default function ExperiencesPage() {
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [reservationError, setReservationError] = useState('');
+  const [reservationToCancel, setReservationToCancel] = useState<ExperienceReservation | null>(
+    null,
+  );
   const [accessBlock, setAccessBlock] = useState<ExperienceAccessBlock>(null);
   const [notice, setNotice] = useState('');
   const [experienceForm, setExperienceForm] = useState({
@@ -248,7 +246,7 @@ export default function ExperiencesPage() {
     } catch (err: unknown) {
       const message = getErrorMessage(err, 'Impossible de charger les expériences');
       setError(message);
-      setAccessBlock(getAccessBlock(message));
+      setAccessBlock(getAccessBlock(err));
       setDataLoaded(false);
       setExperiences([]);
       setSessions([]);
@@ -431,7 +429,7 @@ export default function ExperiencesPage() {
 
   async function cancelReservation(item: ExperienceReservation) {
     setBusy(true);
-    setError('');
+    setReservationError('');
     setNotice('');
     try {
       const response = await post<MutationResponse<ExperienceReservation>>(
@@ -450,14 +448,16 @@ export default function ExperiencesPage() {
             : 'Réservation d’expérience annulée.',
       );
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Impossible d’annuler la réservation');
-      setError(
-        message.includes('EXPERIENCE_REFUND_FAILED')
+      const message = getErrorMessage(err, 'Impossible d’annuler la réservation.');
+      // Une erreur d'action ne se fait pas passer pour un échec de chargement (« Réessayer » rechargerait la page).
+      setReservationError(
+        message.includes('remboursement a échoué')
           ? 'Le remboursement a échoué. La réservation reste confirmée ; vérifiez le paiement Stripe avant toute nouvelle action.'
           : message,
       );
     } finally {
       setBusy(false);
+      setReservationToCancel(null);
     }
   }
 
@@ -527,7 +527,7 @@ export default function ExperiencesPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-              Expériences & événements
+              Expériences à réserver
             </h1>
             <Badge variant="outline" className="font-normal text-muted-foreground">
               Pro
@@ -583,6 +583,15 @@ export default function ExperiencesPage() {
             </div>
           </CardContent>
         </Card>
+      ) : null}
+      {reservationError ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 shrink-0" size={17} />
+          {reservationError}
+        </div>
       ) : null}
       {notice ? (
         <div
@@ -944,7 +953,7 @@ export default function ExperiencesPage() {
                                   <div>
                                     <p className="text-sm font-medium">
                                       {item.customerName ?? 'Client sans nom'} · {item.quantity}{' '}
-                                      personne(s)
+                                      personne{item.quantity > 1 ? 's' : ''}
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       {formatDate(item.session.startsAt)} ·{' '}
@@ -964,11 +973,11 @@ export default function ExperiencesPage() {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => void cancelReservation(item)}
+                                        onClick={() => setReservationToCancel(item)}
                                         disabled={busy}
                                       >
                                         <XCircle size={15} />
-                                        Annuler
+                                        Annuler la réservation
                                       </Button>
                                     ) : null}
                                   </div>
@@ -1252,6 +1261,17 @@ export default function ExperiencesPage() {
           </form>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={reservationToCancel !== null}
+        title="Annuler cette réservation ?"
+        description={`La réservation de ${reservationToCancel?.customerName ?? 'ce client'} sera annulée. Si elle a été payée, le paiement sera remboursé : cette action est irréversible.`}
+        confirmLabel="Annuler la réservation"
+        cancelLabel="Garder la réservation"
+        variant="destructive"
+        pending={busy}
+        onConfirm={() => reservationToCancel && void cancelReservation(reservationToCancel)}
+        onCancel={() => setReservationToCancel(null)}
+      />
     </div>
   );
 }

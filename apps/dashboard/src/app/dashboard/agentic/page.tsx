@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage } from '@/types/api';
-import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
+import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
@@ -105,6 +106,8 @@ export default function AgenticSettingsPage() {
   const [creatingClient, setCreatingClient] = useState(false);
   const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Refus d'activation parce que le profil du restaurant est incomplet : on propose d'aller le compléter.
+  const [errorNeedsProfile, setErrorNeedsProfile] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [lock, setLock] = useState<FeatureLock | null>(null);
   const [clientToRevoke, setClientToRevoke] = useState<McpClient | null>(null);
@@ -151,6 +154,7 @@ export default function AgenticSettingsPage() {
   async function handleOptInSave(next: { mcp: boolean; openaiReserve: boolean }) {
     setSavingOptIn(true);
     setError('');
+    setErrorNeedsProfile(false);
     setSuccess('');
     try {
       const result = (await post('api/agentic/opt-in', next)) as OptInStatus;
@@ -158,6 +162,7 @@ export default function AgenticSettingsPage() {
       setSuccess('Préférences enregistrées');
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
+      setErrorNeedsProfile(err instanceof ApiError && err.kind === 'conflict');
     } finally {
       setSavingOptIn(false);
     }
@@ -245,9 +250,19 @@ export default function AgenticSettingsPage() {
 
   async function copyCreatedKey() {
     if (!createdApiKey) return;
-    await navigator.clipboard.writeText(createdApiKey);
-    setSuccess('Clé copiée');
+    try {
+      await navigator.clipboard.writeText(createdApiKey);
+      setError('');
+      setSuccess('Clé copiée');
+    } catch {
+      setSuccess('');
+      setError('Copie impossible. Sélectionnez la clé et copiez-la à la main.');
+    }
   }
+
+  const maxPartyInvalid = !Number.isInteger(maxPartySize) || maxPartySize < 1 || maxPartySize > 50;
+  const leadTimeInvalid =
+    !Number.isInteger(minLeadTimeMinutes) || minLeadTimeMinutes < 0 || minLeadTimeMinutes > 1440;
 
   if (loading) {
     return (
@@ -291,9 +306,22 @@ export default function AgenticSettingsPage() {
       </h1>
 
       {error && (
-        <div className="sokar-error">
+        <div role="alert" className="sokar-error">
           <AlertCircle size={18} />
-          {error}
+          <span>
+            {error}
+            {errorNeedsProfile ? (
+              <>
+                {' '}
+                <Link
+                  href="/dashboard/settings"
+                  className="font-medium underline underline-offset-4 transition-all duration-200"
+                >
+                  Compléter le profil
+                </Link>
+              </>
+            ) : null}
+          </span>
         </div>
       )}
       {success && (
@@ -432,7 +460,10 @@ export default function AgenticSettingsPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-primary">Clé créée</p>
-                  <code className="block overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground">
+                  <p className="text-xs text-muted-foreground">
+                    Copiez cette clé maintenant : elle ne sera plus affichée.
+                  </p>
+                  <code className="block select-all overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground">
                     {createdApiKey}
                   </code>
                 </div>
@@ -477,7 +508,8 @@ export default function AgenticSettingsPage() {
                               key={scope}
                               className="rounded-full border border-border bg-background px-2 py-1 text-xs text-muted-foreground"
                             >
-                              {scope.replace('mcp:', '')}
+                              {MCP_SCOPE_OPTIONS.find((option) => option.value === scope)?.label ??
+                                scope.replace('mcp:', '')}
                             </span>
                           ))}
                         </div>
@@ -555,7 +587,8 @@ export default function AgenticSettingsPage() {
                     className="min-h-[92px] w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Une par ligne, optionnel pour les clients stdio.
+                    Une adresse par ligne. Facultatif pour les applications installées sur
+                    ordinateur.
                   </p>
                 </div>
 
@@ -597,12 +630,21 @@ export default function AgenticSettingsPage() {
                 type="number"
                 min={1}
                 max={50}
-                value={maxPartySize}
-                onChange={(e) => setMaxPartySize(Number(e.target.value))}
+                value={Number.isNaN(maxPartySize) ? '' : maxPartySize}
+                onChange={(e) =>
+                  setMaxPartySize(e.target.value === '' ? NaN : Number(e.target.value))
+                }
+                aria-invalid={maxPartyInvalid}
+                className={maxPartyInvalid ? 'border-destructive' : undefined}
               />
+              {maxPartyInvalid ? (
+                <p role="alert" className="text-xs text-destructive">
+                  Indiquez un nombre entre 1 et 50.
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
-                1 à 50 personnes. Au-delà, l’assistant téléphonique confirme le nombre puis vous
-                passe l’appel, ou prend un message.
+                1 à 50 personnes. Au-delà, Sokar, votre chef de rang numérique, confirme le nombre
+                de couverts puis vous passe l’appel, ou prend un message.
               </p>
             </div>
 
@@ -612,9 +654,18 @@ export default function AgenticSettingsPage() {
                 type="number"
                 min={0}
                 max={1440}
-                value={minLeadTimeMinutes}
-                onChange={(e) => setMinLeadTimeMinutes(Number(e.target.value))}
+                value={Number.isNaN(minLeadTimeMinutes) ? '' : minLeadTimeMinutes}
+                onChange={(e) =>
+                  setMinLeadTimeMinutes(e.target.value === '' ? NaN : Number(e.target.value))
+                }
+                aria-invalid={leadTimeInvalid}
+                className={leadTimeInvalid ? 'border-destructive' : undefined}
               />
+              {leadTimeInvalid ? (
+                <p role="alert" className="text-xs text-destructive">
+                  Indiquez un nombre entre 0 et 1440 minutes.
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 Empêche les réservations trop tardives (par exemple 30 min avant)
               </p>
@@ -679,6 +730,9 @@ export default function AgenticSettingsPage() {
                     <input
                       type="checkbox"
                       checked={notificationChannels.includes(ch)}
+                      disabled={
+                        notificationChannels.length === 1 && notificationChannels.includes(ch)
+                      }
                       onChange={(e) => {
                         if (e.target.checked) {
                           setNotificationChannels([...notificationChannels, ch]);
@@ -692,6 +746,9 @@ export default function AgenticSettingsPage() {
                   </label>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Gardez au moins un canal de notification.
+              </p>
             </div>
 
             <div className="space-y-2 sm:col-span-2">
@@ -712,7 +769,10 @@ export default function AgenticSettingsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={handleSettingsSave} disabled={savingSettings}>
+            <Button
+              onClick={handleSettingsSave}
+              disabled={savingSettings || maxPartyInvalid || leadTimeInvalid}
+            >
               <Save size={16} className="mr-1" />
               {savingSettings ? 'Enregistrement...' : 'Enregistrer'}
             </Button>

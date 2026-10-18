@@ -101,6 +101,8 @@ export default function SettingsPage() {
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [openingBillingPortal, setOpeningBillingPortal] = useState(false);
+  // Après le paiement, Stripe confirme quelques secondes plus tard : on relit le statut jusqu'à ce qu'il change.
+  const [awaitingBilling, setAwaitingBilling] = useState(false);
 
   // Personality
   const [personality, setPersonality] = useState<AgentPersonality | null>(null);
@@ -139,6 +141,8 @@ export default function SettingsPage() {
   const [crmPrivacyRoles, setCrmPrivacyRoles] = useState<string[]>(['OWNER', 'MANAGER']);
   const [crmPrivacySource, setCrmPrivacySource] = useState<'SITE' | 'ENVIRONMENT'>('ENVIRONMENT');
   const [loadingCrmPrivacy, setLoadingCrmPrivacy] = useState(false);
+  // Tant que la disponibilité du réglage n'est pas connue, ni la carte ni son lien ne s'affichent.
+  const [crmPrivacyChecked, setCrmPrivacyChecked] = useState(false);
   // Le réglage n'existe que si le CRM avancé est ouvert pour ce compte : sinon l'API le refuse et la carte
   // ne doit pas s'afficher (elle montrerait une case « enregistrée » qui ne l'est jamais).
   const [crmPrivacyUnavailable, setCrmPrivacyUnavailable] = useState(false);
@@ -159,8 +163,9 @@ export default function SettingsPage() {
         window.history.replaceState({}, '', window.location.pathname);
       } else if (params.get('billing') === 'success') {
         setBillingNotice(
-          'Souscription confirmée. Votre formule sera synchronisée dès réception du webhook Stripe.',
+          'Souscription confirmée. Votre formule s’affichera ici dans quelques instants.',
         );
+        setAwaitingBilling(true);
         window.history.replaceState({}, '', window.location.pathname);
       } else if (params.get('billing') === 'portal-return') {
         setBillingNotice('Vous êtes revenu du portail de gestion de votre abonnement.');
@@ -168,6 +173,44 @@ export default function SettingsPage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!awaitingBilling || !orgId) return;
+    let attempts = 0;
+    let stopped = false;
+    const poll = window.setInterval(() => {
+      attempts += 1;
+      void get<BillingStatus>('billing/status')
+        .then((status) => {
+          if (stopped) return;
+          setBillingStatus(status);
+          if (
+            status?.subscriptionStatus === 'active' ||
+            status?.subscriptionStatus === 'trialing'
+          ) {
+            // La formule vient d'être mise à jour : on recharge aussi le restaurant pour afficher la bonne.
+            void get<Restaurant>(`restaurants/${orgId}`)
+              .then((data) => {
+                if (!stopped) setRestaurant(data);
+              })
+              .catch(() => undefined);
+            setBillingNotice('Souscription confirmée : votre formule est à jour.');
+            setAwaitingBilling(false);
+          }
+        })
+        .catch(() => undefined);
+      if (attempts >= 10) {
+        setBillingNotice(
+          'Votre formule n’est pas encore à jour. Rechargez la page dans une minute.',
+        );
+        setAwaitingBilling(false);
+      }
+    }, 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(poll);
+    };
+  }, [awaitingBilling, get, orgId]);
 
   const loadSettings = useCallback(async () => {
     if (!orgId) return;
@@ -229,6 +272,8 @@ export default function SettingsPage() {
     if (!orgId || !canManage) return;
     let cancelled = false;
     setLoadingCrmPrivacy(true);
+    setCrmPrivacyChecked(false);
+    setCrmPrivacyUnavailable(false);
     void get<CrmPrivacyResponse>('crm/privacy')
       .then((response) => {
         if (cancelled) return;
@@ -243,7 +288,10 @@ export default function SettingsPage() {
         if (!cancelled) setCrmPrivacyUnavailable(true);
       })
       .finally(() => {
-        if (!cancelled) setLoadingCrmPrivacy(false);
+        if (!cancelled) {
+          setLoadingCrmPrivacy(false);
+          setCrmPrivacyChecked(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -315,6 +363,7 @@ export default function SettingsPage() {
     e.preventDefault();
     setSavingPersonality(true);
     setSavedPersonality(false);
+    setError('');
 
     try {
       await patch(`restaurants/${orgId}/personality`, {
@@ -482,7 +531,7 @@ export default function SettingsPage() {
   const planInfo = PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
   const canManageCrmPrivacy =
-    (!accountId || activeSite?.role === 'OWNER') && !crmPrivacyUnavailable;
+    (!accountId || activeSite?.role === 'OWNER') && crmPrivacyChecked && !crmPrivacyUnavailable;
   const billingStatusLabel =
     billingStatus?.subscriptionStatus === 'past_due'
       ? 'Paiement en attente'
@@ -501,6 +550,18 @@ export default function SettingsPage() {
   const billingIntervalLabel =
     billingStatus?.billingInterval === 'annual' ? 'Facturation annuelle' : 'Facturation mensuelle';
 
+  // Chaque lien suit la carte qu'il annonce : pas de lien vers une carte absente.
+  const sectionLinks: Array<[string, string, boolean]> = [
+    ['settings-info', 'Restaurant', true],
+    ['settings-crm', 'CRM', canManageCrmPrivacy],
+    ['settings-display', 'Affichage', true],
+    ['settings-plan', 'Abonnement', true],
+    ['settings-integrations', 'Intégrations', true],
+    ['settings-waiting-list', 'File d’attente', true],
+    ['settings-gift-cards', 'Cartes cadeaux', true],
+    ['settings-agent', 'Assistant', true],
+  ];
+
   return (
     <div className="space-y-8">
       <OnboardingLockBanner task="restaurant" />
@@ -511,24 +572,17 @@ export default function SettingsPage() {
         className="sticky top-2 z-10 -mx-1 overflow-x-auto px-1 pb-1 md:max-w-fit"
       >
         <div className="flex min-w-max items-center gap-1.5 rounded-xl border border-border bg-background/90 p-1.5 shadow-sm backdrop-blur">
-          {[
-            ['settings-info', 'Restaurant'],
-            ['settings-crm', 'CRM'],
-            ['settings-display', 'Affichage'],
-            ['settings-plan', 'Abonnement'],
-            ['settings-integrations', 'Intégrations'],
-            ['settings-waiting-list', 'File d’attente'],
-            ['settings-gift-cards', 'Cartes cadeaux'],
-            ['settings-agent', 'Assistant'],
-          ].map(([id, label]) => (
-            <a
-              key={id}
-              href={`#${id}`}
-              className="inline-flex h-8 items-center rounded-lg border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {label}
-            </a>
-          ))}
+          {sectionLinks
+            .filter(([, , visible]) => visible)
+            .map(([id, label]) => (
+              <a
+                key={id}
+                href={`#${id}`}
+                className="inline-flex h-8 items-center rounded-lg border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {label}
+              </a>
+            ))}
         </div>
       </nav>
 
@@ -563,7 +617,10 @@ export default function SettingsPage() {
               <Input
                 id="restaurant-name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setSaved(false);
+                }}
                 required
               />
             </div>
@@ -579,7 +636,10 @@ export default function SettingsPage() {
                 autoComplete="tel"
                 placeholder="06 12 34 56 78"
                 value={managerPhone}
-                onChange={(e) => setManagerPhone(e.target.value)}
+                onChange={(e) => {
+                  setManagerPhone(e.target.value);
+                  setSaved(false);
+                }}
               />
             </div>
 
@@ -592,7 +652,10 @@ export default function SettingsPage() {
                 type="email"
                 autoComplete="email"
                 value={managerEmail}
-                onChange={(e) => setManagerEmail(e.target.value)}
+                onChange={(e) => {
+                  setManagerEmail(e.target.value);
+                  setSaved(false);
+                }}
               />
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -739,14 +802,14 @@ export default function SettingsPage() {
                   <TrialRecap trial={billingStatus.trial} />
                   <p className="text-sm text-muted-foreground">
                     {canManageBilling
-                      ? `Ajoutez une carte avant le ${billingPeriodEnd} pour que l’assistant continue de répondre. Aucun prélèvement avant cette date.`
+                      ? `Ajoutez une carte avant le ${billingPeriodEnd} pour que Sokar continue de répondre. Aucun prélèvement avant cette date.`
                       : `Le propriétaire du compte doit ajouter une carte avant le ${billingPeriodEnd}.`}
                   </p>
                 </div>
               )}
               {billingStatus?.suspended && (
                 <p role="alert" className="mt-3 max-w-xl text-sm text-destructive">
-                  Votre abonnement est terminé : l’assistant téléphonique ne répond plus aux appels.{' '}
+                  Votre abonnement est terminé : Sokar ne répond plus aux appels.{' '}
                   {canManageBilling
                     ? 'Choisissez une formule pour le réactiver.'
                     : 'Le propriétaire du compte doit choisir une formule pour le réactiver.'}{' '}
@@ -877,7 +940,10 @@ export default function SettingsPage() {
                 </label>
                 <Input
                   value={googleCalendarId}
-                  onChange={(e) => setGoogleCalendarId(e.target.value)}
+                  onChange={(e) => {
+                    setGoogleCalendarId(e.target.value);
+                    setSavedCalendar(false);
+                  }}
                   placeholder="primary"
                   required
                   className="transition-all duration-200 focus-visible:ring-primary"
@@ -937,7 +1003,10 @@ export default function SettingsPage() {
               <Switch
                 id="waiting-list-enabled"
                 checked={waitingListEnabled}
-                onCheckedChange={setWaitingListEnabled}
+                onCheckedChange={(value) => {
+                  setWaitingListEnabled(value);
+                  setSavedWaitingList(false);
+                }}
               />
             </div>
 
@@ -952,7 +1021,10 @@ export default function SettingsPage() {
                 max={50}
                 value={waitingListMaxEntriesPerSlot}
                 disabled={!waitingListEnabled}
-                onChange={(e) => setWaitingListMaxEntriesPerSlot(Number(e.target.value))}
+                onChange={(e) => {
+                  setWaitingListMaxEntriesPerSlot(Number(e.target.value));
+                  setSavedWaitingList(false);
+                }}
                 className="transition-all duration-200"
               />
               <p className="text-xs text-muted-foreground">Entre 1 et 50 inscrits.</p>
@@ -1024,7 +1096,10 @@ export default function SettingsPage() {
               <label className="text-sm font-medium">Type de restaurant</label>
               <select
                 value={profileType}
-                onChange={(e) => setProfileType(e.target.value)}
+                onChange={(e) => {
+                  setProfileType(e.target.value);
+                  setSavedPersonality(false);
+                }}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {PROFILE_OPTIONS.map((opt) => (
@@ -1039,7 +1114,10 @@ export default function SettingsPage() {
               <label className="text-sm font-medium">Style de l&apos;assistant</label>
               <select
                 value={fillerStyle}
-                onChange={(e) => setFillerStyle(e.target.value)}
+                onChange={(e) => {
+                  setFillerStyle(e.target.value);
+                  setSavedPersonality(false);
+                }}
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {FILLER_OPTIONS.map((opt) => (
@@ -1066,7 +1144,10 @@ export default function SettingsPage() {
               </label>
               <textarea
                 value={systemPromptExtra}
-                onChange={(e) => setSystemPromptExtra(e.target.value)}
+                onChange={(e) => {
+                  setSystemPromptExtra(e.target.value);
+                  setSavedPersonality(false);
+                }}
                 maxLength={SYSTEM_PROMPT_EXTRA_MAX_LENGTH}
                 rows={4}
                 placeholder="Ex : nous avons une offre spéciale le mercredi soir. Proposez-la si le client le demande."

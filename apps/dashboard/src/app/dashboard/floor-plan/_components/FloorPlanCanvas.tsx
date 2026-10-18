@@ -6737,7 +6737,7 @@ export function FloorPlanCanvas({
             </div>
             {selectedServiceReservation.state === 'SEATED' &&
               selectedServiceReservation.seatedAt && (
-                <p className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                <p className="flex items-center gap-1 text-[11px] font-medium text-foreground">
                   <Clock3 size={11} aria-hidden="true" />
                   <span>
                     À table depuis{' '}
