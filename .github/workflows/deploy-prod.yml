@@ -97,23 +97,23 @@ jobs:
               sudo /usr/local/sbin/sokar-deploy-root configure-grafana prod
             sudo /usr/local/sbin/sokar-deploy-root validate-monitoring prod
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}${RESEND_RATE_LIMIT_REDIS_URL:-}" ]; then
-              bash scripts/ops/sync-alerting-config.sh prod
+              bash scripts/ops/sync-env.sh alerting prod
             fi
             if [ -n "${DEMO_REQUEST_NOTIFY_TO:-}" ]; then
-              bash scripts/ops/sync-demo-request-config.sh prod
+              bash scripts/ops/sync-env.sh demo-request prod
             fi
             if [ -n "${RESERVATION_SERVICE_TOKEN:-}" ]; then
-              bash scripts/ops/sync-reservation-token.sh prod
+              bash scripts/ops/sync-env.sh reservation prod
             fi
-            bash scripts/ops/sync-runtime-flags.sh prod
-            bash scripts/ops/sync-operator-allowlist.sh prod
+            bash scripts/ops/sync-env.sh runtime-flags prod
+            bash scripts/ops/sync-env.sh operator prod
             if [ -n "${ALERT_WEBHOOK:-}${HEALTHCHECKS_PING_URL:-}" ]; then
               {
                 printf 'ALERT_WEBHOOK\t%s\n' "${ALERT_WEBHOOK:-}"
                 printf 'HEALTHCHECKS_PING_URL\t%s\n' "${HEALTHCHECKS_PING_URL:-}"
               } | sudo /usr/local/sbin/sokar-deploy-root configure-watchdog prod
             fi
-            bash scripts/ops/sync-stripe-prices.sh prod
+            bash scripts/ops/sync-env.sh stripe-prices prod
             bash scripts/deploy.sh --env prod --confirm-production
             sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
             sudo /usr/local/sbin/sokar-deploy-root start-grafana prod

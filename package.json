@@ -22,7 +22,6 @@
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
     "test:diagnostic": "node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs",
-    "test:voice:simulate": "pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/simulate-voice-call.ts",
     "test:mcp:client": "pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts",
     "test:mcp:stdio": "pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts",
     "tunnel:status": "cloudflared tunnel info sokar",
@@ -37,13 +36,13 @@
     "verify:ai": "scripts/agent/hermes-diff-review.sh head",
     "pr:submit": "scripts/agent/submit-pr.sh",
     "dogfood:sokar": "tools/diagnostics/dogfood-sokar.sh",
-    "deploy:prod": "ssh deploy@sokar 'cd /opt/sokar && git pull origin main && bash scripts/deploy.sh --env prod --confirm-production'",
-    "deploy:staging": "ssh deploy@sokar 'cd /opt/sokar-staging && git pull origin main && bash scripts/deploy.sh --env staging'"
+    "deploy:prod": "gh workflow run deploy-prod.yml --ref main",
+    "deploy:staging": "gh workflow run deploy-staging.yml --ref main"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@types/node": "^20.19.43",
     "husky": "^9.1.7",
     "prettier": "^3.5.0",
@@ -65,7 +64,8 @@
     "overrides": {
       "@hono/node-server": ">=2.0.5",
       "@opentelemetry/core": ">=2.8.0",
-      "brace-expansion": ">=5.0.9",
+      "brace-expansion": ">=5.0.11",
+      "browserslist": ">=4.28.7",
       "deepmerge-ts": ">=8.0.0",
       "esbuild": ">=0.28.1",
       "find-my-way": ">=9.7.0",
@@ -80,7 +80,8 @@
       "proxy-addr": ">=2.0.8",
       "qs": ">=6.15.2",
       "sharp": ">=0.35.5",
-      "undici": ">=7.29.0 <8.0.0",
+      "source-map-js": ">=1.2.2",
+      "undici": ">=7.29.1 <8.0.0",
       "uuid": ">=11.1.1",
       "vite": "8.1.5"
     }

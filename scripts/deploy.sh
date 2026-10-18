@@ -238,7 +238,12 @@ log info "   Memory free: ${FREE_BEFORE}MB"
 log info ""
 log info "📦 Pulling latest code${DEPLOY_ENV:+ from $BRANCH}..."
 PREV_HASH=$(git rev-parse HEAD 2>/dev/null || log info "")
-if [ "${SOKAR_SKIP_GIT_PULL:-0}" = "1" ]; then
+if [ "$DRY_RUN" = true ]; then
+    # Dry-run : on construit le checkout tel quel. Un pull ici échoue sur le
+    # checkout snapshot du VPS et modifierait l'arbre que la simulation doit lire.
+    NEW_HASH=$(git rev-parse HEAD)
+    log info "   Dry-run : aucun git pull, build du checkout courant ($NEW_HASH)"
+elif [ "${SOKAR_SKIP_GIT_PULL:-0}" = "1" ]; then
     NEW_HASH=$(git rev-parse HEAD)
     log info "   Git pull skipped: source snapshot already synchronized ($NEW_HASH)"
 else

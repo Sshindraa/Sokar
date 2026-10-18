@@ -272,6 +272,26 @@ dans le nom des dumps.
   deux journaux (`postgres-backup.log`, `postgres-r2-backup.log`), avec un
   seuil de 26 h.
 
+### Carte des scripts de sauvegarde
+
+Six scripts et une archive. Trois d'entre eux sont appelés directement par des
+crons sur le VPS : ne renommez ni ne déplacez ces fichiers sans mettre à jour
+le cron correspondant sur le VPS, sinon la sauvegarde s'arrête sans message.
+
+| Script                                        | Rôle                                                                                                                           | Appelé par                                                                                                                                                                                    | Statut                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `scripts/database/backup-postgres.sh`         | Dump local de prod, vérifié par restauration temporaire, rétention 14 j                                                        | Cron `/etc/cron.d/sokar-postgres-backup` via la copie `/usr/local/sbin/sokar-backup-postgres` (installée par `sokar-deploy-root install-runtime prod`) ; exécuté aussi par le wrapper staging | Actif                    |
+| `scripts/database/backup-postgres-r2.sh`      | Copie hors site R2 : garde-fou de quota, upload, SHA256, rétention 30 j                                                        | Cron `/etc/cron.d/sokar-r2-backup`, chemin direct `/opt/sokar/scripts/database/` ; versionné dans `infra/cron/sokar-r2-backup`                                                                | Actif                    |
+| `scripts/database/backup-staging-postgres.sh` | Wrapper staging : fixe `POSTGRES_DB=sokar_staging` et `BACKUP_DIR=/var/backups/sokar-staging`, puis lance `backup-postgres.sh` | Cron `/etc/cron.d/sokar-staging-postgres-backup` via `/usr/local/sbin/sokar-staging-backup-postgres` ; installé par `sokar-deploy-root install-runtime staging` et `setup-staging.sh`         | Actif                    |
+| `scripts/ops/db-backup.sh`                    | Bibliothèque sourcée par `deploy.sh` : dump et restauration avant déploiement, utilisés par le rollback                        | `deploy.sh` (pas de cron)                                                                                                                                                                     | Actif                    |
+| `scripts/database/restore-postgres-backup.sh` | Restaure un dump dans une base. Refuse la base `sokar` sauf avec `SKIP_PROD_GUARD=1`                                           | Manuel, procédure P0 ci-dessous                                                                                                                                                               | Actif                    |
+| `scripts/database/test-restore-vierge.sh`     | Exercice de restauration de bout en bout dans une base temporaire                                                              | `sokar-deploy-root restore-test` (root) ou manuel                                                                                                                                             | Actif                    |
+| `scripts/_archive/install-r2-backup.sh`       | Installation ponctuelle du cron R2                                                                                             | Rien : déjà exécutée sur le VPS                                                                                                                                                               | Archivé, ne pas relancer |
+
+Pour une fusion future des trois crons en une seule commande, il faut d'abord
+un exercice `restore-test` réussi sur le VPS. C'est une opération de production,
+pas un simple refactor.
+
 ### Vérifier qu'un backup est restaurable (test régulier)
 
 Le script `scripts/database/test-restore-vierge.sh` prouve bout-en-bout qu'on sait

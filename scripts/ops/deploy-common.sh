@@ -76,6 +76,16 @@ ARTIFACT_PATHS=(
 )
 
 ensure_privileged_wrapper() {
+    # Dry-run : aucune écriture privilégiée (ni self-update, ni installation).
+    if [ "${DRY_RUN:-false}" = true ]; then
+        if [ -x "$PRIVILEGED_WRAPPER" ]; then
+            log info "🔎 Dry-run : wrapper présent, mise à jour ignorée."
+        else
+            log_warn "Dry-run : wrapper absent, il ne sera pas installé en simulation."
+        fi
+        return 0
+    fi
+
     if [ -x "$PRIVILEGED_WRAPPER" ]; then
         log info "🔄 Mise à jour du wrapper privilégié..."
         if sudo -n "$PRIVILEGED_WRAPPER" self-update "$DEPLOY_ENV" >/dev/null 2>&1; then

@@ -45,12 +45,13 @@ l'API.
 - CI/CD: `.github/workflows/deploy-staging.yml` triggered on `main` push (after CI green).
 - GitHub secrets: `STAGING_SSH_KEY`, `STAGING_HOST`, `STAGING_USER`.
 - Script on VPS: `scripts/deploy.sh --env staging`.
-- Dry-run (staging only): `bash scripts/deploy.sh --env staging --dry-run`.
-- From Mac:
+- Dry-run (staging only) : ne pas l'utiliser pour l'instant. `deploy.sh --dry-run` exécute `git pull` sur le checkout snapshot, qui échoue, et réinstalle le wrapper privilégié avant de sortir.
+- Déploiement manuel : lancer le workflow, jamais `git pull` à la main sur le VPS.
   ```zsh
-  # Staging (automatique via CI)
-  ssh deploy@sokar "cd /opt/sokar-staging && git pull origin main && bash scripts/deploy.sh --env staging"
+  # Staging : relance le workflow sur main (smoke tests inclus)
+  gh workflow run deploy-staging.yml --ref main
   ```
+  Le checkout `/opt/sokar-staging` est un snapshot (commits `chore(staging): snapshot <sha>`, jamais poussés) : un `git pull origin main` y diverge et échoue.
 
 ## Production deployment
 
@@ -59,11 +60,10 @@ l'API.
 - Script on VPS: `scripts/deploy.sh --env prod --confirm-production`.
 - Redundant runs are skipped (`workflow_run` only): the job exits 0 when the triggering staging run's `head_sha` is no longer the tip of `main` (a newer run will deploy it), or when `releases/.latest-hash` already equals the target SHA. `workflow_dispatch` always deploys. Runs are serialized by the `deploy-prod` concurrency group (`cancel-in-progress: false`).
 - The production smoke-test job also fetches `https://sokar.tech/pricing` and requires its CSS asset to return 200.
-- From Mac:
+- Déploiement manuel (fallback, seulement si la chaîne automatique a échoué) :
   ```zsh
-  # Production (automatique via CI après staging green)
-  # Manuel (fallback) :
-  ssh deploy@sokar "cd /opt/sokar && git pull origin main && bash scripts/deploy.sh --env prod --confirm-production"
+  # `workflow_dispatch` redéploie même si le SHA est déjà actif : vérifier releases/.latest-hash avant
+  gh workflow run deploy-prod.yml --ref main
   ```
 - Privileged wrapper: `/usr/local/sbin/sokar-deploy-root`.
 - The `deploy` account is **not** in `sudo` or `docker` groups.
@@ -80,9 +80,7 @@ ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging 
 
 ## Dry-run (staging only)
 
-```zsh
-ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging --dry-run"
-```
+Indisponible tant que `deploy.sh` ne protège pas le mode dry-run : il exécute `git pull` et réinstalle `/usr/local/sbin/sokar-deploy-root` avant de sortir. Ne pas lancer la commande `--dry-run` sur le VPS d'ici la correction.
 
 ## Smoke tests
 
