@@ -44,6 +44,5 @@ else
   echo "→ Reusing open pull request #$PR_NUMBER"
 fi
 
-echo "→ Enabling squash auto-merge for pull request #$PR_NUMBER"
-gh pr merge "$PR_NUMBER" --auto --squash
+# Pas d'auto-merge : la fusion reste une décision humaine.
 gh pr view "$PR_NUMBER" --json url,mergeStateStatus --jq '"PR: " + .url + " (" + .mergeStateStatus + ")"'
