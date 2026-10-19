@@ -95,6 +95,7 @@ beforeEach(() => {
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS,
     VOICE_LLM_HEDGE_MS: voiceConfig.VOICE_LLM_HEDGE_MS,
+    VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
   };
   Object.assign(voiceConfig, {
@@ -102,6 +103,7 @@ beforeEach(() => {
     OPENROUTER_API_KEY: FALLBACK_KEY,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: 60,
     VOICE_LLM_HEDGE_MS: 0,
+    VOICE_LLM_TIMEOUT_MS: 1_000,
   });
   (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
     new CallSessionManager();
@@ -202,6 +204,38 @@ describe('repli du tour structuré', () => {
         labels: { path: 'structured', outcome: 'used', reason: 'first_chunk_timeout' },
       }),
     );
+  });
+
+  it('garde le principal lent quand le repli échoue aussi, au lieu de rendre une erreur', async () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const encoder = new TextEncoder();
+    const late = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: 'Ok.' } }] })}\n\n`,
+              ),
+            );
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          }, 200);
+        },
+      }),
+      { status: 200 },
+    );
+    fetchMock
+      .mockResolvedValueOnce(late)
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+    const text = await mgr.streamStructuredCompletion(session, messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    expect(text).toBe('Ok.');
+    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
   });
 
   it('ne bascule pas quand le modèle principal répond à temps', async () => {
@@ -438,6 +472,17 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     expect(text).toBe(answer('Repli.'));
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(await hedgeCount('hedge_won')).toBe(0);
+  });
+
+  it('garde le principal lent quand le doublon échoue : réponse tardive plutôt que « pas compris » (appel du 19/10)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+    const text = await run(CallSessionManager.getInstance());
+
+    expect(text).toBe(answer('Pour combien ?'));
+    expect(await hedgeCount('primary_won')).toBe(1);
   });
 
   it('échoue quand le principal est bloqué et que le doublon échoue aussi', async () => {

@@ -388,6 +388,19 @@ export function _resetCircuitBreakersForTesting(): void {
   resetCircuitBreaker('cerebras');
 }
 
+/** Résout `'timeout'` si la promesse n'aboutit pas avant `timeoutMs`. */
+async function raceTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | 'timeout'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
  * on abort et la dégradation vocale prend le relais. La valeur est validée
@@ -978,23 +991,29 @@ export class CallSessionManager {
     let reader = response.body.getReader();
     // Premier fragment trop lent : le modèle principal est abandonné pour ce tour (et compte comme
     // un échec pour le disjoncteur), OpenRouter reprend avant que l'appelant n'attende 8 s.
+    // Le secours est demandé au délai maximal ; le principal n'est lâché que s'il répond.
+    let fallback: Response | null = null;
     let firstRead = await this.readFirstChunk(
       reader,
       provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
+      async () => {
+        fallback = await this.fetchFallbackStreaming(
+          session,
+          messages,
+          request,
+          'first_chunk_timeout',
+          new Error('LLM first chunk timeout'),
+        );
+        return Boolean(fallback?.body);
+      },
     );
     if (firstRead === 'timeout') {
       recordProviderFailure(primaryProvider);
       reader.cancel().catch(() => undefined);
-      const fallback = await this.fetchFallbackStreaming(
-        session,
-        messages,
-        request,
-        'first_chunk_timeout',
-        new Error('LLM first chunk timeout'),
-      );
-      if (!fallback?.body) throw new Error('Structured LLM first chunk timed out, no fallback');
+      const rescue = fallback as Response | null;
+      if (!rescue?.body) throw new Error('Structured LLM first chunk timed out, no fallback');
       provider = 'openrouter';
-      reader = fallback.body.getReader();
+      reader = rescue.body.getReader();
       firstRead = await reader.read();
     }
     return { reader, provider, firstRead };
@@ -1020,6 +1039,8 @@ export class CallSessionManager {
       request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
     const startedAt = Date.now();
     let primaryError: unknown = null;
+    // Le doublon, lancé plus bas ; tant qu'il n'existe pas, aucun secours n'est disponible.
+    let duplicateRef: Promise<OpenedStream | null> = Promise.resolve(null);
 
     // A : le principal (avec son propre secours si l'échec est immédiat) et son délai maximal.
     const attemptA = async (): Promise<OpenedStream | null> => {
@@ -1037,6 +1058,7 @@ export class CallSessionManager {
       const firstRead = await this.readFirstChunk(
         reader,
         provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
+        async () => (await duplicateRef) !== null,
       );
       if (firstRead === 'timeout') {
         recordProviderFailure(primaryProvider);
@@ -1085,6 +1107,7 @@ export class CallSessionManager {
           return { reader, provider: 'openrouter' as const, firstRead };
         })().catch(() => null)
       : Promise.resolve(null);
+    duplicateRef = duplicate;
 
     const winner = await firstNonNull([primary, duplicate]);
     if (!winner) {
@@ -1291,18 +1314,16 @@ export class CallSessionManager {
   private async readFirstChunk(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     timeoutMs?: number,
+    rescueAvailable?: () => Promise<boolean>,
   ): Promise<StreamChunkRead | 'timeout'> {
     const firstText = readUntilContent(reader);
     if (!timeoutMs) return firstText;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => resolve('timeout'), timeoutMs);
-    });
-    try {
-      return await Promise.race([firstText, timeout]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+    const early = await raceTimeout(firstText, timeoutMs);
+    if (early !== 'timeout' || !rescueAvailable || (await rescueAvailable())) return early;
+    // Sans secours, abandonner le principal ne laisse que « je n'ai pas compris » : mieux vaut
+    // une réponse lente (appel du 19/10 22:09, Cerebras en file d'attente, OpenRouter en 402).
+    // Le délai total de la requête borne toujours l'attente.
+    return raceTimeout(firstText, Math.max(0, voiceConfig.VOICE_LLM_TIMEOUT_MS - timeoutMs));
   }
 
   /**
