@@ -2577,3 +2577,9 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 - Audit build/E2E/visuel (2026-10-19), rejoué comme la CI (build standalone démo sans clé Clerk, `CI=1`) : build OK ; E2E 109 réussis, 0 échec (23 ignorés par conception) ; visuels 18/18 après mise à jour. Les références du dashboard dataient du 15/09 (tests visuels désactivés en CI). Tests corrigés : libellé « Adresse e-mail » (Clerk en français) dans le contrôle staging, total Multi-site sans point final.
 - Constat non corrigé : toutes les pages sont dynamiques (ƒ) car le layout racine lit le cookie de langue (`cookies()`, multi-langue) ; antérieur à Next 16.
 - Piège : définir `PLAYWRIGHT_BASE_URL` bascule la suite en mode « staging » (tests locaux ignorés, contrôles distants activés).
+
+## 2026-10-19 — Performance mobile de l'accueil
+- Mesure Lighthouse de la production (Chromium local, PageSpeed indisponible : quota) : temps de réponse serveur 50–160 ms partout ; seul l'accueil mobile est réellement lent (LCP 4,3 s avec ralentissement réel). Les 7 s de la connexion venaient du modèle simulé de Lighthouse (1,6 s en réel).
+- Cause : la capture du dashboard, élément principal sur mobile, était en `loading="lazy"`. Correctif : chargement prioritaire + préchargement par taille d'écran. A/B sur builds de production identiques (3 passages, ralentissement réel) : LCP 3,8 s → 1,95 s, score 87 → 98.
+- Décision : rendre les pages publiques statiques (cookie de langue dans le layout) n'est plus prioritaire, le serveur n'est pas le goulot.
+- Accessibilité : deux h4 sous un h2 passés en h3.
