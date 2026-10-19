@@ -1,12 +1,12 @@
 /**
- * Tests unitaires pour le middleware Connect.
+ * Tests unitaires pour le proxy Connect.
  *
  * Vérifie la politique de framing : /widget/* doit pouvoir être embarqué
  * dans un iframe cross-origin, le reste du site reste protégé.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { middleware } from './middleware';
+import { proxy } from './proxy';
 
 function makeNextUrl(href: string): URL {
   const url = new URL(href);
@@ -23,7 +23,7 @@ function makeRequest(
     host?: string;
     search?: Record<string, string>;
   } = {},
-): Parameters<typeof middleware>[0] {
+): Parameters<typeof proxy>[0] {
   const origin = options.host ? `https://${options.host}` : 'https://sokar.tech';
   const url = new URL(pathname, origin);
   if (options.preview) url.searchParams.set('preview', options.preview);
@@ -35,29 +35,29 @@ function makeRequest(
     nextUrl,
     headers,
     method: 'GET',
-  } as unknown as Parameters<typeof middleware>[0];
+  } as unknown as Parameters<typeof proxy>[0];
 }
 
-function getCspFrameAncestors(response: ReturnType<typeof middleware>): string | null {
+function getCspFrameAncestors(response: ReturnType<typeof proxy>): string | null {
   const csp = response.headers.get('Content-Security-Policy');
   if (!csp) return null;
   const match = csp.match(/frame-ancestors ([^;]+)/);
   return match ? match[1] : null;
 }
 
-function getCsp(response: ReturnType<typeof middleware>): string | null {
+function getCsp(response: ReturnType<typeof proxy>): string | null {
   return response.headers.get('Content-Security-Policy');
 }
 
-describe('middleware framing policy', () => {
+describe('proxy framing policy', () => {
   it('denies framing by default', () => {
-    const response = middleware(makeRequest('/restaurant/chez-sokar-demo'));
+    const response = proxy(makeRequest('/restaurant/chez-sokar-demo'));
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
     expect(getCspFrameAncestors(response)).toBe("'none'");
   });
 
   it('allows framing on /widget/* from any origin without X-Frame-Options', () => {
-    const response = middleware(makeRequest('/widget/chez-sokar-demo'));
+    const response = proxy(makeRequest('/widget/chez-sokar-demo'));
     expect(response.headers.get('X-Frame-Options')).toBeNull();
     expect(getCspFrameAncestors(response)).toBe('*');
   });
@@ -67,7 +67,7 @@ describe('middleware framing policy', () => {
     process.env.DASHBOARD_URL = 'http://localhost:3000';
 
     try {
-      const response = middleware(makeRequest('/restaurant/chez-sokar-demo', { preview: '1' }));
+      const response = proxy(makeRequest('/restaurant/chez-sokar-demo', { preview: '1' }));
       expect(response.headers.get('X-Frame-Options')).toBeNull();
       expect(getCspFrameAncestors(response)).toBe("'self' http://localhost:3000");
     } finally {
@@ -83,7 +83,7 @@ describe('middleware framing policy', () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.sokar.example';
 
     try {
-      const response = middleware(makeRequest('/widget/chez-sokar-demo'));
+      const response = proxy(makeRequest('/widget/chez-sokar-demo'));
       expect(getCsp(response)).toContain("connect-src 'self' https://api.sokar.example");
     } finally {
       if (previousApiUrl === undefined) delete process.env.API_URL;
@@ -94,7 +94,7 @@ describe('middleware framing policy', () => {
   });
 
   it('allows Stripe.js and its payment frames', () => {
-    const response = middleware(makeRequest('/widget/chez-sokar-demo/gift-card'));
+    const response = proxy(makeRequest('/widget/chez-sokar-demo/gift-card'));
     const csp = getCsp(response);
 
     expect(csp).toContain('script-src');
@@ -110,12 +110,12 @@ describe('middleware framing policy', () => {
     env.NODE_ENV = 'development';
 
     try {
-      const devResponse = middleware(makeRequest('/widget/chez-sokar-demo'));
+      const devResponse = proxy(makeRequest('/widget/chez-sokar-demo'));
       expect(getCsp(devResponse)).toContain("script-src 'self'");
       expect(getCsp(devResponse)).toContain("'unsafe-eval'");
 
       env.NODE_ENV = 'production';
-      const productionResponse = middleware(makeRequest('/widget/chez-sokar-demo'));
+      const productionResponse = proxy(makeRequest('/widget/chez-sokar-demo'));
       expect(getCsp(productionResponse)).not.toContain("'unsafe-eval'");
     } finally {
       if (previousNodeEnv === undefined) delete env.NODE_ENV;
@@ -124,9 +124,9 @@ describe('middleware framing policy', () => {
   });
 });
 
-describe('middleware booking route alias', () => {
+describe('proxy booking route alias', () => {
   it('rewrites /book/[slug] to the public widget and preserves query parameters', () => {
-    const response = middleware(
+    const response = proxy(
       makeRequest('/book/chez-sokar-demo', {
         search: { source: 'restaurant', partySize: '2' },
       }),
@@ -140,7 +140,7 @@ describe('middleware booking route alias', () => {
   });
 });
 
-describe('middleware subdomain routing (*.sokar.tech)', () => {
+describe('proxy subdomain routing (*.sokar.tech)', () => {
   // Le custom domain flow nécessite API_URL pour déclencher le rewrite.
   let originalApiUrl: string | undefined;
   beforeAll(() => {
@@ -153,7 +153,7 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
   });
 
   it('rewrites chezmario.sokar.tech to /restaurant/chezmario', () => {
-    const response = middleware(makeRequest('/', { host: 'chezmario.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'chezmario.sokar.tech' }));
     // NextResponse.rewrite returns a response whose .headers includes the rewritten URL
     // in the `x-middleware-rewrite` header (Next.js internal).
     expect(response.headers.get('x-middleware-rewrite')).toBe(
@@ -162,17 +162,17 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
   });
 
   it('does not rewrite www.sokar.tech (primary host)', () => {
-    const response = middleware(makeRequest('/', { host: 'www.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'www.sokar.tech' }));
     expect(response.headers.get('x-middleware-rewrite')).toBeNull();
   });
 
   it('does not rewrite sokar.tech (primary host)', () => {
-    const response = middleware(makeRequest('/', { host: 'sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'sokar.tech' }));
     expect(response.headers.get('x-middleware-rewrite')).toBeNull();
   });
 
   it('rewrites custom domain reserve.chezmario.fr to /custom-domain', () => {
-    const response = middleware(makeRequest('/', { host: 'reserve.chezmario.fr' }));
+    const response = proxy(makeRequest('/', { host: 'reserve.chezmario.fr' }));
     const rewrite = response.headers.get('x-middleware-rewrite');
     expect(rewrite).toContain('/custom-domain');
     expect(rewrite).toContain('host=reserve.chezmario.fr');
@@ -181,7 +181,7 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
   it('does not rewrite to /restaurant/ when slug is empty (host === .sokar.tech)', () => {
     // host = ".sokar.tech" → slug would be empty → no subdomain rewrite.
     // Falls through to custom-domain flow (not a /restaurant/ rewrite).
-    const response = middleware(makeRequest('/', { host: '.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: '.sokar.tech' }));
     const rewrite = response.headers.get('x-middleware-rewrite');
     // Soit pas de rewrite, soit un rewrite vers /custom-domain (jamais /restaurant/).
     if (rewrite) {
@@ -194,7 +194,7 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
     // foo.bar.sokar.tech → slug = "foo.bar" → /restaurant/foo.bar
     // Comportement documenté : on accepte les dots dans le slug (pas de validation
     // de format ici — la page /restaurant/[slug] retournera notFound() si invalide).
-    const response = middleware(makeRequest('/', { host: 'foo.bar.sokar.tech' }));
+    const response = proxy(makeRequest('/', { host: 'foo.bar.sokar.tech' }));
     expect(response.headers.get('x-middleware-rewrite')).toBe(
       'http://foo.bar.sokar.tech/restaurant/foo.bar',
     );
@@ -202,13 +202,13 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
 
   it('handles uppercase subdomain (browsers lowercase the host, but test the edge)', () => {
     // Les navigateurs lowercaset le host avant l'envoi. Si un client envoie
-    // quand même un host en majuscules (ex: CHEZMARIO.sokar.tech), le middleware
+    // quand même un host en majuscules (ex: CHEZMARIO.sokar.tech), le proxy
     // match car endsWith('.sokar.tech') est sensible à la casse mais le suffixe
     // .sokar.tech reste en minuscules. Le slug est préservé en majuscules dans
     // la rewrite — la page /restaurant/[slug] retournera notFound() car les slugs
     // en DB sont lowercase. Comportement documenté : pas de normalisation de casse
-    // dans le middleware (Edge), la validation se fait côté page.
-    const response = middleware(makeRequest('/', { host: 'CHEZMARIO.sokar.tech' }));
+    // dans le proxy (Edge), la validation se fait côté page.
+    const response = proxy(makeRequest('/', { host: 'CHEZMARIO.sokar.tech' }));
     const rewrite = response.headers.get('x-middleware-rewrite');
     expect(rewrite).toContain('/restaurant/CHEZMARIO');
   });
@@ -216,8 +216,8 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
 
 describe('privacy CSP bootstrap', () => {
   it('forwards the response nonce to Next rendering through the request CSP', () => {
-    const first = middleware(makeRequest('/privacy'));
-    const second = middleware(makeRequest('/privacy'));
+    const first = proxy(makeRequest('/privacy'));
+    const second = proxy(makeRequest('/privacy'));
     const nonce = first.headers.get('x-middleware-request-x-nonce');
     expect(nonce).toBeTruthy();
     expect(first.headers.get('x-middleware-request-content-security-policy')).toBe(
@@ -229,7 +229,7 @@ describe('privacy CSP bootstrap', () => {
   });
 
   it('does not change the request policy of other routes', () => {
-    const response = middleware(makeRequest('/restaurant/chez-sokar-demo'));
+    const response = proxy(makeRequest('/restaurant/chez-sokar-demo'));
     expect(response.headers.get('x-middleware-request-content-security-policy')).toBeNull();
   });
 });

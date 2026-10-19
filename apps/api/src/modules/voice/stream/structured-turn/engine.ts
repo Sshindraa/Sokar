@@ -483,6 +483,7 @@ export async function generateRecoveryReply(
   });
   const text = await mgr.streamStructuredCompletion(session, messages, format, {
     ...(signal ? { signal } : {}),
+    kind: 'recovery',
     onDelta: () => undefined,
   });
   const output = parseStructuredTurnOutput(text);
@@ -804,6 +805,7 @@ export async function runStructuredTurn(
     text ??= await mgr.streamStructuredCompletion(session, messages, format, {
       signal: abortController.signal,
       telemetryTurnId: turnId,
+      kind: actionResult ? 'turn_after_action' : 'turn',
       onDelta,
     });
     let output = parseStructuredTurnOutput(text);

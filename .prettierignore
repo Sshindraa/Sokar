@@ -1,2 +1,5 @@
 # Append-only Obsidian journal: preserve existing entries byte-for-byte.
 docs/obsidian/Journal.md
+
+# Généré par pnpm : Prettier le reformate, et pnpm le réécrit en entier à chaque ajout de paquet.
+pnpm-lock.yaml

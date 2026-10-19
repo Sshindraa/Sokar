@@ -165,7 +165,7 @@ export function startTurnEndJudge(
       session,
       buildTurnEndJudgeMessages(question, transcript),
       TURN_END_JUDGE_FORMAT,
-      { signal: controller.signal, maxTokens: 30, onDelta: () => undefined },
+      { signal: controller.signal, maxTokens: 30, kind: 'judge', onDelta: () => undefined },
     );
     return parseTurnEndJudgeVerdict(text);
   })();

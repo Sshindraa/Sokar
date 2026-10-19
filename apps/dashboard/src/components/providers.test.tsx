@@ -19,6 +19,8 @@ describe('sessions opérateur dans le preview staging', () => {
   it.each([
     ['/admin/provisioning', true],
     ['/login', true],
+    ['/register', true],
+    ['/onboarding', true],
     ['/dashboard', false],
     ['/', false],
   ])('monte la session réelle uniquement pour %s : %s', (pathname, sessionExpected) => {

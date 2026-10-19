@@ -17,6 +17,11 @@ vi.mock('next/image', () => ({ default: () => null }));
 
 beforeAll(() => {
   HTMLElement.prototype.scrollTo = vi.fn();
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('min-width'),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
 });
 
 describe('récapitulatif avant paiement', () => {

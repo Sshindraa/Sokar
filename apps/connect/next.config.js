@@ -24,7 +24,7 @@ const nextConfig = {
       },
     ];
   },
-  // Sécurité — headers ajoutés via middleware.ts (CSP/HSTS/Stripe-frame-blockers).
+  // Sécurité — headers ajoutés via proxy.ts (CSP/HSTS/Stripe-frame-blockers).
   // next.config ne les porte pas car ils dépendent du contexte request.
   images: {
     // Pas d'optimisation Next/Image : on sert des URLs externes (Cloudinary, etc.).
@@ -40,12 +40,6 @@ const nextConfig = {
   // parallelServerBuildTraces: true — parallélise le tracing sur 2 cores.
   experimental: {
     parallelServerBuildTraces: true,
-  },
-  // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
-  // Le relancer pendant next build sur le VPS ajoute ~68 s de linting redondant.
-  // Le typecheck reste actif (ignoreBuildErrors: false) — safety net.
-  eslint: {
-    ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: false,

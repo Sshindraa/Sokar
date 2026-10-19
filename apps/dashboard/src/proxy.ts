@@ -51,7 +51,7 @@ function rewriteBookToWidget(req: NextRequest): NextResponse | null {
   return NextResponse.rewrite(url);
 }
 
-const middleware = hasClerkKey
+const proxy = hasClerkKey
   ? clerkMiddleware(async (auth, req) => {
       const rewrite = rewriteBookToWidget(req);
       if (rewrite) return rewrite;
@@ -81,7 +81,7 @@ const middleware = hasClerkKey
       return NextResponse.next();
     };
 
-export default middleware;
+export default proxy;
 
 export const config = {
   matcher: [

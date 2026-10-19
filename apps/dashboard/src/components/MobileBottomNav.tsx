@@ -121,6 +121,7 @@ export default function MobileBottomNav() {
   const [createOfferOpen, setCreateOfferOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
+  const [pointerInteraction, setPointerInteraction] = useState(false);
   const [dragPreviewIndex, setDragPreviewIndex] = useState<number | null>(null);
   const [liquidReady, setLiquidReady] = useState(false);
 
@@ -202,27 +203,28 @@ export default function MobileBottomNav() {
       const geometry = getGeometry();
       if (!liquid || !geometry) return;
 
-      // The lens is intentionally wider than a tab: it overlaps the adjacent
-      // labels just enough to create the same magnifying-glass silhouette as
-      // the reference interaction while remaining clipped to the bar edges.
+      // Keep a uniform 2px seam at both ends, even when the lens stretches.
+      // The extra 2px accounts for the container's two 1px borders.
       const baseWidth = Math.max(56, geometry.itemWidth * 1.08);
       const width = Math.min(geometry.itemWidth * 1.42, baseWidth + stretch);
       liquid.style.width = `${width}px`;
-      const tilt = Number.parseFloat(liquid.style.getPropertyValue('--liquid-tilt') || '0');
       const pressure = Number.parseFloat(liquid.style.getPropertyValue('--liquid-pressure') || '0');
       const verticalScale = 1 + Math.min(0.035, Math.max(0, pressure) * 0.018);
-      liquid.style.transform = `translate3d(${localX - width / 2}px, -50%, 0) rotate(${tilt}deg) scaleY(${verticalScale})`;
+      const left = Math.max(
+        2,
+        Math.min(localX - width / 2, geometry.containerRect.width - width - 4),
+      );
+      liquid.style.transform = `translate3d(${left}px, -50%, 0) scaleY(${verticalScale})`;
       liquid.style.transition = animate ? LIQUID_SETTLE_TRANSITION : 'none';
     },
     [getGeometry],
   );
 
   const setLiquidInteraction = useCallback(
-    (localX: number, animate: boolean, stretch = 0, tilt = 0, pressure = 0) => {
+    (localX: number, animate: boolean, stretch = 0, pressure = 0) => {
       const liquid = liquidRef.current;
       if (!liquid) return;
 
-      liquid.style.setProperty('--liquid-tilt', `${tilt}deg`);
       liquid.style.setProperty('--liquid-pressure', `${pressure}`);
       setLiquidPosition(localX, animate, stretch);
     },
@@ -232,7 +234,6 @@ export default function MobileBottomNav() {
   const resetLiquidInteraction = useCallback(() => {
     const liquid = liquidRef.current;
     if (!liquid) return;
-    liquid.style.setProperty('--liquid-tilt', '0deg');
     liquid.style.setProperty('--liquid-pressure', '0');
   }, []);
 
@@ -315,6 +316,7 @@ export default function MobileBottomNav() {
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    setPointerInteraction(true);
 
     // A pointer gesture is the point at which cached geometry must be
     // freshest: JSDOM, iOS viewport changes and keyboard/rotation can all
@@ -344,7 +346,7 @@ export default function MobileBottomNav() {
     setIsDragging(true);
     setIsPressed(true);
     setDragPreviewIndex(previewIndex);
-    setLiquidInteraction(localX, false, 0, 0, 1);
+    setLiquidInteraction(localX, false, 0, 1);
     // Pointer capture is needed for a finger that leaves the bar while
     // scrubbing. On a mouse click it would retarget the native click to the
     // container and prevent the underlying Link/button from receiving it.
@@ -381,9 +383,8 @@ export default function MobileBottomNav() {
       44,
       Math.abs(event.clientX - drag.startX) * 0.16 + Math.abs(velocity) * 14,
     );
-    const tilt = Math.max(-7, Math.min(7, velocity * 20));
 
-    setLiquidInteraction(localX, false, stretch, tilt, 1);
+    setLiquidInteraction(localX, false, stretch, 1);
     if (previewIndex !== drag.previewIndex) {
       drag.previewIndex = previewIndex;
       setDragPreviewIndex(previewIndex);
@@ -566,6 +567,8 @@ export default function MobileBottomNav() {
             isDragging && 'is-dragging',
             isPressed && 'is-pressed',
           )}
+          data-pointer-interaction={pointerInteraction || undefined}
+          onKeyDownCapture={() => setPointerInteraction(false)}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={finishDrag}

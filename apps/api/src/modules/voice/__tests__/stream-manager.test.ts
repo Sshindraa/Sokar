@@ -722,6 +722,57 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
       expect(await fallbackUrl(undefined)).toBe('https://openrouter.ai/api/v1/chat/completions');
     });
 
+    it('compte chaque requête par sorte, et une requête en échec comme interrompue', async () => {
+      voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+      voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+      voiceConfig.OPENROUTER_API_KEY = undefined;
+      const usageChunk = `data: ${JSON.stringify({
+        choices: [{ delta: { content: '{"say":"ok"}' } }],
+        usage: { prompt_tokens: 5000, completion_tokens: 12 },
+      })}\n\ndata: [DONE]\n\n`;
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(usageChunk));
+              controller.close();
+            },
+          }),
+        })
+        .mockResolvedValueOnce({ ok: false, status: 402, body: null });
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+      const session = makeSession();
+      const mgr = CallSessionManager.getInstance();
+      const messages: ChatMessage[] = [{ role: 'user', content: 'bonjour' }];
+
+      await mgr.streamStructuredCompletion(session, messages, format, {
+        kind: 'turn',
+        onDelta: () => undefined,
+      });
+      await expect(
+        mgr.streamStructuredCompletion(session, messages, format, {
+          kind: 'speculation',
+          onDelta: () => undefined,
+        }),
+      ).rejects.toThrow();
+
+      expect(session.voiceUsage?.llmByKind?.turn).toEqual({
+        requests: 1,
+        interrupted: 0,
+        inputTokens: 5000,
+        outputTokens: 12,
+      });
+      expect(session.voiceUsage?.llmByKind?.speculation).toMatchObject({
+        requests: 1,
+        interrupted: 1,
+        outputTokens: 0,
+      });
+      expect(session.voiceUsage?.llmByKind?.speculation?.inputTokens).toBeGreaterThan(0);
+    });
+
     it('garde l’erreur d’origine sans clé de secours', async () => {
       voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
       voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;

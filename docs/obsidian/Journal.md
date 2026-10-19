@@ -2517,3 +2517,79 @@ L'entrée précédente sur `?testBooking=1` (parcours simulé) est remplacée pa
 - 2026-10-18 — [deps, securite, audit] **Lot correctifs dépendances (branche `codex/deps-patch-audit`)** — Demandé par Hamza après l'inventaire des versions. Montées sûres : React/React DOM 19.2.7 → 19.3.1, Next 15.5.27 → 15.5.28 (backport 15.x, pas de passage à 16), Fastify 5.12.5 → 5.12.7, Turbo 2.10.2 → 2.11.9. Overrides pnpm relevés : `hono` >=4.13.7, `qs` >=6.16.0, `ip-address` >=10.7.1, `js-yaml` >=5.4.1, ajout `fast-copy` >=4.1.0. `pnpm audit --prod` : 12 → 2 alertes (1 high, 1 moderate). Les deux restantes viennent de `tailwindcss-animate > tailwindcss` (chaîne de build uniquement) : `braces` sans version corrigée et `postcss-selector-parser` <7.1.6 ; le remède est la migration Tailwind 4 avec `tw-animate-css`, pas un override forcé. Vérification dans un worktree séparé (`../Sokar-deps`, basé `origin/main`, env local copié) : typecheck 12/12, lint 16/16 (0 erreur), build 16/16, tests API 400 fichiers/4314 tests et dashboard 110 fichiers/924 tests, tous verts. `install --frozen-lockfile` repassé pour valider le lock régénéré. Restent à planifier : Next 16, Tailwind 4, Prisma 7 (8 encore en RC), Zod 4, TypeScript 7, pnpm 12. Aucun push sur `main`, aucun déploiement.
 
 - 2026-10-18 — [deps, lint, connect] **Réalignement `eslint-config-next` et liens internes Connect** — Même PR que le lot correctifs (#510). `eslint-config-next` était figé en `^14.2.35` alors que Next tourne en 15 : passage à `^15.5.28` dans dashboard, connect et widget. Le nouveau jeu de règles fait échouer `apps/connect/src/app/privacy/page.tsx` (règle `@next/next/no-html-link-for-pages`) : les deux liens internes vers `/` passent en `next/link`, styles inchangés. Vérification : lint 16/16 sans erreur, build 16/16, tests verts (API 4314, dashboard 924, connect 151, shared 71, widget 23, agent-client 3). Découverte au passage : Next 16 n'est pas un simple bump, il entraîne Clerk 7 (@clerk/nextjs 6.39.5 → 7.9.17), Sentry 11 (@sentry/nextjs 10.63 → 11.8) et la migration de `next lint` vers l'ESLint CLI (déprécié, supprimé en 16). À traiter en PR dédiée avec recette d'authentification.
+
+## 2026-10-18 — Migration Next 16 isolée, compatibilité Clerk conservée
+Suite de #510 sur `codex/next16-clerk` : Next/eslint-config-next 16.4.2 et ESLint 9.39.5 dans Dashboard, Connect et widget ; `next lint` remplacé par ESLint CLI/configuration plate, options ESLint retirées de next.config, points d’entrée `middleware.ts` migrés vers `proxy.ts`. Webpack conservé explicitement en dev/build. Node minimum 20.9, JSX automatique/types dev alignés. Clerk 6.39.5, Sentry 10.63.0 et next-intl 4.13.1 conservés : leurs peerDependencies acceptent Next 16, les majeures ne sont donc pas nécessaires. Override ciblé `minimatch@3>brace-expansion` 1.1.21 : préserve l’API CommonJS attendue par ESLint 9, sans nouvelle alerte audit production (toujours braces/postcss-selector-parser via Tailwind 3). Nouveaux diagnostics React Compiler (set-state-in-effect/refs/purity/immutability) en avertissement, dette existante explicite ; règles historiques des hooks conservées. Vérifications locales : typecheck 12/12, builds frontend et dépendances 8/8, lint frontend sans erreur (avertissements), tests dashboard 934 dont 10 nouveaux contrôles d’accès proxy, Connect 151, widget 23, shared 71. Clés Clerk absentes des fichiers dashboard locaux : aucune connexion réelle déclarée validée ; PR à garder en brouillon avant recette staging avec session réelle. Runbook `docs/runbooks/next16-clerk.md`. Aucun déploiement, changement de schéma ou fusion.
+
+## 2026-10-18 — Next 16 : staging déployé et qualification Clerk partielle
+Code #511 `8f1f2d78` : 18 contrôles CI verts. Workflow staging 39165720884 réussi sur la branche dédiée ; release `20261018T210139Z`, rollback/health puis restauration courante validés ; standalone Next 16.4.2 constaté. E2E dashboard/widget : 8 réussis, 4 ignorés ; Connect : 5 réussis. API livez et accueil OK, quatre processus staging online. Session opérateur existante conservée après rechargement de `/admin` ; ancienne URL opérateur redirigée vers `/admin/margin`, lecture effective, aucune erreur navigateur. Instance locale hors démo avec configuration Clerk Development injectée en mémoire depuis staging : quatre routes protégées → 307 /login sans session, formulaire Clerk et redirection Google fonctionnels. L’utilisateur a choisi de terminer lui-même la connexion ; restent nouvelle connexion, organisation hors démo, déconnexion/reconnexion et compte restaurant sans droit opérateur. Décision : garder #511 en brouillon jusqu’à ces vérifications ; aucune fusion ni production. Preuve détaillée dans `docs/runbooks/next16-clerk.md`.
+
+## 2026-10-18 — Next 16 : session et déconnexion Clerk vérifiées, reconnexion bloquée Turnstile
+Sur autorisation de poursuivre la connexion : Google → compte existant → établissement de test et onboarding retrouvés hors démo ; persistance après rechargement et second onglet, sync API en 200, accès opérateur effectif. Déconnexion depuis le menu Sokar validée, puis second onglet `/admin` renvoyé vers `/login`. Reconnexion non validée : callback Clerk en chargement et erreurs Turnstile 300030 répétées. Injection locale réalignée avec les URLs Clerk du staging, sans amélioration. Comparaison Next 15 non concluante (pas de cycle OAuth complet validé). Décision : #511 reste en brouillon, ne pas attribuer le blocage à Next 16 sans preuve et ne pas désactiver l’anti-robot ; reste reconnexion complète et compte réel sans privilège opérateur (refus 403 déjà couvert en CI). Aucun réglage restaurant modifié ni réservation créée. Serveur de contrôle Next 15 arrêté, fichiers générés restaurés ; recette Next 16 disponible pour reprise manuelle.
+
+## 2026-10-18 — Navigation mobile : relief Liquid Glass
+À la demande de Hamza, adaptation visuelle du Liquid Glass Button d’Ali Imam (21st.dev) sur la lentille active de la navigation basse du dashboard : ombres internes superposées, reflets renforcés et surface plus translucide, avec les tokens clair/sombre existants. Choix : conserver le composant et ses gestes, utiliser le flou natif plutôt que le filtre SVG de la référence ; aucun ajout de dépendance. Repli opaque sans backdrop-filter et suppression du reflet animé en réduction des mouvements. Vérification : stylelint ciblé OK, suite dashboard 111 fichiers / 934 tests OK (dont 13 tests MobileBottomNav), aperçu CSS isolé clair/sombre à 390 px inspecté. Pas de validation sur appareil réel ni de déploiement.
+
+
+## 2026-10-18 — Navigation mobile : lentille horizontale et focus clavier
+Après revue de l’enregistrement de Hamza : suppression de la rotation liée à la vitesse pendant le glissement. Le contour de focus resté sur l’onglet d’origine est désormais masqué après une interaction au pointeur et rétabli dès une interaction clavier. Translation, étirement, navigation au relâchement et focus clavier conservés. Vérification : 13 tests MobileBottomNav OK, assertions aller/retour sans rotation et retour au mode clavier ; stylelint et Prettier OK. Glissements dans les deux sens vérifiés dans le dashboard local ; contour calculé absent après le geste. Non déployé.
+
+
+## 2026-10-18 — Navigation mobile : ajustement aux extrémités
+À la demande de Hamza, suppression des marges latérales excessives du rail et harmonisation des arrondis en capsules. Lentille à hauteur du rail moins 4 px, y compris sur iPad ; position bornée pour conserver une couture de 2 px aux extrémités pendant l’étirement. Vérification visuelle locale des deux extrémités et du menu Plus ; 13 tests MobileBottomNav et stylelint ciblé OK. Non déployé.
+
+
+## 2026-10-18 — Connexion web : composition Efferd adaptée à Sokar
+À la demande de Hamza, refonte visuelle locale de `/login` inspirée de https://21st.dev/@efferd/components/auth-page : panneau de marque à gauche, courbes SVG animées, formulaire à droite, palette sombre Sokar et textes français. Le mobile conserve uniquement le panneau de connexion ; composition double vérifiée à 768 px. Suppression de l’ancien simulateur conversationnel sur cette page. Clerk SignIn et redirection vers `/dashboard` conservés, liens vers inscription et confidentialité explicites, titre/noindex de connexion. Correction du crash local sans clé publique Clerk : état indisponible, champs désactivés et possibilité de réessayer, sans appel useAuth hors provider. Aucun changement des fournisseurs, secrets ou mécanismes de session. Vérifications : 4 tests de parcours OK, TypeScript/Prettier/stylelint ciblés OK, rendus inspectés desktop/390/768 px. Limite : authentification réelle non qualifiée car Clerk absent du local. Non déployé.
+
+
+## 2026-10-18 — Connexion : ajustement sans défilement
+Sur demande de Hamza, espacement vertical lié à la hauteur disponible et hauteur minimale du cadre calculée avec sa vraie marge extérieure. Sur écrans courts, réduction des espacements et retrait des seuls textes décoratifs pour conserver les contrôles visibles sans masquer le débordement. Vérification DOM locale : 525×612 → scrollHeight 612 ; 1049×590 → scrollHeight 590 (aucun défilement). Stylelint, Prettier et diff-check OK. Formulaire Clerk réel toujours à qualifier avec sa configuration.
+
+
+## 2026-10-18 — Connexion : simulation d’appel à gauche
+Sur demande de Hamza, ajout d’une simulation animée locale : échange client/Sokar, confirmation de table et onde vocale, boucle et bouton pause/reprise. Mention explicite « Exemple fictif · aucun appel réel » ; aucun appel réseau ni réservation réelle. Animation inactive sur mobile ; préférence de réduction des mouvements : résultat statique. Panneau gauche conservé sans défilement (DOM 1049×590 → scrollHeight 590), messages visibles et confirmation inspectés. Vérifications : 5 tests login (dont progression/pause/reprise), TypeScript, stylelint, Prettier et diff-check OK. Non déployé.
+
+
+## 2026-10-18 — Connexion : occuper toute la fenêtre
+À la demande de Hamza, retrait de la largeur maximale, du centrage et du cadre extérieur autour des deux panneaux. `/login` remplit désormais la fenêtre en largeur et hauteur, sans marge entre la page et le viewport, tout en gardant les panneaux côte à côte. Vérification en navigateur : cadre 1049×590, origine (0,0), scrollHeight 590. Stylelint, Prettier et diff-check OK.
+
+
+## 2026-10-18 — Connexion : signature de marque
+À la demande de Hamza, remplacement de « Le chef de rang numérique » par « Le futur, c’est aujourd’hui » dans le panneau de marque de la page de connexion.
+
+
+## 2026-10-18 — Connexion : titre à accroche variable
+À la demande de Hamza et sur le seul principe visuel du hero cité, ajout d’une accroche qui alterne « Un appel. », « Une réservation. » et « Un service. », avec le concept affiché en premier plan et une entrée discrète. La suite reste fixe : « Sokar s’en occupe. » Cycle sur grand écran, sans animation avec préférence de réduction des mouvements ; pas de dépendance ajoutée. Défilement des trois expressions constaté en navigateur ; hauteur reste ajustée à la fenêtre. TypeScript, stylelint, Prettier et diff-check OK.
+
+
+## 2026-10-18 — Connexion : précision de l’accroche
+À la demande de Hamza, le sous-titre de l’accroche variable devient « Sokar s’en occupe pour vous. »
+
+
+## 2026-10-18 — Connexion : suppression de la phrase de pied de panneau
+À la demande de Hamza, retrait de « Pensé pour les restaurateurs. Au rythme du service. » du panneau de gauche et nettoyage de son style inutilisé.
+
+
+## 2026-10-19 — Un seul serveur local : Next 16 fusionné dans la branche de travail
+- Fusion locale de `codex/next16-clerk` (PR #511, qui inclut #510) dans `feat/onboarding-test-booking-dry-run` (commit `9817a325`, non poussé). Dashboard local sur Next 16.4.2 avec `proxy.ts`, sur localhost:3000 uniquement ; le serveur de recette :3102 est arrêté.
+- Clés Clerk de développement réactivées dans `apps/dashboard/.env` (fichier ignoré par git).
+- Recette Clerk #511 : reconnexion validée dans un navigateur propre (`sokar.localhost:3102`). Le blocage Turnstile 300030 vient très probablement du profil Brave piloté (300* = comportement de robot détecté), pas du code. Preuves en commentaire sur la PR #511.
+- Au push, la PR de cette branche contiendra aussi le diff de #510/#511 tant qu'elles ne sont pas fusionnées dans `main`.
+
+## 2026-10-19 — Accueil : palette bleu-gris, footer, aperçu dashboard ; Clerk en mode démo
+- Accueil (essai) : palette bleu-gris limitée à `.home-palette` (`home-palette.css`), nouveau footer (`components/footer/`), bandeau d'en-tête flou, hero épuré, captures réelles du dashboard démo selon l'écran (`public/marketing/dashboard-*.webp`, script `scripts/marketing-dashboard-shots.mjs`).
+- `/register` reprend la composition de la nouvelle page de connexion (réutilise `login-headline`, `login-call-simulation`, `login.css`, encore non commités).
+- Bug corrigé : en mode démo (`NEXT_PUBLIC_DEMO_STAGING`, actif en local et sur staging), `Providers` ne montait pas Clerk sur `/register` et `/onboarding`, qui appellent `useAuth()` → page cassée. Les deux routes gardent maintenant Clerk ; test `providers.test.tsx`.
+- `tsconfig.json` du dashboard avait été réécrit en `"jsx": "preserve"` par l'ancien serveur Next 15 : restauré (`react-jsx`, attendu par Next 16).
+- Suite : textes Clerk en français via `src/lib/clerk-fr.ts` (extrait MIT de `@clerk/localizations` fr-FR, sans nouvelle dépendance) ; palette renommée `brand-palette.css` et étendue à `/pricing`, `/login`, `/register` ; lien « Tarifs » du footer vers `/pricing`.
+- Constat : le `pnpm-lock.yaml` de #511 n'est pas stable — `pnpm install --lockfile-only` le réécrit (~8 000 lignes, variantes de pairs `jiti`) sans aucun changement. À régénérer sur #511 avant fusion.
+- Audit build/E2E/visuel (2026-10-19), rejoué comme la CI (build standalone démo sans clé Clerk, `CI=1`) : build OK ; E2E 109 réussis, 0 échec (23 ignorés par conception) ; visuels 18/18 après mise à jour. Les références du dashboard dataient du 15/09 (tests visuels désactivés en CI). Tests corrigés : libellé « Adresse e-mail » (Clerk en français) dans le contrôle staging, total Multi-site sans point final.
+- Constat non corrigé : toutes les pages sont dynamiques (ƒ) car le layout racine lit le cookie de langue (`cookies()`, multi-langue) ; antérieur à Next 16.
+- Piège : définir `PLAYWRIGHT_BASE_URL` bascule la suite en mode « staging » (tests locaux ignorés, contrôles distants activés).
+
+## 2026-10-19 — Performance mobile de l'accueil
+- Mesure Lighthouse de la production (Chromium local, PageSpeed indisponible : quota) : temps de réponse serveur 50–160 ms partout ; seul l'accueil mobile est réellement lent (LCP 4,3 s avec ralentissement réel). Les 7 s de la connexion venaient du modèle simulé de Lighthouse (1,6 s en réel).
+- Cause : la capture du dashboard, élément principal sur mobile, était en `loading="lazy"`. Correctif : chargement prioritaire + préchargement par taille d'écran. A/B sur builds de production identiques (3 passages, ralentissement réel) : LCP 3,8 s → 1,95 s, score 87 → 98.
+- Décision : rendre les pages publiques statiques (cookie de langue dans le layout) n'est plus prioritaire, le serveur n'est pas le goulot.
+- Accessibilité : deux h4 sous un h2 passés en h3.

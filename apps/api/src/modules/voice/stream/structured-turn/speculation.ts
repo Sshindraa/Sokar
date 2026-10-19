@@ -135,6 +135,7 @@ export function startSpeculation(
   speculation.done = Promise.resolve(
     mgr.streamStructuredCompletion(session, messages, format, {
       signal: controller.signal,
+      kind: 'speculation',
       onDelta: (delta) => {
         speculation.deltas.push(delta);
         for (const listener of speculation.listeners) listener(delta);

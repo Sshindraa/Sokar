@@ -381,13 +381,6 @@ export default function DemoSection() {
         <h2 className="mt-4 text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
           Aperçu du tableau de bord
         </h2>
-        <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
-          Exemple de l&apos;interface de pilotage Sokar. Les indicateurs et la conversation
-          ci-dessous sont simulés : restaurant, disponibilités et résultats fictifs. Cette animation
-          est sans audio ni conversation vocale interactive ; elle ne mesure pas la fiabilité
-          réelle. Aucun appel, réservation, SMS, transfert ou facturation n’est déclenché. Les
-          réglages modifient seulement cet aperçu, sans son.
-        </p>
       </div>
 
       <div className="relative z-10 grid w-full gap-4 lg:grid-cols-[1.08fr_1fr] lg:gap-6">
@@ -421,9 +414,9 @@ export default function DemoSection() {
                 />
               </div>
               <div>
-                <h4 className="text-xs font-semibold tracking-tight text-white">
+                <h3 className="text-xs font-semibold tracking-tight text-white">
                   Exemple de conversation
-                </h4>
+                </h3>
                 <p className="text-xs sm:text-[11px] text-white/50 font-medium flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-white/40" /> Scénario simulé
                 </p>

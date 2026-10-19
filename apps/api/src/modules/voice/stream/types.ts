@@ -259,11 +259,29 @@ export interface VoiceUsageLlmCounter {
   estimated: boolean;
 }
 
+/** Sorte de requête au modèle, pour savoir où partent les jetons (mesure seulement). */
+export type LlmRequestKind =
+  | 'turn'
+  | 'turn_after_action'
+  | 'speculation'
+  | 'judge'
+  | 'recovery'
+  | 'other';
+
+/** Requêtes d'un appel par sorte ; les requêtes interrompues comptent leur entrée estimée (facturée). */
+export interface VoiceUsageKindCounter {
+  requests: number;
+  interrupted: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
   cartesiaTtsCharacters: number;
   elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
+  llmByKind?: Partial<Record<LlmRequestKind, VoiceUsageKindCounter>>;
   finalization?: Promise<void>;
 }
 

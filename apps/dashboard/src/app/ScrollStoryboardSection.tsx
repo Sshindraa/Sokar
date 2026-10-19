@@ -109,7 +109,7 @@ export default function ScrollStoryboardSection() {
       <div className="sticky top-0 flex h-screen w-full items-center justify-center overflow-hidden px-4 py-16 sm:px-6 lg:px-10">
         <motion.div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(142,135,123,0.2),transparent_24rem),radial-gradient(circle_at_82%_54%,rgba(255,255,255,0.08),transparent_24rem)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(85,108,140,0.2),transparent_24rem),radial-gradient(circle_at_82%_54%,rgba(255,255,255,0.08),transparent_24rem)]"
           style={{ scale: screenScale }}
         />
         <motion.div
