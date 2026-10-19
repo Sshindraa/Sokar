@@ -48,9 +48,11 @@ import {
 } from '../../../shared/observability/metrics';
 import {
   alertLlmCircuitOpened,
+  alertLlmFallbackUnavailable,
   alertLlmPrimaryUnavailable,
   recordLlmBothProvidersFailed,
   recordLlmHedgeFired,
+  type LlmTurnFailureCause,
 } from './llm-alerts';
 import { armSilenceRecovery, cancelNoInputRecovery } from './no-input-recovery';
 
@@ -156,14 +158,29 @@ function firstNonNull<T>(
 }
 
 /** Hébergeurs OpenRouter du repli : ordre configuré, avec repli sur les autres si tous échouent. */
-function fallbackProviderPreferences(): Record<string, unknown> {
-  const order = (voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER ?? '')
+function providerList(value: string | undefined): string[] {
+  return (value ?? '')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean);
-  return order.length
-    ? { require_parameters: true, order, allow_fallbacks: true }
-    : { require_parameters: true, sort: 'latency' };
+}
+
+/**
+ * Hébergeurs OpenRouter du repli. Les appels contiennent des données personnelles (noms, numéros) :
+ * par défaut, seuls les hébergeurs qui ne conservent rien et n'entraînent rien sur les requêtes
+ * sont admis (`zdr`, `data_collection: deny`) ; VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION=false lève
+ * cette exigence. Ceux de la liste d'exclusion sont écartés même en secours.
+ */
+function fallbackProviderPreferences(): Record<string, unknown> {
+  const order = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER);
+  const ignore = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE);
+  const zeroRetention = voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION !== 'false';
+  return {
+    require_parameters: true,
+    ...(zeroRetention ? { zdr: true, data_collection: 'deny' } : {}),
+    ...(order.length ? { order, allow_fallbacks: true } : { sort: 'latency' }),
+    ...(ignore.length ? { ignore } : {}),
+  };
 }
 
 /** Pourquoi le fournisseur principal n'a pas pu prendre le tour (catégories pour la métrique). */
@@ -204,6 +221,17 @@ function recordLlmException(
  * nouvelle requête : la session est terminée, le signal est déjà aborted et
  * toute requête ultérieure échouerait immédiatement.
  */
+/** Délai dépassé (premier texte ou délai total) : le principal était lent, pas en erreur. */
+function turnFailureCause(error: unknown): LlmTurnFailureCause {
+  if (
+    error instanceof Error &&
+    (error.name === 'TimeoutError' || /timed out/i.test(error.message))
+  ) {
+    return 'primary_slow';
+  }
+  return 'primary_failed';
+}
+
 function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean {
   return err instanceof Error && err.name === 'AbortError' && !!sessionSignal?.aborted;
 }
@@ -859,6 +887,16 @@ export class CallSessionManager {
         estimateTokenCount(streamedText),
         true,
       );
+      // Un tour entendu par l'appelant est resté sans réponse : compté une fois, ici. Le juge et
+      // l'anticipation échouent sans que l'appelant l'entende ; un abandon (barge-in) n'est pas un échec.
+      if (!options.signal?.aborted && kind !== 'judge' && kind !== 'speculation') {
+        const cause = turnFailureCause(error);
+        logger.warn(
+          { callId: session.callControlId, kind, cause },
+          '[llm-alerts] Turn without model answer counted',
+        );
+        notify(recordLlmBothProvidersFailed(cause));
+      }
       throw error;
     }
   }
@@ -1113,7 +1151,6 @@ export class CallSessionManager {
     if (!winner) {
       if (isHedge) {
         voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
-        notify(recordLlmBothProvidersFailed());
       }
       if (primaryError) throw primaryError;
       throw new Error('Structured LLM first chunk timed out, no fallback');
@@ -1235,7 +1272,6 @@ export class CallSessionManager {
     const detail = primaryError instanceof Error ? primaryError.message : String(primaryError);
     if (!apiKey) {
       voiceLlmFallbackTotal.inc({ path, outcome: 'no_key', reason });
-      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.warn(
         { callId: session.callControlId, path, reason, detail },
         '[llm-fallback] Primary failed, no fallback key',
@@ -1254,9 +1290,13 @@ export class CallSessionManager {
           model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL,
           messages: mergeSystemMessages(messages),
           max_tokens: opts.maxTokens,
-          temperature: opts.temperature,
-          top_p: 0.8,
-          reasoning: { enabled: false },
+          ...(voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING === 'false'
+            ? {}
+            : { temperature: opts.temperature, top_p: 0.8 }),
+          reasoning:
+            voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING === 'none'
+              ? { effort: 'none' }
+              : { enabled: false },
           ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
           // Uniquement des hébergeurs qui respectent les paramètres. Ordre imposé : le tri par latence
           // historique a donné des pointes de 5 à 30 s (mesures du 29/09) ; vide = ce tri.
@@ -1268,7 +1308,10 @@ export class CallSessionManager {
       if (!response.ok || !response.body) {
         await response.body?.cancel().catch(() => undefined);
         voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
-        if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
+        // Crédit épuisé ou clé refusée : le secours est hors service, doublons compris.
+        if ([401, 402, 403].includes(response.status)) {
+          notify(alertLlmFallbackUnavailable(response.status));
+        }
         logger.error(
           { callId: session.callControlId, path, reason, detail, status: response.status },
           '[llm-fallback] Primary and fallback failed',
@@ -1286,7 +1329,6 @@ export class CallSessionManager {
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) throw err;
       voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
-      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.error(
         {
           callId: session.callControlId,
