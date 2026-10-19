@@ -48,9 +48,11 @@ import {
 } from '../../../shared/observability/metrics';
 import {
   alertLlmCircuitOpened,
+  alertLlmFallbackUnavailable,
   alertLlmPrimaryUnavailable,
   recordLlmBothProvidersFailed,
   recordLlmHedgeFired,
+  type LlmTurnFailureCause,
 } from './llm-alerts';
 import { armSilenceRecovery, cancelNoInputRecovery } from './no-input-recovery';
 
@@ -204,6 +206,17 @@ function recordLlmException(
  * nouvelle requête : la session est terminée, le signal est déjà aborted et
  * toute requête ultérieure échouerait immédiatement.
  */
+/** Délai dépassé (premier texte ou délai total) : le principal était lent, pas en erreur. */
+function turnFailureCause(error: unknown): LlmTurnFailureCause {
+  if (
+    error instanceof Error &&
+    (error.name === 'TimeoutError' || /timed out/i.test(error.message))
+  ) {
+    return 'primary_slow';
+  }
+  return 'primary_failed';
+}
+
 function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean {
   return err instanceof Error && err.name === 'AbortError' && !!sessionSignal?.aborted;
 }
@@ -859,6 +872,16 @@ export class CallSessionManager {
         estimateTokenCount(streamedText),
         true,
       );
+      // Un tour entendu par l'appelant est resté sans réponse : compté une fois, ici. Le juge et
+      // l'anticipation échouent sans que l'appelant l'entende ; un abandon (barge-in) n'est pas un échec.
+      if (!options.signal?.aborted && kind !== 'judge' && kind !== 'speculation') {
+        const cause = turnFailureCause(error);
+        logger.warn(
+          { callId: session.callControlId, kind, cause },
+          '[llm-alerts] Turn without model answer counted',
+        );
+        notify(recordLlmBothProvidersFailed(cause));
+      }
       throw error;
     }
   }
@@ -1113,7 +1136,6 @@ export class CallSessionManager {
     if (!winner) {
       if (isHedge) {
         voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
-        notify(recordLlmBothProvidersFailed());
       }
       if (primaryError) throw primaryError;
       throw new Error('Structured LLM first chunk timed out, no fallback');
@@ -1235,7 +1257,6 @@ export class CallSessionManager {
     const detail = primaryError instanceof Error ? primaryError.message : String(primaryError);
     if (!apiKey) {
       voiceLlmFallbackTotal.inc({ path, outcome: 'no_key', reason });
-      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.warn(
         { callId: session.callControlId, path, reason, detail },
         '[llm-fallback] Primary failed, no fallback key',
@@ -1268,7 +1289,10 @@ export class CallSessionManager {
       if (!response.ok || !response.body) {
         await response.body?.cancel().catch(() => undefined);
         voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
-        if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
+        // Crédit épuisé ou clé refusée : le secours est hors service, doublons compris.
+        if ([401, 402, 403].includes(response.status)) {
+          notify(alertLlmFallbackUnavailable(response.status));
+        }
         logger.error(
           { callId: session.callControlId, path, reason, detail, status: response.status },
           '[llm-fallback] Primary and fallback failed',
@@ -1286,7 +1310,6 @@ export class CallSessionManager {
     } catch (err) {
       if (isSessionAbortError(err, opts.signal)) throw err;
       voiceLlmFallbackTotal.inc({ path, outcome: 'failed', reason });
-      if (reason !== 'hedge') notify(recordLlmBothProvidersFailed());
       logger.error(
         {
           callId: session.callControlId,
