@@ -2583,3 +2583,10 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 - Cause : la capture du dashboard, élément principal sur mobile, était en `loading="lazy"`. Correctif : chargement prioritaire + préchargement par taille d'écran. A/B sur builds de production identiques (3 passages, ralentissement réel) : LCP 3,8 s → 1,95 s, score 87 → 98.
 - Décision : rendre les pages publiques statiques (cookie de langue dans le layout) n'est plus prioritaire, le serveur n'est pas le goulot.
 - Accessibilité : deux h4 sous un h2 passés en h3.
+
+## 2026-10-19 — Juge de fin de tour : attente après désaccord à 800 ms (production)
+- Appel test 4a0afa9d (Chez Sokar) : noms Assam et Houett bien relus, réservation créée puis annulée. Rapport automatique généré et relié aux journaux (`linked`) : le TODO « vérifier le lien du rapport » est soldé. Note : `voice_call_audio.py report <début d'id>` ne trouve pas le rapport, il faut l'id complet.
+- Mesure sur les 4 appels avec juge (14–19/10) : 10 verdicts « inachevé », l'appelant n'a repris que 3 fois. Les 7 autres ont coûté environ 2 s de plus qu'un tour normal (médiane ≈ 3,0 s contre ≈ 1,1 s).
+- Changement : `VOICE_TURN_JUDGE_DISAGREEMENT_SILENCE_MS=800` dans `/opt/sokar/apps/api/.env` (défaut 1200), `sokar-api` redémarré à 11:12 UTC, valeur vérifiée. Seul Chez Sokar a le juge. Sauvegarde : `.env.bak-20261019T111243Z`. Retour : supprimer la ligne, puis `pm2 restart sokar-api --update-env`.
+- Reste : le cas où juge et modèle se trompent ensemble (épellation, 3,3 s) ; à remesurer sur les prochains appels.
+- Crédit OpenRouter (repli LLM de la voix en production) : 0,17 $ restants sur 10 $. Hamza ne recharge pas pour l'instant.
