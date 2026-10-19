@@ -182,7 +182,9 @@ test.describe('Accès opérateur distant sans session', () => {
       await page.goto(path, { waitUntil: 'domcontentloaded' });
       await expect(page).toHaveURL(/\/login(?:\?|$)/);
       await expect(page.getByRole('heading', { name: 'Ravis de vous revoir' })).toBeVisible();
-      await expect(page.getByRole('textbox', { name: 'Email address', exact: true })).toBeVisible();
+      await expect(
+        page.getByRole('textbox', { name: 'Adresse e-mail', exact: true }),
+      ).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Espace administration' })).toHaveCount(0);
     });
   }

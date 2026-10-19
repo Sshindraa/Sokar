@@ -2,6 +2,7 @@
 
 import { ClerkProvider } from '@clerk/nextjs';
 import { usePathname } from 'next/navigation';
+import { clerkFrFR } from '@/lib/clerk-fr';
 import { useEffect, useLayoutEffect, type ReactNode } from 'react';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -26,7 +27,12 @@ export default function Providers({ children }: { children: ReactNode }) {
     pathname?.startsWith('/admin') ||
     pathname?.startsWith('/onboarding');
 
-  const needsOperatorSession = pathname?.startsWith('/admin') || pathname?.startsWith('/login');
+  // /register et /onboarding appellent useAuth() : il leur faut Clerk, même en mode démo.
+  const needsOperatorSession =
+    pathname?.startsWith('/admin') ||
+    pathname?.startsWith('/login') ||
+    pathname?.startsWith('/register') ||
+    pathname?.startsWith('/onboarding');
 
   // Public marketing pages must not depend on Clerk. Auth is mounted only
   // where the route actually needs login/session state.
@@ -34,5 +40,9 @@ export default function Providers({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  return <ClerkProvider publishableKey={publishableKey}>{children}</ClerkProvider>;
+  return (
+    <ClerkProvider publishableKey={publishableKey} localization={clerkFrFR}>
+      {children}
+    </ClerkProvider>
+  );
 }

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import PricingPlans from '@/app/PricingPlans';
 import PricingDetails from '@/app/PricingDetails';
 import { PRICING_METADATA } from '@/app/marketing-metadata';
+import '../brand-palette.css';
 
 export const metadata = PRICING_METADATA;
 
@@ -13,7 +14,7 @@ export const metadata = PRICING_METADATA;
 
 export default function PricingPage() {
   return (
-    <div className="pricing-root">
+    <div className="pricing-root brand-palette">
       {/* Floating navbar */}
       <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
         <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/85 px-3 py-2 shadow-2xl backdrop-blur-xl">

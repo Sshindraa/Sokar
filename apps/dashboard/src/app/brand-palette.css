@@ -1,0 +1,33 @@
+/*
+ * Essai de palette bleu-gris sur les pages publiques (2026-10-19) : accueil, tarifs, connexion, inscription.
+ * Bleu nuit 216 42% 20% → ardoise 213 28% 46% → gris-bleu 212 30% 72% → pâle 210 30% 92%.
+ * Surcharge les variables du thème sous .brand-palette : le dashboard n'est pas touché.
+ */
+.brand-palette {
+  --pricing-accent: 213 28% 52%;
+  --pricing-accent-glow: 212 32% 86%;
+  --pricing-border-glow: 212 26% 70%;
+  --brand: 213 28% 52%;
+  --metal: 213 28% 52%;
+  --ring: 212 30% 72%;
+  --info: 213 28% 52%;
+  --success: 213 28% 52%;
+  --warning: 212 22% 62%;
+  --accent-cyan: 213 28% 52%;
+  --accent-violet: 214 24% 62%;
+}
+
+.dark .brand-palette,
+.brand-palette.dark {
+  --background: 218 30% 4.5%;
+  --foreground: 210 25% 95%;
+  --card: 216 26% 9% / 0.8;
+  --card-foreground: 210 25% 95%;
+  --primary: 210 30% 93%;
+  --muted: 216 26% 9% / 0.8;
+  --muted-foreground: 212 16% 68%;
+  --faint-foreground: 213 14% 50%;
+  --secondary: 216 24% 12% / 0.7;
+  --accent: 216 24% 12% / 0.7;
+  --glass-2: 216 24% 12% / 0.7;
+}

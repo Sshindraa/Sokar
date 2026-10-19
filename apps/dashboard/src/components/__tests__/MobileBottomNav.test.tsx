@@ -142,6 +142,24 @@ describe('MobileBottomNav', () => {
       clientX: 175,
       clientY: 20,
     });
+    const liquid = container.querySelector('.dashboard-mobile-nav__liquid-indicator');
+    expect(liquid?.getAttribute('style')).not.toMatch(/rotate|skew/);
+    expect(nav).toHaveAttribute('data-pointer-interaction', 'true');
+
+    // Reversing the gesture keeps the lens horizontal as well.
+    fireEvent.pointerMove(nav, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 105,
+      clientY: 20,
+    });
+    expect(liquid?.getAttribute('style')).not.toMatch(/rotate|skew/);
+    fireEvent.pointerMove(nav, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 175,
+      clientY: 20,
+    });
     fireEvent.pointerUp(nav, {
       pointerId: 1,
       pointerType: 'touch',
@@ -150,6 +168,11 @@ describe('MobileBottomNav', () => {
     });
 
     expect(routerState.push).toHaveBeenCalledWith('/dashboard/customers');
+    expect(liquid?.getAttribute('style')).not.toMatch(/rotate|skew/);
+
+    // Keyboard navigation restores the visible focus treatment.
+    fireEvent.keyDown(items[0], { key: 'Tab' });
+    expect(nav).not.toHaveAttribute('data-pointer-interaction');
   });
 
   it('keeps the lens on a tapped destination while the route changes', () => {
