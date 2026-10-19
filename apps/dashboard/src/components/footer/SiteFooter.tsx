@@ -43,9 +43,9 @@ export default function SiteFooter() {
               aria-label={column.title}
               className="flex flex-col gap-1 sm:gap-5"
             >
-              <h4 className="mb-2 text-base font-semibold text-white font-sans sm:mb-0">
+              <h3 className="mb-2 text-base font-semibold text-white font-sans sm:mb-0">
                 {column.title}
-              </h4>
+              </h3>
               {column.links.map((link) =>
                 link.href.startsWith('/') ? (
                   <Link key={link.label} href={link.href} className={LINK}>
