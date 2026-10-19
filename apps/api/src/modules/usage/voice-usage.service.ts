@@ -4,6 +4,7 @@ import { logger } from '../../shared/logger/pino';
 import type {
   CallSession,
   LlmRequestKind,
+  VoiceSpeculationCounters,
   VoiceUsageCounters,
   VoiceUsageKindCounter,
 } from '../voice/stream/types';
@@ -171,6 +172,20 @@ export function summarizeLlmKinds(
   ) as Record<string, VoiceUsageKindCounter>;
 }
 
+/**
+ * Récapitulatif de l'anticipation pour le résumé de fin d'appel. `unresolved` : lancées encore en cours
+ * quand l'appel s'est terminé (ni reprises, ni jetées, ni remplacées, ni abandonnées).
+ */
+export function summarizeSpeculation(
+  counters: VoiceUsageCounters,
+): (VoiceSpeculationCounters & { unresolved: number }) | null {
+  const speculation = counters.speculation;
+  if (!speculation) return null;
+  const missed = Object.values(speculation.misses).reduce((total, count) => total + count, 0);
+  const resolved = speculation.hits + missed + speculation.replaced + speculation.cancelled;
+  return { ...speculation, unresolved: Math.max(0, speculation.launches - resolved) };
+}
+
 export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
   if (session.voiceUsage?.finalization) return session.voiceUsage.finalization;
 
@@ -178,9 +193,15 @@ export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
     const counters = ensureVoiceUsage(session);
     const tasks: Promise<void>[] = [];
     const llmByKind = summarizeLlmKinds(counters);
-    if (Object.keys(llmByKind).length) {
+    const speculation = summarizeSpeculation(counters);
+    if (Object.keys(llmByKind).length || speculation) {
       logger.info(
-        { callId: session.callControlId, restaurantId: session.restaurantId, llmByKind },
+        {
+          callId: session.callControlId,
+          restaurantId: session.restaurantId,
+          llmByKind,
+          ...(speculation ? { speculation } : {}),
+        },
         '[usage] llm requests by kind',
       );
     }
