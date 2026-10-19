@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
-import type { CallSession, CallState, ChatMessage } from './types';
+import type { CallSession, CallState, ChatMessage, LlmRequestKind } from './types';
 import { voiceConfig } from '../../../env';
 import { validateToolArgs } from '../tool-schemas';
 import {
@@ -32,6 +32,7 @@ import {
 } from '../llm-provider';
 import {
   addLlmUsage,
+  addLlmKindUsage,
   estimateMessagesTokens,
   estimateTokenCount,
 } from '../../usage/voice-usage.service';
@@ -819,9 +820,47 @@ export class CallSessionManager {
       signal?: AbortSignal;
       telemetryTurnId?: string;
       maxTokens?: number;
+      /** Sorte de requête, pour mesurer où partent les jetons (aucun effet sur la réponse). */
+      kind?: LlmRequestKind;
       onDelta: (delta: string) => void;
     },
   ): Promise<string> {
+    const kind = options.kind ?? 'other';
+    let streamedText = '';
+    try {
+      const result = await this.runStructuredCompletion(session, messages, responseFormat, {
+        ...options,
+        onDelta: (delta) => {
+          streamedText += delta;
+          options.onDelta(delta);
+        },
+      });
+      addLlmKindUsage(session, kind, result.inputTokens, result.outputTokens, false);
+      return result.text;
+    } catch (error) {
+      // Interrompue (anticipation jetée, appelant qui reprend) ou en échec : le fournisseur a déjà reçu l'entrée.
+      addLlmKindUsage(
+        session,
+        kind,
+        estimateMessagesTokens(messages),
+        estimateTokenCount(streamedText),
+        true,
+      );
+      throw error;
+    }
+  }
+
+  private async runStructuredCompletion(
+    session: CallSession,
+    messages: ChatMessage[],
+    responseFormat: StructuredResponseFormat,
+    options: {
+      signal?: AbortSignal;
+      telemetryTurnId?: string;
+      maxTokens?: number;
+      onDelta: (delta: string) => void;
+    },
+  ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
     const request = {
       responseFormat,
       maxTokens: options.maxTokens ?? 400,
@@ -909,7 +948,11 @@ export class CallSessionManager {
       outputTokens ?? estimateTokenCount(text),
       inputTokens === undefined,
     );
-    return text;
+    return {
+      text,
+      inputTokens: inputTokens ?? estimateMessagesTokens(messages),
+      outputTokens: outputTokens ?? estimateTokenCount(text),
+    };
   }
 
   /**
