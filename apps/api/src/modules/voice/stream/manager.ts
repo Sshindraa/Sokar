@@ -158,14 +158,28 @@ function firstNonNull<T>(
 }
 
 /** Hébergeurs OpenRouter du repli : ordre configuré, avec repli sur les autres si tous échouent. */
-function fallbackProviderPreferences(): Record<string, unknown> {
-  const order = (voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER ?? '')
+function providerList(value: string | undefined): string[] {
+  return (value ?? '')
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean);
-  return order.length
-    ? { require_parameters: true, order, allow_fallbacks: true }
-    : { require_parameters: true, sort: 'latency' };
+}
+
+/**
+ * Hébergeurs OpenRouter du repli. Les appels contiennent des données personnelles (noms, numéros) :
+ * seuls les hébergeurs qui ne conservent rien et n'entraînent rien sur les requêtes sont admis
+ * (`zdr`, `data_collection: deny`), et ceux de la liste d'exclusion sont écartés même en secours.
+ */
+function fallbackProviderPreferences(): Record<string, unknown> {
+  const order = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER);
+  const ignore = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE);
+  return {
+    require_parameters: true,
+    zdr: true,
+    data_collection: 'deny',
+    ...(order.length ? { order, allow_fallbacks: true } : { sort: 'latency' }),
+    ...(ignore.length ? { ignore } : {}),
+  };
 }
 
 /** Pourquoi le fournisseur principal n'a pas pu prendre le tour (catégories pour la métrique). */

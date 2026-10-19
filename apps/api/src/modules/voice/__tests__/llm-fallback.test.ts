@@ -109,6 +109,8 @@ beforeEach(() => {
     VOICE_LLM_HEDGE_MS: voiceConfig.VOICE_LLM_HEDGE_MS,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE:
+      voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -179,6 +181,8 @@ describe('repli du tour structuré', () => {
     });
     expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
       require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
       order: ['Cohere', 'Wafer'],
       allow_fallbacks: true,
     });
@@ -193,7 +197,33 @@ describe('repli du tour structuré', () => {
     });
     expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
       require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
       sort: 'latency',
+    });
+  });
+
+  it('exclut les hébergeurs listés, en exigeant toujours zéro conservation des données', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE: ' DekaLLM , Chutes ,',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
+      order: ['ModelRun'],
+      allow_fallbacks: true,
+      ignore: ['DekaLLM', 'Chutes'],
     });
   });
 
