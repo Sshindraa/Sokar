@@ -346,31 +346,6 @@ function recordProviderSuccess(provider: LlmProvider): void {
   }
 }
 
-/**
- * Un fournisseur qui répond toujours mais trop lentement remet son compteur à zéro dès les
- * en-têtes reçus : le disjoncteur ne s'ouvrirait jamais. Quand le doublon lancé par le hedging
- * gagne plusieurs tours de suite, le principal est donc considéré comme dégradé et ignoré le
- * temps du cooldown ; un tour où il gagne remet le compte à zéro.
- */
-const HEDGE_LOSSES_TO_OPEN_BREAKER = 3;
-let consecutiveHedgeWins = 0;
-
-function recordHedgeOutcome(provider: LlmProvider, hedgeWon: boolean): void {
-  if (!hedgeWon) {
-    consecutiveHedgeWins = 0;
-    return;
-  }
-  consecutiveHedgeWins += 1;
-  if (consecutiveHedgeWins < HEDGE_LOSSES_TO_OPEN_BREAKER) return;
-  consecutiveHedgeWins = 0;
-  circuitBreakers[provider] = { failures: CIRCUIT_BREAKER_THRESHOLD, openedAt: Date.now() };
-  logger.warn(
-    { provider },
-    `[circuit-breaker] ${provider} opened: the hedged request won ${HEDGE_LOSSES_TO_OPEN_BREAKER} turns in a row`,
-  );
-  notify(alertLlmCircuitOpened());
-}
-
 function recordProviderFailure(provider: LlmProvider): void {
   const state = circuitBreakers[provider];
   state.failures++;
@@ -906,7 +881,7 @@ export class CallSessionManager {
     const hedgeMs = voiceConfig.VOICE_LLM_HEDGE_MS;
     const startedAt = Date.now();
     const opened =
-      hedgeMs > 0 && voiceConfig.OPENROUTER_API_KEY?.trim()
+      hedgeMs > 0
         ? await this.openStructuredHedged(session, messages, request, hedgeMs)
         : await this.openStructuredSequential(session, messages, request);
     const { provider, firstRead } = opened;
@@ -1044,9 +1019,11 @@ export class CallSessionManager {
 
   /**
    * Ouvre le flux du tour structuré avec une requête de doublon (hedging) : si le principal n'a
-   * pas produit son premier fragment après `hedgeMs`, la même requête part chez le secours et le
-   * premier flux à répondre est gardé ; l'autre est annulé. Le doublon ne coûte que sur les tours
-   * lents, et l'appelant n'entend plus les pics de latence du principal.
+   * pas produit de texte après `hedgeMs`, la même requête repart chez le même fournisseur, avec le
+   * même modèle, et le premier flux qui produit du texte est gardé ; l'autre est annulé.
+   * Les pics de la file d'attente de Cerebras touchent les requêtes une par une (mesures du
+   * 19/10) : le doublon passe le plus souvent pendant que la première attend. Les deux requêtes
+   * sont bornées par le délai total ; le doublon ne coûte que sur les tours lents.
    */
   private async openStructuredHedged(
     session: CallSession,
@@ -1061,11 +1038,11 @@ export class CallSessionManager {
     const signalOf = (controller: AbortController): AbortSignal =>
       request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
     const startedAt = Date.now();
+    const remainingMs = () =>
+      Math.max(0, voiceConfig.VOICE_LLM_TIMEOUT_MS - (Date.now() - startedAt));
     let primaryError: unknown = null;
-    // Le doublon, lancé plus bas ; tant qu'il n'existe pas, aucun secours n'est disponible.
-    let duplicateRef: Promise<OpenedStream | null> = Promise.resolve(null);
 
-    // A : le principal (avec son propre secours si l'échec est immédiat) et son délai maximal.
+    // A : le principal (avec son propre secours si l'échec est immédiat), jusqu'au délai total.
     const attemptA = async (): Promise<OpenedStream | null> => {
       const { response, provider } = await this.fetchLlmStreaming(
         session,
@@ -1078,11 +1055,7 @@ export class CallSessionManager {
         throw new Error(`Structured LLM request failed (${response.status})`);
       }
       const reader = response.body.getReader();
-      const firstRead = await this.readFirstChunk(
-        reader,
-        provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
-        async () => (await duplicateRef) !== null,
-      );
+      const firstRead = await raceTimeout(readUntilContent(reader), remainingMs());
       if (firstRead === 'timeout') {
         recordProviderFailure(primaryProvider);
         reader.cancel().catch(() => undefined);
@@ -1104,37 +1077,43 @@ export class CallSessionManager {
     });
     if (early && early !== 'hedge') {
       // Le principal (ou son secours immédiat) a répondu à temps.
-      recordHedgeOutcome(primaryProvider, false);
       return early;
     }
     // Échec net du principal : son secours a déjà été tenté, un doublon n'apporterait rien.
     if (early === null && primaryError) throw primaryError;
 
-    // B : le doublon. Inutile si le principal s'est déjà rabattu sur le secours. Si le délai
-    // maximal du principal est tombé avant le délai de hedging, c'est un repli classique.
-    const isHedge = early === 'hedge';
+    // B : le doublon chez le même fournisseur. Inutile si le principal s'est déjà rabattu sur le
+    // secours (disjoncteur ouvert, échec immédiat) : ce n'est plus le principal qui tarde.
     const canHedge = !trace.fellBack;
-    if (isHedge && canHedge) notify(recordLlmHedgeFired());
+    if (canHedge) notify(recordLlmHedgeFired());
     const duplicate = canHedge
       ? (async (): Promise<OpenedStream | null> => {
-          const response = await this.fetchFallbackStreaming(
-            session,
+          const response = await this.fetchProviderStreaming(
             messages,
             { ...request, signal: signalOf(controllerB) },
-            isHedge ? 'hedge' : 'first_chunk_timeout',
-            new Error(`LLM first chunk slower than ${hedgeMs} ms`),
+            getVoiceLlmModel(),
           );
-          if (!response?.body) return null;
+          if (!response.ok || !response.body) {
+            await response.body?.cancel().catch(() => undefined);
+            logger.warn(
+              { callId: session.callControlId, status: response.status },
+              '[llm-hedge] duplicate request failed',
+            );
+            return null;
+          }
           const reader = response.body.getReader();
-          const firstRead = await reader.read();
-          return { reader, provider: 'openrouter' as const, firstRead };
+          const firstRead = await raceTimeout(readUntilContent(reader), remainingMs());
+          if (firstRead === 'timeout') {
+            reader.cancel().catch(() => undefined);
+            return null;
+          }
+          return { reader, provider: primaryProvider, firstRead };
         })().catch(() => null)
       : Promise.resolve(null);
-    duplicateRef = duplicate;
 
     const winner = await firstNonNull([primary, duplicate]);
     if (!winner) {
-      if (isHedge) {
+      if (canHedge) {
         voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
       }
       if (primaryError) throw primaryError;
@@ -1147,14 +1126,14 @@ export class CallSessionManager {
       (late) => late?.reader.cancel().catch(() => undefined),
       () => undefined,
     );
-    if (canHedge && isHedge) {
-      recordHedgeOutcome(primaryProvider, hedgeWon);
+    if (canHedge) {
       voiceLlmHedgeTotal.inc({ outcome: hedgeWon ? 'hedge_won' : 'primary_won' });
       logger.info(
         {
           callId: session.callControlId,
           hedgeMs,
-          winner: winner.value.provider,
+          winner: hedgeWon ? 'duplicate' : 'primary',
+          provider: winner.value.provider,
           firstChunkMs: Date.now() - startedAt,
         },
         '[llm-hedge] hedged request raced the primary',
