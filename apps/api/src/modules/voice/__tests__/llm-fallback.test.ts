@@ -114,6 +114,8 @@ beforeEach(() => {
     VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION,
     VOICE_STRUCTURED_FALLBACK_REASONING: voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING,
     VOICE_STRUCTURED_FALLBACK_SAMPLING: voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING,
+    VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS:
+      voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -701,5 +703,80 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
         (v) => v.labels.reason === 'first_chunk_timeout' && v.labels.outcome === 'used',
       ),
     ).toBe(true);
+  });
+});
+
+describe('OpenRouter en principal pour les restaurants listés (Cerebras en relais)', () => {
+  const answer = (say: string) => `{"turnComplete":true,"say":"${say}"}`;
+  const run = () =>
+    CallSessionManager.getInstance().streamStructuredCompletion(
+      makeSession(),
+      messages,
+      format as never,
+      { onDelta: () => undefined },
+    );
+  const hedgeCount = async (outcome: string) =>
+    (await voiceLlmHedgeTotal.get()).values.find((v) => v.labels.outcome === outcome)?.value ?? 0;
+
+  beforeEach(() => {
+    Object.assign(voiceConfig, {
+      VOICE_LLM_HEDGE_MS: 30,
+      VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: 'autre-resto, rest-1',
+      VOICE_STRUCTURED_FALLBACK_MODEL: 'openai/gpt-6-luna',
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'openai/fast',
+      VOICE_STRUCTURED_FALLBACK_REASONING: 'none',
+      VOICE_STRUCTURED_FALLBACK_SAMPLING: 'false',
+    });
+    voiceLlmHedgeTotal.reset();
+    alerts.fallbackUnavailable.mockClear();
+  });
+
+  it('envoie le tour d’abord à OpenRouter, avec les réglages du relais', async () => {
+    fetchMock.mockResolvedValueOnce(sse([answer('Pour quel jour ?')]));
+
+    const text = await run();
+
+    expect(text).toBe(answer('Pour quel jour ?'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
+    const body = bodyOf(fetchMock.mock.calls[0]);
+    expect(body.model).toBe('openai/gpt-6-luna');
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.provider.order).toEqual(['openai/fast']);
+  });
+
+  it('lance Cerebras en doublon quand OpenRouter tarde, et garde le premier qui répond', async () => {
+    fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
+
+    const text = await run();
+
+    expect(text).toBe(answer('Oui.'));
+    expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
+    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
+    expect(bodyOf(fetchMock.mock.calls[1]).reasoning_effort).toBe('none');
+    expect(await hedgeCount('hedge_won')).toBe(1);
+  });
+
+  it('passe tout de suite à Cerebras quand OpenRouter refuse, et signale le relais hors service', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse([answer('Bonjour.')]));
+
+    const text = await run();
+
+    expect(text).toBe(answer('Bonjour.'));
+    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
+    expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
+    expect(await hedgeCount('hedge_won')).toBe(0);
+  });
+
+  it('laisse les autres restaurants sur Cerebras en principal', async () => {
+    Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: 'autre-resto' });
+    fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
+
+    await run();
+
+    expect(urlOf(fetchMock.mock.calls[0])).not.toContain('openrouter');
   });
 });
