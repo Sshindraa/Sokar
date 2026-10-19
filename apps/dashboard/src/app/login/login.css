@@ -1,0 +1,505 @@
+/* Split composition inspired by https://21st.dev/@efferd/components/auth-page. */
+.sokar-login {
+  min-height: 100svh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background:
+    radial-gradient(ellipse at 15% 0%, hsl(var(--metal) / 0.08), transparent 50%),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.sokar-login__frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  width: 100%;
+  min-height: 100svh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: hsl(var(--background));
+}
+
+.sokar-login__story {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: clamp(1rem, 3svh, 3rem);
+  overflow: hidden;
+  isolation: isolate;
+  padding: clamp(2rem, 4vw, 3.5rem);
+  border-right: 1px solid hsl(var(--border));
+  background: linear-gradient(150deg, hsl(var(--secondary)), hsl(var(--background)) 85%);
+}
+
+.sokar-login__brand,
+.sokar-login__mobile-brand {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  transition: opacity 200ms ease;
+}
+
+.sokar-login__brand:hover,
+.sokar-login__mobile-brand:hover {
+  opacity: 0.75;
+}
+
+.sokar-login__paths {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  color: hsl(var(--metal));
+  opacity: 0.25;
+  mask-image: linear-gradient(to bottom, transparent 5%, hsl(var(--foreground)) 65%);
+}
+
+.sokar-login__paths svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sokar-login__path {
+  stroke-dasharray: 70 20 350 20;
+  animation: sokar-login-flow 32s linear infinite;
+}
+
+@keyframes sokar-login-flow {
+  to {
+    stroke-dashoffset: -460;
+  }
+}
+
+.sokar-login__story-content {
+  margin-top: auto;
+}
+
+.sokar-login__eyebrow {
+  display: block;
+  margin-bottom: 1.5rem;
+  color: hsl(var(--metal));
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.19em;
+}
+
+.sokar-login__story-heading {
+  display: flex;
+  min-height: 2.2em;
+  flex-direction: column;
+  justify-content: center;
+  font-size: clamp(1.75rem, 2.8vw, 2.75rem);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.055em;
+}
+
+.sokar-login__rotating-word {
+  display: block;
+  color: hsl(var(--foreground));
+  font-weight: 650;
+  animation: sokar-login-word-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sokar-login__story-highlight {
+  display: block;
+  color: hsl(var(--muted-foreground));
+}
+
+@keyframes sokar-login-word-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(0.32em);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.sokar-login__access {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.75rem, 2svh, 2rem);
+  padding: clamp(1rem, 3svh, 2rem) clamp(1.5rem, 4vw, 4rem);
+}
+
+.sokar-login__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sokar-login__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  transition: color 200ms ease;
+}
+
+.sokar-login__back:hover {
+  color: hsl(var(--foreground));
+}
+
+.sokar-login__mobile-brand {
+  display: none;
+}
+
+.sokar-login__form {
+  width: 100%;
+  max-width: 23rem;
+  margin: auto;
+}
+
+.sokar-login__intro {
+  margin-bottom: 2rem;
+}
+
+.sokar-login__intro .sokar-login__eyebrow {
+  margin-bottom: 1rem;
+}
+
+.sokar-login__intro h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2.125rem);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+}
+
+.sokar-login__intro p {
+  margin-top: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.sokar-login__signup {
+  margin-top: 1.75rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+
+.sokar-login__signup a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: hsl(var(--foreground));
+  text-underline-offset: 4px;
+  transition: opacity 200ms ease;
+}
+
+.sokar-login__signup a:hover {
+  text-decoration: underline;
+  opacity: 0.8;
+}
+
+.sokar-login__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.6875rem;
+}
+
+.sokar-login__footer a {
+  transition: color 200ms ease;
+}
+
+.sokar-login__footer a:hover {
+  color: hsl(var(--foreground));
+}
+
+.sokar-login a:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 5px;
+  border-radius: 0.25rem;
+}
+
+@media (max-width: 767px) {
+  .sokar-login {
+    display: flex;
+    padding: 0;
+  }
+
+  .sokar-login__frame {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sokar-login__story {
+    display: none;
+  }
+
+  .sokar-login__access {
+    gap: clamp(0.75rem, 2svh, 2rem);
+    padding: max(1rem, env(safe-area-inset-top)) 1.5rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .sokar-login__mobile-brand {
+    display: inline-flex;
+  }
+}
+
+/* Fit the initial sign-in view on shorter laptop and phone screens by
+   reducing decorative space, without clipping authentication controls. */
+@media (max-height: 740px) {
+  .sokar-login__intro {
+    margin-bottom: 1.25rem;
+  }
+
+  .sokar-login__intro .sokar-login__eyebrow {
+    margin-bottom: 0.5rem;
+  }
+
+  .sokar-login__intro h1 {
+    font-size: 1.75rem;
+  }
+
+  .sokar-login__intro p {
+    margin-top: 0.5rem;
+  }
+
+  .sokar-login__signup {
+    margin-top: 1rem;
+  }
+
+  .sokar-login__story {
+    padding-block: 1.5rem;
+  }
+}
+
+@media (max-height: 600px) {
+  .sokar-login__intro .sokar-login__eyebrow,
+  .sokar-login__intro p,
+  .sokar-login__story-footer {
+    display: none;
+  }
+
+  .sokar-login__intro h1 {
+    font-size: 1.625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sokar-login__path {
+    animation: none;
+  }
+
+  .sokar-login a {
+    transition: none;
+  }
+}
+
+.sokar-login__brand,
+.sokar-login__story-content {
+  position: relative;
+  z-index: 1;
+}
+
+.sokar-login-call {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: clamp(15rem, 40svh, 19rem);
+  margin-top: 1.5rem;
+  overflow: hidden;
+  border: 1px solid hsl(var(--foreground) / 0.12);
+  border-radius: 1.25rem;
+  background: hsl(var(--background) / 0.75);
+  box-shadow: 0 12px 40px hsl(var(--background) / 0.2);
+  backdrop-filter: blur(12px);
+}
+
+.sokar-login-call__header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.875rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.sokar-login-call__phone {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 50%;
+  color: hsl(var(--foreground));
+}
+
+.sokar-login-call__identity,
+.sokar-login-call__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sokar-login-call__identity strong,
+.sokar-login-call__result strong {
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.sokar-login-call__identity span,
+.sokar-login-call__result span {
+  font-size: 0.5625rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.sokar-login-call__badge {
+  margin-left: auto;
+  color: hsl(var(--metal));
+  font-size: 0.5625rem;
+}
+
+.sokar-login-call__pause {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: hsl(var(--muted-foreground));
+  transition: all 200ms ease;
+}
+
+.sokar-login-call__pause:hover {
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+}
+
+.sokar-login-call__pause:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.sokar-login-call__messages {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 0.875rem;
+}
+
+.sokar-login-call__message {
+  max-width: 90%;
+  align-self: flex-end;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  animation: sokar-login-message 240ms ease-out both;
+}
+
+.sokar-login-call__message[data-speaker='Sokar'] {
+  align-self: flex-start;
+}
+
+.sokar-login-call__message > span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.5625rem;
+}
+
+.sokar-login-call__message > p {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.75rem;
+  background: hsl(var(--secondary) / 0.7);
+}
+
+.sokar-login-call__message[data-speaker='Sokar'] > p {
+  background: hsl(var(--foreground) / 0.09);
+  border-color: hsl(var(--foreground) / 0.14);
+}
+
+.sokar-login-call__result {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border-top: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.sokar-login-call__result[data-confirmed='true'] {
+  color: hsl(var(--foreground));
+}
+
+.sokar-login-call__result .sokar-login-call__wave {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  height: 1.5rem;
+  margin-left: auto;
+}
+
+.sokar-login-call__bar {
+  width: 2px;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: hsl(var(--metal));
+  animation: sokar-login-wave 900ms ease-in-out infinite alternate;
+}
+
+.sokar-login-call__wave[data-paused='true'] .sokar-login-call__bar {
+  animation-play-state: paused;
+}
+
+@keyframes sokar-login-message {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sokar-login-wave {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (max-height: 600px) {
+  .sokar-login__story-content .sokar-login__eyebrow {
+    margin-bottom: 0.75rem;
+  }
+
+  .sokar-login__story-heading {
+    font-size: 1.5rem;
+  }
+
+  .sokar-login-call {
+    margin-top: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sokar-login__path,
+  .sokar-login__rotating-word,
+  .sokar-login-call__message,
+  .sokar-login-call__bar {
+    animation: none;
+  }
+}
