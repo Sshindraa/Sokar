@@ -46,7 +46,7 @@ function detectBot(userAgent: string): string | null {
   return null;
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Generate a per-request nonce for CSP script-src (audit sécurité Phase 2).
   // crypto.randomUUID() is available in Edge Runtime.
   const nonce = crypto.randomUUID();

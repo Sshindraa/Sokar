@@ -134,7 +134,7 @@ export default defineConfig({
         webServer: {
           command: process.env.CI
             ? 'bash scripts/copy-static.sh && node .next/standalone/apps/dashboard/server.js'
-            : 'pnpm next dev',
+            : 'pnpm dev',
           url: 'http://localhost:3000/dashboard',
           timeout: 60_000,
           reuseExistingServer: !process.env.CI,
