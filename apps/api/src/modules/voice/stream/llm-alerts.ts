@@ -180,7 +180,7 @@ export function alertLlmFallbackUnavailable(
   );
 }
 
-/** Une requête de doublon (hedging) est partie chez Cerebras : le premier texte a tardé. */
+/** Une requête de doublon (hedging) est partie : le principal a dépassé le délai de démarrage. */
 export async function recordLlmHedgeFired(
   dependencies: LlmAlertDependencies = defaultDependencies,
 ): Promise<boolean> {
@@ -192,11 +192,11 @@ export async function recordLlmHedgeFired(
     {
       kind: 'voice_llm_primary_slow',
       severity: 'warning',
-      summary: 'Cerebras est lent : le doublon est parti plusieurs fois en 15 minutes',
+      summary: 'Cerebras est lent : le doublon de secours est parti plusieurs fois en 15 minutes',
       detail: [
         `hedgeRequests=${fired}`,
         `windowSeconds=${HEDGE_WINDOW_SECONDS}`,
-        'Chaque doublon coûte une requête de plus à Cerebras (même modèle) ; au-delà de ce rythme, la file de Cerebras est durablement lente.',
+        'Chaque doublon coûte un appel au repli. Si le repli est indisponible, les appelants attendent Cerebras (réponses lentes).',
       ].join('\n'),
     },
     dependencies,

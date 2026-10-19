@@ -288,13 +288,11 @@ CEREBRAS_API_KEY="csk-..."
 CEREBRAS_BASE_URL="https://api.cerebras.ai/v1"
 VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
-# Premier fragment du modèle principal, chemin sans doublon (VOICE_LLM_HEDGE_MS=0) : au-delà, OpenRouter
-# prend le tour s'il répond, sinon le principal est attendu jusqu'à VOICE_LLM_TIMEOUT_MS (500 à 8000 ms).
+# Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
 VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
-# Hedging (tour structuré) : si le principal n'a produit aucun texte après ce délai, la même requête repart
-# chez le même fournisseur (Cerebras, même modèle) ; le premier flux qui produit du texte est gardé, l'autre
-# annulé, les deux bornés par VOICE_LLM_TIMEOUT_MS. 0 = désactivé (0 à 4000 ms). N'exige pas OpenRouter.
-# Mesures du 19/10 : les pics de file touchent les requêtes une par une ; doublon dans ~15 à 20 % des tours.
+# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
+# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
+# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
 VOICE_LLM_HEDGE_MS="700"
 ```
 
@@ -313,7 +311,7 @@ C'est un filet d'urgence, pas un provider de production.
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API decisions), juge d'évaluation, suivi de crédit
-# Adresse du SEUL secours vocal (tour structuré en échec, chemin sans doublon) ; vide = OPENROUTER_BASE_URL.
+# Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
 # Mesure du 01/10 : voir docs/runbooks/provider-resilience.md (un seul hébergeur UE pour le modèle de repli).
 OPENROUTER_FALLBACK_BASE_URL=""

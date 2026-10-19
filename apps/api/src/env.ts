@@ -80,7 +80,7 @@ const PROD_HOST_ALLOWLIST = [
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 /** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
 const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
-/** Délai avant de relancer la même requête chez le même fournisseur (tour structuré) ; 0 = désactivé. */
+/** Délai avant de lancer la requête de doublon chez le secours (tour structuré) ; 0 = désactivé. */
 const DEFAULT_VOICE_LLM_HEDGE_MS = 700;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');

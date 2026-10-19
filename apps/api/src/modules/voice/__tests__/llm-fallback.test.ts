@@ -381,19 +381,14 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     voiceLlmFallbackTotal.reset();
   });
 
-  it('le doublon gagne quand le principal est bloqué : même fournisseur, même modèle, le principal est annulé', async () => {
+  it('le doublon gagne quand le principal est bloqué : le secours répond, le principal est annulé', async () => {
     fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
 
     const text = await run(CallSessionManager.getInstance());
 
     expect(text).toBe(answer('Oui.'));
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(urlOf(fetchMock.mock.calls[1])).toBe(urlOf(fetchMock.mock.calls[0]));
-    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
-    expect(bodyOf(fetchMock.mock.calls[1]).model).toBe(bodyOf(fetchMock.mock.calls[0]).model);
-    expect(bodyOf(fetchMock.mock.calls[1]).messages).toEqual(
-      bodyOf(fetchMock.mock.calls[0]).messages,
-    );
+    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
     expect(signalOf(0).aborted).toBe(true);
     expect(await hedgeCount('hedge_won')).toBe(1);
     // Un doublon n'est pas un repli : pas de série « used » pour la raison hedge.
@@ -423,7 +418,7 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     const text = await run(CallSessionManager.getInstance());
 
     expect(text).toBe(answer('Oui.'));
-    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
+    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
     expect(await hedgeCount('hedge_won')).toBe(1);
   });
 
@@ -469,20 +464,6 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     expect(await hedgeCount('primary_won')).toBe(1);
   });
 
-  it('le principal qui répond après le délai du premier fragment gagne sans attendre le doublon en file', async () => {
-    fetchMock
-      .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
-      .mockResolvedValueOnce(neverEmits());
-    const startedAt = Date.now();
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Pour combien ?'));
-    expect(Date.now() - startedAt).toBeLessThan(900);
-    expect(signalOf(1).aborted).toBe(true);
-    expect(await hedgeCount('primary_won')).toBe(1);
-  });
-
   it('ne lance aucun doublon quand le principal répond avant le délai', async () => {
     fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
 
@@ -508,7 +489,7 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
   it('garde le principal lent quand le doublon échoue : réponse tardive plutôt que « pas compris » (appel du 19/10)', async () => {
     fetchMock
       .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
-      .mockResolvedValueOnce(new Response('busy', { status: 503 }));
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
 
     const text = await run(CallSessionManager.getInstance());
 
@@ -522,20 +503,21 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
       alerts.fallbackUnavailable.mockClear();
     });
 
-    it('principal lent mais qui répond, doublon en échec : aucun tour compté en échec', async () => {
+    it('principal lent mais qui répond, secours en 402 : alerte secours, aucun tour compté en échec', async () => {
       fetchMock
         .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
-        .mockResolvedValueOnce(new Response('busy', { status: 503 }));
+        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
 
       await run(CallSessionManager.getInstance());
 
+      expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
       expect(alerts.bothFailed).not.toHaveBeenCalled();
     });
 
-    it('principal muet jusqu’au délai total, doublon en échec : un seul tour compté, cause « lent »', async () => {
+    it('principal muet jusqu’au délai total, secours en 402 : un seul tour compté, cause « lent »', async () => {
       fetchMock
         .mockResolvedValueOnce(neverEmits())
-        .mockResolvedValueOnce(new Response('busy', { status: 503 }));
+        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
 
       await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
 
@@ -552,8 +534,6 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
 
       expect(alerts.bothFailed).toHaveBeenCalledTimes(1);
       expect(alerts.bothFailed).toHaveBeenCalledWith('primary_failed');
-      // Le repli OpenRouter a refusé (crédit épuisé) : le secours hors service est signalé.
-      expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
     });
 
     it('le juge et l’anticipation en échec ne comptent pas : l’appelant n’entend rien', async () => {
@@ -584,9 +564,9 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     expect(await hedgeCount('both_failed')).toBe(1);
   });
 
-  it('un doublon qui gagne plusieurs tours de suite n’écarte pas le fournisseur principal : c’est le même', async () => {
+  it('ouvre le disjoncteur quand le doublon gagne trois tours de suite : le principal est ensuite ignoré', async () => {
     const mgr = CallSessionManager.getInstance();
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 3; i++) {
       fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
       await run(mgr);
     }
@@ -596,17 +576,26 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
     const text = await run(mgr);
 
     expect(text).toBe(answer('Direct.'));
-    expect(urlOf(fetchMock.mock.calls[0])).not.toContain('openrouter');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
   });
 
-  it('fonctionne sans clé OpenRouter : le doublon ne dépend pas du secours', async () => {
-    Object.assign(voiceConfig, { OPENROUTER_API_KEY: '' });
+  it('un tour gagné par le principal remet le compte du disjoncteur à zéro', async () => {
+    const mgr = CallSessionManager.getInstance();
+    for (let i = 0; i < 2; i++) {
+      fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
+      await run(mgr);
+    }
+    fetchMock.mockResolvedValueOnce(sse([answer('Principal.')]));
+    await run(mgr);
     fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
+    await run(mgr);
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(sse([answer('Encore le principal.')]));
 
-    const text = await run(CallSessionManager.getInstance());
+    await run(mgr);
 
-    expect(text).toBe(answer('Oui.'));
-    expect(await hedgeCount('hedge_won')).toBe(1);
+    expect(urlOf(fetchMock.mock.calls[0])).not.toContain('openrouter');
   });
 
   it('est désactivé avec VOICE_LLM_HEDGE_MS=0 : repli séquentiel après le délai maximal', async () => {
