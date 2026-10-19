@@ -1290,9 +1290,13 @@ export class CallSessionManager {
           model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL,
           messages: mergeSystemMessages(messages),
           max_tokens: opts.maxTokens,
-          temperature: opts.temperature,
-          top_p: 0.8,
-          reasoning: { enabled: false },
+          ...(voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING === 'false'
+            ? {}
+            : { temperature: opts.temperature, top_p: 0.8 }),
+          reasoning:
+            voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING === 'none'
+              ? { effort: 'none' }
+              : { enabled: false },
           ...(opts.responseFormat ? { response_format: opts.responseFormat } : {}),
           // Uniquement des hébergeurs qui respectent les paramètres. Ordre imposé : le tri par latence
           // historique a donné des pointes de 5 à 30 s (mesures du 29/09) ; vide = ce tri.

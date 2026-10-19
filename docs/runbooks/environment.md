@@ -316,6 +316,10 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="ModelRun"          # 0,5 s, jamais au-delà de 0,8 s sur 40 tours
 # VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE="DekaLLM"          # jamais utilisés, même en secours (données hors pays admis)
 # VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION="false"            # défaut true ; false = performance d'abord (décision du 20/10)
+# Relais GPT-6 Luna (accès prioritaire OpenAI) : 133/134 au banc, le moins « IA » à l'écoute, ~0,8 s, max 1,4 s.
+# VOICE_STRUCTURED_FALLBACK_MODEL="openai/gpt-6-luna"  VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="openai/fast"
+# VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
+# VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
 # Mesure du 01/10 : voir docs/runbooks/provider-resilience.md (un seul hébergeur UE pour le modèle de repli).

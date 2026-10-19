@@ -112,6 +112,8 @@ beforeEach(() => {
     VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE:
       voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE,
     VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION,
+    VOICE_STRUCTURED_FALLBACK_REASONING: voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING,
+    VOICE_STRUCTURED_FALLBACK_SAMPLING: voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -223,6 +225,42 @@ describe('repli du tour structuré', () => {
       order: ['ModelRun'],
       allow_fallbacks: true,
     });
+  });
+
+  it('envoie le raisonnement et l’échantillonnage réglés pour un modèle de repli à raisonnement (GPT-6 Luna)', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_REASONING: 'none',
+      VOICE_STRUCTURED_FALLBACK_SAMPLING: 'false',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    const body = bodyOf(fetchMock.mock.calls[1]);
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('top_p');
+  });
+
+  it('garde par défaut le raisonnement désactivé et l’échantillonnage du tour', async () => {
+    const mgr = CallSessionManager.getInstance();
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    const body = bodyOf(fetchMock.mock.calls[1]);
+    expect(body.reasoning).toEqual({ enabled: false });
+    expect(body.temperature).toBe(0.3);
+    expect(body.top_p).toBe(0.8);
   });
 
   it('exclut les hébergeurs listés, en exigeant zéro conservation des données par défaut', async () => {
