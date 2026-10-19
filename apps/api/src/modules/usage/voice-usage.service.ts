@@ -1,7 +1,12 @@
 import type { UsageCategory } from '@prisma/client';
 import { enqueueOnDatabase } from '../../shared/outbox/outbox.service';
 import { logger } from '../../shared/logger/pino';
-import type { CallSession, VoiceUsageCounters } from '../voice/stream/types';
+import type {
+  CallSession,
+  LlmRequestKind,
+  VoiceUsageCounters,
+  VoiceUsageKindCounter,
+} from '../voice/stream/types';
 import { telnyxCodecProfile } from '../voice/stream/telnyx-codec';
 import { ELEVENLABS_DIALOGUE_MODEL } from '../voice/stream/elevenlabs-dialogue-context';
 
@@ -128,12 +133,57 @@ async function enqueueVoiceUsage(payload: VoiceUsagePayload): Promise<void> {
  * call from Telnyx close, stop and error paths: keys are stable and enqueue is
  * idempotent, while a failed flush can be retried by the caller.
  */
+/**
+ * Compte une requête au modèle par sorte (tour, second passage, anticipation, juge, relance). Mesure seulement :
+ * rien ne change dans le dialogue ni dans la facturation enregistrée. Une requête interrompue (anticipation jetée)
+ * compte son entrée estimée : le fournisseur la facture alors qu'elle n'apparaît pas dans `llmByProvider`.
+ */
+export function addLlmKindUsage(
+  session: CallSession,
+  kind: LlmRequestKind,
+  inputTokens: number,
+  outputTokens: number,
+  interrupted: boolean,
+): void {
+  if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return;
+  const counters = ensureVoiceUsage(session);
+  const byKind = (counters.llmByKind ??= {});
+  const current: VoiceUsageKindCounter = (byKind[kind] ??= {
+    requests: 0,
+    interrupted: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  });
+  current.requests += 1;
+  if (interrupted) current.interrupted += 1;
+  current.inputTokens += Math.max(0, Math.round(inputTokens));
+  current.outputTokens += Math.max(0, Math.round(outputTokens));
+}
+
+/** Résumé par sorte de requête, journalisé à la fin de l'appel (des comptes, jamais de texte). */
+export function summarizeLlmKinds(
+  counters: VoiceUsageCounters,
+): Record<string, VoiceUsageKindCounter> {
+  return Object.fromEntries(
+    Object.entries(counters.llmByKind ?? {}).filter(
+      ([, counter]) => counter && counter.requests > 0,
+    ),
+  ) as Record<string, VoiceUsageKindCounter>;
+}
+
 export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
   if (session.voiceUsage?.finalization) return session.voiceUsage.finalization;
 
   const promise = (async () => {
     const counters = ensureVoiceUsage(session);
     const tasks: Promise<void>[] = [];
+    const llmByKind = summarizeLlmKinds(counters);
+    if (Object.keys(llmByKind).length) {
+      logger.info(
+        { callId: session.callControlId, restaurantId: session.restaurantId, llmByKind },
+        '[usage] llm requests by kind',
+      );
+    }
 
     const sttSeconds = counters.sttAudioSamples / telnyxCodecProfile(session.codec).sampleRate;
     if (sttSeconds > 0) {
