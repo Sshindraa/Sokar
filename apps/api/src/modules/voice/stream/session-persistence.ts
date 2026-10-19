@@ -8,7 +8,7 @@
 import type { CallSession, VoiceTurnLatencyTrace, VoiceTurnTelemetry } from './types';
 import { snapshotVoiceTurnTelemetry } from './turn-telemetry';
 import { telephonyTtsProvider, ttsProviderWithModel } from './elevenlabs-tts';
-import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import { voiceLlmRouteFor } from '../llm-provider';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
@@ -101,8 +101,8 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
       // Le stream courant est toujours routé par le provider canonique. Ne
       // recopions pas une valeur éventuellement fournie par un ancien webhook
       // dans la télémétrie de cette session.
-      llmProvider: getVoiceLlmProvider(),
-      llmModel: getVoiceLlmModel(),
+      llmProvider: voiceLlmRouteFor(session.restaurantId).provider,
+      llmModel: voiceLlmRouteFor(session.restaurantId).model,
       ttsProvider: callRecord.ttsProvider ?? ttsProviderWithModel(telephonyTtsProvider()),
     };
 
