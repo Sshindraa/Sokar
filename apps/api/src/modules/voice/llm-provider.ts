@@ -32,6 +32,28 @@ export function getVoiceLlmEndpoint(): {
 }
 
 /**
+ * Restaurants dont le tour structuré part d'abord chez OpenRouter (VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS),
+ * avec le modèle et les réglages du relais ; Cerebras devient leur doublon et leur repli.
+ */
+export function isOpenRouterPrimaryFor(restaurantId: string | null | undefined): boolean {
+  if (!restaurantId) return false;
+  return (voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .includes(restaurantId);
+}
+
+/** Fournisseur et modèle principaux d'un restaurant, pour la télémétrie et le rapport d'appel. */
+export function voiceLlmRouteFor(restaurantId: string | null | undefined): {
+  provider: string;
+  model: string;
+} {
+  return isOpenRouterPrimaryFor(restaurantId)
+    ? { provider: 'openrouter', model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL }
+    : { provider: getVoiceLlmProvider(), model: getVoiceLlmModel() };
+}
+
+/**
  * Métadonnées opérationnelles : la clé OpenRouter peut exister pour un outil
  * externe sans que le chemin vocal ne l'utilise. `provider` et `model` restent
  * la preuve de l'appel effectivement routé.

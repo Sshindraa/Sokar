@@ -320,6 +320,10 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_MODEL="openai/gpt-6-luna"  VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="openai/fast"
 # VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
 # VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
+# Restaurants dont le tour part d'abord chez OpenRouter (modèle et réglages ci-dessus), Cerebras devenant
+# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. Essai prévu :
+# Chez Sokar seul (710309f4-d699-472d-a1db-f22d527fc4d0), uniquement sur feu vert de Hamza.
+# VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
 # Mesure du 01/10 : voir docs/runbooks/provider-resilience.md (un seul hébergeur UE pour le modèle de repli).

@@ -29,7 +29,7 @@
 - [ ] Appel réel Chez Sokar : valider compréhension/épellation, mesurer le délai de relecture et tester « A, deux S, A, M ».
 - [ ] Après l’appel réel, vérifier `judge` (disponibilité/délai) et rejouer « je voudrais bien venir »; retrait via `VOICE_TURN_JUDGE_RESTAURANT_IDS`.
 - [ ] Banc voix : traiter la répétition mot pour mot (20–55 %, seuil 80 %) et utiliser le vrai prompt `prompts.ts`.
-- [ ] Secours UE : décider UE seule, UE→mondial ou aucun basculement; vérifier les régions Cerebras, Deepgram, Cartesia et Telnyx.
+- [ ] Relais LLM : GPT-6 Luna fast (OpenRouter `openai/fast`) actif en prod depuis le 20/10, doublon à 700 ms et repli de Cerebras; conservation des données acceptée pour l'instant (pas d'UE). Suivre `hedge_won`/`primary_won`; Luna en principal sur Chez Sokar prêt (#521), sur feu vert.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
