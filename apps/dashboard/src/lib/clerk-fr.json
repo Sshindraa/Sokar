@@ -1,0 +1,455 @@
+{
+  "locale": "fr-FR",
+  "backButton": "Retour",
+  "badge__activePlan": "Actif",
+  "badge__canceledEndsAt": "Annulé • Termine le {{ date | shortDate('fr-FR') }}",
+  "badge__currentPlan": "Plan actuel",
+  "badge__default": "Défaut",
+  "badge__endsAt": "Termine le {{ date | shortDate('fr-FR') }}",
+  "badge__expired": "Expiré",
+  "badge__freeTrial": "Essai gratuit",
+  "badge__otherImpersonatorDevice": "Autre dispositif d'imitation",
+  "badge__pastDueAt": "En retard depuis le {{ date | shortDate('fr-FR') }}",
+  "badge__pastDuePlan": "Paiement en retard",
+  "badge__primary": "Principal",
+  "badge__renewsAt": "Renouvelle le {{ date | shortDate('fr-FR') }}",
+  "badge__requiresAction": "Nécessite une action",
+  "badge__startsAt": "Débute le {{ date | shortDate('fr-FR') }}",
+  "badge__thisDevice": "Cet appareil",
+  "badge__trialEndsAt": "L’essai se termine le {{ date | shortDate('fr-FR') }}",
+  "badge__unverified": "Non vérifié",
+  "badge__upcomingPlan": "À venir",
+  "badge__userDevice": "Appareil utilisateur",
+  "badge__you": "Vous",
+  "dividerText": "ou",
+  "footerActionLink__alternativePhoneCodeProvider": "Envoyer le code par SMS à la place",
+  "footerActionLink__useAnotherMethod": "Utiliser une autre méthode",
+  "footerPageLink__help": "Aide",
+  "footerPageLink__privacy": "Vie privée",
+  "footerPageLink__terms": "Conditions",
+  "formButtonPrimary": "Continuer",
+  "formButtonPrimary__verify": "Vérifier",
+  "formFieldAction__forgotPassword": "Mot de passe oublié ?",
+  "formFieldError__matchingPasswords": "Les mots de passe correspondent.",
+  "formFieldError__notMatchingPasswords": "Les mots de passe ne correspondent pas.",
+  "formFieldError__verificationLinkExpired": "Le lien de vérification a expiré. Merci de demander un nouveau lien.",
+  "formFieldHintText__optional": "Optionnel",
+  "formFieldHintText__slug": "Un slug est un identifiant lisible qui doit être unique. Il est souvent utilisé dans les URL.",
+  "formFieldInputPlaceholder__apiKeyDescription": "Expliquez pourquoi vous générez cette clé",
+  "formFieldInputPlaceholder__apiKeyExpirationDate": "Sélectionner une date",
+  "formFieldInputPlaceholder__apiKeyName": "Entrez le nom de votre clé secrète",
+  "formFieldInputPlaceholder__backupCode": "Code de sauvegarde",
+  "formFieldInputPlaceholder__confirmDeletionUserAccount": "Supprimer le compte",
+  "formFieldInputPlaceholder__emailAddress": "Adresse e-mail",
+  "formFieldInputPlaceholder__emailAddress_username": "Nom d'utilisateur ou adresse e-mail",
+  "formFieldInputPlaceholder__emailAddresses": "exemple@email.com, exemple2@email.com",
+  "formFieldInputPlaceholder__firstName": "Prénom",
+  "formFieldInputPlaceholder__lastName": "Nom",
+  "formFieldInputPlaceholder__organizationDomain": "Domaine de l'organisation",
+  "formFieldInputPlaceholder__organizationDomainEmailAddress": "Adresse e-mail de l'organisation",
+  "formFieldInputPlaceholder__organizationName": "Nom de l'organisation",
+  "formFieldInputPlaceholder__organizationSlug": "Identifiant de l'organisation",
+  "formFieldInputPlaceholder__password": "Mot de passe",
+  "formFieldInputPlaceholder__phoneNumber": "Numéro de téléphone",
+  "formFieldInputPlaceholder__username": "Nom d'utilisateur",
+  "formFieldLabel__apiKey": "Clé API",
+  "formFieldLabel__apiKeyDescription": "Description",
+  "formFieldLabel__apiKeyExpiration": "Expiration",
+  "formFieldLabel__apiKeyName": "Nom de la clé secrète",
+  "formFieldLabel__automaticInvitations": "Activer les invitations automatiques pour ce domaine",
+  "formFieldLabel__backupCode": "Code de récupération",
+  "formFieldLabel__confirmDeletion": "Confirmation",
+  "formFieldLabel__confirmPassword": "Confirmer le mot de passe",
+  "formFieldLabel__currentPassword": "Mot de passe actuel",
+  "formFieldLabel__emailAddress": "Adresse e-mail",
+  "formFieldLabel__emailAddress_username": "Adresse e-mail ou nom d'utilisateur",
+  "formFieldLabel__emailAddresses": "Adresses e-mail",
+  "formFieldLabel__firstName": "Prénom",
+  "formFieldLabel__lastName": "Nom",
+  "formFieldLabel__newPassword": "Nouveau mot de passe",
+  "formFieldLabel__organizationDomain": "Domaine",
+  "formFieldLabel__organizationDomainDeletePending": "Supprimer les invitations et suggestions en attente",
+  "formFieldLabel__organizationDomainEmailAddress": "E-mail de vérification",
+  "formFieldLabel__organizationDomainEmailAddressDescription": "Entrer une adresse e-mail appartenant à ce domaine pour recevoir un code et vérifier ce domaine.",
+  "formFieldLabel__organizationName": "Nom de l'organisation",
+  "formFieldLabel__organizationSlug": "Slug URL",
+  "formFieldLabel__passkeyName": "Nom de la clé de sécurité",
+  "formFieldLabel__password": "Mot de passe",
+  "formFieldLabel__phoneNumber": "Numéro de téléphone",
+  "formFieldLabel__role": "Rôle",
+  "formFieldLabel__signOutOfOtherSessions": "Se déconnecter de tous les autres appareils",
+  "formFieldLabel__username": "Nom d'utilisateur",
+  "lastAuthenticationStrategy": "Utilisé la dernière fois",
+  "maintenanceMode": "Nous effectuons des travaux de maintenance, mais ne vous en inquiétez pas, cela ne devrait pas prendre plus de quelques minutes.",
+  "membershipRole__admin": "Administrateur",
+  "membershipRole__basicMember": "Membre",
+  "membershipRole__guestMember": "Invité",
+  "paginationButton__next": "Suivant",
+  "paginationButton__previous": "Précédent",
+  "paginationRowText__displaying": "Affichage",
+  "paginationRowText__of": "de",
+  "signIn": {
+    "accountSwitcher": {
+      "action__addAccount": "Ajouter un compte",
+      "action__signOutAll": "Se déconnecter de tous les comptes",
+      "subtitle": "Sélectionnez le compte avec lequel vous souhaitez continuer.",
+      "title": "Choisissez un compte"
+    },
+    "alternativeMethods": {
+      "actionLink": "Obtenir de l'aide",
+      "actionText": "Aucune de ces méthodes ne fonctionne ?",
+      "blockButton__backupCode": "Utiliser un code de récupération",
+      "blockButton__emailCode": "Envoyer le code à {{identifier}}",
+      "blockButton__emailLink": "Envoyer le lien à {{identifier}}",
+      "blockButton__passkey": "Utiliser une clé de sécurité",
+      "blockButton__password": "Connectez-vous avec votre mot de passe",
+      "blockButton__phoneCode": "Envoyer le code à {{identifier}}",
+      "blockButton__totp": "Utilisez votre application d'authentification",
+      "getHelp": {
+        "blockButton__emailSupport": "Assistance par e-mail",
+        "content": "Si vous rencontrez des difficultés pour vous connecter à votre compte, envoyez-nous un e-mail et nous travaillerons avec vous pour rétablir l'accès dès que possible.",
+        "title": "Obtenir de l'aide"
+      },
+      "subtitle": "Vous rencontrez des problèmes ? Vous pouvez utiliser l'une de ces méthodes pour vous connecter.",
+      "title": "Utiliser une autre méthode"
+    },
+    "alternativePhoneCodeProvider": {
+      "formTitle": "Code de vérification",
+      "resendButton": "Vous n’avez pas reçu de code ? Renvoyer",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre {{provider}}"
+    },
+    "backupCodeMfa": {
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Entrez un code de récupération"
+    },
+    "emailCode": {
+      "formTitle": "Le code de vérification",
+      "resendButton": "Renvoyer le code",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre messagerie"
+    },
+    "emailCodeMfa": {
+      "formTitle": "Vérifiez votre messagerie",
+      "resendButton": "Vous n'avez pas reçu de code ? Renvoyer",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre messagerie"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Ce lien ne correspond pas à la demande en cours.",
+        "title": "Erreur de correspondance du client"
+      },
+      "expired": {
+        "subtitle": "Retournez à l'onglet d'origine pour continuer",
+        "title": "Ce lien de vérification a expiré"
+      },
+      "failed": {
+        "subtitle": "Retourner à l'onglet original pour continuer",
+        "title": "Ce lien de vérification n'est pas valide"
+      },
+      "formSubtitle": "Utilisez le lien de vérification envoyé par e-mail",
+      "formTitle": "lien de vérification",
+      "loading": {
+        "subtitle": "Vous allez bientôt être redirigé",
+        "title": "Connexion en cours..."
+      },
+      "resendButton": "Renvoyer le lien",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre messagerie",
+      "unusedTab": {
+        "title": "Vous pouvez fermer cet onglet"
+      },
+      "verified": {
+        "subtitle": "Vous serez bientôt redirigé",
+        "title": "Connexion réussie"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Revenir à l'onglet d'origine pour continuer",
+        "subtitleNewTab": "Revenez à l'onglet nouvellement ouvert pour continuer",
+        "titleNewTab": "Connecté sur un autre onglet"
+      }
+    },
+    "emailLinkMfa": {
+      "formSubtitle": "Utilisez le lien de vérification envoyé par e-mail",
+      "resendButton": "Vous n'avez pas reçu de lien ? Renvoyer",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre messagerie"
+    },
+    "enterpriseConnections": {},
+    "forgotPassword": {
+      "formTitle": "Code de réinitialisation du mot de passe",
+      "resendButton": "Vous n'avez pas reçu de code ? Renvoyer",
+      "subtitle": "pour réinitialiser votre mot de passe",
+      "subtitle_email": "Tout d'abord, saisissez le code envoyé à votre adresse e-mail.",
+      "subtitle_phone": "Tout d'abord, saisissez le code envoyé à votre téléphone.",
+      "title": "Réinitialiser le mot de passe"
+    },
+    "forgotPasswordAlternativeMethods": {
+      "blockButton__resetPassword": "Réinitialiser votre mot de passe",
+      "label__alternativeMethods": "Ou connectez-vous avec une autre méthode.",
+      "title": "Mot de passe oublié ?"
+    },
+    "newDeviceVerificationNotice": "Vous vous connectez depuis un nouvel appareil. Nous demandons une vérification pour sécuriser votre compte.",
+    "noAvailableMethods": {
+      "message": "Impossible de poursuivre la connexion. Aucun facteur d'authentification n'est disponible.",
+      "subtitle": "Une erreur s'est produite",
+      "title": "Impossible de se connecter"
+    },
+    "passkey": {
+      "subtitle": "Utilisez une clé de sécurité pour continuer.",
+      "title": "Clé de sécurité"
+    },
+    "password": {
+      "actionLink": "Utiliser une autre méthode",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Entrez votre mot de passe"
+    },
+    "passwordCompromised": {},
+    "passwordPwned": {
+      "title": "Mot de passe compromis"
+    },
+    "passwordUntrusted": {},
+    "phoneCode": {
+      "formTitle": "Code de vérification",
+      "resendButton": "Vous n'avez pas reçu de code ? Renvoyer",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre téléphone"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Code de vérification",
+      "resendButton": "Vous n'avez pas reçu de code ? Renvoyer",
+      "subtitle": "Entrez le code envoyé à votre téléphone pour continuer.",
+      "title": "Vérifiez votre téléphone"
+    },
+    "resetPassword": {
+      "formButtonPrimary": "Réinitialiser",
+      "requiredMessage": "Pour des raisons de sécurité, il est nécessaire de réinitialiser votre mot de passe.",
+      "successMessage": "Votre mot de passe a été modifié avec succès. Nous vous reconnectons, veuillez patienter un instant.",
+      "title": "Réinitialiser le mot de passe"
+    },
+    "resetPasswordMfa": {
+      "detailsLabel": "Nous devons vérifier votre identité avant de réinitialiser votre mot de passe."
+    },
+    "start": {
+      "actionLink": "S'inscrire",
+      "actionLink__join_waitlist": "Rejoindre la liste d'attente",
+      "actionLink__use_email": "Utiliser e-mail",
+      "actionLink__use_email_username": "Utiliser l'e-mail ou le nom d'utilisateur",
+      "actionLink__use_passkey": "Utiliser une clé de sécurité",
+      "actionLink__use_phone": "Utiliser téléphone",
+      "actionLink__use_username": "Utiliser le nom d'utilisateur",
+      "actionText": "Vous n'avez pas encore de compte ?",
+      "actionText__join_waitlist": "Inscrivez-vous sur la liste d'attente",
+      "alternativePhoneCodeProvider": {
+        "actionLink": "Utiliser une autre méthode",
+        "label": "Numéro de téléphone {{provider}}",
+        "subtitle": "Entrez votre numéro de téléphone pour recevoir un code de vérification sur {{provider}}.",
+        "title": "Se connecter à {{applicationName}} avec {{provider}}"
+      },
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Se connecter",
+      "titleCombined": "Continuer vers {{applicationName}}"
+    },
+    "totpMfa": {
+      "formTitle": "Le code de vérification",
+      "subtitle": "Entrez le code de l'application d'authentification.",
+      "title": "Vérification en deux étapes"
+    },
+    "web3Solana": {
+      "subtitle": "Sélectionnez un portefeuille ci-dessous pour vous connecter",
+      "title": "Se connecter avec Solana"
+    }
+  },
+  "signInEnterPasswordTitle": "Entrez votre mot de passe",
+  "signUp": {
+    "alternativePhoneCodeProvider": {
+      "resendButton": "Vous n’avez pas reçu de code ? Renvoyer",
+      "subtitle": "Entrez le code de vérification envoyé à votre {{provider}}",
+      "title": "Vérifiez votre {{provider}}"
+    },
+    "continue": {
+      "actionLink": "Se connecter",
+      "actionText": "Vous avez déjà un compte ?",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Remplir les champs manquants"
+    },
+    "emailCode": {
+      "formSubtitle": "Entrez le code de vérification envoyé à votre adresse e-mail",
+      "formTitle": "Le code de vérification",
+      "resendButton": "Renvoyer le code",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre e-mail"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Pour continuer, ouvrir le lien de vérification sur l'appareil et le navigateur depuis lequel vous avez initié l'inscription",
+        "title": "Erreur de correspondance du client"
+      },
+      "formSubtitle": "Utilisez le lien de vérification envoyé à votre adresse e-mail",
+      "formTitle": "lien de vérification",
+      "loading": {
+        "title": "Création de votre compte..."
+      },
+      "resendButton": "Renvoyer le lien",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre e-mail",
+      "verified": {
+        "title": "Compte créé"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Revenez à l'onglet nouvellement ouvert pour continuer",
+        "subtitleNewTab": "Revenir à l'onglet précédent pour continuer",
+        "title": "E-mail vérifié avec succès"
+      }
+    },
+    "enterpriseConnections": {},
+    "legalConsent": {
+      "checkbox": {
+        "label__onlyPrivacyPolicy": "J'accepte la Politique de confidentialité.",
+        "label__onlyTermsOfService": "J'accepte les Conditions d'utilisation.",
+        "label__termsOfServiceAndPrivacyPolicy": "J'accepte les {{ termsOfServiceLink || link(\"Conditions d'utilisation\") }} et la {{ privacyPolicyLink || link(\"Politique de confidentialité\") }}."
+      },
+      "continue": {
+        "subtitle": "Lisez et acceptez les conditions pour continuer.",
+        "title": "Consentement légal"
+      }
+    },
+    "phoneCode": {
+      "formSubtitle": "Entrez le code de vérification envoyé à votre numéro de téléphone",
+      "formTitle": "Le code de vérification",
+      "resendButton": "Renvoyer le code",
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "title": "Vérifiez votre téléphone"
+    },
+    "restrictedAccess": {
+      "actionLink": "Contacter le support",
+      "actionText": "Accès restreint.",
+      "blockButton__emailSupport": "Contacter le support par e-mail",
+      "blockButton__joinWaitlist": "Rejoindre la liste d'attente",
+      "subtitle": "Vous n'avez pas la permission d'accéder à cette page.",
+      "subtitleWaitlist": "Inscrivez-vous pour demander l'accès.",
+      "title": "Accès restreint"
+    },
+    "start": {
+      "actionLink": "Se connecter",
+      "actionLink__use_email": "Utiliser votre adresse e-mail",
+      "actionLink__use_phone": "Utiliser votre téléphone",
+      "actionText": "Vous avez déjà un compte ?",
+      "alternativePhoneCodeProvider": {
+        "actionLink": "Utiliser une autre méthode",
+        "label": "Numéro de téléphone {{provider}}",
+        "subtitle": "Entrez votre numéro de téléphone pour recevoir un code de vérification sur {{provider}}.",
+        "title": "S’inscrire à {{applicationName}} avec {{provider}}"
+      },
+      "subtitle": "pour continuer vers {{applicationName}}",
+      "subtitleCombined": "pour continuer vers {{applicationName}}",
+      "title": "Créez votre compte",
+      "titleCombined": "Créez votre compte"
+    },
+    "web3Solana": {
+      "subtitle": "Sélectionnez un portefeuille ci-dessous pour vous inscrire",
+      "title": "S'inscrire avec Solana"
+    }
+  },
+  "socialButtonsBlockButton": "Continuer avec {{provider|titleize}}",
+  "socialButtonsBlockButtonManyInView": "{{provider|titleize}}",
+  "unstable__errors": {
+    "already_a_member_in_organization": "Vous êtes déjà membre de cette organisation.",
+    "avatar_file_size_exceeded": "La taille du fichier dépasse la limite maximale de 10 Mo. Veuillez choisir un fichier plus petit.",
+    "avatar_file_type_invalid": "Type de fichier non pris en charge. Veuillez télécharger une image JPG, PNG, GIF ou WEBP.",
+    "captcha_invalid": "Inscription échouée en raison de validations de sécurité incorrectes. Veuillez rafraîchir la page pour réessayer ou contacter le support pour obtenir de l'aide.",
+    "captcha_unavailable": "Inscription échouée en raison d'une validation de captcha non réussie. Veuillez actualiser la page pour réessayer ou contacter le support pour obtenir de l'aide.",
+    "form_code_incorrect": "Code incorrect",
+    "form_email_address_blocked": "Les services de messagerie temporaire ne sont pas pris en charge. Veuillez utiliser votre adresse e-mail habituelle pour créer un compte.",
+    "form_identifier_exists__email_address": "Cette adresse e-mail existe déjà.",
+    "form_identifier_exists__phone_number": "Ce numéro de téléphone existe déjà.",
+    "form_identifier_exists__username": "Ce nom d'utilisateur existe déjà.",
+    "form_identifier_not_found": "Nous n'avons pas trouvé de compte avec ces détails.",
+    "form_param_format_invalid": "Le format est invalide",
+    "form_param_format_invalid__email_address": "L'adresse e-mail doit être une adresse e-mail valide.",
+    "form_param_format_invalid__phone_number": "Le numéro de téléphone doit être au format international.",
+    "form_param_max_length_exceeded__first_name": "Le prénom ne doit pas dépasser 256 caractères.",
+    "form_param_max_length_exceeded__last_name": "Le nom ne doit pas dépasser 256 caractères.",
+    "form_param_max_length_exceeded__name": "Le nom ne doit pas dépasser 256 caractères.",
+    "form_param_nil": "Ce champ est requis.",
+    "form_param_value_invalid": "La valeur fournie est invalide.",
+    "form_password_incorrect": "Mot de passe incorrect",
+    "form_password_or_identifier_incorrect": "Le mot de passe ou l'adresse e-mail est incorrect. Réessayez ou utilisez une autre méthode.",
+    "form_password_length_too_short": "Votre mot de passe est trop court.",
+    "form_password_not_strong_enough": "Votre mot de passe n'est pas assez fort.",
+    "form_password_pwned": "Ce mot de passe a été compromis et ne peut pas être utilisé. Veuillez essayer un autre mot de passe à la place.",
+    "form_password_pwned__sign_in": "Mot de passe compromis. Veuillez le réinitialiser.",
+    "form_password_size_in_bytes_exceeded": "Votre mot de passe a dépassé le nombre maximum d'octets autorisés. Veuillez le raccourcir ou supprimer certains caractères spéciaux.",
+    "form_password_validation_failed": "Mot de passe incorrect",
+    "form_username_invalid_character": "L'identifiant contient des caractères invalides.",
+    "form_username_invalid_length": "Le nombre de caractères de l'identifiant est invalide.",
+    "form_username_needs_non_number_char": "Votre nom d'utilisateur doit contenir au moins un caractère non numérique.",
+    "identification_deletion_failed": "Vous ne pouvez pas supprimer votre dernière identification.",
+    "not_allowed_access": "L'adresse e-mail ou le numéro de téléphone n'est pas autorisée à s'inscrire. Cela peut être dû à l'utilisation de '+', '=', '#' ou '.' dans votre adresse e-mail, l'utilisation d'un domaine connecté à un service de messagerie temporaire ou l'exclusion explicite. Si vous pensez que c'est une erreur, veuillez contacter le support.",
+    "organization_domain_blocked": "Ce domaine d'organisation est bloqué.",
+    "organization_domain_common": "Ce domaine est trop courant pour une organisation.",
+    "organization_membership_quota_exceeded": "Le quota de membres de l'organisation a été dépassé.",
+    "organization_minimum_permissions_needed": "Permissions minimales nécessaires pour accéder à cette organisation.",
+    "organization_not_found_or_unauthorized": "Vous n’êtes plus membre de cette organisation. Veuillez en choisir ou en créer une autre.",
+    "organization_not_found_or_unauthorized_with_create_organization_disabled": "Vous n’êtes plus membre de cette organisation. Veuillez en choisir une autre.",
+    "passkey_already_exists": "Cette clé de sécurité existe déjà.",
+    "passkey_not_supported": "Les clés de sécurité ne sont pas prises en charge sur cet appareil.",
+    "passkey_pa_not_supported": "Les clés de sécurité ne sont pas prises en charge dans cet environnement.",
+    "passkey_registration_cancelled": "Enregistrement de la clé de sécurité annulé.",
+    "passkey_retrieval_cancelled": "Récupération de la clé de sécurité annulée.",
+    "passwordComplexity": {
+      "maximumLength": "moins de {{length}} caractères",
+      "minimumLength": "au moins {{length}} caractères",
+      "requireLowercase": "une lettre minuscule",
+      "requireNumbers": "un chiffre",
+      "requireSpecialCharacter": "un caractère spécial",
+      "requireUppercase": "une lettre majuscule",
+      "sentencePrefix": "Votre mot de passe doit contenir"
+    },
+    "phone_number_exists": "Ce numéro de téléphone est déjà utilisé. Veuillez essayer un autre.",
+    "session_exists": "Vous êtes déjà connecté.",
+    "web3_missing_identifier": "Aucune extension de portefeuille Web3 trouvée. Veuillez en installer une pour continuer.",
+    "web3_signature_request_rejected": "Vous avez refusé la demande de signature. Veuillez réessayer pour continuer.",
+    "web3_solana_signature_generation_failed": "Une erreur s'est produite lors de la génération de la signature. Veuillez réessayer pour continuer.",
+    "zxcvbn": {
+      "couldBeStronger": "Votre mot de passe fonctionne mais pourrait être plus sûr. Essayez d'ajouter des caractères.",
+      "goodPassword": "Bien joué. C'est un excellent mot de passe.",
+      "notEnough": "Votre mot de passe n'est pas assez fort.",
+      "suggestions": {
+        "allUppercase": "Mettez quelques lettres en majuscules, mais pas toutes.",
+        "anotherWord": "Ajoutez des mots moins courants.",
+        "associatedYears": "Évitez les années qui vous sont associées. (ex: date de naissance)",
+        "capitalization": "Capitalisez mais pas seulement la première lettre.",
+        "dates": "Évitez les dates et les années qui vous sont associées. (ex: date ou année de naissance)",
+        "l33t": "Évitez les substitutions de lettres prévisibles comme '@' pour 'a'.",
+        "longerKeyboardPattern": "Utilisez des motifs de clavier plus longs et changez de sens de frappe plusieurs fois.",
+        "noNeed": "Vous pouvez créer des mots de passe forts sans utiliser de symboles, de chiffres ou de lettres majuscules.",
+        "pwned": "Si vous utilisez ce mot de passe ailleurs, vous devriez le modifier.",
+        "recentYears": "Évitez les dernières années.",
+        "repeated": "Évitez les mots et les caractères répétés.",
+        "reverseWords": "Évitez les orthographes inversées des mots courants",
+        "sequences": "Évitez les séquences de caractères courantes.",
+        "useWords": "Utilisez plusieurs mots, mais évitez les phrases courantes."
+      },
+      "warnings": {
+        "common": "Ce mot de passe est couramment utilisé.",
+        "commonNames": "Les noms communs et les noms de famille sont faciles à deviner.",
+        "dates": "Les dates sont faciles à deviner.",
+        "extendedRepeat": "Les caractères répétés comme 'abcabcabc' sont faciles à deviner.",
+        "keyPattern": "Des motifs de clavier courts sont faciles à deviner.",
+        "namesByThemselves": "Des noms ou des prénoms simples sont faciles à deviner.",
+        "pwned": "Votre mot de passe a été divulgué suite à une violation de données sur Internet.",
+        "recentYears": "Les années récentes sont faciles à deviner.",
+        "sequences": "Des séquences de caractères communs comme 'abc' sont faciles à deviner.",
+        "similarToCommon": "Ce mot de passe est similaire à un mot de passe couramment utilisé.",
+        "simpleRepeat": "Les caractères répétés comme 'aaa' sont faciles à deviner.",
+        "straightRow": "Les lignes droites de touches de votre clavier sont faciles à deviner.",
+        "topHundred": "Ce mot de passe est fréquemment utilisé.",
+        "topTen": "Ce mot de passe est très utilisé.",
+        "userInputs": "Le mot de passe ne doit pas comporter de données personnelles ou liées au site.",
+        "wordByItself": "Les mots simples sont faciles à deviner."
+      }
+    }
+  }
+}
