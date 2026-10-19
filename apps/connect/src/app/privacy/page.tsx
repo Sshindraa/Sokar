@@ -7,6 +7,7 @@
  */
 
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ArrowLeft, ArrowUpRight, Mail } from 'lucide-react';
 import {
   PRIVACY_DOCUMENT,
@@ -32,19 +33,19 @@ export default function PrivacyPage() {
       className="mx-auto max-w-6xl px-5 pb-16 pt-6 text-foreground sm:px-8 sm:pt-8"
     >
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
-        <a
+        <Link
           href="/"
           className="text-lg font-semibold tracking-tight transition-all duration-200 hover:opacity-70"
         >
           Sokar<span className="text-muted-foreground">.</span>
-        </a>
-        <a
+        </Link>
+        <Link
           href="/"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-all duration-200 hover:text-foreground"
         >
           <ArrowLeft size={14} aria-hidden="true" />
           Retour à l’accueil
-        </a>
+        </Link>
       </header>
       <div className="pb-10 pt-12 sm:pb-12 sm:pt-16">
         <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
