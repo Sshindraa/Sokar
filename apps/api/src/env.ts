@@ -277,6 +277,8 @@ export const VoiceConfigSchema = z
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: z.string().default('Cohere,Wafer,Baidu'),
     // Hébergeurs OpenRouter jamais utilisés par le repli, même en secours (ex. données hors des pays admis).
     VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE: z.string().default(''),
+    // Repli réservé aux hébergeurs sans conservation des données (`zdr`) ; false = performance d'abord.
+    VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: z.enum(['true', 'false']).default('true'),
   })
   .merge(VoiceDeepgramConfigSchema);
 

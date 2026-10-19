@@ -167,16 +167,17 @@ function providerList(value: string | undefined): string[] {
 
 /**
  * Hébergeurs OpenRouter du repli. Les appels contiennent des données personnelles (noms, numéros) :
- * seuls les hébergeurs qui ne conservent rien et n'entraînent rien sur les requêtes sont admis
- * (`zdr`, `data_collection: deny`), et ceux de la liste d'exclusion sont écartés même en secours.
+ * par défaut, seuls les hébergeurs qui ne conservent rien et n'entraînent rien sur les requêtes
+ * sont admis (`zdr`, `data_collection: deny`) ; VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION=false lève
+ * cette exigence. Ceux de la liste d'exclusion sont écartés même en secours.
  */
 function fallbackProviderPreferences(): Record<string, unknown> {
   const order = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER);
   const ignore = providerList(voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE);
+  const zeroRetention = voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION !== 'false';
   return {
     require_parameters: true,
-    zdr: true,
-    data_collection: 'deny',
+    ...(zeroRetention ? { zdr: true, data_collection: 'deny' } : {}),
     ...(order.length ? { order, allow_fallbacks: true } : { sort: 'latency' }),
     ...(ignore.length ? { ignore } : {}),
   };

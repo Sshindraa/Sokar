@@ -111,6 +111,7 @@ beforeEach(() => {
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE:
       voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE,
+    VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -203,7 +204,28 @@ describe('repli du tour structuré', () => {
     });
   });
 
-  it('exclut les hébergeurs listés, en exigeant toujours zéro conservation des données', async () => {
+  it('n’exige plus zéro conservation quand le réglage est à false (choix de performance)', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
+      VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: 'false',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      order: ['ModelRun'],
+      allow_fallbacks: true,
+    });
+  });
+
+  it('exclut les hébergeurs listés, en exigeant zéro conservation des données par défaut', async () => {
     const mgr = CallSessionManager.getInstance();
     Object.assign(voiceConfig, {
       VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',

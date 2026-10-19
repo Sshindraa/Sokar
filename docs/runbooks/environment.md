@@ -311,10 +311,11 @@ C'est un filet d'urgence, pas un provider de production.
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API decisions), juge d'évaluation, suivi de crédit
-# Hébergeurs du repli : le code exige toujours zéro conservation des données (`zdr`, `data_collection: deny`).
+# Hébergeurs du repli : par défaut, le code exige zéro conservation des données (`zdr`, `data_collection: deny`).
 # VOICE_STRUCTURED_FALLBACK_MODEL="qwen/qwen3.8-27b"           # même modèle que Cerebras (banc du 20/10)
 # VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="ModelRun"          # 0,5 s, jamais au-delà de 0,8 s sur 40 tours
 # VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE="DekaLLM"          # jamais utilisés, même en secours (données hors pays admis)
+# VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION="false"            # défaut true ; false = performance d'abord (décision du 20/10)
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
 # Mesure du 01/10 : voir docs/runbooks/provider-resilience.md (un seul hébergeur UE pour le modèle de repli).
