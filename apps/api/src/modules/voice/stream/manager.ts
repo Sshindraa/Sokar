@@ -388,15 +388,7 @@ export function _resetCircuitBreakersForTesting(): void {
   resetCircuitBreaker('cerebras');
 }
 
-/**
- * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
- * on abort et la dégradation vocale prend le relais. La valeur est validée
- * dans env.ts.
- */
-/**
- * Combine le signal de session avec un timeout par requête.
- * Retourne un signal qui abort si l'un des deux se déclenche.
- */
+/** Résout `'timeout'` si la promesse n'aboutit pas avant `timeoutMs`. */
 async function raceTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | 'timeout'> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
@@ -409,6 +401,15 @@ async function raceTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
+/**
+ * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
+ * on abort et la dégradation vocale prend le relais. La valeur est validée
+ * dans env.ts.
+ */
+/**
+ * Combine le signal de session avec un timeout par requête.
+ * Retourne un signal qui abort si l'un des deux se déclenche.
+ */
 function withRequestTimeout(sessionSignal?: AbortSignal): AbortSignal {
   // AbortSignal.any est disponible en Node 20+
   const timeoutSignal = AbortSignal.timeout(voiceConfig.VOICE_LLM_TIMEOUT_MS);
