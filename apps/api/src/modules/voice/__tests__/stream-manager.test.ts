@@ -687,6 +687,8 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
       expect(body.response_format).toEqual(format);
       expect(body.provider).toEqual({
         require_parameters: true,
+        zdr: true,
+        data_collection: 'deny',
         order: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER.split(',').map((name) =>
           name.trim(),
         ),
