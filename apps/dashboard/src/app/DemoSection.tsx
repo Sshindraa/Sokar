@@ -414,9 +414,9 @@ export default function DemoSection() {
                 />
               </div>
               <div>
-                <h4 className="text-xs font-semibold tracking-tight text-white">
+                <h3 className="text-xs font-semibold tracking-tight text-white">
                   Exemple de conversation
-                </h4>
+                </h3>
                 <p className="text-xs sm:text-[11px] text-white/50 font-medium flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-white/40" /> Scénario simulé
                 </p>
