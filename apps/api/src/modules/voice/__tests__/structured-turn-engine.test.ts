@@ -2052,3 +2052,63 @@ describe('relecture du nom : les lettres isolées, vérifiées par le code (appe
     expect(spoken().join(' ')).toContain('Houet');
   });
 });
+
+describe('repli parlé quand le tour échoue (appel du 19/10, 22 h 09)', () => {
+  const TECHNICAL = "Désolée, j'ai eu un petit souci de mon côté. Pouvez-vous me le redire ?";
+  const NOT_UNDERSTOOD = "Pardon, je n'ai pas bien saisi. Pouvez-vous répéter ?";
+  const ESCALATION =
+    'Je rencontre un petit souci technique. Je peux vous passer le gérant ou prendre un message. Que préférez-vous ?';
+
+  it('panne du fournisseur : dit que le souci vient de nous, pas « pas compris »', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.streamStructuredCompletion).mockRejectedValueOnce(
+      new Error('Cerebras queue timeout'),
+    );
+
+    await processTranscriptStreaming(session, 'je voudrais réserver pour demain soir', mgr);
+
+    expect(spoken()).toEqual([TECHNICAL]);
+    expect(session.history.at(-1)).toEqual({ role: 'assistant', content: TECHNICAL });
+    expect(session.conversation.llmFailureStreak).toBe(1);
+    // Le détecteur d'incompréhension ne compte pas une panne de notre côté.
+    expect(session.conversation.misunderstandingCount).toBe(0);
+  });
+
+  it('sortie du modèle inexploitable : garde « je n’ai pas bien saisi »', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.streamStructuredCompletion).mockResolvedValueOnce('pas du JSON');
+
+    await processTranscriptStreaming(session, 'euh hm', mgr);
+
+    expect(spoken()).toEqual([NOT_UNDERSTOOD]);
+  });
+
+  it('propose le gérant ou un message au deuxième échec d’affilée', async () => {
+    const { session, mgr } = fixture();
+    session.managerPhone = '+33100000000';
+    vi.mocked(mgr.streamStructuredCompletion)
+      .mockRejectedValueOnce(new Error('upstream 503'))
+      .mockRejectedValueOnce(new Error('upstream 503'));
+
+    await processTranscriptStreaming(session, 'une table pour quatre', mgr);
+    await processTranscriptStreaming(session, 'je disais une table pour quatre demain', mgr);
+
+    expect(spoken()).toEqual([TECHNICAL, ESCALATION]);
+  });
+
+  it('un tour réussi remet le compteur à zéro', async () => {
+    const { session, mgr, outputs } = fixture();
+    session.managerPhone = '+33100000000';
+    vi.mocked(mgr.streamStructuredCompletion).mockRejectedValueOnce(new Error('upstream 503'));
+    await processTranscriptStreaming(session, 'une table pour quatre', mgr);
+
+    outputs.push(turn({ awaiting: 'date', say: 'Pour quel jour ?' }));
+    await processTranscriptStreaming(session, 'je disais une table pour quatre', mgr);
+    expect(session.conversation.llmFailureStreak).toBe(0);
+
+    vi.mocked(mgr.streamStructuredCompletion).mockRejectedValueOnce(new Error('upstream 503'));
+    await processTranscriptStreaming(session, 'demain', mgr);
+
+    expect(spoken()).toEqual([TECHNICAL, 'Pour quel jour ?', TECHNICAL]);
+  });
+});

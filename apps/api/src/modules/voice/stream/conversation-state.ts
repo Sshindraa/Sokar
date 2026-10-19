@@ -443,14 +443,26 @@ export function buildAvailabilityReplyPlan(
 }
 
 /**
+ * Pourquoi le tour n'a pas de réponse du modèle. `technical` : aucune réponse (erreur fournisseur,
+ * délai, file d'attente) ; `unusable` : le modèle a répondu, mais rien d'exploitable (sortie invalide, vide).
+ */
+export type LlmFailureCause = 'technical' | 'unusable';
+
+/**
  * Réponse parlée quand le LLM échoue (429, 5xx, timeout, requête refusée).
  *
  * Un silence fait raccrocher l'appelant : on répond toujours, de façon
  * déterministe, à partir de l'état vérifié. Si une disponibilité vient d'être
  * vérifiée pour la demande en cours, on reprend exactement ce résultat ; après
  * deux échecs consécutifs, on propose le gérant ou un message.
+ *
+ * Panne technique : la phrase dit que le souci vient de nous. « Je n'ai pas bien saisi » faisait croire
+ * à l'appelant qu'il avait mal parlé alors que la transcription était exacte (appel du 19/10, 22 h 09).
  */
-export function buildLlmFailurePlan(session: CallSession): AssistantReplyEmissionPlan {
+export function buildLlmFailurePlan(
+  session: CallSession,
+  cause: LlmFailureCause = 'unusable',
+): AssistantReplyEmissionPlan {
   const language = effectiveVoiceLanguage(session);
   const streak = session.conversation.llmFailureStreak ?? 0;
   const managerConfigured = Boolean(session.managerPhone?.trim());
@@ -476,6 +488,14 @@ export function buildLlmFailurePlan(session: CallSession): AssistantReplyEmissio
       lastAvailability.slots,
       language,
     );
+  }
+
+  if (cause === 'technical') {
+    const reply =
+      language === 'en'
+        ? 'Sorry, I had a small glitch on my end. Could you tell me again?'
+        : "Désolée, j'ai eu un petit souci de mon côté. Pouvez-vous me le redire ?";
+    return buildExplicitInteractionReplyPlan(session, reply, 'open');
   }
 
   const reply =
