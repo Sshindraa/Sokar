@@ -37,6 +37,18 @@ vi.mock('../../../shared/logger/pino', () => ({
   },
 }));
 
+const alerts = vi.hoisted(() => ({
+  bothFailed: vi.fn().mockResolvedValue(false),
+  fallbackUnavailable: vi.fn().mockResolvedValue(false),
+}));
+vi.mock('../stream/llm-alerts', () => ({
+  recordLlmBothProvidersFailed: alerts.bothFailed,
+  alertLlmFallbackUnavailable: alerts.fallbackUnavailable,
+  recordLlmHedgeFired: vi.fn().mockResolvedValue(false),
+  alertLlmPrimaryUnavailable: vi.fn().mockResolvedValue(false),
+  alertLlmCircuitOpened: vi.fn().mockResolvedValue(false),
+}));
+
 const PRIMARY_KEY = ['test', 'cerebras', 'key'].join('-');
 const FALLBACK_KEY = ['test', 'openrouter', 'key'].join('-');
 
@@ -97,6 +109,11 @@ beforeEach(() => {
     VOICE_LLM_HEDGE_MS: voiceConfig.VOICE_LLM_HEDGE_MS,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE:
+      voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE,
+    VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION,
+    VOICE_STRUCTURED_FALLBACK_REASONING: voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING,
+    VOICE_STRUCTURED_FALLBACK_SAMPLING: voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -167,6 +184,8 @@ describe('repli du tour structuré', () => {
     });
     expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
       require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
       order: ['Cohere', 'Wafer'],
       allow_fallbacks: true,
     });
@@ -181,7 +200,90 @@ describe('repli du tour structuré', () => {
     });
     expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
       require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
       sort: 'latency',
+    });
+  });
+
+  it('n’exige plus zéro conservation quand le réglage est à false (choix de performance)', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
+      VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: 'false',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      order: ['ModelRun'],
+      allow_fallbacks: true,
+    });
+  });
+
+  it('envoie le raisonnement et l’échantillonnage réglés pour un modèle de repli à raisonnement (GPT-6 Luna)', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_REASONING: 'none',
+      VOICE_STRUCTURED_FALLBACK_SAMPLING: 'false',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    const body = bodyOf(fetchMock.mock.calls[1]);
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('top_p');
+  });
+
+  it('garde par défaut le raisonnement désactivé et l’échantillonnage du tour', async () => {
+    const mgr = CallSessionManager.getInstance();
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    const body = bodyOf(fetchMock.mock.calls[1]);
+    expect(body.reasoning).toEqual({ enabled: false });
+    expect(body.temperature).toBe(0.3);
+    expect(body.top_p).toBe(0.8);
+  });
+
+  it('exclut les hébergeurs listés, en exigeant zéro conservation des données par défaut', async () => {
+    const mgr = CallSessionManager.getInstance();
+    Object.assign(voiceConfig, {
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
+      VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE: ' DekaLLM , Chutes ,',
+    });
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
+
+    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
+      onDelta: () => undefined,
+    });
+
+    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
+      require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
+      order: ['ModelRun'],
+      allow_fallbacks: true,
+      ignore: ['DekaLLM', 'Chutes'],
     });
   });
 
@@ -483,6 +585,64 @@ describe('hedging du tour structuré (requête de doublon quand le principal tar
 
     expect(text).toBe(answer('Pour combien ?'));
     expect(await hedgeCount('primary_won')).toBe(1);
+  });
+
+  describe('alertes (appel du 19/10 22h09)', () => {
+    beforeEach(() => {
+      alerts.bothFailed.mockClear();
+      alerts.fallbackUnavailable.mockClear();
+    });
+
+    it('principal lent mais qui répond, secours en 402 : alerte secours, aucun tour compté en échec', async () => {
+      fetchMock
+        .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
+        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+      await run(CallSessionManager.getInstance());
+
+      expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
+      expect(alerts.bothFailed).not.toHaveBeenCalled();
+    });
+
+    it('principal muet jusqu’au délai total, secours en 402 : un seul tour compté, cause « lent »', async () => {
+      fetchMock
+        .mockResolvedValueOnce(neverEmits())
+        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+      await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
+
+      expect(alerts.bothFailed).toHaveBeenCalledTimes(1);
+      expect(alerts.bothFailed).toHaveBeenCalledWith('primary_slow');
+    });
+
+    it('principal en erreur, secours en 402 : un seul tour compté, cause « erreur »', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('down', { status: 503 }))
+        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+      await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
+
+      expect(alerts.bothFailed).toHaveBeenCalledTimes(1);
+      expect(alerts.bothFailed).toHaveBeenCalledWith('primary_failed');
+    });
+
+    it('le juge et l’anticipation en échec ne comptent pas : l’appelant n’entend rien', async () => {
+      for (const kind of ['judge', 'speculation'] as const) {
+        fetchMock
+          .mockResolvedValueOnce(new Response('down', { status: 503 }))
+          .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+        await expect(
+          CallSessionManager.getInstance().streamStructuredCompletion(
+            makeSession(),
+            messages,
+            format as never,
+            { kind, onDelta: () => undefined },
+          ),
+        ).rejects.toThrow();
+      }
+
+      expect(alerts.bothFailed).not.toHaveBeenCalled();
+    });
   });
 
   it('échoue quand le principal est bloqué et que le doublon échoue aussi', async () => {
