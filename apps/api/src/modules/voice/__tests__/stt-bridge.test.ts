@@ -28,6 +28,9 @@ import {
   deepgramShortStallFinalizeMs,
   finalizeOnSemanticEndOfTurn,
   looksLikeSpelledLetters,
+  maybeFlushDeepgramOnSilence,
+  isDeepgramSilenceFlushEnabledFor,
+  deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
 import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
@@ -928,6 +931,174 @@ describe('Deepgram final dispatch', () => {
     expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
       500,
     );
+  });
+
+  describe('relève au silence : mot retenu par Deepgram (appel du 21/10, « midi 30 »)', () => {
+    const FINALIZE = JSON.stringify({ type: 'Finalize' });
+
+    function listening() {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-21T01:01:10Z'));
+      vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
+      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', 'rest-1');
+      const { session, onEvent } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      session.state = 'LISTENING';
+      return { session, onEvent, ws };
+    }
+    function spoke(session: CallSession) {
+      const now = Date.now();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: now, lastClearVoiceAt: now };
+    }
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+
+    it('ne fait rien sans le restaurant dans la liste', () => {
+      const { session, ws } = listening();
+      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', '');
+      spoke(session);
+      vi.advanceTimersByTime(2_000);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+    });
+
+    it('accepte `*` et ignore une durée hors bornes', () => {
+      expect(
+        isDeepgramSilenceFlushEnabledFor('r-9', {
+          VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS: ' * ',
+        }),
+      ).toBe(true);
+      expect(isDeepgramSilenceFlushEnabledFor('r-9', {})).toBe(false);
+      expect(deepgramSilenceFlushMs({})).toBe(700);
+      expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '100' })).toBe(700);
+      expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '900' })).toBe(900);
+    });
+
+    it('relève au silence réel, puis clôt le tour par la règle habituelle sans second Finalize', () => {
+      const { session, onEvent, ws } = listening();
+      spoke(session);
+      vi.advanceTimersByTime(699);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(true);
+      expect(ws.send).toHaveBeenCalledWith(FINALIZE);
+
+      // Deepgram rend le mot retenu, souvent marqué speech_final : le tour ne part pas encore.
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'midi 30',
+        speechFinal: true,
+        fromFinalize: true,
+      });
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+      expect(session.sttDeepgramFlushHeld).toBe(true);
+
+      // Réponse courte : partielle figée à 500 ms, l'appelant se tait toujours.
+      vi.advanceTimersByTime(499);
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+      vi.advanceTimersByTime(1);
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'midi 30',
+          finalTrigger: 'silence_flush',
+        }),
+      );
+      expect(ws.send).toHaveBeenCalledTimes(1);
+      expect(session.sttDeepgramFlushHeld).toBe(false);
+      expect(session.sttDeepgramPendingInterim).toBe(false);
+    });
+
+    it('garde la parole si l’appelant reprend : le texte relevé rejoint la suite', () => {
+      const { session, onEvent, ws } = listening();
+      spoke(session);
+      vi.advanceTimersByTime(700);
+      maybeFlushDeepgramOnSilence(session);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'oui',
+        speechFinal: true,
+        fromFinalize: true,
+      });
+      vi.advanceTimersByTime(200);
+      spoke(session);
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'pour quatre' });
+      expect(session.sttDeepgramFlushHeld).toBe(false);
+
+      // La partielle figée de la reprise passe par un vrai Finalize, qui clôt tout le tour.
+      vi.advanceTimersByTime(900);
+      expect(ws.send).toHaveBeenCalledTimes(2);
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'pour quatre',
+        speechFinal: false,
+        fromFinalize: true,
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'oui pour quatre',
+          finalTrigger: 'stalled_finalize',
+        }),
+      );
+    });
+
+    it('ne relève qu’une fois par prise de parole, et rien quand la réponse est vide', () => {
+      const { session, onEvent, ws } = listening();
+      spoke(session);
+      vi.advanceTimersByTime(800);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(true);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: '',
+        speechFinal: false,
+        fromFinalize: true,
+      });
+      vi.advanceTimersByTime(3_000);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
+      expect(ws.send).toHaveBeenCalledTimes(1);
+      expect(session.sttDeepgramFlushHeld).toBeFalsy();
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+    });
+
+    it('n’agit pas quand Deepgram a déjà une partielle, ni pendant que l’agent parle', () => {
+      const { session, ws } = listening();
+      spoke(session);
+      handleNormalizedSttMessage(session, { type: 'partial', transcript: 'midi' });
+      vi.advanceTimersByTime(400);
+      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+
+      const other = listening();
+      spoke(other.session);
+      other.session.state = 'SPEAKING';
+      vi.advanceTimersByTime(1_000);
+      expect(maybeFlushDeepgramOnSilence(other.session)).toBe(false);
+      expect(other.ws.send).not.toHaveBeenCalled();
+    });
+
+    it('le verdict « fini » du modèle sur le texte relevé clôt le tour tout de suite', () => {
+      const { session, onEvent, ws } = listening();
+      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
+      spoke(session);
+      vi.advanceTimersByTime(700);
+      maybeFlushDeepgramOnSilence(session);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'midi 30',
+        speechFinal: false,
+        fromFinalize: true,
+      });
+      expect(finalizeOnSemanticEndOfTurn(session, 'midi 30', true)).toBe(true);
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'silence_flush' }),
+      );
+      expect(ws.send).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('spéculation du tour structuré à la pause de l’appelant', () => {
