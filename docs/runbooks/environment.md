@@ -321,8 +321,9 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
 # VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
 # Restaurants dont le tour part d'abord chez OpenRouter (modèle et réglages ci-dessus), Cerebras devenant
-# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. Essai prévu :
-# Chez Sokar seul (710309f4-d699-472d-a1db-f22d527fc4d0), uniquement sur feu vert de Hamza.
+# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. `*` = tous
+# les restaurants, y compris ceux créés après le réglage (sinon un nouveau restaurant part d'abord chez
+# Cerebras). Liste explicite : seulement les identifiants listés, séparés par des virgules.
 # VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
 # Délai avant le doublon Cerebras pour ces restaurants (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s).
 # VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS="1500"
