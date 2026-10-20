@@ -116,6 +116,7 @@ beforeEach(() => {
     VOICE_STRUCTURED_FALLBACK_SAMPLING: voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING,
     VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS:
       voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS,
+    VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -721,6 +722,7 @@ describe('OpenRouter en principal pour les restaurants listés (Cerebras en rela
   beforeEach(() => {
     Object.assign(voiceConfig, {
       VOICE_LLM_HEDGE_MS: 30,
+      VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 30,
       VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: 'autre-resto, rest-1',
       VOICE_STRUCTURED_FALLBACK_MODEL: 'openai/gpt-6-luna',
       VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'openai/fast',
@@ -769,6 +771,35 @@ describe('OpenRouter en principal pour les restaurants listés (Cerebras en rela
     expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
     expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
     expect(await hedgeCount('hedge_won')).toBe(0);
+  });
+
+  it('attend son propre délai avant le doublon Cerebras : Luna plus lent que le doublon normal garde la main', async () => {
+    Object.assign(voiceConfig, {
+      VOICE_LLM_HEDGE_MS: 30,
+      VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 300,
+    });
+    const encoder = new TextEncoder();
+    const slowLuna = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: answer('Luna.') } }] })}\n\ndata: [DONE]\n\n`,
+              ),
+            );
+            controller.close();
+          }, 120);
+        },
+      }),
+      { status: 200 },
+    );
+    fetchMock.mockResolvedValueOnce(slowLuna);
+
+    const text = await run();
+
+    expect(text).toBe(answer('Luna.'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('laisse les autres restaurants sur Cerebras en principal', async () => {
