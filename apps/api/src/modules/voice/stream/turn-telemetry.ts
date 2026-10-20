@@ -20,7 +20,7 @@ import {
   voiceTurnPlanShadowByRestaurantTotal,
   recordVoiceQualityTurnEvent,
 } from '../../../shared/observability/metrics';
-import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import { voiceLlmRouteFor } from '../llm-provider';
 import { recordDebugCallerText } from './debug-dialogue';
 import { telephonyTtsProvider, ttsProviderWithModel } from './elevenlabs-tts';
 
@@ -472,8 +472,13 @@ export function recordVoiceTurnEvent(
       case 'llm_started':
         setVoiceTurnPath(session, 'llm');
         turn.llmProvider =
-          typeof fields.provider === 'string' ? fields.provider : getVoiceLlmProvider();
-        turn.llmModel = typeof fields.model === 'string' ? fields.model : getVoiceLlmModel();
+          typeof fields.provider === 'string'
+            ? fields.provider
+            : voiceLlmRouteFor(session.restaurantId).provider;
+        turn.llmModel =
+          typeof fields.model === 'string'
+            ? fields.model
+            : voiceLlmRouteFor(session.restaurantId).model;
         break;
       case 'availability_started':
         setVoiceTurnPath(session, 'availability');

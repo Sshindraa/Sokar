@@ -74,6 +74,10 @@ function turn(overrides: Partial<StructuredTurnOutput> = {}): StructuredTurnOutp
   };
 }
 
+// Sessions des tests : closes après chaque test, sinon une relance armée en temps réel (tour jugé
+// inachevé, 2 s) se déclenche pendant un test suivant quand la suite est lente et parle à sa place.
+const fixtureSessions: CallSession[] = [];
+
 function fixture() {
   const session = {
     callControlId: 'cc-structured',
@@ -90,6 +94,7 @@ function fixture() {
     conversation: createConversationState(),
     telnyxWs: { readyState: WebSocket.OPEN, send: vi.fn() },
   } as unknown as CallSession;
+  fixtureSessions.push(session);
   const outputs: StructuredTurnOutput[] = [];
   const mgr = {
     handleBargeIn: vi.fn(),
@@ -143,7 +148,10 @@ function spoken(): string[] {
 beforeEach(() => {
   __resetMetrics();
   vi.clearAllMocks();
-  return () => vi.unstubAllEnvs();
+  return () => {
+    for (const session of fixtureSessions.splice(0)) session.ended = true;
+    vi.unstubAllEnvs();
+  };
 });
 
 describe('tour structuré (canary)', () => {

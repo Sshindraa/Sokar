@@ -283,6 +283,9 @@ export const VoiceConfigSchema = z
     VOICE_STRUCTURED_FALLBACK_REASONING: z.enum(['disabled', 'none']).default('disabled'),
     // false : ni temperature ni top_p, refusés par les modèles à raisonnement d'OpenAI.
     VOICE_STRUCTURED_FALLBACK_SAMPLING: z.enum(['true', 'false']).default('true'),
+    // Restaurants dont le tour structuré part d'abord chez OpenRouter (modèle et réglages du relais),
+    // Cerebras devenant leur doublon et leur repli. Vide = Cerebras en principal partout.
+    VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: z.string().optional(),
   })
   .merge(VoiceDeepgramConfigSchema);
 
