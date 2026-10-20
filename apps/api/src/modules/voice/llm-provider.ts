@@ -34,13 +34,14 @@ export function getVoiceLlmEndpoint(): {
 /**
  * Restaurants dont le tour structuré part d'abord chez OpenRouter (VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS),
  * avec le modèle et les réglages du relais ; Cerebras devient leur doublon et leur repli.
+ * `*` dans la liste vaut pour tous les restaurants, y compris ceux créés après le réglage.
  */
 export function isOpenRouterPrimaryFor(restaurantId: string | null | undefined): boolean {
   if (!restaurantId) return false;
-  return (voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS ?? '')
+  const ids = (voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS ?? '')
     .split(',')
-    .map((id) => id.trim())
-    .includes(restaurantId);
+    .map((id) => id.trim());
+  return ids.includes('*') || ids.includes(restaurantId);
 }
 
 /** Fournisseur et modèle principaux d'un restaurant, pour la télémétrie et le rapport d'appel. */
