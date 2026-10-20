@@ -574,7 +574,7 @@ export const voiceSemanticStatusTotal = new Counter({
 });
 export const voiceStructuredSpeculationTotal = new Counter({
   name: 'sokar_voice_structured_speculation_total',
-  help: 'Structured-turn speculation outcomes: hit, none (never started) or miss by cause',
+  help: 'Structured-turn speculation outcomes: hit, hit_tolerant (harmless transcript gap), none (never started) or miss by cause',
   labelNames: ['outcome'] as const,
   registers: [getRegistry()],
 });

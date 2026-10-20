@@ -352,6 +352,13 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 # sokar_voice_structured_speculation_launch_total{result=started|capped}.
 VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
 VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
+# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (restaurants
+# listés, vide = aucun) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
+# (« pour pour »). Même état, même historique, même schéma exigés ; tout chiffre, jour, heure, nom, lettre
+# épelée, négation, « euh », « merci » ou question ajoutée refuse la reprise (rejeu GPT-6 Luna du 20/10/2026).
+# Hors liste, la règle est seulement journalisée (`harmless` dans « Speculation outcome »).
+# Métrique : sokar_voice_structured_speculation_total{outcome=hit_tolerant}.
+VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS=""
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
