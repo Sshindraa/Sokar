@@ -834,6 +834,14 @@ describe('réponse parlée après un échec LLM', () => {
     );
   });
 
+  it('panne technique : dit que le souci vient de nous', () => {
+    const session = makeSession();
+
+    expect(buildLlmFailurePlan(session, 'technical').reply).toBe(
+      "Désolée, j'ai eu un petit souci de mon côté. Pouvez-vous me le redire ?",
+    );
+  });
+
   it('propose le gérant après deux échecs consécutifs', () => {
     const session = makeSession();
     session.managerPhone = '+33100000000';

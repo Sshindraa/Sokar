@@ -83,6 +83,9 @@ import {
 } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
 
+/** Le modèle a répondu, mais sans rien d'exploitable : ce n'est pas une panne du fournisseur. */
+class UnusableTurnOutputError extends Error {}
+
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
   options: { turnCompleteOnly?: boolean; understanding?: boolean; tone?: boolean } = {},
@@ -809,7 +812,7 @@ export async function runStructuredTurn(
       onDelta,
     });
     let output = parseStructuredTurnOutput(text);
-    if (!output) throw new Error('Invalid structured turn output');
+    if (!output) throw new UnusableTurnOutputError('Invalid structured turn output');
     // Le juge a une échéance propre : on l'attend ici (il tourne depuis le début du passage, souvent déjà rendu).
     await judgeSettled;
     drainSaid();
@@ -1235,7 +1238,8 @@ export async function runStructuredTurn(
       speakPhrase(CALLER_FINISHED_FALLBACK);
     }
     const said = final.say.trim();
-    if (!said) throw new Error('Structured turn produced no speech');
+    if (!said) throw new UnusableTurnOutputError('Structured turn produced no speech');
+    session.conversation.llmFailureStreak = 0;
     state.lastAwaiting = final.awaiting;
     state.recapKey =
       final.awaiting === 'confirmation' && isBookingComplete(state.draft)
@@ -1276,7 +1280,11 @@ export async function runStructuredTurn(
       durationMs: Date.now() - startedAt,
     });
     await flushSpeech();
-    const fallback = buildLlmFailurePlan(session).reply;
+    // Compteur perdu avec le mode à outils (#395) : sans lui, l'escalade vers le gérant ou un message
+    // (deuxième échec d'affilée, voir buildLlmFailurePlan) ne se déclenchait plus.
+    session.conversation.llmFailureStreak = (session.conversation.llmFailureStreak ?? 0) + 1;
+    const cause = err instanceof UnusableTurnOutputError ? 'unusable' : 'technical';
+    const fallback = buildLlmFailurePlan(session, cause).reply;
     session.history.push({ role: 'assistant', content: fallback });
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, fallback);
