@@ -287,6 +287,8 @@ export interface VoiceSpeculationCounters {
   replaced: number;
   cancelled: number;
   hits: number;
+  /** Parmi `hits`, reprises malgré un écart sans conséquence de la phrase (harmlessTranscriptGap). */
+  tolerantHits?: number;
   /** Tours sans anticipation à reprendre. */
   none: number;
   misses: Record<string, number>;
