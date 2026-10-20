@@ -9,6 +9,12 @@
  *
  * Usage (depuis apps/api) : CEREBRAS_API_KEY=… node --env-file=.env --import tsx scripts/voice-structured-bench.ts [répétitions]
  * Clé de dev uniquement ; aucune donnée ni appel de production.
+ *
+ * `VOICE_TTS_CONTEXT_V2_ENABLED` est forcé à `false` ci-dessous : sinon le moteur
+ * ouvrirait une vraie connexion TTS. `BENCH_ONLY` filtre les scénarios,
+ * `BENCH_PACE_MS` espace les appels, `BENCH_EXTRA_BODY` (JSON) est fusionné dans
+ * le corps de la requête, par exemple pour épingler un hébergeur OpenRouter :
+ * BENCH_EXTRA_BODY='{"provider":{"only":["cerebras"]}}'.
  */
 import { WebSocket } from 'ws';
 import { runStructuredTurn } from '../src/modules/voice/stream/structured-turn/engine';
@@ -18,6 +24,9 @@ import { todayInTimezone } from '../src/modules/voice/stream/structured-turn/fac
 import type { CallSession, ChatMessage } from '../src/modules/voice/stream/types';
 import type { CallSessionManager } from '../src/modules/voice/stream/manager';
 import type { StructuredTurnOutput } from '../src/modules/voice/stream/structured-turn/schema';
+
+// Lu à chaque tour par le moteur : le banc ne doit jamais ouvrir de connexion TTS.
+process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
 
 const API_KEY = process.env.CEREBRAS_API_KEY;
 const MODEL = process.env.VOICE_LLM_MODEL ?? 'qwen-3.8-27b';
@@ -249,7 +258,8 @@ function lastQuestion(text: string): string {
   return (
     text
       .split(/(?<=[.!?])\s+/)
-      .findLast((part) => part.trim().endsWith('?'))
+      .reverse()
+      .find((part) => part.trim().endsWith('?'))
       ?.trim() ?? ''
   );
 }
@@ -293,6 +303,12 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
       session.reservationCreatedAt = Date.now();
       return 'Réservation confirmée. Un SMS de confirmation va être envoyé.';
     },
+    getTableRanges: async () => [
+      { capacity: 2, minCapacity: 1 },
+      { capacity: 4, minCapacity: 2 },
+      { capacity: 7, minCapacity: 4 },
+    ],
+    handleBargeIn: () => undefined,
     handoffToManager: async () => 'Je vous passe le gérant.',
     recordCallerMessage: async () => 'Message enregistré pour le gérant.',
     streamStructuredCompletion: async (
@@ -318,6 +334,8 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
           response_format: responseFormat,
           stream: true,
           stream_options: { include_usage: true },
+          // BENCH_EXTRA_BODY : paramètres en plus (ex. épinglage d'un hébergeur OpenRouter).
+          ...JSON.parse(process.env.BENCH_EXTRA_BODY ?? '{}'),
         }),
         signal: options.signal,
       });
@@ -403,6 +421,7 @@ function benchSession(closeTomorrow = false): CallSession {
       openingHours: hours,
     }),
     state: 'LISTENING',
+    codec: 'PCMA',
     ended: false,
     responseGeneration: 0,
     ttsGeneration: 0,
@@ -461,8 +480,10 @@ async function main() {
         const said = String(session.history.at(-1)?.content ?? '');
         if (session.history.at(-1)?.role === 'assistant') {
           const previousSaid = String(
-            session.history.slice(0, -1).findLast((message) => message.role === 'assistant')
-              ?.content ?? '',
+            session.history
+              .slice(0, -1)
+              .reverse()
+              .find((message) => message.role === 'assistant')?.content ?? '',
           );
           recordStyle(said, previousSaid);
         }
