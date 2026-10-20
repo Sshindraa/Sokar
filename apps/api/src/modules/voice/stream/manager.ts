@@ -928,7 +928,7 @@ export class CallSessionManager {
             session,
             messages,
             request,
-            hedgeMs,
+            voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS,
             openRouterKey,
           )
         : hedgeMs > 0 && openRouterKey
