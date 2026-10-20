@@ -35,7 +35,7 @@
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
 - [ ] Après phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
-- [ ] Avant Flux, comprendre les 9/31 finals manquants; garder l’allowlist vide jusque-là.
+- [ ] Flux non retenu (20/10, courts/épellations perdus); allowlist vide. Mesurer les tours « inachevés ».
 - [ ] Phase A3 : décider du canary keyterms métier/L16 après revue des résultats et validation staging.
 - [ ] MCP : déployer le reset audité, nettoyer/rejouer le run staging et rejouer les écritures; tests Chez Sokar uniquement, sans `initialize`/`tools/list` bruts.
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.

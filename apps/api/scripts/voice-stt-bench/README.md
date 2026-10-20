@@ -237,6 +237,24 @@ pnpm exec tsx scripts/voice-stt-bench/nb-flux-score.ts \
   scripts/voice-stt-bench/.data/nb-flux-comparison.json
 ```
 
+### Fin de tour sur de vraies pistes appelant (20/10)
+
+Rejoue les pistes appelant des appels enregistrés (récupérées hors du dépôt par
+`scripts/ops/voice_call_audio.py`) vers Nova-3 et Flux, au rythme réel et avec les paramètres de
+socket de la production, puis compare la fin de tour à la fin de voix mesurée sur la piste.
+L'audio et le JSON du rejeu (transcriptions) restent hors du dépôt. Coût : ~0,65 $ pour 51 min.
+
+```zsh
+cd apps/api
+node --env-file=.env --import tsx scripts/voice-stt-bench/call-eot-replay.ts \
+  --audio-dir "$TMPDIR/sokar-call-audio" --out "$TMPDIR/eot-replay.json"
+python3 -I scripts/voice-stt-bench/eot_pauses.py "$TMPDIR/sokar-call-audio" "$TMPDIR/eot-turns.json"
+python3 -I scripts/voice-stt-bench/eot_evaluate.py "$TMPDIR/eot-turns.json" "$TMPDIR/eot-replay.json" "$TMPDIR/eot-stats.json"
+```
+
+`flux-probe.ts` rejoue un clip du banc synthétique et journalise les événements Flux (sans texte).
+Résultats : `docs/audits/2026-10-20-voice-end-of-turn-latency.md`.
+
 ### Phase A3 — réglages Nova-3 et PCMA contre L16
 
 Le plan factoriel PCMA compare `numerals` vrai/faux, `punctuate` vrai/faux et
