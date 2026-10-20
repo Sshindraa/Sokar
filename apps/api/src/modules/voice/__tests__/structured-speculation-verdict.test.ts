@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelSpeculation,
   classifySpeculationMiss,
+  harmlessTranscriptGap,
+  isTolerantSpeculationEnabled,
   parseTurnCompleteVerdict,
   speculationWordGap,
   startSpeculation,
@@ -325,5 +327,163 @@ describe('comptage de l’anticipation par tour et par appel', () => {
     expect(speculationWordGap(request('six'), request('six personnes demain'))).toBe(2);
     expect(speculationWordGap(request('pour six demain'), request('pour sept demain'))).toBe(1);
     expect(speculationWordGap(request(''), request('bonjour'))).toBe(1);
+  });
+});
+
+describe('reprise malgré un écart sans conséquence', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+  const format = {} as never;
+  const request = (text: string, state = 'état A') => [
+    { role: 'system' as const, content: state },
+    { role: 'assistant' as const, content: 'Pour quel jour ?' },
+    { role: 'user' as const, content: text },
+  ];
+  const manager = () => ({
+    streamStructuredCompletion: vi.fn(async (...args: unknown[]) => {
+      const options = args[3] as { onDelta: (delta: string) => void };
+      options.onDelta('{"turnComplete":true}');
+      return '{"turnComplete":true}';
+    }),
+  });
+  const take = (session: CallSession, text: string, state?: string) =>
+    takeSpeculation(
+      session,
+      request(text, state),
+      format,
+      () => undefined,
+      new AbortController().signal,
+    );
+
+  it('accepte la ponctuation, la casse, un « s’il vous plaît » final et un mot outil répété', () => {
+    expect(
+      harmlessTranscriptGap('Demain soir, vers 20 heures.', 'demain soir vers 20 heures'),
+    ).toBe('format');
+    expect(
+      harmlessTranscriptGap(
+        'bonjour je voudrais faire une réservation',
+        "bonjour je voudrais faire une réservation s'il vous plaît",
+      ),
+    ).toBe('politeness');
+    expect(
+      harmlessTranscriptGap(
+        'je vous appelle pour faire une réservation',
+        'je vous appelle pour pour faire une réservation',
+      ),
+    ).toBe('stutter');
+    expect(harmlessTranscriptGap("oui c'est bien ça", "oui oui c'est bien ça")).toBe('stutter');
+  });
+
+  it('refuse tout écart qui touche un chiffre, un jour, une heure, une date, un nom ou une négation', () => {
+    const refused: Array<[string, string]> = [
+      ['pour 4', 'pour 4 personnes'],
+      ['pour 4 4', 'pour 4'],
+      ['pour quatre', 'pour cinq'],
+      ['demain soir', 'après demain soir'],
+      ['samedi', 'dimanche'],
+      ['vers 20 heures', 'vers 20 heures 30'],
+      ['le 12 novembre', 'le 13 novembre'],
+      ['au nom de Martin', 'au nom de Martine'],
+      ['a k i f', 'a k k i f'],
+      ["c'est bon", "c'est pas bon"],
+      ['oui', 'non'],
+      ["oui c'est bien ça", "oui c'est bien ça mais plutôt à 21 heures"],
+      ['demain', 'plutôt demain'],
+    ];
+    for (const [speculated, final] of refused) {
+      expect(harmlessTranscriptGap(speculated, final)).toBeNull();
+    }
+  });
+
+  it('refuse les écarts qui changent la réponse au rejeu : « euh », politesse inachevée, « merci », question', () => {
+    expect(harmlessTranscriptGap('demain soir', 'demain soir euh')).toBeNull();
+    expect(
+      harmlessTranscriptGap(
+        "je voudrais faire une réservation s'il vous",
+        "je voudrais faire une réservation s'il vous plaît",
+      ),
+    ).toBeNull();
+    expect(harmlessTranscriptGap("non c'est tout", "non c'est tout merci")).toBeNull();
+    expect(
+      harmlessTranscriptGap('vous êtes ouverts demain', 'vous êtes ouverts demain ?'),
+    ).toBeNull();
+    // Rien à comprendre en dehors de la politesse.
+    expect(harmlessTranscriptGap('', "s'il vous plaît")).toBeNull();
+    expect(harmlessTranscriptGap('oui', "oui s'il vous plaît")).toBe('politeness');
+  });
+
+  it('lit la liste des restaurants, vide par défaut', () => {
+    expect(isTolerantSpeculationEnabled('r1', {})).toBe(false);
+    expect(
+      isTolerantSpeculationEnabled('r1', {
+        VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS: 'r0, r1',
+      }),
+    ).toBe(true);
+    expect(isTolerantSpeculationEnabled(undefined, {})).toBe(false);
+  });
+
+  it('reprend l’anticipation pour un restaurant listé quand seul un écart sans conséquence la sépare', async () => {
+    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
+    const info = vi.spyOn(logger, 'info');
+    const session = { callControlId: 'c-tol', restaurantId: 'r-tol' } as CallSession;
+    const mgr = manager();
+    startSpeculation(session, mgr as never, request('nous serons quatre'), format);
+    const deltas: string[] = [];
+    const taken = takeSpeculation(
+      session,
+      request("nous serons quatre s'il vous plaît"),
+      format,
+      (delta) => deltas.push(delta),
+      new AbortController().signal,
+    );
+    expect(taken).not.toBeNull();
+    await expect(taken).resolves.toBe('{"turnComplete":true}');
+    expect(deltas.join('')).toBe('{"turnComplete":true}');
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(1);
+    expect(session.voiceUsage?.speculation).toMatchObject({ hits: 1, tolerantHits: 1 });
+    const line = info.mock.calls.find(
+      (call) => call[1] === '[structured-turn] Speculation outcome',
+    );
+    expect(line?.[0]).toMatchObject({
+      outcome: 'hit_tolerant',
+      harmless: 'politeness',
+      wordGap: 4,
+    });
+    expect(JSON.stringify(line?.[0])).not.toMatch(/quatre|plaît/);
+  });
+
+  it('ne reprend jamais un chiffre, un jour ou une négation changés, même pour un restaurant listé', () => {
+    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
+    const session = { callControlId: 'c-tol2', restaurantId: 'r-tol' } as CallSession;
+    for (const [speculated, final] of [
+      ['nous serons quatre', 'nous serons cinq'],
+      ['demain soir', 'samedi soir'],
+      ['à 20 heures', 'à 21 heures'],
+      ["c'est bon", "c'est pas bon"],
+    ]) {
+      startSpeculation(session, manager() as never, request(speculated), format);
+      expect(take(session, final)).toBeNull();
+    }
+  });
+
+  it('ne reprend pas quand l’état ou l’historique diffère, même avec une phrase équivalente', () => {
+    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
+    const session = { callControlId: 'c-tol3', restaurantId: 'r-tol' } as CallSession;
+    startSpeculation(session, manager() as never, request('demain soir'), format);
+    expect(take(session, 'Demain soir.', 'état B')).toBeNull();
+  });
+
+  it('hors liste, jette l’anticipation mais journalise ce que la règle aurait repris', () => {
+    const info = vi.spyOn(logger, 'info');
+    const session = { callControlId: 'c-shadow', restaurantId: 'r-other' } as CallSession;
+    startSpeculation(session, manager() as never, request('pour pour demain'), format);
+    expect(take(session, 'pour demain')).toBeNull();
+    const line = info.mock.calls.find(
+      (call) => call[1] === '[structured-turn] Speculation outcome',
+    );
+    expect(line?.[0]).toMatchObject({ outcome: 'miss_transcript_changed', harmless: 'stutter' });
+    expect(session.voiceUsage?.speculation?.tolerantHits).toBe(0);
   });
 });
