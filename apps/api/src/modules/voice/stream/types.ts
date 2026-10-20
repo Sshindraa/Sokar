@@ -276,12 +276,33 @@ export interface VoiceUsageKindCounter {
   outputTokens: number;
 }
 
+/**
+ * Anticipation du tour structuré sur tout l'appel : des comptes et des tokens estimés, jamais de texte.
+ * Une anticipation lancée finit reprise (`hits`), jetée au tour par cause (`misses`), remplacée par une
+ * partielle plus récente (`replaced`) ou abandonnée sans tour (`cancelled`) ; le reste était en cours à la fin.
+ */
+export interface VoiceSpeculationCounters {
+  launches: number;
+  capped: number;
+  replaced: number;
+  cancelled: number;
+  hits: number;
+  /** Tours sans anticipation à reprendre. */
+  none: number;
+  misses: Record<string, number>;
+  /** Entrée estimée des anticipations jetées (remplacées, ratées, abandonnées) : facturée sans servir. */
+  discardedInputTokens: number;
+  /** Même entrée par cause : `replaced`, `cancelled` ou l'issue `miss_*` du tour. */
+  discardedInputTokensByCause: Record<string, number>;
+}
+
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
   cartesiaTtsCharacters: number;
   elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
   llmByKind?: Partial<Record<LlmRequestKind, VoiceUsageKindCounter>>;
+  speculation?: VoiceSpeculationCounters;
   finalization?: Promise<void>;
 }
 
