@@ -28,6 +28,7 @@ import {
   getVoiceLlmEndpoint,
   getVoiceLlmModel,
   getVoiceLlmProvider,
+  isOpenRouterParallelFor,
   isOpenRouterPrimaryFor,
   type VoiceLlmProvider,
 } from '../llm-provider';
@@ -1082,6 +1083,7 @@ export class CallSessionManager {
   ): Promise<OpenedStream> {
     const cerebras = getVoiceLlmProvider();
     const controllerA = new AbortController();
+    const controllerA2 = new AbortController();
     const controllerB = new AbortController();
     const signalOf = (controller: AbortController): AbortSignal =>
       request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
@@ -1090,11 +1092,11 @@ export class CallSessionManager {
       Math.max(0, voiceConfig.VOICE_LLM_TIMEOUT_MS - (Date.now() - startedAt));
     let primaryError: unknown = null;
 
-    // A : OpenRouter, jusqu'au délai total.
-    const attemptA = async (): Promise<OpenedStream | null> => {
+    // A : OpenRouter, jusqu'au délai total ; deux requêtes identiques pour les restaurants listés.
+    const attemptOpenRouter = async (controller: AbortController): Promise<OpenedStream | null> => {
       const response = await this.fetchOpenRouterStreaming(
         messages,
-        { ...request, signal: signalOf(controllerA) },
+        { ...request, signal: signalOf(controller) },
         apiKey,
       );
       if (!response.ok || !response.body) {
@@ -1112,10 +1114,36 @@ export class CallSessionManager {
       }
       return { reader, provider: 'openrouter' as const, firstRead };
     };
-    const primary = attemptA().catch((err: unknown) => {
-      primaryError = err;
-      return null;
-    });
+    const parallel = isOpenRouterParallelFor(session.restaurantId);
+    const primary = (async (): Promise<OpenedStream | null> => {
+      const controllers = parallel ? [controllerA, controllerA2] : [controllerA];
+      const runs = controllers.map((controller) =>
+        attemptOpenRouter(controller).catch((err: unknown) => {
+          primaryError = err;
+          return null;
+        }),
+      );
+      const first = await firstNonNull(runs);
+      if (!first) return null;
+      if (runs.length > 1) {
+        // L'autre requête est annulée : seul le premier texte compte.
+        const loser = first.index === 0 ? 1 : 0;
+        controllers[loser].abort();
+        runs[loser].then(
+          (late) => late?.reader.cancel().catch(() => undefined),
+          () => undefined,
+        );
+        logger.info(
+          {
+            callId: session.callControlId,
+            winner: first.index === 0 ? 'first' : 'second',
+            firstChunkMs: Date.now() - startedAt,
+          },
+          '[llm-parallel] OpenRouter twin requests raced',
+        );
+      }
+      return first.value;
+    })();
 
     // Sans doublon (hedgeMs = 0), Cerebras ne sert que de repli : on attend la fin de A.
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1167,7 +1195,12 @@ export class CallSessionManager {
       throw new Error('Structured LLM first chunk timed out, no fallback');
     }
     const duplicateWon = winner.index === 1;
-    (duplicateWon ? controllerA : controllerB).abort();
+    if (duplicateWon) {
+      controllerA.abort();
+      controllerA2.abort();
+    } else {
+      controllerB.abort();
+    }
     (duplicateWon ? primary : duplicate).then(
       (late) => late?.reader.cancel().catch(() => undefined),
       () => undefined,

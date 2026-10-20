@@ -326,6 +326,9 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # Cerebras). Liste explicite : seulement les identifiants listés, séparés par des virgules.
 # VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
 # Délai avant le doublon Cerebras pour ces restaurants (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s).
+# Deux requêtes OpenRouter identiques et simultanées pour ces restaurants (ou *) : le premier texte gagne, l'autre est
+# annulée. Banc du 20/10 (40 paires, GPT-6 Luna) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ; ~0,00015 $ de plus par tour.
+# VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS=""
 # VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS="1500"
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).

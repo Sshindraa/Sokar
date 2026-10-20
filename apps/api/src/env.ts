@@ -286,6 +286,9 @@ export const VoiceConfigSchema = z
     // Restaurants dont le tour structuré part d'abord chez OpenRouter (modèle et réglages du relais),
     // Cerebras devenant leur doublon et leur repli. Vide = Cerebras en principal partout.
     VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: z.string().optional(),
+    // Restaurants (ou *) dont le tour part chez OpenRouter en deux requêtes identiques simultanées :
+    // le premier texte gagne, l'autre est annulée. Coupe les pics de GPT-6 Luna (banc du 20/10). Vide = une requête.
+    VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: z.string().optional(),
     // Délai avant le doublon Cerebras pour ces restaurants. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
     // au délai normal (700 ms), Cerebras gagnerait la moitié des tours. 0 = Cerebras seulement en repli.
     VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: z.preprocess((value) => {
