@@ -117,6 +117,8 @@ beforeEach(() => {
     VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS:
       voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS,
     VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS,
+    VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS:
+      voiceConfig.VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
@@ -800,6 +802,63 @@ describe('OpenRouter en principal pour les restaurants listés (Cerebras en rela
 
     expect(text).toBe(answer('Luna.'));
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('deux requêtes OpenRouter en parallèle (restaurants listés)', () => {
+    const signalAt = (index: number) =>
+      (fetchMock.mock.calls[index][1] as { signal: AbortSignal }).signal;
+
+    beforeEach(() => {
+      Object.assign(voiceConfig, {
+        VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 0,
+        VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: 'rest-1',
+      });
+    });
+
+    it('envoie deux requêtes identiques en même temps et garde la première qui écrit', async () => {
+      fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
+
+      const text = await run();
+
+      expect(text).toBe(answer('Oui.'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
+      expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
+      expect(bodyOf(fetchMock.mock.calls[1])).toEqual(bodyOf(fetchMock.mock.calls[0]));
+      expect(signalAt(0).aborted).toBe(true);
+      expect(signalAt(1).aborted).toBe(false);
+    });
+
+    it('garde la requête qui répond quand l’autre est refusée', async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('busy', { status: 503 }))
+        .mockResolvedValueOnce(sse([answer('Bonjour.')]));
+
+      const text = await run();
+
+      expect(text).toBe(answer('Bonjour.'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('accepte * pour tous les restaurants', async () => {
+      Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: '*' });
+      fetchMock.mockResolvedValueOnce(sse([answer('Ok.')])).mockResolvedValueOnce(neverEmits());
+
+      const text = await run();
+
+      expect(text).toBe(answer('Ok.'));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(signalAt(1).aborted).toBe(true);
+    });
+
+    it('n’envoie qu’une requête pour un restaurant non listé', async () => {
+      Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: 'autre-resto' });
+      fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
+
+      await run();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('laisse les autres restaurants sur Cerebras en principal', async () => {

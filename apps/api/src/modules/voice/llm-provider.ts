@@ -44,6 +44,18 @@ export function isOpenRouterPrimaryFor(restaurantId: string | null | undefined):
   return ids.includes('*') || ids.includes(restaurantId);
 }
 
+/**
+ * Restaurants (ou `*`) dont le tour, quand il part chez OpenRouter en principal, est envoyé en deux
+ * requêtes identiques simultanées (VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS).
+ */
+export function isOpenRouterParallelFor(restaurantId: string | null | undefined): boolean {
+  if (!restaurantId) return false;
+  const ids = (voiceConfig.VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim());
+  return ids.includes('*') || ids.includes(restaurantId);
+}
+
 /** Fournisseur et modèle principaux d'un restaurant, pour la télémétrie et le rapport d'appel. */
 export function voiceLlmRouteFor(restaurantId: string | null | undefined): {
   provider: string;
