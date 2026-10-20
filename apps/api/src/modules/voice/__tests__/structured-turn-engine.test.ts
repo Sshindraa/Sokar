@@ -1868,6 +1868,10 @@ describe('tour structuré (canary)', () => {
     it('prépare la réponse dès qu’un tour est jugé inachevé, et la dit sans nouvel appel si l’appelant se tait', async () => {
       // Appel bb50c0d3 du 16/10/2026 : phrase finie jugée inachevée, puis attente, puis passage complet.
       vi.useFakeTimers();
+      // Heure figée au milieu d'une heure : la requête porte l'heure du restaurant (« 10 h, matin »), et une
+      // attente qui franchit l'heure pile change la requête, donc la réponse préparée ne sert plus (CI du
+      // 20/10, lancé à 10:59:58 à Paris : un troisième appel au modèle).
+      vi.setSystemTime(new Date('2026-10-20T08:30:00.000Z'));
       const { session, mgr, outputs } = fixture();
       outputs.push(
         turn({ turnComplete: false, interpretation: 'new_request' }),
