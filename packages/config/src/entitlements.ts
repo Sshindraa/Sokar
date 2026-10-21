@@ -67,7 +67,9 @@ const ESSENTIAL_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> =
   'customers.advanced': false,
   'analytics.basic': true,
   'agenticReservations.publish': true,
-  'customers.vipRecognition': false,
+  // Décision du 22/10/2026 : l'agent reconnaît les clients connus dès Essential. Pro garde la fiche
+  // détaillée, les préférences, les étiquettes et les campagnes.
+  'customers.vipRecognition': true,
   'reactivation.manage': false,
   'marketing.segments': false,
   'marketing.campaigns': false,
@@ -89,7 +91,6 @@ const ESSENTIAL_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> =
 const PRO_CAPABILITIES: Readonly<Record<EntitlementCapability, boolean>> = {
   ...ESSENTIAL_CAPABILITIES,
   'floorPlan.copilot': true,
-  'customers.vipRecognition': true,
   'customers.advanced': true,
   'reactivation.manage': true,
   'marketing.segments': true,

@@ -32,6 +32,7 @@ describe('GET /entitlements', () => {
       supportLevel: 'standard',
       capabilities: {
         'voice.inbound': true,
+        'customers.vipRecognition': true,
         'reactivation.manage': false,
         'customers.advanced': false,
         'marketing.segments': false,
