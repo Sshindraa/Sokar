@@ -14,6 +14,7 @@ import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
 import {
   isVoiceExpressionToneEnabled,
+  isVoiceTtsEarlyPhraseEnabled,
   isVoiceTurnJudgeEnabled,
   isVoiceUnderstandingCheckEnabled,
 } from '../feature-flags';
@@ -555,6 +556,10 @@ export async function runStructuredTurn(
     };
   }
   const spokenPhrases: string[] = [];
+  // Premiers mots de la réponse dits dès la première virgule (voir `PhraseSplitter`) : ElevenLabs seulement, qui
+  // génère alors ce début sans attendre la fin de phrase. Mesure du 21/10 : la voix part ~0,15 à 0,26 s plus tôt.
+  const earlyPhrase =
+    contextTts?.provider === 'elevenlabs' && isVoiceTtsEarlyPhraseEnabled(session.restaurantId);
   // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
   // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
   let replyTone: string | null = null;
@@ -595,6 +600,7 @@ export async function runStructuredTurn(
   };
   const startedAt = Date.now();
   let firstPhraseSpoken = false;
+  let earlyPhraseNext = false;
 
   session.turnCount++;
   session.history.push({ role: 'user', content: transcript });
@@ -615,7 +621,11 @@ export async function runStructuredTurn(
       markVoiceTurnLlmFirstPhrase(session, turnId);
       mgr.transition(session, 'SPEAKING');
     }
-    recordVoiceTurnEvent(session, 'llm_phrase_generated', { characterCount: phrase.length });
+    recordVoiceTurnEvent(session, 'llm_phrase_generated', {
+      characterCount: phrase.length,
+      ...(earlyPhraseNext ? { early: true } : {}),
+    });
+    earlyPhraseNext = false;
     // La voix surjoue les points d'exclamation sur une phrase courte (« Avec
     // plaisiiir ! », appel 0d49230d) : ton posé côté synthèse.
     phrase = phrase.replace(/\s*!/g, '.');
@@ -628,10 +638,10 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(
-        cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)),
-        toneForNextPhrase(),
-      );
+      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)), {
+        ...toneForNextPhrase(),
+        ...(earlyPhrase ? { flush: true } : {}),
+      });
       return;
     }
     ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
@@ -693,11 +703,21 @@ export async function runStructuredTurn(
         (judged === undefined ? false : judged === null ? turnComplete === true : judged);
       return complete && !slotConflict;
     };
+    // Premiers mots avant la fin de la première phrase : seulement quand la voix a déjà le droit de partir (action,
+    // fin de tour, créneau, tous lus avant `say`) et qu'aucun garde-fou ne juge la phrase entière (relecture du nom,
+    // « question seule »).
+    const earlyAllowed = () =>
+      earlyPhrase &&
+      !firstPhraseSpoken &&
+      readbackName === null &&
+      (Boolean(actionResult) || !timeGivenWithoutPartySize(extractor.raw, state.draft));
     const drainSaid = () => {
       if (!unsaid || action !== 'none' || !mayContinue() || !isLive()) return;
       const chunk = unsaid;
       unsaid = '';
-      splitter.push(chunk).forEach(emit);
+      const phrases = splitter.push(chunk, { early: earlyAllowed() });
+      earlyPhraseNext = splitter.early;
+      phrases.forEach(emit);
     };
     const judgeSettled: Promise<void> = judging
       ? startTurnEndJudge(session, mgr, transcript).then((verdict) => {

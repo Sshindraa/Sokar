@@ -464,6 +464,11 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
 # Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique),
 # restaurant par restaurant. Sans effet hors ElevenLabs Dialogue. Vide = aucun.
 VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
+# Premiers mots de la réponse envoyés à ElevenLabs dès la première virgule (« Très bien, »), sans attendre la fin
+# de la première phrase. Seulement une fois la voix autorisée (action, fin de tour, garde-fous lus) ; jamais sur
+# une relecture de nom, un nombre ou des lettres épelées. Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun.
+# Banc du 21/10 : la voix part 0,15 à 0,26 s plus tôt (médiane). À activer après écoute de Hamza.
+VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS=""
 # Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
 # ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
 # Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait
