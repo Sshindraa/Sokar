@@ -22,7 +22,6 @@ import {
   voiceFillerDelayMs,
   voiceFillerTexts,
   waitForVoiceFiller,
-  withoutRepeatedInterjection,
   type VoiceFillerChoiceInput,
 } from '../stream/voice-filler';
 
@@ -33,13 +32,11 @@ const CLIP_AUDIO = Buffer.alloc(2_400, 0x2a);
 function choiceInput(overrides: Partial<VoiceFillerChoiceInput> = {}): VoiceFillerChoiceInput {
   return {
     style: 'CASUAL',
-    action: null,
-    turnComplete: null,
+    action: 'check_availability',
     replyQueued: false,
-    transcript: 'je voudrais réserver samedi soir',
-    lastAwaiting: 'open',
+    transcript: 'on serait quatre vers vingt heures',
+    lastAwaiting: 'time',
     callerSilenceMs: 800,
-    turnNumber: 3,
     call: { played: 0 },
     maxPerCall: 4,
     isCached: () => true,
@@ -69,7 +66,7 @@ function makeSession(): {
       send: (payload: string) => sent.push(JSON.parse(payload) as { event: string }),
     },
   } as unknown as CallSession;
-  startVoiceTurn(session, 'je voudrais réserver');
+  startVoiceTurn(session, 'on serait quatre');
   return { session, sent };
 }
 
@@ -79,6 +76,8 @@ function loggedEvents(): Array<Record<string, unknown>> {
     .mock.calls.map(([payload]) => (payload as { voiceTurn?: Record<string, unknown> }).voiceTurn)
     .filter((turn): turn is Record<string, unknown> => Boolean(turn));
 }
+
+const media = (sent: Array<{ event: string }>) => sent.filter((m) => m.event === 'media').length;
 
 function cacheWholeBank(audio: Buffer | null): void {
   for (const text of voiceFillerTexts()) __setVoiceFillerAudioForTests(text, 'PCMA', audio);
@@ -117,45 +116,40 @@ describe('voice filler : réglage', () => {
 });
 
 describe('voice filler : banque', () => {
-  it('8 à 15 variantes par ton, vouvoiement partout', () => {
+  it('seulement la vérification et l’enregistrement, par ton', () => {
     for (const purposes of Object.values(VOICE_FILLER_BANK)) {
-      const clips = Object.values(purposes).flat();
-      expect(clips.length).toBeGreaterThanOrEqual(8);
-      expect(clips.length).toBeLessThanOrEqual(15);
-      for (const clip of clips) {
+      expect(Object.keys(purposes).sort()).toEqual(['booking', 'lookup']);
+      expect(purposes.lookup.length).toBeGreaterThanOrEqual(2);
+      expect(purposes.booking.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('annonce l’action sans recouper la réponse : ni accusé de réception, ni résultat, vouvoiement', () => {
+    for (const purposes of Object.values(VOICE_FILLER_BANK)) {
+      for (const clip of Object.values(purposes).flat()) {
+        expect(clip.text).not.toMatch(/\b(hmm|mmh|d'accord|très bien|alors|ok|bien sûr)\b/i);
+        expect(clip.text).not.toMatch(/\bnot[eé]\b|je (vous )?note|réservé|c'est fait/i);
         expect(clip.text).not.toMatch(/\b(tu|te|toi|ton|ta|tes)\b/i);
-        expect(clip.text.length).toBeLessThanOrEqual(30);
       }
     }
   });
 });
 
 describe('voice filler : choix du son', () => {
-  it('adapté au moment : « je regarde » avant une vérification, « je note » avant une réservation, « hmm » si la fin de tour est inconnue', () => {
-    const lookup = chooseVoiceFiller(choiceInput({ action: 'check_availability' }));
-    expect(lookup).toMatchObject({ purpose: 'lookup' });
-    const booking = chooseVoiceFiller(choiceInput({ action: 'create_reservation' }));
-    expect(booking).toMatchObject({ purpose: 'booking' });
-    expect(chooseVoiceFiller(choiceInput({ turnComplete: true }))).toMatchObject({
-      purpose: 'ack',
+  it('« je regarde » pour une vérification, « j’enregistre » pour une réservation', () => {
+    expect(chooseVoiceFiller(choiceInput())).toMatchObject({ purpose: 'lookup' });
+    expect(chooseVoiceFiller(choiceInput({ action: 'create_reservation' }))).toMatchObject({
+      purpose: 'booking',
     });
-    expect(chooseVoiceFiller(choiceInput())).toMatchObject({ purpose: 'backchannel' });
   });
 
   it('suit le ton du restaurant', () => {
-    const choice = chooseVoiceFiller(
-      choiceInput({ style: 'FORMAL', action: 'check_availability' }),
-    );
-    expect('clip' in choice && VOICE_FILLER_BANK.FORMAL.lookup).toContain(
-      'clip' in choice ? choice.clip : null,
-    );
+    const choice = chooseVoiceFiller(choiceInput({ style: 'FORMAL' }));
+    expect(VOICE_FILLER_BANK.FORMAL.lookup).toContain('clip' in choice ? choice.clip : null);
   });
 
   it('rien pendant une épellation de nom', () => {
     expect(chooseVoiceFiller(choiceInput({ lastAwaiting: 'customerName' }))).toEqual({
-      skip: 'spelling',
-    });
-    expect(chooseVoiceFiller(choiceInput({ lastAwaiting: 'customerNameConfirmation' }))).toEqual({
       skip: 'spelling',
     });
     expect(chooseVoiceFiller(choiceInput({ transcript: 'h o u e t' }))).toEqual({
@@ -163,80 +157,35 @@ describe('voice filler : choix du son', () => {
     });
   });
 
-  it('rien après un au revoir', () => {
-    expect(chooseVoiceFiller(choiceInput({ action: 'end_call' }))).toEqual({ skip: 'goodbye' });
-    expect(chooseVoiceFiller(choiceInput({ transcript: 'merci, bonne soirée' }))).toEqual({
-      skip: 'goodbye',
-    });
-  });
-
-  it("rien quand l'appelant parle encore ou n'a pas fini", () => {
+  it("rien quand l'appelant parle encore, ni quand la réponse est déjà partie", () => {
     expect(chooseVoiceFiller(choiceInput({ callerSilenceMs: 120 }))).toEqual({
       skip: 'caller_speaking',
     });
-    expect(chooseVoiceFiller(choiceInput({ turnComplete: false }))).toEqual({
-      skip: 'caller_unfinished',
-    });
-  });
-
-  it('rien sur un tour déjà rapide : la réponse est déjà partie', () => {
     expect(chooseVoiceFiller(choiceInput({ replyQueued: true }))).toEqual({ skip: 'reply_ready' });
   });
 
-  it('jamais deux fois de suite le même son', () => {
-    for (const clip of VOICE_FILLER_BANK.CASUAL.lookup) {
-      const choice = chooseVoiceFiller(
-        choiceInput({
-          action: 'check_availability',
-          call: { played: 1, lastClipId: clip.id, lastTurn: 1 },
-          random: () => 0.99,
-        }),
-      );
-      expect('clip' in choice && choice.clip.id).not.toBe(clip.id);
-      const first = chooseVoiceFiller(
-        choiceInput({
-          action: 'check_availability',
-          call: { played: 1, lastClipId: clip.id, lastTurn: 1 },
-          random: () => 0,
-        }),
-      );
-      expect('clip' in first && first.clip.id).not.toBe(clip.id);
+  it('jamais deux fois de suite la même formule', () => {
+    for (const purposes of Object.values(VOICE_FILLER_BANK)) {
+      for (const clip of Object.values(purposes).flat()) {
+        for (const random of [() => 0, () => 0.99]) {
+          const choice = chooseVoiceFiller(
+            choiceInput({ call: { played: 1, lastClipText: clip.text }, random }),
+          );
+          expect('clip' in choice && choice.clip.text).not.toBe(clip.text);
+        }
+      }
     }
   });
 
-  it('plafond par appel, et pas deux tours de suite (sauf « je regarde »)', () => {
+  it('plafond par appel ; son absent du cache : rien', () => {
     expect(chooseVoiceFiller(choiceInput({ call: { played: 4 } }))).toEqual({ skip: 'cap' });
-    expect(chooseVoiceFiller(choiceInput({ call: { played: 1, lastTurn: 2 } }))).toEqual({
-      skip: 'consecutive_turn',
-    });
-    expect(
-      chooseVoiceFiller(
-        choiceInput({ action: 'check_availability', call: { played: 1, lastTurn: 2 } }),
-      ),
-    ).toMatchObject({ purpose: 'lookup' });
-  });
-
-  it('son absent du cache : rien', () => {
     expect(chooseVoiceFiller(choiceInput({ isCached: () => false }))).toEqual({
       skip: 'not_cached',
     });
   });
 });
 
-describe('voice filler : enchaînement avec la réponse', () => {
-  it("retire le mot d'appui que le son vient de dire", () => {
-    expect(withoutRepeatedInterjection("D'accord, et à quel nom ?", "D'accord,")).toBe(
-      'Et à quel nom ?',
-    );
-    expect(withoutRepeatedInterjection('Très bien.', 'Très bien,')).toBe('');
-    expect(withoutRepeatedInterjection("D'accord, et à quel nom ?", 'Alors,')).toBe(
-      "D'accord, et à quel nom ?",
-    );
-    expect(withoutRepeatedInterjection('Pour combien de personnes ?', 'Hmm,')).toBe(
-      'Pour combien de personnes ?',
-    );
-  });
-
+describe('voice filler : coupe du son', () => {
   it('coupe le silence de tête et de traîne', () => {
     const silence = Buffer.alloc(800, 0xd5);
     const voice = Buffer.alloc(800, 0x2a);
@@ -261,8 +210,8 @@ describe('voice filler : déclenchement et interruption', () => {
   function arm(session: CallSession, signal = new AbortController().signal) {
     session.latencyTrace!.speechEndAt = Date.now();
     const filler = createTurnFiller(session, 'elevenlabs', {
-      transcript: 'je voudrais réserver samedi',
-      lastAwaiting: 'open',
+      transcript: 'on serait quatre vers vingt heures',
+      lastAwaiting: 'time',
       turnId: session.currentTurn?.id,
       signal,
       env: ENV,
@@ -272,34 +221,63 @@ describe('voice filler : déclenchement et interruption', () => {
     return filler!;
   }
 
-  it('seulement au-delà du délai après la fin de parole', async () => {
+  it('aucun son sans vérification ni enregistrement, même si la réponse tarde', async () => {
     const { session, sent } = makeSession();
-    arm(session);
-    await vi.advanceTimersByTimeAsync(700);
+    const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(3_000);
+    filler.replyQueued();
     expect(sent).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(60);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(1);
+  });
+
+  it('vérification lancée après le délai : le son part tout de suite', async () => {
+    const { session, sent } = makeSession();
+    const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(1_200);
+    filler.expectLongWait('check_availability');
+    expect(media(sent)).toBe(1);
     await vi.advanceTimersByTimeAsync(400);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(3);
-    expect(loggedEvents().map((e) => e.event)).toEqual(
-      expect.arrayContaining(['filler_started', 'tts_first_audio', 'filler_completed']),
-    );
+    expect(media(sent)).toBe(3);
+    expect(loggedEvents().find((e) => e.event === 'filler_started')).toMatchObject({
+      purpose: 'lookup',
+    });
+    expect(loggedEvents().some((e) => e.event === 'filler_completed')).toBe(true);
     expect(session.latencyTrace?.firstAudioIsFiller).toBe(true);
   });
 
-  it('réponse partie avant le délai : aucun son', async () => {
+  it('action lancée avant le délai : le son attend le délai, et rien si la réponse part avant', async () => {
     const { session, sent } = makeSession();
     const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(300);
+    filler.expectLongWait('create_reservation');
     await vi.advanceTimersByTimeAsync(400);
-    filler.replyQueued();
+    expect(media(sent)).toBe(0);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(media(sent)).toBe(1);
+
+    const other = makeSession();
+    const quick = arm(other.session);
+    quick.expectLongWait('check_availability');
+    await vi.advanceTimersByTimeAsync(500);
+    quick.replyQueued();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(media(other.sent)).toBe(0);
+  });
+
+  it('un seul son par tour', async () => {
+    const { session, sent } = makeSession();
+    const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(1_000);
+    filler.expectLongWait('check_availability');
+    filler.expectLongWait('create_reservation');
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(sent).toHaveLength(0);
+    expect(media(sent)).toBe(3);
   });
 
   it('la vraie réponse attend la fin du son, et son premier son est mesuré à part', async () => {
     const { session } = makeSession();
     const filler = arm(session);
-    await vi.advanceTimersByTimeAsync(760);
+    await vi.advanceTimersByTimeAsync(1_000);
+    filler.expectLongWait('check_availability');
     filler.replyQueued();
     let released = false;
     const release = waitForVoiceFiller(session).then(() => {
@@ -311,25 +289,29 @@ describe('voice filler : déclenchement et interruption', () => {
     await release;
     expect(released).toBe(true);
     markVoiceTurnAudioSent(session, { ttsPath: 'elevenlabs_dialogue', isFiller: false });
-    expect(session.latencyTrace?.endOfSpeechToReplyAudioMs).toBeGreaterThanOrEqual(1_000);
+    expect(session.latencyTrace?.endOfSpeechToReplyAudioMs).toBeGreaterThanOrEqual(1_300);
     expect(loggedEvents().some((e) => e.event === 'reply_first_audio')).toBe(true);
   });
 
-  it('barge-in : le son s’arrête net', async () => {
+  it('barge-in : le son s’arrête net et Telnyx est vidé', async () => {
     const { session, sent } = makeSession();
-    arm(session);
-    await vi.advanceTimersByTimeAsync(760);
+    const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(1_000);
+    filler.expectLongWait('check_availability');
     session.ttsGeneration++;
     await vi.advanceTimersByTimeAsync(500);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(1);
-    const interrupted = loggedEvents().find((e) => e.event === 'filler_interrupted');
-    expect(interrupted).toMatchObject({ reason: 'barge_in' });
+    expect(media(sent)).toBe(1);
+    expect(sent.at(-1)).toEqual({ event: 'clear' });
+    expect(loggedEvents().find((e) => e.event === 'filler_interrupted')).toMatchObject({
+      reason: 'barge_in',
+    });
   });
 
-  it("l'appelant reprend la parole pendant le son : coupé et effacé chez Telnyx", async () => {
+  it("l'appelant reprend la parole pendant le son : coupé", async () => {
     const { session, sent } = makeSession();
-    arm(session);
-    await vi.advanceTimersByTimeAsync(760);
+    const filler = arm(session);
+    await vi.advanceTimersByTimeAsync(1_000);
+    filler.expectLongWait('check_availability');
     session.callerVoice = { noiseFloor: 0, voiceRun: 3, lastClearVoiceAt: Date.now() };
     await vi.advanceTimersByTimeAsync(500);
     expect(sent.at(-1)).toEqual({ event: 'clear' });
@@ -338,58 +320,15 @@ describe('voice filler : déclenchement et interruption', () => {
     });
   });
 
-  it('attente longue après un « hmm » refusé : « je regarde » part à la seconde passe', async () => {
-    const { session, sent } = makeSession();
-    const state = voiceFillerCallState(session);
-    state.played = 1;
-    state.lastTurn = session.turnCount - 1;
-    const filler = arm(session);
-    await vi.advanceTimersByTimeAsync(800);
-    expect(sent).toHaveLength(0);
-    filler.expectLongWait('check_availability');
-    await vi.advanceTimersByTimeAsync(10);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(1);
-    expect(loggedEvents().find((e) => e.event === 'filler_started')).toMatchObject({
-      purpose: 'lookup',
-    });
-  });
-
-  it('« hmm… » puis « je regarde… » quand une vérification s’annonce, sans chevauchement', async () => {
-    const { session, sent } = makeSession();
-    const filler = arm(session);
-    await vi.advanceTimersByTimeAsync(760);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(1);
-    filler.observe({ action: 'check_availability' });
-    await vi.advanceTimersByTimeAsync(100);
-    // Le premier son (3 trames) n'est pas fini : le second attend.
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(2);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(6);
-    const started = loggedEvents().filter((e) => e.event === 'filler_started');
-    expect(started.map((e) => e.purpose)).toEqual(['backchannel', 'lookup']);
-    expect(started[1]).toMatchObject({ followUp: true });
-    expect(voiceFillerCallState(session).played).toBe(1);
-  });
-
-  it('pas de second son quand la réponse est déjà partie', async () => {
-    const { session, sent } = makeSession();
-    const filler = arm(session);
-    await vi.advanceTimersByTimeAsync(760);
-    filler.replyQueued();
-    filler.expectLongWait('check_availability');
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(sent.filter((m) => m.event === 'media')).toHaveLength(3);
-  });
-
-  it('pas deux fois de suite le même son ni au-delà du plafond sur un appel', async () => {
+  it('sur un appel : jamais deux fois de suite la même formule, plafond respecté', async () => {
     const { session } = makeSession();
     const played: unknown[] = [];
     for (let turn = 0; turn < 8; turn++) {
-      session.turnCount += 2;
       startVoiceTurn(session, 'tour');
       const filler = arm(session);
-      filler.expectLongWait('check_availability');
-      await vi.advanceTimersByTimeAsync(1_500);
+      await vi.advanceTimersByTimeAsync(1_000);
+      filler.expectLongWait(turn % 2 ? 'create_reservation' : 'check_availability');
+      await vi.advanceTimersByTimeAsync(1_000);
       const started = loggedEvents().filter((e) => e.event === 'filler_started');
       played.splice(0, played.length, ...started.map((e) => e.clip));
     }
@@ -397,5 +336,6 @@ describe('voice filler : déclenchement et interruption', () => {
     for (let index = 1; index < played.length; index++) {
       expect(played[index]).not.toBe(played[index - 1]);
     }
+    expect(voiceFillerCallState(session).played).toBe(4);
   });
 });

@@ -2,16 +2,17 @@
  * Écoute des petits mots d'attente (voir `src/modules/voice/stream/voice-filler.ts`).
  *
  * 1. Banque : chaque son est généré comme au préchargement de production (HTTP ElevenLabs, voix Lucie, v4 Turbo,
- *    A-law 8 kHz, `language_code=fr`), puis coupé par `trimVoiceFillerAudio`. Un WAV par son, par ton et par moment.
- * 2. Situations : pour chacune, la version actuelle (silence puis réponse) et la version avec son d'attente, sur une
- *    même chronologie réaliste (fin de parole de l'appelant = 0). Réponses de Léa générées sur le WebSocket Text to
- *    Dialogue, comme en production ; l'appelant a une autre voix (George, voix de base ElevenLabs).
+ *    A-law 8 kHz, `language_code=fr`), puis coupé par `trimVoiceFillerAudio`. Un WAV par son, par ton et par action.
+ * 2. Situations où le cas se produit vraiment (vérification d'un créneau, enregistrement final) : la version actuelle
+ *    (silence puis réponse) et la version avec petit mot, sur une même chronologie réaliste (fin de parole = 0).
+ *    Réponses de Léa générées sur le WebSocket Text to Dialogue, comme en production ; l'appelant a une autre voix
+ *    (George, voix de base ElevenLabs).
  *
- * Niveaux : l'appelant et la réponse sont ramenés à -20 LUFS chacun ; les sons d'attente reçoivent le même gain que la
+ * Niveaux : l'appelant et la réponse sont ramenés à -22 LUFS chacun ; les sons d'attente reçoivent le même gain que la
  * réponse de leur situation (leur niveau relatif reste celui du téléphone). Les deux versions d'une situation ont donc
  * exactement la même réponse au même niveau.
  *
- * Usage depuis apps/api (≈ 1 000 caractères, ≈ 500 crédits v4 Turbo) :
+ * Usage depuis apps/api (≈ 300 caractères neufs, le reste vient du cache disque) :
  *   BENCH_MAX_CREDITS=800 pnpm exec tsx --env-file=.env scripts/voice-tts-bench/filler-samples.ts <dossier>
  */
 import { spawnSync } from 'node:child_process';
@@ -24,6 +25,7 @@ import { alawToPcm16 } from '../../src/modules/voice/stream/telnyx-codec';
 import {
   VOICE_FILLER_BANK,
   trimVoiceFillerAudio,
+  type VoiceFillerPurpose,
   type VoiceFillerStyle,
 } from '../../src/modules/voice/stream/voice-filler';
 
@@ -190,65 +192,49 @@ interface Situation {
   reply: string;
   /** Premier son de la réponse, ms après la fin de parole, côté serveur (mesures du 20–21/10). */
   replyServerMs: number;
-  /** Sons d'attente joués : identifiants de la banque, dans l'ordre. */
-  fillers: Array<{ purpose: 'backchannel' | 'ack' | 'lookup' | 'booking'; id: string }>;
-  /** Action lue dans le flux, ms après la fin de parole (second son d'attente au plus tôt à cet instant). */
-  actionKnownMs?: number;
+  /** Petit mot joué : identifiant dans la banque. */
+  filler: { purpose: VoiceFillerPurpose; id: string };
+  /** Lancement réel de l'action par le code (fin du premier passage du modèle), ms après la fin de parole. */
+  actionStartMs: number;
 }
 
 const SITUATIONS: Situation[] = [
   {
-    name: 'situation-1-question-simple',
-    style: 'CASUAL',
-    caller: 'Bonjour, je voudrais réserver une table pour samedi soir.',
-    reply: 'Très bien, pour combien de personnes ?',
-    replyServerMs: 1_700,
-    fillers: [{ purpose: 'backchannel', id: 'hmm' }],
-  },
-  {
-    name: 'situation-2-verification-disponibilite',
+    name: 'situation-1-verification-creneau',
     style: 'CASUAL',
     caller: 'On serait quatre, vers vingt heures.',
     reply: "Oui, il me reste une table à vingt heures samedi. À quel nom, s'il vous plaît ?",
     replyServerMs: 2_700,
-    actionKnownMs: 1_250,
-    fillers: [
-      { purpose: 'backchannel', id: 'hmm' },
-      { purpose: 'lookup', id: 'je-regarde-ca' },
-    ],
+    actionStartMs: 1_250,
+    filler: { purpose: 'lookup', id: 'un-instant-je-regarde' },
   },
   {
-    name: 'situation-3-creation-reservation',
-    style: 'WARM',
-    caller: "Oui, c'est parfait.",
-    reply: "C'est noté, votre table pour quatre est réservée samedi à vingt heures.",
-    replyServerMs: 2_600,
-    actionKnownMs: 1_200,
-    fillers: [
-      { purpose: 'backchannel', id: 'mmh' },
-      { purpose: 'booking', id: 'je-vous-note-ca' },
-    ],
-  },
-  {
-    name: 'situation-4-disponibilite-ton-formel',
+    name: 'situation-2-verification-creneau-ton-formel',
     style: 'FORMAL',
     caller: 'Avez-vous encore de la place demain midi pour deux personnes ?',
     reply:
       'Oui, nous avons de la place demain à midi et à midi et demi. Quelle heure vous conviendrait ?',
     replyServerMs: 2_800,
-    actionKnownMs: 1_300,
-    fillers: [
-      { purpose: 'backchannel', id: 'hmm' },
-      { purpose: 'lookup', id: 'je-regarde-cela' },
-    ],
+    actionStartMs: 1_300,
+    filler: { purpose: 'lookup', id: 'un-instant-je-verifie' },
   },
   {
-    name: 'situation-5-question-pratique',
+    name: 'situation-3-enregistrement-final',
     style: 'WARM',
-    caller: 'Est-ce que vous êtes ouverts le lundi ?',
-    reply: 'Oui, nous sommes ouverts le lundi soir, à partir de dix-neuf heures.',
-    replyServerMs: 1_800,
-    fillers: [{ purpose: 'backchannel', id: 'mmh' }],
+    caller: "Oui, c'est parfait.",
+    reply: "C'est noté, votre table pour quatre est réservée samedi à vingt heures.",
+    replyServerMs: 2_600,
+    actionStartMs: 1_200,
+    filler: { purpose: 'booking', id: 'un-instant-j-enregistre' },
+  },
+  {
+    name: 'situation-4-enregistrement-final-ton-formel',
+    style: 'FORMAL',
+    caller: 'Oui, tout est exact.',
+    reply: 'Votre réservation est confirmée pour demain à midi et demi, au nom de Martin.',
+    replyServerMs: 2_600,
+    actionStartMs: 1_200,
+    filler: { purpose: 'booking', id: 'j-enregistre' },
   },
 ];
 
@@ -294,22 +280,15 @@ async function main() {
     ]);
 
     const parts = [{ atMs: callerAt, pcm: caller }];
-    let cursor = zero + FILLER_DELAY_MS + TRANSPORT_MS;
-    const fillerNotes: string[] = [];
-    for (const [index, filler] of situation.fillers.entries()) {
-      const clip = VOICE_FILLER_BANK[situation.style][filler.purpose].find(
-        (c) => c.id === filler.id,
-      );
-      if (!clip) throw new Error(`son inconnu ${filler.id}`);
-      const alaw = padToFrame(fillerAudio.get(clip.text)!);
-      if (index > 0 && situation.actionKnownMs !== undefined) {
-        cursor = Math.max(cursor, zero + situation.actionKnownMs + TRANSPORT_MS);
-      }
-      const pcm = gain(toPcm(alaw), replyGain);
-      parts.push({ atMs: cursor, pcm });
-      fillerNotes.push(`« ${clip.text} » à ${Math.round(cursor - zero)} ms`);
-      cursor += durationMs(pcm);
-    }
+    const { filler } = situation;
+    const clip = VOICE_FILLER_BANK[situation.style][filler.purpose].find((c) => c.id === filler.id);
+    if (!clip) throw new Error(`son inconnu ${filler.id}`);
+    // Comme en production : au lancement de l'action, pas avant le délai après la fin de parole.
+    const fillerAt = zero + Math.max(FILLER_DELAY_MS, situation.actionStartMs) + TRANSPORT_MS;
+    const fillerPcm = gain(toPcm(padToFrame(fillerAudio.get(clip.text)!)), replyGain);
+    parts.push({ atMs: fillerAt, pcm: fillerPcm });
+    const fillerNotes = [`« ${clip.text} » à ${Math.round(fillerAt - zero)} ms`];
+    const cursor = fillerAt + durationMs(fillerPcm);
     const replyAt = Math.max(replyReadyAt, cursor);
     parts.push({ atMs: replyAt, pcm: reply });
     const withFiller = timeline(parts);

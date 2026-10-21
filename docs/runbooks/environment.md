@@ -469,12 +469,13 @@ VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
 # une relecture de nom, un nombre ou des lettres épelées. Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun.
 # Banc du 21/10 : la voix part 0,15 à 0,26 s plus tôt (médiane). À activer après écoute de Hamza.
 VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS=""
-# Petits mots d'attente (« hmm… », « je regarde ça… ») quand la réponse tarde : sons préenregistrés avec la voix de
-# Léa, joués par le code (pas par le modèle), la réponse enchaîne après eux. Jamais pendant une épellation, après un au
-# revoir ni quand l'appelant parle ; jamais deux fois de suite le même son, pas deux tours de suite, plafond par appel.
+# Petit mot d'attente pendant une vraie vérification de créneau ou un vrai enregistrement de réservation
+# (« Un instant, je regarde. », « Un instant, j'enregistre. ») quand la réponse tarde : sons préenregistrés avec la voix
+# de Léa, joués par le code (pas par le modèle), la réponse enchaîne après eux. Rien sur une question simple, jamais
+# pendant une épellation ni quand l'appelant parle ; jamais deux fois de suite la même formule, plafond par appel.
 # Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun (et aucune génération de sons au démarrage).
 VOICE_FILLER_RESTAURANT_IDS=""
-# Délai après la fin de parole avant le premier son (300–3000 ms). Tours mesurés : réponse à 1,5–1,9 s.
+# Délai minimal après la fin de parole (300–3000 ms) ; l'action démarre d'ordinaire vers 1,2–1,5 s.
 VOICE_FILLER_DELAY_MS="750"
 # Tours avec son d'attente au plus par appel (1–20).
 VOICE_FILLER_MAX_PER_CALL="4"

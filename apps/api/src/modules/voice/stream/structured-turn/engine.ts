@@ -83,7 +83,7 @@ import {
   takeSpeculation,
 } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
-import { createTurnFiller, waitForVoiceFiller, withoutRepeatedInterjection } from '../voice-filler';
+import { createTurnFiller, waitForVoiceFiller } from '../voice-filler';
 
 /** Le modèle a répondu, mais sans rien d'exploitable : ce n'est pas une panne du fournisseur. */
 class UnusableTurnOutputError extends Error {}
@@ -556,7 +556,8 @@ export async function runStructuredTurn(
       mgr.handleBargeIn(session);
     };
   }
-  // Petit mot d'attente quand la réponse tarde (voir voice-filler.ts) : `null` hors restaurants listés.
+  // Petit mot d'attente pendant une vérification ou un enregistrement (voir voice-filler.ts) : `null` hors
+  // restaurants listés.
   const filler = createTurnFiller(session, contextTts?.provider ?? null, {
     transcript,
     lastAwaiting: state.lastAwaiting,
@@ -648,12 +649,8 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      let ttsText = cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session));
-      // « D'accord… » vient d'être dit par le son d'attente : la réponse ne le répète pas.
-      const fillerText = spokenPhrases.length === 1 ? filler?.playedText : null;
-      if (fillerText) ttsText = withoutRepeatedInterjection(ttsText, fillerText);
       filler?.replyQueued();
-      contextTts.push(ttsText, {
+      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)), {
         ...toneForNextPhrase(),
         ...(earlyPhrase ? { flush: true } : {}),
       });
@@ -754,7 +751,6 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
-      if (!actionResult) filler?.observe({ action, turnComplete });
       replyTone ??= /"tone"\s*:\s*"([a-z]+)"/.exec(extractor.raw)?.[1] ?? null;
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).

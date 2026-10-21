@@ -1,21 +1,20 @@
 /**
- * Petits mots d'attente (« hmm… », « alors… », « je regarde… ») : quand la réponse tarde, Léa glisse un son court,
- * préenregistré avec sa voix, pour que l'appelant n'entende pas de silence. Le calcul n'est pas plus court : c'est le
- * silence ressenti qui disparaît.
+ * Petit mot d'attente pendant une vraie vérification ou un vrai enregistrement : quand Léa vérifie un créneau ou
+ * enregistre la réservation et que la réponse tarde, un son court, préenregistré avec sa voix, annonce ce qu'elle fait
+ * (« Un instant, je regarde. », « Un instant, j'enregistre. ») pour que l'appelant n'entende pas de silence.
  *
- * Ce ne sont pas des phrases du modèle : le code les choisit et les joue à part, comme les phrases de secours. Le
- * prompt n'en sait rien et la réponse du modèle n'en dépend pas (seul un mot d'appui répété, « D'accord… D'accord, »,
- * est retiré de la voix ; voir `withoutRepeatedInterjection`).
+ * Seulement ces deux cas (écoute de Hamza du 21/10 : les « hmm », « d'accord » et petits mots sur une question simple
+ * ne sonnent pas humains). Le son part au lancement réel de l'action par le code (`runAvailability`,
+ * `runCreateReservation`, voir `expectLongWait`), jamais sur la simple intention lue dans le flux : une action refusée
+ * par les garde-fous ne déclenche rien. Il annonce l'action, jamais son résultat (pas de « c'est noté »).
+ *
+ * Ce ne sont pas des phrases du modèle : le code les choisit et les joue à part, comme les phrases de secours.
  *
  * Règles :
- * - seulement quand ça traîne : à `VOICE_FILLER_DELAY_MS` (750 ms) après la fin de parole, et seulement si aucune
- *   phrase de la vraie réponse n'est encore partie vers la synthèse ;
- * - adapté au moment : avant une vérification de disponibilité ou une réservation, « je regarde » (`lookup`) ; tour
- *   jugé fini, réponse simple, « alors… », « d'accord… » (`ack`) ; fin de tour encore inconnue, un « hmm » d'écoute
- *   (`backchannel`), qui reste naturel si l'appelant n'avait pas fini ;
- * - jamais pendant une épellation, ni après un au revoir, ni quand l'appelant parle, ni sur la relance après silence ;
- * - jamais deux fois de suite le même son, jamais deux tours de suite (sauf « je regarde »), plafond par appel ;
- * - le ton suit le réglage « Ton de voix » du restaurant (`fillerStyle`), vouvoiement partout.
+ * - seulement quand ça traîne : pas avant `VOICE_FILLER_DELAY_MS` (750 ms) après la fin de parole, et seulement si
+ *   aucune phrase de la vraie réponse n'est encore partie vers la synthèse ;
+ * - jamais pendant une épellation, ni quand l'appelant parle, ni sur la relance après silence ;
+ * - jamais deux fois de suite le même son, plafond par appel ; le ton suit `fillerStyle`, vouvoiement partout.
  *
  * La vraie réponse attend la fin du son (`waitForVoiceFiller`), sans chevauchement ni coupure. L'appelant qui parle
  * pendant le son le coupe (voix claire, qu'un écho n'atteint pas) ; un barge-in ou une nouvelle réponse aussi.
@@ -48,87 +47,57 @@ import { markVoiceTurnAudioSent, recordVoiceTurnEventIfCurrent } from './turn-te
 import type { CallSession } from './types';
 
 export type VoiceFillerStyle = 'CASUAL' | 'FORMAL' | 'WARM';
-/**
- * `backchannel` : fin de tour encore inconnue. `ack` : tour fini, réponse simple. `lookup` : vérification de
- * disponibilité. `booking` : création de la réservation.
- */
-export type VoiceFillerPurpose = 'backchannel' | 'ack' | 'lookup' | 'booking';
+/** `lookup` : vérification de disponibilité. `booking` : enregistrement de la réservation. */
+export type VoiceFillerPurpose = 'lookup' | 'booking';
+export type VoiceFillerAction = 'check_availability' | 'create_reservation';
 
 export interface VoiceFillerClip {
   readonly id: string;
-  /** Texte donné à la synthèse. La virgule finale garde une intonation suspendue : la réponse enchaîne. */
   readonly text: string;
 }
 
-const BACKCHANNEL: readonly VoiceFillerClip[] = [
-  { id: 'hmm', text: 'Hmm,' },
-  { id: 'mmh', text: 'Mmh.' },
-];
-
 /**
- * Banque de sons, par ton et par moment (12 par ton). Vouvoiement partout ; aucun son ne promet un résultat. Des sons
- * courts, la réponse attend leur fin : mesurés après coupe (voix Lucie, 21/10), 0,5 s pour « hmm », 0,5 à 0,7 s pour
- * « alors », 0,7 à 1,1 s pour « je regarde » ou « je note ». Les formules de plus de 1,1 s ont été retirées.
+ * Banque de sons, par ton et par action. Chaque formule annonce l'action en cours sans recouper la réponse qui suit :
+ * aucun résultat (« c'est noté », « je vous note ça »), aucun mot d'appui. Vouvoiement partout.
  */
 export const VOICE_FILLER_BANK: Record<
   VoiceFillerStyle,
   Record<VoiceFillerPurpose, readonly VoiceFillerClip[]>
 > = {
   FORMAL: {
-    backchannel: BACKCHANNEL,
-    ack: [
-      { id: 'bien', text: 'Bien,' },
-      { id: 'entendu', text: 'Entendu,' },
-      { id: 'alors', text: 'Alors,' },
-    ],
     lookup: [
-      { id: 'je-regarde-cela', text: 'Je regarde cela,' },
-      { id: 'je-verifie', text: 'Je vérifie,' },
-      { id: 'voyons-cela', text: 'Voyons cela,' },
-      { id: 'je-consulte', text: 'Je consulte,' },
+      { id: 'un-instant-je-verifie', text: 'Un instant, je vérifie.' },
+      { id: 'je-verifie', text: 'Je vérifie.' },
+      { id: 'un-instant-je-vous-prie', text: 'Un instant, je vous prie.' },
     ],
     booking: [
-      { id: 'je-note-cela', text: 'Je note cela,' },
-      { id: 'je-note', text: 'Je note,' },
-      { id: 'j-enregistre', text: "J'enregistre," },
+      { id: 'un-instant-j-enregistre', text: "Un instant, j'enregistre." },
+      { id: 'j-enregistre', text: "J'enregistre." },
+      { id: 'un-instant-je-vous-prie', text: 'Un instant, je vous prie.' },
     ],
   },
   CASUAL: {
-    backchannel: BACKCHANNEL,
-    ack: [
-      { id: 'd-accord', text: "D'accord," },
-      { id: 'alors', text: 'Alors,' },
-      { id: 'ok', text: 'OK,' },
-    ],
     lookup: [
-      { id: 'je-regarde', text: 'Je regarde,' },
-      { id: 'voyons-voir', text: 'Voyons voir,' },
-      { id: 'je-regarde-ca', text: 'Je regarde ça,' },
-      { id: 'je-verifie', text: 'Je vérifie,' },
+      { id: 'un-instant-je-regarde', text: 'Un instant, je regarde.' },
+      { id: 'je-regarde', text: 'Je regarde.' },
+      { id: 'je-verifie', text: 'Je vérifie.' },
     ],
     booking: [
-      { id: 'je-note-ca', text: 'Je note ça,' },
-      { id: 'je-note', text: 'Je note,' },
-      { id: 'j-enregistre-ca', text: "J'enregistre ça," },
+      { id: 'un-instant-j-enregistre', text: "Un instant, j'enregistre." },
+      { id: 'j-enregistre', text: "J'enregistre." },
+      { id: 'une-seconde', text: 'Une seconde.' },
     ],
   },
   WARM: {
-    backchannel: BACKCHANNEL,
-    ack: [
-      { id: 'd-accord', text: "D'accord," },
-      { id: 'tres-bien', text: 'Très bien,' },
-      { id: 'alors', text: 'Alors,' },
-    ],
     lookup: [
-      { id: 'voyons-voir', text: 'Voyons voir,' },
-      { id: 'laissez-moi-regarder', text: 'Laissez-moi regarder,' },
-      { id: 'je-regarde-ca', text: 'Je regarde ça,' },
-      { id: 'je-vous-regarde-ca', text: 'Je vous regarde ça,' },
+      { id: 'un-instant-je-regarde', text: 'Un instant, je regarde.' },
+      { id: 'je-regarde-pour-vous', text: 'Je regarde pour vous.' },
+      { id: 'je-verifie', text: 'Je vérifie.' },
     ],
     booking: [
-      { id: 'je-vous-note-ca', text: 'Je vous note ça,' },
-      { id: 'je-m-en-occupe', text: "Je m'en occupe," },
-      { id: 'je-note-ca-pour-vous', text: 'Je note ça pour vous,' },
+      { id: 'un-instant-j-enregistre', text: "Un instant, j'enregistre." },
+      { id: 'je-m-en-occupe', text: "Je m'en occupe." },
+      { id: 'une-petite-seconde', text: 'Une petite seconde.' },
     ],
   },
 };
@@ -158,10 +127,10 @@ function anyVoiceFillerRestaurant(env: NodeJS.ProcessEnv = process.env): boolean
 }
 
 /**
- * Délai après la fin de parole. Mesures du 20–21/10 (GPT-6 Luna) : la fin de parole est constatée 0,3 à 0,6 s après
- * le dernier mot et le premier son de la réponse part 1,5 à 1,9 s après. À 750 ms, une réponse rapide (première
- * phrase déjà partie vers la synthèse) n'est jamais couverte, et le son d'attente, court (0,4 à 0,6 s pour un
- * « hmm » ou un « alors »), finit avant que la réponse typique soit prête.
+ * Délai minimal après la fin de parole. Mesures du 20–21/10 (GPT-6 Luna) : la fin de parole est constatée 0,3 à 0,6 s
+ * après le dernier mot ; une vérification ou un enregistrement démarre après le premier passage du modèle, vers 1,2 à
+ * 1,5 s, et la réponse qui suit arrive vers 2,6 à 3 s. Le délai ne retient donc le son que sur un tour exceptionnellement
+ * rapide ; dans le cas courant, il part au lancement de l'action.
  */
 export function voiceFillerDelayMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.VOICE_FILLER_DELAY_MS ?? 750);
@@ -182,56 +151,33 @@ const CALLER_QUIET_MS = 400;
 export type VoiceFillerSkipReason =
   | 'reply_ready'
   | 'spelling'
-  | 'goodbye'
   | 'caller_speaking'
-  | 'caller_unfinished'
   | 'cap'
-  | 'consecutive_turn'
   | 'not_cached';
 
 export interface VoiceFillerCallState {
   played: number;
-  lastClipId?: string;
-  lastTurn?: number;
+  lastClipText?: string;
 }
 
 export interface VoiceFillerChoiceInput {
   style: VoiceFillerStyle;
-  /** Action lue dans le flux du modèle, ou décidée par le code (`check_availability` d'une seconde passe). */
-  action: string | null;
-  /** `turnComplete` lu dans le flux ; `null` tant qu'inconnu. */
-  turnComplete: boolean | null;
+  /** Action réellement lancée par le code. */
+  action: VoiceFillerAction;
   /** Une phrase de la vraie réponse est déjà partie vers la synthèse. */
   replyQueued: boolean;
   transcript: string;
   lastAwaiting: string | undefined;
   callerSilenceMs: number;
-  turnNumber: number;
   call: VoiceFillerCallState;
   maxPerCall: number;
-  /** Second son du même tour (« hmm… je regarde… ») : le plafond et la règle des tours de suite sont déjà passés. */
-  followUp?: boolean;
   /** Le son existe dans le cache (voix, modèle et codec de l'appel). */
   isCached: (clip: VoiceFillerClip) => boolean;
   random?: () => number;
 }
 
-const GOODBYE =
-  /\b(au revoir|bonne (soirée|journée|fin de journée|soiree|journee)|à bientôt|a bientot|bye|salut)\b/i;
-
-/** Moment du tour, d'après ce que le flux du modèle a déjà dit. */
-export function voiceFillerPurpose(
-  action: string | null,
-  turnComplete: boolean | null,
-): VoiceFillerPurpose {
-  if (action === 'check_availability') return 'lookup';
-  if (action === 'create_reservation') return 'booking';
-  return turnComplete === true ? 'ack' : 'backchannel';
-}
-
-/** Une vérification ou une réservation : l'attente sera longue, le son dit ce que Léa fait. */
-export function isTaskFillerPurpose(purpose: VoiceFillerPurpose): boolean {
-  return purpose === 'lookup' || purpose === 'booking';
+export function voiceFillerPurpose(action: VoiceFillerAction): VoiceFillerPurpose {
+  return action === 'check_availability' ? 'lookup' : 'booking';
 }
 
 export function chooseVoiceFiller(
@@ -245,49 +191,17 @@ export function chooseVoiceFiller(
   ) {
     return { skip: 'spelling' };
   }
-  if (input.action === 'end_call' || GOODBYE.test(input.transcript)) return { skip: 'goodbye' };
-  if (input.turnComplete === false) return { skip: 'caller_unfinished' };
   if (input.callerSilenceMs < CALLER_QUIET_MS) return { skip: 'caller_speaking' };
-  const purpose = voiceFillerPurpose(input.action, input.turnComplete);
-  if (input.followUp && !isTaskFillerPurpose(purpose)) return { skip: 'reply_ready' };
-  if (!input.followUp && input.call.played >= input.maxPerCall) return { skip: 'cap' };
-  if (
-    !input.followUp &&
-    !isTaskFillerPurpose(purpose) &&
-    input.call.lastTurn === input.turnNumber - 1
-  ) {
-    return { skip: 'consecutive_turn' };
-  }
+  if (input.call.played >= input.maxPerCall) return { skip: 'cap' };
+  const purpose = voiceFillerPurpose(input.action);
   const candidates = VOICE_FILLER_BANK[input.style][purpose].filter(
-    (clip) => clip.id !== input.call.lastClipId && input.isCached(clip),
+    (clip) => clip.text !== input.call.lastClipText && input.isCached(clip),
   );
   if (!candidates.length) return { skip: 'not_cached' };
   const random = input.random ?? Math.random;
   const clip =
     candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
   return { clip, purpose };
-}
-
-const INTERJECTION = /^\s*(ah,?\s*)?(d'accord|très bien|bien|alors|entendu|ok|bon)\s*[,.…]?\s*/i;
-
-const normalizeInterjection = (text: string): string =>
-  text
-    .toLowerCase()
-    .replace(/’/g, "'")
-    .replace(/^ah,?\s*/, '')
-    .replace(/[,.…\s]+$/g, '')
-    .trim();
-
-/**
- * La réponse commence par le mot que le son d'attente vient de dire (« D'accord… D'accord, à quel nom ? ») : ce mot
- * est retiré de la voix. L'historique garde la phrase du modèle telle quelle.
- */
-export function withoutRepeatedInterjection(phrase: string, fillerText: string): string {
-  const match = INTERJECTION.exec(phrase.replace(/’/g, "'"));
-  if (!match) return phrase;
-  if (normalizeInterjection(match[0]) !== normalizeInterjection(fillerText)) return phrase;
-  const rest = phrase.slice(match[0].length).trimStart();
-  return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : '';
 }
 
 // ─── Cache audio ────────────────────────────────────────────────────
@@ -400,7 +314,7 @@ async function loadOrGenerate(text: string, codec: TelnyxCodec): Promise<'redis'
 
 /**
  * Précharge la banque (RAM, Redis 30 jours) pour un codec. Ne fait rien tant qu'aucun restaurant n'est listé :
- * aucun caractère ElevenLabs n'est dépensé pour une fonction coupée. Environ 300 caractères par voix et par codec.
+ * aucun caractère ElevenLabs n'est dépensé pour une fonction coupée. Environ 200 caractères par voix et par codec.
  */
 export function initVoiceFillerCache(codec: TelnyxCodec = getTelnyxCodec()): Promise<void> {
   if (!anyVoiceFillerRestaurant() || !process.env.ELEVENLABS_API_KEY?.trim()) {
@@ -435,10 +349,7 @@ export function initVoiceFillerCache(codec: TelnyxCodec = getTelnyxCodec()): Pro
 // ─── Lecture ────────────────────────────────────────────────────────
 
 interface FillerPlayback {
-  readonly clipText: string;
   done: Promise<void>;
-  finished: boolean;
-  stop(reason: string): void;
 }
 
 const playbacks = new WeakMap<CallSession, FillerPlayback>();
@@ -469,12 +380,10 @@ function playFiller(
   const generation = session.ttsGeneration;
   const startedAt = Date.now();
   const frames = splitTelnyxAudioFrames(audio, session.codec);
-  let stopReason: string | null = null;
   const debugEntry = recordDebugAgentSpeech(session, clip.text, 'filler');
   let framesSent = 0;
 
   const interrupted = (): string | null => {
-    if (stopReason) return stopReason;
     if (signal.aborted) return 'aborted';
     if (session.ended || session.telnyxWs?.readyState !== WebSocket.OPEN) return 'ended';
     if (session.ttsGeneration !== generation) return 'barge_in';
@@ -483,12 +392,7 @@ function playFiller(
   };
 
   const playback: FillerPlayback = {
-    clipText: clip.text,
     done: Promise.resolve(),
-    finished: false,
-    stop: (reason) => {
-      stopReason ??= reason;
-    },
   };
   playbacks.set(session, playback);
   playback.done = (async () => {
@@ -532,7 +436,6 @@ function playFiller(
           playedMs: framesSent * TTS_PACE_PAUSE_MS,
         });
       }
-      playback.finished = true;
       if (playbacks.get(session) === playback) playbacks.delete(session);
     }
   })().catch((err: unknown) => {
@@ -558,24 +461,17 @@ export interface TurnFillerOptions {
 }
 
 /**
- * Sons d'attente d'un tour : un premier son au délai, puis au plus un second quand une vérification ou une réservation
- * s'annonce (« hmm… je regarde ça… »). Le moteur signale ce qu'il apprend du flux (`observe`), la première phrase
- * envoyée à la synthèse (`replyQueued`) et une attente longue certaine (`expectLongWait`, seconde passe).
+ * Petit mot d'attente d'un tour : au plus un, au lancement réel d'une vérification ou d'un enregistrement
+ * (`expectLongWait`), pas avant le délai après la fin de parole, jamais après la première phrase de la réponse.
  */
 export class TurnFiller {
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private action: string | null = null;
-  private turnComplete: boolean | null = null;
+  private closed = false;
   private replyIsQueued = false;
-  /**
-   * `pending` : délai en cours. `open` : délai passé, un son de vérification ou de réservation peut encore partir.
-   * `closed` : plus aucun son à ce tour.
-   */
-  private phase: 'pending' | 'open' | 'closed' = 'pending';
   private playback: FillerPlayback | null = null;
-  private chained = false;
   private readonly env: NodeJS.ProcessEnv;
   private readonly now: () => number;
+  private readonly earliestAt: number;
 
   constructor(
     private readonly session: CallSession,
@@ -584,42 +480,24 @@ export class TurnFiller {
     this.env = options.env ?? process.env;
     this.now = options.now ?? Date.now;
     const speechEndAt = session.latencyTrace?.speechEndAt ?? this.now();
-    const waitMs = Math.max(0, speechEndAt + voiceFillerDelayMs(this.env) - this.now());
+    this.earliestAt = speechEndAt + voiceFillerDelayMs(this.env);
+  }
+
+  /** Vérification ou enregistrement lancé par le code : l'attente sera longue. */
+  expectLongWait(action: VoiceFillerAction): void {
+    if (this.closed || this.timer || this.playback) return;
+    const waitMs = this.earliestAt - this.now();
+    if (waitMs <= 0) return this.fire(action);
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.fire();
+      this.fire(action);
     }, waitMs);
   }
 
-  /** Champs lus dans le flux du modèle, dès qu'ils sont connus. */
-  observe(fields: { action?: string | null; turnComplete?: boolean | null }): void {
-    if (this.phase === 'closed') return;
-    if (fields.action && fields.action !== this.action) {
-      this.action = fields.action;
-      if (this.action === 'end_call') return this.close();
-      if (this.phase === 'open' && isTaskFillerPurpose(this.purpose())) this.fire();
-    }
-    if (typeof fields.turnComplete === 'boolean') this.turnComplete = fields.turnComplete;
-    if (this.turnComplete === false) this.close();
-  }
-
-  /** Une phrase de la vraie réponse part vers la synthèse : plus aucun nouveau son (celui en cours finit). */
+  /** Une phrase de la vraie réponse part vers la synthèse : plus aucun son (celui en cours finit). */
   replyQueued(): void {
     this.replyIsQueued = true;
     this.close();
-  }
-
-  /** Vérification ou réservation lancée par le code (seconde passe à venir) : l'attente sera longue. */
-  expectLongWait(action: 'check_availability' | 'create_reservation'): void {
-    if (this.phase === 'closed') return;
-    this.action = action;
-    this.turnComplete = true;
-    if (this.phase === 'open') this.fire();
-  }
-
-  /** Texte du dernier son joué à ce tour, pour retirer un mot d'appui répété au début de la réponse. */
-  get playedText(): string | null {
-    return this.playback?.clipText ?? null;
   }
 
   /** Fin du tour : un son déjà commencé finit (la réponse l'attend), un son pas encore parti n'aura pas lieu. */
@@ -627,81 +505,48 @@ export class TurnFiller {
     this.close();
   }
 
-  private purpose(): VoiceFillerPurpose {
-    return voiceFillerPurpose(this.action, this.turnComplete);
-  }
-
   private close(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    this.phase = 'closed';
+    this.closed = true;
   }
 
-  private fire(): void {
-    if (this.phase === 'closed') return;
-    if (this.options.signal.aborted || this.session.ended) return this.close();
-    const previous = this.playback;
-    if (previous && !previous.finished) {
-      // Le second son suit le premier, jamais par-dessus.
-      if (!this.chained) {
-        this.chained = true;
-        previous.done
-          .then(() => {
-            this.chained = false;
-            this.fire();
-          })
-          .catch(() => undefined);
-      }
-      return;
-    }
-    const followUp = previous !== null;
+  private fire(action: VoiceFillerAction): void {
+    if (this.closed) return;
+    this.close();
+    if (this.options.signal.aborted || this.session.ended) return;
     const call = voiceFillerCallState(this.session);
     const codec = this.session.codec;
     const choice = chooseVoiceFiller({
       style: this.session.personality?.fillerStyle ?? 'CASUAL',
-      action: this.action,
-      turnComplete: this.turnComplete,
+      action,
       replyQueued: this.replyIsQueued,
       transcript: this.options.transcript,
       lastAwaiting: this.options.lastAwaiting,
       callerSilenceMs: callerSilenceMs(this.session, this.now()),
-      turnNumber: this.session.turnCount,
       call,
       maxPerCall: voiceFillerMaxPerCall(this.env),
-      followUp,
       isCached: (clip) => cachedVoiceFillerAudio(clip.text, codec) !== null,
       ...(this.options.random ? { random: this.options.random } : {}),
     });
     if ('skip' in choice) {
       // Un son manquant pour ce codec (L16) : préchargé pour les appels suivants.
       if (choice.skip === 'not_cached') initVoiceFillerCache(codec).catch(() => undefined);
-      // Ces refus tiennent au moment, pas au tour : une vérification à venir peut encore justifier « je regarde ».
-      const retry = choice.skip === 'caller_speaking' || choice.skip === 'consecutive_turn';
-      if (retry && !isTaskFillerPurpose(this.purpose())) this.phase = 'open';
-      else this.close();
-      if (!followUp || choice.skip !== 'reply_ready') {
-        recordVoiceTurnEventIfCurrent(this.session, this.options.turnId, 'filler_skipped', {
-          reason: choice.skip,
-          purpose: this.purpose(),
-        });
-      }
+      recordVoiceTurnEventIfCurrent(this.session, this.options.turnId, 'filler_skipped', {
+        reason: choice.skip,
+        purpose: voiceFillerPurpose(action),
+      });
       return;
     }
     const audio = cachedVoiceFillerAudio(choice.clip.text, codec);
-    if (!audio) return this.close();
-    // Après un son de vérification, plus rien ; après un « hmm », une vérification peut encore s'annoncer.
-    if (isTaskFillerPurpose(choice.purpose)) this.close();
-    else this.phase = 'open';
-    if (!followUp) {
-      call.played++;
-      call.lastTurn = this.session.turnCount;
-    }
-    call.lastClipId = choice.clip.id;
+    if (!audio) return;
+    call.played++;
+    // Par texte : les deux actions partagent parfois une formule, elle ne revient pas deux fois de suite.
+    call.lastClipText = choice.clip.text;
     const speechEndAt = this.session.latencyTrace?.speechEndAt;
     recordVoiceTurnEventIfCurrent(this.session, this.options.turnId, 'filler_started', {
       purpose: choice.purpose,
       clip: choice.clip.id,
-      ...(followUp ? { followUp: true } : {}),
       ...(speechEndAt !== undefined ? { sinceSpeechEndMs: this.now() - speechEndAt } : {}),
     });
     this.playback = playFiller(

@@ -1856,26 +1856,31 @@ describe('tour structuré (canary)', () => {
         });
       }
 
-      it('réponse lente : un son part avant la réponse, qui suit normalement', async () => {
+      it('vérification réelle et réponse lente : un son part, la réponse suit', async () => {
         const { session, mgr, outputs } = fixture();
         session.codec = 'PCMA';
         slowModel(mgr, 450);
-        outputs.push(turn({ awaiting: 'partySize', say: 'Pour combien de personnes ?' }));
-        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
         await waitForVoiceFiller(session);
 
         expect(media(session)).toBe(2);
         expect(contextTurn.push.mock.calls.map(([text]) => text)).toEqual([
-          'Pour combien de personnes ?',
+          'Il me reste vingt heures.',
+          'À quel nom ?',
         ]);
       });
 
-      it('réponse rapide : aucun son', async () => {
+      it('question simple, même lente : aucun son', async () => {
         const { session, mgr, outputs } = fixture();
         session.codec = 'PCMA';
+        slowModel(mgr, 900);
         outputs.push(turn({ awaiting: 'partySize', say: 'Pour combien de personnes ?' }));
         await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
-        await new Promise((resolve) => setTimeout(resolve, 400));
 
         expect(media(session)).toBe(0);
       });
@@ -1885,8 +1890,12 @@ describe('tour structuré (canary)', () => {
         const { session, mgr, outputs } = fixture();
         session.codec = 'PCMA';
         slowModel(mgr, 450);
-        outputs.push(turn({ awaiting: 'partySize', say: 'Pour combien de personnes ?' }));
-        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
 
         expect(media(session)).toBe(0);
       });
