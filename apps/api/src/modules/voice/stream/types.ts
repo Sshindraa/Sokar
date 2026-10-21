@@ -552,6 +552,14 @@ export interface CallSession {
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;
+  /** Second avis STT (voir stt-second-opinion.ts) : réglage lu une fois par appel. */
+  sttSecondOpinionEnabled?: boolean;
+  /** Dernières secondes d'audio envoyées à Deepgram, avec leur position dans le flux de la connexion. */
+  sttSecondOpinionAudio?: Array<{ startByte: number; data: Buffer }>;
+  /** Seconds avis demandés pendant l'appel (plafonnés). */
+  sttSecondOpinionCount?: number;
+  /** Dernière phrase entendue autrement par le second avis : vérifiée au tour suivant. */
+  sttSecondOpinionNote?: { heard: string; secondHeard: string; at: number };
   sttDeepgramFinalParts?: Array<{
     transcript: string;
     words?: SttWord[];

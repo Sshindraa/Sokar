@@ -454,6 +454,16 @@ VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée. Activer d'abord Chez
 # Sokar et écouter un appel d'un client connu avant d'élargir.
 VOICE_CRM_PROFILE_RESTAURANT_IDS=""
+# Second avis STT en arrière-plan (restaurants listés, `*` = tous, vide = aucun). Quand Deepgram termine une phrase
+# de 4 mots ou plus, son audio (20 s gardées en mémoire, jamais écrites) est retranscrit par
+# `VOICE_STT_SECOND_OPINION_MODEL` (défaut `microsoft/mai-transcribe-2`, OpenRouter, `OPENROUTER_API_KEY`) sans
+# retarder la réponse. Si les deux textes diffèrent, le tour suivant reçoit une consigne de principe : vérifier avec
+# l'appelant une information de réservation qui en dépend, sans parler de la double écoute. Plafonds : 8 demandes par
+# appel et `VOICE_STT_SECOND_OPINION_DAILY_USD` (défaut 1) par jour, tous appels confondus (compteur Redis).
+# Banc du 22/10/2026 : Deepgram 22,4 % de mots erronés sur les phrases longues, MAI 15,9 %, ≈ 0,0003 $ par phrase.
+VOICE_STT_SECOND_OPINION_RESTAURANT_IDS=""
+VOICE_STT_SECOND_OPINION_MODEL=""
+VOICE_STT_SECOND_OPINION_DAILY_USD="1"
 # Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
 # requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
 # `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,

@@ -60,6 +60,7 @@ import {
 import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
+import { recordSecondOpinionAudio, requestSecondOpinion } from './stt-second-opinion';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -1050,6 +1051,14 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
       ? buildSttPreviousText(session.restaurantName)
       : undefined,
   );
+  if (adapter.id === 'deepgram') {
+    recordSecondOpinionAudio(
+      session,
+      audio,
+      session.sttConnectionAudioBytesSent ?? 0,
+      adapter.chunkBytesPerMs(session.codec),
+    );
+  }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
   addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
   session.sttFirstAudioChunkSent = true;
@@ -1741,6 +1750,14 @@ function dispatchDeepgramFinalParts(
     languageCode,
     timing,
   );
+  // Après l'envoi au dialogue, jamais avant : le second avis ne retarde pas la réponse (il ne lève jamais).
+  requestSecondOpinion(
+    session,
+    transcript,
+    words,
+    speechEndOffsetMs || undefined,
+    sttAdapterForSession(session).chunkBytesPerMs(session.codec),
+  )?.catch(() => undefined);
 }
 
 export function flushDeepgramFinalPartsForSafety(session: CallSession): void {

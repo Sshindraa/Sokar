@@ -190,6 +190,7 @@ interface PassResult {
  * ~2,2 s) ; réglable sans déploiement par VOICE_INCOMPLETE_TURN_SILENCE_MS.
  */
 import { askedAgainFact } from './asked-again';
+import { currentSecondOpinionNote } from '../stt-second-opinion';
 
 export const INCOMPLETE_TURN_SILENCE_MS = 2_000;
 
@@ -395,11 +396,13 @@ function passRequest(
   const tone =
     isVoiceExpressionToneEnabled(session.restaurantId) &&
     isElevenLabsDialogueEnabledFor(session.restaurantId);
+  const secondOpinion = currentSecondOpinionNote(session, state.reservationCreated);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
     history,
     transcript,
     state,
+    ...(secondOpinion ? { secondOpinion } : {}),
     openingHours: session.openingHours,
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
