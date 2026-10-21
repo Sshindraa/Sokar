@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CustomerService } from '../customer.service';
 import { db } from '../../../shared/db/client';
-import { redisCache } from '../../../shared/redis/client';
+import { getCachedContext, redisCache } from '../../../shared/redis/client';
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
@@ -48,6 +48,7 @@ describe('CustomerService', () => {
     typicalPartySize: null,
     preferences: [],
     tags: [],
+    lastReservationName: null,
   };
 
   describe('contexte client historique (restaurant hors profil CRM)', () => {
@@ -149,6 +150,27 @@ describe('CustomerService', () => {
     });
   });
 
+  describe('nom connu par la dernière réservation', () => {
+    it('reconnaît une fiche sans nom grâce au nom de sa dernière réservation', () => {
+      const customer = {
+        ...baseCustomer,
+        name: null,
+        voiceProfile: { ...emptyProfile, pastVisits: 9, lastReservationName: 'Hamza Akkif' },
+      };
+      expect(CustomerService.buildVipPromptExtra(customer)).toContain('- Nom : Hamza Akkif.');
+      expect(CustomerService.buildVipPromptExtra(customer)).toContain('Déjà venu 9 fois');
+      expect(CustomerService.returningCustomerFirstName(customer)).toBe('Hamza');
+    });
+
+    it('préfère le nom de la fiche à celui de la réservation', () => {
+      const customer = {
+        ...baseCustomer,
+        voiceProfile: { ...emptyProfile, pastVisits: 2, lastReservationName: 'Autre Nom' },
+      };
+      expect(CustomerService.returningCustomerFirstName(customer)).toBe('Jean');
+    });
+  });
+
   describe('returningCustomerFirstName', () => {
     it('client déjà venu → prénom seul', () => {
       expect(
@@ -184,6 +206,46 @@ describe('CustomerService', () => {
           voiceProfile: { ...emptyProfile, pastVisits: 5 },
         }),
       ).toBe('');
+    });
+  });
+
+  describe('lookupOrCreate et le cache', () => {
+    const cachedWithoutName = {
+      id: 'c1',
+      name: null,
+      visitCount: 0,
+      isVip: false,
+      specialOccasion: null,
+      notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
+    };
+    const row = { ...cachedWithoutName, name: 'Hamza', partySizeTypical: null };
+
+    beforeEach(() => {
+      vi.mocked(getCachedContext).mockResolvedValue(cachedWithoutName as never);
+      vi.mocked(db.customerIdentity.findUnique).mockResolvedValue(null as never);
+      vi.mocked(db.customer.upsert).mockResolvedValue(row as never);
+    });
+
+    it('sans nom, sert la fiche gardée en mémoire', async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000');
+      expect(result).toBe(cachedWithoutName);
+      expect(db.customer.upsert).not.toHaveBeenCalled();
+    });
+
+    it('avec un nom, écrit toujours le nom en base même si la fiche est en mémoire', async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '  Hamza ');
+      expect(db.customer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ name: 'Hamza' }) }),
+      );
+      expect(result.name).toBe('Hamza');
+    });
+
+    it("un nom vide n'efface rien et sert la mémoire", async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '   ');
+      expect(result).toBe(cachedWithoutName);
+      expect(db.customer.upsert).not.toHaveBeenCalled();
     });
   });
 

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { selectVoicePreferences, summarizeVisitHistory } from '../customer-voice-profile';
+import {
+  latestReservationName,
+  selectVoicePreferences,
+  summarizeVisitHistory,
+} from '../customer-voice-profile';
 
 vi.mock('../../../shared/db/client', () => ({ db: {} }));
 
@@ -114,5 +118,23 @@ describe('selectVoicePreferences', () => {
     );
     expect(selected.value.length).toBe(121);
     expect(selected.value.endsWith('…')).toBe(true);
+  });
+});
+
+describe('latestReservationName', () => {
+  it('prend le nom le plus récent en ignorant les vides et les placeholders de salle', () => {
+    expect(
+      latestReservationName([
+        { customerName: '  ' },
+        { customerName: 'Sans réservation' },
+        { customerName: 'Walk-in' },
+        { customerName: ' Hamza   Akkif ' },
+        { customerName: 'Ancien Nom' },
+      ]),
+    ).toBe('Hamza Akkif');
+  });
+
+  it('aucun nom utilisable → null', () => {
+    expect(latestReservationName([{ customerName: null }, {}])).toBeNull();
   });
 });
