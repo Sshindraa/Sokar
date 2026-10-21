@@ -66,7 +66,7 @@ async function createDemoSession(
     ...ctx,
     openingHours: ctx.openingHours as OpeningHours,
     customerExtra: '',
-    customerGreeting: '',
+    returningCustomerFirstName: '',
     giftCardMinimumAmount: ctx.giftCardMinimumAmount,
     voiceGender: agentVoiceGender(ctx.personality),
     personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),

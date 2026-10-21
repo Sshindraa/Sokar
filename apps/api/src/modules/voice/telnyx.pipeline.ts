@@ -193,7 +193,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           isVoicePipelineEnabled(ctx.id),
           isBillingSuspended(ctx.id),
           payload.from
-            ? CustomerService.lookupOrCreate(ctx.id, payload.from)
+            ? CustomerService.lookupOrCreate(ctx.id, payload.from).then((caller) =>
+                CustomerService.withVoiceProfile(ctx.id, caller),
+              )
             : Promise.resolve(null),
         ]);
 
@@ -244,14 +246,18 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           );
         }
 
-        const customerExtra = customer ? CustomerService.buildVipPromptExtra(customer) : '';
-        const customerGreeting = customer ? CustomerService.buildReturningGreeting(customer) : '';
+        const customerExtra = customer
+          ? CustomerService.buildVipPromptExtra(customer, { timezone: ctx.timezone })
+          : '';
+        const returningCustomerFirstName = customer
+          ? CustomerService.returningCustomerFirstName(customer)
+          : '';
 
         const systemPrompt = buildSystemPrompt({
           ...ctx,
           openingHours: ctx.openingHours as OpeningHours,
           customerExtra,
-          customerGreeting,
+          returningCustomerFirstName,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
           voiceGender: agentVoiceGender(ctx.personality),
           personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),

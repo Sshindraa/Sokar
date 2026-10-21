@@ -37,7 +37,10 @@ vi.mock('../../customers/customer.service', () => ({
   CustomerService: {
     lookupOrCreate: vi.fn(),
     buildVipPromptExtra: vi.fn(),
-    buildReturningGreeting: vi.fn(() => 'Bonjour'),
+    withVoiceProfile: vi.fn((_restaurantId: string, customer: unknown) =>
+      Promise.resolve(customer),
+    ),
+    returningCustomerFirstName: vi.fn(() => 'Jean'),
     recordCallActivity: vi.fn(() => Promise.resolve()),
     incrementVisit: vi.fn(),
   },
