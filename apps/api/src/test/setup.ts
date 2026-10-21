@@ -83,6 +83,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
     };
     restaurantBilling = {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       update: vi.fn(),
       upsert: vi.fn(),
@@ -645,6 +646,12 @@ const stripeMocks = vi.hoisted(() => ({
     trial_end: 1_792_000_000 + 14 * 24 * 60 * 60,
     status: 'trialing',
   }),
+  subscriptionRetrieve: vi.fn().mockResolvedValue({
+    id: 'sub_trial_test',
+    status: 'trialing',
+    metadata: {},
+    items: { data: [] },
+  }),
   checkoutSessionCreate: vi
     .fn()
     .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
@@ -659,6 +666,8 @@ const stripeMocks = vi.hoisted(() => ({
 (globalThis as Record<string, unknown>).__sokarStripeCustomerCreate = stripeMocks.customerCreate;
 (globalThis as Record<string, unknown>).__sokarStripeSubscriptionCreate =
   stripeMocks.subscriptionCreate;
+(globalThis as Record<string, unknown>).__sokarStripeSubscriptionRetrieve =
+  stripeMocks.subscriptionRetrieve;
 
 vi.mock('stripe', () => {
   class Stripe {
@@ -667,6 +676,7 @@ vi.mock('stripe', () => {
     };
     subscriptions = {
       create: stripeMocks.subscriptionCreate,
+      retrieve: stripeMocks.subscriptionRetrieve,
     };
     checkout = {
       sessions: {

@@ -304,6 +304,45 @@ STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
 Pour le compte live, la même commande exige aussi `--allow-live` et
 `STRIPE_ALLOW_LIVE_WEBHOOK_MUTATION=ENSURE_SOKAR_BILLING_EVENTS`.
 
+### Ordre des événements et même seconde
+
+Stripe ne garantit ni l'ordre de livraison ni un ordre chronologique des identifiants
+d'événement, et plusieurs instantanés d'un même abonnement peuvent partager la même seconde
+(`created`). La recette du 21 octobre 2026
+([audit](../audits/2026-10-21-billing-trial-recipe.md)) l'a montré sur une fin d'essai
+anticipée : activation, deux factures et rappel d'essai à la même seconde, le rappel l'emportant
+par ordre alphabétique et laissant Sokar en `trialing`.
+
+Règles appliquées par `billing.service.ts` :
+
+- un événement plus ancien que le dernier appliqué (seconde `created` inférieure) est ignoré ;
+- à seconde égale, aucun départage par identifiant : Sokar relit l'abonnement chez Stripe
+  (`subscriptions.retrieve`) et projette son état actuel, pour les événements d'abonnement comme
+  de facture. Si cette lecture échoue, le webhook échoue et Stripe le relivre ;
+- `customer.subscription.trial_will_end` ne sert qu'au courriel de rappel (revérifié à l'envoi)
+  et ne modifie jamais le statut, la formule ni le point de reprise.
+
+### Réparer un dossier décalé
+
+Un dossier traité avant ce correctif peut garder un statut différent de Stripe ; rejouer
+l'événement ne suffit pas, car il est déjà marqué traité. Le script compare chaque dossier
+facturé à l'abonnement Stripe et, avec `--apply` seulement, reprojette l'état Stripe sans
+avancer le point de reprise des webhooks. Sa sortie ne contient que des identifiants et des
+statuts.
+
+```zsh
+cd /opt/sokar/apps/api   # ou /opt/sokar-staging/apps/api
+# 1. Lecture seule : liste les écarts.
+./node_modules/.bin/tsx scripts/reconcile-stripe-billing.ts --dry-run
+# 2. Un dossier précis, après contrôle de l'écart.
+./node_modules/.bin/tsx scripts/reconcile-stripe-billing.ts --restaurant-id <id> --apply
+```
+
+Avant `--apply` en production : sauvegarder la base (`scripts/ops/db-backup.sh`), vérifier dans
+le tableau de bord Stripe que l'abonnement listé est bien dans l'état annoncé, et réparer dossier
+par dossier. La réparation met aussi à jour la formule du restaurant et du compte selon le prix
+de l'abonnement (retour à `STARTER` si l'abonnement est annulé).
+
 ## Pilotes Essential — porte P1_ESSENTIAL
 
 **Reste ouvert.** Deux restaurants, sept jours, avec au minimum : consentement

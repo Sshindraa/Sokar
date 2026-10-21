@@ -850,21 +850,38 @@ function clearCheckoutAttempt() {
   };
 }
 
-async function isStaleStripeEvent(restaurantId: string, event: Stripe.Event): Promise<boolean> {
+type StripeEventOrder = 'stale' | 'tie' | 'newer';
+
+/**
+ * Orders an event against the last applied checkpoint by its `created` second only. Stripe
+ * neither guarantees delivery order nor makes event IDs chronological, and several snapshots of
+ * one subscription can share the same second (recette du 21/10/2026 : activation, factures et
+ * rappel d'essai à la même seconde). A tie is therefore never resolved by comparing IDs: the
+ * caller re-reads the subscription from Stripe, which is the current truth.
+ */
+async function compareStripeEvent(
+  restaurantId: string,
+  event: Stripe.Event,
+): Promise<StripeEventOrder> {
   const current = await db.restaurantBilling.findUnique({
     where: { restaurantId },
   });
   const lastCreated = current?.lastStripeEventCreated;
-  const lastEventId = current?.lastStripeEventId;
-  if (lastCreated === null || lastCreated === undefined) return false;
-
+  if (lastCreated === null || lastCreated === undefined) return 'newer';
   const incomingCreated = eventCreated(event);
-  if (incomingCreated < lastCreated) return true;
-  return (
-    incomingCreated === lastCreated &&
-    Boolean(lastEventId) &&
-    eventId(event) <= (lastEventId as string)
-  );
+  if (incomingCreated < lastCreated) return 'stale';
+  return incomingCreated === lastCreated ? 'tie' : 'newer';
+}
+
+async function isStaleStripeEvent(restaurantId: string, event: Stripe.Event): Promise<boolean> {
+  return (await compareStripeEvent(restaurantId, event)) === 'stale';
+}
+
+/** Current subscription state from Stripe; an error propagates so Stripe redelivers the event. */
+async function retrieveLiveSubscription(subscriptionId: string): Promise<SubscriptionObject> {
+  return (await getStripe().subscriptions.retrieve(
+    subscriptionId,
+  )) as unknown as SubscriptionObject;
 }
 
 /**
@@ -1132,20 +1149,45 @@ async function handleSubscriptionEvent(
     restaurantId = existing?.restaurantId;
   }
   if (!restaurantId) return false;
-  if (await isStaleStripeEvent(restaurantId, event)) return true;
 
+  // The trial reminder only schedules an e-mail (the worker re-checks it at send time). Its
+  // snapshot can predate the subscription's current state: it never rewrites the projection.
+  if (eventType === 'customer.subscription.trial_will_end') {
+    await enqueueBillingNotification(eventType, restaurantId, subscription);
+    return true;
+  }
+
+  const order = await compareStripeEvent(restaurantId, event);
+  if (order === 'stale') return true;
+  const current = order === 'tie' ? await retrieveLiveSubscription(subscription.id) : subscription;
+  const deleted = eventType === 'customer.subscription.deleted' || current.status === 'canceled';
+  await applySubscriptionSnapshot(restaurantId, current, deleted, eventCheckpoint(event));
+  await enqueueBillingNotification(eventType, restaurantId, subscription);
+  return true;
+}
+
+/**
+ * Projects one subscription snapshot onto the restaurant and account billing records. Shared by
+ * webhooks and by the reconciliation of records that an earlier same-second race left behind.
+ */
+async function applySubscriptionSnapshot(
+  restaurantId: string,
+  subscription: SubscriptionObject,
+  deleted: boolean,
+  checkpoint: { lastStripeEventCreated: number; lastStripeEventId: string },
+): Promise<void> {
+  const metadata = subscription.metadata ?? {};
   const priceId = subscription.items.data[0]?.price?.id;
   const planFromMetadata =
     metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
   // The current price wins: a Stripe portal plan switch changes the price but keeps the
   // Checkout metadata. Metadata only covers historical prices absent from the catalogue.
   const plan = (priceId ? getPublicPlanFromPriceId(priceId) : null) ?? planFromMetadata;
-  const deleted = eventType === 'customer.subscription.deleted';
   const billingData = subscriptionUpdateData(subscription, deleted);
   const siteCount = deleted ? 1 : metadataSiteCount(metadata);
   if (plan && deleted) {
     await db.restaurant.update({ where: { id: restaurantId }, data: { plan: 'STARTER' } });
-  } else if (plan && eventType !== 'customer.subscription.deleted') {
+  } else if (plan) {
     await db.restaurant.update({
       where: { id: restaurantId },
       data: { plan: PLAN_TO_DATABASE[plan] },
@@ -1157,8 +1199,7 @@ async function handleSubscriptionEvent(
     ...billingData,
     plan: plan ? (deleted ? 'STARTER' : PLAN_TO_DATABASE[plan]) : undefined,
     entitledSiteCount: siteCount,
-    lastStripeEventCreated: eventCreated(event),
-    lastStripeEventId: eventId(event),
+    ...checkpoint,
   });
   await db.restaurantBilling.upsert({
     where: { restaurantId },
@@ -1166,12 +1207,66 @@ async function handleSubscriptionEvent(
       restaurantId,
       ...billingData,
       ...clearCheckoutAttempt(),
-      ...eventCheckpoint(event),
+      ...checkpoint,
     },
-    update: { ...billingData, ...clearCheckoutAttempt(), ...eventCheckpoint(event) },
+    update: { ...billingData, ...clearCheckoutAttempt(), ...checkpoint },
   });
-  await enqueueBillingNotification(eventType, restaurantId, subscription);
-  return true;
+}
+
+export interface BillingReconciliationResult {
+  restaurantId: string;
+  subscriptionId: string;
+  storedStatus: string | null;
+  liveStatus: string;
+  changed: boolean;
+  applied: boolean;
+}
+
+/**
+ * Repairs billing records whose projected status differs from Stripe (for example a trial ended
+ * early that stayed `trialing`, see the 21/10/2026 audit). Dry-run unless `apply` is set. Applying
+ * re-projects the live subscription without moving the event checkpoint, so later webhooks keep
+ * their normal ordering. Logs and results carry identifiers and statuses only.
+ */
+export async function reconcileBillingFromStripe(options: {
+  apply: boolean;
+  restaurantId?: string;
+}): Promise<BillingReconciliationResult[]> {
+  const records = await db.restaurantBilling.findMany({
+    where: {
+      stripeSubscriptionId: { not: null },
+      ...(options.restaurantId ? { restaurantId: options.restaurantId } : {}),
+    },
+    select: {
+      restaurantId: true,
+      stripeSubscriptionId: true,
+      subscriptionStatus: true,
+      lastStripeEventCreated: true,
+      lastStripeEventId: true,
+    },
+    orderBy: { restaurantId: 'asc' },
+  });
+  const results: BillingReconciliationResult[] = [];
+  for (const record of records) {
+    if (!record.stripeSubscriptionId) continue;
+    const live = await retrieveLiveSubscription(record.stripeSubscriptionId);
+    const changed = record.subscriptionStatus !== live.status;
+    if (changed && options.apply) {
+      await applySubscriptionSnapshot(record.restaurantId, live, live.status === 'canceled', {
+        lastStripeEventCreated: record.lastStripeEventCreated ?? 0,
+        lastStripeEventId: record.lastStripeEventId ?? '',
+      });
+    }
+    results.push({
+      restaurantId: record.restaurantId,
+      subscriptionId: record.stripeSubscriptionId,
+      storedStatus: record.subscriptionStatus ?? null,
+      liveStatus: live.status,
+      changed,
+      applied: changed && options.apply,
+    });
+  }
+  return results;
 }
 
 function stripeDate(seconds: number | null | undefined): Date | null {
@@ -1334,7 +1429,8 @@ async function handleInvoiceEvent(
   if (!resolved) return false;
 
   const { billing, restaurantId } = resolved;
-  if (await isStaleStripeEvent(restaurantId, event)) return true;
+  const order = await compareStripeEvent(restaurantId, event);
+  if (order === 'stale') return true;
 
   const metadata = (invoice.metadata ?? {}) as Record<string, string>;
   const customerId = stripeObjectId(invoice.customer) ?? billing?.stripeCustomerId ?? null;
@@ -1353,14 +1449,25 @@ async function handleInvoiceEvent(
   // A trial opens with a zero invoice marked paid: the subscription is still `trialing`.
   const trialStartInvoice =
     paid && invoice.billing_reason === 'subscription_create' && invoice.amount_paid === 0;
-  const status = trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
-  const periodEnd = invoicePeriodEnd(invoice) ?? billing?.subscriptionCurrentPeriodEnd ?? null;
-  const cancelAtPeriodEnd = billing?.subscriptionCancelAtPeriodEnd ?? false;
+  // Same second as the last applied event: the invoice alone cannot tell which state is current,
+  // so the subscription status comes from Stripe (see compareStripeEvent).
+  const live =
+    order === 'tie' && subscriptionId ? await retrieveLiveSubscription(subscriptionId) : null;
+  const status = live ? live.status : trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
+  const periodEnd =
+    (live ? subscriptionPeriodEnd(live) : null) ??
+    invoicePeriodEnd(invoice) ??
+    billing?.subscriptionCurrentPeriodEnd ??
+    null;
+  const cancelAtPeriodEnd = live
+    ? live.cancel_at_period_end
+    : (billing?.subscriptionCancelAtPeriodEnd ?? false);
 
   // A successful first or renewal invoice can carry the plan snapshot. A
   // failed attempt must leave the existing entitlement untouched during the
   // provider's grace window.
-  if (paid && plan) {
+  const entitles = paid && Boolean(plan) && status !== 'canceled';
+  if (entitles && plan) {
     await db.restaurant.update({
       where: { id: restaurantId },
       data: { plan: PLAN_TO_DATABASE[plan] },
@@ -1373,7 +1480,7 @@ async function handleInvoiceEvent(
     subscriptionStatus: status,
     subscriptionPriceId: priceId,
     ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
-    plan: paid && plan ? PLAN_TO_DATABASE[plan] : undefined,
+    plan: entitles && plan ? PLAN_TO_DATABASE[plan] : undefined,
     entitledSiteCount: siteCount,
     subscriptionCurrentPeriodEnd: periodEnd,
     subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
