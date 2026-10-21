@@ -17,6 +17,11 @@ import {
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 import type { CallSession } from '../stream/types';
+import {
+  __setVoiceFillerAudioForTests,
+  voiceFillerTexts,
+  waitForVoiceFiller,
+} from '../stream/voice-filler';
 import type { CallSessionManager } from '../stream/manager';
 import { partySizeCorrectionFact } from '../stream/structured-turn/fact-guards';
 import { speakTtsStreamed } from '../stream/tts-handler';
@@ -1824,6 +1829,76 @@ describe('tour structuré (canary)', () => {
         json_schema: { schema: { properties: Record<string, unknown> } };
       };
       expect(format.json_schema.schema.properties).not.toHaveProperty('tone');
+    });
+
+    describe("petits mots d'attente (VOICE_FILLER_RESTAURANT_IDS)", () => {
+      const media = (session: CallSession) =>
+        vi
+          .mocked(session.telnyxWs.send)
+          .mock.calls.filter(([payload]) => String(payload).includes('"media"')).length;
+      beforeEach(() => {
+        contextTurn.provider = 'elevenlabs';
+        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', RESTAURANT_ID);
+        vi.stubEnv('VOICE_FILLER_DELAY_MS', '300');
+        for (const text of voiceFillerTexts()) {
+          __setVoiceFillerAudioForTests(text, 'PCMA', Buffer.alloc(1_600, 0x2a));
+        }
+      });
+      afterEach(() => {
+        contextTurn.provider = 'cartesia';
+        for (const text of voiceFillerTexts()) __setVoiceFillerAudioForTests(text, 'PCMA', null);
+      });
+      function slowModel(mgr: CallSessionManager, delayMs: number): void {
+        const original = vi.mocked(mgr.streamStructuredCompletion).getMockImplementation()!;
+        vi.mocked(mgr.streamStructuredCompletion).mockImplementation(async (...args) => {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          return original(...args);
+        });
+      }
+
+      it('vérification réelle et réponse lente : un son part, la réponse suit', async () => {
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 450);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
+        await waitForVoiceFiller(session);
+
+        expect(media(session)).toBe(2);
+        expect(contextTurn.push.mock.calls.map(([text]) => text)).toEqual([
+          'Il me reste vingt heures.',
+          'À quel nom ?',
+        ]);
+      });
+
+      it('question simple, même lente : aucun son', async () => {
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 900);
+        outputs.push(turn({ awaiting: 'partySize', say: 'Pour combien de personnes ?' }));
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(media(session)).toBe(0);
+      });
+
+      it('réglage vide : aucun son, même lent', async () => {
+        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', '');
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 450);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
+
+        expect(media(session)).toBe(0);
+      });
     });
 
     describe('premiers mots avant la fin de la première phrase (VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS)', () => {

@@ -23,6 +23,7 @@ import {
   type ElevenLabsChunkAlignment,
 } from './elevenlabs-dialogue-context';
 import { holdFirstAudioForCallerSilence } from './first-audio-hold';
+import { waitForVoiceFiller } from './voice-filler';
 import type { SpokenAlignment } from './interrupted-reply';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import { persistLatencyTrace } from './session-persistence';
@@ -373,6 +374,9 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
       }
       if (!this.holdDone) {
         this.holdDone = true;
+        // Un son d'attente est en cours : la réponse part après lui, jamais par-dessus.
+        await waitForVoiceFiller(this.session);
+        if (this.cancelled) return;
         // La réponse est prête ; elle ne part qu'après un vrai silence de l'appelant.
         const hold = await holdFirstAudioForCallerSilence(
           this.session,

@@ -469,6 +469,16 @@ VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
 # une relecture de nom, un nombre ou des lettres épelées. Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun.
 # Banc du 21/10 : la voix part 0,15 à 0,26 s plus tôt (médiane). À activer après écoute de Hamza.
 VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS=""
+# Petit mot d'attente pendant une vraie vérification de créneau ou un vrai enregistrement de réservation
+# (« Un instant, je regarde. », « Un instant, j'enregistre. ») quand la réponse tarde : sons préenregistrés avec la voix
+# de Léa, joués par le code (pas par le modèle), la réponse enchaîne après eux. Rien sur une question simple, jamais
+# pendant une épellation ni quand l'appelant parle ; jamais deux fois de suite la même formule, plafond par appel.
+# Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun (et aucune génération de sons au démarrage).
+VOICE_FILLER_RESTAURANT_IDS=""
+# Délai minimal après la fin de parole (300–3000 ms) ; l'action démarre d'ordinaire vers 1,2–1,5 s.
+VOICE_FILLER_DELAY_MS="750"
+# Tours avec son d'attente au plus par appel (1–20).
+VOICE_FILLER_MAX_PER_CALL="4"
 # Voix ElevenLabs du tour (facultatif) : la voix du banc est utilisée si absente.
 # ELEVENLABS_TTS_VOICE_ID="lPojg5cGgbhot31LKO2z"
 # Dictionnaire de prononciation ElevenLabs (facultatif, les deux ou aucun). Un identifiant inconnu fait
@@ -607,7 +617,8 @@ L'épellation attend 800 ms de silence total, en tenant compte de
 `endpointing`; elle ne cumule pas un hold hybride. Les valeurs autorisées sont
 respectivement 100–1000 ms, 500–3000 ms et 400–2000 ms.
 
-Le filler différé n'est actif que pour une session Deepgram + Dialogue V2.
+`VOICE_LLM_FILLER_DELAY_MS` n'est plus lu depuis la suppression du mode à outils (#395) ; les petits mots
+d'attente actuels utilisent `VOICE_FILLER_DELAY_MS`.
 
 ```dotenv
 VOICE_LLM_FILLER_DELAY_MS="1200"      # 100–5000 ms
