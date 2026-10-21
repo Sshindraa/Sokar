@@ -23,8 +23,11 @@ export interface ContextTtsTurn {
     totalMs: number | null;
     alignment?: SpokenAlignment;
   };
-  /** `tone` : balise d'expression à placer avant ce texte (ElevenLabs seulement ; ignorée ailleurs). */
-  push(transcript: string, options?: { tone?: string }): void;
+  /**
+   * `tone` : balise d'expression à placer avant ce texte (ElevenLabs seulement ; ignorée ailleurs). `flush` : générer
+   * ce texte tout de suite même sans ponctuation finale (premiers mots d'une phrase ; ElevenLabs seulement).
+   */
+  push(transcript: string, options?: { tone?: string; flush?: boolean }): void;
   finish(): Promise<void>;
   cancel(reason?: 'barge_in' | 'unused'): void;
 }

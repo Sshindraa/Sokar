@@ -72,6 +72,20 @@ export function isVoiceExpressionToneEnabled(
 }
 
 /**
+ * Premiers mots envoyés à la synthèse dès la première virgule, sans attendre la fin de la première phrase (voir
+ * `PhraseSplitter`). Seulement pour les restaurants listés (`VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS`), `*` = tous,
+ * vide = aucun. Sans effet hors ElevenLabs Dialogue.
+ */
+export function isVoiceTtsEarlyPhraseEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!restaurantId) return false;
+  const ids = parseRestaurantIdList(env.VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS);
+  return ids.includes('*') || ids.includes(restaurantId);
+}
+
+/**
  * Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires…) donnés à
  * l'assistant pour qu'il réponde aux questions des appelants au lieu de botter en touche. Seulement
  * pour les restaurants listés (`VOICE_PRACTICAL_INFO_RESTAURANT_IDS`), vide = aucun.

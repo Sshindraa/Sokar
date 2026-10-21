@@ -148,6 +148,33 @@ describe('ElevenLabs context TTS : protocole et relais audio', () => {
     expect(turn.interruptionSnapshot().text).toBe('Oh, quarante ans. Vous serez combien ?');
   });
 
+  it('premiers mots : flush demandé sans ponctuation finale, texte relevé recollé avec la suite', async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const url = startServer((message) => {
+      received.push(message);
+    });
+    const { session } = makeSession('PCMA');
+    const turn = new ElevenLabsContextTurn(session, 1, 'cle-test', 'voix-test', url);
+
+    turn.push('Très bien,', { tone: 'warm', flush: true });
+    turn.push('pour combien de personnes ?', { flush: true });
+    await waitFor(() => received.length >= 3);
+
+    expect(received.slice(1, 3)).toEqual([
+      {
+        inputs: [{ text: '[warm] Très bien,', voice_id: 'voix-test', new_turn: false }],
+        flush: true,
+      },
+      {
+        inputs: [{ text: ' pour combien de personnes ?', voice_id: 'voix-test', new_turn: false }],
+        flush: true,
+      },
+    ]);
+    // Interruption après les premiers mots : la reprise lit la réponse entière, sans balise.
+    turn.cancel('barge_in');
+    expect(turn.interruptionSnapshot().text).toBe('Très bien, pour combien de personnes ?');
+  });
+
   it('envoie la voix, puis les phrases avec flush selon leur fin, puis close_socket', async () => {
     const received: Array<Record<string, unknown>> = [];
     const audio = Buffer.alloc(800, 0x2a); // une trame de 100 ms en A-law

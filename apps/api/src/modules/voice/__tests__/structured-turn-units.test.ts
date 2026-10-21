@@ -69,6 +69,45 @@ describe('PhraseSplitter', () => {
     expect(splitter.push(' de personnes ? Merci')).toEqual(['Pour combien de personnes ?']);
     expect(splitter.flush()).toBe('Merci');
   });
+
+  it('early : rend le début de la première phrase dès sa première virgule, puis la suite comme une phrase', () => {
+    const splitter = new PhraseSplitter();
+    expect(splitter.push('Très bien, pour', { early: true })).toEqual(['Très bien,']);
+    expect(splitter.early).toBe(true);
+    expect(splitter.push(' combien de personnes ? Et', { early: true })).toEqual([
+      'pour combien de personnes ?',
+    ]);
+    expect(splitter.early).toBe(false);
+    // Une phrase est déjà sortie : plus de coupe à la virgule.
+    expect(splitter.push(' le nom, s’il vous plaît', { early: true })).toEqual([]);
+    expect(splitter.flush()).toBe('Et le nom, s’il vous plaît');
+  });
+
+  it('early : une phrase finie dans le même fragment part entière', () => {
+    const splitter = new PhraseSplitter();
+    expect(splitter.push('Très bien, c’est noté. Et', { early: true })).toEqual([
+      'Très bien, c’est noté.',
+    ]);
+    expect(splitter.early).toBe(false);
+  });
+
+  it('early : jamais sur un début trop court, un nombre ou des lettres épelées', () => {
+    expect(new PhraseSplitter().push('Oui, très', { early: true })).toEqual([]);
+    expect(new PhraseSplitter().push('Oui, très bien, je', { early: true })).toEqual([
+      'Oui, très bien,',
+    ]);
+    expect(new PhraseSplitter().push('Le 06 12, 34 56', { early: true })).toEqual([]);
+    expect(new PhraseSplitter().push('Pour 12,5 personnes, ou', { early: true })).toEqual([]);
+    expect(new PhraseSplitter().push('Je note A, S, S, A, M, M, c’est', { early: true })).toEqual(
+      [],
+    );
+  });
+
+  it('sans early : la virgule ne coupe rien (comportement actuel)', () => {
+    const splitter = new PhraseSplitter();
+    expect(splitter.push('Très bien, pour combien')).toEqual([]);
+    expect(splitter.early).toBe(false);
+  });
 });
 
 describe('parseStructuredTurnOutput', () => {

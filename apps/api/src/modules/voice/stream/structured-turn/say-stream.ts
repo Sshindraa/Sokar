@@ -72,14 +72,39 @@ const ESCAPES: Record<string, string> = {
   f: '',
 };
 
+/** Début de première phrase sûr à dire seul : au moins 6 caractères, aucun chiffre, aucune lettre épelée. */
+const EARLY_MIN_LENGTH = 6;
+
+function earlyFragmentEnd(pending: string): number {
+  const boundary = /,(?=\s)/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(pending)) !== null) {
+    const fragment = pending.slice(0, match.index + 1).trim();
+    // Un nombre ou une lettre isolée (« A, S, S ») se lit en entier : le nettoyage TTS regroupe les numéros.
+    if (/\d/.test(fragment) || /(^|\s)\p{L},/u.test(fragment)) return -1;
+    if (fragment.length >= EARLY_MIN_LENGTH) return match.index + 1;
+  }
+  return -1;
+}
+
 /**
  * Découpe le texte parlé en phrases complètes pour la synthèse. Le reste non
  * terminé est gardé jusqu'au prochain fragment ou jusqu'à `flush`.
+ *
+ * `early` : tant qu'aucune phrase n'est sortie, le début de la première phrase part dès sa première virgule
+ * (« Très bien, »), la suite sort ensuite comme une phrase. La voix démarre sans attendre la ponctuation finale.
  */
 export class PhraseSplitter {
   private pending = '';
+  private emitted = false;
+  private lastEarly = false;
 
-  push(text: string): string[] {
+  /** Le dernier `push` a rendu des premiers mots, pas une phrase finie. */
+  get early(): boolean {
+    return this.lastEarly;
+  }
+
+  push(text: string, options: { early?: boolean } = {}): string[] {
     this.pending += text;
     const phrases: string[] = [];
     const boundary = /[.!?…](?=\s)/g;
@@ -91,12 +116,23 @@ export class PhraseSplitter {
       start = match.index + 1;
     }
     this.pending = this.pending.slice(start);
+    this.lastEarly = false;
+    if (!phrases.length && options.early && !this.emitted) {
+      const end = earlyFragmentEnd(this.pending);
+      if (end > 0) {
+        phrases.push(this.pending.slice(0, end).trim());
+        this.pending = this.pending.slice(end);
+        this.lastEarly = true;
+      }
+    }
+    if (phrases.length) this.emitted = true;
     return phrases;
   }
 
   flush(): string | null {
     const rest = this.pending.trim();
     this.pending = '';
+    if (rest) this.emitted = true;
     return rest || null;
   }
 }
