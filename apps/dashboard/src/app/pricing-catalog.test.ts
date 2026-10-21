@@ -60,6 +60,13 @@ describe('catalogue des fonctionnalités', () => {
     );
   });
 
+  it('inclut la reconnaissance des habitués dès Essential, annoncée comme prévue', () => {
+    const feature = CATALOG_FEATURES.find((item) => item.id === 'returning-callers');
+    expect(feature).toEqual(
+      expect.objectContaining({ introducedIn: 'Essential', status: 'prévu' }),
+    );
+  });
+
   it('réserve le copilote de service à Pro et Multi-site, jamais à Essential', () => {
     const copilot = CATALOG_FEATURES.filter((feature) => feature.id.startsWith('copilot-'));
 

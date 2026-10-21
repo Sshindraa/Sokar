@@ -53,6 +53,14 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     introducedIn: 'Essential',
   },
   {
+    // « prévu » tant que le profil client de l'agent (VOICE_CRM_PROFILE_RESTAURANT_IDS) n'est pas ouvert
+    // à tous les restaurants.
+    id: 'returning-callers',
+    label: 'Vos habitués reconnus dès qu’ils appellent',
+    status: 'prévu',
+    introducedIn: 'Essential',
+  },
+  {
     id: 'number',
     label: 'Numéro dédié inclus',
     status: 'disponible',
