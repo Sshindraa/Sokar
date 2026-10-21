@@ -212,7 +212,7 @@ export async function saveVoiceSuggestion(input: {
   const { restaurantId, customerId, suggestion } = input;
   const outcome = await db.$transaction(async (tx) => {
     const existing = await tx.customerPreference.findUnique({
-      where: { customerId_key: { customerId, key: suggestion.key } },
+      where: { customerId_key: { customerId, key: suggestion.key }, restaurantId },
       select: { source: true, confirmedAt: true, value: true, expiresAt: true },
     });
     const existingIsLive = !existing?.expiresAt || existing.expiresAt.getTime() > now.getTime();
