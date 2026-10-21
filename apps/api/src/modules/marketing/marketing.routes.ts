@@ -4,7 +4,11 @@ import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { requireOrg } from '../../plugins/clerk';
-import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
+import {
+  requireCapability,
+  requireRuntimeFlag,
+  requireRuntimeFlagOrRestaurant,
+} from '../entitlements/entitlement.guard';
 import { CustomerSegmentDefinitionSchema } from '../customers/customer-segment.service';
 import {
   CAMPAIGN_CHANNELS,
@@ -144,8 +148,10 @@ const DeactivateConversionBodySchema = z.object({
   reservationId: z.string().trim().min(1).max(128),
 });
 
-const requireCrmAdvancedFeature = requireRuntimeFlag(
+// Ouvert partout par CRM_ADVANCED_ENABLED, ou seulement pour les restaurants de CRM_ADVANCED_RESTAURANT_IDS.
+const requireCrmAdvancedFeature = requireRuntimeFlagOrRestaurant(
   'CRM_ADVANCED_ENABLED',
+  'CRM_ADVANCED_RESTAURANT_IDS',
   'Le CRM avancé reste désactivé jusqu’à la qualification du chantier.',
   'CRM_ADVANCED_DISABLED',
 );

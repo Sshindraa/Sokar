@@ -280,7 +280,8 @@ export class CustomerService {
   /**
    * Customer context used before the CRM voice profile (restaurants outside
    * `VOICE_CRM_PROFILE_RESTAURANT_IDS`). Kept verbatim so the prompt stays
-   * identical until a restaurant is listed.
+   * identical until a restaurant is listed, except the manager's free-text
+   * notes, which never reach the model (they may hold sensitive data).
    */
   static buildLegacyVipPromptExtra(customer: CustomerContext): string {
     if (!customer.name) return '';
@@ -288,7 +289,6 @@ export class CustomerService {
     if (customer.visitCount > 0) lines.push(`C'est sa ${customer.visitCount + 1}e visite.`);
     if (customer.isVip) lines.push('⭐ Client VIP — sois particulièrement attentionné.');
     if (customer.specialOccasion) lines.push(`Occasion spéciale : ${customer.specialOccasion}.`);
-    if (customer.notes) lines.push(`Note gérant : ${customer.notes}`);
     if (customer.partySizeTypical && customer.partySizeTypical > 0) {
       lines.push(`Taille de groupe habituelle : ${customer.partySizeTypical} pers.`);
     }
@@ -326,6 +326,11 @@ export class CustomerService {
     }
   }
 
+  /**
+   * The manager's free-text notes are deliberately left out: they may hold
+   * health data or judgements and would leave for the LLM provider. Only
+   * structured preferences the team entered or confirmed reach the agent.
+   */
   static buildVipPromptExtra(
     customer: CustomerContext,
     options: { timezone?: string } = {},
@@ -366,7 +371,6 @@ export class CustomerService {
     }
     if (customer.isVip) lines.push("- Client VIP : soigne particulièrement l'échange.");
     if (customer.specialOccasion) lines.push(`- Occasion spéciale : ${customer.specialOccasion}.`);
-    if (customer.notes) lines.push(`- Note du gérant : ${customer.notes}`);
 
     return [
       'CLIENT RECONNU PAR SON NUMÉRO (fiche du restaurant) :',

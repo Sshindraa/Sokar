@@ -35,6 +35,42 @@ describe('customer CRM routes', () => {
     }
   });
 
+  it('ouvre le CRM avancé en production pour un restaurant listé seulement', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousFlag = process.env.CRM_ADVANCED_ENABLED;
+    const previousList = process.env.CRM_ADVANCED_RESTAURANT_IDS;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CRM_ADVANCED_ENABLED;
+    try {
+      const app = await getApp();
+      process.env.CRM_ADVANCED_RESTAURANT_IDS = 'another-restaurant';
+      const closed = await app.inject({
+        method: 'GET',
+        url: '/crm/privacy',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(closed.statusCode).toBe(503);
+
+      process.env.CRM_ADVANCED_RESTAURANT_IDS = 'another-restaurant,test-rest-1';
+      vi.mocked(db.restaurant.findUnique)
+        .mockResolvedValueOnce({ plan: 'PRO' } as never)
+        .mockResolvedValueOnce({ crmSensitiveNoteRoles: null } as never);
+      const open = await app.inject({
+        method: 'GET',
+        url: '/crm/privacy',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(open.statusCode).not.toBe(503);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousFlag === undefined) delete process.env.CRM_ADVANCED_ENABLED;
+      else process.env.CRM_ADVANCED_ENABLED = previousFlag;
+      if (previousList === undefined) delete process.env.CRM_ADVANCED_RESTAURANT_IDS;
+      else process.env.CRM_ADVANCED_RESTAURANT_IDS = previousList;
+    }
+  });
+
   it('expose la politique de notes effective et la réserve au propriétaire', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique)
