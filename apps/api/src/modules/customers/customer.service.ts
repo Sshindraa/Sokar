@@ -39,12 +39,16 @@ export class CustomerService {
   static async lookupOrCreate(
     restaurantId: string,
     phone: string,
-    name?: string,
+    rawName?: string,
   ): Promise<CustomerContext> {
+    const name = rawName?.trim() || undefined;
     const normalizedPhone = normalizeCustomerPhone(phone);
     const cachePhone = normalizedPhone ?? phone;
     const cacheKey = `customer:${restaurantId}:${cachePhone}`;
-    const cached = await getCachedContext(cacheKey);
+    // The cache only serves reads. A caller that brings a name (a reservation being created) must
+    // reach the database: the context cached at call start has no name yet, and returning it here
+    // silently dropped the name of every caller who books by phone.
+    const cached = name ? null : await getCachedContext(cacheKey);
     if (cached) return cached;
 
     const identityCandidate = normalizedPhone
@@ -335,10 +339,11 @@ export class CustomerService {
     customer: CustomerContext,
     options: { timezone?: string } = {},
   ): string {
-    if (!customer.name) return '';
+    const name = knownName(customer);
+    if (!name) return '';
     const timezone = options.timezone ?? 'Europe/Paris';
     const profile = customer.voiceProfile;
-    const lines: string[] = [`- Nom : ${customer.name}.`];
+    const lines: string[] = [`- Nom : ${name}.`];
 
     if (profile) {
       if (profile.pastVisits > 0) {
@@ -384,11 +389,17 @@ export class CustomerService {
    * the team), for the agent to acknowledge in its own words. Empty otherwise.
    */
   static returningCustomerFirstName(customer: CustomerContext): string {
-    if (!customer.name) return '';
+    const name = knownName(customer);
+    if (!name) return '';
     const pastVisits = customer.voiceProfile?.pastVisits ?? 0;
     if (pastVisits < 1 && !customer.isVip) return '';
-    return customer.name.trim().split(/\s+/)[0] ?? '';
+    return name.split(/\s+/)[0] ?? '';
   }
+}
+
+/** The customer record's name, or the name given on the latest reservation when the record has none. */
+function knownName(customer: CustomerContext): string | null {
+  return customer.name?.trim() || customer.voiceProfile?.lastReservationName || null;
 }
 
 function formatVoiceDate(iso: string, timezone: string, withTime: boolean): string {

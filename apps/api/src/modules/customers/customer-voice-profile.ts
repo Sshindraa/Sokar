@@ -15,6 +15,11 @@ export interface CustomerVoiceProfile {
   typicalPartySize: number | null;
   preferences: Array<{ key: CustomerPreferenceKey; value: string }>;
   tags: string[];
+  /**
+   * Name given on the latest reservation, for customers whose record has none: phone bookings
+   * did not write the name to the customer record before 22/10/2026 (cached lookup).
+   */
+  lastReservationName: string | null;
 }
 
 interface ReservationForHistory {
@@ -129,7 +134,13 @@ export async function loadCustomerVoiceProfile(
   const [reservations, preferences, tagAssignments] = await Promise.all([
     db.reservation.findMany({
       where: { restaurantId, customerId },
-      select: { state: true, startsAt: true, reservedAt: true, partySize: true },
+      select: {
+        state: true,
+        startsAt: true,
+        reservedAt: true,
+        partySize: true,
+        customerName: true,
+      },
       orderBy: { reservedAt: 'desc' },
       take: HISTORY_LIMIT,
     }),
@@ -156,5 +167,22 @@ export async function loadCustomerVoiceProfile(
       now,
     ),
     tags: tagAssignments.map((assignment) => assignment.tag.label.trim()).filter(Boolean),
+    lastReservationName: latestReservationName(reservations),
   };
+}
+
+/** Walk-in placeholders written by the floor plan are not a caller's name. */
+const PLACEHOLDER_NAMES = new Set(['sans réservation', 'walk-in', 'walk in']);
+const MAX_NAME_LENGTH = 80;
+
+/** Most recent non-placeholder name; reservations come newest first. */
+export function latestReservationName(
+  reservations: ReadonlyArray<{ customerName?: string | null }>,
+): string | null {
+  for (const reservation of reservations) {
+    const name = reservation.customerName?.replace(/\s+/g, ' ').trim();
+    if (!name || PLACEHOLDER_NAMES.has(name.toLowerCase())) continue;
+    return name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH) : name;
+  }
+  return null;
 }
