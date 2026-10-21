@@ -8,7 +8,9 @@
 4. L’écran de formule propose un essai de 14 jours sans carte (`POST /billing/trial`). Le compte est l’unité de facturation et possède un établissement principal. Une fois l’essai terminé, l’absence de moyen de paiement entraîne l’annulation Stripe ; le webhook met à jour les droits. Les paiements et changements de formule passent ensuite par les parcours Stripe prévus.
 5. La synchronisation dashboard retente les erreurs réseau, délais dépassés, HTTP 429 et HTTP 5xx, au maximum trois fois. Un échec persistant affiche un message et un bouton Réessayer. Un changement d’organisation annule la tentative précédente et synchronise la nouvelle organisation. Les contrôles d’accès et d’onboarding restent appliqués.
 
-La présence de clés Stripe et d’un drapeau d’activation n’est pas une recette de paiement. Avant l’ouverture commerciale, qualifier un parcours complet en environnement Stripe de test, du compte Clerk aux webhooks et droits, sans faire de souscription réelle pour cette vérification.
+La présence de clés Stripe et d’un drapeau d’activation n’est pas une recette de paiement.
+
+**Recette du 21 octobre 2026** ([audit](../audits/2026-10-21-billing-trial-recipe.md)) : parcours nominal Essential mensuel vérifié en sandbox Stripe avec trois comptes Clerk de test (création du compte, reconnexion idempotente, essai de 14 jours sans carte, paiement fictif de 199 € à l’échéance, annulation et suspension sans carte, signature de webhook invalide refusée). **Pas de feu vert commercial global** : une fin d’essai anticipée laisse Sokar en `trialing` alors que Stripe est `active` (événements de la même seconde départagés par ordre alphabétique, rappel d’essai appliqué comme un changement d’abonnement, dans `billing.service.ts`), et le formulaire public d’inscription et l’onboarding n’ont pas été parcourus de bout en bout. Changements de formule, annuel, Multi-site, 3DS, refus et recouvrement restent hors de cette recette.
 
 ## Diagnostic d’un ancien restaurant inaccessible
 
