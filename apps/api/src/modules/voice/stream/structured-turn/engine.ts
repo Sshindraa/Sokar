@@ -83,6 +83,7 @@ import {
   takeSpeculation,
 } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
+import { createTurnFiller, waitForVoiceFiller, withoutRepeatedInterjection } from '../voice-filler';
 
 /** Le modèle a répondu, mais sans rien d'exploitable : ce n'est pas une panne du fournisseur. */
 class UnusableTurnOutputError extends Error {}
@@ -555,6 +556,14 @@ export async function runStructuredTurn(
       mgr.handleBargeIn(session);
     };
   }
+  // Petit mot d'attente quand la réponse tarde (voir voice-filler.ts) : `null` hors restaurants listés.
+  const filler = createTurnFiller(session, contextTts?.provider ?? null, {
+    transcript,
+    lastAwaiting: state.lastAwaiting,
+    turnId,
+    signal: abortController.signal,
+    ...(options.callerFinished ? { callerFinished: true } : {}),
+  });
   const spokenPhrases: string[] = [];
   // Premiers mots de la réponse dits dès la première virgule (voir `PhraseSplitter`) : ElevenLabs seulement, qui
   // génère alors ce début sans attendre la fin de phrase. Mesure du 21/10 : la voix part ~0,15 à 0,26 s plus tôt.
@@ -592,6 +601,7 @@ export async function runStructuredTurn(
           '[structured-turn] TTS context failed',
         );
         if (outcome === 'http_fallback') {
+          await waitForVoiceFiller(session);
           await speakTtsStreamed(session, spokenPhrases.join(' ')).catch(() => undefined);
         }
       }
@@ -638,7 +648,12 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)), {
+      let ttsText = cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session));
+      // « D'accord… » vient d'être dit par le son d'attente : la réponse ne le répète pas.
+      const fillerText = spokenPhrases.length === 1 ? filler?.playedText : null;
+      if (fillerText) ttsText = withoutRepeatedInterjection(ttsText, fillerText);
+      filler?.replyQueued();
+      contextTts.push(ttsText, {
         ...toneForNextPhrase(),
         ...(earlyPhrase ? { flush: true } : {}),
       });
@@ -739,6 +754,7 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      if (!actionResult) filler?.observe({ action, turnComplete });
       replyTone ??= /"tone"\s*:\s*"([a-z]+)"/.exec(extractor.raw)?.[1] ?? null;
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
@@ -916,6 +932,7 @@ export async function runStructuredTurn(
   };
 
   const runAvailability = async (): Promise<string> => {
+    filler?.expectLongWait('check_availability');
     const { date, time, partySize } = state.draft;
     recordDebugTool(session, 'checkAvailability');
     recordVoiceTurnEvent(session, 'availability_started', {});
@@ -970,6 +987,7 @@ export async function runStructuredTurn(
   };
 
   const runCreateReservation = async (): Promise<string> => {
+    filler?.expectLongWait('create_reservation');
     const { date, time, partySize, customerName } = state.draft;
     const { conversation } = session;
     conversation.slots.date = date;
@@ -997,6 +1015,7 @@ export async function runStructuredTurn(
   const endCall = async (goodbye: string) => {
     await flushSpeech();
     session.history.push({ role: 'assistant', content: goodbye });
+    await waitForVoiceFiller(session);
     await finishCall(session, mgr, goodbye);
   };
 
@@ -1307,9 +1326,11 @@ export async function runStructuredTurn(
     const fallback = buildLlmFailurePlan(session, cause).reply;
     session.history.push({ role: 'assistant', content: fallback });
     mgr.transition(session, 'SPEAKING');
+    await waitForVoiceFiller(session);
     await speakTtsStreamed(session, fallback);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
   } finally {
+    filler?.dispose();
     // Tour sans phrase (fragment retenu, relance, interruption) : le contexte
     // ouvert d'avance est fermé sans audio.
     if (contextTts && !spokenPhrases.length) contextTts.cancel('unused');

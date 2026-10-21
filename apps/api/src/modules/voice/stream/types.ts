@@ -326,6 +326,9 @@ export interface VoiceTurnLatencyTrace {
   holdMs?: number;
   endOfSpeechToFirstAudioMs?: number;
   firstAudioIsFiller?: boolean;
+  /** Premier son de la vraie réponse quand un son d'attente est parti avant (voir voice-filler.ts). */
+  replyAudioSentAt?: number;
+  endOfSpeechToReplyAudioMs?: number;
   llmFirstTokenMs?: number;
   llmFirstPhraseMs?: number;
   llmCompletedMs?: number;
