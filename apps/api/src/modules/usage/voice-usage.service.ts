@@ -145,6 +145,7 @@ export function addLlmKindUsage(
   inputTokens: number,
   outputTokens: number,
   interrupted: boolean,
+  cachedInputTokens = 0,
 ): void {
   if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return;
   const counters = ensureVoiceUsage(session);
@@ -153,11 +154,15 @@ export function addLlmKindUsage(
     requests: 0,
     interrupted: 0,
     inputTokens: 0,
+    cachedInputTokens: 0,
     outputTokens: 0,
   });
   current.requests += 1;
   if (interrupted) current.interrupted += 1;
   current.inputTokens += Math.max(0, Math.round(inputTokens));
+  if (Number.isFinite(cachedInputTokens)) {
+    current.cachedInputTokens += Math.max(0, Math.round(cachedInputTokens));
+  }
   current.outputTokens += Math.max(0, Math.round(outputTokens));
 }
 

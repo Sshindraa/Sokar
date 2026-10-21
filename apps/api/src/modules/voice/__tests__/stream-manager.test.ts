@@ -724,13 +724,17 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
       expect(await fallbackUrl(undefined)).toBe('https://openrouter.ai/api/v1/chat/completions');
     });
 
-    it('compte chaque requête par sorte, et une requête en échec comme interrompue', async () => {
+    it('compte chaque requête par sorte, sa part servie par le cache, et une requête en échec comme interrompue', async () => {
       voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
       voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
       voiceConfig.OPENROUTER_API_KEY = undefined;
       const usageChunk = `data: ${JSON.stringify({
         choices: [{ delta: { content: '{"say":"ok"}' } }],
-        usage: { prompt_tokens: 5000, completion_tokens: 12 },
+        usage: {
+          prompt_tokens: 5000,
+          completion_tokens: 12,
+          prompt_tokens_details: { cached_tokens: 4864 },
+        },
       })}\n\ndata: [DONE]\n\n`;
       const fetchMock = vi
         .fn()
@@ -765,11 +769,13 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
         requests: 1,
         interrupted: 0,
         inputTokens: 5000,
+        cachedInputTokens: 4864,
         outputTokens: 12,
       });
       expect(session.voiceUsage?.llmByKind?.speculation).toMatchObject({
         requests: 1,
         interrupted: 1,
+        cachedInputTokens: 0,
         outputTokens: 0,
       });
       expect(session.voiceUsage?.llmByKind?.speculation?.inputTokens).toBeGreaterThan(0);
