@@ -447,6 +447,12 @@ VOICE_PRACTICAL_INFO_RESTAURANT_IDS=""
 # jugée plus soignée que le défaut mais moins naturelle (4 contre 2). Pour un son le plus naturel, le réglage par
 # défaut (bistrot, naturel) reste la recommandation ; la maison est un choix du restaurant.
 VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
+# Profil client du CRM dans le prompt (restaurants listés, `*` = tous, vide = aucun : prompt identique à avant).
+# Visites réelles lues dans les réservations (honorées, placées, ou confirmées passées ; annulées et absences
+# exclues), dernière visite, prochaine réservation, taille de groupe médiane, préférences saisies ou confirmées
+# par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée. Activer d'abord Chez
+# Sokar et écouter un appel d'un client connu avant d'élargir.
+VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).

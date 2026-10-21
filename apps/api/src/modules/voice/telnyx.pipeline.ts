@@ -17,6 +17,7 @@ import {
   isVoiceFeatureEnabledForRestaurant,
   isVoicePracticalInfoEnabled,
   isVoicePersonalityStyleEnabled,
+  isVoiceCrmProfileEnabled,
 } from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
@@ -188,13 +189,14 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // Avant : checkMarginHealth → isVoicePipelineEnabled → lookupOrCreate
         //         (3 awaits séquentiels = ~50-150ms cumulés)
         // Après : Promise.all des 3 en parallèle = max(3) au lieu de sum(3)
+        const crmProfileEnabled = isVoiceCrmProfileEnabled(ctx.id);
         const [safe, voiceEnabled, billingSuspended, customer] = await Promise.all([
           RestaurantService.checkMarginHealth(ctx.id),
           isVoicePipelineEnabled(ctx.id),
           isBillingSuspended(ctx.id),
           payload.from
             ? CustomerService.lookupOrCreate(ctx.id, payload.from).then((caller) =>
-                CustomerService.withVoiceProfile(ctx.id, caller),
+                crmProfileEnabled ? CustomerService.withVoiceProfile(ctx.id, caller) : caller,
               )
             : Promise.resolve(null),
         ]);
@@ -246,18 +248,25 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           );
         }
 
-        const customerExtra = customer
-          ? CustomerService.buildVipPromptExtra(customer, { timezone: ctx.timezone })
-          : '';
-        const returningCustomerFirstName = customer
-          ? CustomerService.returningCustomerFirstName(customer)
-          : '';
+        // Sans profil CRM (restaurant non listé), le contexte client reste celui d'avant.
+        const customerExtra = !customer
+          ? ''
+          : crmProfileEnabled
+            ? CustomerService.buildVipPromptExtra(customer, { timezone: ctx.timezone })
+            : CustomerService.buildLegacyVipPromptExtra(customer);
+        const returningCustomerFirstName =
+          customer && crmProfileEnabled ? CustomerService.returningCustomerFirstName(customer) : '';
+        const customerGreeting =
+          customer && !crmProfileEnabled
+            ? CustomerService.buildLegacyReturningGreeting(customer)
+            : '';
 
         const systemPrompt = buildSystemPrompt({
           ...ctx,
           openingHours: ctx.openingHours as OpeningHours,
           customerExtra,
           returningCustomerFirstName,
+          customerGreeting,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount,
           voiceGender: agentVoiceGender(ctx.personality),
           personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),
