@@ -275,6 +275,8 @@ export interface VoiceUsageKindCounter {
   requests: number;
   interrupted: number;
   inputTokens: number;
+  /** Part de l'entrée servie par le cache de prompt du fournisseur (cached_tokens), 0 s'il ne le dit pas. */
+  cachedInputTokens: number;
   outputTokens: number;
 }
 

@@ -878,7 +878,14 @@ export class CallSessionManager {
           options.onDelta(delta);
         },
       });
-      addLlmKindUsage(session, kind, result.inputTokens, result.outputTokens, false);
+      addLlmKindUsage(
+        session,
+        kind,
+        result.inputTokens,
+        result.outputTokens,
+        false,
+        result.cachedInputTokens,
+      );
       return result.text;
     } catch (error) {
       // Interrompue (anticipation jetée, appelant qui reprend) ou en échec : le fournisseur a déjà reçu l'entrée.
@@ -913,7 +920,12 @@ export class CallSessionManager {
       maxTokens?: number;
       onDelta: (delta: string) => void;
     },
-  ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  ): Promise<{
+    text: string;
+    inputTokens: number;
+    cachedInputTokens: number;
+    outputTokens: number;
+  }> {
     const request = {
       responseFormat,
       maxTokens: options.maxTokens ?? 400,
@@ -942,6 +954,7 @@ export class CallSessionManager {
     let pending = '';
     let text = '';
     let inputTokens: number | undefined;
+    let cachedInputTokens = 0;
     let outputTokens: number | undefined;
     // Chronologie du flux, journalisée seulement s'il est lent : premier texte et plus longue pause.
     const openedMs = Date.now() - startedAt;
@@ -967,10 +980,16 @@ export class CallSessionManager {
           try {
             const chunk = JSON.parse(payload) as {
               choices?: Array<{ delta?: { content?: string | null } }>;
-              usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+              usage?: {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                prompt_tokens_details?: { cached_tokens?: number } | null;
+              } | null;
             };
             if (chunk.usage) {
               inputTokens = chunk.usage.prompt_tokens ?? inputTokens;
+              cachedInputTokens =
+                chunk.usage.prompt_tokens_details?.cached_tokens ?? cachedInputTokens;
               outputTokens = chunk.usage.completion_tokens ?? outputTokens;
             }
             const delta = chunk.choices?.[0]?.delta?.content;
@@ -1013,6 +1032,7 @@ export class CallSessionManager {
     return {
       text,
       inputTokens: inputTokens ?? estimateMessagesTokens(messages),
+      cachedInputTokens,
       outputTokens: outputTokens ?? estimateTokenCount(text),
     };
   }
