@@ -31,121 +31,153 @@ describe('CustomerService', () => {
     vi.clearAllMocks();
   });
 
-  it('buildVipPromptExtra — client VIP avec nom et visites', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Jean Dupont',
-      visitCount: 3,
-      isVip: true,
-      specialOccasion: null,
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: null,
+  const baseCustomer = {
+    id: '1',
+    name: 'Jean Dupont',
+    visitCount: 0,
+    isVip: false,
+    specialOccasion: null,
+    notes: null,
+    lastCallAt: null,
+    partySizeTypical: null,
+  };
+  const emptyProfile = {
+    pastVisits: 0,
+    lastVisitAt: null,
+    upcomingReservation: null,
+    typicalPartySize: null,
+    preferences: [],
+    tags: [],
+  };
+
+  describe('contexte client historique (restaurant hors profil CRM)', () => {
+    it('reste identique à avant', () => {
+      expect(
+        CustomerService.buildLegacyVipPromptExtra({ ...baseCustomer, visitCount: 3, isVip: true }),
+      ).toBe(
+        "Le client s'appelle Jean Dupont. C'est sa 4e visite. ⭐ Client VIP — sois particulièrement attentionné.",
+      );
+      expect(CustomerService.buildLegacyReturningGreeting({ ...baseCustomer, isVip: true })).toBe(
+        ', content de vous revoir M. Jean',
+      );
+      expect(CustomerService.buildLegacyReturningGreeting({ ...baseCustomer, visitCount: 1 })).toBe(
+        ', ravi de vous revoir Jean',
+      );
+      expect(CustomerService.buildLegacyReturningGreeting(baseCustomer)).toBe('');
     });
-    expect(result).toContain('Jean Dupont');
-    expect(result).toContain('VIP');
-    expect(result).toContain('4e visite');
   });
 
-  it('buildVipPromptExtra — client inconnu → chaîne vide', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: null,
-      visitCount: 0,
-      isVip: false,
-      specialOccasion: null,
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: null,
-    });
-    expect(result).toBe('');
-  });
-
-  it('buildVipPromptExtra — occasion spéciale incluse', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Marie',
-      visitCount: 1,
-      isVip: false,
-      specialOccasion: 'anniversaire',
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: null,
-    });
-    expect(result).toContain('anniversaire');
-  });
-
-  it("buildVipPromptExtra — partySizeTypical affiché quand on l'a", () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Jean',
-      visitCount: 5,
-      isVip: false,
-      specialOccasion: null,
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: 4,
-    });
-    expect(result).toContain('4 pers.');
-  });
-
-  describe('buildReturningGreeting', () => {
-    it('VIP nommé → "content de vous revoir M. <prénom>"', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Jean Dupont',
-        visitCount: 10,
-        isVip: true,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toContain('content de vous revoir');
-      expect(result).toContain('M. Jean');
-    });
-
-    it('retour non-VIP avec visites → "ravi de vous revoir <prénom>"', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Marie Curie',
-        visitCount: 2,
-        isVip: false,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toContain('ravi de vous revoir');
-      expect(result).toContain('Marie');
-    });
-
-    it('nouveau client (visitCount=0) → chaîne vide', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Paul',
-        visitCount: 0,
-        isVip: false,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toBe('');
-    });
-
+  describe('buildVipPromptExtra', () => {
     it('client inconnu (pas de nom) → chaîne vide', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: null,
-        visitCount: 5,
-        isVip: true,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
+      expect(CustomerService.buildVipPromptExtra({ ...baseCustomer, name: null })).toBe('');
+    });
+
+    it("compte les vraies visites, jamais l'ancien compteur de réservations téléphone", () => {
+      const result = CustomerService.buildVipPromptExtra(
+        {
+          ...baseCustomer,
+          visitCount: 9,
+          voiceProfile: {
+            ...emptyProfile,
+            pastVisits: 3,
+            lastVisitAt: '2026-09-12T18:30:00.000Z',
+            typicalPartySize: 4,
+          },
+        },
+        { timezone: 'Europe/Paris' },
+      );
+      expect(result).toContain('Déjà venu 3 fois ; dernière visite le 12 septembre 2026.');
+      expect(result).toContain('Taille de groupe habituelle : 4 pers.');
+      expect(result).not.toContain('9');
+      expect(result).not.toContain('visite.');
+    });
+
+    it('dit « aucune visite » quand le numéro a seulement réservé', () => {
+      const result = CustomerService.buildVipPromptExtra({
+        ...baseCustomer,
+        visitCount: 2,
+        voiceProfile: emptyProfile,
       });
-      expect(result).toBe('');
+      expect(result).toContain('Aucune visite passée connue.');
+    });
+
+    it('transmet réservation à venir, préférences confirmées et étiquettes', () => {
+      const result = CustomerService.buildVipPromptExtra(
+        {
+          ...baseCustomer,
+          voiceProfile: {
+            ...emptyProfile,
+            upcomingReservation: { startsAt: '2026-10-24T18:00:00.000Z', partySize: 4 },
+            preferences: [
+              { key: 'preferred_section', value: 'terrasse' },
+              { key: 'dietary_restrictions', value: 'sans gluten' },
+            ],
+            tags: ['Habitué'],
+          },
+        },
+        { timezone: 'Europe/Paris' },
+      );
+      expect(result).toContain('Réservation à venir : samedi 24 octobre à 20:00, 4 pers.');
+      expect(result).toContain('zone préférée : terrasse ; régime alimentaire : sans gluten');
+      expect(result).toContain("Étiquettes de l'équipe : Habitué.");
+      expect(result).toContain("ne s'étend pas aux autres convives");
+    });
+
+    it("VIP, occasion et note du gérant, sans accord imposé à l'agent", () => {
+      const result = CustomerService.buildVipPromptExtra({
+        ...baseCustomer,
+        isVip: true,
+        specialOccasion: 'anniversaire',
+        notes: 'Aime la table 12',
+      });
+      expect(result).toContain("Client VIP : soigne particulièrement l'échange.");
+      expect(result).toContain('Occasion spéciale : anniversaire.');
+      expect(result).toContain('Note du gérant : Aime la table 12');
+      expect(result).not.toContain('attentionné');
+    });
+
+    it('sans profil chargé, garde la taille de groupe historique', () => {
+      const result = CustomerService.buildVipPromptExtra({ ...baseCustomer, partySizeTypical: 4 });
+      expect(result).toContain('4 pers.');
+      expect(result).not.toContain('Déjà venu');
+    });
+  });
+
+  describe('returningCustomerFirstName', () => {
+    it('client déjà venu → prénom seul', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          voiceProfile: { ...emptyProfile, pastVisits: 2 },
+        }),
+      ).toBe('Jean');
+    });
+
+    it("VIP marqué par l'équipe sans visite enregistrée → prénom", () => {
+      expect(CustomerService.returningCustomerFirstName({ ...baseCustomer, isVip: true })).toBe(
+        'Jean',
+      );
+    });
+
+    it('réservations téléphone sans visite passée → rien', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          visitCount: 5,
+          voiceProfile: emptyProfile,
+        }),
+      ).toBe('');
+    });
+
+    it('client sans nom → rien', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          name: null,
+          isVip: true,
+          voiceProfile: { ...emptyProfile, pastVisits: 5 },
+        }),
+      ).toBe('');
     });
   });
 

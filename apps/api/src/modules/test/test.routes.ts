@@ -6,6 +6,7 @@ import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from '../voice/prompts';
 import { CallSessionManager } from '../voice/stream/manager';
+import { isVoiceCrmProfileEnabled } from '../voice/stream/feature-flags';
 import { logger } from '../../shared/logger/pino';
 
 const SimulateCallSchema = z.object({
@@ -83,8 +84,14 @@ export async function testRoutes(app: FastifyInstance) {
           .send({ error: "Circuit breaker triggered — trop d'appels récents" });
       }
 
-      const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
-      const customerExtra = CustomerService.buildVipPromptExtra(customer);
+      const crmProfileEnabled = isVoiceCrmProfileEnabled(ctx.id);
+      const caller = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
+      const customer = crmProfileEnabled
+        ? await CustomerService.withVoiceProfile(ctx.id, caller)
+        : caller;
+      const customerExtra = crmProfileEnabled
+        ? CustomerService.buildVipPromptExtra(customer, { timezone: ctx.timezone })
+        : CustomerService.buildLegacyVipPromptExtra(customer);
       const systemPrompt = buildSystemPrompt({
         ...ctx,
         openingHours: ctx.openingHours as OpeningHours,

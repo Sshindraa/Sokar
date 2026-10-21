@@ -412,19 +412,31 @@ describe('buildSystemPrompt', () => {
     expect(secondLastLine).toBe(customerExtra);
   });
 
-  it('devrait injecter le customerGreeting VIP dans les instructions de continuité', () => {
-    const customerGreeting = ', content de vous revoir M. Jean';
+  it('reconnaît un client connu par principe, sans formule ni civilité imposées', () => {
     const prompt = buildSystemPrompt({
       ...baseCtx,
-      customerGreeting,
+      returningCustomerFirstName: 'Jean',
     });
 
-    expect(prompt).toContain('CLIENT RECONNU');
-    expect(prompt).toContain(customerGreeting);
-    const ruleIdx = prompt.indexOf('CLIENT RECONNU');
-    const greetIdx = prompt.indexOf(customerGreeting);
-    expect(greetIdx).toBeGreaterThan(ruleIdx);
-    expect(greetIdx).toBeLessThan(ruleIdx + 200);
+    expect(prompt).toContain('CLIENT CONNU');
+    expect(prompt).toContain('prénom Jean');
+    expect(prompt).toContain('avec tes propres mots');
+    expect(prompt).toContain('ni Monsieur ni Madame');
+    expect(prompt).not.toContain('content de vous revoir');
+  });
+
+  it("garde le fragment d'accueil historique hors profil CRM", () => {
+    const customerGreeting = ', content de vous revoir M. Jean';
+    const prompt = buildSystemPrompt({ ...baseCtx, customerGreeting });
+    expect(prompt).toContain(
+      `CLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${customerGreeting}".`,
+    );
+    expect(prompt).not.toContain('CLIENT CONNU');
+  });
+
+  it("n'ajoute aucune reconnaissance pour un appelant inconnu", () => {
+    const prompt = buildSystemPrompt({ ...baseCtx, returningCustomerFirstName: '' });
+    expect(prompt).not.toContain('CLIENT CONNU');
   });
 });
 describe('phrases à dire : des principes, pas des formules', () => {

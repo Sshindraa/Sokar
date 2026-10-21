@@ -115,6 +115,21 @@ export function isVoicePersonalityStyleEnabled(
   );
 }
 
+/**
+ * Profil client du CRM dans le prompt : visites réelles lues dans les réservations, prochaine
+ * réservation, préférences confirmées et étiquettes, et reconnaissance d'un client connu par
+ * principe. Seulement pour les restaurants listés (`VOICE_CRM_PROFILE_RESTAURANT_IDS`, `*` = tous) ;
+ * vide = aucun, le prompt reste celui d'avant.
+ */
+export function isVoiceCrmProfileEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!restaurantId) return false;
+  const ids = parseRestaurantIdList(env.VOICE_CRM_PROFILE_RESTAURANT_IDS);
+  return ids.includes('*') || ids.includes(restaurantId);
+}
+
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,

@@ -8,6 +8,19 @@ import {
   rebuildCustomerMetricSnapshot,
   upsertCustomerIdentity,
 } from './customer-crm.service';
+import { loadCustomerVoiceProfile, type CustomerVoiceProfile } from './customer-voice-profile';
+
+const VOICE_PREFERENCE_LABELS: Record<CustomerVoiceProfile['preferences'][number]['key'], string> =
+  {
+    preferred_section: 'zone préférée',
+    preferred_table: 'table préférée',
+    dietary_restrictions: 'régime alimentaire',
+    accessibility_needs: 'accessibilité',
+    preferred_language: 'langue préférée',
+    occasion_type: 'occasion habituelle',
+    service_preference: 'service préféré',
+    group_pattern: 'groupe habituel',
+  };
 
 export interface CustomerContext {
   id: string;
@@ -18,6 +31,8 @@ export interface CustomerContext {
   notes: string | null;
   lastCallAt: Date | null;
   partySizeTypical: number | null;
+  /** Real visit history and confirmed CRM data, loaded for voice calls only. */
+  voiceProfile?: CustomerVoiceProfile;
 }
 
 export class CustomerService {
@@ -262,7 +277,12 @@ export class CustomerService {
     }
   }
 
-  static buildVipPromptExtra(customer: CustomerContext): string {
+  /**
+   * Customer context used before the CRM voice profile (restaurants outside
+   * `VOICE_CRM_PROFILE_RESTAURANT_IDS`). Kept verbatim so the prompt stays
+   * identical until a restaurant is listed.
+   */
+  static buildLegacyVipPromptExtra(customer: CustomerContext): string {
     if (!customer.name) return '';
     const lines: string[] = [`Le client s'appelle ${customer.name}.`];
     if (customer.visitCount > 0) lines.push(`C'est sa ${customer.visitCount + 1}e visite.`);
@@ -275,12 +295,8 @@ export class CustomerService {
     return lines.join(' ');
   }
 
-  /**
-   * Returns a short French greeting fragment for a returning customer.
-   * Empty string if we don't know the customer well enough (no name).
-   * Used in the first utterance of returning VIPs.
-   */
-  static buildReturningGreeting(customer: CustomerContext): string {
+  /** Greeting fragment used before the CRM voice profile; see buildLegacyVipPromptExtra. */
+  static buildLegacyReturningGreeting(customer: CustomerContext): string {
     if (!customer.name) return '';
     if (customer.isVip) return `, content de vous revoir M. ${customer.name.split(' ')[0]}`;
     if (customer.visitCount >= 1) {
@@ -288,6 +304,99 @@ export class CustomerService {
     }
     return '';
   }
+
+  /**
+   * Adds the real visit history and the confirmed CRM data to a caller. Best
+   * effort: a CRM read failure leaves the call on the basic customer context.
+   */
+  static async withVoiceProfile(
+    restaurantId: string,
+    customer: CustomerContext,
+    now = new Date(),
+  ): Promise<CustomerContext> {
+    try {
+      const voiceProfile = await loadCustomerVoiceProfile(restaurantId, customer.id, now);
+      return { ...customer, voiceProfile };
+    } catch (error) {
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error), restaurantId },
+        '[crm] voice profile unavailable',
+      );
+      return customer;
+    }
+  }
+
+  static buildVipPromptExtra(
+    customer: CustomerContext,
+    options: { timezone?: string } = {},
+  ): string {
+    if (!customer.name) return '';
+    const timezone = options.timezone ?? 'Europe/Paris';
+    const profile = customer.voiceProfile;
+    const lines: string[] = [`- Nom : ${customer.name}.`];
+
+    if (profile) {
+      if (profile.pastVisits > 0) {
+        const last = profile.lastVisitAt
+          ? ` ; dernière visite le ${formatVoiceDate(profile.lastVisitAt, timezone, false)}`
+          : '';
+        lines.push(`- Déjà venu ${profile.pastVisits} fois${last}.`);
+      } else {
+        lines.push('- Aucune visite passée connue.');
+      }
+      if (profile.upcomingReservation) {
+        const { startsAt, partySize } = profile.upcomingReservation;
+        lines.push(
+          `- Réservation à venir : ${formatVoiceDate(startsAt, timezone, true)}, ${partySize} pers.`,
+        );
+      }
+    }
+    const typicalPartySize = profile ? profile.typicalPartySize : customer.partySizeTypical;
+    if (typicalPartySize && typicalPartySize > 0) {
+      lines.push(`- Taille de groupe habituelle : ${typicalPartySize} pers.`);
+    }
+    if (profile && profile.preferences.length > 0) {
+      const preferences = profile.preferences
+        .map((preference) => `${VOICE_PREFERENCE_LABELS[preference.key]} : ${preference.value}`)
+        .join(' ; ');
+      lines.push(`- Préférences notées par l'équipe : ${preferences}.`);
+    }
+    if (profile && profile.tags.length > 0) {
+      lines.push(`- Étiquettes de l'équipe : ${profile.tags.join(', ')}.`);
+    }
+    if (customer.isVip) lines.push("- Client VIP : soigne particulièrement l'échange.");
+    if (customer.specialOccasion) lines.push(`- Occasion spéciale : ${customer.specialOccasion}.`);
+    if (customer.notes) lines.push(`- Note du gérant : ${customer.notes}`);
+
+    return [
+      'CLIENT RECONNU PAR SON NUMÉRO (fiche du restaurant) :',
+      ...lines,
+      "Ces informations t'aident à mieux le servir : tu ne les récites pas, tu t'en sers au moment où elles servent (sa zone ou sa table habituelle quand vous choisissez, sa réservation à venir s'il appelle à son sujet). Un régime alimentaire ou un besoin d'accessibilité se confirme avec lui plutôt que d'être supposé, et ne s'étend pas aux autres convives. Si l'appelant dit être une autre personne, ne t'en sers pas.",
+    ].join('\n');
+  }
+
+  /**
+   * First name of a caller the restaurant knows (a past visit, or marked VIP by
+   * the team), for the agent to acknowledge in its own words. Empty otherwise.
+   */
+  static returningCustomerFirstName(customer: CustomerContext): string {
+    if (!customer.name) return '';
+    const pastVisits = customer.voiceProfile?.pastVisits ?? 0;
+    if (pastVisits < 1 && !customer.isVip) return '';
+    return customer.name.trim().split(/\s+/)[0] ?? '';
+  }
+}
+
+function formatVoiceDate(iso: string, timezone: string, withTime: boolean): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    weekday: withTime ? 'long' : undefined,
+    day: 'numeric',
+    month: 'long',
+    year: withTime ? undefined : 'numeric',
+    hour: withTime ? '2-digit' : undefined,
+    minute: withTime ? '2-digit' : undefined,
+    timeZone: timezone,
+  }).format(new Date(iso));
 }
 
 async function findCustomerForPhone(
