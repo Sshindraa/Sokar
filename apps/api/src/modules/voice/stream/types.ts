@@ -111,6 +111,8 @@ export type SttFinalTrigger =
   /** Partielle Deepgram figée sans fin de phrase : `Finalize` a forcé le segment. */
   | 'stalled_finalize'
   | 'safety_flush'
+  /** Relève au silence : texte rendu par un `Finalize` envoyé au silence réel, tour clos par la règle habituelle. */
+  | 'silence_flush'
   | 'spelling_hold'
   | 'semantic_hold';
 
@@ -324,6 +326,9 @@ export interface VoiceTurnLatencyTrace {
   holdMs?: number;
   endOfSpeechToFirstAudioMs?: number;
   firstAudioIsFiller?: boolean;
+  /** Premier son de la vraie réponse quand un son d'attente est parti avant (voir voice-filler.ts). */
+  replyAudioSentAt?: number;
+  endOfSpeechToReplyAudioMs?: number;
   llmFirstTokenMs?: number;
   llmFirstPhraseMs?: number;
   llmCompletedMs?: number;
@@ -557,6 +562,15 @@ export interface CallSession {
   sttDeepgramPendingInterim?: boolean;
   /** Deepgram : `Finalize` envoyé en cours d'appel, le prochain segment final clôt le tour. */
   sttDeepgramFinalizeRequested?: boolean;
+  /** Deepgram : dernier texte non vide reçu (partielle ou segment final), horloge serveur. */
+  sttDeepgramLastTextAt?: number;
+  /** Deepgram : dernière relève au silence envoyée (`Finalize` sur voix sans texte), horloge serveur. */
+  sttDeepgramSilenceFlushAt?: number;
+  /**
+   * Deepgram : texte rendu par une relève au silence, gardé dans les segments finaux et traité comme une
+   * partielle (partielle figée, fin jugée par le modèle) ; à l'échéance, le tour part sans nouveau `Finalize`.
+   */
+  sttDeepgramFlushHeld?: boolean;
   /**
    * Deepgram : rythme des transcriptions partielles depuis le dernier segment
    * final (jamais leur texte dans les logs). Sert à expliquer un segment final

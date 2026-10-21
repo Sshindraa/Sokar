@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { processTranscriptStreaming } from '../stream/llm-handler';
 import { createConversationState } from '../stream/conversation-controller';
@@ -17,6 +17,11 @@ import {
   todayInTimezone,
 } from '../stream/structured-turn/fact-guards';
 import type { CallSession } from '../stream/types';
+import {
+  __setVoiceFillerAudioForTests,
+  voiceFillerTexts,
+  waitForVoiceFiller,
+} from '../stream/voice-filler';
 import type { CallSessionManager } from '../stream/manager';
 import { partySizeCorrectionFact } from '../stream/structured-turn/fact-guards';
 import { speakTtsStreamed } from '../stream/tts-handler';
@@ -33,7 +38,7 @@ const contextTurn: {
   finish: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
   hasAudioOutput: boolean;
-  provider: 'cartesia';
+  provider: 'cartesia' | 'elevenlabs';
   onHoldCancelled?: () => void;
 } = {
   provider: 'cartesia',
@@ -1824,6 +1829,237 @@ describe('tour structuré (canary)', () => {
         json_schema: { schema: { properties: Record<string, unknown> } };
       };
       expect(format.json_schema.schema.properties).not.toHaveProperty('tone');
+    });
+
+    describe("petits mots d'attente (VOICE_FILLER_RESTAURANT_IDS)", () => {
+      const media = (session: CallSession) =>
+        vi
+          .mocked(session.telnyxWs.send)
+          .mock.calls.filter(([payload]) => String(payload).includes('"media"')).length;
+      beforeEach(() => {
+        contextTurn.provider = 'elevenlabs';
+        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', RESTAURANT_ID);
+        vi.stubEnv('VOICE_FILLER_DELAY_MS', '300');
+        for (const text of voiceFillerTexts()) {
+          __setVoiceFillerAudioForTests(text, 'PCMA', Buffer.alloc(1_600, 0x2a));
+        }
+      });
+      afterEach(() => {
+        contextTurn.provider = 'cartesia';
+        for (const text of voiceFillerTexts()) __setVoiceFillerAudioForTests(text, 'PCMA', null);
+      });
+      function slowModel(mgr: CallSessionManager, delayMs: number): void {
+        const original = vi.mocked(mgr.streamStructuredCompletion).getMockImplementation()!;
+        vi.mocked(mgr.streamStructuredCompletion).mockImplementation(async (...args) => {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          return original(...args);
+        });
+      }
+
+      it('vérification réelle et réponse lente : un son part, la réponse suit', async () => {
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 450);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
+        await waitForVoiceFiller(session);
+
+        expect(media(session)).toBe(2);
+        expect(contextTurn.push.mock.calls.map(([text]) => text)).toEqual([
+          'Il me reste vingt heures.',
+          'À quel nom ?',
+        ]);
+      });
+
+      it('question simple, même lente : aucun son', async () => {
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 900);
+        outputs.push(turn({ awaiting: 'partySize', say: 'Pour combien de personnes ?' }));
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(media(session)).toBe(0);
+      });
+
+      it('réglage vide : aucun son, même lent', async () => {
+        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', '');
+        const { session, mgr, outputs } = fixture();
+        session.codec = 'PCMA';
+        slowModel(mgr, 450);
+        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+        outputs.push(
+          turn({ draft, action: 'check_availability' }),
+          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
+        );
+        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
+
+        expect(media(session)).toBe(0);
+      });
+    });
+
+    describe('premiers mots avant la fin de la première phrase (VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS)', () => {
+      beforeEach(() => {
+        contextTurn.provider = 'elevenlabs';
+        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', RESTAURANT_ID);
+      });
+      afterEach(() => {
+        contextTurn.provider = 'cartesia';
+      });
+      const pushed = () => contextTurn.push.mock.calls.map(([text]) => text);
+
+      it('envoie les premiers mots dès la virgule, générés tout de suite, puis la suite', async () => {
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ? Merci.' }),
+        );
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(contextTurn.push.mock.calls).toEqual([
+          ['Très bien,', { flush: true }],
+          ['pour combien de personnes ?', { flush: true }],
+          ['Merci.', { flush: true }],
+        ]);
+        // L'historique garde la phrase du modèle, entière.
+        expect(session.history.at(-1)?.content).toBe(
+          'Très bien, pour combien de personnes ? Merci.',
+        );
+      });
+
+      it('le ton part avec les premiers mots, une seule fois', async () => {
+        vi.stubEnv('VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS', RESTAURANT_ID);
+        vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
+        vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', RESTAURANT_ID);
+        vi.stubEnv('ELEVENLABS_API_KEY', '');
+        const { session, mgr, outputs } = fixture();
+        const { say, ...rest } = turn({
+          awaiting: 'partySize',
+          say: 'Oh, quarante ans, quelle belle occasion. Vous serez combien ?',
+        });
+        outputs.push({ ...rest, tone: 'cheerful', say });
+        await processTranscriptStreaming(session, "c'est pour les quarante ans de ma femme", mgr);
+
+        expect(contextTurn.push.mock.calls).toEqual([
+          ['Oh, quarante ans,', { tone: 'cheerful', flush: true }],
+          ['quelle belle occasion.', { flush: true }],
+          ['Vous serez combien ?', { flush: true }],
+        ]);
+      });
+
+      it('`*` vaut pour tous les restaurants', async () => {
+        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', ' * ');
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ?' }),
+        );
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(pushed()).toEqual(['Très bien,', 'pour combien de personnes ?']);
+      });
+
+      it('réglage vide : la phrase part entière, comme avant', async () => {
+        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', '');
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ?' }),
+        );
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(contextTurn.push.mock.calls).toEqual([
+          ['Très bien, pour combien de personnes ?', {}],
+        ]);
+      });
+
+      it('sans effet hors ElevenLabs', async () => {
+        contextTurn.provider = 'cartesia';
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ?' }),
+        );
+        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
+
+        expect(pushed()).toEqual(['Très bien, pour combien de personnes ?']);
+      });
+
+      it('rien ne part tant que l’appelant n’a pas fini (turnComplete=false)', async () => {
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({
+            turnComplete: false,
+            interpretation: 'unclear',
+            say: 'Très bien, je vous écoute.',
+          }),
+        );
+        await processTranscriptStreaming(session, 'je voudrais', mgr);
+
+        expect(contextTurn.push).not.toHaveBeenCalled();
+      });
+
+      it('rien ne part avant le résultat d’une action : seule la réponse du second passage est dite', async () => {
+        const { session, mgr, outputs } = fixture();
+        outputs.push(
+          turn({
+            action: 'check_availability',
+            draft: { date: TOMORROW, time: '20:00', partySize: 2, customerName: '' },
+            say: 'Un instant, je regarde.',
+          }),
+          turn({
+            draft: { date: TOMORROW, time: '20:00', partySize: 2, customerName: '' },
+            awaiting: 'customerName',
+            say: 'C’est possible, à quel nom ?',
+          }),
+        );
+        await processTranscriptStreaming(session, 'demain 20 heures pour deux', mgr);
+
+        expect(pushed()).not.toContain('Un instant,');
+        expect(pushed()[0]).toBe('C’est possible,');
+      });
+
+      it('la relecture du nom n’est jamais coupée : elle reste retenue jusqu’à la vérification', async () => {
+        const fx = fixture();
+        const state = createStructuredTurnState();
+        state.draft = { date: TOMORROW, time: '12:30', partySize: 5, customerName: '' };
+        state.lastAwaiting = 'customerName';
+        fx.session.structuredTurn = state;
+        fx.outputs.push(
+          turn({
+            draft: { date: TOMORROW, time: '12:30', partySize: 5, customerName: 'ASSAMM' },
+            awaiting: 'customerNameConfirmation',
+            say: "Donc Assamm, avec deux s et deux m. C'est bien ça ?",
+          }),
+          turn({
+            draft: { date: TOMORROW, time: '12:30', partySize: 5, customerName: 'ASSAMM' },
+            awaiting: 'customerNameConfirmation',
+            say: "Donc A, S, S, A, M, M. C'est bien ça ?",
+          }),
+        );
+        await processTranscriptStreaming(fx.session, 'a 2 s a 2 m', fx.mgr);
+
+        expect(pushed().join(' ')).not.toContain('Assamm');
+        expect(pushed()).not.toContain('Donc Assamm,');
+      });
+
+      it('« question seule » actif : la phrase retirée n’est pas entamée', async () => {
+        const fx = fixture();
+        fx.session.structuredTurn = {
+          ...createStructuredTurnState(),
+          draft: { date: TOMORROW, time: '', partySize: 0, customerName: '' },
+          lastAwaiting: 'time',
+        };
+        fx.outputs.push(
+          turn({
+            draft: { date: TOMORROW, time: '20:00', partySize: 0, customerName: '' },
+            awaiting: 'partySize',
+            say: 'Samedi soir, ça marche. Vous êtes combien ?',
+          }),
+        );
+        await processTranscriptStreaming(fx.session, 'pour 20 heures', fx.mgr);
+
+        expect(pushed()).toEqual(['Vous êtes combien ?']);
+      });
     });
 
     it('ferme sans audio le contexte d’un tour où l’agent se tait', async () => {

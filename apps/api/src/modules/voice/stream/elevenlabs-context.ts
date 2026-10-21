@@ -23,6 +23,7 @@ import {
   type ElevenLabsChunkAlignment,
 } from './elevenlabs-dialogue-context';
 import { holdFirstAudioForCallerSilence } from './first-audio-hold';
+import { waitForVoiceFiller } from './voice-filler';
 import type { SpokenAlignment } from './interrupted-reply';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import { persistLatencyTrace } from './session-persistence';
@@ -92,7 +93,7 @@ function wait(ms: number): Promise<void> {
  * `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` : le chemin par défaut ne le touche pas.
  *
  * Chaque phrase part dans `inputs`. `flush` vaut vrai quand la phrase se termine par une ponctuation
- * forte, pour qu'elle soit générée tout de suite ; le reste attend la phrase suivante ou `close_socket`,
+ * forte, ou quand l'appelant le demande (premiers mots d'une phrase), pour qu'elle soit générée tout de suite ; le reste attend la phrase suivante ou `close_socket`,
  * qui vide le tampon. `is_final` marque la fin de la réponse. Le socket s'ouvre pendant la génération
  * du LLM, comme Cartesia.
  */
@@ -189,7 +190,7 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
     };
   }
 
-  push(transcript: string, options: { tone?: string } = {}): void {
+  push(transcript: string, options: { tone?: string; flush?: boolean } = {}): void {
     if (this.finishedInput || this.finishedOutput || this.cancelled || !transcript) return;
     // Les segments se concatènent sans séparateur implicite : on en ajoute un entre deux mots.
     const needsSpace =
@@ -202,7 +203,7 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
     this.sendOrQueue({
       kind: 'text',
       text: `${tag}${joinedTranscript}`,
-      flush: SENTENCE_END.test(joinedTranscript),
+      flush: options.flush === true || SENTENCE_END.test(joinedTranscript),
     });
   }
 
@@ -373,6 +374,9 @@ export class ElevenLabsContextTurn implements ContextTtsTurn {
       }
       if (!this.holdDone) {
         this.holdDone = true;
+        // Un son d'attente est en cours : la réponse part après lui, jamais par-dessus.
+        await waitForVoiceFiller(this.session);
+        if (this.cancelled) return;
         // La réponse est prête ; elle ne part qu'après un vrai silence de l'appelant.
         const hold = await holdFirstAudioForCallerSilence(
           this.session,
