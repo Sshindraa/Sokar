@@ -53,7 +53,12 @@ describe('CustomerService', () => {
   describe('contexte client historique (restaurant hors profil CRM)', () => {
     it('reste identique à avant', () => {
       expect(
-        CustomerService.buildLegacyVipPromptExtra({ ...baseCustomer, visitCount: 3, isVip: true }),
+        CustomerService.buildLegacyVipPromptExtra({
+          ...baseCustomer,
+          visitCount: 3,
+          isVip: true,
+          notes: 'Diabétique',
+        }),
       ).toBe(
         "Le client s'appelle Jean Dupont. C'est sa 4e visite. ⭐ Client VIP — sois particulièrement attentionné.",
       );
@@ -123,7 +128,7 @@ describe('CustomerService', () => {
       expect(result).toContain("ne s'étend pas aux autres convives");
     });
 
-    it("VIP, occasion et note du gérant, sans accord imposé à l'agent", () => {
+    it("VIP et occasion, jamais la note libre du gérant, sans accord imposé à l'agent", () => {
       const result = CustomerService.buildVipPromptExtra({
         ...baseCustomer,
         isVip: true,
@@ -132,7 +137,8 @@ describe('CustomerService', () => {
       });
       expect(result).toContain("Client VIP : soigne particulièrement l'échange.");
       expect(result).toContain('Occasion spéciale : anniversaire.');
-      expect(result).toContain('Note du gérant : Aime la table 12');
+      expect(result).not.toContain('Aime la table 12');
+      expect(result).not.toContain('Note');
       expect(result).not.toContain('attentionné');
     });
 

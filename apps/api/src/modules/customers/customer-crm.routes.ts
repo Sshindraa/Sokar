@@ -2,7 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
-import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
+import {
+  requireCapability,
+  requireRuntimeFlagOrRestaurant,
+} from '../entitlements/entitlement.guard';
 import {
   appendCustomerTimelineEvent,
   assignCustomerTag,
@@ -97,8 +100,10 @@ const ProjectionRepairPreviewQuerySchema = z.object({
   now: z.coerce.date().optional(),
 });
 
-const requireCrmAdvancedFeature = requireRuntimeFlag(
+// Ouvert partout par CRM_ADVANCED_ENABLED, ou seulement pour les restaurants de CRM_ADVANCED_RESTAURANT_IDS.
+const requireCrmAdvancedFeature = requireRuntimeFlagOrRestaurant(
   'CRM_ADVANCED_ENABLED',
+  'CRM_ADVANCED_RESTAURANT_IDS',
   'Le CRM avancé reste désactivé jusqu’à la qualification du chantier.',
   'CRM_ADVANCED_DISABLED',
 );
