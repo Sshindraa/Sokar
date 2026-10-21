@@ -453,6 +453,15 @@ VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée. Activer d'abord Chez
 # Sokar et écouter un appel d'un client connu avant d'élargir.
 VOICE_CRM_PROFILE_RESTAURANT_IDS=""
+# Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
+# requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
+# `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,
+# régime, accessibilité, langue ou occasion. Une suggestion n'est gardée que si sa preuve figure mot pour mot dans
+# la transcription ; elle est écrite `VOICE_SUGGESTION` non confirmée, expire à 90 jours et n'écrase jamais une
+# saisie de l'équipe. L'agent ne s'en sert qu'une fois confirmée dans la fiche CRM (Confirmer / Écarter), qui
+# exige `CRM_ADVANCED_ENABLED`. Une requête par appel concerné ; tâche en file, une seule tentative.
+VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS=""
+VOICE_CRM_SUGGESTIONS_MODEL=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 # Fin de phrase Deepgram : 200 ms par défaut (958 → 849 ms en médiane au rejeu).

@@ -4,6 +4,10 @@ import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
+import {
+  CRM_VOICE_SUGGESTIONS_JOB_NAME,
+  enqueueCrmVoiceSuggestions,
+} from '../customers/customer-voice-suggestions';
 import { buildPracticalFacts } from '../restaurants/practical-info';
 import { buildSystemPrompt, type OpeningHours, agentVoiceGender } from './prompts';
 import { CallSessionManager } from './stream/manager';
@@ -606,6 +610,14 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               customerPhone: payload.from,
             },
             callFinalizationDependencies(app),
+          );
+          // Suggestions CRM tirées de ce que l'appelant a dit (restaurants listés) : en file, jamais
+          // bloquant, après la finalisation qui a écrit la transcription.
+          await enqueueCrmVoiceSuggestions(
+            payload.call_leg_id,
+            callRecord?.restaurantId,
+            app.queues.telnyxWebhooks,
+            buildTelnyxWebhookJobId(CRM_VOICE_SUGGESTIONS_JOB_NAME, payload.call_leg_id),
           );
         } catch (err: unknown) {
           app.log.error(
