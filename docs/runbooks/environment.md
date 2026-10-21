@@ -369,6 +369,12 @@ VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
 # structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
+# Relève au silence (vide = aucun restaurant, `*` = tous) : quand l'appelant a parlé, se tait depuis
+# VOICE_DEEPGRAM_SILENCE_FLUSH_MS et que Deepgram n'a rendu aucun texte, `Finalize` lui fait rendre le mot
+# qu'il retient (« midi 30 » arrivé 2,1 s après le dernier mot, appel du 21/10). Le texte rendu est traité
+# comme une partielle : partielle figée, garde de silence et verdict du modèle décident de la fin du tour.
+VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS=""
+VOICE_DEEPGRAM_SILENCE_FLUSH_MS="700"
 # Garde de silence : une fin de tour forcée (partielle figée, jugement du modèle) attend que
 # l'audio de l'appelant soit silencieux depuis ce délai, au lieu de tomber pendant qu'il parle
 # (appel 5cebe456 : 11 fins de tour forcées sur 17 tombaient pendant la parole). 0 désactive.
