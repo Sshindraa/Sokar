@@ -889,6 +889,10 @@ describe('Sokar Connect — Routes publiques', () => {
       it('enregistre les cases cochées pour la fiche client de la réservation', async () => {
         const res = await confirmWith({ reused: false, marketingConsent: consent });
         expect(res.statusCode).toBe(200);
+        expect(db.reservation.findUnique).toHaveBeenCalledWith({
+          where: { id: expect.any(String), restaurantId: RESTAURANT_ID },
+          select: { customerId: true },
+        });
         expect(recordBookingMarketingConsent).toHaveBeenCalledWith({
           restaurantId: RESTAURANT_ID,
           restaurantName: 'Chez Sokar',

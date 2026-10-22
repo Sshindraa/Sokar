@@ -17,7 +17,7 @@ vi.mock('../../../shared/db/client', () => ({
   db: {
     customer: { findFirst: vi.fn(), updateMany: vi.fn() },
     restaurant: { findUnique: vi.fn() },
-    marketingPermission: { findUnique: vi.fn() },
+    marketingPermission: { findFirst: vi.fn() },
   },
 }));
 vi.mock('../../customers/customer-crm.service', async (importActual) => ({
@@ -42,7 +42,7 @@ describe('recordBookingMarketingConsent', () => {
     vi.clearAllMocks();
     vi.mocked(db.customer.findFirst).mockResolvedValue({ emailNormalized: null } as never);
     vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as never);
-    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue(null);
+    vi.mocked(db.marketingPermission.findFirst).mockResolvedValue(null);
     vi.mocked(upsertCustomerIdentity).mockResolvedValue({ status: 'created' } as never);
     vi.mocked(upsertMarketingPermission).mockResolvedValue({} as never);
   });
@@ -151,7 +151,7 @@ describe('recordBookingMarketingConsent', () => {
   });
 
   it('does not re-stamp a consent already granted under the same wording', async () => {
-    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({
+    vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
       status: MarketingPermissionStatus.OPTED_IN,
       proofVersion: MARKETING_CONSENT_VERSION,
     } as never);
@@ -164,7 +164,7 @@ describe('recordBookingMarketingConsent', () => {
   });
 
   it('records a new opt-in after a withdrawal: the customer ticked the box again', async () => {
-    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({
+    vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
       status: MarketingPermissionStatus.OPTED_OUT,
       proofVersion: MARKETING_CONSENT_VERSION,
     } as never);

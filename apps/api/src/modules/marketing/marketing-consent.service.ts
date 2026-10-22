@@ -82,8 +82,12 @@ async function grantChannel(args: {
   source: BookingConsentSource;
   occurredAt: Date;
 }): Promise<'RECORDED' | 'ALREADY_GRANTED'> {
-  const existing = await db.marketingPermission.findUnique({
-    where: { customerId_channel: { customerId: args.customerId, channel: args.channel } },
+  const existing = await db.marketingPermission.findFirst({
+    where: {
+      restaurantId: args.restaurantId,
+      customerId: args.customerId,
+      channel: args.channel,
+    },
     select: { status: true, proofVersion: true },
   });
   if (

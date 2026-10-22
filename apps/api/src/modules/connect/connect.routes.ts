@@ -850,7 +850,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         if (!result.reused && bodyParse.data.marketingConsent) {
           try {
             const booked = await db.reservation.findUnique({
-              where: { id: result.reservationId },
+              where: { id: result.reservationId, restaurantId: restaurant.id },
               select: { customerId: true },
             });
             await recordBookingMarketingConsent({
