@@ -291,23 +291,18 @@ VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
 # Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
 VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
-# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
-# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
-# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
-VOICE_LLM_HEDGE_MS="700"
 ```
 
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
-Secours du tour structuré :
-si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
-réseau, circuit ouvert), la même requête JSON Schema stricte part vers
-OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
-`response_format`. Sans `OPENROUTER_API_KEY`, pas de secours : le tour dit la
-phrase de repli. Mesuré le 26 septembre (banc réel) : 0 sortie invalide, mais
-début de phrase vers 2 s au lieu de ~350 ms, et `awaiting` parfois `open`.
-C'est un filet d'urgence, pas un provider de production.
+Modèle principal du tour structuré (depuis le 22/10/2026, pour tous les restaurants, sans liste) :
+GPT-6 Luna via OpenRouter, dès que `OPENROUTER_API_KEY` est présente, avec les réglages
+`VOICE_STRUCTURED_FALLBACK_*` (fournisseur le plus rapide d'abord, sans raisonnement). Le tour part en deux
+requêtes OpenRouter identiques ; le premier texte gagne. Cerebras (`VOICE_LLM_MODEL`) devient le doublon
+après `VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS` (0 = seulement en repli) et le repli immédiat si OpenRouter
+refuse (401, 402, 403 : alerte « secours OpenRouter refusé »). Sans `OPENROUTER_API_KEY`, Cerebras reste seul.
+Le juge de fin de tour passe toujours par Cerebras : son crédit reste indispensable.
 
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
@@ -321,15 +316,9 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_MODEL="openai/gpt-6-luna"  VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="openai/fast"
 # VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
 # VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
-# Restaurants dont le tour part d'abord chez OpenRouter (modèle et réglages ci-dessus), Cerebras devenant
-# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. `*` = tous
-# les restaurants, y compris ceux créés après le réglage (sinon un nouveau restaurant part d'abord chez
-# Cerebras). Liste explicite : seulement les identifiants listés, séparés par des virgules.
-# VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
-# Délai avant le doublon Cerebras pour ces restaurants (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s).
-# Deux requêtes OpenRouter identiques et simultanées pour ces restaurants (ou *) : le premier texte gagne, l'autre est
-# annulée. Banc du 20/10 (40 paires, GPT-6 Luna) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ; ~0,00015 $ de plus par tour.
-# VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS=""
+# Délai avant le doublon Cerebras (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s ; prod : 0, Cerebras en repli seul).
+# Deux requêtes Luna par tour, banc du 20/10 (40 paires) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ;
+# ~0,00015 $ de plus par tour.
 # VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS="1500"
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
