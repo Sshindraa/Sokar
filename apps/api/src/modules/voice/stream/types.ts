@@ -110,6 +110,8 @@ export type SttFinalTrigger =
   | 'utterance_end_finalize'
   /** Partielle Deepgram figée sans fin de phrase : `Finalize` a forcé le segment. */
   | 'stalled_finalize'
+  /** Partielle Deepgram en attente et appelant silencieux (détection locale) : `Finalize` a forcé le segment. */
+  | 'silence_finalize'
   | 'safety_flush'
   /** Relève au silence : texte rendu par un `Finalize` envoyé au silence réel, tour clos par la règle habituelle. */
   | 'silence_flush'
@@ -588,6 +590,8 @@ export interface CallSession {
    * final (jamais leur texte dans les logs). Sert à expliquer un segment final
    * tardif : partielles encore en mouvement, ou silence côté fournisseur.
    */
+  /** Partielle déjà close par la fin de phrase sur silence local : une seule fois par partielle. */
+  sttDeepgramLocalSilenceFinalizedText?: string;
   sttDeepgramPartials?: {
     count: number;
     changes: number;

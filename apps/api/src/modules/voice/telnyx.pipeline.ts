@@ -22,6 +22,7 @@ import {
   isVoicePracticalInfoEnabled,
   isVoicePersonalityStyleEnabled,
   isVoiceCrmProfileEnabled,
+  isVoiceDeepgramReservationKeytermsEnabled,
 } from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
@@ -329,12 +330,16 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         const deepgramKeyterms =
           isVoiceFeatureEnabledForRestaurant('deepgramStt', ctx.id) &&
           isVoiceDeepgramKeytermsEnabled(ctx.id)
-            ? buildDeepgramCallKeyterms({
-                restaurantName: ctx.name,
-                address: ctx.formattedAddress,
-                city: ctx.city,
-                cuisineTypes: ctx.cuisineType,
-              })
+            ? buildDeepgramCallKeyterms(
+                {
+                  restaurantName: ctx.name,
+                  address: ctx.formattedAddress,
+                  city: ctx.city,
+                  cuisineTypes: ctx.cuisineType,
+                },
+                undefined,
+                { reservationVocabulary: isVoiceDeepgramReservationKeytermsEnabled(ctx.id) },
+              )
             : undefined;
         CallSessionManager.getInstance().create({
           callControlId: payload.call_control_id,

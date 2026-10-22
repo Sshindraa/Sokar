@@ -29,6 +29,9 @@ import {
   finalizeOnSemanticEndOfTurn,
   looksLikeSpelledLetters,
   maybeFlushDeepgramOnSilence,
+  maybeFinalizeDeepgramOnLocalSilence,
+  isDeepgramLocalSilenceFinalizeEnabledFor,
+  deepgramLocalSilenceFinalizeMs,
   isDeepgramSilenceFlushEnabledFor,
   deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
@@ -979,6 +982,94 @@ describe('Deepgram final dispatch', () => {
     expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
       500,
     );
+  });
+
+  describe('fin de phrase sur silence local (partielle figée, 12 % des tours en prod)', () => {
+    const FINALIZE = JSON.stringify({ type: 'Finalize' });
+    function listening(enabled = true) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-22T10:00:00Z'));
+      vi.stubEnv('VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS', enabled ? 'rest-1' : '');
+      const { session, onEvent } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      session.state = 'LISTENING';
+      return { session, onEvent, ws };
+    }
+    function spokeNow(session: CallSession) {
+      const now = Date.now();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: now, lastClearVoiceAt: now };
+    }
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+
+    it('réglage : liste ou *, délai borné entre 300 et 1500 ms', () => {
+      expect(isDeepgramLocalSilenceFinalizeEnabledFor('r', {})).toBe(false);
+      expect(
+        isDeepgramLocalSilenceFinalizeEnabledFor('r', {
+          VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS: '*',
+        }),
+      ).toBe(true);
+      expect(deepgramLocalSilenceFinalizeMs({})).toBe(450);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '100' }),
+      ).toBe(450);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '600' }),
+      ).toBe(600);
+    });
+
+    it('clôt la phrase dès 450 ms de silence, sans attendre 1,2 s de partielle figée', () => {
+      const { session, onEvent, ws } = listening();
+      handleNormalizedSttMessage(session, {
+        type: 'partial',
+        transcript: 'je voudrais une table pour demain soir',
+      });
+      spokeNow(session);
+      vi.advanceTimersByTime(300);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(160);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+      expect(ws.send).toHaveBeenCalledWith(FINALIZE);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'je voudrais une table pour demain soir',
+        speechFinal: false,
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'silence_finalize' }),
+      );
+    });
+
+    it('ne fait rien sans réglage, sans voix entendue, ou pendant une épellation', () => {
+      const off = listening(false);
+      handleNormalizedSttMessage(off.session, {
+        type: 'partial',
+        transcript: 'je voudrais une table',
+      });
+      spokeNow(off.session);
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(off.session)).toBe(false);
+      vi.unstubAllEnvs();
+
+      const noVoice = listening();
+      handleNormalizedSttMessage(noVoice.session, {
+        type: 'partial',
+        transcript: 'je voudrais une table',
+      });
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(noVoice.session)).toBe(false);
+      vi.unstubAllEnvs();
+
+      const spelling = listening();
+      handleNormalizedSttMessage(spelling.session, { type: 'partial', transcript: 'a d k i f' });
+      spokeNow(spelling.session);
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(spelling.session)).toBe(false);
+      expect(spelling.ws.send).not.toHaveBeenCalledWith(FINALIZE);
+    });
   });
 
   describe('relève au silence : mot retenu par Deepgram (appel du 21/10, « midi 30 »)', () => {

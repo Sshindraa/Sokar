@@ -27,6 +27,22 @@ export const DEEPGRAM_PARTY_SIZE_KEYTERMS = [
   'dix',
 ] as const;
 
+/**
+ * Vocabulaire de réservation (restaurants de `VOICE_DEEPGRAM_RESERVATION_KEYTERMS_RESTAURANT_IDS`). Les mots-clés
+ * ne portaient que le nom et l'adresse du restaurant : « une réservation » devenait « un arrêt de passion » (appel
+ * 785555d4 du 22/10/2026). Liste courte à dessein : trop de termes poussent Deepgram à les entendre partout.
+ */
+export const DEEPGRAM_RESERVATION_KEYTERMS = [
+  'réservation',
+  'réserver',
+  'une table',
+  'personnes',
+  'couverts',
+  'ce soir',
+  'demain',
+  'midi',
+] as const;
+
 function estimatedTokenCount(value: string): number {
   const wordCount = value.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0;
   return Math.max(wordCount, Math.ceil(value.length / 3));
@@ -76,23 +92,23 @@ export function buildDeepgramKeyterms(
 }
 
 /**
- * Mots-clés d'un appel : les tailles de groupe d'abord (budget réservé), puis
- * les termes propres au restaurant dans le budget restant.
+ * Mots-clés d'un appel : les tailles de groupe d'abord (budget réservé), puis le vocabulaire de réservation
+ * s'il est demandé, puis les termes propres au restaurant dans le budget restant.
  */
 export function buildDeepgramCallKeyterms(
   sources: DeepgramKeytermSources,
   tokenBudget = DEEPGRAM_KEYTERM_TOKEN_BUDGET,
+  options: { reservationVocabulary?: boolean } = {},
 ): string[] {
-  const partyTokens = DEEPGRAM_PARTY_SIZE_KEYTERMS.reduce(
-    (total, term) => total + estimatedTokenCount(term),
-    0,
+  const fixed: string[] = [
+    ...DEEPGRAM_PARTY_SIZE_KEYTERMS,
+    ...(options.reservationVocabulary ? DEEPGRAM_RESERVATION_KEYTERMS : []),
+  ];
+  const fixedTokens = fixed.reduce((total, term) => total + estimatedTokenCount(term), 0);
+  if (fixedTokens > tokenBudget) return buildDeepgramKeyterms(sources, tokenBudget);
+  const seen = new Set(fixed.map((term) => term.toLocaleLowerCase('fr-FR')));
+  const business = buildDeepgramKeyterms(sources, tokenBudget - fixedTokens).filter(
+    (term) => !seen.has(term.toLocaleLowerCase('fr-FR')),
   );
-  if (partyTokens > tokenBudget) return buildDeepgramKeyterms(sources, tokenBudget);
-  const business = buildDeepgramKeyterms(sources, tokenBudget - partyTokens).filter(
-    (term) =>
-      !(DEEPGRAM_PARTY_SIZE_KEYTERMS as readonly string[]).includes(
-        term.toLocaleLowerCase('fr-FR'),
-      ),
-  );
-  return [...DEEPGRAM_PARTY_SIZE_KEYTERMS, ...business].slice(0, DEEPGRAM_KEYTERM_MAX_TERMS);
+  return [...fixed, ...business].slice(0, DEEPGRAM_KEYTERM_MAX_TERMS);
 }

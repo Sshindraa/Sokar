@@ -3,6 +3,7 @@ import {
   buildDeepgramCallKeyterms,
   buildDeepgramKeyterms,
   DEEPGRAM_PARTY_SIZE_KEYTERMS,
+  DEEPGRAM_RESERVATION_KEYTERMS,
   DEEPGRAM_KEYTERM_MAX_TERMS,
   DEEPGRAM_KEYTERM_TOKEN_BUDGET,
 } from '../stream/stt-deepgram-keyterms';
@@ -73,5 +74,34 @@ describe('buildDeepgramKeyterms', () => {
     expect(keyterms).not.toContain('Trois');
     expect(keyterms).toEqual(expect.arrayContaining(['Chez Exemple', 'Plat du jour']));
     expect(keyterms).not.toContain('un');
+  });
+});
+
+describe('vocabulaire de réservation', () => {
+  it("absent par défaut : les mots-clés de l'appel sont inchangés", () => {
+    const sources = { restaurantName: 'Chez Sokar', city: 'Lyon' };
+    expect(buildDeepgramCallKeyterms(sources)).toEqual(
+      buildDeepgramCallKeyterms(sources, undefined, { reservationVocabulary: false }),
+    );
+    expect(buildDeepgramCallKeyterms(sources)).not.toContain('réservation');
+  });
+
+  it('demandé : placé après les tailles de groupe, avant les termes du restaurant, sans doublon', () => {
+    const keyterms = buildDeepgramCallKeyterms(
+      { restaurantName: 'Chez Sokar', cuisineTypes: ['Demain', 'bistrot'] },
+      undefined,
+      { reservationVocabulary: true },
+    );
+    expect(keyterms.slice(0, DEEPGRAM_PARTY_SIZE_KEYTERMS.length)).toEqual([
+      ...DEEPGRAM_PARTY_SIZE_KEYTERMS,
+    ]);
+    expect(
+      keyterms.slice(
+        DEEPGRAM_PARTY_SIZE_KEYTERMS.length,
+        DEEPGRAM_PARTY_SIZE_KEYTERMS.length + DEEPGRAM_RESERVATION_KEYTERMS.length,
+      ),
+    ).toEqual([...DEEPGRAM_RESERVATION_KEYTERMS]);
+    expect(keyterms).toContain('Chez Sokar');
+    expect(keyterms.filter((term) => term.toLowerCase() === 'demain')).toHaveLength(1);
   });
 });

@@ -466,6 +466,17 @@ VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 # seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
 # appel. Toute panne retombe sur Deepgram seul.
 VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""
+# Vocabulaire de réservation dans les mots-clés Deepgram (restaurants listés, `*` = tous, vide = mots-clés inchangés) :
+# réservation, réserver, une table, personnes, couverts, ce soir, demain, midi, après les tailles de groupe. Les
+# mots-clés ne portaient que le nom et l'adresse : « une réservation » devenait « un arrêt de passion ». Effet seulement
+# là où `VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS` s'applique.
+VOICE_DEEPGRAM_RESERVATION_KEYTERMS_RESTAURANT_IDS=""
+# Fin de phrase sur silence local (restaurants listés, `*` = tous, vide = aucun) : une partielle Deepgram attend et
+# l'appelant se tait depuis `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS` (défaut 450, 300 à 1500) selon la détection
+# locale : `Finalize` part sans attendre 1,2 s de partielle figée (12 % des tours du 14 au 21/10, p90 1,56 s). Jamais
+# pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
+VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS=""
+VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="450"
 VOICE_STT_INK_WAIT_MS="250"
 VOICE_STT_INK_DAILY_SECONDS="1800"
 # Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
@@ -987,7 +998,7 @@ pas cette sélection. Ce flag ne sélectionne pas Deepgram à lui seul : le prov
 Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
 `endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.
 La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullables et doit
-passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
+passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms` (étiquetée `final_trigger` depuis le 22/10/2026)
 et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
 ### ElevenLabs : clé et quota (historique, état du 24/09/2026)
