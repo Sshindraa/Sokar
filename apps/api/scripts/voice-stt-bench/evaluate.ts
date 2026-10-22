@@ -303,7 +303,10 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
   return { tally, details, outcomes, scores };
 }
 
-/** Rapprochement de la phase 1 toujours actif ; seul le flag de confiance bascule. */
+/**
+ * Historique : ces réglages n'existent plus depuis le 22/10/2026 (fonctions actives pour tous). Les deux
+ * passages donnent donc le même résultat ; gardé pour relire les anciens rapports coupé/actif.
+ */
 function withFlag<T>(enabled: boolean, run: () => T): T {
   const keys = ['VOICE_EXPECTED_ANSWER_ENABLED', 'VOICE_CONFIDENCE_CONFIRM_ENABLED'] as const;
   const previous = keys.map((key) => process.env[key]);

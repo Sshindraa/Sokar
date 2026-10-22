@@ -33,8 +33,8 @@ export interface ContextTtsTurn {
 }
 
 /**
- * Choisit le fournisseur du tour. Le chemin ElevenLabs ne s'applique qu'aux restaurants listés (voir
- * `isElevenLabsDialogueEnabledFor`) et passe devant Cartesia ; s'il est actif sans clé d'API, on retombe sur Cartesia.
+ * Choisit le fournisseur du tour. Le chemin ElevenLabs s'applique à tous les restaurants dès que la clé est
+ * présente (voir `isElevenLabsDialogueEnabledFor`) et passe devant Cartesia.
  * Sans aucun drapeau, le résultat est `null` : le chemin HTTP habituel reste en place.
  */
 export function createContextTtsTurn(session: CallSession): ContextTtsTurn | null {

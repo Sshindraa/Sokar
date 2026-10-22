@@ -1,5 +1,12 @@
 import { vi } from 'vitest';
 
+// Ink-2 en parallèle s'ouvre à chaque connexion Deepgram dès qu'une clé Cartesia est présente : jamais de vraie
+// socket Cartesia pendant les tests (stt-ink-parallel.test.ts teste le module réel avec une socket simulée).
+vi.mock('../modules/voice/stream/stt-ink-parallel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../modules/voice/stream/stt-ink-parallel')>()),
+  openInkParallel: vi.fn(async () => undefined),
+}));
+
 // ── Mock @prisma/client ──
 vi.mock('@prisma/client', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;

@@ -60,10 +60,10 @@ describe('catalogue des fonctionnalités', () => {
     );
   });
 
-  it('inclut la reconnaissance des habitués dès Essential, annoncée comme prévue', () => {
+  it('inclut la reconnaissance des habitués dès Essential, disponible', () => {
     const feature = CATALOG_FEATURES.find((item) => item.id === 'returning-callers');
     expect(feature).toEqual(
-      expect.objectContaining({ introducedIn: 'Essential', status: 'prévu' }),
+      expect.objectContaining({ introducedIn: 'Essential', status: 'disponible' }),
     );
   });
 

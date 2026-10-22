@@ -29,9 +29,7 @@ import {
   looksLikeSpelledLetters,
   maybeFlushDeepgramOnSilence,
   maybeFinalizeDeepgramOnLocalSilence,
-  isDeepgramLocalSilenceFinalizeEnabledFor,
   deepgramLocalSilenceFinalizeMs,
-  isDeepgramSilenceFlushEnabledFor,
   deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
 import {
@@ -979,7 +977,6 @@ describe('Deepgram final dispatch', () => {
     });
 
     it("bascule une fois sur Ink-2 au lieu de couper l'appel", () => {
-      vi.stubEnv('VOICE_STT_INK_FALLBACK_RESTAURANT_IDS', 'rest-1');
       vi.stubEnv('CARTESIA_API_KEY', 'k');
       const { session, onEvent } = deepgramSession();
       handleNormalizedSttMessage(session, {
@@ -1004,7 +1001,6 @@ describe('Deepgram final dispatch', () => {
     });
 
     it('sans réglage ou sans clé Cartesia : comportement d’avant', () => {
-      vi.stubEnv('VOICE_STT_INK_FALLBACK_RESTAURANT_IDS', 'rest-1');
       vi.stubEnv('CARTESIA_API_KEY', '');
       const { session, onEvent } = deepgramSession();
       handleNormalizedSttMessage(session, {
@@ -1042,10 +1038,9 @@ describe('Deepgram final dispatch', () => {
 
   describe('fin de phrase sur silence local (partielle figée, 12 % des tours en prod)', () => {
     const FINALIZE = JSON.stringify({ type: 'Finalize' });
-    function listening(enabled = true) {
+    function listening() {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-10-22T10:00:00Z'));
-      vi.stubEnv('VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS', enabled ? 'rest-1' : '');
       const { session, onEvent } = deepgramSession();
       const ws = makeWsMock();
       session.sttWs = ws;
@@ -1061,13 +1056,7 @@ describe('Deepgram final dispatch', () => {
       vi.useRealTimers();
     });
 
-    it('réglage : liste ou *, seuil de départ borné entre 300 et 1500 ms (600 par défaut)', () => {
-      expect(isDeepgramLocalSilenceFinalizeEnabledFor('r', {})).toBe(false);
-      expect(
-        isDeepgramLocalSilenceFinalizeEnabledFor('r', {
-          VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS: '*',
-        }),
-      ).toBe(true);
+    it('seuil de départ borné entre 300 et 1500 ms (600 par défaut)', () => {
       expect(deepgramLocalSilenceFinalizeMs({})).toBe(600);
       expect(
         deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '100' }),
@@ -1121,17 +1110,7 @@ describe('Deepgram final dispatch', () => {
       expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
     });
 
-    it('ne fait rien sans réglage, sans voix entendue, ou pendant une épellation', () => {
-      const off = listening(false);
-      handleNormalizedSttMessage(off.session, {
-        type: 'partial',
-        transcript: 'je voudrais une table',
-      });
-      spokeNow(off.session);
-      vi.advanceTimersByTime(600);
-      expect(maybeFinalizeDeepgramOnLocalSilence(off.session)).toBe(false);
-      vi.unstubAllEnvs();
-
+    it('ne fait rien sans voix entendue, ou pendant une épellation', () => {
       const noVoice = listening();
       handleNormalizedSttMessage(noVoice.session, {
         type: 'partial',
@@ -1157,7 +1136,6 @@ describe('Deepgram final dispatch', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-10-21T01:01:10Z'));
       vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
-      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', 'rest-1');
       const { session, onEvent } = deepgramSession();
       const ws = makeWsMock();
       session.sttWs = ws;
@@ -1173,22 +1151,7 @@ describe('Deepgram final dispatch', () => {
       vi.useRealTimers();
     });
 
-    it('ne fait rien sans le restaurant dans la liste', () => {
-      const { session, ws } = listening();
-      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', '');
-      spoke(session);
-      vi.advanceTimersByTime(2_000);
-      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
-      expect(ws.send).not.toHaveBeenCalled();
-    });
-
-    it('accepte `*` et ignore une durée hors bornes', () => {
-      expect(
-        isDeepgramSilenceFlushEnabledFor('r-9', {
-          VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS: ' * ',
-        }),
-      ).toBe(true);
-      expect(isDeepgramSilenceFlushEnabledFor('r-9', {})).toBe(false);
+    it('ignore une durée hors bornes', () => {
       expect(deepgramSilenceFlushMs({})).toBe(700);
       expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '100' })).toBe(700);
       expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '900' })).toBe(900);

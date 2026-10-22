@@ -7,10 +7,6 @@ import {
 } from '../stream/structured-turn/schema';
 import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
 import {
-  isVoiceExpressionToneEnabled,
-  isVoiceUnderstandingCheckEnabled,
-} from '../stream/feature-flags';
-import {
   applyProposedDraft,
   authorizeStructuredAction,
   bookingKey,
@@ -196,14 +192,6 @@ describe('vérification de compréhension', () => {
     const block = on.slice(on.indexOf('COMPRÉHENSION VÉRIFIÉE'), on.indexOf('ÉTAT VÉRIFIÉ'));
     expect(block).not.toMatch(/[«»]/);
   });
-
-  it('drapeau par restaurant : vide = aucun', () => {
-    const env = { VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS: 'a, b' } as NodeJS.ProcessEnv;
-    expect(isVoiceUnderstandingCheckEnabled('a', env)).toBe(true);
-    expect(isVoiceUnderstandingCheckEnabled('c', env)).toBe(false);
-    expect(isVoiceUnderstandingCheckEnabled(undefined, env)).toBe(false);
-    expect(isVoiceUnderstandingCheckEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
-  });
 });
 
 describe('ton de voix (balise d’expression ElevenLabs)', () => {
@@ -244,14 +232,6 @@ describe('ton de voix (balise d’expression ElevenLabs)', () => {
     expect(on).toContain('TON DE VOIX');
     const block = on.slice(on.indexOf('TON DE VOIX'), on.indexOf('ÉTAT VÉRIFIÉ'));
     expect(block).not.toMatch(/[«»]/);
-  });
-
-  it('drapeau par restaurant : vide = aucun', () => {
-    const env = { VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS: 'a, b' } as NodeJS.ProcessEnv;
-    expect(isVoiceExpressionToneEnabled('a', env)).toBe(true);
-    expect(isVoiceExpressionToneEnabled('c', env)).toBe(false);
-    expect(isVoiceExpressionToneEnabled(undefined, env)).toBe(false);
-    expect(isVoiceExpressionToneEnabled('a', {} as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 

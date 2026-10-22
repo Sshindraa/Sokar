@@ -6,7 +6,6 @@ import {
   trackCallerVoice,
   callerPauseFinalizeMs,
 } from './caller-voice-activity';
-import { parseRestaurantIdList } from './feature-flags';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
@@ -113,17 +112,15 @@ function clearSttRecoveryTimers(session: CallSession): void {
 }
 
 /**
- * Secours Ink-2 (restaurants de `VOICE_STT_INK_FALLBACK_RESTAURANT_IDS`, `*` = tous ; vide = aucun) : quand
- * Deepgram est déclaré indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours au lieu d'être
- * coupé. Sans `CARTESIA_API_KEY`, ou si le secours a déjà servi, le comportement d'avant reprend.
+ * Secours Ink-2, pour tous les restaurants : quand Deepgram est déclaré indisponible, l'appel bascule une fois sur
+ * Cartesia Ink-2 en mode tours au lieu d'être coupé. Sans `CARTESIA_API_KEY`, ou si le secours a déjà servi, le
+ * parcours d'indisponibilité habituel reprend.
  */
 export function isSttInkFallbackEnabled(
   restaurantId: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (!restaurantId || !(env.CARTESIA_API_KEY ?? '').trim()) return false;
-  const ids = parseRestaurantIdList(env.VOICE_STT_INK_FALLBACK_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
+  return Boolean(restaurantId && (env.CARTESIA_API_KEY ?? '').trim());
 }
 
 function switchToInkFallback(
@@ -1864,27 +1861,17 @@ export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.
 }
 
 /**
- * Relève au silence (VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS, `*` = tous, vide = aucun). Appel du 21/10
+ * Relève au silence, pour tous les restaurants. Appel du 21/10
  * sur Chez Sokar : « midi 30 » n'est arrivé en partielle que 2,1 s après le dernier mot, sans speech_final ;
  * la partielle figée n'a pu partir que 500 ms plus tard (2,6 s de silence). Nova-3 retient souvent un
  * énoncé court isolé ; un `Finalize` le rend en ~40 ms (sonde sur 94 tours courts enregistrés).
  */
 /**
- * Fin de phrase sur silence local (restaurants de `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS`, `*` =
- * tous) : une partielle Deepgram attend, et l'appelant se tait depuis plus longtemps que ses propres pauses
+ * Fin de phrase sur silence local, pour tous les restaurants : une partielle Deepgram attend, et l'appelant se tait depuis plus longtemps que ses propres pauses
  * habituelles (`callerPauseFinalizeMs`, détection locale). Sans elle, une partielle figée attend 1,2 s après son dernier changement (12 % des tours en
  * prod du 14 au 21/10/2026, fin de parole → transcription p90 1,56 s). Jamais pendant une épellation, dont les
  * pauses sont plus longues (garde dédiée) ; une seule fois par partielle.
  */
-export function isDeepgramLocalSilenceFinalizeEnabledFor(
-  restaurantId: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
-}
-
 /**
  * Silence local exigé tant que les pauses de l'appelant ne sont pas connues (moins de 3 observées) : 300 à
  * 1500 ms, 600 par défaut. Ensuite, le seuil suit ses propres pauses (`callerPauseFinalizeMs`).
@@ -1906,8 +1893,7 @@ export function maybeFinalizeDeepgramOnLocalSilence(
     !session.sttDeepgramPendingInterim ||
     session.sttDeepgramFinalizeRequested ||
     !partial ||
-    session.sttDeepgramLocalSilenceFinalizedText === partial ||
-    !isDeepgramLocalSilenceFinalizeEnabledFor(session.restaurantId)
+    session.sttDeepgramLocalSilenceFinalizedText === partial
   ) {
     return false;
   }
@@ -1919,15 +1905,6 @@ export function maybeFinalizeDeepgramOnLocalSilence(
   if (isSpellingTurn(session, partial) || looksLikeSpelledLetters(partial)) return false;
   session.sttDeepgramLocalSilenceFinalizedText = partial;
   return requestDeepgramFinalize(session, { trigger: 'local_silence' });
-}
-
-export function isDeepgramSilenceFlushEnabledFor(
-  restaurantId: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
 }
 
 /**
@@ -2010,8 +1987,7 @@ export function maybeFlushDeepgramOnSilence(session: CallSession, now = Date.now
     session.sttAdapter?.id !== 'deepgram' ||
     session.sttDeepgramPendingInterim ||
     session.sttDeepgramFinalizeRequested ||
-    ws?.readyState !== WebSocket.OPEN ||
-    !isDeepgramSilenceFlushEnabledFor(session.restaurantId)
+    ws?.readyState !== WebSocket.OPEN
   ) {
     return false;
   }

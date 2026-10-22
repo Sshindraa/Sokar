@@ -16,7 +16,6 @@ import {
   VOICE_FILLER_BANK,
   chooseVoiceFiller,
   createTurnFiller,
-  isVoiceFillerEnabled,
   trimVoiceFillerAudio,
   voiceFillerCallState,
   voiceFillerDelayMs,
@@ -25,7 +24,7 @@ import {
   type VoiceFillerChoiceInput,
 } from '../stream/voice-filler';
 
-const ENV = { VOICE_FILLER_RESTAURANT_IDS: 'resto-1' } as NodeJS.ProcessEnv;
+const ENV = {} as NodeJS.ProcessEnv;
 /** Trois trames Telnyx (300 ms) de son A-law non silencieux. */
 const CLIP_AUDIO = Buffer.alloc(2_400, 0x2a);
 
@@ -83,30 +82,17 @@ function cacheWholeBank(audio: Buffer | null): void {
   for (const text of voiceFillerTexts()) __setVoiceFillerAudioForTests(text, 'PCMA', audio);
 }
 
-describe('voice filler : réglage', () => {
-  it('vide = aucun restaurant ; `*` = tous', () => {
-    expect(isVoiceFillerEnabled('resto-1', {} as NodeJS.ProcessEnv)).toBe(false);
-    expect(isVoiceFillerEnabled('resto-1', ENV)).toBe(true);
-    expect(isVoiceFillerEnabled('resto-2', ENV)).toBe(false);
-    expect(
-      isVoiceFillerEnabled('resto-2', { VOICE_FILLER_RESTAURANT_IDS: '*' } as NodeJS.ProcessEnv),
-    ).toBe(true);
-  });
-
+describe('voice filler : déclenchement', () => {
   it('délai par défaut 750 ms, borné', () => {
     expect(voiceFillerDelayMs({} as NodeJS.ProcessEnv)).toBe(750);
     expect(voiceFillerDelayMs({ VOICE_FILLER_DELAY_MS: '900' } as NodeJS.ProcessEnv)).toBe(900);
     expect(voiceFillerDelayMs({ VOICE_FILLER_DELAY_MS: '50' } as NodeJS.ProcessEnv)).toBe(750);
   });
 
-  it('réglage vide : aucun son, comportement actuel', () => {
+  it('jamais hors ElevenLabs Dialogue, ni sur la relance après silence', () => {
     const { session } = makeSession();
     const signal = new AbortController().signal;
     const options = { transcript: 'bonjour', lastAwaiting: 'open', turnId: 't', signal };
-    expect(
-      createTurnFiller(session, 'elevenlabs', { ...options, env: {} as NodeJS.ProcessEnv }),
-    ).toBeNull();
-    // Hors ElevenLabs Dialogue, ou relance après silence : jamais.
     expect(createTurnFiller(session, 'cartesia', { ...options, env: ENV })).toBeNull();
     expect(createTurnFiller(session, null, { ...options, env: ENV })).toBeNull();
     expect(

@@ -53,11 +53,10 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     introducedIn: 'Essential',
   },
   {
-    // « prévu » tant que le profil client de l'agent (VOICE_CRM_PROFILE_RESTAURANT_IDS) n'est pas ouvert
-    // à tous les restaurants.
+    // Profil client de l'agent actif pour tous les restaurants depuis le 22/10/2026.
     id: 'returning-callers',
     label: 'Vos habitués reconnus dès qu’ils appellent',
-    status: 'prévu',
+    status: 'disponible',
     introducedIn: 'Essential',
   },
   {

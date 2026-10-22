@@ -425,15 +425,6 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('content de vous revoir');
   });
 
-  it("garde le fragment d'accueil historique hors profil CRM", () => {
-    const customerGreeting = ', content de vous revoir M. Jean';
-    const prompt = buildSystemPrompt({ ...baseCtx, customerGreeting });
-    expect(prompt).toContain(
-      `CLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${customerGreeting}".`,
-    );
-    expect(prompt).not.toContain('CLIENT CONNU');
-  });
-
   it("n'ajoute aucune reconnaissance pour un appelant inconnu", () => {
     const prompt = buildSystemPrompt({ ...baseCtx, returningCustomerFirstName: '' });
     expect(prompt).not.toContain('CLIENT CONNU');

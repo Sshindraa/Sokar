@@ -18,7 +18,6 @@ import { WebSocket } from 'ws';
 import type { CallSession, TelnyxStreamMessage } from '../stream/types';
 import { CallSessionManager } from '../stream/manager';
 import { handleTelnyxMessage } from '../stream/handler';
-import { isVoicePersonalityStyleEnabled } from '../stream/feature-flags';
 import { closeStt } from '../stream/stt-bridge';
 import { buildSystemPrompt, agentVoiceGender, type OpeningHours } from '../prompts';
 import { RestaurantService } from '../../restaurants/restaurant.service';
@@ -69,7 +68,7 @@ async function createDemoSession(
     returningCustomerFirstName: '',
     giftCardMinimumAmount: ctx.giftCardMinimumAmount,
     voiceGender: agentVoiceGender(ctx.personality),
-    personalityStyleEnabled: isVoicePersonalityStyleEnabled(ctx.id),
+    personalityStyleEnabled: true,
   });
 
   const session = CallSessionManager.getInstance().create({
@@ -93,7 +92,7 @@ async function createDemoSession(
     // Même codec que la production par défaut : la démonstration restitue ce qu'entendra un client.
     codec: 'PCMA',
     demo: true,
-    ...(isVoicePersonalityStyleEnabled(ctx.id) && ctx.personality
+    ...(ctx.personality
       ? {
           greetingStyle: {
             profileType: ctx.personality.profileType,

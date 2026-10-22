@@ -145,7 +145,6 @@ function spoken(): string[] {
 beforeEach(() => {
   __resetMetrics();
   vi.clearAllMocks();
-  vi.stubEnv('VOICE_TURN_JUDGE_RESTAURANT_IDS', RESTAURANT_ID);
   return () => vi.unstubAllEnvs();
 });
 
@@ -242,17 +241,6 @@ describe('juge de fin de tour séparé : décision de répondre', () => {
 
     expect(spoken()).toEqual(['Pour quel jour ?']);
     expect(Date.now() - startedAt).toBeLessThan(1_500);
-  });
-
-  it('n’appelle pas le juge hors liste de restaurants', async () => {
-    vi.stubEnv('VOICE_TURN_JUDGE_RESTAURANT_IDS', 'autre-resto');
-    const { session, mgr, outputs, judgeCalls } = fixture();
-    outputs.push(turn({ awaiting: 'date', say: 'Pour quel jour ?' }));
-
-    await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
-
-    expect(judgeCalls.count).toBe(0);
-    expect(spoken()).toEqual(['Pour quel jour ?']);
   });
 });
 

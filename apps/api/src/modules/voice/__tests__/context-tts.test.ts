@@ -21,28 +21,19 @@ afterEach(() => {
 });
 
 describe('context-tts : fournisseur du tour en contexte', () => {
-  it('reste sur le chemin HTTP sans liste de restaurants, même avec le drapeau global', () => {
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', '');
+  it('reste sur le chemin HTTP sans clé ElevenLabs', () => {
+    vi.stubEnv('ELEVENLABS_API_KEY', '');
 
     expect(createContextTtsTurn(sessionFor('resto-a'))).toBeNull();
     expect(createElevenLabsContextTurn).not.toHaveBeenCalled();
   });
 
-  it('n’ouvre pas le WebSocket ElevenLabs pour un restaurant non listé', () => {
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', 'resto-a');
-
-    expect(createContextTtsTurn(sessionFor('resto-b'))).toBeNull();
-    expect(createElevenLabsContextTurn).not.toHaveBeenCalled();
-  });
-
-  it('ouvre le tour ElevenLabs pour un restaurant listé', () => {
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
-    vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', 'resto-a');
+  it('ouvre le tour ElevenLabs pour tout restaurant dès que la clé est présente', () => {
+    vi.stubEnv('ELEVENLABS_API_KEY', 'test-only-elevenlabs-key');
     createElevenLabsContextTurn.mockReturnValue(elevenLabsTurn);
 
     expect(createContextTtsTurn(sessionFor('resto-a'))).toBe(elevenLabsTurn);
-    expect(createElevenLabsContextTurn).toHaveBeenCalledTimes(1);
+    expect(createContextTtsTurn(sessionFor('resto-b'))).toBe(elevenLabsTurn);
+    expect(createElevenLabsContextTurn).toHaveBeenCalledTimes(2);
   });
 });

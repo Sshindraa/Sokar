@@ -47,6 +47,17 @@ const contextTurn: {
   cancel: vi.fn(),
   hasAudioOutput: false,
 };
+// Le juge de fin de tour tourne pour tous les restaurants : ici sans verdict, le `turnComplete` du modèle décide
+// (le juge a ses propres tests, turn-end-judge-runtime.test.ts).
+vi.mock('../stream/structured-turn/turn-end-judge', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../stream/structured-turn/turn-end-judge')>()),
+  startTurnEndJudge: vi.fn(async () => null),
+}));
+// Tour ElevenLabs simulé par le contexte Cartesia ci-dessous : la vraie socket n'est jamais ouverte.
+vi.mock('../stream/elevenlabs-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../stream/elevenlabs-context')>()),
+  createElevenLabsContextTurn: vi.fn(() => null),
+}));
 vi.mock('../stream/cartesia-context', () => ({
   isCartesiaContextV2Enabled: () => process.env.VOICE_TTS_CONTEXT_V2_ENABLED === 'true',
   createCartesiaContextTurn: vi.fn(() => contextTurn),
@@ -1794,12 +1805,9 @@ describe('tour structuré (canary)', () => {
       ]);
     });
 
-    it('envoie le ton choisi avec la première phrase seulement, sous les deux drapeaux', async () => {
-      vi.stubEnv('VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS', RESTAURANT_ID);
-      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
-      vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', RESTAURANT_ID);
-      // Sans clé ElevenLabs, la fabrique retombe sur le contexte simulé : seul le ton est observé ici.
-      vi.stubEnv('ELEVENLABS_API_KEY', '');
+    it('envoie le ton choisi avec la première phrase seulement', async () => {
+      // Voix ElevenLabs Dialogue (clé présente) : le tour est simulé par le contexte ci-dessus.
+      vi.stubEnv('ELEVENLABS_API_KEY', 'test-only-elevenlabs-key');
       const { session, mgr, outputs } = fixture();
       // `tone` avant `say`, comme dans le schéma.
       const { say, ...rest } = turn({
@@ -1819,7 +1827,8 @@ describe('tour structuré (canary)', () => {
       expect(format.json_schema.schema.properties).toHaveProperty('tone');
     });
 
-    it('n’ajoute aucun ton sans le drapeau, ni pour none', async () => {
+    it('n’ajoute aucun ton sans voix ElevenLabs, ni pour none', async () => {
+      vi.stubEnv('ELEVENLABS_API_KEY', '');
       const { session, mgr, outputs } = fixture();
       outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));
       await processTranscriptStreaming(session, 'je voudrais réserver', mgr);
@@ -1831,14 +1840,13 @@ describe('tour structuré (canary)', () => {
       expect(format.json_schema.schema.properties).not.toHaveProperty('tone');
     });
 
-    describe("petits mots d'attente (VOICE_FILLER_RESTAURANT_IDS)", () => {
+    describe("petits mots d'attente", () => {
       const media = (session: CallSession) =>
         vi
           .mocked(session.telnyxWs.send)
           .mock.calls.filter(([payload]) => String(payload).includes('"media"')).length;
       beforeEach(() => {
         contextTurn.provider = 'elevenlabs';
-        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', RESTAURANT_ID);
         vi.stubEnv('VOICE_FILLER_DELAY_MS', '300');
         for (const text of voiceFillerTexts()) {
           __setVoiceFillerAudioForTests(text, 'PCMA', Buffer.alloc(1_600, 0x2a));
@@ -1884,35 +1892,28 @@ describe('tour structuré (canary)', () => {
 
         expect(media(session)).toBe(0);
       });
-
-      it('réglage vide : aucun son, même lent', async () => {
-        vi.stubEnv('VOICE_FILLER_RESTAURANT_IDS', '');
-        const { session, mgr, outputs } = fixture();
-        session.codec = 'PCMA';
-        slowModel(mgr, 450);
-        const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
-        outputs.push(
-          turn({ draft, action: 'check_availability' }),
-          turn({ draft, awaiting: 'customerName', say: 'Il me reste vingt heures. À quel nom ?' }),
-        );
-        await processTranscriptStreaming(session, 'on serait quatre vers vingt heures', mgr);
-
-        expect(media(session)).toBe(0);
-      });
     });
 
-    describe('premiers mots avant la fin de la première phrase (VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS)', () => {
+    describe('premiers mots avant la fin de la première phrase', () => {
       beforeEach(() => {
         contextTurn.provider = 'elevenlabs';
-        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', RESTAURANT_ID);
       });
       afterEach(() => {
         contextTurn.provider = 'cartesia';
       });
       const pushed = () => contextTurn.push.mock.calls.map(([text]) => text);
+      // Le juge de fin de tour répond avant le premier mot du modèle, comme en appel : la voix peut partir tôt.
+      function judgeFirst(mgr: CallSessionManager): void {
+        const original = vi.mocked(mgr.streamStructuredCompletion).getMockImplementation()!;
+        vi.mocked(mgr.streamStructuredCompletion).mockImplementation(async (...args) => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return original(...args);
+        });
+      }
 
       it('envoie les premiers mots dès la virgule, générés tout de suite, puis la suite', async () => {
         const { session, mgr, outputs } = fixture();
+        judgeFirst(mgr);
         outputs.push(
           turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ? Merci.' }),
         );
@@ -1930,11 +1931,9 @@ describe('tour structuré (canary)', () => {
       });
 
       it('le ton part avec les premiers mots, une seule fois', async () => {
-        vi.stubEnv('VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS', RESTAURANT_ID);
-        vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED', 'true');
-        vi.stubEnv('VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS', RESTAURANT_ID);
-        vi.stubEnv('ELEVENLABS_API_KEY', '');
+        vi.stubEnv('ELEVENLABS_API_KEY', 'test-only-elevenlabs-key');
         const { session, mgr, outputs } = fixture();
+        judgeFirst(mgr);
         const { say, ...rest } = turn({
           awaiting: 'partySize',
           say: 'Oh, quarante ans, quelle belle occasion. Vous serez combien ?',
@@ -1946,30 +1945,6 @@ describe('tour structuré (canary)', () => {
           ['Oh, quarante ans,', { tone: 'cheerful', flush: true }],
           ['quelle belle occasion.', { flush: true }],
           ['Vous serez combien ?', { flush: true }],
-        ]);
-      });
-
-      it('`*` vaut pour tous les restaurants', async () => {
-        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', ' * ');
-        const { session, mgr, outputs } = fixture();
-        outputs.push(
-          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ?' }),
-        );
-        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
-
-        expect(pushed()).toEqual(['Très bien,', 'pour combien de personnes ?']);
-      });
-
-      it('réglage vide : la phrase part entière, comme avant', async () => {
-        vi.stubEnv('VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS', '');
-        const { session, mgr, outputs } = fixture();
-        outputs.push(
-          turn({ awaiting: 'partySize', say: 'Très bien, pour combien de personnes ?' }),
-        );
-        await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
-
-        expect(contextTurn.push.mock.calls).toEqual([
-          ['Très bien, pour combien de personnes ?', {}],
         ]);
       });
 

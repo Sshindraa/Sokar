@@ -505,21 +505,6 @@ export function buildLlmFailurePlan(
   return buildExplicitInteractionReplyPlan(session, reply, 'open');
 }
 
-/**
- * Rapprochement phonétique et relecture naturelle : désactivés par défaut,
- * activés par `VOICE_EXPECTED_ANSWER_ENABLED=true`, limités aux restaurants de
- * `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` (liste vide = tous). Flag coupé, le
- * dialogue est strictement celui d'avant la fonctionnalité.
- */
-export function isExpectedAnswerEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
-  if (process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'true') return false;
-  const restaurantIds = (process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
-}
-
 export const FRENCH_PARTY_SIZE_WORDS: Record<number, string> = {
   1: 'une',
   2: 'deux',
@@ -586,7 +571,6 @@ export function phoneticDateReadBack(session: CallSession): string {
 }
 
 export function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
-  if (!isExpectedAnswerEnabled(session)) return '';
   const justFilled = session.conversation.justFilled;
   if (!justFilled) return '';
   const filled: { partySize?: boolean; date?: boolean; time?: boolean } = only

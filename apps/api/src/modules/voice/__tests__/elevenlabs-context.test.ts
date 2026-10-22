@@ -11,8 +11,6 @@ import {
 import type { CallSession } from '../stream/types';
 
 const ENV_KEYS = [
-  'VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED',
-  'VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS',
   'VOICE_TTS_CONTEXT_V2_ENABLED',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_TTS_VOICE_ID',
@@ -99,24 +97,9 @@ describe('ElevenLabs context TTS : format et voix', () => {
 });
 
 describe('ElevenLabs context TTS : fabrique', () => {
-  it('ne crée aucun tour de contexte quand aucun drapeau n’est actif', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    delete process.env.VOICE_TTS_CONTEXT_V2_ENABLED;
-    expect(createContextTtsTurn(makeSession().session)).toBeNull();
-  });
-
-  it('sans clé d’API, le drapeau ElevenLabs ne crée pas de tour', () => {
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = 'true';
-    process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+  it('ne crée aucun tour de contexte sans clé ElevenLabs ni contexte Cartesia', () => {
     delete process.env.ELEVENLABS_API_KEY;
-    expect(createContextTtsTurn(makeSession().session)).toBeNull();
-  });
-
-  it('la liste de restaurants ne crée pas de tour pour un restaurant absent', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS = 'autre-restaurant';
     process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
-    process.env.ELEVENLABS_API_KEY = ELEVENLABS_TEST_KEY;
     expect(createContextTtsTurn(makeSession().session)).toBeNull();
   });
 });

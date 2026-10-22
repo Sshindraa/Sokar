@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  isVoiceCrmProfileEnabled,
   isVoiceDeepgramKeytermsEnabled,
   isVoiceFeatureEnabledForRestaurant,
   isVoiceV2Default,
@@ -18,22 +17,6 @@ afterEach(() => {
 });
 
 describe('voice feature flags', () => {
-  it('profil CRM : liste vide = aucun, liste ou * = restaurants concernés', () => {
-    expect(isVoiceCrmProfileEnabled('rest-1', {})).toBe(false);
-    expect(isVoiceCrmProfileEnabled('rest-1', { VOICE_CRM_PROFILE_RESTAURANT_IDS: 'rest-2' })).toBe(
-      false,
-    );
-    expect(
-      isVoiceCrmProfileEnabled('rest-1', { VOICE_CRM_PROFILE_RESTAURANT_IDS: 'rest-2, rest-1' }),
-    ).toBe(true);
-    expect(isVoiceCrmProfileEnabled('rest-1', { VOICE_CRM_PROFILE_RESTAURANT_IDS: '*' })).toBe(
-      true,
-    );
-    expect(isVoiceCrmProfileEnabled(undefined, { VOICE_CRM_PROFILE_RESTAURANT_IDS: '*' })).toBe(
-      false,
-    );
-  });
-
   it('keeps dialogue V2 disabled for an empty or non-matching restaurant list', () => {
     expect(
       isVoiceFeatureEnabledForRestaurant('dialogueListeningV2', 'rest-a', {

@@ -12,12 +12,6 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createContextTtsTurn } from '../context-tts';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import {
-  isVoiceExpressionToneEnabled,
-  isVoiceTtsEarlyPhraseEnabled,
-  isVoiceTurnJudgeEnabled,
-  isVoiceUnderstandingCheckEnabled,
-} from '../feature-flags';
 import { isElevenLabsDialogueEnabledFor } from '../elevenlabs-dialogue-context';
 import {
   markVoiceTurnLlmFirstPhrase,
@@ -391,11 +385,8 @@ function passRequest(
     actions?: readonly StructuredTurnAction[];
   } = {},
 ) {
-  const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
   // Le ton n'a d'effet que sur la voix ElevenLabs Dialogue : ailleurs, le modèle ne le choisit pas.
-  const tone =
-    isVoiceExpressionToneEnabled(session.restaurantId) &&
-    isElevenLabsDialogueEnabledFor(session.restaurantId);
+  const tone = isElevenLabsDialogueEnabledFor(session.restaurantId);
   const secondOpinion = currentInkDisagreementNote(session, state.reservationCreated);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
@@ -406,7 +397,7 @@ function passRequest(
     openingHours: session.openingHours,
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
-    ...(understanding ? { understanding } : {}),
+    understanding: true,
     ...(tone ? { tone } : {}),
     ...extra,
   });
@@ -416,7 +407,7 @@ function passRequest(
     extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined),
     {
       turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
-      ...(understanding ? { understanding } : {}),
+      understanding: true,
       ...(tone ? { tone } : {}),
     },
   );
@@ -443,7 +434,7 @@ export function speculateStructuredTurn(
   if (!transcript) return;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
-  if (!onVerdict || !isVoiceTurnJudgeEnabled(session.restaurantId)) {
+  if (!onVerdict) {
     startSpeculation(session, mgr, messages, format, onVerdict);
     return;
   }
@@ -571,8 +562,7 @@ export async function runStructuredTurn(
   const spokenPhrases: string[] = [];
   // Premiers mots de la réponse dits dès la première virgule (voir `PhraseSplitter`) : ElevenLabs seulement, qui
   // génère alors ce début sans attendre la fin de phrase. Mesure du 21/10 : la voix part ~0,15 à 0,26 s plus tôt.
-  const earlyPhrase =
-    contextTts?.provider === 'elevenlabs' && isVoiceTtsEarlyPhraseEnabled(session.restaurantId);
+  const earlyPhrase = contextTts?.provider === 'elevenlabs';
   // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
   // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
   let replyTone: string | null = null;
@@ -709,7 +699,7 @@ export async function runStructuredTurn(
     });
     // Juge de fin de tour séparé (turn-end-judge.ts) : son verdict remplace `turnComplete` du modèle pour décider de
     // parler. Tant qu'il n'a pas répondu, la phrase est retenue ; sans verdict (délai, erreur), `turnComplete` du modèle.
-    const judging = useJudge && !finished && isVoiceTurnJudgeEnabled(session.restaurantId);
+    const judging = useJudge && !finished;
     let judged = (judging ? undefined : null) as boolean | null | undefined;
     let unsaid = '';
     const mayContinue = () => {
