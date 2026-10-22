@@ -42,7 +42,10 @@ l'API.
 
 ## Staging deployment
 
-- CI/CD: `.github/workflows/deploy-staging.yml` triggered on `main` push (after CI green).
+- CI/CD: `.github/workflows/deploy-staging.yml` triggered directly by the push to `main` (merge of a PR). The full CI is **not** re-run on `main`: the job `verify-ci` (`scripts/ops/verify-merged-tree-ci.mjs`) proves instead that the commit comes from a merged PR, that its Git tree is identical to the PR head, and that every check on the PR head is green (pending checks are awaited up to 15 min). No proof, no deploy.
+- Full CI on `main` remains available on demand (`gh workflow run ci.yml --ref main`) and runs every night (02:15 UTC) to catch drift. Only the secret scan runs on each push to `main`.
+- If `verify-ci` fails (direct push, merge without an up-to-date branch, red optional check): run the full CI on `main`, then `gh workflow run deploy-staging.yml --ref main` (manual dispatch skips `verify-ci`).
+- Protection of `main` must keep "Require branches to be up to date before merging" (`strict`); the script re-checks the tree identity anyway.
 - GitHub secrets: `STAGING_SSH_KEY`, `STAGING_HOST`, `STAGING_USER`.
 - Script on VPS: `scripts/deploy.sh --env staging`.
 - Dry-run (staging only) : `deploy.sh --dry-run` ne modifie rien sur le VPS (voir la section ci-dessous).
