@@ -24,6 +24,8 @@
  *   VBE_PROVIDER_ORDER=DeepInfra,…     openrouter : hébergeurs autorisés, sans repli (même quantification d'un bout à l'autre)
  *   VBE_REASONING_OFF=1                openrouter : envoie reasoning:{enabled:false} (modèles à raisonnement
  *                                      optionnel comme DeepSeek ; les autres le refusent avec require_parameters)
+ *   VBE_REASONING_NONE=1               openrouter : envoie reasoning:{effort:'none'} (GPT-6 Luna, comme en production)
+ *   VBE_SAMPLING=false                 n'envoie pas temperature (refusée par GPT-6 Luna)
  */
 import { readFileSync } from 'node:fs';
 
@@ -144,11 +146,14 @@ async function sample(request, arm = 'reference') {
           model,
           messages: request.messages,
           ...(request.format ? { response_format: request.format } : {}),
-          temperature: 0.3,
+          ...(process.env.VBE_SAMPLING === 'false' ? {} : { temperature: 0.3 }),
           max_tokens: request.maxTokens ?? 400,
           ...(provider === 'openrouter'
             ? {
                 ...(process.env.VBE_REASONING_OFF === '1' ? { reasoning: { enabled: false } } : {}),
+                ...(process.env.VBE_REASONING_NONE === '1'
+                  ? { reasoning: { effort: 'none' } }
+                  : {}),
                 provider: {
                   require_parameters: true,
                   ...(providerOrder.length ? { order: providerOrder, allow_fallbacks: false } : {}),
