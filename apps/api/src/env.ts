@@ -80,8 +80,6 @@ const PROD_HOST_ALLOWLIST = [
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 /** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
 const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
-/** Délai avant de lancer la requête de doublon chez le secours (tour structuré) ; 0 = désactivé. */
-const DEFAULT_VOICE_LLM_HEDGE_MS = 700;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
 
@@ -141,14 +139,6 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
 }, z.number().positive());
-
-const voiceLlmHedgeSchema = z.preprocess((value) => {
-  if (value === undefined || value === '') return DEFAULT_VOICE_LLM_HEDGE_MS;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 4000
-    ? parsed
-    : DEFAULT_VOICE_LLM_HEDGE_MS;
-}, z.number().min(0));
 
 const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
@@ -228,7 +218,6 @@ export const VoiceConfigSchema = z
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
-    VOICE_LLM_HEDGE_MS: voiceLlmHedgeSchema,
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
@@ -265,13 +254,7 @@ export const VoiceConfigSchema = z
     VOICE_STRUCTURED_FALLBACK_REASONING: z.enum(['disabled', 'none']).default('disabled'),
     // false : ni temperature ni top_p, refusés par les modèles à raisonnement d'OpenAI.
     VOICE_STRUCTURED_FALLBACK_SAMPLING: z.enum(['true', 'false']).default('true'),
-    // Restaurants dont le tour structuré part d'abord chez OpenRouter (modèle et réglages du relais),
-    // Cerebras devenant leur doublon et leur repli. Vide = Cerebras en principal partout.
-    VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: z.string().optional(),
-    // Restaurants (ou *) dont le tour part chez OpenRouter en deux requêtes identiques simultanées :
-    // le premier texte gagne, l'autre est annulée. Coupe les pics de GPT-6 Luna (banc du 20/10). Vide = une requête.
-    VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: z.string().optional(),
-    // Délai avant le doublon Cerebras pour ces restaurants. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
+    // Délai avant le doublon Cerebras quand GPT-6 Luna (OpenRouter) est en principal. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
     // au délai normal (700 ms), Cerebras gagnerait la moitié des tours. 0 = Cerebras seulement en repli.
     VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: z.preprocess((value) => {
       if (value === undefined || value === '') return 1500;

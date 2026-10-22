@@ -363,31 +363,6 @@ function recordProviderSuccess(provider: LlmProvider): void {
   }
 }
 
-/**
- * Un fournisseur qui répond toujours mais trop lentement remet son compteur à zéro dès les
- * en-têtes reçus : le disjoncteur ne s'ouvrirait jamais. Quand le doublon lancé par le hedging
- * gagne plusieurs tours de suite, le principal est donc considéré comme dégradé et ignoré le
- * temps du cooldown ; un tour où il gagne remet le compte à zéro.
- */
-const HEDGE_LOSSES_TO_OPEN_BREAKER = 3;
-let consecutiveHedgeWins = 0;
-
-function recordHedgeOutcome(provider: LlmProvider, hedgeWon: boolean): void {
-  if (!hedgeWon) {
-    consecutiveHedgeWins = 0;
-    return;
-  }
-  consecutiveHedgeWins += 1;
-  if (consecutiveHedgeWins < HEDGE_LOSSES_TO_OPEN_BREAKER) return;
-  consecutiveHedgeWins = 0;
-  circuitBreakers[provider] = { failures: CIRCUIT_BREAKER_THRESHOLD, openedAt: Date.now() };
-  logger.warn(
-    { provider },
-    `[circuit-breaker] ${provider} opened: the hedged request won ${HEDGE_LOSSES_TO_OPEN_BREAKER} turns in a row`,
-  );
-  notify(alertLlmCircuitOpened());
-}
-
 function recordProviderFailure(provider: LlmProvider): void {
   const state = circuitBreakers[provider];
   state.failures++;
@@ -924,7 +899,6 @@ export class CallSessionManager {
       temperature: 0.3,
       signal: options.signal,
     };
-    const hedgeMs = voiceConfig.VOICE_LLM_HEDGE_MS;
     const startedAt = Date.now();
     const openRouterKey = voiceConfig.OPENROUTER_API_KEY?.trim();
     const opened =
@@ -936,9 +910,7 @@ export class CallSessionManager {
             voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS,
             openRouterKey,
           )
-        : hedgeMs > 0 && openRouterKey
-          ? await this.openStructuredHedged(session, messages, request, hedgeMs)
-          : await this.openStructuredSequential(session, messages, request);
+        : await this.openStructuredSequential(session, messages, request);
     const { provider, firstRead } = opened;
     const reader = opened.reader;
     const decoder = new TextDecoder();
@@ -1081,7 +1053,7 @@ export class CallSessionManager {
   }
 
   /**
-   * Restaurants listés dans VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS : le tour part d'abord chez
+   * Tous les restaurants dès que la clé OpenRouter est présente : le tour part d'abord chez
    * OpenRouter (modèle et réglages du relais) ; Cerebras devient le doublon si aucun texte n'est
    * arrivé après `hedgeMs` (0 = pas de doublon), et le repli immédiat si OpenRouter refuse. Le premier
    * flux qui produit du texte est gardé ; les deux sont bornés par le délai total.
@@ -1234,127 +1206,6 @@ export class CallSessionManager {
   }
 
   /**
-   * Ouvre le flux du tour structuré avec une requête de doublon (hedging) : si le principal n'a
-   * pas produit son premier fragment après `hedgeMs`, la même requête part chez le secours et le
-   * premier flux à répondre est gardé ; l'autre est annulé. Le doublon ne coûte que sur les tours
-   * lents, et l'appelant n'entend plus les pics de latence du principal.
-   */
-  private async openStructuredHedged(
-    session: CallSession,
-    messages: ChatMessage[],
-    request: StructuredStreamRequest,
-    hedgeMs: number,
-  ): Promise<OpenedStream> {
-    const primaryProvider = getVoiceLlmProvider();
-    const trace = { fellBack: false };
-    const controllerA = new AbortController();
-    const controllerB = new AbortController();
-    const signalOf = (controller: AbortController): AbortSignal =>
-      request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal;
-    const startedAt = Date.now();
-    let primaryError: unknown = null;
-    // Le doublon, lancé plus bas ; tant qu'il n'existe pas, aucun secours n'est disponible.
-    let duplicateRef: Promise<OpenedStream | null> = Promise.resolve(null);
-
-    // A : le principal (avec son propre secours si l'échec est immédiat) et son délai maximal.
-    const attemptA = async (): Promise<OpenedStream | null> => {
-      const { response, provider } = await this.fetchLlmStreaming(
-        session,
-        messages,
-        { ...request, signal: signalOf(controllerA) },
-        trace,
-      );
-      if (!response.ok || !response.body) {
-        await response.body?.cancel().catch(() => undefined);
-        throw new Error(`Structured LLM request failed (${response.status})`);
-      }
-      const reader = response.body.getReader();
-      const firstRead = await this.readFirstChunk(
-        reader,
-        provider === primaryProvider ? voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS : undefined,
-        async () => (await duplicateRef) !== null,
-      );
-      if (firstRead === 'timeout') {
-        recordProviderFailure(primaryProvider);
-        reader.cancel().catch(() => undefined);
-        return null;
-      }
-      return { reader, provider, firstRead };
-    };
-    const primary = attemptA().catch((err: unknown) => {
-      primaryError = err;
-      return null;
-    });
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const hedgeDeadline = new Promise<'hedge'>((resolve) => {
-      timer = setTimeout(() => resolve('hedge'), hedgeMs);
-    });
-    const early = await Promise.race([primary, hedgeDeadline]).finally(() => {
-      if (timer) clearTimeout(timer);
-    });
-    if (early && early !== 'hedge') {
-      // Le principal (ou son secours immédiat) a répondu à temps.
-      recordHedgeOutcome(primaryProvider, false);
-      return early;
-    }
-    // Échec net du principal : son secours a déjà été tenté, un doublon n'apporterait rien.
-    if (early === null && primaryError) throw primaryError;
-
-    // B : le doublon. Inutile si le principal s'est déjà rabattu sur le secours. Si le délai
-    // maximal du principal est tombé avant le délai de hedging, c'est un repli classique.
-    const isHedge = early === 'hedge';
-    const canHedge = !trace.fellBack;
-    if (isHedge && canHedge) notify(recordLlmHedgeFired());
-    const duplicate = canHedge
-      ? (async (): Promise<OpenedStream | null> => {
-          const response = await this.fetchFallbackStreaming(
-            session,
-            messages,
-            { ...request, signal: signalOf(controllerB) },
-            isHedge ? 'hedge' : 'first_chunk_timeout',
-            new Error(`LLM first chunk slower than ${hedgeMs} ms`),
-          );
-          if (!response?.body) return null;
-          const reader = response.body.getReader();
-          const firstRead = await reader.read();
-          return { reader, provider: 'openrouter' as const, firstRead };
-        })().catch(() => null)
-      : Promise.resolve(null);
-    duplicateRef = duplicate;
-
-    const winner = await firstNonNull([primary, duplicate]);
-    if (!winner) {
-      if (isHedge) {
-        voiceLlmHedgeTotal.inc({ outcome: 'both_failed' });
-      }
-      if (primaryError) throw primaryError;
-      throw new Error('Structured LLM first chunk timed out, no fallback');
-    }
-    const hedgeWon = winner.index === 1;
-    const loser = hedgeWon ? controllerA : controllerB;
-    loser.abort();
-    (hedgeWon ? primary : duplicate).then(
-      (late) => late?.reader.cancel().catch(() => undefined),
-      () => undefined,
-    );
-    if (canHedge && isHedge) {
-      recordHedgeOutcome(primaryProvider, hedgeWon);
-      voiceLlmHedgeTotal.inc({ outcome: hedgeWon ? 'hedge_won' : 'primary_won' });
-      logger.info(
-        {
-          callId: session.callControlId,
-          hedgeMs,
-          winner: winner.value.provider,
-          firstChunkMs: Date.now() - startedAt,
-        },
-        '[llm-hedge] hedged request raced the primary',
-      );
-    }
-    return winner.value;
-  }
-
-  /**
    * Fetch LLM streaming : le provider actif d'abord ; s'il échoue avant le premier octet (quota,
    * 429, 5xx, réseau, coupure), OpenRouter prend le tour, pour le tour structuré comme pour le
    * chemin à outils des autres restaurants.
@@ -1427,8 +1278,7 @@ export class CallSessionManager {
 
   /**
    * Requête OpenRouter du tour structuré, avec le modèle et les réglages du relais
-   * (VOICE_STRUCTURED_FALLBACK_*). Sert au repli, au doublon, et au principal des restaurants
-   * listés dans VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS.
+   * (VOICE_STRUCTURED_FALLBACK_*). Sert au principal (GPT-6 Luna), au repli et au doublon.
    */
   private fetchOpenRouterStreaming(
     messages: ChatMessage[],

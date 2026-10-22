@@ -36,17 +36,14 @@ describe('voice LLM runtime identity', () => {
 });
 
 describe('isOpenRouterPrimaryFor', () => {
-  const previousIds = voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS;
+  const previousKey = voiceConfig.OPENROUTER_API_KEY;
 
   afterEach(() => {
-    Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: previousIds });
+    Object.assign(voiceConfig, { OPENROUTER_API_KEY: previousKey });
   });
 
-  const withIds = (ids: string | undefined) =>
-    Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: ids });
-
-  it('`*` envoie tous les restaurants chez OpenRouter, même un restaurant créé après le réglage', () => {
-    withIds('*');
+  it('GPT-6 Luna en principal pour tout restaurant dès que la clé OpenRouter est présente', () => {
+    Object.assign(voiceConfig, { OPENROUTER_API_KEY: ['test', 'openrouter', 'key'].join('-') });
 
     expect(isOpenRouterPrimaryFor('rest-1')).toBe(true);
     expect(isOpenRouterPrimaryFor('nouveau-resto')).toBe(true);
@@ -54,28 +51,8 @@ describe('isOpenRouterPrimaryFor', () => {
     expect(isOpenRouterPrimaryFor(undefined)).toBe(false);
   });
 
-  it('une liste explicite ne vaut que pour les restaurants listés', () => {
-    withIds('rest-1,rest-2');
-
-    expect(isOpenRouterPrimaryFor('rest-1')).toBe(true);
-    expect(isOpenRouterPrimaryFor('rest-2')).toBe(true);
-    expect(isOpenRouterPrimaryFor('rest-3')).toBe(false);
-  });
-
-  it('une valeur vide ou absente garde Cerebras en principal partout', () => {
-    withIds('');
+  it('sans clé OpenRouter, Cerebras reste en principal', () => {
+    Object.assign(voiceConfig, { OPENROUTER_API_KEY: ' ' });
     expect(isOpenRouterPrimaryFor('rest-1')).toBe(false);
-
-    withIds(undefined);
-    expect(isOpenRouterPrimaryFor('rest-1')).toBe(false);
-  });
-
-  it('tolère les espaces autour des identifiants et de `*`', () => {
-    withIds(' rest-1 , rest-2 ');
-    expect(isOpenRouterPrimaryFor('rest-2')).toBe(true);
-    expect(isOpenRouterPrimaryFor('rest-3')).toBe(false);
-
-    withIds(' rest-1 ,  * ');
-    expect(isOpenRouterPrimaryFor('rest-3')).toBe(true);
   });
 });
