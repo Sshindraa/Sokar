@@ -552,6 +552,12 @@ export interface CallSession {
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;
+  /** Cartesia Ink-2 en parallèle de Deepgram (voir stt-ink-parallel.ts). */
+  sttInk?: import('./stt-ink-parallel').InkParallelState;
+  /** L'ouverture d'Ink-2 a déjà été tentée pour cet appel. */
+  sttInkAttempted?: boolean;
+  /** Fins de phrase Deepgram envoyées dans l'ordre pendant l'attente d'Ink-2. */
+  sttInkDispatchChain?: Promise<void>;
   /** Second avis STT (voir stt-second-opinion.ts) : réglage lu une fois par appel. */
   sttSecondOpinionEnabled?: boolean;
   /** Dernières secondes d'audio envoyées à Deepgram, avec leur position dans le flux de la connexion. */

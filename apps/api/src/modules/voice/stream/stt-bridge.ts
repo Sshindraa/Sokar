@@ -61,6 +61,12 @@ import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
 import { recordSecondOpinionAudio, requestSecondOpinion } from './stt-second-opinion';
+import {
+  closeInkParallel,
+  openInkParallel,
+  resolveInkTranscript,
+  sendInkAudio,
+} from './stt-ink-parallel';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -1052,6 +1058,7 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
       : undefined,
   );
   if (adapter.id === 'deepgram') {
+    sendInkAudio(session, telnyxAudio);
     recordSecondOpinionAudio(
       session,
       audio,
@@ -1743,21 +1750,58 @@ function dispatchDeepgramFinalParts(
     resultEndMs || undefined,
     lastWordEndMs || undefined,
   );
-  dispatchCommittedTranscript(
-    session,
-    transcript,
-    words.length ? words : undefined,
-    languageCode,
-    timing,
-  );
-  // Après l'envoi au dialogue, jamais avant : le second avis ne retarde pas la réponse (il ne lève jamais).
-  requestSecondOpinion(
-    session,
-    transcript,
-    words,
-    speechEndOffsetMs || undefined,
-    sttAdapterForSession(session).chunkBytesPerMs(session.codec),
-  )?.catch(() => undefined);
+  const send = (finalTranscript: string, source: 'deepgram' | 'ink'): void => {
+    dispatchCommittedTranscript(
+      session,
+      finalTranscript,
+      words.length ? words : undefined,
+      languageCode,
+      timing,
+    );
+    // Après l'envoi au dialogue, jamais avant : le second avis ne retarde pas la réponse (il ne lève
+    // jamais). Inutile quand le texte vient déjà d'Ink-2.
+    if (source === 'deepgram') {
+      requestSecondOpinion(
+        session,
+        finalTranscript,
+        words,
+        speechEndOffsetMs || undefined,
+        sttAdapterForSession(session).chunkBytesPerMs(session.codec),
+      )?.catch(() => undefined);
+    }
+  };
+  if (!session.sttInk?.ready) {
+    send(transcript, 'deepgram');
+    return;
+  }
+  // Ink-2 en parallèle : attente plafonnée de son texte, phrases envoyées dans l'ordre.
+  session.sttInkDispatchChain = (session.sttInkDispatchChain ?? Promise.resolve())
+    .then(async () => {
+      let resolved: Awaited<ReturnType<typeof resolveInkTranscript>> = {
+        transcript,
+        source: 'deepgram',
+        waitedMs: 0,
+      };
+      try {
+        resolved = await resolveInkTranscript(session, transcript);
+      } catch {
+        // Deepgram seul.
+      }
+      logger.info(
+        { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
+        '[stt-ink] final transcript',
+      );
+      send(resolved.transcript, resolved.source);
+    })
+    .catch((error: unknown) => {
+      logger.error(
+        {
+          callId: session.callControlId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        '[stt-ink] dispatch failed',
+      );
+    });
 }
 
 export function flushDeepgramFinalPartsForSafety(session: CallSession): void {
@@ -2398,6 +2442,8 @@ export function connectStt(
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
   const adapter = sttAdapterForSession(session);
+  // Ink-2 en parallèle (restaurants listés) : ouverte une fois par appel, sans effet sur Deepgram.
+  if (adapter.id === 'deepgram') openInkParallel(session).catch(() => undefined);
   if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && adapter.id === 'scribe') {
     session.onAgentSpeaking = () => beginFrenchSttRelock(session, createSocket);
   }
@@ -2669,6 +2715,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 export function closeStt(session: CallSession): void {
   // Fin d'appel : envoyer ce qui reste avant de couper la socket.
   flushSttChunkBuffer(session);
+  closeInkParallel(session).catch(() => undefined);
   if (session.sttRelockPending || session.sttRelockAttempt) {
     voiceSttRelockTotal.inc({ result: 'skipped' });
     session.sttRelockPending = false;

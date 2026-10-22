@@ -464,6 +464,18 @@ VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 VOICE_STT_SECOND_OPINION_RESTAURANT_IDS=""
 VOICE_STT_SECOND_OPINION_MODEL=""
 VOICE_STT_SECOND_OPINION_DAILY_USD="1"
+# Cartesia Ink-2 en parallèle de Deepgram (restaurants listés, `*` = tous, vide = aucun ; `CARTESIA_API_KEY`).
+# Deepgram garde la fin de phrase, les mots (timings, confiance, bruit, interruption) et les mots isolés ;
+# Ink-2 (`/stt/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, L16 en PCM16 16 kHz) reçoit seulement
+# la voix de l'appelant (détection locale `trackCallerVoice`, 0,5 s gardées avant, 1 s après la dernière voix).
+# À chaque fin de phrase Deepgram de 2 mots ou plus : `finalize`, puis le texte Ink-2 remplace celui de Deepgram
+# s'il arrive dans `VOICE_STT_INK_WAIT_MS` (défaut 250, 50 à 1000 ; banc : 87 ms médiane, 128 ms p90), sinon
+# Deepgram. Le second avis MAI ne tourne alors que sur les phrases restées à Deepgram. 3 crédits Cartesia par
+# seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
+# appel. Toute panne retombe sur Deepgram seul.
+VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""
+VOICE_STT_INK_WAIT_MS="250"
+VOICE_STT_INK_DAILY_SECONDS="1800"
 # Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
 # requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
 # `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,
