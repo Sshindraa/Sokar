@@ -7,11 +7,7 @@
  * Source of truth: `packages/database/prisma/schema.prisma`.
  */
 
-export const PROFILE_TYPE_VALUES = [
-  'BISTROT_BRASSERIE',
-  'GASTRONOMIQUE',
-  'SEMI_GASTRO',
-] as const;
+export const PROFILE_TYPE_VALUES = ['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO'] as const;
 export type ProfileType = (typeof PROFILE_TYPE_VALUES)[number];
 
 export const PROFILE_TYPE_LABELS: Record<ProfileType, string> = {

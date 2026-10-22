@@ -57,7 +57,15 @@ export function MarketingConsentFields({
         </label>
       ))}
       <p className="text-xs text-muted-foreground">
-        Ce choix est indépendant de votre réservation : vous pouvez réserver sans cocher ces cases.
+        Ce choix est indépendant de votre réservation : vous pouvez réserver sans cocher ces cases.{' '}
+        <a
+          href="/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline transition-all duration-200 hover:text-foreground"
+        >
+          Informations sur le traitement de vos données
+        </a>
       </p>
     </fieldset>
   );

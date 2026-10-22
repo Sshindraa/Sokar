@@ -27,7 +27,7 @@ export function buildMarketingConsentLabel(
 ): string {
   return `Je souhaite recevoir ${CHANNEL_WORDING[channel]} les offres et actualités de ${restaurantLabel(
     restaurantName,
-  )}. Je peux me désinscrire à tout moment.`;
+  )}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.`;
 }
 
 /**

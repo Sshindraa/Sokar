@@ -30,7 +30,7 @@ describe('MarketingConsentFields', () => {
       />,
     );
     const email = screen.getByRole('checkbox', {
-      name: 'Je souhaite recevoir par e-mail les offres et actualités de Chez Sokar. Je peux me désinscrire à tout moment.',
+      name: 'Je souhaite recevoir par e-mail les offres et actualités de Chez Sokar. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.',
     });
     const sms = screen.getByRole('checkbox', {
       name: /par SMS les offres et actualités de Chez Sokar/,
@@ -38,6 +38,9 @@ describe('MarketingConsentFields', () => {
     expect(email).not.toBeChecked();
     expect(sms).not.toBeChecked();
     expect(screen.getByText(/vous pouvez réserver sans cocher/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /informations sur le traitement de vos données/i }),
+    ).toHaveAttribute('href', '/privacy');
   });
 
   it('hides the e-mail box while the address is not usable', () => {

@@ -46,8 +46,9 @@ d'exclusion ; aucun langage arbitraire ou filtre SQL fourni par le client n'est 
   `WHATSAPP`) ; `MarketingPermissionEvent` conserve chaque preuve, version, source et horodatage.
 - Un opt-in exige `proofVersion` et un hash SHA-256 de la preuve. Le texte brut n'est pas stocké
   dans le ledger de permission.
-- Pendant la migration, `CustomerConsent.marketingOptIn` peut autoriser SMS/email uniquement.
-  WhatsApp exige toujours un opt-in explicite par canal.
+- Pendant la migration, `CustomerConsent.marketingOptIn` peut autoriser le SMS uniquement. L'e-mail
+  et WhatsApp exigent toujours un opt-in explicite par canal (un indicateur rattaché à un téléphone ne
+  prouve pas un accord pour l'e-mail ; décision du 22/10/2026, avant le pilote e-mail).
 - `MarketingSuppression` gagne sur tout opt-in. Une désinscription par lien signé met à jour la
   permission immédiatement et ne révèle ni téléphone ni email.
 - Une plainte ou un rebond définitif signalé par le fournisseur crée une `MarketingSuppression` (`COMPLAINED`,

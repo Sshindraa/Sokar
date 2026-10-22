@@ -62,11 +62,14 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   e-mails transactionnels. Un pilote de quelques adresses tient largement.
 - **Jeton dans les journaux d'accès.** L'URL de désinscription contient le jeton ; il n'embarque que des
   identifiants opaques (aucune adresse), mais ne le copiez pas dans un ticket.
-- **Le consentement historique.** Sans ligne `MarketingPermission`, un `CustomerConsent.marketingOptIn`
-  (rattaché au téléphone) autorise aussi l'e-mail (ADR, « période de migration »). Rien dans le dashboard,
-  le widget ou Connect ne le met à `true` (seuls des appels API directs de type MCP le peuvent) : les cases
-  de §4 créent une `MarketingPermission` par canal et laissent `marketingOptIn` à `false`. Pour le
-  pilote, ne comptez que sur un consentement **e-mail explicite** (§5, étape B).
+- **Le consentement historique n'autorise plus l'e-mail.** Un `CustomerConsent.marketingOptIn` est un
+  indicateur rattaché à un numéro de téléphone : il ne démontre pas que la personne a accepté la prospection
+  par e-mail du restaurant concerné. Depuis cette PR, il ne peut plus autoriser que le SMS (période de
+  migration, SMS bloqués de toute façon) ; l'e-mail exige une permission `EMAIL` dédiée (ADR mis à jour).
+  Les consentements historiques ne sont utilisables pour l'e-mail que si leur preuve établit un accord
+  préalable couvrant ce canal et ce restaurant ; à défaut, le destinataire est exclu. Rien dans le dashboard,
+  le widget ou Connect ne met `marketingOptIn` à `true` (seuls des appels API directs de type MCP le
+  peuvent) : les cases de §4 créent une `MarketingPermission` par canal.
 
 ## 4. Base légale du consentement
 
@@ -80,8 +83,10 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   l'omet). Mettez le nom du restaurant dans le corps (`{{restaurant.name}}`).
 - **Pour le pilote**, les destinataires sont uniquement des personnes qui ont donné leur accord pour ce test
   (vous, collaborateurs, proches informés). Version de preuve proposée : `pilote-interne-2026-10`, texte de
-  preuve : « Accord donné par le titulaire de l'adresse pour recevoir les e-mails du pilote Sokar, retirable à
-  tout moment ». À conserver tel quel pour que le hachage reste identique.
+  preuve : « Accord donné par le titulaire de l'adresse pour recevoir de Chez Sokar (envoi opéré par Sokar)
+  les e-mails de test du pilote marketing, du <début> au <fin>, sans offre commerciale réelle, retirable à
+  tout moment ». Il identifie qui envoie, la nature des messages et la période (à compléter). À conserver tel
+  quel pour que le hachage reste identique, et à noter avec la date et la personne qui a donné l'accord.
 - **À valider par vous** (je ne tranche pas le droit) : le texte qui sera montré à de vrais clients (case à
   cocher non pré-cochée), la finalité (« offres et actualités de <restaurant> »), la durée de conservation de
   la preuve, et la mention dans l'annexe client (`privacy-client-annex.md`). Resend : DPA signé archivé en
@@ -93,10 +98,10 @@ Ce texte est une **proposition par défaut**. Il n'a pas été validé juridique
 juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il vit à un seul endroit,
 `packages/shared/src/marketing-consent.ts`, utilisé à la fois par les écrans et par l'API.
 
-| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                                                                   |
-| ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| E-mail | « Je souhaite recevoir par e-mail les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment. » |
-| SMS    | « Je souhaite recevoir par SMS les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment. »    |
+| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                                                                                                        |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E-mail | « Je souhaite recevoir par e-mail les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation. » |
+| SMS    | « Je souhaite recevoir par SMS les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation. »    |
 
 - **Version** : `marketing-consent-2026-10-22` (`MARKETING_CONSENT_VERSION`). Toute modification du texte
   exige une nouvelle version : une preuve ancienne doit rester rattachée au texte que le client a lu. Une
@@ -108,19 +113,56 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
-- **Durée de conservation de la preuve : proposition, à confirmer.** Aucune durée propre n'est définie
-  dans la politique de confidentialité (`PRIVACY_RETENTION_RULES` n'a pas de ligne marketing). Aujourd'hui la
-  preuve reste tant que la fiche client existe et disparaît avec elle (suppression en cascade) ; elle figure
-  dans l'export RGPD du client. Proposition retenue en attendant un avis juridique : conserver la preuve tant
-  que le client reçoit des messages, puis pendant une durée limitée après le dernier contact ou le retrait
-  (ordre de grandeur de 3 ans à confirmer ; ce chiffre n'est pas validé). **Rien n'est purgé automatiquement
-  aujourd'hui** : cette durée n'est pas encore appliquée par le code. Sa mention dans la politique et dans
-  l'annexe client (`privacy-client-annex.md`) reste à faire.
-- **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Une
-  personne peut cocher la case avec l'adresse de quelqu'un d'autre ; le lien de désinscription de chaque
-  message limite les dégâts. Recommandation : acceptable pour le pilote (adresses de test, personnes
-  informées), à ajouter avant d'écrire à de vrais clients (jeton signé et état « en attente de
-  confirmation » : phase suivante, non faite).
+- **Durées de conservation : trois obligations distinctes, aucune n'est encore appliquée par le code.**
+  La politique de confidentialité (`PRIVACY_RETENTION_RULES`) n'a pas de ligne marketing. Les durées
+  ci-dessous sont des **recommandations de la CNIL à contextualiser, pas une durée universelle ni une
+  décision validée** :
+
+  | Données                          | Règle à prévoir                                                                                                                                                                                     |
+  | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Fichier de prospection           | Durée adaptée ; la CNIL recommande 3 ans après la fin de la relation client, ou après la collecte ou le dernier contact **venant du prospect** (un e-mail envoyé par le restaurant n'en est pas un) |
+  | Preuve du consentement           | Conservation probatoire distincte, justifiée et à accès limité (aujourd'hui : avec la fiche client)                                                                                                 |
+  | Liste d'opposition (désinscrits) | Au moins 3 ans recommandés, uniquement pour empêcher une nouvelle sollicitation                                                                                                                     |
+
+  Point à vérifier : la preuve et l'état « retiré » sont aujourd'hui supprimés **en cascade** avec la fiche
+  client (effacement RGPD). Une personne désinscrite pourrait alors être réimportée puis sollicitée de
+  nouveau. Il faut une liste d'opposition minimale et séparée (par exemple l'empreinte de l'adresse et la
+  date), conservée après l'effacement de la fiche. **Non faite.**
+
+- **Limites connues de la preuve** : l'empreinte de `version|canal|phrase` permet de vérifier un texte, elle ne
+  prouve pas à elle seule que le titulaire de l'adresse l'a accepté. Il faut pouvoir rattacher l'acte à la
+  personne : date, adresse concernée, parcours, version présentée (déjà conservés) et, pour une saisie par le
+  restaurant, **l'auteur de la saisie et les circonstances du recueil** (la méthode seule est conservée
+  aujourd'hui, pas l'auteur). Une déclaration du restaurateur dans le dashboard est une preuve plus fragile
+  qu'un accord donné par le client lui-même. De plus, le texte est reconstruit avec le **nom actuel** du
+  restaurant : si ce nom change, l'empreinte ne se vérifie plus. Conserver le texte réellement présenté (ou le
+  nom à l'époque) et l'auteur nécessite une colonne en plus : **changement de schéma additif, non fait,
+  à décider** avant d'écrire à de vrais clients.
+- **Suivi des ouvertures et des clics : désactivé par défaut pour le pilote.** L'accord pour recevoir des
+  offres ne vaut pas accord pour suivre individuellement leur ouverture ou leurs clics (recommandation CNIL
+  sur les pixels, avril 2026 : certains usages exigent un consentement, d'autres une exemption encadrée).
+  N'activez pas les événements `opened` / `clicked` dans Resend, et vérifiez dans le domaine Resend que le suivi
+  des ouvertures et des clics est coupé. L'attribution réservation/visite (identifiants, cookies éventuels,
+  rapprochements CRM, finalité, conservation) est à qualifier séparément avant l'étape H.
+- **Information complète à proximité de la case** : la case ne remplit pas l'obligation d'information
+  (RGPD art. 13). Un lien « Informations sur le traitement de vos données » (`/privacy`) est affiché sous les
+  cases, mais cette notice est encore « en cours de finalisation » : responsable, finalités, destinataires,
+  durées, droits, contact et transferts hors UE restent à compléter.
+- **Rôles** : pour les campagnes décidées par un restaurant, qualification habituelle à confirmer : le
+  restaurant est responsable du traitement, Sokar sous-traitant, Resend sous-traitant ultérieur. Le DPA Resend
+  signé ne règle pas toute la chaîne : contrat restaurant–Sokar, sous-traitance ultérieure, conservation et
+  transferts hors UE doivent être documentés. Une réutilisation par Sokar pour ses propres finalités exige une
+  analyse distincte.
+- **Expéditeur** : le message doit rendre identifiable le restaurant pour lequel il est envoyé. L'expéditeur
+  actuel est « Sokar <noreply@sokar.tech> » (`EMAIL_FROM`) : « Sokar » seul peut être ambigu pour une campagne
+  de restaurant. À traiter avant de vrais clients (nom du restaurant dans le nom d'expéditeur) ; pour le
+  pilote, le nom du restaurant figure dans le corps.
+- **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Ce
+  n'est pas une obligation générale pour toute newsletter, mais une mesure recommandée ici pour réduire les
+  inscriptions avec l'adresse d'autrui et renforcer la preuve. Une personne peut cocher la case avec l'adresse
+  de quelqu'un d'autre ; la désinscription ultérieure ne remplace jamais l'autorisation préalable.
+  Acceptable pour le pilote (adresses de test, personnes informées), à ajouter avant d'écrire à de vrais
+  clients (jeton signé et état « en attente de confirmation » : phase suivante, non faite).
 - **Adresse enregistrée seulement avec l'accord** : aujourd'hui l'adresse saisie sur la page de réservation
   n'est conservée nulle part. Elle n'est rattachée à la fiche client que si le client coche la case e-mail,
   et jamais en remplacement d'une adresse déjà connue (dans ce cas, l'accord n'est pas enregistré).
@@ -143,15 +185,15 @@ production la fenêtre d'envoi.
 
 ### Étape A — Configuration (aucun envoi)
 
-| #   | Action                                                                                                                                                                                                                                                                                                                | Critère de réussite                                                                                                                 |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`                                                                                                                                           | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
-| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                               | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
-| A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (+ `opened`/`clicked` si vous voulez mesurer). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET` | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
-| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe`                                                                                                               | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
-| A5  | `MARKETING_FEATURES_ENABLED=true` (déjà vrai en production), `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                      | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
-| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                         | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
-| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                             | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
+| #   | Action                                                                                                                                                                                                                                                                                                                                               | Critère de réussite                                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`                                                                                                                                                                          | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
+| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                              | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
+| A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET` | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
+| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe`                                                                                                                                              | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
+| A5  | `MARKETING_FEATURES_ENABLED=true` (déjà vrai en production), `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                                                     | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
+| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                                                        | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
+| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                                                            | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
 
 ### Étape B — Destinataires de test et consentement
 
@@ -167,7 +209,7 @@ production la fenêtre d'envoi.
 ```bash
 curl -sS -X PUT "https://api.sokar.tech/crm/customers/<id-client>/marketing-permissions/EMAIL" \
   -H "authorization: Bearer $TOKEN" -H "content-type: application/json" \
-  -d '{"status":"OPTED_IN","source":"PILOT_INTERNAL","proofVersion":"pilote-interne-2026-10","proof":"Accord donné par le titulaire de l'\''adresse pour recevoir les e-mails du pilote Sokar, retirable à tout moment"}'
+  -d '{"status":"OPTED_IN","source":"PILOT_INTERNAL","proofVersion":"pilote-interne-2026-10","proof":"Accord donné par le titulaire de l'\''adresse pour recevoir de Chez Sokar (envoi opéré par Sokar) les e-mails de test du pilote marketing, du <début> au <fin>, sans offre commerciale réelle, retirable à tout moment"}'
 ```
 
 ### Étape C — Segment, brouillon, aperçu (toujours sans envoi)
@@ -240,8 +282,8 @@ exporter le rapport, ajouter une entrée au Journal, mettre à jour les bloqueur
 
 ## 6. Ce qui reste à faire par vous
 
-1. **Resend** : confirmer le domaine vérifié, créer le webhook (A3) et me donner la décision d'activer les
-   événements d'ouverture/clic ; copier le secret dans l'`.env` du VPS (staging puis production).
+1. **Resend** : confirmer le domaine vérifié, créer le webhook (A3) et laisser les événements
+   d'ouverture/clic désactivés (§4) ; copier le secret dans l'`.env` du VPS (staging puis production).
 2. **Secrets et drapeaux sur le VPS** : poser `MARKETING_UNSUBSCRIBE_SECRET`, `MARKETING_ATTRIBUTION_SECRET`,
    `MARKETING_UNSUBSCRIBE_BASE_URL`, `MARKETING_RECIPIENT_ALLOWLIST` ; décider qui ouvre la fenêtre
    `MARKETING_SENDS_ENABLED=true` (voir le verrou de déploiement du §3). Je n'y ai pas touché.
@@ -262,4 +304,7 @@ exporter le rapport, ajouter une entrée au Journal, mettre à jour les bloqueur
 Aucune migration n'est ajoutée. Pour couper : `MARKETING_SENDS_ENABLED=false` et rechargement ; les messages
 `PENDING` restent en attente et la campagne peut être annulée (`POST /marketing/campaigns/:id/cancel`).
 Les suppressions créées automatiquement se retirent une à une en base (ligne `marketing_suppressions`) après
-vérification de l'adresse concernée.
+vérification de l'adresse concernée. **Retirer une suppression ne recrée pas un consentement** : une plainte
+ou une opposition réelle ne se retire jamais ; seule une erreur technique ou un rebond établi comme tel peut
+l'être, par une procédure documentée qui distingue ces trois cas (l'opposition doit être prise en compte
+durablement).
