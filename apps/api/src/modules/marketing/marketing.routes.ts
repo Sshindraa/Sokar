@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { MARKETING_CONSENT_CHANNELS, MARKETING_CONSENT_COLLECTION_METHODS } from '@sokar/shared';
 import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
@@ -38,6 +39,7 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
+import { recordStaffMarketingConsent } from './marketing-consent.service';
 import {
   consumeMarketingUnsubscribeToken,
   verifyMarketingUnsubscribeToken,
@@ -80,6 +82,13 @@ const PermissionBodySchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/)
     .nullable()
     .optional(),
+});
+
+const StaffConsentParamsSchema = CustomerIdParamsSchema.extend({
+  channel: z.enum(MARKETING_CONSENT_CHANNELS),
+});
+const StaffConsentBodySchema = z.object({
+  method: z.enum(MARKETING_CONSENT_COLLECTION_METHODS),
 });
 
 const AudiencePreviewSchema = z
@@ -305,6 +314,32 @@ export async function marketingRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post(
+    '/crm/customers/:id/marketing-permissions/:channel/consent',
+    { preHandler: requireCrmAdvanced },
+    async (request, reply) => {
+      const { id, channel } = StaffConsentParamsSchema.parse(request.params);
+      const { method } = StaffConsentBodySchema.parse(request.body);
+      try {
+        const permission = await recordStaffMarketingConsent({
+          restaurantId: request.restaurantId!,
+          customerId: id,
+          channel,
+          method,
+        });
+        return reply.send({ data: permission });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
+          return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
+        }
+        if (error instanceof Error && error.message === 'CUSTOMER_EMAIL_REQUIRED') {
+          return reply.status(409).send({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+        }
+        throw error;
+      }
+    },
+  );
+
   app.delete(
     '/crm/customers/:id/marketing-permissions/:channel',
     { preHandler: requireCrmAdvanced },
@@ -315,7 +350,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           restaurantId: request.restaurantId!,
           customerId: id,
           channel,
-          source: 'UNSUBSCRIBE',
+          source: 'DASHBOARD_WITHDRAWAL',
         });
         return reply.send({ data: permission });
       } catch (error) {

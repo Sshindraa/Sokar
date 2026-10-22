@@ -13,16 +13,16 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 
 ## 1. Ce qui est prêt dans le code
 
-| Élément                                                                                              | État                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Segments, aperçu d'audience, brouillon, préparation, programmation, envoi, annulation, rapport + CSV | Livrés (`apps/api/src/modules/marketing/`), protégés par `marketing.campaigns` (plan Pro) et par `MARKETING_FEATURES_ENABLED`                                    |
-| Consentement par canal (`MarketingPermission`) avec preuve hachée et journal d'événements            | Livré ; **aucune interface ne permet de le recueillir** (voir §6)                                                                                                |
-| Désinscription signée par canal, immédiate, sans révéler l'adresse                                   | Livrée ; page de confirmation en français et en-têtes `List-Unsubscribe` ajoutés par cette PR                                                                    |
-| Contrôle au dernier moment : contact, consentement, suppression, plafond de 3 messages par jour      | Livré (worker `marketing-campaign`, deux contrôles avant l'appel Resend)                                                                                         |
-| Callbacks Resend signés (Svix) → statut du message, rapprochement des identifiants inconnus          | Livrés ; endpoint `POST /marketing/webhooks/resend`                                                                                                              |
-| Suppression automatique après plainte ou rebond définitif                                            | **Ajoutée par cette PR** (il n'existait aucun code qui créait une suppression)                                                                                   |
-| Liste blanche de destinataires propre au marketing (`MARKETING_RECIPIENT_ALLOWLIST`)                 | **Ajoutée par cette PR** ; vide = aucune restriction                                                                                                             |
-| Mode « test » d'une campagne                                                                         | `POST /marketing/campaigns/:id/test` est un **dry-run** : il rend le message mais ne contacte aucun fournisseur. L'envoi réel de test passe par la liste blanche |
+| Élément                                                                                              | État                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Segments, aperçu d'audience, brouillon, préparation, programmation, envoi, annulation, rapport + CSV | Livrés (`apps/api/src/modules/marketing/`), protégés par `marketing.campaigns` (plan Pro) et par `MARKETING_FEATURES_ENABLED`                                                                   |
+| Consentement par canal (`MarketingPermission`) avec preuve hachée et journal d'événements            | Livré. **Recueil ajouté** : case non pré-cochée sur la page de réservation Sokar Connect, et état par canal avec saisie d'un accord oral et retrait dans la fiche client du dashboard (voir §4) |
+| Désinscription signée par canal, immédiate, sans révéler l'adresse                                   | Livrée ; page de confirmation en français et en-têtes `List-Unsubscribe` ajoutés par cette PR                                                                                                   |
+| Contrôle au dernier moment : contact, consentement, suppression, plafond de 3 messages par jour      | Livré (worker `marketing-campaign`, deux contrôles avant l'appel Resend)                                                                                                                        |
+| Callbacks Resend signés (Svix) → statut du message, rapprochement des identifiants inconnus          | Livrés ; endpoint `POST /marketing/webhooks/resend`                                                                                                                                             |
+| Suppression automatique après plainte ou rebond définitif                                            | **Ajoutée par cette PR** (il n'existait aucun code qui créait une suppression)                                                                                                                  |
+| Liste blanche de destinataires propre au marketing (`MARKETING_RECIPIENT_ALLOWLIST`)                 | **Ajoutée par cette PR** ; vide = aucune restriction                                                                                                                                            |
+| Mode « test » d'une campagne                                                                         | `POST /marketing/campaigns/:id/test` est un **dry-run** : il rend le message mais ne contacte aucun fournisseur. L'envoi réel de test passe par la liste blanche                                |
 
 ## 2. Défauts constatés et corrigés (PR dédiée)
 
@@ -64,7 +64,8 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   identifiants opaques (aucune adresse), mais ne le copiez pas dans un ticket.
 - **Le consentement historique.** Sans ligne `MarketingPermission`, un `CustomerConsent.marketingOptIn`
   (rattaché au téléphone) autorise aussi l'e-mail (ADR, « période de migration »). Rien dans le dashboard,
-  le widget ou Connect ne le met à `true` (seuls des appels API directs de type MCP le peuvent). Pour le
+  le widget ou Connect ne le met à `true` (seuls des appels API directs de type MCP le peuvent) : les cases
+  de §4 créent une `MarketingPermission` par canal et laissent `marketingOptIn` à `false`. Pour le
   pilote, ne comptez que sur un consentement **e-mail explicite** (§5, étape B).
 
 ## 4. Base légale du consentement
@@ -86,6 +87,49 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   la preuve, et la mention dans l'annexe client (`privacy-client-annex.md`). Resend : DPA signé archivé en
   privé ; conservation effective à valider (voir `Context.md`).
 
+### Texte de consentement (à valider par Hamza)
+
+Ce texte est une **proposition par défaut**. Il n'a pas été validé juridiquement : Hamza (avec un conseil
+juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il vit à un seul endroit,
+`packages/shared/src/marketing-consent.ts`, utilisé à la fois par les écrans et par l'API.
+
+| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                                                                   |
+| ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| E-mail | « Je souhaite recevoir par e-mail les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment. » |
+| SMS    | « Je souhaite recevoir par SMS les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment. »    |
+
+- **Version** : `marketing-consent-2026-10-22` (`MARKETING_CONSENT_VERSION`). Toute modification du texte
+  exige une nouvelle version : une preuve ancienne doit rester rattachée au texte que le client a lu. Une
+  page qui envoie une version inconnue n'enregistre rien (la réservation, elle, aboutit).
+- **Finalité** : envoi d'offres et d'actualités du restaurant, par le canal coché, rien d'autre.
+- **Ce qui est conservé** (par canal et par client) : état (donné / retiré), date, source (`CONNECT`,
+  `DASHBOARD_IN_PERSON`, `DASHBOARD_PHONE`, `DASHBOARD_PAPER`, `UNSUBSCRIBE_LINK`, `DASHBOARD_WITHDRAWAL`),
+  version du texte et **empreinte SHA-256** de la preuve `version|canal|phrase exacte`. Le texte brut n'est
+  pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
+  restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
+  journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
+- **Durée de conservation de la preuve : à décider par vous.** Aucune durée propre n'est définie dans la
+  politique de confidentialité (`PRIVACY_RETENTION_RULES` n'a pas de ligne marketing). Aujourd'hui la preuve
+  reste tant que la fiche client existe et disparaît avec elle (suppression en cascade) ; elle figure dans
+  l'export RGPD du client. Une durée explicite, et sa mention dans la politique et l'annexe client
+  (`privacy-client-annex.md`), restent à arrêter.
+- **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Une
+  personne peut cocher la case avec l'adresse de quelqu'un d'autre ; le lien de désinscription de chaque
+  message limite les dégâts. À trancher : faut-il une confirmation par e-mail avant le premier envoi ?
+- **Adresse enregistrée seulement avec l'accord** : aujourd'hui l'adresse saisie sur la page de réservation
+  n'est conservée nulle part. Elle n'est rattachée à la fiche client que si le client coche la case e-mail,
+  et jamais en remplacement d'une adresse déjà connue (dans ce cas, l'accord n'est pas enregistré).
+- **Où les cases apparaissent** : formulaire de réservation de Sokar Connect (`/restaurant/<slug>/book`, `/widget/<slug>` et ses
+  intégrations), uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le
+  téléphone (case SMS) saisis. Le consentement n'est jamais une condition pour réserver. Le texte
+  « Ce choix est indépendant de votre réservation » est affiché sous les cases.
+- **Retrait** : par le client avec le lien de désinscription de chaque message ; par le restaurant depuis la
+  fiche client (« Retirer l'accord », avec confirmation).
+- **Non couvert** : l'agent vocal (aucun accord recueilli à l'appel), la liste d'attente Connect, le widget
+  embarqué `apps/widget` (gelé avant production ; le champ API optionnel `marketingConsent` de
+  `POST /public/r/:slug/confirm` est prêt à l'emploi), la page `/widget/<id>` du dashboard (sa création de
+  réservation passe par une route interne protégée par jeton et ne peut pas servir au public).
+
 ## 5. Liste de vérification du pilote (adresses de test seulement)
 
 Faites les étapes dans l'ordre. Chaque étape a un critère de réussite ; s'il n'est pas atteint, arrêtez-vous.
@@ -106,14 +150,14 @@ production la fenêtre d'envoi.
 
 ### Étape B — Destinataires de test et consentement
 
-| #   | Action                                                                                                                                                                                                           | Critère de réussite                                                                                    |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| B1  | Créez une réservation de test sur `/book/<slug-chez-sokar>` pour **chaque** adresse de test (ou utilisez un client existant à votre nom) : la fiche CRM `/dashboard/customers/crm/<id>` apparaît avec son e-mail | Chaque testeur a une fiche CRM avec e-mail renseigné                                                   |
-| B2  | Sur chaque fiche, ajoutez l'étiquette `pilote-email` (clé minuscule, séparée par des tirets)                                                                                                                     | L'étiquette est visible sur la fiche                                                                   |
-| B3  | Enregistrez le consentement e-mail de chaque testeur (appel API, voir §6 : aucune interface pour l'instant)                                                                                                      | `GET /crm/customers/<id>/marketing-permissions` renvoie `EMAIL`, `OPTED_IN`, `proofVersion` renseignée |
-| B4  | Gardez un testeur **sans** consentement et un testeur déjà « désinscrit » : ils servent de témoins                                                                                                               | Ils figureront dans les exclusions de l'aperçu (étape C)                                               |
+| #   | Action                                                                                                                                                                                                                                                                            | Critère de réussite                                                                                                                                            |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | Créez une réservation de test sur `/book/<slug-chez-sokar>` pour **chaque** adresse de test (ou utilisez un client existant à votre nom) : la fiche CRM `/dashboard/customers/crm/<id>` apparaît avec son e-mail                                                                  | Chaque testeur a une fiche CRM avec e-mail renseigné                                                                                                           |
+| B2  | Sur chaque fiche, ajoutez l'étiquette `pilote-email` (clé minuscule, séparée par des tirets)                                                                                                                                                                                      | L'étiquette est visible sur la fiche                                                                                                                           |
+| B3  | Enregistrez le consentement e-mail de chaque testeur : soit en cochant la case e-mail à la réservation de test, soit dans la fiche client (« Consentement marketing » → « Enregistrer un accord », méthode « À l'oral, sur place » ou autre, adresse e-mail requise sur la fiche) | La fiche affiche « Accord donné le … » avec la source ; `GET /crm/customers/<id>/marketing-permissions` renvoie `EMAIL`, `OPTED_IN`, `proofVersion` renseignée |
+| B4  | Gardez un testeur **sans** consentement et un testeur déjà « désinscrit » : ils servent de témoins                                                                                                                                                                                | Ils figureront dans les exclusions de l'aperçu (étape C)                                                                                                       |
 
-Exemple d'appel de consentement (jeton de session Clerk d'un Owner/Manager dans `$TOKEN`, ne le collez nulle part) :
+Équivalent par API, sans interface (jeton de session Clerk d'un Owner/Manager dans `$TOKEN`, ne le collez nulle part) :
 
 ```bash
 curl -sS -X PUT "https://api.sokar.tech/crm/customers/<id-client>/marketing-permissions/EMAIL" \
@@ -198,11 +242,11 @@ exporter le rapport, ajouter une entrée au Journal, mettre à jour les bloqueur
    `MARKETING_SENDS_ENABLED=true` (voir le verrou de déploiement du §3). Je n'y ai pas touché.
 3. **DNS** : reconfirmer SPF/DMARC chez Cloudflare.
 4. **Choisir les testeurs** : liste des adresses réelles (hors dépôt), avec leur accord.
-5. **Recueil du consentement** : il n'existe aucune interface (ni case dans le widget de réservation, ni
-   contrôle dans la fiche CRM) ; jusque-là, seuls des appels API le créent. Décidez si l'on ajoute un contrôle
-   « Consentement e-mail » dans la fiche CRM (utile au pilote) et la case non pré-cochée du formulaire de
-   réservation (nécessaire pour de vrais clients), avec le texte juridique validé.
-6. **Base légale** : valider le texte de consentement et la durée de conservation (§4).
+5. **Recueil du consentement** : les cases existent désormais (Connect, fiche client). Il reste à les
+   valider : parcours réel sur staging avec une réservation de test (case cochée, puis non cochée), et
+   décision sur la confirmation par e-mail (§4). L'agent vocal, la liste d'attente et le widget gelé ne
+   recueillent encore rien.
+6. **Base légale** : valider le texte de consentement proposé et décider la durée de conservation de la preuve (§4).
 7. **Verrou de déploiement** : décider entre fenêtre courte sans déploiement et retrait du flag du profil
    `core-operator-foundations`.
 8. **Telnyx** : toujours en attente du support (40008) ; hors périmètre de ce pilote.

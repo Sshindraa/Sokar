@@ -85,6 +85,7 @@ import {
 } from './connect.types';
 import { emitConnectEvent } from './connect-analytics';
 import { ConnectKpiService } from './connect-kpis.service';
+import { recordBookingMarketingConsent } from '../marketing/marketing-consent.service';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
 import { connectRequestDuration } from '../../shared/observability/metrics';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
@@ -842,6 +843,33 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             notification: 'not_sent',
             capacity: 'unchanged',
           });
+        }
+
+        // Consentement marketing : effet de bord facultatif, ne bloque jamais la réservation.
+        // Un rejeu idempotent (reused) ne ré-enregistre rien.
+        if (!result.reused && bodyParse.data.marketingConsent) {
+          try {
+            const booked = await db.reservation.findUnique({
+              where: { id: result.reservationId },
+              select: { customerId: true },
+            });
+            await recordBookingMarketingConsent({
+              restaurantId: restaurant.id,
+              restaurantName: restaurant.name,
+              customerId: booked?.customerId ?? null,
+              source: 'CONNECT',
+              consent: bodyParse.data.marketingConsent,
+              email: bodyParse.data.customer.email,
+            });
+          } catch (consentError) {
+            logger.warn(
+              {
+                restaurantId: restaurant.id,
+                err: consentError instanceof Error ? consentError.name : 'unknown',
+              },
+              'connect marketing consent not recorded',
+            );
+          }
         }
 
         // Émettre l'événement analytics reservation_confirmed (T9)

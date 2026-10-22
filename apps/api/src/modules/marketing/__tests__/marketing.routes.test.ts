@@ -97,6 +97,99 @@ describe('marketing control plane routes', () => {
     });
   });
 
+  it('records an oral consent from the dashboard with its collection method as source', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: 'client@example.com',
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+      id: 'permission-1',
+      channel: 'EMAIL',
+      status: MarketingPermissionStatus.OPTED_IN,
+    } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/crm/customers/customer-1/marketing-permissions/EMAIL/consent',
+      headers: AUTH,
+      payload: { method: 'IN_PERSON' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const upsert = vi.mocked(db.marketingPermission.upsert).mock.calls[0]?.[0];
+    expect(upsert?.create).toMatchObject({
+      restaurantId: 'test-rest-1',
+      source: 'DASHBOARD_IN_PERSON',
+      status: MarketingPermissionStatus.OPTED_IN,
+    });
+    expect(upsert?.create.proofVersion).toMatch(/^marketing-consent-/);
+    expect(upsert?.create.proofHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('rejects an oral consent without a method, on an unknown channel or without an e-mail', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: null,
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    const url = '/crm/customers/customer-1/marketing-permissions';
+
+    const noMethod = await app.inject({
+      method: 'POST',
+      url: `${url}/EMAIL/consent`,
+      headers: AUTH,
+      payload: {},
+    });
+    expect(noMethod.statusCode).toBe(400);
+    const whatsapp = await app.inject({
+      method: 'POST',
+      url: `${url}/WHATSAPP/consent`,
+      headers: AUTH,
+      payload: { method: 'PHONE' },
+    });
+    expect(whatsapp.statusCode).toBe(400);
+    const noEmail = await app.inject({
+      method: 'POST',
+      url: `${url}/EMAIL/consent`,
+      headers: AUTH,
+      payload: { method: 'PHONE' },
+    });
+    expect(noEmail.statusCode).toBe(409);
+    expect(noEmail.json()).toEqual({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+    expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+  });
+
+  it('withdraws a consent from the dashboard under its own source', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/crm/customers/customer-1/marketing-permissions/SMS',
+      headers: AUTH,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(vi.mocked(db.marketingPermission.upsert).mock.calls[0]?.[0].create).toMatchObject({
+      status: MarketingPermissionStatus.OPTED_OUT,
+      source: 'DASHBOARD_WITHDRAWAL',
+    });
+  });
+
   it('previews and creates a draft campaign without sending to a provider', async () => {
     const app = await getApp();
     vi.mocked(db.customerSegment.findFirst).mockResolvedValue({
