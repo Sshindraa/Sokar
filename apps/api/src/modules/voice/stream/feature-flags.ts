@@ -1,6 +1,5 @@
 import type { CallSession } from './types';
 
-export type VoiceSttProvider = 'scribe' | 'deepgram';
 export type VoiceDeepgramModel = 'nova-3' | 'flux-general-multi';
 
 export function parseRestaurantIdList(value: string | undefined): string[] {
@@ -10,84 +9,27 @@ export function parseRestaurantIdList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/**
- * Parcours vocal moderne par défaut (Deepgram, mots-clés Deepgram, écoute Dialogue V2 avec
- * filtre d'écho) pour tout restaurant, sans le lister un par un. `VOICE_V2_DISABLED_RESTAURANT_IDS` ramène un
- * restaurant à l'ancien chemin ; il n'annule pas les listes explicites, qui gardent leur effet.
- * Désactivé tant que `VOICE_V2_DEFAULT` n'est pas `true`.
- */
-export function isVoiceV2Default(
-  restaurantId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return (
-    env.VOICE_V2_DEFAULT === 'true' &&
-    !parseRestaurantIdList(env.VOICE_V2_DISABLED_RESTAURANT_IDS).includes(restaurantId)
-  );
-}
-
-export function isVoiceFeatureEnabledForRestaurant(
-  feature: 'dialogueListeningV2' | 'deepgramStt',
-  restaurantId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (feature === 'dialogueListeningV2') {
-    return (
-      env.VOICE_DIALOGUE_LISTENING_V2 === 'true' ||
-      parseRestaurantIdList(env.VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS).includes(
-        restaurantId,
-      ) ||
-      isVoiceV2Default(restaurantId, env)
-    );
-  }
-
-  return (
-    env.VOICE_STT_PROVIDER === 'deepgram' &&
-    (parseRestaurantIdList(env.VOICE_STT_PROVIDER_RESTAURANT_IDS).includes(restaurantId) ||
-      isVoiceV2Default(restaurantId, env))
-  );
-}
-
 export interface VoiceFeatureSnapshot {
-  dialogueListeningV2Enabled: boolean;
-  sttProvider: VoiceSttProvider;
   deepgramModel: VoiceDeepgramModel;
   deepgramNumeralsEnabled: boolean;
   deepgramPunctuateEnabled: boolean;
-  deepgramKeytermsEnabled: boolean;
 }
 
-export function isVoiceDeepgramKeytermsEnabled(
-  restaurantId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return (
-    parseRestaurantIdList(env.VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS).includes(restaurantId) ||
-    isVoiceV2Default(restaurantId, env)
-  );
-}
-
+/**
+ * Réglages Deepgram figés pour tout appel : nova-3, chiffres en nombres, sans ponctuation (le réglage
+ * de production depuis septembre ; Flux et la ponctuation restent mesurables au banc,
+ * scripts/voice-stt-bench). Le fournisseur, l'écoute Dialogue V2 avec filtre d'écho et les mots-clés
+ * Deepgram sont actifs pour tous les restaurants, sans liste ni interrupteur.
+ */
 export function resolveVoiceFeatureSnapshot(
-  session: Pick<CallSession, 'restaurantId' | 'voiceFeatureSnapshot'>,
-  env: NodeJS.ProcessEnv = process.env,
+  session: Pick<CallSession, 'voiceFeatureSnapshot'>,
 ): VoiceFeatureSnapshot {
   if (session.voiceFeatureSnapshot) return session.voiceFeatureSnapshot;
 
   const snapshot: VoiceFeatureSnapshot = {
-    dialogueListeningV2Enabled: isVoiceFeatureEnabledForRestaurant(
-      'dialogueListeningV2',
-      session.restaurantId,
-      env,
-    ),
-    sttProvider: isVoiceFeatureEnabledForRestaurant('deepgramStt', session.restaurantId, env)
-      ? 'deepgram'
-      : 'scribe',
-    // Pour tous les restaurants : nova-3, chiffres en nombres, sans ponctuation (le réglage de production
-    // depuis septembre ; Flux et la ponctuation restent mesurables au banc, scripts/voice-stt-bench).
     deepgramModel: 'nova-3',
     deepgramNumeralsEnabled: true,
     deepgramPunctuateEnabled: false,
-    deepgramKeytermsEnabled: isVoiceDeepgramKeytermsEnabled(session.restaurantId, env),
   };
   session.voiceFeatureSnapshot = snapshot;
   return snapshot;

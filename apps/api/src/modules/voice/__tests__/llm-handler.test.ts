@@ -168,8 +168,6 @@ describe('reprise de final STT', () => {
       restaurantName: 'Test',
       sttProviderUsed: 'deepgram-nova-3',
       voiceFeatureSnapshot: {
-        sttProvider: 'deepgram',
-        dialogueListeningV2Enabled: true,
         deepgramModel: 'nova-3',
       },
       conversation: createConversationState(),
@@ -189,7 +187,6 @@ describe('reprise de final STT', () => {
         loopDetected: false,
         completed: false,
         eventSequence: 0,
-        sttProvider: 'deepgram-nova-3',
         latencyTrace,
       },
       latencyTrace,
