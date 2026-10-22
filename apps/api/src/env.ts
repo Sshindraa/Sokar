@@ -450,6 +450,7 @@ const EnvSchema = z
     MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
+    MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
     // POS connectors remain disabled until a provider sandbox and pilot are
     // qualified. The adapter and import endpoints are still available locally
     // when explicitly enabled in a non-production environment.

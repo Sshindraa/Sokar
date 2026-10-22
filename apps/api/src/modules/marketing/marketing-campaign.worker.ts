@@ -244,6 +244,22 @@ export function buildMarketingReservationLink(
   }
 }
 
+/**
+ * Interrupteur global de sécurité du pilote : `MARKETING_RECIPIENT_ALLOWLIST` (adresses e-mail ou
+ * numéros, séparés par des virgules). Renseigné, seuls ces contacts reçoivent un message marketing,
+ * tous restaurants confondus ; vide ou absent, aucune restriction. Contrairement à
+ * `EMAIL_TEST_ALLOWLIST`, il ne touche ni les confirmations ni les alertes.
+ */
+export function marketingRecipientAllowlist(
+  environment: NodeJS.ProcessEnv = process.env,
+): Set<string> | null {
+  const entries = (environment.MARKETING_RECIPIENT_ALLOWLIST ?? '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+  return entries.length > 0 ? new Set(entries) : null;
+}
+
 async function eligibility(
   deps: MarketingCampaignWorkerDependencies,
   args: {
@@ -294,6 +310,14 @@ async function eligibility(
   }
   if (args.channel !== 'EMAIL' && !args.customer.phone) {
     return { allowed: false, reason: 'NO_CONTACT' };
+  }
+  const allowlist = marketingRecipientAllowlist();
+  if (allowlist) {
+    const contact =
+      args.channel === 'EMAIL' ? args.customer.emailNormalized : args.customer.phone.trim();
+    if (!contact || !allowlist.has(contact.toLowerCase())) {
+      return { allowed: false, reason: 'NOT_IN_TEST_ALLOWLIST' };
+    }
   }
   return { allowed: true };
 }
@@ -365,6 +389,11 @@ async function sendOne(
           to: message.customer.emailNormalized,
           subject: campaign.subject ?? campaign.restaurant.name,
           html: toMarketingHtml(rendered),
+          // Désinscription en un clic (RFC 8058) : Gmail et Outlook affichent un bouton natif.
+          headers: {
+            'List-Unsubscribe': `<${context.unsubscribeUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
           usage,
         }),
         'resend',

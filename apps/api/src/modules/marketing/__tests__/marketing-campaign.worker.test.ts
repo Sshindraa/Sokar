@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingMessageStatus } from '@prisma/client';
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 import {
+  marketingRecipientAllowlist,
   processMarketingCampaignJob,
   type MarketingCampaignWorkerDependencies,
 } from '../marketing-campaign.worker';
@@ -87,6 +88,10 @@ function makeDependencies() {
 }
 
 describe('marketing campaign worker', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.API_URL = 'https://api.sokar.test';
@@ -174,5 +179,95 @@ describe('marketing campaign worker', () => {
       `Réservez ici : http://localhost:3000/book/chez-sokar?marketingAttributionToken=${attributionToken}`,
       expect.anything(),
     );
+  });
+  it('envoie un e-mail avec liens cliquables et en-têtes de désinscription en un clic', async () => {
+    const { db, deps } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      restaurantId: 'restaurant-1',
+      channel: 'EMAIL',
+      status: MarketingCampaignStatus.READY,
+      subject: 'Une table vous attend',
+      bodyTemplate: 'Bonjour {{customer.firstName}}\nSe désinscrire : {{unsubscribeUrl}}',
+      restaurant: { name: 'Chez Sokar', slug: 'chez-sokar' },
+    } as never);
+    vi.mocked(db.campaignMessage.findMany)
+      .mockReset()
+      .mockResolvedValueOnce([
+        {
+          id: 'message-1',
+          customerId: 'customer-1',
+          customer: {
+            id: 'customer-1',
+            name: 'Alice Martin',
+            phone: '',
+            emailNormalized: 'alice@example.com',
+          },
+        },
+      ] as never)
+      .mockResolvedValue([]);
+    const sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'success',
+      provider: 'resend',
+      channel: 'email',
+      providerMessageId: 'resend-1',
+    });
+    deps.sendEmail = sendEmail as never;
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
+      accepted: 1,
+      failed: 0,
+    });
+    const unsubscribeUrl = 'https://api.sokar.test/marketing/unsubscribe?token=unsubscribe-token';
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'alice@example.com',
+        subject: 'Une table vous attend',
+        html: `Bonjour Alice<br>Se désinscrire : <a href="${unsubscribeUrl}">${unsubscribeUrl}</a>`,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      }),
+    );
+  });
+  it('lit la liste blanche sans tenir compte de la casse ni des espaces', () => {
+    expect(marketingRecipientAllowlist({})).toBeNull();
+    expect(marketingRecipientAllowlist({ MARKETING_RECIPIENT_ALLOWLIST: ' , ' })).toBeNull();
+    expect(
+      marketingRecipientAllowlist({
+        MARKETING_RECIPIENT_ALLOWLIST: ' Testeur@Example.com , +33600000000 ',
+      }),
+    ).toEqual(new Set(['testeur@example.com', '+33600000000']));
+  });
+
+  it('annule sans appeler le fournisseur un destinataire hors liste blanche', async () => {
+    vi.stubEnv('MARKETING_RECIPIENT_ALLOWLIST', 'testeur@example.com');
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
+      processed: 1,
+      accepted: 0,
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.marketingFrequencyWindow.updateMany).not.toHaveBeenCalled();
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingMessageStatus.CANCELLED, errorCode: 'NOT_IN_TEST_ALLOWLIST' },
+      }),
+    );
+  });
+
+  it('envoie à un destinataire présent dans la liste blanche', async () => {
+    vi.stubEnv('MARKETING_RECIPIENT_ALLOWLIST', '+33601020304');
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
+      accepted: 1,
+    });
+    expect(sendSms).toHaveBeenCalledTimes(1);
   });
 });

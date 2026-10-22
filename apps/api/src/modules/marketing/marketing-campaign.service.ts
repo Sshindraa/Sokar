@@ -176,7 +176,14 @@ export function toMarketingHtml(text: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
-  return escaped.replaceAll(/\r?\n/g, '<br>');
+  // Les adresses deviennent des liens cliquables : le lien de désinscription et celui de réservation
+  // doivent fonctionner même dans un client de messagerie qui ne détecte pas les URL.
+  const linked = escaped.replaceAll(/https?:\/\/[^\s<]+/g, (match) => {
+    const trailing = /(?:[.,;:!?)]|&quot;|&#39;)+$/.exec(match)?.[0] ?? '';
+    const url = trailing ? match.slice(0, -trailing.length) : match;
+    return `<a href="${url}">${url}</a>${trailing}`;
+  });
+  return linked.replaceAll(/\r?\n/g, '<br>');
 }
 
 export async function ensureCampaignMessages(
