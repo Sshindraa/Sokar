@@ -16,10 +16,6 @@ import {
   isOnboardingTestCall,
   parseClientState,
 } from './onboarding-test-call';
-import {
-  isVoiceDeepgramKeytermsEnabled,
-  isVoiceFeatureEnabledForRestaurant,
-} from './stream/feature-flags';
 import { buildDeepgramCallKeyterms } from './stream/stt-deepgram-keyterms';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { buildTelnyxStreamConfig, getTelnyxCodec } from './stream/telnyx-codec';
@@ -311,16 +307,12 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         // telnyxWs et déclenchera la première salutation.
         // Codec Telnyx : PCMA par défaut, L16 seulement si le flag est activé.
         const telnyxCodec = getTelnyxCodec(ctx.id);
-        const deepgramKeyterms =
-          isVoiceFeatureEnabledForRestaurant('deepgramStt', ctx.id) &&
-          isVoiceDeepgramKeytermsEnabled(ctx.id)
-            ? buildDeepgramCallKeyterms({
-                restaurantName: ctx.name,
-                address: ctx.formattedAddress,
-                city: ctx.city,
-                cuisineTypes: ctx.cuisineType,
-              })
-            : undefined;
+        const deepgramKeyterms = buildDeepgramCallKeyterms({
+          restaurantName: ctx.name,
+          address: ctx.formattedAddress,
+          city: ctx.city,
+          cuisineTypes: ctx.cuisineType,
+        });
         CallSessionManager.getInstance().create({
           callControlId: payload.call_control_id,
           callSessionId: payload.call_leg_id,

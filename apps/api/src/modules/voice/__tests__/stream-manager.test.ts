@@ -557,8 +557,6 @@ function callFetchLlmStreaming(
   session: CallSession = {
     restaurantId: 'rest-stream-test',
     voiceFeatureSnapshot: {
-      sttProvider: 'scribe',
-      dialogueListeningV2Enabled: false,
       deepgramModel: 'nova-3',
     },
   } as CallSession,
