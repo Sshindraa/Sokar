@@ -94,7 +94,8 @@ async function flushMicrotasks(): Promise<void> {
 describe('résilience STT', () => {
   beforeEach(() => {
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('ELEVENLABS_API_KEY', 'test-only-elevenlabs-key');
+    vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
+    vi.stubEnv('CARTESIA_API_KEY', '');
   });
 
   afterEach(() => {
@@ -137,8 +138,6 @@ describe('résilience STT', () => {
 
   it('sans clé Cartesia (pas de secours Ink-2) : un 401 Deepgram à l’ouverture suit le chemin « reconnaissance indisponible »', async () => {
     vi.stubEnv('CARTESIA_API_KEY', '');
-    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
-    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
     vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
     const session = makeSession();
@@ -170,8 +169,6 @@ describe('résilience STT', () => {
   });
 
   it('route Deepgram en binaire brut et normalise son segment final dans le bridge commun', async () => {
-    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
-    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
     vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
     const session = makeSession();
@@ -223,8 +220,6 @@ describe('résilience STT', () => {
   });
 
   it('ne ré-ouvre pas une autre socket que celle de Deepgram après une première ouverture réussie', async () => {
-    vi.stubEnv('VOICE_STT_PROVIDER', 'deepgram');
-    vi.stubEnv('VOICE_STT_PROVIDER_RESTAURANT_IDS', 'restaurant-stt-resilience');
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
     const session = makeSession();
     const { socket, handlers } = makeConnectingSocket();
