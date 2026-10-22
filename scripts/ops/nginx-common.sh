@@ -27,7 +27,7 @@ source "$HELPERS_DIR/logging.sh"
 #   $1 — root       : /opt/sokar | /opt/sokar-staging
 #   $2 — vhost      : sokar | sokar-staging
 #   $3 — environment : prod | staging
-#   $4 — cert_root  : /etc/letsencrypt/live/sokar.tech | /etc/letsencrypt/live/staging.sokar.tech
+#   $4 — cert_root  : /etc/letsencrypt/live/sokar.tech (certificat d'origine Cloudflare *.sokar.tech, prod et staging)
 #
 # Retourne 0 en cas de succès, 1 si nginx -t échoue.
 install_nginx_vhost() {

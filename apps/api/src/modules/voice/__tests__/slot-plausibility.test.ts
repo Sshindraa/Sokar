@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   buildAnswerChoicePlan,
   buildDeterministicTurnPlan,
@@ -19,27 +19,6 @@ const EVERY_DAY = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const NOON_TO_ELEVEN = Object.fromEntries(
   EVERY_DAY.map((day) => [day, { open: '12:00', close: '23:00' }]),
 ) as CallSession['openingHours'];
-
-const ENV_KEYS = [
-  'VOICE_EXPECTED_ANSWER_ENABLED',
-  'VOICE_CONFIDENCE_CONFIRM_ENABLED',
-  'VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS',
-  'VOICE_CONFIDENCE_CONFIRM_SLOTS',
-] as const;
-const saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
-
-beforeEach(() => {
-  process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
-  delete process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED;
-  delete process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS;
-  delete process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS;
-});
-afterEach(() => {
-  for (const key of ENV_KEYS) {
-    if (saved[key] === undefined) delete process.env[key];
-    else process.env[key] = saved[key];
-  }
-});
 
 function makeSession(overrides: Partial<CallSession> = {}): CallSession {
   const session = {
@@ -144,22 +123,9 @@ describe('vraisemblance des heures', () => {
 
     expect(session.conversation.slots.time).toBe('10:00');
   });
-
-  it('ne change rien quand la phase 1 est coupée', () => {
-    process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'false';
-    const session = makeSession();
-    recordAssistantReplyFromLlmTextFallback(session, 'Vous voulez venir vers quelle heure ?');
-    recordUserTurn(session, 'Vers 10 heures.', 'content', NOW);
-
-    expect(session.conversation.slots.time).toBe('10:00');
-  });
 });
 
-describe('portée du flag de confiance', () => {
-  beforeEach(() => {
-    process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED = 'true';
-  });
-
+describe('portée de la confirmation par la confiance', () => {
   function lowConfidenceTurn(): CallSession {
     const session = makeSession();
     session.conversation.slots.date = '2026-09-26';
@@ -187,15 +153,6 @@ describe('portée du flag de confiance', () => {
       { kind: 'partySize', confidence: 0.05, unstable: false, decision: 'choice' },
       { kind: 'time', confidence: 0.05, unstable: false, decision: 'wouldBeReadBack' },
     ]);
-  });
-
-  it('agit sur l’heure quand elle est dans la portée', () => {
-    process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS = 'time';
-    const session = lowConfidenceTurn();
-
-    expect(session.conversation.slots.partySize).toBe(6);
-    expect(session.conversation.answerChoice?.kind).toBe('time');
-    expect(session.conversation.lastSlotConfidence?.[0].decision).toBe('wouldBeChoice');
   });
 });
 

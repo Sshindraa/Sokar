@@ -282,34 +282,6 @@ export class CustomerService {
   }
 
   /**
-   * Customer context used before the CRM voice profile (restaurants outside
-   * `VOICE_CRM_PROFILE_RESTAURANT_IDS`). Kept verbatim so the prompt stays
-   * identical until a restaurant is listed, except the manager's free-text
-   * notes, which never reach the model (they may hold sensitive data).
-   */
-  static buildLegacyVipPromptExtra(customer: CustomerContext): string {
-    if (!customer.name) return '';
-    const lines: string[] = [`Le client s'appelle ${customer.name}.`];
-    if (customer.visitCount > 0) lines.push(`C'est sa ${customer.visitCount + 1}e visite.`);
-    if (customer.isVip) lines.push('⭐ Client VIP — sois particulièrement attentionné.');
-    if (customer.specialOccasion) lines.push(`Occasion spéciale : ${customer.specialOccasion}.`);
-    if (customer.partySizeTypical && customer.partySizeTypical > 0) {
-      lines.push(`Taille de groupe habituelle : ${customer.partySizeTypical} pers.`);
-    }
-    return lines.join(' ');
-  }
-
-  /** Greeting fragment used before the CRM voice profile; see buildLegacyVipPromptExtra. */
-  static buildLegacyReturningGreeting(customer: CustomerContext): string {
-    if (!customer.name) return '';
-    if (customer.isVip) return `, content de vous revoir M. ${customer.name.split(' ')[0]}`;
-    if (customer.visitCount >= 1) {
-      return `, ravi de vous revoir ${customer.name.split(' ')[0]}`;
-    }
-    return '';
-  }
-
-  /**
    * Adds the real visit history and the confirmed CRM data to a caller. Best
    * effort: a CRM read failure leaves the call on the basic customer context.
    */
@@ -414,7 +386,7 @@ function formatVoiceDate(iso: string, timezone: string, withTime: boolean): stri
   }).format(new Date(iso));
 }
 
-async function findCustomerForPhone(
+export async function findCustomerForPhone(
   restaurantId: string,
   phone: string,
   normalizedPhone: string | null,

@@ -503,8 +503,8 @@ qu'elle porte ; `spanPool` : spans supplémentaires servant de donneurs) avec un
 VBE_SUITE=perturb VBE_JSON_OUT=/chemin/absolu/hors/depot/perturb.json scripts/ops/voice-behavior-eval.sh
 ```
 
-- `VBE_UNDERSTANDING=1` compose les requêtes avec la vérification de compréhension (drapeau de production
-  `VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS`) ; sans, comportement historique. Pour juger ce drapeau : même suite
+- `VBE_UNDERSTANDING=1` compose les requêtes avec la vérification de compréhension (active pour tous les
+  restaurants en production depuis le 22/10/2026) ; sans, comportement historique. Pour juger ce drapeau : même suite
   sans puis avec, en rejeu A/B (voir plus bas), jamais contre un score stocké.
 - `VBE_SUITE=default|perturb|all`. `perturb` = 27 variantes × 5 tirages = 135 requêtes (plafond 150).
 - Indicateurs par découpage : **fausse acceptation** (part des tirages d'ablation où une valeur absente de la phrase

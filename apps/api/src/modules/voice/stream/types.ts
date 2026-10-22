@@ -110,6 +110,8 @@ export type SttFinalTrigger =
   | 'utterance_end_finalize'
   /** Partielle Deepgram figée sans fin de phrase : `Finalize` a forcé le segment. */
   | 'stalled_finalize'
+  /** Partielle Deepgram en attente et appelant silencieux (détection locale) : `Finalize` a forcé le segment. */
+  | 'silence_finalize'
   | 'safety_flush'
   /** Relève au silence : texte rendu par un `Finalize` envoyé au silence réel, tour clos par la règle habituelle. */
   | 'silence_flush'
@@ -552,6 +554,18 @@ export interface CallSession {
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;
+  /** Le secours Ink-2 a déjà remplacé Deepgram pendant cet appel (une seule fois). */
+  sttInkFallbackUsed?: boolean;
+  /** Cartesia Ink-2 en parallèle de Deepgram (voir stt-ink-parallel.ts). */
+  sttInk?: import('./stt-ink-parallel').InkParallelState;
+  /** L'ouverture d'Ink-2 a déjà été tentée pour cet appel. */
+  sttInkAttempted?: boolean;
+  /** Fins de phrase Deepgram envoyées dans l'ordre pendant l'attente d'Ink-2. */
+  sttInkDispatchChain?: Promise<void>;
+  /** Ink-2 et Deepgram en désaccord sur le nombre de personnes de cette phrase : à faire confirmer. */
+  sttInkNote?: import('./stt-ink-parallel').InkDisagreementNote;
+  /** Fins de phrase Deepgram envoyées au dialogue pendant l'appel : une note ne vaut que pour un tour. */
+  sttFinalCount?: number;
   sttDeepgramFinalParts?: Array<{
     transcript: string;
     words?: SttWord[];
@@ -578,6 +592,8 @@ export interface CallSession {
    * final (jamais leur texte dans les logs). Sert à expliquer un segment final
    * tardif : partielles encore en mouvement, ou silence côté fournisseur.
    */
+  /** Partielle déjà close par la fin de phrase sur silence local : une seule fois par partielle. */
+  sttDeepgramLocalSilenceFinalizedText?: string;
   sttDeepgramPartials?: {
     count: number;
     changes: number;
@@ -601,16 +617,6 @@ export interface CallSession {
     code: VoiceLanguageCode;
     count: number;
   } | null;
-  /** Relock Scribe en français différé jusqu'au début du prochain TTS. */
-  sttRelockPending?: boolean;
-  /** Le socket courant utilise le profil français sans détection. */
-  sttFrenchOnly?: boolean;
-  /** Un handshake de relock est en cours ; son échec restaure l'auto-détection. */
-  sttRelockAttempt?: boolean;
-  /** Socket auto-détection conservé jusqu'à l'ouverture du nouveau socket français. */
-  sttRelockPreviousWs?: WebSocket | null;
-  /** Appelé par la machine d'état uniquement à l'entrée en SPEAKING. */
-  onAgentSpeaking?: () => void;
   /** Le tour non français verrouillé doit emprunter la relance française. */
   forceFrenchReprompt?: boolean;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */

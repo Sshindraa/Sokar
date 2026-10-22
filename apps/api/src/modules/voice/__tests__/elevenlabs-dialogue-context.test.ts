@@ -10,7 +10,6 @@ import {
   ELEVENLABS_DIALOGUE_MODEL,
   ElevenLabsDialogueSession,
   getPronunciationDictionaryLocator,
-  isElevenLabsDialogueEnabled,
   isElevenLabsDialogueEnabledFor,
   parseElevenLabsDialogueMessage,
 } from '../stream/elevenlabs-dialogue-context';
@@ -143,54 +142,16 @@ describe('elevenlabs-dialogue-context : lecture des messages serveur', () => {
   });
 });
 
-describe('elevenlabs-dialogue-context : drapeau global', () => {
-  it('est désactivé par défaut et ne s’active qu’avec la valeur « true »', () => {
-    expect(isElevenLabsDialogueEnabled({})).toBe(false);
-    expect(isElevenLabsDialogueEnabled({ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true' })).toBe(
-      true,
-    );
-    expect(isElevenLabsDialogueEnabled({ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: '1' })).toBe(false);
-  });
-});
-
-describe('elevenlabs-dialogue-context : restaurants listés', () => {
-  const listed = {
-    VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true',
-    VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS: ' resto-a , resto-b ',
-  };
-
-  it('reste inactif avec la liste seule, sans le drapeau global', () => {
-    expect(
-      isElevenLabsDialogueEnabledFor('resto-a', {
-        VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS: 'resto-a',
-      }),
-    ).toBe(false);
+describe('elevenlabs-dialogue-context : tous les restaurants', () => {
+  it('est actif pour tout restaurant dès que la clé ElevenLabs est présente', () => {
+    expect(isElevenLabsDialogueEnabledFor('resto-a', { ELEVENLABS_API_KEY: 'k' })).toBe(true);
+    expect(isElevenLabsDialogueEnabledFor('resto-b', { ELEVENLABS_API_KEY: 'k' })).toBe(true);
   });
 
-  it('reste inactif sans liste de restaurants, même avec le drapeau global', () => {
-    expect(
-      isElevenLabsDialogueEnabledFor('resto-a', { VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'true' }),
-    ).toBe(false);
-  });
-
-  it('n’active que les restaurants listés, espaces compris', () => {
-    expect(isElevenLabsDialogueEnabledFor('resto-a', listed)).toBe(true);
-    expect(isElevenLabsDialogueEnabledFor('resto-b', listed)).toBe(true);
-    expect(isElevenLabsDialogueEnabledFor('resto-c', listed)).toBe(false);
-  });
-
-  it('reste inactif si le drapeau global est coupé, même pour un restaurant listé', () => {
-    expect(
-      isElevenLabsDialogueEnabledFor('resto-a', {
-        ...listed,
-        VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED: 'false',
-      }),
-    ).toBe(false);
-  });
-
-  it('reste inactif sans identifiant de restaurant', () => {
-    expect(isElevenLabsDialogueEnabledFor(undefined, listed)).toBe(false);
-    expect(isElevenLabsDialogueEnabledFor('', listed)).toBe(false);
+  it('reste inactif sans clé ou sans restaurant', () => {
+    expect(isElevenLabsDialogueEnabledFor('resto-a', {})).toBe(false);
+    expect(isElevenLabsDialogueEnabledFor('resto-a', { ELEVENLABS_API_KEY: ' ' })).toBe(false);
+    expect(isElevenLabsDialogueEnabledFor(undefined, { ELEVENLABS_API_KEY: 'k' })).toBe(false);
   });
 });
 

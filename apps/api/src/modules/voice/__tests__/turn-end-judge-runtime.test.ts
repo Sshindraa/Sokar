@@ -6,7 +6,6 @@ import {
   startTurnEndJudge,
   turnEndJudgeTimeoutMs,
 } from '../stream/structured-turn/turn-end-judge';
-import { isVoiceTurnJudgeEnabled } from '../stream/feature-flags';
 import type { CallSession } from '../stream/types';
 
 const sessionWith = (history: CallSession['history']): CallSession =>
@@ -88,15 +87,9 @@ describe('juge de fin de tour : exécution', () => {
     expect(aborted).toBe(true);
   });
 
-  it('borne le délai et ne s’active que pour les restaurants listés', () => {
+  it('borne le délai', () => {
     expect(turnEndJudgeTimeoutMs({})).toBe(800);
     expect(turnEndJudgeTimeoutMs({ VOICE_TURN_JUDGE_TIMEOUT_MS: '50' })).toBe(800);
     expect(turnEndJudgeTimeoutMs({ VOICE_TURN_JUDGE_TIMEOUT_MS: '500' })).toBe(500);
-    expect(isVoiceTurnJudgeEnabled('r1', { VOICE_TURN_JUDGE_RESTAURANT_IDS: 'r1,r2' })).toBe(true);
-    expect(isVoiceTurnJudgeEnabled('r3', { VOICE_TURN_JUDGE_RESTAURANT_IDS: 'r1,r2' })).toBe(false);
-    expect(isVoiceTurnJudgeEnabled('r1', {})).toBe(false);
-    expect(isVoiceTurnJudgeEnabled(undefined, { VOICE_TURN_JUDGE_RESTAURANT_IDS: 'r1' })).toBe(
-      false,
-    );
   });
 });

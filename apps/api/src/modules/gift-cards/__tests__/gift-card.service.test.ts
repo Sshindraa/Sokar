@@ -33,6 +33,10 @@ describe('GiftCardService', () => {
       restaurantId: RESTAURANT_ID,
     } as never);
     vi.mocked(db.giftCardRedemption.findFirst).mockResolvedValue(null);
+    vi.mocked(db.giftCardRedemption.create).mockResolvedValue({
+      id: 'redemption-1',
+      redeemedAt: new Date('2026-10-22T10:00:00.000Z'),
+    } as never);
   });
 
   it('crée une carte cadeau avec remainingAmount égal à amount', async () => {
@@ -254,6 +258,11 @@ describe('GiftCardService', () => {
         }),
       }),
     );
+    // Best effort CRM projection: no customer is known here, so nothing is written.
+    expect(db.giftCard.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'gc-1', restaurantId: RESTAURANT_ID } }),
+    );
+    expect(db.customerTimelineEvent.create).not.toHaveBeenCalled();
   });
 
   it('applique une carte cadeau : partial', async () => {

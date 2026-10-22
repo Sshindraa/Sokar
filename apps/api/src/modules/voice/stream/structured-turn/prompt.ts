@@ -176,6 +176,16 @@ const NAME_AWAITING: ReadonlySet<StructuredTurnState['lastAwaiting']> = new Set(
   'customerNameConfirmation',
 ]);
 
+/**
+ * Seconde écoute (Ink-2 en parallèle de Deepgram) : une phrase de l'appelant a été retranscrite autrement. Un principe, pas une
+ * phrase à dire : seule une information de réservation qui en dépend est à faire confirmer, dans le
+ * récapitulatif déjà prévu avant la création (aucune question en plus), et l'agent ne parle jamais de cette
+ * double écoute.
+ */
+export function buildSecondOpinionBlock(note: { heard: string; secondHeard: string }): string {
+  return `SECONDE ÉCOUTE (une phrase récente de l'appelant, réécoutée par un autre système de transcription) : premier texte ${JSON.stringify(note.heard)}, second texte ${JSON.stringify(note.secondHeard)}. Si la différence touche une information de la réservation (nombre de personnes, jour, heure, nom) que le brouillon tient de cette phrase, ne la tiens pas pour acquise : fais-la confirmer dans le récapitulatif que tu fais de toute façon avant de créer la réservation, sans poser de question à part. Sinon, ignore cette note. Ne parle jamais de cette seconde écoute à l'appelant.`;
+}
+
 export function buildStructuredTurnMessages(input: {
   systemPrompt: string;
   history: ChatMessage[];
@@ -198,6 +208,8 @@ export function buildStructuredTurnMessages(input: {
   formulation?: boolean;
   /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
   tone?: boolean;
+  /** Deepgram et Ink-2 ont entendu un nombre de personnes différent dans la phrase de ce tour. */
+  secondOpinion?: { heard: string; secondHeard: string };
 }): ChatMessage[] {
   const nameLetters = nameLettersData(input.state.draft.customerName);
   // Le nom est attendu : les lettres épelées dans les mots de l'appelant sont déchiffrées par le code (« a 2 s a 2 m »
@@ -235,6 +247,7 @@ export function buildStructuredTurnMessages(input: {
       : input.actionResult
         ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
         : '',
+    input.secondOpinion ? buildSecondOpinionBlock(input.secondOpinion) : '',
     input.recovery ? `${RECOVERY_INSTRUCTIONS[input.recovery]}\n${RECOVERY_CONSTRAINTS}` : '',
     input.callerFinished
       ? "L'appelant s'est tu : son tour est terminé. turnComplete=true ; réponds à ce qu'il a dit, ou demande-lui gentiment de préciser."

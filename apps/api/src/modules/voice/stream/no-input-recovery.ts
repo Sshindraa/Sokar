@@ -19,7 +19,6 @@ import type { CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { speakTtsStreamed } from './tts-handler';
 import { generateRecoveryReply } from './structured-turn/engine';
-import { parseRestaurantIdList } from './feature-flags';
 import { logger } from '../../../shared/logger/pino';
 
 export type NoInputRecoveryKind = 'unheard' | 'silence';
@@ -69,16 +68,6 @@ function stateOf(session: CallSession): RecoveryState {
   return state;
 }
 
-export function isNoInputRecoveryEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return Boolean(
-    restaurantId &&
-    parseRestaurantIdList(env.VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS).includes(restaurantId),
-  );
-}
-
 export function noInputTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.VOICE_NO_INPUT_TIMEOUT_MS ?? 7_000);
   return Number.isFinite(parsed) && parsed >= 3_000 && parsed <= 20_000 ? parsed : 7_000;
@@ -117,7 +106,6 @@ function canRecover(session: CallSession): boolean {
     !session.ended &&
     !session.ending &&
     session.state === 'LISTENING' &&
-    isNoInputRecoveryEnabled(session.restaurantId) &&
     stateOf(session).count < MAX_RECOVERIES_PER_CALL
   );
 }
@@ -198,7 +186,6 @@ async function speakRecovery(
 
 /** Parole détectée sans mot reconnu : relance après un court délai, sauf si un mot arrive. */
 export function scheduleUnheardRecovery(session: CallSession, mgr: Manager): void {
-  if (!isNoInputRecoveryEnabled(session.restaurantId)) return;
   const speechAt = session.sttLastSpeechStartedAt;
   if (speechAt === undefined || Date.now() - speechAt > UNHEARD_MAX_SPEECH_AGE_MS) return;
   const state = stateOf(session);
@@ -218,7 +205,6 @@ export function scheduleUnheardRecovery(session: CallSession, mgr: Manager): voi
 
 /** À la fin d'une réplique de l'agent : relance si l'appelant ne dit rien. */
 export function armSilenceRecovery(session: CallSession, mgr: Manager): void {
-  if (!isNoInputRecoveryEnabled(session.restaurantId)) return;
   const state = stateOf(session);
   clearSilenceTimer(state);
   state.silenceTimer = setTimeout(() => {

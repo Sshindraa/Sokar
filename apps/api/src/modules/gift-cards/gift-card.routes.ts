@@ -27,6 +27,7 @@ import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/ra
 import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { retrievePaymentIntent } from './stripe.service';
 import { giftCardHash } from './gift-card-finance.util';
+import { recordGiftCardPurchaseTimelineEvent } from '../customers/customer-activity-timeline';
 import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
 import { handleBillingWebhook } from '../billing/billing.service';
 import {
@@ -515,6 +516,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       restaurantId,
       createdBy: 'DASHBOARD',
     });
+    await recordGiftCardPurchaseTimelineEvent(card);
 
     return reply.status(201).send(serializeGiftCard(card));
   });

@@ -345,7 +345,7 @@ async function start() {
       .catch((err) => logger.warn({ err }, 'Greeting cache warmup failed (non-blocking)'));
   });
 
-  // Petits mots d'attente (voir voice-filler.ts) : rien n'est généré tant que VOICE_FILLER_RESTAURANT_IDS est vide.
+  // Petits mots d'attente (voir voice-filler.ts) : banque préchargée au démarrage.
   setImmediate(() => {
     initVoiceFillerCache().catch((err) =>
       logger.warn({ err }, 'Voice filler cache warmup failed (non-blocking)'),

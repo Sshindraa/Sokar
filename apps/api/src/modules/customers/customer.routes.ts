@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { requireOrg } from '../../plugins/clerk';
@@ -16,6 +17,25 @@ import {
   upsertCustomerIdentity,
 } from './customer-crm.service';
 import { canViewSensitiveNotes } from './customer-privacy';
+import { withCustomerLifecycles } from './customer-lifecycle';
+import {
+  loadReservationServiceCards,
+  SERVICE_CARD_MAX_RESERVATIONS,
+} from './customer-service-card';
+
+const ServiceCardQuerySchema = z.object({
+  reservationIds: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((value) =>
+      value
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().min(1).max(128)).min(1).max(SERVICE_CARD_MAX_RESERVATIONS)),
+});
 
 function canWriteCustomerNotes(siteRole: string | undefined): boolean {
   return siteRole === 'OWNER' || siteRole === 'MANAGER';
@@ -73,12 +93,32 @@ export async function customerRoutes(app: FastifyInstance) {
       ]);
 
       const canViewNotes = canViewSensitiveNotes(req.siteRole, restaurant?.crmSensitiveNoteRoles);
+      const withLifecycle = await withCustomerLifecycles(restaurantId, customers);
       return reply.send({
-        data: customers.map((customer) => (canViewNotes ? customer : { ...customer, notes: null })),
+        data: withLifecycle.map((customer) =>
+          canViewNotes ? customer : { ...customer, notes: null },
+        ),
         total,
         limit: query.limit,
         offset: query.offset,
       });
+    },
+  );
+
+  /**
+   * Badges shown next to each reservation during service, for a whole list in
+   * one call. Never the manager's notes, never an unconfirmed voice suggestion.
+   */
+  app.get(
+    '/customers/service-cards',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const parsed = ServiceCardQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: 'INVALID_RESERVATION_IDS' });
+      }
+      const data = await loadReservationServiceCards(req.restaurantId!, parsed.data.reservationIds);
+      return reply.send({ data });
     },
   );
 

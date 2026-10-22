@@ -490,11 +490,88 @@ describe('event service', () => {
   it('expires closed sessions and their pending waitlist entries', async () => {
     vi.mocked(db.eventSession.findMany).mockResolvedValue([{ id: SESSION_ID }] as never);
     vi.mocked(db.eventSession.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.eventWaitlistEntry.findMany)
+      .mockResolvedValueOnce([{ id: WAITLIST_ID }] as never)
+      .mockResolvedValueOnce([
+        waitlistRow({ customerId: 'customer-1', status: EventWaitlistStatus.EXPIRED }),
+      ] as never);
     vi.mocked(db.eventWaitlistEntry.updateMany).mockResolvedValue({ count: 2 } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: RESTAURANT_ID } as never);
+    vi.mocked(db.customerTimelineEvent.create).mockResolvedValue({ id: 'timeline-1' } as never);
     const closed = await expireEventSessions({ now: NOW, limit: 10 });
     expect(closed).toBe(1);
     expect(db.eventWaitlistEntry.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: EventWaitlistStatus.EXPIRED } }),
+    );
+    expect(db.customerTimelineEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customerId: 'customer-1',
+          eventType: 'WAITLIST_EXPIRED',
+          sourceId: WAITLIST_ID,
+        }),
+      }),
+    );
+  });
+
+  it('links a waitlist entry to the CRM customer known by phone', async () => {
+    vi.mocked(db.eventWaitlistEntry.findUnique).mockResolvedValue(null);
+    vi.mocked(db.eventSession.findFirst).mockResolvedValue(sessionRow() as never);
+    vi.mocked(db.customerIdentity.findUnique).mockResolvedValue({
+      customer: {
+        id: 'customer-1',
+        restaurantId: RESTAURANT_ID,
+        archivedAt: null,
+        mergedIntoId: null,
+      },
+    } as never);
+    vi.mocked(db.eventWaitlistEntry.create).mockResolvedValue(
+      waitlistRow({ customerId: 'customer-1' }) as never,
+    );
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: RESTAURANT_ID } as never);
+    vi.mocked(db.customerTimelineEvent.create).mockResolvedValue({ id: 'timeline-1' } as never);
+
+    await joinEventWaitlist({
+      restaurantId: RESTAURANT_ID,
+      eventId: EVENT_ID,
+      sessionId: SESSION_ID,
+      phone: '+33 6 12 34 56 78',
+      quantity: 2,
+      actor: 'user-1',
+      now: NOW,
+    });
+
+    expect(db.eventWaitlistEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ customerId: 'customer-1' }) }),
+    );
+    expect(db.customerTimelineEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ eventType: 'WAITLIST_JOINED', sourceId: WAITLIST_ID }),
+      }),
+    );
+  });
+
+  it('keeps the waitlist operation successful when the CRM write fails', async () => {
+    vi.mocked(db.eventWaitlistEntry.findUnique).mockResolvedValue(null);
+    vi.mocked(db.eventSession.findFirst).mockResolvedValue(sessionRow() as never);
+    vi.mocked(db.customerIdentity.findUnique).mockRejectedValue(new Error('crm down'));
+    vi.mocked(db.eventWaitlistEntry.create).mockResolvedValue(waitlistRow() as never);
+
+    const joined = await joinEventWaitlist({
+      restaurantId: RESTAURANT_ID,
+      eventId: EVENT_ID,
+      sessionId: SESSION_ID,
+      phone: '+33612345678',
+      quantity: 2,
+      actor: 'user-1',
+      now: NOW,
+    });
+
+    expect(joined).toMatchObject({ status: EventWaitlistStatus.WAITING, replayed: false });
+    expect(db.eventWaitlistEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ customerId: undefined }) }),
     );
   });
 

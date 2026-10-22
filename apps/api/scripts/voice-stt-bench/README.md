@@ -2,7 +2,11 @@
 
 Mesure ce que la réservation vocale retient réellement d'une réponse d'appelant :
 synthèse Cartesia → dégradation téléphonique → transcription Scribe de production →
-dialogue réel (`recordUserTurn`), flag `VOICE_EXPECTED_ANSWER_ENABLED` coupé puis actif.
+dialogue réel (`recordUserTurn`).
+
+Depuis le 22/10/2026, réponses attendues et confirmation par la confiance sont actives pour tous les
+restaurants, sans réglage : les colonnes « coupé » et « actif » du rapport sont identiques. Les chiffres
+coupé/actif cités plus bas datent d'avant.
 
 ## Jeux de phrases
 

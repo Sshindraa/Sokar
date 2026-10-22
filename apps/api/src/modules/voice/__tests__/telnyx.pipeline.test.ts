@@ -41,8 +41,6 @@ vi.mock('../../customers/customer.service', () => ({
       Promise.resolve(customer),
     ),
     returningCustomerFirstName: vi.fn(() => 'Jean'),
-    buildLegacyVipPromptExtra: vi.fn(() => ''),
-    buildLegacyReturningGreeting: vi.fn(() => ''),
     recordCallActivity: vi.fn(() => Promise.resolve()),
     incrementVisit: vi.fn(),
   },
@@ -185,7 +183,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     delete process.env.VIP_PUSH_ENABLED;
-    delete process.env.VOICE_CRM_PROFILE_RESTAURANT_IDS;
     // Each test gets a fresh CallSessionManager singleton
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
@@ -207,28 +204,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     partySizeTypical: null,
   };
 
-  it('restaurant hors VOICE_CRM_PROFILE_RESTAURANT_IDS : contexte client inchangé, aucun profil lu', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
-    mockCheckMarginHealth.mockResolvedValue(true);
-    mockIsVoicePipelineEnabled.mockResolvedValue(true);
-    mockLookupOrCreate.mockResolvedValue(knownCaller);
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/voice/telnyx',
-      payload: makeInitiatedPayload(),
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(CustomerService.withVoiceProfile).not.toHaveBeenCalled();
-    expect(mockBuildVipPromptExtra).not.toHaveBeenCalled();
-    expect(CustomerService.returningCustomerFirstName).not.toHaveBeenCalled();
-    expect(CustomerService.buildLegacyVipPromptExtra).toHaveBeenCalledWith(knownCaller);
-    expect(CustomerService.buildLegacyReturningGreeting).toHaveBeenCalledWith(knownCaller);
-  });
-
-  it('restaurant listé : profil CRM chargé et nouveau contexte client', async () => {
-    process.env.VOICE_CRM_PROFILE_RESTAURANT_IDS = 'rest-1';
+  it('tout restaurant : profil CRM chargé et contexte client', async () => {
     mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
@@ -245,8 +221,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     expect(CustomerService.withVoiceProfile).toHaveBeenCalledWith('rest-1', knownCaller);
     expect(mockBuildVipPromptExtra).toHaveBeenCalled();
     expect(CustomerService.returningCustomerFirstName).toHaveBeenCalled();
-    expect(CustomerService.buildLegacyVipPromptExtra).not.toHaveBeenCalled();
-    expect(CustomerService.buildLegacyReturningGreeting).not.toHaveBeenCalled();
   });
 
   it('happy path: pre-creates the session and enqueues the answer job', async () => {

@@ -9,6 +9,11 @@ import {
   Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { logger } from '../../shared/logger/pino';
+import {
+  recordWaitlistTimelineEvent,
+  safelyResolveCrmCustomerId,
+} from '../customers/customer-activity-timeline';
 
 const EVENT_KEY_PATTERN = /^[a-z][a-z0-9_.-]{1,63}$/;
 const TICKET_TYPE_KEY_PATTERN = /^[a-z][a-z0-9_.-]{1,47}$/;
@@ -1518,6 +1523,8 @@ export async function joinEventWaitlist(input: {
   eventId: string;
   sessionId: string;
   customerId?: string;
+  /** Without a customer id, the entry is linked to the CRM customer known under this phone. */
+  phone?: string;
   quantity: number;
   idempotencyKey?: string;
   actor: string;
@@ -1540,13 +1547,19 @@ export async function joinEventWaitlist(input: {
     throw new EventConflictError('EVENT_WAITLIST_CLOSED');
   if (session.event.status !== EventStatus.ACTIVE) throw new EventConflictError('EVENT_NOT_ACTIVE');
   if (input.customerId) await assertCustomer(input.restaurantId, input.customerId);
+  const customerId =
+    input.customerId ??
+    (input.phone
+      ? ((await safelyResolveCrmCustomerId(input.restaurantId, [{ phone: input.phone }])) ??
+        undefined)
+      : undefined);
   try {
     const row = await db.eventWaitlistEntry.create({
       data: {
         restaurantId: input.restaurantId,
         eventId: input.eventId,
         sessionId: input.sessionId,
-        customerId: input.customerId,
+        customerId,
         quantity,
         idempotencyKey,
         status: EventWaitlistStatus.WAITING,
@@ -1554,6 +1567,7 @@ export async function joinEventWaitlist(input: {
       },
       select: WAITLIST_SELECT,
     });
+    await recordWaitlistTimelineEvent(row, 'JOINED', row.createdAt);
     return { ...serializeWaitlist(row), replayed: false };
   } catch (error) {
     if (
@@ -1619,6 +1633,7 @@ export async function cancelEventWaitlist(input: {
     select: WAITLIST_SELECT,
   });
   if (!row) throw new EventWaitlistNotFoundError();
+  await recordWaitlistTimelineEvent(row, 'CANCELLED', input.now);
   return { ...serializeWaitlist(row), replayed: false };
 }
 
@@ -1650,11 +1665,36 @@ export async function promoteEventWaitlist(input: {
     actor: input.actor,
     now: input.now,
   });
-  await db.eventWaitlistEntry.updateMany({
+  const promotedAt = input.now ?? new Date();
+  const promoted = await db.eventWaitlistEntry.updateMany({
     where: { id: entry.id, restaurantId: input.restaurantId, status: EventWaitlistStatus.WAITING },
-    data: { status: EventWaitlistStatus.PROMOTED, promotedAt: input.now ?? new Date() },
+    data: { status: EventWaitlistStatus.PROMOTED, promotedAt },
   });
+  if ((promoted as { count?: number }).count === 1) {
+    await recordWaitlistTimelineEvent(entry, 'PROMOTED', promotedAt);
+  }
   return result;
+}
+
+/** Best effort: the expiry itself has already been committed. */
+async function projectExpiredWaitlist(waiting: Array<{ id: string }>, now: Date): Promise<void> {
+  try {
+    // tenant-scoping: global — reread the swept entries to project them in each restaurant's CRM.
+    const expired = await db.eventWaitlistEntry.findMany({
+      where: {
+        id: { in: waiting.map((entry) => entry.id) },
+        status: EventWaitlistStatus.EXPIRED,
+        customerId: { not: null },
+      },
+      select: WAITLIST_SELECT,
+    });
+    for (const entry of expired) await recordWaitlistTimelineEvent(entry, 'EXPIRED', now);
+  } catch (error) {
+    logger.warn(
+      { err: error instanceof Error ? error.message : String(error), entries: waiting.length },
+      '[crm] expired waitlist projection failed',
+    );
+  }
 }
 
 export async function expireEventSessions(input?: { now?: Date; limit?: number }): Promise<number> {
@@ -1671,9 +1711,17 @@ export async function expireEventSessions(input?: { now?: Date; limit?: number }
     where: { id: { in: rows.map((row) => row.id) }, status: EventSessionStatus.OPEN },
     data: { status: EventSessionStatus.CLOSED },
   });
+  const sessionIds = rows.map((row) => row.id);
+  // tenant-scoping: global — sweep across restaurants; each row carries its own restaurantId.
+  const waiting = await db.eventWaitlistEntry.findMany({
+    where: { sessionId: { in: sessionIds }, status: EventWaitlistStatus.WAITING },
+    select: { id: true },
+  });
+  // tenant-scoping: global — same cross-restaurant expiry sweep.
   await db.eventWaitlistEntry.updateMany({
-    where: { sessionId: { in: rows.map((row) => row.id) }, status: EventWaitlistStatus.WAITING },
+    where: { sessionId: { in: sessionIds }, status: EventWaitlistStatus.WAITING },
     data: { status: EventWaitlistStatus.EXPIRED },
   });
+  if (waiting.length > 0) await projectExpiredWaitlist(waiting, now);
   return (result as { count?: number }).count ?? 0;
 }

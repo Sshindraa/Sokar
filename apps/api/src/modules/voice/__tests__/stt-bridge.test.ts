@@ -7,7 +7,6 @@ import {
   buildDeepgramSttUrl,
   flushDeepgramFinalPartsForSafety,
   buildSttKeyterms,
-  buildSttPreviousText,
   DEFAULT_STT_LANGUAGES,
   getSttLanguageCodes,
   sendAudioToStt,
@@ -18,7 +17,6 @@ import {
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
   DIALOGUE_V2_INCOMPLETE_HOLD_MS,
-  isSmartEndpointEnabled,
   SMART_ENDPOINT_HOLD_CORRECTION_MS,
   SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS,
   SMART_ENDPOINT_HOLD_SUSPENDED_MS,
@@ -29,10 +27,14 @@ import {
   finalizeOnSemanticEndOfTurn,
   looksLikeSpelledLetters,
   maybeFlushDeepgramOnSilence,
-  isDeepgramSilenceFlushEnabledFor,
+  maybeFinalizeDeepgramOnLocalSilence,
+  deepgramLocalSilenceFinalizeMs,
   deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
-import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
+import {
+  createCartesiaTurnsSttAdapter,
+  createDeepgramSttAdapter,
+} from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
@@ -132,13 +134,6 @@ describe('buildSttUrl', () => {
     expect(url.searchParams.getAll('keyterms')).toContain('Chez La Grande Table');
     expect(keyterms.length).toBeLessThanOrEqual(50);
     expect(keyterms.every((term) => term.length <= 20)).toBe(true);
-  });
-
-  it('construit un contexte previous_text court et stable', () => {
-    expect(buildSttPreviousText('  Chez   Sokar  ')).toBe(
-      'Réservation / restaurant booking Chez Sokar',
-    );
-    expect(Array.from(buildSttPreviousText('x'.repeat(100))).length).toBeLessThanOrEqual(50);
   });
 
   it('sélectionne PCM16 pour un stt Telnyx PCMA', () => {
@@ -318,13 +313,7 @@ describe('sendAudioToStt', () => {
     };
     expect(payload.message_type).toBe('input_audio_chunk');
     expect(Buffer.from(payload.audio_base_64, 'base64')).toHaveLength(2);
-    expect(payload.previous_text).toBe('Réservation / restaurant booking Test');
-
-    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
-    const secondPayload = JSON.parse(vi.mocked(ws.send).mock.calls[1][0] as string) as {
-      previous_text?: string;
-    };
-    expect(secondPayload.previous_text).toBeUndefined();
+    expect(payload.previous_text).toBeUndefined();
   });
 });
 
@@ -630,15 +619,13 @@ describe('handleSttMessage', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  describe('fin de tour hybride', () => {
+  describe('fin de tour hybride (écoute Dialogue V2)', () => {
     beforeEach(() => {
-      process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
-      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      process.env.VOICE_DIALOGUE_LISTENING_V2 = 'true';
       vi.useFakeTimers();
     });
     afterEach(() => {
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      delete process.env.VOICE_DIALOGUE_LISTENING_V2;
       vi.useRealTimers();
     });
 
@@ -662,17 +649,6 @@ describe('handleSttMessage', () => {
             },
           ];
         });
-
-    it('respecte le flag et la liste de restaurants', () => {
-      const session = makeSession();
-      expect(isSmartEndpointEnabled(session)).toBe(true);
-      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = 'autre-resto';
-      expect(isSmartEndpointEnabled(session)).toBe(false);
-      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = `autre-resto, ${session.restaurantId}`;
-      expect(isSmartEndpointEnabled(session)).toBe(true);
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      expect(isSmartEndpointEnabled(session)).toBe(false);
-    });
 
     it('envoie immédiatement une phrase complète', () => {
       const session = makeSession();
@@ -704,19 +680,8 @@ describe('handleSttMessage', () => {
       ]);
     });
 
-    it('libère le tour retenu à la fin de l’attente', () => {
-      const session = makeSession();
-      const onEvent = vi.fn();
-      session.onSttEvent = onEvent;
-      commit(session, 'Ce sera au nom de');
-      vi.advanceTimersByTime(SMART_ENDPOINT_HOLD_SUSPENDED_MS - 1);
-      expect(utteranceEnds(onEvent)).toHaveLength(0);
-      vi.advanceTimersByTime(1);
-      expect(utteranceEnds(onEvent)).toHaveLength(1);
-    });
-
-    it('envoie directement quand le flag est coupé', () => {
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+    it('envoie directement sans écoute Dialogue V2', () => {
+      delete process.env.VOICE_DIALOGUE_LISTENING_V2;
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
@@ -753,7 +718,6 @@ describe('Deepgram final dispatch', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     delete process.env.VOICE_DIALOGUE_LISTENING_V2;
-    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
   });
 
   function deepgramSession() {
@@ -772,9 +736,56 @@ describe('Deepgram final dispatch', () => {
     return { session, onEvent };
   }
 
+  it("Ink-2 prêt : son texte part à la place de Deepgram, le désaccord sur le nombre de personnes est noté pour ce tour, et la phrase suivante commencée pendant l'attente est gardée", async () => {
+    const { session, onEvent } = deepgramSession();
+    const sent: Array<Buffer | string> = [];
+    session.sttInk = {
+      socket: {
+        readyState: 1,
+        send: (data: Buffer | string) => sent.push(data),
+        close: () => undefined,
+        on: () => undefined,
+      },
+      ready: true,
+      closed: false,
+      // finalize déjà parti au premier silence, réponse déjà reçue.
+      finals: ['je voudrais une table pour six personnes'],
+      bytesSent: 0,
+      bytesPerSecond: 8000,
+      preRoll: [],
+      preRollBytes: 0,
+      speechSinceFinalize: false,
+      pendingFinalize: false,
+    };
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'je voudrais une table pour dix personnes.',
+      speechFinal: true,
+      speechEndOffsetMs: 1_000,
+    });
+    // Début de la phrase suivante, arrivé pendant l'attente.
+    session.turnTranscript = 'et aussi';
+    await session.sttInkDispatchChain;
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'je voudrais une table pour six personnes',
+      }),
+    );
+    expect(sent).toHaveLength(0);
+    expect(session.sttInkNote).toEqual(
+      expect.objectContaining({
+        heard: 'je voudrais une table pour six personnes',
+        secondHeard: 'je voudrais une table pour dix personnes.',
+        validThrough: session.sttFinalCount,
+      }),
+    );
+    expect(session.turnTranscript).toBe('et aussi');
+  });
+
   it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {
     const { session, onEvent } = deepgramSession();
-    process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
     handleNormalizedSttMessage(session, {
       type: 'final_segment',
       transcript: 'Demain soir',
@@ -799,7 +810,6 @@ describe('Deepgram final dispatch', () => {
     });
     expect(onEvent).not.toHaveBeenCalled();
     expect(session.sttSemanticHold?.transcript).toContain('en-');
-    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
   });
 
   it('force la sortie du segment quand UtteranceEnd arrive avant tout segment final (appel a8012c5c)', () => {
@@ -933,6 +943,164 @@ describe('Deepgram final dispatch', () => {
     );
   });
 
+  describe('secours Ink-2 quand Deepgram tombe', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("bascule une fois sur Ink-2 au lieu de couper l'appel", () => {
+      vi.stubEnv('CARTESIA_API_KEY', 'k');
+      const { session, onEvent } = deepgramSession();
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'quota_exceeded',
+        message: 'quota',
+      });
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'Unavailable' }));
+      expect(session.sttAdapter?.id).toBe('cartesia');
+      expect(session.sttInkFallbackUsed).toBe(true);
+      expect(session.sttTerminalFailure).toBe(false);
+
+      // Une seconde panne, sur le secours cette fois : l'appel est coupé comme avant.
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'auth_error',
+        message: 'auth',
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'Unavailable', reason: 'auth' }),
+      );
+    });
+
+    it('sans réglage ou sans clé Cartesia : comportement d’avant', () => {
+      vi.stubEnv('CARTESIA_API_KEY', '');
+      const { session, onEvent } = deepgramSession();
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'quota_exceeded',
+        message: 'quota',
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'Unavailable', reason: 'quota' }),
+      );
+      expect(session.sttAdapter?.id).toBe('deepgram');
+    });
+
+    it('les tours rendus par Ink-2 partent au dialogue comme des phrases validées', () => {
+      const { session, onEvent } = deepgramSession();
+      session.sttAdapter = createCartesiaTurnsSttAdapter({ model: 'ink-2' });
+      const adapter = session.sttAdapter;
+      for (const raw of [
+        { type: 'turn.start', transcript: '' },
+        { type: 'turn.update', transcript: 'je voudrais' },
+        { type: 'turn.end', transcript: 'je voudrais réserver une table pour demain.' },
+      ]) {
+        for (const event of adapter.normalizeMessage(Buffer.from(JSON.stringify(raw)))) {
+          handleNormalizedSttMessage(session, event);
+        }
+      }
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'je voudrais réserver une table pour demain.',
+        }),
+      );
+    });
+  });
+
+  describe('fin de phrase sur silence local (partielle figée, 12 % des tours en prod)', () => {
+    const FINALIZE = JSON.stringify({ type: 'Finalize' });
+    function listening() {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-22T10:00:00Z'));
+      const { session, onEvent } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      session.state = 'LISTENING';
+      return { session, onEvent, ws };
+    }
+    function spokeNow(session: CallSession) {
+      const now = Date.now();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: now, lastClearVoiceAt: now };
+    }
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+
+    it('seuil de départ borné entre 300 et 1500 ms (600 par défaut)', () => {
+      expect(deepgramLocalSilenceFinalizeMs({})).toBe(600);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '100' }),
+      ).toBe(600);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '700' }),
+      ).toBe(700);
+    });
+
+    function partialThenSilence(pauses?: number[]) {
+      const { session, onEvent, ws } = listening();
+      handleNormalizedSttMessage(session, {
+        type: 'partial',
+        transcript: 'je voudrais une table pour demain soir',
+      });
+      spokeNow(session);
+      if (pauses) session.callerVoice!.pauses = pauses;
+      return { session, onEvent, ws };
+    }
+
+    it('pauses encore inconnues : clôt après 600 ms de silence, sans attendre 1,2 s de partielle figée', () => {
+      const { session, onEvent, ws } = partialThenSilence();
+      vi.advanceTimersByTime(450);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(160);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+      expect(ws.send).toHaveBeenCalledWith(FINALIZE);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'je voudrais une table pour demain soir',
+        speechFinal: false,
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'silence_finalize' }),
+      );
+    });
+
+    it('appelant aux pauses courtes : clôt plus tôt (80e centile + 150 ms)', () => {
+      const { session } = partialThenSilence([150, 180, 200, 220, 250]);
+      vi.advanceTimersByTime(360);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(20);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+    });
+
+    it('appelant qui réfléchit en parlant : attend plus longtemps, sans dépasser 1,1 s', () => {
+      const { session } = partialThenSilence([600, 700, 800, 900, 1_400]);
+      vi.advanceTimersByTime(1_000);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(110);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+    });
+
+    it('ne fait rien sans voix entendue, ou pendant une épellation', () => {
+      const noVoice = listening();
+      handleNormalizedSttMessage(noVoice.session, {
+        type: 'partial',
+        transcript: 'je voudrais une table',
+      });
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(noVoice.session)).toBe(false);
+      vi.unstubAllEnvs();
+
+      const spelling = listening();
+      handleNormalizedSttMessage(spelling.session, { type: 'partial', transcript: 'a d k i f' });
+      spokeNow(spelling.session);
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(spelling.session)).toBe(false);
+      expect(spelling.ws.send).not.toHaveBeenCalledWith(FINALIZE);
+    });
+  });
+
   describe('relève au silence : mot retenu par Deepgram (appel du 21/10, « midi 30 »)', () => {
     const FINALIZE = JSON.stringify({ type: 'Finalize' });
 
@@ -940,7 +1108,6 @@ describe('Deepgram final dispatch', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-10-21T01:01:10Z'));
       vi.stubEnv('VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS', '500');
-      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', 'rest-1');
       const { session, onEvent } = deepgramSession();
       const ws = makeWsMock();
       session.sttWs = ws;
@@ -956,22 +1123,7 @@ describe('Deepgram final dispatch', () => {
       vi.useRealTimers();
     });
 
-    it('ne fait rien sans le restaurant dans la liste', () => {
-      const { session, ws } = listening();
-      vi.stubEnv('VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS', '');
-      spoke(session);
-      vi.advanceTimersByTime(2_000);
-      expect(maybeFlushDeepgramOnSilence(session)).toBe(false);
-      expect(ws.send).not.toHaveBeenCalled();
-    });
-
-    it('accepte `*` et ignore une durée hors bornes', () => {
-      expect(
-        isDeepgramSilenceFlushEnabledFor('r-9', {
-          VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS: ' * ',
-        }),
-      ).toBe(true);
-      expect(isDeepgramSilenceFlushEnabledFor('r-9', {})).toBe(false);
+    it('ignore une durée hors bornes', () => {
       expect(deepgramSilenceFlushMs({})).toBe(700);
       expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '100' })).toBe(700);
       expect(deepgramSilenceFlushMs({ VOICE_DEEPGRAM_SILENCE_FLUSH_MS: '900' })).toBe(900);

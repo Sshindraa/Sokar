@@ -49,7 +49,6 @@ import {
   FRENCH_NUMBER_UNITS,
   FRENCH_NUMBER_TENS,
   extractConversationSlots,
-  isExpectedAnswerEnabled,
   FRENCH_PARTY_SIZE_WORDS,
   formatAvailabilitySlot,
   selectClosestAvailabilitySlots,
@@ -126,12 +125,7 @@ export function activatePendingInteraction(
   const qualityKind = voiceQualityKindForInteraction(kind);
   if (qualityKind) {
     const repeated = voiceQualityKindForInteraction(active?.kind) === qualityKind;
-    recordVoiceQuestionForTurn(
-      session,
-      qualityKind,
-      isExpectedAnswerEnabled(session) ? 'flag_on' : 'flag_off',
-      repeated,
-    );
+    recordVoiceQuestionForTurn(session, qualityKind, 'flag_on', repeated);
   }
   if (active?.kind === kind) {
     active.prompt = prompt;
@@ -1115,7 +1109,6 @@ function applyExpectedAnswer(
   now: Date,
   previousChoice: ConversationState['answerChoice'] = null,
 ): 'partySize' | 'date' | 'time' | null {
-  if (!isExpectedAnswerEnabled(session)) return null;
   if (extracted.partySize || extracted.date || extracted.time) return null;
   if (isExploratoryUtterance(transcript)) return null;
   if (normalizeTranscript(transcript).split(' ').length > MAX_EXPECTED_ANSWER_WORDS) return null;
@@ -1200,20 +1193,6 @@ function applyExpectedAnswer(
   return 'time';
 }
 
-/**
- * Confirmation guidée par la confiance : désactivée par défaut, activée par
- * `VOICE_CONFIDENCE_CONFIRM_ENABLED=true`, limitée aux restaurants de
- * `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` (liste vide = tous).
- */
-export function isConfidenceConfirmEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
-  if (process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED !== 'true') return false;
-  const restaurantIds = (process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
-}
-
 const JS_WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 
 function weekdayOfDate(date: string): string {
@@ -1271,7 +1250,6 @@ function applyTimePlausibility(
   extracted: ConversationState['slots'],
   previousChoice: ConversationState['answerChoice'],
 ): void {
-  if (!isExpectedAnswerEnabled(session)) return;
   const time = extracted.time;
   if (!time || !session.openingHours) return;
   const date = extracted.date ?? session.conversation.slots.date;
@@ -1394,19 +1372,12 @@ export function buildClosedTimeRepromptPlan(
 
 /**
  * Types sur lesquels la confirmation par la confiance agit vraiment
- * (`VOICE_CONFIDENCE_CONFIRM_SLOTS`, défaut `partySize`) : la confiance Scribe
+ * (le nombre de personnes) : la confiance Scribe
  * sépare bien les nombres justes des faux, pas les heures (banc difficile).
  * Hors portée, la décision est seulement observée (`wouldBe…`).
  */
 export function confidenceConfirmSlots(): Set<'partySize' | 'date' | 'time'> {
-  const raw = process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS ?? 'partySize';
-  const slots = raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value): value is 'partySize' | 'date' | 'time' =>
-      ['partySize', 'date', 'time'].includes(value),
-    );
-  return new Set(slots);
+  return new Set(['partySize']);
 }
 
 const WOULD_BE = {
@@ -1428,10 +1399,6 @@ function applySlotConfidence(
   extracted: ConversationState['slots'],
   now: Date,
 ): void {
-  // Flag coupé mais phase 1 active : la décision est calculée et publiée
-  // (« wouldBe… ») pour observer, sans rien changer au dialogue.
-  const enabled = isConfidenceConfirmEnabled(session);
-  if (!enabled && !isExpectedAnswerEnabled(session)) return;
   const scope = confidenceConfirmSlots();
   const evidence =
     session.sttEvidence &&
@@ -1452,7 +1419,7 @@ function applySlotConfidence(
   for (const [slot, kind] of slots) {
     const raw = extracted[slot];
     if (raw === undefined) continue;
-    const apply = enabled && scope.has(slot);
+    const apply = scope.has(slot);
     const value = slot === 'date' ? weekdayOfDate(String(raw)) : String(raw);
     const partialValues = partialSlots.map((partial, index) => {
       // L'analyse exacte ignore les groupes de plus de 7 : « dix » dans une

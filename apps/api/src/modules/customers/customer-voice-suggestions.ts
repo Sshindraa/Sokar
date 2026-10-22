@@ -9,7 +9,6 @@
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
-import { parseRestaurantIdList } from '../voice/stream/feature-flags';
 import {
   appendCustomerTimelineEvent,
   buildCustomerTimelineDedupeKey,
@@ -37,13 +36,12 @@ const MAX_TRANSCRIPT_LENGTH = 6_000;
 const MAX_VALUE_LENGTH = 120;
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/** Pour tous les restaurants dès que la clé OpenRouter est présente (la requête passe par elle). */
 export function isCrmVoiceSuggestionsEnabled(
   restaurantId: string | undefined | null,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
+  return Boolean(restaurantId && (env.OPENROUTER_API_KEY ?? '').trim());
 }
 
 export const VOICE_SUGGESTION_INSTRUCTIONS = [

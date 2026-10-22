@@ -208,10 +208,33 @@ export interface Customer {
   name: string | null;
   phone: string;
   visitCount: number;
+  /** Legacy score, no longer computed; kept for API compatibility. Use `lifecycle`. */
   loyaltyScore: number;
   isVip: boolean;
   notes: string | null;
   lastSeenAt: string | null;
+  /** Computed from real visits; null when the visit history could not be read. */
+  lifecycle?: CustomerLifecycle | null;
+}
+
+export type CustomerLifecycleStatus = 'new' | 'active' | 'regular' | 'at_risk' | 'dormant';
+
+export interface CustomerLifecycle {
+  status: CustomerLifecycleStatus;
+  reason: string;
+}
+
+export interface ServiceCardBadge {
+  kind: 'regular' | 'allergy' | 'diet' | 'accessibility' | 'occasion' | 'no_show_risk';
+  label: string;
+  detail: string;
+}
+
+export interface ServiceCard {
+  reservationId: string;
+  customerId: string | null;
+  lifecycle: CustomerLifecycle | null;
+  badges: ServiceCardBadge[];
 }
 
 // ─── GiftCard & GiftCardPack ────────────────────────────────────────────

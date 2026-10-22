@@ -59,5 +59,5 @@ ssh deploy@sokar "pm2 logs sokar-staging-api"        # API logs
 
 ## Notes
 
-- TLS certificate: `/etc/letsencrypt/live/staging.sokar.tech/` (must cover `staging.sokar.tech` and `api-staging.sokar.tech`).
+- TLS certificate: `/etc/letsencrypt/live/sokar.tech/`, the Cloudflare Origin certificate for `*.sokar.tech` shared with prod (valid until 2041, no renewal). Since 2026-10-22, staging no longer uses the Let's Encrypt certificate `staging.sokar.tech`: certbot renewal had been failing since July, and the certificate expired that day (Cloudflare 526). Both hosts must stay proxied by Cloudflare: an Origin certificate is only trusted through Cloudflare.
 - Connect page `/restaurant/[slug]` is rendered dynamically (`force-dynamic`) in staging to avoid `DYNAMIC_SERVER_USAGE` during VPS build. In prod it stays ISR.

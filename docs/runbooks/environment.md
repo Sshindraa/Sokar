@@ -227,7 +227,6 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
 | `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
 | `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
-| `CRM_ADVANCED_RESTAURANT_IDS`    | Vide par défaut. Ouvre le CRM avancé (fiche, préférences, tags, doublons) aux seuls restaurants listés quand `CRM_ADVANCED_ENABLED` reste `false` ; la formule (`customers.advanced`) s'applique toujours.                         |
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
@@ -291,23 +290,18 @@ VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
 # Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
 VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
-# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
-# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
-# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
-VOICE_LLM_HEDGE_MS="700"
 ```
 
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
-Secours du tour structuré :
-si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
-réseau, circuit ouvert), la même requête JSON Schema stricte part vers
-OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
-`response_format`. Sans `OPENROUTER_API_KEY`, pas de secours : le tour dit la
-phrase de repli. Mesuré le 26 septembre (banc réel) : 0 sortie invalide, mais
-début de phrase vers 2 s au lieu de ~350 ms, et `awaiting` parfois `open`.
-C'est un filet d'urgence, pas un provider de production.
+Modèle principal du tour structuré (depuis le 22/10/2026, pour tous les restaurants, sans liste) :
+GPT-6 Luna via OpenRouter, dès que `OPENROUTER_API_KEY` est présente, avec les réglages
+`VOICE_STRUCTURED_FALLBACK_*` (fournisseur le plus rapide d'abord, sans raisonnement). Le tour part en deux
+requêtes OpenRouter identiques ; le premier texte gagne. Cerebras (`VOICE_LLM_MODEL`) devient le doublon
+après `VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS` (0 = seulement en repli) et le repli immédiat si OpenRouter
+refuse (401, 402, 403 : alerte « secours OpenRouter refusé »). Sans `OPENROUTER_API_KEY`, Cerebras reste seul.
+Le juge de fin de tour passe toujours par Cerebras : son crédit reste indispensable.
 
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
@@ -321,15 +315,9 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_MODEL="openai/gpt-6-luna"  VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="openai/fast"
 # VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
 # VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
-# Restaurants dont le tour part d'abord chez OpenRouter (modèle et réglages ci-dessus), Cerebras devenant
-# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. `*` = tous
-# les restaurants, y compris ceux créés après le réglage (sinon un nouveau restaurant part d'abord chez
-# Cerebras). Liste explicite : seulement les identifiants listés, séparés par des virgules.
-# VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
-# Délai avant le doublon Cerebras pour ces restaurants (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s).
-# Deux requêtes OpenRouter identiques et simultanées pour ces restaurants (ou *) : le premier texte gagne, l'autre est
-# annulée. Banc du 20/10 (40 paires, GPT-6 Luna) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ; ~0,00015 $ de plus par tour.
-# VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS=""
+# Délai avant le doublon Cerebras (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s ; prod : 0, Cerebras en repli seul).
+# Deux requêtes Luna par tour, banc du 20/10 (40 paires) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ;
+# ~0,00015 $ de plus par tour.
 # VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS="1500"
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
@@ -357,24 +345,21 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 # sokar_voice_structured_speculation_launch_total{result=started|capped}.
 VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
 VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
-# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (restaurants
-# listés, vide = aucun) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
+# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (tous les
+# restaurants depuis le 22/10, sans réglage) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
 # (« pour pour »). Même état, même historique, même schéma exigés ; tout chiffre, jour, heure, nom, lettre
 # épelée, négation, « euh », « merci » ou question ajoutée refuse la reprise (rejeu GPT-6 Luna du 20/10/2026).
-# Hors liste, la règle est seulement journalisée (`harmless` dans « Speculation outcome »).
 # Métrique : sokar_voice_structured_speculation_total{outcome=hit_tolerant}.
-VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS=""
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
 # appel c5d6b07d, « 4 » attendait 2,7 s. Une fin trop tôt est rattrapée par le tour
 # structuré (turnComplete=false, fragment recollé). Défaut : égal au délai normal.
 VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS="1200"
-# Relève au silence (vide = aucun restaurant, `*` = tous) : quand l'appelant a parlé, se tait depuis
+# Relève au silence (tous les restaurants depuis le 22/10) : quand l'appelant a parlé, se tait depuis
 # VOICE_DEEPGRAM_SILENCE_FLUSH_MS et que Deepgram n'a rendu aucun texte, `Finalize` lui fait rendre le mot
 # qu'il retient (« midi 30 » arrivé 2,1 s après le dernier mot, appel du 21/10). Le texte rendu est traité
 # comme une partielle : partielle figée, garde de silence et verdict du modèle décident de la fin du tour.
-VOICE_DEEPGRAM_SILENCE_FLUSH_RESTAURANT_IDS=""
 VOICE_DEEPGRAM_SILENCE_FLUSH_MS="700"
 # Garde de silence : une fin de tour forcée (partielle figée, jugement du modèle) attend que
 # l'audio de l'appelant soit silencieux depuis ce délai, au lieu de tomber pendant qu'il parle
@@ -421,47 +406,64 @@ VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
 # Silence avant de répondre à un tour que le modèle juge inachevé (ms, 800 à 6000, défaut 2000),
 # mesuré depuis la transcription finale. Tant que des mots arrivent, la réponse est reportée (5 fois max).
 VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
-# Vérification de compréhension du tour structuré (restaurants listés, vide = aucun). Le modèle lit
+# Vérification de compréhension du tour structuré (tous les restaurants depuis le 22/10). Le modèle lit
 # littéralement ce que l'appelant a dit (`reading`) et déclare `understanding` clear/doubtful ; sur
 # doubtful le code n'applique aucun changement de brouillon ni aucune action (même pas une
 # vérification de disponibilité) et le modèle redemande. Aucune liste de phrases : le jugement est celui du
-# modèle, dans le contexte. Change le schéma et le prompt de ces restaurants : activer d'abord Chez Sokar.
-VOICE_UNDERSTANDING_CHECK_RESTAURANT_IDS=""
-# Juge de fin de tour séparé (restaurants listés, vide = aucun) : une requête minimale (dernière question de
+# modèle, dans le contexte. Aucun réglage.
+# Juge de fin de tour séparé (tous les restaurants depuis le 22/10) : une requête minimale (dernière question de
 # l'agent, parole de l'appelant, sortie {complete}) tourne en parallèle du passage anticipé ; son verdict
 # remplace `turnComplete` pour fermer le tour (clôture sémantique) et pour décider de répondre. Délai dépassé
 # ou erreur : `turnComplete` du modèle, comme sans le juge. Métriques : sokar_voice_turn_judge_total{outcome},
-# sokar_voice_turn_judge_duration_ms. Banc A/B : voir Journal du 2026-10-02. Activer d'abord Chez Sokar.
-VOICE_TURN_JUDGE_RESTAURANT_IDS=""
+# sokar_voice_turn_judge_duration_ms. Banc A/B : voir Journal du 2026-10-02. Aucun réglage d'activation.
 # Faits pratiques du restaurant (parking, accessibilité, animaux, options alimentaires, menu), saisis à
-# l'étape « Votre restaurant en pratique » de l'onboarding et ajoutés au prompt de l'assistant pour les
-# restaurants listés (identifiants séparés par des virgules). Vide = aucun : le prompt est alors identique
-# à avant. Sans fait pour une question, l'assistant ne devine pas et propose le gérant. Activer d'abord
-# Chez Sokar et comparer les appels avec questions pratiques avant d'élargir.
-VOICE_PRACTICAL_INFO_RESTAURANT_IDS=""
+# l'étape « Votre restaurant en pratique » de l'onboarding et ajoutés au prompt de l'assistant, pour tous les
+# restaurants depuis le 22/10 (aucun réglage). Sans fait pour une question, l'assistant ne devine pas et propose
+# le gérant.
 # Style de la maison : les réglages « Style » (bistrot, semi-gastro, gastronomique) et « Ton de voix »
 # (chaleureux, naturel, formel) de l'étape « Consignes & démo » modifient la façon de parler de
-# l'assistant, pour les restaurants listés. Vide = aucun : prompt identique à avant. Le réglage par
+# l'assistant, pour tous les restaurants depuis le 22/10 (aucun réglage). Le réglage par
 # défaut (bistrot, naturel) n'ajoute rien. Mesuré le 08/10/2026 (scripts/voice-style-ab.ts) : formel
 # et gastronomique nettement plus soignés, chaleureux peu distinct du défaut.
 # Coût observé (09/10/2026, juge = modèle de production, 6 comparaisons) : la maison gastronomique formelle est
 # jugée plus soignée que le défaut mais moins naturelle (4 contre 2). Pour un son le plus naturel, le réglage par
 # défaut (bistrot, naturel) reste la recommandation ; la maison est un choix du restaurant.
-VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
-# Profil client du CRM dans le prompt (restaurants listés, `*` = tous, vide = aucun : prompt identique à avant).
+# Profil client du CRM dans le prompt, pour tous les restaurants depuis le 22/10 (aucun réglage).
 # Visites réelles lues dans les réservations (honorées, placées, ou confirmées passées ; annulées et absences
 # exclues), dernière visite, prochaine réservation, taille de groupe médiane, préférences saisies ou confirmées
-# par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée. Activer d'abord Chez
-# Sokar et écouter un appel d'un client connu avant d'élargir.
-VOICE_CRM_PROFILE_RESTAURANT_IDS=""
-# Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
+# par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée.
+# Cartesia Ink-2 en parallèle de Deepgram, pour tous les restaurants dès que `CARTESIA_API_KEY` est présente.
+# Deepgram garde la fin de phrase, les mots (timings, confiance, bruit, interruption) et les mots isolés ;
+# Ink-2 (`/stt/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, L16 en PCM16 16 kHz) reçoit seulement
+# la voix de l'appelant (détection locale `trackCallerVoice`, 0,5 s gardées avant, 1 s après la dernière voix).
+# À chaque fin de phrase Deepgram de 2 mots ou plus : `finalize`, puis le texte Ink-2 remplace celui de Deepgram
+# s'il arrive dans `VOICE_STT_INK_WAIT_MS` (défaut 250, 50 à 1000 ; banc : 87 ms médiane, 128 ms p90), sinon
+# Deepgram. `finalize` part dès 150 ms de silence local : le texte est en général prêt quand Deepgram clôt la phrase.
+# Si les deux ne s'accordent pas sur le nombre de personnes, Léa le fait confirmer dans son récapitulatif (aucune
+# question en plus). 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel, sans plafond quotidien ;
+# les secondes du jour sont comptées dans Redis (`stt-ink:seconds:<jour>`) pour suivre la dépense. Toute panne
+# retombe sur Deepgram seul.
+# Secours Ink-2 quand Deepgram tombe, pour tous les restaurants (`CARTESIA_API_KEY`) : au lieu de
+# déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
+# (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du
+# restaurant en `keyterm`) ; Ink-2 décide alors seul de la fin de phrase. Une seconde panne suit le parcours normal
+# (message d'indisponibilité). Métrique `sokar_voice_provider_errors_total{provider="deepgram_stt",type="fallback_ink"}`.
+# Fin de phrase sur silence local, adaptée à l'appelant, pour tous les restaurants : une partielle
+# Deepgram attend et l'appelant se tait depuis plus longtemps que ses propres pauses (80e centile de ses pauses
+# observées pendant l'appel + 150 ms, borné entre 350 et 1 100 ms ; `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS`, défaut
+# 600, tant que moins de 3 pauses sont connues) : `Finalize` part sans attendre 1,2 s de partielle figée (12 % des tours
+# du 14 au 21/10, p90 1,56 s). Mesure du 22/10 sur 41 appels : 80e centile des pauses de 164 à 1 160 ms selon
+# l'appelant. Jamais pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
+VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="600"
+VOICE_STT_INK_WAIT_MS="250"
+# Suggestions CRM tirées des appels, pour tous les restaurants dès que `OPENROUTER_API_KEY` est présente
+# (depuis le 22/10, sans liste). Après le raccroché, une
 # requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
 # `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,
 # régime, accessibilité, langue ou occasion. Une suggestion n'est gardée que si sa preuve figure mot pour mot dans
 # la transcription ; elle est écrite `VOICE_SUGGESTION` non confirmée, expire à 90 jours et n'écrase jamais une
 # saisie de l'équipe. L'agent ne s'en sert qu'une fois confirmée dans la fiche CRM (Confirmer / Écarter), qui
-# exige `CRM_ADVANCED_ENABLED`. Une requête par appel concerné ; tâche en file, une seule tentative.
-VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS=""
+# suit la formule (`customers.advanced`). Une requête par appel concerné ; tâche en file, une seule tentative.
 VOICE_CRM_SUGGESTIONS_MODEL=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
@@ -471,26 +473,19 @@ VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
 # Contexte Cartesia (une connexion par réponse) : faux par défaut, le chemin HTTP reste la référence.
 VOICE_TTS_CONTEXT_V2_ENABLED="false"
-# Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : faux en production, ne pas activer sans
-# écoute validée. Prioritaire sur le contexte Cartesia ; sans ELEVENLABS_API_KEY, repli automatique.
-VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
-# Restaurants autorisés (ids séparés par des virgules). Il faut le drapeau ci-dessus à true ET le
-# restaurant dans cette liste : la liste seule ne suffit pas, le drapeau seul non plus. Vide = aucun.
-VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS=""
-# Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique),
-# restaurant par restaurant. Sans effet hors ElevenLabs Dialogue. Vide = aucun.
-VOICE_TTS_EXPRESSION_TONE_RESTAURANT_IDS=""
+# Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : actif pour tous les restaurants dès que
+# ELEVENLABS_API_KEY est présente, sans réglage (22/10). Prioritaire sur le contexte Cartesia.
+# Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique) : tous
+# les restaurants, sur le chemin ElevenLabs Dialogue seulement.
 # Premiers mots de la réponse envoyés à ElevenLabs dès la première virgule (« Très bien, »), sans attendre la fin
 # de la première phrase. Seulement une fois la voix autorisée (action, fin de tour, garde-fous lus) ; jamais sur
-# une relecture de nom, un nombre ou des lettres épelées. Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun.
-# Banc du 21/10 : la voix part 0,15 à 0,26 s plus tôt (médiane). À activer après écoute de Hamza.
-VOICE_TTS_EARLY_PHRASE_RESTAURANT_IDS=""
+# une relecture de nom, un nombre ou des lettres épelées. Tous les restaurants, ElevenLabs Dialogue seulement.
+# Banc du 21/10 : la voix part 0,15 à 0,26 s plus tôt (médiane), quand le juge de fin de tour a répondu avant.
 # Petit mot d'attente pendant une vraie vérification de créneau ou un vrai enregistrement de réservation
 # (« Un instant, je regarde. », « Un instant, j'enregistre. ») quand la réponse tarde : sons préenregistrés avec la voix
 # de Léa, joués par le code (pas par le modèle), la réponse enchaîne après eux. Rien sur une question simple, jamais
 # pendant une épellation ni quand l'appelant parle ; jamais deux fois de suite la même formule, plafond par appel.
-# Sans effet hors ElevenLabs Dialogue. `*` = tous, vide = aucun (et aucune génération de sons au démarrage).
-VOICE_FILLER_RESTAURANT_IDS=""
+# Tous les restaurants, ElevenLabs Dialogue seulement ; sons générés au démarrage (environ 200 caractères par voix).
 # Délai minimal après la fin de parole (300–3000 ms) ; l'action démarre d'ordinaire vers 1,2–1,5 s.
 VOICE_FILLER_DELAY_MS="750"
 # Tours avec son d'attente au plus par appel (1–20).
@@ -510,13 +505,12 @@ trois » rendu vide par Deepgram, 12 s de silence, raccroché). L'agent repose s
 dernière question : « Pardon, je n'ai pas bien entendu. … » quand Deepgram signale
 une parole sans aucun mot reconnu, ou « Vous êtes toujours là ? … » après un
 silence. Deux relances au plus par appel, jamais pendant une clôture, et seulement
-si la dernière réplique de l'agent était une question. Les petits nombres (« deux »
+si la dernière réplique de l'agent était une question. Active pour tous les restaurants
+depuis le 22/10, sans réglage. Les petits nombres (« deux »
 à « dix ») sont aussi envoyés en tête des mots-clés Deepgram quand les mots-clés
 sont activés pour le restaurant.
 
 ```dotenv
-# Restaurants où la relance est active (liste d'identifiants séparés par des virgules).
-VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS=""
 # Silence après une question de l'agent avant « Vous êtes toujours là ? » (3000–20000).
 VOICE_NO_INPUT_TIMEOUT_MS="7000"
 # La relance est formulée par le modèle à partir d'un fait (parole non comprise, silence, silence après
@@ -550,8 +544,7 @@ VOICE_TTS_PROVIDER="cartesia"
 # ELEVENLABS_TTS_VOICE_ID : identifiant de la voix ElevenLabs, à fournir au déploiement.
 # Défaut eleven_v4_turbo, le modèle mesuré au banc.
 ELEVENLABS_TTS_MODEL="eleven_v4_turbo"
-# Chemin WebSocket des tours en contexte (latence de dialogue), distinct et désactivé par défaut.
-VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
+# Le chemin WebSocket des tours en contexte (latence de dialogue) est actif dès que ELEVENLABS_API_KEY est présente.
 ```
 
 - Le téléphone (tours HTTP, message d'accueil en cache) suit `VOICE_TTS_PROVIDER`. Le format de sortie est le G.711
@@ -562,10 +555,8 @@ VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED="false"
 - `ELEVENLABS_TTS_STREAMING="true"` passe le téléphone sur le point de synthèse en flux (`/stream`), dont le premier
   octet arrive plus tôt, au même prix par caractère. Absent ou autre valeur : point de synthèse classique. Retour
   arrière : supprimer la variable, puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
-- Le chemin WebSocket exige deux conditions : `VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED=true` ET le restaurant dans
-  `VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS`. Le drapeau seul ne bascule personne, et la liste seule non plus :
-  sans le drapeau, le restaurant reste sur la voix HTTP. Pour l'arrêter ou retirer un restaurant, modifier la
-  variable puis redémarrer `sokar-api` et `sokar-workers` (ou leurs équivalents staging).
+- Le chemin WebSocket sert tous les restaurants dès que `ELEVENLABS_API_KEY` est présente (depuis le 22/10, plus
+  de drapeau ni de liste). Un échec d'ouverture retombe sur la voix HTTP, tour par tour.
 - `CARTESIA_API_KEY` reste exigée en production : la démo de l'onboarding et les aperçus de voix du restaurant
   utilisent encore Cartesia.
 - Retour arrière : `VOICE_TTS_PROVIDER="cartesia"`. Les caractères ElevenLabs sont comptés sous le fournisseur
@@ -598,18 +589,11 @@ DEEPGRAM_API_HOST="api.deepgram.com"
 # (Scribe, sans Dialogue V2) mais n'annule pas ses listes explicites. Le tour structuré est toujours actif.
 VOICE_V2_DEFAULT="false"
 VOICE_V2_DISABLED_RESTAURANT_IDS=""
-# Suppression de bruit Telnyx (bêta) sur l'audio de l'appelant, avant la transcription. « off » (défaut)
-# ou Krisp | DeepFilterNet | AiCoustics | Denoiser ; uniquement pour les restaurants listés.
-# Facturée par direction et par minute (une seule direction utilisée). Un échec n'arrête pas l'appel.
-VOICE_NOISE_SUPPRESSION_ENGINE="off"
-VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_MODEL="nova-3"
-# Optional; Flux is used only when this CSV contains the restaurant ID.
-VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_NUMERALS="true"
-VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_PUNCTUATE="false"
-VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS=""
+# Suppression de bruit Telnyx Krisp (bêta) sur l'audio de l'appelant, avant la transcription, pour tous les
+# restaurants depuis le 22/10 (aucun réglage). Facturée par direction et par minute (une seule direction
+# utilisée). Un échec n'arrête pas l'appel.
+# Deepgram, pour tous les restaurants et sans réglage depuis le 22/10 : nova-3, chiffres en nombres
+# (`numerals=true`), sans ponctuation. Flux et la ponctuation restent mesurables au banc (scripts/voice-stt-bench).
 VOICE_DEEPGRAM_MIP_OPT_OUT="true"
 VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS=
 ```
@@ -832,12 +816,8 @@ y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commence
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
 pas un booléen et se pose directement dans le fichier d'environnement de l'API.
 
-`VOICE_SMART_ENDPOINT_ENABLED=true` (défaut `false`) active la fin de tour hybride.
-`VOICE_SMART_ENDPOINT_RESTAURANT_IDS` (IDs séparés par des virgules, vide = tous) la limite
-à certains restaurants. Pour ces appels, Scribe coupe après
-`VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS` (défaut `0.5`, bornes 0,2 à 3) au lieu de
-`ELEVENLABS_STT_VAD_SILENCE_SECS` (défaut `0.95`, qui reste la valeur des autres appels).
-Après le commit, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
+Fin de tour hybride (écoute Dialogue V2, tous les restaurants) :
+après la fin de phrase, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
 (ponctuation finale ou réponse d'un ou deux mots comme « oui »), 800 ms si elle finit en
 suspens (« demain à », « au nom de », « je suis »), 600 ms pour une correction commencée
 (« non, plutôt… »), 400 ms sans ponctuation. Si le client reprend pendant l'attente, la
@@ -857,21 +837,16 @@ valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → comm
 valeur fait échouer le démarrage (validation Zod). Suivre
 `sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
 
-`VOICE_STT_FILTER_BACKGROUND=true` transmet `filter_background_audio=true` à Scribe pour
-réduire les faux déclenchements dus aux conversations voisines et au bruit ambiant. Défaut
-`false` : aucun paramètre supplémentaire n'est envoyé. Le seuil VAD explicite actuel reste
-inchangé. ElevenLabs interdit de combiner ce filtre avec `include_timestamps` : lorsque le
-flag est actif, ce seul paramètre explicite est omis ; `include_language_detection` reste
-actif. Voir la [référence Scribe Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime).
+`VOICE_STT_FILTER_BACKGROUND` est sans effet depuis le 22/10 : le filtre Scribe n'est plus
+envoyé (Scribe n'est plus utilisé en production ; Deepgram ou le secours Ink-2).
 
 `VOICE_STT_LANGUAGE_LOCK=true` verrouille l'appel en français après le premier tour commité
 que Scribe identifie comme français et qui contient au moins deux mots. La langue de dialogue
 ne suit ensuite plus les détections ultérieures. Un contenu non français récupérable par
 l'extracteur du champ demandé suit le parcours normal de réservation ; sinon l'agent relance
-en français. Après le verrou, une nouvelle session Scribe forcée en français est tentée au
-début du prochain tour TTS, jamais pendant que le client parle. Si ce relock échoue, la
-session auto-détectée précédente est restaurée ; si elle s'est aussi fermée, la reconnexion
-existante reprend la détection automatique. Défaut `false` : comportement actuel.
+en français. Depuis le 22/10, plus aucune
+session Scribe forcée en français n'est rouverte après le verrou (relock retiré). Défaut
+`false` : comportement actuel.
 Les compteurs `sokar_voice_language_locked_total`,
 `sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
 `sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
@@ -962,18 +937,14 @@ comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
 allowlist vide ou absente reste en PCMA. Les autres appels restent PCMA. La
 valeur est évaluée à l'ouverture de l'appel et ne change pas pendant le flux.
 
-Le modèle Deepgram reste `nova-3` par défaut. Le canary Flux nécessite simultanément
-`VOICE_DEEPGRAM_MODEL=flux-general-multi` et l'identifiant du restaurant dans
-`VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS` ; sans les deux, le modèle résolu reste Nova-3. Flux
-utilise l'endpoint `/v2/listen` avec `language_hint=fr`. `flux-general-multi` est le modèle Flux
-documenté qui prend en charge le français ; les noms `DEEPGRAM_MODEL` historiques ne pilotent
-pas cette sélection. Ce flag ne sélectionne pas Deepgram à lui seul : le provider exige toujours
-`VOICE_STT_PROVIDER=deepgram` et `VOICE_STT_PROVIDER_RESTAURANT_IDS`.
+Le modèle Deepgram est `nova-3` pour tous les restaurants (le canary Flux par restaurant est retiré
+depuis le 22/10/2026). Flux (`/v2/listen`, `flux-general-multi`, `language_hint=fr`) reste mesurable
+au banc.
 
 Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
 `endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.
 La migration `voice_turn_end_of_speech_latency` n'ajoute que des colonnes nullables et doit
-passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms`
+passer par le déploiement normal. Les métriques `sokar_voice_end_of_speech_to_stt_final_ms` (étiquetée `final_trigger` depuis le 22/10/2026)
 et `sokar_voice_stt_provider_audio_messages_total` sont additives.
 
 ### ElevenLabs : clé et quota (historique, état du 24/09/2026)
@@ -1026,12 +997,8 @@ possibles. Une valeur nette est retenue puis relue dans la phrase suivante
 (« Six personnes, très bien. Pour quel jour ? ») ; deux valeurs proches donnent
 « Pardon, six ou seize personnes ? » ; une réponse hors sujet ne donne rien.
 Les heures candidates sont les créneaux vérifiés, sinon les horaires
-d'ouverture du jour, sinon une liste par défaut.
-
-| Variable                               | Défaut  | Effet                                                                  |
-| -------------------------------------- | ------- | ---------------------------------------------------------------------- |
-| `VOICE_EXPECTED_ANSWER_ENABLED`        | `false` | `true` active rapprochement, choix « X ou Y ? » et relecture naturelle |
-| `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` | vide    | limite aux restaurants listés (virgules) ; vide = tous                 |
+d'ouverture du jour, sinon une liste par défaut. Actif pour tous les restaurants
+depuis le 22/10/2026, sans réglage.
 
 Confirmation guidée par la confiance (`stream/slot-confidence.ts`) : pour
 chaque valeur retenue par l'analyse exacte (nombre, jour, heure), la confiance
@@ -1042,21 +1009,15 @@ cinq/sept, 20 h/21 h/22 h, 8 h/20 h, et quart/et demie) : « Pardon, six ou dix
 personnes ? ». Valeur très douteuse sans voisin : question reposée autrement.
 Heure hors des horaires d'ouverture du jour : jamais acceptée d'office.
 L'événement `slot_confidence` publie le type, la confiance arrondie,
-l'instabilité et la décision, jamais le texte ni la valeur. À utiliser avec
-`VOICE_EXPECTED_ANSWER_ENABLED=true`, qui porte la relecture.
+l'instabilité et la décision, jamais le texte ni la valeur. Actif pour tous les
+restaurants depuis le 22/10/2026, sans réglage.
 
-| Variable                                  | Défaut      | Effet                                                                  |
-| ----------------------------------------- | ----------- | ---------------------------------------------------------------------- |
-| `VOICE_CONFIDENCE_CONFIRM_ENABLED`        | `false`     | `true` active la confirmation guidée par la confiance                  |
-| `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` | vide        | limite aux restaurants listés ; vide = tous                            |
-| `VOICE_CONFIDENCE_CONFIRM_SLOTS`          | `partySize` | types sur lesquels la confiance agit (CSV parmi `partySize,date,time`) |
+La confiance n'agit que sur le nombre de personnes ; pour le jour et l'heure, la
+décision est seulement observée : `slot_confidence` la publie préfixée `wouldBe…`,
+sans rien changer au dialogue. Le banc difficile montre que la confiance Scribe
+distingue les nombres de personnes justes des faux, pas les heures.
 
-Hors de `VOICE_CONFIDENCE_CONFIRM_SLOTS`, la décision est seulement observée :
-`slot_confidence` la publie préfixée `wouldBe…`, sans rien changer au dialogue.
-Le banc difficile montre que la confiance Scribe distingue les nombres de
-personnes justes des faux, pas les heures : d'où le défaut `partySize`.
-
-Vraisemblance des heures (sous `VOICE_EXPECTED_ANSWER_ENABLED`, indépendante
+Vraisemblance des heures (toujours active, indépendante
 de la confiance) : une heure hors des horaires d'ouverture du jour, ou de la
 semaine si le jour est inconnu, n'est jamais retenue. L'agent demande « 10 h ou
 22 h ? » avec l'heure ouverte la plus proche à l'oreille, ou cite les horaires.
@@ -1066,8 +1027,7 @@ tableau de bord « Assistants IA », partagé avec le canal agentique ; 7 sans
 ligne de réglages), le téléphone confirme le nombre puis transfère au gérant,
 ou prend un message sans ligne gérant. Aucun flag : ce parcours est toujours actif.
 
-Flag coupé, le dialogue est celui d'avant la fonctionnalité. L'événement
-`expected_answer` publie le type, le statut et les scores (meilleur, écart),
+L'événement `expected_answer` publie le type, le statut et les scores (meilleur, écart),
 jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.
 
 Chaque tour publie la confiance Scribe (`minWordConfidence`,
