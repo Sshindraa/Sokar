@@ -177,6 +177,85 @@ describe('marketing provider reconciliation', () => {
     });
   });
 
+  it("réévalue l'événement qui perd la course contre un autre callback du même message", async () => {
+    // `email.sent` et `email.delivered` arrivent à quelques millisecondes d'intervalle : le second lit
+    // ACCEPTED, le premier passe le message à SENT, puis la mise à jour conditionnelle du second échoue.
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    const result = await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.delivered',
+      occurredAt: new Date('2026-09-13T10:01:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      matched: true,
+      changed: true,
+      status: MarketingMessageStatus.DELIVERED,
+    });
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.ACCEPTED },
+      }),
+    );
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.SENT },
+        data: expect.objectContaining({ status: MarketingMessageStatus.DELIVERED }),
+      }),
+    );
+    expect(db.marketingCampaign.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne perd pas un rebond qui perd la course contre un callback précédent', async () => {
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      channel: 'EMAIL',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Permanent',
+    });
+
+    expect(db.marketingSuppression.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ customerId: 'customer-1', reason: 'HARD_BOUNCE' }),
+      }),
+    );
+  });
+
   it('ignore un événement en retard après une livraison', async () => {
     vi.mocked(db.campaignMessage.findFirst).mockResolvedValue({
       id: 'message-1',
