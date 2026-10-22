@@ -812,8 +812,8 @@ export const voiceEndOfSpeechToFirstAudioMs = new Histogram({
 
 export const voiceEndOfSpeechToSttFinalMs = new Histogram({
   name: 'sokar_voice_end_of_speech_to_stt_final_ms',
-  help: 'Measured end of caller speech to final STT transcript in milliseconds',
-  labelNames: ['provider'] as const,
+  help: 'Measured end of caller speech to final STT transcript in milliseconds, by what closed the phrase',
+  labelNames: ['provider', 'final_trigger'] as const,
   buckets: [100, 200, 350, 500, 750, 1000, 1250, 1500, 2000, 3000, 5000],
   registers: [getRegistry()],
 });

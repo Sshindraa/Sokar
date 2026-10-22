@@ -29,6 +29,9 @@ import {
   finalizeOnSemanticEndOfTurn,
   looksLikeSpelledLetters,
   maybeFlushDeepgramOnSilence,
+  maybeFinalizeDeepgramOnLocalSilence,
+  isDeepgramLocalSilenceFinalizeEnabledFor,
+  deepgramLocalSilenceFinalizeMs,
   isDeepgramSilenceFlushEnabledFor,
   deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
@@ -772,6 +775,54 @@ describe('Deepgram final dispatch', () => {
     return { session, onEvent };
   }
 
+  it("Ink-2 prêt : son texte part à la place de Deepgram, le désaccord sur le nombre de personnes est noté pour ce tour, et la phrase suivante commencée pendant l'attente est gardée", async () => {
+    const { session, onEvent } = deepgramSession();
+    const sent: Array<Buffer | string> = [];
+    session.sttInk = {
+      socket: {
+        readyState: 1,
+        send: (data: Buffer | string) => sent.push(data),
+        close: () => undefined,
+        on: () => undefined,
+      },
+      ready: true,
+      closed: false,
+      // finalize déjà parti au premier silence, réponse déjà reçue.
+      finals: ['je voudrais une table pour six personnes'],
+      bytesSent: 0,
+      bytesPerSecond: 8000,
+      preRoll: [],
+      preRollBytes: 0,
+      speechSinceFinalize: false,
+      pendingFinalize: false,
+    };
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'je voudrais une table pour dix personnes.',
+      speechFinal: true,
+      speechEndOffsetMs: 1_000,
+    });
+    // Début de la phrase suivante, arrivé pendant l'attente.
+    session.turnTranscript = 'et aussi';
+    await session.sttInkDispatchChain;
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'je voudrais une table pour six personnes',
+      }),
+    );
+    expect(sent).toHaveLength(0);
+    expect(session.sttInkNote).toEqual(
+      expect.objectContaining({
+        heard: 'je voudrais une table pour six personnes',
+        secondHeard: 'je voudrais une table pour dix personnes.',
+        validThrough: session.sttFinalCount,
+      }),
+    );
+    expect(session.turnTranscript).toBe('et aussi');
+  });
+
   it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {
     const { session, onEvent } = deepgramSession();
     process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
@@ -931,6 +982,116 @@ describe('Deepgram final dispatch', () => {
     expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
       500,
     );
+  });
+
+  describe('fin de phrase sur silence local (partielle figée, 12 % des tours en prod)', () => {
+    const FINALIZE = JSON.stringify({ type: 'Finalize' });
+    function listening(enabled = true) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-22T10:00:00Z'));
+      vi.stubEnv('VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS', enabled ? 'rest-1' : '');
+      const { session, onEvent } = deepgramSession();
+      const ws = makeWsMock();
+      session.sttWs = ws;
+      session.state = 'LISTENING';
+      return { session, onEvent, ws };
+    }
+    function spokeNow(session: CallSession) {
+      const now = Date.now();
+      session.callerVoice = { noiseFloor: 0, voiceRun: 0, lastVoiceAt: now, lastClearVoiceAt: now };
+    }
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.useRealTimers();
+    });
+
+    it('réglage : liste ou *, seuil de départ borné entre 300 et 1500 ms (600 par défaut)', () => {
+      expect(isDeepgramLocalSilenceFinalizeEnabledFor('r', {})).toBe(false);
+      expect(
+        isDeepgramLocalSilenceFinalizeEnabledFor('r', {
+          VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS: '*',
+        }),
+      ).toBe(true);
+      expect(deepgramLocalSilenceFinalizeMs({})).toBe(600);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '100' }),
+      ).toBe(600);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '700' }),
+      ).toBe(700);
+    });
+
+    function partialThenSilence(pauses?: number[]) {
+      const { session, onEvent, ws } = listening();
+      handleNormalizedSttMessage(session, {
+        type: 'partial',
+        transcript: 'je voudrais une table pour demain soir',
+      });
+      spokeNow(session);
+      if (pauses) session.callerVoice!.pauses = pauses;
+      return { session, onEvent, ws };
+    }
+
+    it('pauses encore inconnues : clôt après 600 ms de silence, sans attendre 1,2 s de partielle figée', () => {
+      const { session, onEvent, ws } = partialThenSilence();
+      vi.advanceTimersByTime(450);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(160);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+      expect(ws.send).toHaveBeenCalledWith(FINALIZE);
+      handleNormalizedSttMessage(session, {
+        type: 'final_segment',
+        transcript: 'je voudrais une table pour demain soir',
+        speechFinal: false,
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'silence_finalize' }),
+      );
+    });
+
+    it('appelant aux pauses courtes : clôt plus tôt (80e centile + 150 ms)', () => {
+      const { session } = partialThenSilence([150, 180, 200, 220, 250]);
+      vi.advanceTimersByTime(360);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(20);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+    });
+
+    it('appelant qui réfléchit en parlant : attend plus longtemps, sans dépasser 1,1 s', () => {
+      const { session } = partialThenSilence([600, 700, 800, 900, 1_400]);
+      vi.advanceTimersByTime(1_000);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(110);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+    });
+
+    it('ne fait rien sans réglage, sans voix entendue, ou pendant une épellation', () => {
+      const off = listening(false);
+      handleNormalizedSttMessage(off.session, {
+        type: 'partial',
+        transcript: 'je voudrais une table',
+      });
+      spokeNow(off.session);
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(off.session)).toBe(false);
+      vi.unstubAllEnvs();
+
+      const noVoice = listening();
+      handleNormalizedSttMessage(noVoice.session, {
+        type: 'partial',
+        transcript: 'je voudrais une table',
+      });
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(noVoice.session)).toBe(false);
+      vi.unstubAllEnvs();
+
+      const spelling = listening();
+      handleNormalizedSttMessage(spelling.session, { type: 'partial', transcript: 'a d k i f' });
+      spokeNow(spelling.session);
+      vi.advanceTimersByTime(600);
+      expect(maybeFinalizeDeepgramOnLocalSilence(spelling.session)).toBe(false);
+      expect(spelling.ws.send).not.toHaveBeenCalledWith(FINALIZE);
+    });
   });
 
   describe('relève au silence : mot retenu par Deepgram (appel du 21/10, « midi 30 »)', () => {

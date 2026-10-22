@@ -624,7 +624,12 @@ export function recordVoiceTurnEvent(
     case 'stt_final':
       if (typeof fields.endOfSpeechToSttFinalMs === 'number') {
         voiceEndOfSpeechToSttFinalMs.observe(
-          { provider: turn.sttProvider ?? 'unknown' },
+          {
+            provider: turn.sttProvider ?? 'unknown',
+            // Ce qui a clos la phrase (speech_final, partielle figée, épellation…) : la queue lente se lit ici.
+            final_trigger:
+              typeof fields.finalTrigger === 'string' ? fields.finalTrigger : 'unknown',
+          },
           fields.endOfSpeechToSttFinalMs,
         );
       }

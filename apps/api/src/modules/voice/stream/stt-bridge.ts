@@ -4,6 +4,7 @@ import {
   callerSpokeClearlySince,
   noCallerVoiceSince,
   trackCallerVoice,
+  callerPauseFinalizeMs,
 } from './caller-voice-activity';
 import { parseRestaurantIdList } from './feature-flags';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
@@ -60,6 +61,13 @@ import {
 import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
+import {
+  closeInkParallel,
+  openInkParallel,
+  partySizeDiffers,
+  resolveInkTranscript,
+  sendInkAudio,
+} from './stt-ink-parallel';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -1050,6 +1058,9 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
       ? buildSttPreviousText(session.restaurantName)
       : undefined,
   );
+  if (adapter.id === 'deepgram') {
+    sendInkAudio(session, telnyxAudio);
+  }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
   addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
   session.sttFirstAudioChunkSent = true;
@@ -1734,13 +1745,62 @@ function dispatchDeepgramFinalParts(
     resultEndMs || undefined,
     lastWordEndMs || undefined,
   );
-  dispatchCommittedTranscript(
-    session,
-    transcript,
-    words.length ? words : undefined,
-    languageCode,
-    timing,
-  );
+  const send = (finalTranscript: string, source: 'deepgram' | 'ink'): void => {
+    session.sttFinalCount = (session.sttFinalCount ?? 0) + 1;
+    // Ink-2 et Deepgram ne s'accordent pas sur le nombre de personnes : à faire confirmer dans le
+    // récapitulatif de ce tour (remplace la confiance par mot de Deepgram, qui ne décrit plus ce texte).
+    if (source === 'ink' && partySizeDiffers(finalTranscript, transcript)) {
+      session.sttInkNote = {
+        heard: finalTranscript,
+        secondHeard: transcript,
+        at: Date.now(),
+        validThrough: session.sttFinalCount,
+      };
+    }
+    dispatchCommittedTranscript(
+      session,
+      finalTranscript,
+      words.length ? words : undefined,
+      languageCode,
+      timing,
+    );
+  };
+  if (!session.sttInk?.ready) {
+    send(transcript, 'deepgram');
+    return;
+  }
+  // Ink-2 en parallèle : attente plafonnée de son texte, phrases envoyées dans l'ordre. Le tampon de la
+  // phrase est vidé maintenant, pas après l'attente : ce qui arrive entre-temps appartient à la suivante.
+  session.turnTranscript = '';
+  session.sttInkDispatchChain = (session.sttInkDispatchChain ?? Promise.resolve())
+    .then(async () => {
+      let resolved: Awaited<ReturnType<typeof resolveInkTranscript>> = {
+        transcript,
+        source: 'deepgram',
+        waitedMs: 0,
+      };
+      try {
+        resolved = await resolveInkTranscript(session, transcript);
+      } catch {
+        // Deepgram seul.
+      }
+      logger.info(
+        { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
+        '[stt-ink] final transcript',
+      );
+      const nextPhrase = session.turnTranscript;
+      send(resolved.transcript, resolved.source);
+      if (nextPhrase && !session.turnTranscript) session.turnTranscript = nextPhrase;
+    })
+    .catch((error: unknown) => {
+      logger.error(
+        {
+          callId: session.callControlId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        '[stt-ink] dispatch failed',
+      );
+    });
 }
 
 export function flushDeepgramFinalPartsForSafety(session: CallSession): void {
@@ -1848,6 +1908,58 @@ export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.
  * la partielle figée n'a pu partir que 500 ms plus tard (2,6 s de silence). Nova-3 retient souvent un
  * énoncé court isolé ; un `Finalize` le rend en ~40 ms (sonde sur 94 tours courts enregistrés).
  */
+/**
+ * Fin de phrase sur silence local (restaurants de `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS`, `*` =
+ * tous) : une partielle Deepgram attend, et l'appelant se tait depuis plus longtemps que ses propres pauses
+ * habituelles (`callerPauseFinalizeMs`, détection locale). Sans elle, une partielle figée attend 1,2 s après son dernier changement (12 % des tours en
+ * prod du 14 au 21/10/2026, fin de parole → transcription p90 1,56 s). Jamais pendant une épellation, dont les
+ * pauses sont plus longues (garde dédiée) ; une seule fois par partielle.
+ */
+export function isDeepgramLocalSilenceFinalizeEnabledFor(
+  restaurantId: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (!restaurantId) return false;
+  const ids = parseRestaurantIdList(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS);
+  return ids.includes('*') || ids.includes(restaurantId);
+}
+
+/**
+ * Silence local exigé tant que les pauses de l'appelant ne sont pas connues (moins de 3 observées) : 300 à
+ * 1500 ms, 600 par défaut. Ensuite, le seuil suit ses propres pauses (`callerPauseFinalizeMs`).
+ */
+export function deepgramLocalSilenceFinalizeMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS ?? 600);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 1_500 ? parsed : 600;
+}
+
+export function maybeFinalizeDeepgramOnLocalSilence(
+  session: CallSession,
+  now = Date.now(),
+): boolean {
+  const partial = session.sttDeepgramPartials?.lastText?.trim();
+  if (
+    session.ended ||
+    session.state !== 'LISTENING' ||
+    session.sttAdapter?.id !== 'deepgram' ||
+    !session.sttDeepgramPendingInterim ||
+    session.sttDeepgramFinalizeRequested ||
+    !partial ||
+    session.sttDeepgramLocalSilenceFinalizedText === partial ||
+    !isDeepgramLocalSilenceFinalizeEnabledFor(session.restaurantId)
+  ) {
+    return false;
+  }
+  // Silence infini = aucune voix entendue sur la ligne (partielle née d'un écho) : rien à clore.
+  const silentMs = callerSilenceMs(session, now);
+  const thresholdMs = callerPauseFinalizeMs(session, deepgramLocalSilenceFinalizeMs());
+  if (!Number.isFinite(silentMs) || silentMs < thresholdMs) return false;
+  // Épellation attendue par le dialogue, ou lettres isolées sans qu'il l'attende : pauses longues, garde dédiée.
+  if (isSpellingTurn(session, partial) || looksLikeSpelledLetters(partial)) return false;
+  session.sttDeepgramLocalSilenceFinalizedText = partial;
+  return requestDeepgramFinalize(session, { trigger: 'local_silence' });
+}
+
 export function isDeepgramSilenceFlushEnabledFor(
   restaurantId: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -1921,7 +2033,7 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
 }
 const deepgramFinalizeReasons = new WeakMap<
   CallSession,
-  'utterance_end' | 'stalled' | 'silence_flush'
+  'utterance_end' | 'stalled' | 'silence_flush' | 'local_silence'
 >();
 
 /**
@@ -2030,7 +2142,7 @@ function armDeepgramStallTimer(session: CallSession): void {
 function requestDeepgramFinalize(
   session: CallSession,
   fields: {
-    trigger: 'stall' | 'semantic';
+    trigger: 'stall' | 'semantic' | 'local_silence';
     stallMs?: number;
     short?: boolean;
     /** Phrase sur laquelle le modèle a jugé le tour fini : si la partielle a changé, ce verdict ne vaut plus. */
@@ -2102,7 +2214,10 @@ function requestDeepgramFinalize(
     return true;
   }
   session.sttDeepgramFinalizeRequested = true;
-  deepgramFinalizeReasons.set(session, 'stalled');
+  deepgramFinalizeReasons.set(
+    session,
+    fields.trigger === 'local_silence' ? 'local_silence' : 'stalled',
+  );
   logVoiceDebugText(session, 'finalize_sent', {
     trigger: fields.trigger,
     partial: session.sttDeepgramPartials?.lastText,
@@ -2119,7 +2234,9 @@ function requestDeepgramFinalize(
     },
     fields.trigger === 'semantic'
       ? '[stt] Model judged the turn complete, Finalize sent'
-      : '[stt] Deepgram partial stalled, Finalize sent',
+      : fields.trigger === 'local_silence'
+        ? '[stt] Caller silent after speech, Finalize sent'
+        : '[stt] Deepgram partial stalled, Finalize sent',
   );
   session.sttAdapter.finalize(ws);
   return true;
@@ -2281,7 +2398,9 @@ export function handleNormalizedSttMessage(
           session,
           deepgramFinalizeReasons.get(session) === 'stalled'
             ? 'stalled_finalize'
-            : 'utterance_end_finalize',
+            : deepgramFinalizeReasons.get(session) === 'local_silence'
+              ? 'silence_finalize'
+              : 'utterance_end_finalize',
         );
       }
       return;
@@ -2381,6 +2500,8 @@ export function connectStt(
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
   const adapter = sttAdapterForSession(session);
+  // Ink-2 en parallèle (restaurants listés) : ouverte une fois par appel, sans effet sur Deepgram.
+  if (adapter.id === 'deepgram') openInkParallel(session).catch(() => undefined);
   if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && adapter.id === 'scribe') {
     session.onAgentSpeaking = () => beginFrenchSttRelock(session, createSocket);
   }
@@ -2624,6 +2745,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
   const input = Buffer.from(audioPayload, 'base64');
   checkFastBargeIn(session, trackCallerVoice(session, input), CallSessionManager.getInstance());
   maybeFlushDeepgramOnSilence(session);
+  maybeFinalizeDeepgramOnLocalSilence(session);
 
   if (
     !session.sttWs &&
@@ -2652,6 +2774,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 export function closeStt(session: CallSession): void {
   // Fin d'appel : envoyer ce qui reste avant de couper la socket.
   flushSttChunkBuffer(session);
+  closeInkParallel(session).catch(() => undefined);
   if (session.sttRelockPending || session.sttRelockAttempt) {
     voiceSttRelockTotal.inc({ result: 'skipped' });
     session.sttRelockPending = false;
