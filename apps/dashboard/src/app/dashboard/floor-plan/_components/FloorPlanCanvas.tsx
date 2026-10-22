@@ -136,6 +136,7 @@ import {
 import { useUndoHistory } from './useUndoHistory';
 import { WALK_IN_DEFAULT_NAME, WalkInPlacement, walkInErrorMessage } from './WalkInPlacement';
 import { useIsMobile, useMediaQuery } from '@/lib/useMediaQuery';
+import { ServiceCardBadges, useServiceCards } from '@/components/reservation/service-card-badges';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
@@ -2600,6 +2601,10 @@ export function FloorPlanCanvas({
   const liveDateRef = useRef(liveDate);
   liveDateRef.current = liveDate;
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
+  // Fiche de service (habitué, allergie, occasion, absences) : une seule lecture pour tout le service.
+  const serviceCards = useServiceCards(
+    live ? reservations.map((reservation) => reservation.id) : [],
+  );
   const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
   const [waitingListLoading, setWaitingListLoading] = useState(false);
   const [promotingWaitingListEntryId, setPromotingWaitingListEntryId] = useState<string | null>(
@@ -6735,6 +6740,7 @@ export function FloorPlanCanvas({
                 {format(parseISO(selectedServiceReservation.startsAt), 'HH:mm')}
               </span>
             </div>
+            <ServiceCardBadges reservationId={selectedServiceReservation.id} state={serviceCards} />
             {selectedServiceReservation.state === 'SEATED' &&
               selectedServiceReservation.seatedAt && (
                 <p className="flex items-center gap-1 text-[11px] font-medium text-foreground">
@@ -7127,6 +7133,10 @@ export function FloorPlanCanvas({
                   {selectedServiceReservation.customerName || 'Sans nom'}
                 </span>
               </div>
+              <ServiceCardBadges
+                reservationId={selectedServiceReservation.id}
+                state={serviceCards}
+              />
               <div className="flex items-center gap-2 text-sm">
                 <Users size={16} className="text-muted-foreground" />
                 <span>{selectedServiceReservation.partySize} personnes</span>

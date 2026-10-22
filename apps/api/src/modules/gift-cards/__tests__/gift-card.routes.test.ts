@@ -966,6 +966,10 @@ describe('gift-card routes', () => {
         id: 'res-1',
         restaurantId: RESTAURANT_ID,
       } as never);
+      vi.mocked(db.giftCardRedemption.create).mockResolvedValue({
+        id: 'redemption-1',
+        redeemedAt: new Date(),
+      } as never);
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',

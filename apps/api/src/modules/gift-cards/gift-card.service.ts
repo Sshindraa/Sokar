@@ -12,6 +12,7 @@ import { generateUniqueShortCode } from './gift-card-code.util.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { GiftCardRefundService } from './gift-card-refund.service';
 import { giftCardAmountCents, lockGiftCard } from './gift-card-finance.util';
+import { recordGiftCardRedemptionTimelineEvent } from '../customers/customer-activity-timeline';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -248,7 +249,7 @@ export class GiftCardService {
     const giftCard = validation.giftCard;
     const reservationAmount = new Prisma.Decimal(input.reservationAmount);
 
-    const { updated, appliedAmount, complementAmount, paymentStatus } =
+    const { updated, appliedAmount, complementAmount, paymentStatus, redemption } =
       await this.prisma.$transaction(async (tx) => {
         // Verrouiller la carte cadeau pour empêcher la double utilisation
         // concurrente (P0 RES-006).
@@ -297,6 +298,7 @@ export class GiftCardService {
             appliedAmount: new Prisma.Decimal(snap.appliedAmount),
             complementAmount: new Prisma.Decimal(snap.complementAmount),
             paymentStatus: snap.paymentStatus,
+            redemption: null,
           };
         }
 
@@ -323,7 +325,7 @@ export class GiftCardService {
           paymentStatus = 'FULLY_COVERED';
         }
 
-        await tx.giftCardRedemption.create({
+        const redemption = await tx.giftCardRedemption.create({
           data: {
             giftCardId: giftCard.id,
             restaurantId: input.restaurantId,
@@ -367,8 +369,24 @@ export class GiftCardService {
             },
           },
         });
-        return { updated, appliedAmount, complementAmount, paymentStatus };
+        return {
+          updated,
+          appliedAmount,
+          complementAmount,
+          paymentStatus,
+          redemption: { id: redemption.id, redeemedAt: redemption.redeemedAt },
+        };
       }, DEFAULT_TRANSACTION_OPTIONS);
+    if (redemption) {
+      await recordGiftCardRedemptionTimelineEvent({
+        restaurantId: input.restaurantId,
+        giftCardId: updated.id,
+        redemptionId: redemption.id,
+        amount: appliedAmount,
+        reservationId: input.reservationId,
+        redeemedAt: redemption.redeemedAt,
+      });
+    }
 
     return {
       reservationId: input.reservationId,
