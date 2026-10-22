@@ -198,3 +198,44 @@ describe('STT provider adapters', () => {
     expect(socket.close).toHaveBeenCalledOnce();
   });
 });
+
+describe('Cartesia Ink-2 en mode tours (secours)', () => {
+  it('traduit les tours Cartesia dans le format commun', async () => {
+    const { normalizeCartesiaTurnsMessage } = await import('../stream/stt-provider-adapter');
+    expect(normalizeCartesiaTurnsMessage({ type: 'connected' })).toEqual([
+      { type: 'session_started' },
+    ]);
+    expect(
+      normalizeCartesiaTurnsMessage({ type: 'turn.update', transcript: ' je voudrais ' }),
+    ).toEqual([{ type: 'partial', transcript: 'je voudrais' }]);
+    expect(
+      normalizeCartesiaTurnsMessage({ type: 'turn.end', transcript: 'pour six personnes' }),
+    ).toEqual([{ type: 'timestamped_commit', transcript: 'pour six personnes' }]);
+    expect(normalizeCartesiaTurnsMessage({ type: 'turn.end', transcript: '' })).toEqual([]);
+    expect(normalizeCartesiaTurnsMessage({ type: 'turn.resume' })).toEqual([]);
+    expect(
+      normalizeCartesiaTurnsMessage({ type: 'error', error_code: 'quota_exceeded', message: 'q' }),
+    ).toEqual([{ type: 'provider_error', messageType: 'quota_exceeded', message: 'q' }]);
+  });
+
+  it("envoie l'A-law tel quel et construit l'adresse en français avec un délai de fin de tour court", async () => {
+    const { buildCartesiaTurnsUrl, createCartesiaTurnsSttAdapter } =
+      await import('../stream/stt-provider-adapter');
+    const adapter = createCartesiaTurnsSttAdapter({ model: 'ink-2' });
+    const frame = Buffer.alloc(160, 0xd5);
+    expect(adapter.toProviderAudio('PCMA', frame)).toBe(frame);
+    expect(adapter.chunkBytesPerMs('PCMA')).toBe(8);
+    const url = new URL(buildCartesiaTurnsUrl('PCMA', 'Chez Sokar'));
+    expect(url.pathname).toBe('/stt/turns/websocket');
+    expect(Object.fromEntries(url.searchParams)).toEqual(
+      expect.objectContaining({
+        model: 'ink-2',
+        language: 'fr',
+        encoding: 'pcm_alaw',
+        sample_rate: '8000',
+        turn_end_timeout_ms: '1500',
+        keyterm: 'Chez Sokar',
+      }),
+    );
+  });
+});

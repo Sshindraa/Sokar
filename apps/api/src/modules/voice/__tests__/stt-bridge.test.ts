@@ -7,7 +7,6 @@ import {
   buildDeepgramSttUrl,
   flushDeepgramFinalPartsForSafety,
   buildSttKeyterms,
-  buildSttPreviousText,
   DEFAULT_STT_LANGUAGES,
   getSttLanguageCodes,
   sendAudioToStt,
@@ -35,7 +34,10 @@ import {
   isDeepgramSilenceFlushEnabledFor,
   deepgramSilenceFlushMs,
 } from '../stream/stt-bridge';
-import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
+import {
+  createCartesiaTurnsSttAdapter,
+  createDeepgramSttAdapter,
+} from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
@@ -135,13 +137,6 @@ describe('buildSttUrl', () => {
     expect(url.searchParams.getAll('keyterms')).toContain('Chez La Grande Table');
     expect(keyterms.length).toBeLessThanOrEqual(50);
     expect(keyterms.every((term) => term.length <= 20)).toBe(true);
-  });
-
-  it('construit un contexte previous_text court et stable', () => {
-    expect(buildSttPreviousText('  Chez   Sokar  ')).toBe(
-      'Réservation / restaurant booking Chez Sokar',
-    );
-    expect(Array.from(buildSttPreviousText('x'.repeat(100))).length).toBeLessThanOrEqual(50);
   });
 
   it('sélectionne PCM16 pour un stt Telnyx PCMA', () => {
@@ -321,13 +316,7 @@ describe('sendAudioToStt', () => {
     };
     expect(payload.message_type).toBe('input_audio_chunk');
     expect(Buffer.from(payload.audio_base_64, 'base64')).toHaveLength(2);
-    expect(payload.previous_text).toBe('Réservation / restaurant booking Test');
-
-    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
-    const secondPayload = JSON.parse(vi.mocked(ws.send).mock.calls[1][0] as string) as {
-      previous_text?: string;
-    };
-    expect(secondPayload.previous_text).toBeUndefined();
+    expect(payload.previous_text).toBeUndefined();
   });
 });
 
@@ -982,6 +971,73 @@ describe('Deepgram final dispatch', () => {
     expect(deepgramShortStallFinalizeMs({ VOICE_DEEPGRAM_SHORT_STALL_FINALIZE_MS: '500' })).toBe(
       500,
     );
+  });
+
+  describe('secours Ink-2 quand Deepgram tombe', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("bascule une fois sur Ink-2 au lieu de couper l'appel", () => {
+      vi.stubEnv('VOICE_STT_INK_FALLBACK_RESTAURANT_IDS', 'rest-1');
+      vi.stubEnv('CARTESIA_API_KEY', 'k');
+      const { session, onEvent } = deepgramSession();
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'quota_exceeded',
+        message: 'quota',
+      });
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'Unavailable' }));
+      expect(session.sttAdapter?.id).toBe('cartesia');
+      expect(session.sttInkFallbackUsed).toBe(true);
+      expect(session.sttTerminalFailure).toBe(false);
+
+      // Une seconde panne, sur le secours cette fois : l'appel est coupé comme avant.
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'auth_error',
+        message: 'auth',
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'Unavailable', reason: 'auth' }),
+      );
+    });
+
+    it('sans réglage ou sans clé Cartesia : comportement d’avant', () => {
+      vi.stubEnv('VOICE_STT_INK_FALLBACK_RESTAURANT_IDS', 'rest-1');
+      vi.stubEnv('CARTESIA_API_KEY', '');
+      const { session, onEvent } = deepgramSession();
+      handleNormalizedSttMessage(session, {
+        type: 'provider_error',
+        messageType: 'quota_exceeded',
+        message: 'quota',
+      });
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'Unavailable', reason: 'quota' }),
+      );
+      expect(session.sttAdapter?.id).toBe('deepgram');
+    });
+
+    it('les tours rendus par Ink-2 partent au dialogue comme des phrases validées', () => {
+      const { session, onEvent } = deepgramSession();
+      session.sttAdapter = createCartesiaTurnsSttAdapter({ model: 'ink-2' });
+      const adapter = session.sttAdapter;
+      for (const raw of [
+        { type: 'turn.start', transcript: '' },
+        { type: 'turn.update', transcript: 'je voudrais' },
+        { type: 'turn.end', transcript: 'je voudrais réserver une table pour demain.' },
+      ]) {
+        for (const event of adapter.normalizeMessage(Buffer.from(JSON.stringify(raw)))) {
+          handleNormalizedSttMessage(session, event);
+        }
+      }
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'UtteranceEnd',
+          transcript: 'je voudrais réserver une table pour demain.',
+        }),
+      );
+    });
   });
 
   describe('fin de phrase sur silence local (partielle figée, 12 % des tours en prod)', () => {

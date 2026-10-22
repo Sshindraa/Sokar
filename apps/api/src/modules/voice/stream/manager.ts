@@ -621,7 +621,7 @@ export class CallSessionManager {
       session.abortController.abort();
       session.abortController = null;
     }
-    for (const socket of new Set([session.sttWs, session.sttRelockPreviousWs])) {
+    for (const socket of [session.sttWs]) {
       if (socket && socket.readyState === WebSocket.OPEN) {
         try {
           socket.close();
@@ -637,7 +637,6 @@ export class CallSessionManager {
       }
     }
     session.sttWs = null;
-    session.sttRelockPreviousWs = null;
     session.sttReady = null;
     session.audioBuffer = [];
     if (session.sttChunkTimer) {
@@ -670,13 +669,6 @@ export class CallSessionManager {
     // autre changement d'état (l'appelant parle, clôture…) annule la relance.
     if (newState === 'LISTENING' && previousState === 'SPEAKING') armSilenceRecovery(session, this);
     else if (newState !== 'LISTENING') cancelNoInputRecovery(session);
-    if (newState === 'SPEAKING') {
-      try {
-        session.onAgentSpeaking?.();
-      } catch {
-        // A best-effort STT relock must never fail a voice-state transition.
-      }
-    }
     return true;
   }
 

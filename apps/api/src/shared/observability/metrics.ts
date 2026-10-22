@@ -390,13 +390,6 @@ export const voiceNonFrTranscriptAfterLockTotal = new Counter({
   registers: [getRegistry()],
 });
 
-export const voiceSttRelockTotal = new Counter({
-  name: 'sokar_voice_stt_relock_total',
-  help: 'Résultat du relock Scribe en français après verrou de langue',
-  labelNames: ['result'] as const,
-  registers: [getRegistry()],
-});
-
 export type VoiceQualityKind = 'party_size' | 'date' | 'time';
 export type VoiceQualityCohort = 'flag_on' | 'flag_off';
 export type VoiceExpectedAnswerStatus = 'accepted' | 'choice' | 'unresolved';
