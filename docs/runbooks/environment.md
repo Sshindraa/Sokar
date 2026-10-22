@@ -466,12 +466,14 @@ VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 # seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
 # appel. Toute panne retombe sur Deepgram seul.
 VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""
-# Fin de phrase sur silence local (restaurants listés, `*` = tous, vide = aucun) : une partielle Deepgram attend et
-# l'appelant se tait depuis `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS` (défaut 450, 300 à 1500) selon la détection
-# locale : `Finalize` part sans attendre 1,2 s de partielle figée (12 % des tours du 14 au 21/10, p90 1,56 s). Jamais
-# pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
+# Fin de phrase sur silence local, adaptée à l'appelant (restaurants listés, `*` = tous, vide = aucun) : une partielle
+# Deepgram attend et l'appelant se tait depuis plus longtemps que ses propres pauses (80e centile de ses pauses
+# observées pendant l'appel + 150 ms, borné entre 350 et 1 100 ms ; `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS`, défaut
+# 600, tant que moins de 3 pauses sont connues) : `Finalize` part sans attendre 1,2 s de partielle figée (12 % des tours
+# du 14 au 21/10, p90 1,56 s). Mesure du 22/10 sur 41 appels : 80e centile des pauses de 164 à 1 160 ms selon
+# l'appelant. Jamais pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
 VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="450"
+VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="600"
 VOICE_STT_INK_WAIT_MS="250"
 VOICE_STT_INK_DAILY_SECONDS="1800"
 # Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une

@@ -4,6 +4,7 @@ import {
   callerSpokeClearlySince,
   noCallerVoiceSince,
   trackCallerVoice,
+  callerPauseFinalizeMs,
 } from './caller-voice-activity';
 import { parseRestaurantIdList } from './feature-flags';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
@@ -1909,8 +1910,8 @@ export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.
  */
 /**
  * Fin de phrase sur silence local (restaurants de `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS`, `*` =
- * tous) : une partielle Deepgram attend, et l'appelant se tait depuis `deepgramLocalSilenceFinalizeMs` selon la
- * détection locale. Sans elle, une partielle figée attend 1,2 s après son dernier changement (12 % des tours en
+ * tous) : une partielle Deepgram attend, et l'appelant se tait depuis plus longtemps que ses propres pauses
+ * habituelles (`callerPauseFinalizeMs`, détection locale). Sans elle, une partielle figée attend 1,2 s après son dernier changement (12 % des tours en
  * prod du 14 au 21/10/2026, fin de parole → transcription p90 1,56 s). Jamais pendant une épellation, dont les
  * pauses sont plus longues (garde dédiée) ; une seule fois par partielle.
  */
@@ -1923,10 +1924,13 @@ export function isDeepgramLocalSilenceFinalizeEnabledFor(
   return ids.includes('*') || ids.includes(restaurantId);
 }
 
-/** Silence local exigé avant la fin de phrase forcée : 300 à 1500 ms, 450 par défaut (au-dessus de la garde de 350). */
+/**
+ * Silence local exigé tant que les pauses de l'appelant ne sont pas connues (moins de 3 observées) : 300 à
+ * 1500 ms, 600 par défaut. Ensuite, le seuil suit ses propres pauses (`callerPauseFinalizeMs`).
+ */
 export function deepgramLocalSilenceFinalizeMs(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS ?? 450);
-  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 1_500 ? parsed : 450;
+  const parsed = Number(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS ?? 600);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 1_500 ? parsed : 600;
 }
 
 export function maybeFinalizeDeepgramOnLocalSilence(
@@ -1948,7 +1952,8 @@ export function maybeFinalizeDeepgramOnLocalSilence(
   }
   // Silence infini = aucune voix entendue sur la ligne (partielle née d'un écho) : rien à clore.
   const silentMs = callerSilenceMs(session, now);
-  if (!Number.isFinite(silentMs) || silentMs < deepgramLocalSilenceFinalizeMs()) return false;
+  const thresholdMs = callerPauseFinalizeMs(session, deepgramLocalSilenceFinalizeMs());
+  if (!Number.isFinite(silentMs) || silentMs < thresholdMs) return false;
   // Épellation attendue par le dialogue, ou lettres isolées sans qu'il l'attende : pauses longues, garde dédiée.
   if (isSpellingTurn(session, partial) || looksLikeSpelledLetters(partial)) return false;
   session.sttDeepgramLocalSilenceFinalizedText = partial;

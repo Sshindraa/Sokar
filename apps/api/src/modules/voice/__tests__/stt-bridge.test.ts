@@ -1005,30 +1005,36 @@ describe('Deepgram final dispatch', () => {
       vi.useRealTimers();
     });
 
-    it('réglage : liste ou *, délai borné entre 300 et 1500 ms', () => {
+    it('réglage : liste ou *, seuil de départ borné entre 300 et 1500 ms (600 par défaut)', () => {
       expect(isDeepgramLocalSilenceFinalizeEnabledFor('r', {})).toBe(false);
       expect(
         isDeepgramLocalSilenceFinalizeEnabledFor('r', {
           VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_RESTAURANT_IDS: '*',
         }),
       ).toBe(true);
-      expect(deepgramLocalSilenceFinalizeMs({})).toBe(450);
+      expect(deepgramLocalSilenceFinalizeMs({})).toBe(600);
       expect(
         deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '100' }),
-      ).toBe(450);
-      expect(
-        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '600' }),
       ).toBe(600);
+      expect(
+        deepgramLocalSilenceFinalizeMs({ VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS: '700' }),
+      ).toBe(700);
     });
 
-    it('clôt la phrase dès 450 ms de silence, sans attendre 1,2 s de partielle figée', () => {
+    function partialThenSilence(pauses?: number[]) {
       const { session, onEvent, ws } = listening();
       handleNormalizedSttMessage(session, {
         type: 'partial',
         transcript: 'je voudrais une table pour demain soir',
       });
       spokeNow(session);
-      vi.advanceTimersByTime(300);
+      if (pauses) session.callerVoice!.pauses = pauses;
+      return { session, onEvent, ws };
+    }
+
+    it('pauses encore inconnues : clôt après 600 ms de silence, sans attendre 1,2 s de partielle figée', () => {
+      const { session, onEvent, ws } = partialThenSilence();
+      vi.advanceTimersByTime(450);
       expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
       vi.advanceTimersByTime(160);
       expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
@@ -1041,6 +1047,22 @@ describe('Deepgram final dispatch', () => {
       expect(onEvent).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'UtteranceEnd', finalTrigger: 'silence_finalize' }),
       );
+    });
+
+    it('appelant aux pauses courtes : clôt plus tôt (80e centile + 150 ms)', () => {
+      const { session } = partialThenSilence([150, 180, 200, 220, 250]);
+      vi.advanceTimersByTime(360);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(20);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
+    });
+
+    it('appelant qui réfléchit en parlant : attend plus longtemps, sans dépasser 1,1 s', () => {
+      const { session } = partialThenSilence([600, 700, 800, 900, 1_400]);
+      vi.advanceTimersByTime(1_000);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(false);
+      vi.advanceTimersByTime(110);
+      expect(maybeFinalizeDeepgramOnLocalSilence(session)).toBe(true);
     });
 
     it('ne fait rien sans réglage, sans voix entendue, ou pendant une épellation', () => {
