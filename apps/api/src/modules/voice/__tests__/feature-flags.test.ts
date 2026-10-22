@@ -63,41 +63,12 @@ describe('voice feature flags', () => {
     ).toBe(true);
   });
 
-  it('keeps Nova by default and gates Flux behind its own restaurant allowlist', () => {
-    const pilot = { restaurantId: 'rest-a' } as CallSession;
-    const other = { restaurantId: 'rest-b' } as CallSession;
-    const env = {
-      VOICE_DEEPGRAM_MODEL: 'flux-general-multi',
-      VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS: ' rest-a ',
-    };
-
-    expect(resolveVoiceFeatureSnapshot(pilot, env).deepgramModel).toBe('flux-general-multi');
-    expect(resolveVoiceFeatureSnapshot(other, env).deepgramModel).toBe('nova-3');
-    expect(
-      resolveVoiceFeatureSnapshot({ restaurantId: 'rest-c' } as CallSession, {}).deepgramModel,
-    ).toBe('nova-3');
-  });
-
-  it('keeps Deepgram formatting defaults and gates overrides per restaurant', () => {
-    const pilot = { restaurantId: 'rest-a' } as CallSession;
-    const other = { restaurantId: 'rest-b' } as CallSession;
-    const env = {
-      VOICE_DEEPGRAM_NUMERALS: 'false',
-      VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS: 'rest-a',
-      VOICE_DEEPGRAM_PUNCTUATE: 'true',
-      VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS: 'rest-a',
-      VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: 'rest-a',
-    };
-
-    expect(resolveVoiceFeatureSnapshot(pilot, env)).toMatchObject({
-      deepgramNumeralsEnabled: false,
-      deepgramPunctuateEnabled: true,
-      deepgramKeytermsEnabled: true,
-    });
-    expect(resolveVoiceFeatureSnapshot(other, env)).toMatchObject({
+  it('fixe nova-3, les chiffres en nombres et pas de ponctuation pour tous les restaurants', () => {
+    const snapshot = resolveVoiceFeatureSnapshot({ restaurantId: 'rest-a' } as CallSession, {});
+    expect(snapshot).toMatchObject({
+      deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     });
   });
 

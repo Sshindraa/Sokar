@@ -17,7 +17,6 @@ import {
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
   DIALOGUE_V2_INCOMPLETE_HOLD_MS,
-  isSmartEndpointEnabled,
   SMART_ENDPOINT_HOLD_CORRECTION_MS,
   SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS,
   SMART_ENDPOINT_HOLD_SUSPENDED_MS,
@@ -620,15 +619,13 @@ describe('handleSttMessage', () => {
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  describe('fin de tour hybride', () => {
+  describe('fin de tour hybride (écoute Dialogue V2)', () => {
     beforeEach(() => {
-      process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
-      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      process.env.VOICE_DIALOGUE_LISTENING_V2 = 'true';
       vi.useFakeTimers();
     });
     afterEach(() => {
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      delete process.env.VOICE_DIALOGUE_LISTENING_V2;
       vi.useRealTimers();
     });
 
@@ -652,17 +649,6 @@ describe('handleSttMessage', () => {
             },
           ];
         });
-
-    it('respecte le flag et la liste de restaurants', () => {
-      const session = makeSession();
-      expect(isSmartEndpointEnabled(session)).toBe(true);
-      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = 'autre-resto';
-      expect(isSmartEndpointEnabled(session)).toBe(false);
-      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = `autre-resto, ${session.restaurantId}`;
-      expect(isSmartEndpointEnabled(session)).toBe(true);
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
-      expect(isSmartEndpointEnabled(session)).toBe(false);
-    });
 
     it('envoie immédiatement une phrase complète', () => {
       const session = makeSession();
@@ -694,19 +680,8 @@ describe('handleSttMessage', () => {
       ]);
     });
 
-    it('libère le tour retenu à la fin de l’attente', () => {
-      const session = makeSession();
-      const onEvent = vi.fn();
-      session.onSttEvent = onEvent;
-      commit(session, 'Ce sera au nom de');
-      vi.advanceTimersByTime(SMART_ENDPOINT_HOLD_SUSPENDED_MS - 1);
-      expect(utteranceEnds(onEvent)).toHaveLength(0);
-      vi.advanceTimersByTime(1);
-      expect(utteranceEnds(onEvent)).toHaveLength(1);
-    });
-
-    it('envoie directement quand le flag est coupé', () => {
-      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+    it('envoie directement sans écoute Dialogue V2', () => {
+      delete process.env.VOICE_DIALOGUE_LISTENING_V2;
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
@@ -743,7 +718,6 @@ describe('Deepgram final dispatch', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     delete process.env.VOICE_DIALOGUE_LISTENING_V2;
-    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
   });
 
   function deepgramSession() {
@@ -812,7 +786,6 @@ describe('Deepgram final dispatch', () => {
 
   it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {
     const { session, onEvent } = deepgramSession();
-    process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
     handleNormalizedSttMessage(session, {
       type: 'final_segment',
       transcript: 'Demain soir',
@@ -837,7 +810,6 @@ describe('Deepgram final dispatch', () => {
     });
     expect(onEvent).not.toHaveBeenCalled();
     expect(session.sttSemanticHold?.transcript).toContain('en-');
-    delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
   });
 
   it('force la sortie du segment quand UtteranceEnd arrive avant tout segment final (appel a8012c5c)', () => {
