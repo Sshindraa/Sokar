@@ -32,6 +32,11 @@ const MAX_CALL_SECONDS = 600;
  */
 const SPEECH_HANGOVER_MS = 1000;
 const PRE_ROLL_MS = 500;
+/**
+ * `finalize` part dès 150 ms de silence local, avant la fin de phrase Deepgram (200 ms d'endpointing en
+ * prod) : Ink-2 répond en ~90 ms, son texte est donc prêt quand Deepgram clôt la phrase.
+ */
+export const EARLY_FINALIZE_SILENCE_MS = 150;
 const CARTESIA_VERSION = '2026-03-01';
 const FILLERS = new Set([
   'euh',
@@ -60,6 +65,10 @@ export interface InkParallelState {
   /** Dernières 0,5 s non envoyées, pour ne pas couper le début d'une prise de parole. */
   preRoll: Buffer[];
   preRollBytes: number;
+  /** De la voix a été envoyée depuis le dernier `finalize`. */
+  speechSinceFinalize: boolean;
+  /** Un `finalize` attend encore sa réponse. */
+  pendingFinalize: boolean;
 }
 
 /** Ce que le module attend d'une socket : la `ws` du serveur, ou un double en test. */
@@ -168,6 +177,8 @@ export async function openInkParallel(session: CallSession, deps: InkDeps = {}):
     bytesPerSecond: sampleRate * (encoding === 'pcm_s16le' ? 2 : 1),
     preRoll: [],
     preRollBytes: 0,
+    speechSinceFinalize: false,
+    pendingFinalize: false,
   };
   session.sttInk = state;
   socket.on('open', () => {
@@ -182,6 +193,7 @@ export async function openInkParallel(session: CallSession, deps: InkDeps = {}):
     }
     if (event.type === 'transcript' && event.is_final && event.text?.trim()) {
       state.finals.push(event.text.trim());
+      state.pendingFinalize = false;
       if (state.waiter) {
         const resolve = state.waiter;
         state.waiter = undefined;
@@ -236,14 +248,32 @@ export function sendInkAudio(session: CallSession, telnyxAudio: Buffer, now = Da
   try {
     state.socket.send(audio);
     state.bytesSent += audio.length;
+    if (callerSilenceMs(session, now) < EARLY_FINALIZE_SILENCE_MS) {
+      state.speechSinceFinalize = true;
+    } else if (state.speechSinceFinalize && !state.pendingFinalize) {
+      sendFinalize(state);
+    }
   } catch {
     state.closed = true;
   }
 }
 
+function sendFinalize(state: InkParallelState): void {
+  state.socket.send('finalize');
+  state.pendingFinalize = true;
+  state.speechSinceFinalize = false;
+}
+
+/** La réponse d'un `finalize` dont on ne veut plus est avalée, pour ne pas fuir dans la phrase suivante. */
+function discardPendingReply(state: InkParallelState): void {
+  state.finals = [];
+  state.waiter = state.pendingFinalize ? () => undefined : undefined;
+}
+
 /**
- * Texte à envoyer au dialogue pour une phrase finale Deepgram. Un mot isolé reste à Deepgram, sans
- * attendre ; sinon `finalize`, puis le texte Ink-2 s'il arrive dans le délai, sinon celui de Deepgram.
+ * Texte à envoyer au dialogue pour une phrase finale Deepgram. Le `finalize` est en général déjà parti au
+ * premier silence (sinon il part maintenant). Un mot isolé reste à Deepgram, sans attendre ; sinon le texte
+ * Ink-2 s'il est là ou arrive dans le délai, sinon celui de Deepgram.
  */
 export async function resolveInkTranscript(
   session: CallSession,
@@ -252,24 +282,32 @@ export async function resolveInkTranscript(
 ): Promise<{ transcript: string; source: 'deepgram' | 'ink'; waitedMs: number }> {
   const state = session.sttInk;
   const env = deps.env ?? process.env;
-  if (!state?.ready || state.closed)
-    return { transcript: deepgramTranscript, source: 'deepgram', waitedMs: 0 };
+  const deepgram = (waitedMs = 0) => ({
+    transcript: deepgramTranscript,
+    source: 'deepgram' as const,
+    waitedMs,
+  });
+  if (!state?.ready || state.closed) return deepgram();
   const startedAt = Date.now();
-  // Les finaux déjà reçus appartiennent à cette phrase ; finalize clôt le reste.
+  if (state.speechSinceFinalize || (!state.pendingFinalize && !state.finals.length)) {
+    try {
+      sendFinalize(state);
+    } catch {
+      return deepgram();
+    }
+  }
+  if (comparableWordCount(deepgramTranscript) < INK_MIN_DEEPGRAM_WORDS) {
+    // Deepgram garde les mots isolés : ce qu'Ink-2 rend pour cette phrase est jeté.
+    discardPendingReply(state);
+    return deepgram();
+  }
+  if (!state.pendingFinalize) {
+    const ready = takeFinals(state);
+    return ready ? { transcript: ready, source: 'ink', waitedMs: 0 } : deepgram();
+  }
   const result = new Promise<string>((resolve) => {
     state.waiter = resolve;
   });
-  try {
-    state.socket.send('finalize');
-  } catch {
-    state.waiter = undefined;
-    return { transcript: deepgramTranscript, source: 'deepgram', waitedMs: 0 };
-  }
-  if (comparableWordCount(deepgramTranscript) < INK_MIN_DEEPGRAM_WORDS) {
-    // On finalise pour vider le tampon d'Ink-2, sans attendre : Deepgram garde les mots isolés, et le
-    // texte qu'Ink-2 rendra pour cette phrase est jeté par l'attente déjà posée.
-    return { transcript: deepgramTranscript, source: 'deepgram', waitedMs: 0 };
-  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<string>((resolve) => {
     timer = setTimeout(() => resolve(''), waitMs(env));
@@ -278,12 +316,57 @@ export async function resolveInkTranscript(
   if (timer) clearTimeout(timer);
   const waitedMs = Date.now() - startedAt;
   if (!inkText) {
-    // Trop tard ou rien : la suite éventuelle sera ignorée par la prochaine phrase.
-    state.waiter = undefined;
-    state.finals = [];
-    return { transcript: deepgramTranscript, source: 'deepgram', waitedMs };
+    discardPendingReply(state);
+    return deepgram(waitedMs);
   }
   return { transcript: inkText, source: 'ink', waitedMs };
+}
+
+const PARTY_NUMBER_WORDS: Record<string, string> = {
+  deux: '2',
+  trois: '3',
+  quatre: '4',
+  cinq: '5',
+  six: '6',
+  sept: '7',
+  huit: '8',
+  neuf: '9',
+  dix: '10',
+  onze: '11',
+  douze: '12',
+  treize: '13',
+  quatorze: '14',
+  quinze: '15',
+  seize: '16',
+  vingt: '20',
+};
+
+/**
+ * Nombres de personnes d'une phrase : un nombre suivi de « personnes » ou « couverts ». Volontairement
+ * étroit : sur le banc, comparer tous les nombres et jours déclenchait un désaccord dans 24 % des phrases
+ * (« une réservation », lettres épelées « D » entendues « 2 ») ; le nombre de personnes seul, 1 sur 368.
+ */
+export function partySizeValues(text: string): string[] {
+  const words = text
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .split(/[^\p{L}\p{N}']+/u);
+  const values: string[] = [];
+  words.forEach((word, index) => {
+    const value = PARTY_NUMBER_WORDS[word] ?? (/^\d{1,2}$/.test(word) ? word : undefined);
+    if (
+      value &&
+      words.slice(index + 1, index + 3).some((next) => /^(personne|couvert)/.test(next))
+    ) {
+      values.push(value);
+    }
+  });
+  return values;
+}
+
+/** Deepgram et Ink-2 ne s'accordent pas sur le nombre de personnes : à faire confirmer. */
+export function partySizeDiffers(first: string, second: string): boolean {
+  return partySizeValues(first).join(' ') !== partySizeValues(second).join(' ');
 }
 
 /** Fin d'appel : ferme la socket et ajoute les secondes envoyées au compteur du jour. */
@@ -316,4 +399,28 @@ export async function closeInkParallel(session: CallSession, deps: InkDeps = {})
     );
   }
   logger.info({ callId: session.callControlId, seconds }, '[stt-ink] call closed');
+}
+
+export interface InkDisagreementNote {
+  heard: string;
+  secondHeard: string;
+  at: number;
+  /** Dernière fin de phrase (compteur `sttFinalCount`) pour laquelle la note vaut ; ensuite elle disparaît. */
+  validThrough?: number;
+}
+
+/** Une note ne sert que le tour de sa phrase, au plus 90 s, et jamais après la création de la réservation. */
+export const INK_NOTE_TTL_MS = 90_000;
+
+export function currentInkDisagreementNote(
+  session: CallSession,
+  reservationCreated: boolean,
+  now = Date.now(),
+): InkDisagreementNote | undefined {
+  const note = session.sttInkNote;
+  if (!note || reservationCreated || now - note.at > INK_NOTE_TTL_MS) return undefined;
+  if (note.validThrough !== undefined && (session.sttFinalCount ?? 0) > note.validThrough) {
+    return undefined;
+  }
+  return note;
 }

@@ -772,6 +772,54 @@ describe('Deepgram final dispatch', () => {
     return { session, onEvent };
   }
 
+  it("Ink-2 prêt : son texte part à la place de Deepgram, le désaccord sur le nombre de personnes est noté pour ce tour, et la phrase suivante commencée pendant l'attente est gardée", async () => {
+    const { session, onEvent } = deepgramSession();
+    const sent: Array<Buffer | string> = [];
+    session.sttInk = {
+      socket: {
+        readyState: 1,
+        send: (data: Buffer | string) => sent.push(data),
+        close: () => undefined,
+        on: () => undefined,
+      },
+      ready: true,
+      closed: false,
+      // finalize déjà parti au premier silence, réponse déjà reçue.
+      finals: ['je voudrais une table pour six personnes'],
+      bytesSent: 0,
+      bytesPerSecond: 8000,
+      preRoll: [],
+      preRollBytes: 0,
+      speechSinceFinalize: false,
+      pendingFinalize: false,
+    };
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'je voudrais une table pour dix personnes.',
+      speechFinal: true,
+      speechEndOffsetMs: 1_000,
+    });
+    // Début de la phrase suivante, arrivé pendant l'attente.
+    session.turnTranscript = 'et aussi';
+    await session.sttInkDispatchChain;
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: 'je voudrais une table pour six personnes',
+      }),
+    );
+    expect(sent).toHaveLength(0);
+    expect(session.sttInkNote).toEqual(
+      expect.objectContaining({
+        heard: 'je voudrais une table pour six personnes',
+        secondHeard: 'je voudrais une table pour dix personnes.',
+        validThrough: session.sttFinalCount,
+      }),
+    );
+    expect(session.turnTranscript).toBe('et aussi');
+  });
+
   it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {
     const { session, onEvent } = deepgramSession();
     process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';

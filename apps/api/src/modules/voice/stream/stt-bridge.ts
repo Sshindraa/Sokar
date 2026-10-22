@@ -60,10 +60,10 @@ import {
 import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
-import { recordSecondOpinionAudio, requestSecondOpinion } from './stt-second-opinion';
 import {
   closeInkParallel,
   openInkParallel,
+  partySizeDiffers,
   resolveInkTranscript,
   sendInkAudio,
 } from './stt-ink-parallel';
@@ -1059,12 +1059,6 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
   );
   if (adapter.id === 'deepgram') {
     sendInkAudio(session, telnyxAudio);
-    recordSecondOpinionAudio(
-      session,
-      audio,
-      session.sttConnectionAudioBytesSent ?? 0,
-      adapter.chunkBytesPerMs(session.codec),
-    );
   }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
   addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
@@ -1751,6 +1745,17 @@ function dispatchDeepgramFinalParts(
     lastWordEndMs || undefined,
   );
   const send = (finalTranscript: string, source: 'deepgram' | 'ink'): void => {
+    session.sttFinalCount = (session.sttFinalCount ?? 0) + 1;
+    // Ink-2 et Deepgram ne s'accordent pas sur le nombre de personnes : à faire confirmer dans le
+    // récapitulatif de ce tour (remplace la confiance par mot de Deepgram, qui ne décrit plus ce texte).
+    if (source === 'ink' && partySizeDiffers(finalTranscript, transcript)) {
+      session.sttInkNote = {
+        heard: finalTranscript,
+        secondHeard: transcript,
+        at: Date.now(),
+        validThrough: session.sttFinalCount,
+      };
+    }
     dispatchCommittedTranscript(
       session,
       finalTranscript,
@@ -1758,23 +1763,14 @@ function dispatchDeepgramFinalParts(
       languageCode,
       timing,
     );
-    // Après l'envoi au dialogue, jamais avant : le second avis ne retarde pas la réponse (il ne lève
-    // jamais). Inutile quand le texte vient déjà d'Ink-2.
-    if (source === 'deepgram') {
-      requestSecondOpinion(
-        session,
-        finalTranscript,
-        words,
-        speechEndOffsetMs || undefined,
-        sttAdapterForSession(session).chunkBytesPerMs(session.codec),
-      )?.catch(() => undefined);
-    }
   };
   if (!session.sttInk?.ready) {
     send(transcript, 'deepgram');
     return;
   }
-  // Ink-2 en parallèle : attente plafonnée de son texte, phrases envoyées dans l'ordre.
+  // Ink-2 en parallèle : attente plafonnée de son texte, phrases envoyées dans l'ordre. Le tampon de la
+  // phrase est vidé maintenant, pas après l'attente : ce qui arrive entre-temps appartient à la suivante.
+  session.turnTranscript = '';
   session.sttInkDispatchChain = (session.sttInkDispatchChain ?? Promise.resolve())
     .then(async () => {
       let resolved: Awaited<ReturnType<typeof resolveInkTranscript>> = {
@@ -1791,7 +1787,9 @@ function dispatchDeepgramFinalParts(
         { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
         '[stt-ink] final transcript',
       );
+      const nextPhrase = session.turnTranscript;
       send(resolved.transcript, resolved.source);
+      if (nextPhrase && !session.turnTranscript) session.turnTranscript = nextPhrase;
     })
     .catch((error: unknown) => {
       logger.error(

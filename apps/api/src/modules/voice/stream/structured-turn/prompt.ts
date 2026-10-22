@@ -177,12 +177,13 @@ const NAME_AWAITING: ReadonlySet<StructuredTurnState['lastAwaiting']> = new Set(
 ]);
 
 /**
- * Second avis STT : une phrase récente de l'appelant a été retranscrite autrement. Un principe, pas une
- * phrase à dire : seule une information de réservation qui en dépend est à vérifier, et l'agent ne parle
- * jamais de cette double écoute.
+ * Seconde écoute (Ink-2 en parallèle de Deepgram) : une phrase de l'appelant a été retranscrite autrement. Un principe, pas une
+ * phrase à dire : seule une information de réservation qui en dépend est à faire confirmer, dans le
+ * récapitulatif déjà prévu avant la création (aucune question en plus), et l'agent ne parle jamais de cette
+ * double écoute.
  */
 export function buildSecondOpinionBlock(note: { heard: string; secondHeard: string }): string {
-  return `SECONDE ÉCOUTE (une phrase récente de l'appelant, réécoutée par un autre système de transcription) : premier texte ${JSON.stringify(note.heard)}, second texte ${JSON.stringify(note.secondHeard)}. Si la différence touche une information de la réservation (nombre de personnes, jour, heure, nom) que le brouillon tient de cette phrase, ne la tiens pas pour acquise : vérifie-la avec l'appelant, naturellement, avant de créer la réservation. Sinon, ignore cette note. Ne parle jamais de cette seconde écoute à l'appelant.`;
+  return `SECONDE ÉCOUTE (une phrase récente de l'appelant, réécoutée par un autre système de transcription) : premier texte ${JSON.stringify(note.heard)}, second texte ${JSON.stringify(note.secondHeard)}. Si la différence touche une information de la réservation (nombre de personnes, jour, heure, nom) que le brouillon tient de cette phrase, ne la tiens pas pour acquise : fais-la confirmer dans le récapitulatif que tu fais de toute façon avant de créer la réservation, sans poser de question à part. Sinon, ignore cette note. Ne parle jamais de cette seconde écoute à l'appelant.`;
 }
 
 export function buildStructuredTurnMessages(input: {
@@ -207,7 +208,7 @@ export function buildStructuredTurnMessages(input: {
   formulation?: boolean;
   /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
   tone?: boolean;
-  /** Une phrase récente de l'appelant a été entendue autrement par le second avis STT. */
+  /** Deepgram et Ink-2 ont entendu un nombre de personnes différent dans la phrase de ce tour. */
   secondOpinion?: { heard: string; secondHeard: string };
 }): ChatMessage[] {
   const nameLetters = nameLettersData(input.state.draft.customerName);

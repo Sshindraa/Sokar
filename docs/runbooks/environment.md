@@ -454,23 +454,15 @@ VOICE_PERSONALITY_STYLE_RESTAURANT_IDS=""
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée. Activer d'abord Chez
 # Sokar et écouter un appel d'un client connu avant d'élargir.
 VOICE_CRM_PROFILE_RESTAURANT_IDS=""
-# Second avis STT en arrière-plan (restaurants listés, `*` = tous, vide = aucun). Quand Deepgram termine une phrase
-# de 4 mots ou plus, son audio (20 s gardées en mémoire, jamais écrites) est retranscrit par
-# `VOICE_STT_SECOND_OPINION_MODEL` (défaut `microsoft/mai-transcribe-2`, OpenRouter, `OPENROUTER_API_KEY`) sans
-# retarder la réponse. Si les deux textes diffèrent, le tour suivant reçoit une consigne de principe : vérifier avec
-# l'appelant une information de réservation qui en dépend, sans parler de la double écoute. Plafonds : 8 demandes par
-# appel et `VOICE_STT_SECOND_OPINION_DAILY_USD` (défaut 1) par jour, tous appels confondus (compteur Redis).
-# Banc du 22/10/2026 : Deepgram 22,4 % de mots erronés sur les phrases longues, MAI 15,9 %, ≈ 0,0003 $ par phrase.
-VOICE_STT_SECOND_OPINION_RESTAURANT_IDS=""
-VOICE_STT_SECOND_OPINION_MODEL=""
-VOICE_STT_SECOND_OPINION_DAILY_USD="1"
 # Cartesia Ink-2 en parallèle de Deepgram (restaurants listés, `*` = tous, vide = aucun ; `CARTESIA_API_KEY`).
 # Deepgram garde la fin de phrase, les mots (timings, confiance, bruit, interruption) et les mots isolés ;
 # Ink-2 (`/stt/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, L16 en PCM16 16 kHz) reçoit seulement
 # la voix de l'appelant (détection locale `trackCallerVoice`, 0,5 s gardées avant, 1 s après la dernière voix).
 # À chaque fin de phrase Deepgram de 2 mots ou plus : `finalize`, puis le texte Ink-2 remplace celui de Deepgram
 # s'il arrive dans `VOICE_STT_INK_WAIT_MS` (défaut 250, 50 à 1000 ; banc : 87 ms médiane, 128 ms p90), sinon
-# Deepgram. Le second avis MAI ne tourne alors que sur les phrases restées à Deepgram. 3 crédits Cartesia par
+# Deepgram. `finalize` part dès 150 ms de silence local : le texte est en général prêt quand Deepgram clôt la phrase.
+# Si les deux ne s'accordent pas sur le nombre de personnes, Léa le fait confirmer dans son récapitulatif (aucune
+# question en plus). 3 crédits Cartesia par
 # seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
 # appel. Toute panne retombe sur Deepgram seul.
 VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""

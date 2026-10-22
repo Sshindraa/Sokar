@@ -558,14 +558,10 @@ export interface CallSession {
   sttInkAttempted?: boolean;
   /** Fins de phrase Deepgram envoyées dans l'ordre pendant l'attente d'Ink-2. */
   sttInkDispatchChain?: Promise<void>;
-  /** Second avis STT (voir stt-second-opinion.ts) : réglage lu une fois par appel. */
-  sttSecondOpinionEnabled?: boolean;
-  /** Dernières secondes d'audio envoyées à Deepgram, avec leur position dans le flux de la connexion. */
-  sttSecondOpinionAudio?: Array<{ startByte: number; data: Buffer }>;
-  /** Seconds avis demandés pendant l'appel (plafonnés). */
-  sttSecondOpinionCount?: number;
-  /** Dernière phrase entendue autrement par le second avis : vérifiée au tour suivant. */
-  sttSecondOpinionNote?: { heard: string; secondHeard: string; at: number };
+  /** Ink-2 et Deepgram en désaccord sur le nombre de personnes de cette phrase : à faire confirmer. */
+  sttInkNote?: import('./stt-ink-parallel').InkDisagreementNote;
+  /** Fins de phrase Deepgram envoyées au dialogue pendant l'appel : une note ne vaut que pour un tour. */
+  sttFinalCount?: number;
   sttDeepgramFinalParts?: Array<{
     transcript: string;
     words?: SttWord[];
