@@ -16,7 +16,7 @@ import {
 const MAX_SOURCE_CUSTOMERS = 5;
 const MAX_DUPLICATE_SCAN = 10_000;
 const MAX_DUPLICATE_GROUP_SIZE = 100;
-const MAX_MERGE_RETRIES = 3;
+const MAX_MERGE_RETRIES = 5;
 
 export type CustomerMergePreferenceResolution = 'target' | 'source' | 'latest';
 
@@ -305,11 +305,15 @@ function isUniqueConstraint(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
+/**
+ * Conflit de sérialisation à rejouer. Le verrou `FOR UPDATE` passe par `$queryRaw` : PostgreSQL y renvoie
+ * 40001 sous le code Prisma P2010 (requête brute), pas P2034. Preuve : customer-crm.concurrency.integration.test.ts.
+ */
 function isSerializationFailure(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    (error.code === 'P2034' || error.code === 'P2028')
-  );
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === 'P2034' || error.code === 'P2028') return true;
+  const meta = error.meta as { code?: unknown } | undefined;
+  return error.code === 'P2010' && (meta?.code === '40001' || error.message.includes('40001'));
 }
 
 function numberOrZero(value: number | null | undefined): number {
@@ -1705,7 +1709,11 @@ export async function mergeCustomerProfiles(args: {
         replayed: result.replayed,
       };
     } catch (error) {
-      if (isSerializationFailure(error) && attempt < MAX_MERGE_RETRIES - 1) continue;
+      if (isSerializationFailure(error) && attempt < MAX_MERGE_RETRIES - 1) {
+        // Petit délai aléatoire : des fusions rejouées ensemble ne se recroisent pas au même instant.
+        await new Promise((resolve) => setTimeout(resolve, 20 + Math.floor(Math.random() * 60)));
+        continue;
+      }
       if (isUniqueConstraint(error)) {
         const existing = await findExistingAudit(args.idempotencyKey.trim(), payloadHash);
         if (existing) {

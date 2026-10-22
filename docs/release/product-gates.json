@@ -71,15 +71,13 @@
     {
       "id": "P2_CRM",
       "label": "CRM Pro",
-      "status": "LOCAL_ONLY",
+      "status": "OPEN",
       "evidence": [
         "docs/architecture/adr-crm-marketing-control-plane.md",
-        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md",
+        "apps/api/src/modules/customers/__tests__/customer-crm.concurrency.integration.test.ts"
       ],
-      "blockers": [
-        "exécuter les tests PostgreSQL concurrents de fusion, segmentation et projection",
-        "valider l'export/effacement avec deux identités Clerk réelles"
-      ]
+      "blockers": ["valider l'export/effacement avec deux identités Clerk réelles"]
     },
     {
       "id": "P3_MARKETING",
