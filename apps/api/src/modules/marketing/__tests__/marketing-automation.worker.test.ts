@@ -74,7 +74,7 @@ describe('marketing automation worker', () => {
       1,
       'send-campaign',
       { campaignId: 'campaign-1', restaurantId: 'restaurant-1' },
-      { jobId: 'marketing-campaign:campaign-1' },
+      { jobId: 'marketing-campaign-campaign-1' },
     );
   });
 });
