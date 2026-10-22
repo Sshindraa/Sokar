@@ -108,14 +108,19 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
-- **Durée de conservation de la preuve : à décider par vous.** Aucune durée propre n'est définie dans la
-  politique de confidentialité (`PRIVACY_RETENTION_RULES` n'a pas de ligne marketing). Aujourd'hui la preuve
-  reste tant que la fiche client existe et disparaît avec elle (suppression en cascade) ; elle figure dans
-  l'export RGPD du client. Une durée explicite, et sa mention dans la politique et l'annexe client
-  (`privacy-client-annex.md`), restent à arrêter.
+- **Durée de conservation de la preuve : proposition, à confirmer.** Aucune durée propre n'est définie
+  dans la politique de confidentialité (`PRIVACY_RETENTION_RULES` n'a pas de ligne marketing). Aujourd'hui la
+  preuve reste tant que la fiche client existe et disparaît avec elle (suppression en cascade) ; elle figure
+  dans l'export RGPD du client. Proposition retenue en attendant un avis juridique : conserver la preuve tant
+  que le client reçoit des messages, puis pendant une durée limitée après le dernier contact ou le retrait
+  (ordre de grandeur de 3 ans à confirmer ; ce chiffre n'est pas validé). **Rien n'est purgé automatiquement
+  aujourd'hui** : cette durée n'est pas encore appliquée par le code. Sa mention dans la politique et dans
+  l'annexe client (`privacy-client-annex.md`) reste à faire.
 - **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Une
   personne peut cocher la case avec l'adresse de quelqu'un d'autre ; le lien de désinscription de chaque
-  message limite les dégâts. À trancher : faut-il une confirmation par e-mail avant le premier envoi ?
+  message limite les dégâts. Recommandation : acceptable pour le pilote (adresses de test, personnes
+  informées), à ajouter avant d'écrire à de vrais clients (jeton signé et état « en attente de
+  confirmation » : phase suivante, non faite).
 - **Adresse enregistrée seulement avec l'accord** : aujourd'hui l'adresse saisie sur la page de réservation
   n'est conservée nulle part. Elle n'est rattachée à la fiche client que si le client coche la case e-mail,
   et jamais en remplacement d'une adresse déjà connue (dans ce cas, l'accord n'est pas enregistré).
