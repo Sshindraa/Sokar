@@ -15,6 +15,7 @@ import {
   MAX_SENDS_PER_FREQUENCY_WINDOW,
   validateMarketingTemplate,
 } from './marketing-campaign.service';
+import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
 import {
   loadLegacyMarketingOptIns,
   resolveMarketingPermission,
@@ -424,6 +425,15 @@ async function filterEligibleCandidates(args: {
       })),
     }),
   ]);
+  const optOutRegister = await loadOptedOutCustomerIds({
+    restaurantId: args.restaurantId,
+    channel: args.channel,
+    customers: args.candidates.map((candidate) => ({
+      id: candidate.customerId,
+      phone: candidate.phone,
+      emailNormalized: candidate.emailNormalized,
+    })),
+  });
   const permissionByCustomer = new Map(
     (permissions ?? []).map((row) => [row.customerId, row.status]),
   );
@@ -438,6 +448,7 @@ async function filterEligibleCandidates(args: {
       args.channel === 'EMAIL' ? Boolean(candidate.emailNormalized) : Boolean(candidate.phone);
     if (!hasContact || suppressed.has(candidate.customerId) || capped.has(candidate.customerId))
       return false;
+    if (optOutRegister.optedOut.has(candidate.customerId)) return false;
     return resolveMarketingPermission({
       channel: args.channel,
       channelStatus: permissionByCustomer.get(candidate.customerId),

@@ -192,6 +192,8 @@ export async function recordStaffMarketingConsent(args: {
   customerId: string;
   channel: MarketingConsentChannel;
   method: MarketingConsentCollectionMethod;
+  /** The team member who recorded the agreement, kept with the proof. */
+  actorUserId?: string | null;
   occurredAt?: Date;
 }): Promise<MarketingPermission> {
   const customer = await db.customer.findFirst({
@@ -216,6 +218,7 @@ export async function recordStaffMarketingConsent(args: {
     source: `DASHBOARD_${args.method}`,
     proofVersion: MARKETING_CONSENT_VERSION,
     proof: `${buildMarketingConsentProof(args.channel, restaurant.name)}|${args.method}`,
+    actorUserId: args.actorUserId,
     occurredAt: args.occurredAt,
   });
 }

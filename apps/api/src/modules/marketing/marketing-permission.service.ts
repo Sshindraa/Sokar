@@ -5,6 +5,12 @@ import {
   type MarketingPermission,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { logger } from '../../shared/logger/pino';
+import {
+  clearMarketingOptOut,
+  registerMarketingOptOut,
+  type MarketingOptOutReason,
+} from './marketing-opt-out.service';
 import {
   appendCustomerTimelineEvent,
   buildCustomerTimelineDedupeKey,
@@ -24,6 +30,8 @@ export type MarketingPermissionInput = {
   proof?: string | null;
   /** Allows a trusted import to provide an already calculated SHA-256 hash. */
   proofHash?: string | null;
+  /** Authenticated team member who recorded a manual entry; absent for the customer's own acts. */
+  actorUserId?: string | null;
   occurredAt?: Date;
 };
 
@@ -114,18 +122,81 @@ export function resolveMarketingPermission(args: {
   };
 }
 
-async function assertCustomerTenant(customerId: string, restaurantId: string): Promise<void> {
+async function assertCustomerTenant(
+  customerId: string,
+  restaurantId: string,
+): Promise<{ phone?: string | null; emailNormalized?: string | null }> {
   const customer = await db.customer.findFirst({
     where: { id: customerId, restaurantId, archivedAt: null },
-    select: { id: true },
+    select: { id: true, phone: true, emailNormalized: true },
   });
   if (!customer) throw new Error('CUSTOMER_NOT_FOUND');
+  return customer;
+}
+
+function optOutReasonFor(source: string): MarketingOptOutReason {
+  return source === 'UNSUBSCRIBE_LINK' || source === 'UNSUBSCRIBE' ? 'UNSUBSCRIBE' : 'MANUAL';
+}
+
+/**
+ * Keeps the opt-out register in step with the permission. It never fails the permission change: a
+ * withdrawal is recorded first, and the register is an additional protection (errors are logged
+ * without any address).
+ */
+async function syncOptOutRegister(args: {
+  restaurantId: string;
+  channel: MarketingChannel;
+  status: MarketingPermissionStatus;
+  source: string;
+  occurredAt: Date;
+  contact: { phone?: string | null; emailNormalized?: string | null };
+}): Promise<void> {
+  if (
+    args.status !== MarketingPermissionStatus.OPTED_OUT &&
+    args.status !== MarketingPermissionStatus.OPTED_IN
+  ) {
+    return;
+  }
+  const address = args.channel === 'EMAIL' ? args.contact.emailNormalized : args.contact.phone;
+  try {
+    if (args.status === MarketingPermissionStatus.OPTED_OUT) {
+      const outcome = await registerMarketingOptOut({
+        restaurantId: args.restaurantId,
+        channel: args.channel,
+        address,
+        reason: optOutReasonFor(args.source),
+        source: args.source,
+        occurredAt: args.occurredAt,
+      });
+      if (outcome === 'SKIPPED_NO_KEY') {
+        logger.warn(
+          { restaurantId: args.restaurantId, channel: args.channel },
+          '[marketing-opt-out] register key missing: opposition not registered',
+        );
+      }
+    } else {
+      await clearMarketingOptOut({
+        restaurantId: args.restaurantId,
+        channel: args.channel,
+        address,
+      });
+    }
+  } catch (error) {
+    logger.error(
+      {
+        restaurantId: args.restaurantId,
+        channel: args.channel,
+        err: error instanceof Error ? error.name : 'unknown',
+      },
+      '[marketing-opt-out] register not updated',
+    );
+  }
 }
 
 export async function upsertMarketingPermission(
   input: MarketingPermissionInput,
 ): Promise<MarketingPermission> {
-  await assertCustomerTenant(input.customerId, input.restaurantId);
+  const contact = await assertCustomerTenant(input.customerId, input.restaurantId);
 
   const channel = normalizeChannel(input.channel);
   const source = normalizeText(input.source, 'source', 80);
@@ -135,6 +206,12 @@ export async function upsertMarketingPermission(
     throw new Error('proofVersion must contain at most 80 characters');
   }
   const proofHash = normalizeProofHash(input);
+  // The exact string that was hashed is kept so the proof stays verifiable if the restaurant renames.
+  const proofText = input.proof?.trim() || null;
+  const actorUserId = input.actorUserId?.trim() || null;
+  if (actorUserId && actorUserId.length > 128) {
+    throw new Error('actorUserId must contain at most 128 characters');
+  }
 
   if (input.status === MarketingPermissionStatus.OPTED_IN && (!proofVersion || !proofHash)) {
     throw new Error('channel opt-in requires proofVersion and proof');
@@ -173,8 +250,19 @@ export async function upsertMarketingPermission(
       source,
       proofVersion,
       proofHash,
+      proofText,
+      actorUserId,
       occurredAt,
     },
+  });
+
+  await syncOptOutRegister({
+    restaurantId: input.restaurantId,
+    channel,
+    status: input.status,
+    source,
+    occurredAt,
+    contact,
   });
 
   await appendCustomerTimelineEvent({
@@ -203,6 +291,7 @@ export async function withdrawMarketingPermission(args: {
   customerId: string;
   channel: MarketingChannelCode;
   source?: string;
+  actorUserId?: string | null;
   occurredAt?: Date;
 }): Promise<MarketingPermission> {
   return upsertMarketingPermission({
@@ -211,6 +300,7 @@ export async function withdrawMarketingPermission(args: {
     channel: args.channel,
     status: MarketingPermissionStatus.OPTED_OUT,
     source: args.source ?? 'UNSUBSCRIBE',
+    actorUserId: args.actorUserId,
     occurredAt: args.occurredAt,
   });
 }

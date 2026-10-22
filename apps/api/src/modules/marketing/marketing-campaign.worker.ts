@@ -18,6 +18,7 @@ import {
   renderMarketingTemplate,
   toMarketingHtml,
 } from './marketing-campaign.service';
+import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
 import {
   resolveMarketingPermission,
   type MarketingChannelCode,
@@ -39,6 +40,7 @@ type CampaignWorkerDb = Pick<
   | 'campaignMessage'
   | 'marketingPermission'
   | 'marketingSuppression'
+  | 'marketingOptOut'
   | 'marketingFrequencyWindow'
   | 'customerConsent'
   | 'customer'
@@ -295,6 +297,25 @@ async function eligibility(
   ]);
   if (!activeCustomer) return { allowed: false, reason: 'CUSTOMER_INACTIVE' };
   if (suppression) return { allowed: false, reason: `SUPPRESSED_${suppression.reason}` };
+  // Last check before the provider call: an opposition survives the erasure of the customer record.
+  // Without the register key nothing can be verified, so the message is not sent.
+  const optOut = await loadOptedOutCustomerIds(
+    {
+      restaurantId: args.restaurantId,
+      channel: args.channel,
+      customers: [
+        {
+          id: args.customer.id,
+          phone: args.customer.phone,
+          emailNormalized: args.customer.emailNormalized,
+        },
+      ],
+    },
+    deps.db,
+  );
+  if (!optOut.checked) return { allowed: false, reason: 'OPT_OUT_REGISTER_UNAVAILABLE' };
+  if (optOut.optedOut.has(args.customer.id))
+    return { allowed: false, reason: 'OPTED_OUT_REGISTER' };
   const legacy =
     args.channel !== 'WHATSAPP' &&
     !permission &&

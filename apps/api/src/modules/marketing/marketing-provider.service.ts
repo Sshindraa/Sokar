@@ -5,6 +5,10 @@ import {
   type PrismaClient,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import {
+  isMarketingOptOutRegisterConfigured,
+  registerMarketingOptOut,
+} from './marketing-opt-out.service';
 
 export type MarketingProvider = 'telnyx' | 'resend';
 
@@ -23,6 +27,8 @@ export type MarketingProviderReadiness = {
   sendGate: { enabled: boolean; missing: string[] };
   /** Vrai quand `MARKETING_RECIPIENT_ALLOWLIST` limite les envois à des contacts de test. */
   recipientAllowlistActive: boolean;
+  /** Faux : sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé (registre d'opposition illisible). */
+  optOutRegisterConfigured: boolean;
   sms: MarketingProviderChannelReadiness;
   email: MarketingProviderChannelReadiness;
   whatsapp: MarketingProviderChannelReadiness;
@@ -85,6 +91,7 @@ export function getMarketingProviderReadiness(
       missing: sendsEnabled ? [] : ['MARKETING_SENDS_ENABLED'],
     },
     recipientAllowlistActive: Boolean(environment.MARKETING_RECIPIENT_ALLOWLIST?.trim()),
+    optOutRegisterConfigured: isMarketingOptOutRegisterConfigured(environment),
     sms,
     email,
     whatsapp,
@@ -122,6 +129,8 @@ type ProviderDb = Pick<
   | 'marketingCampaign'
   | 'marketingProviderReconciliation'
   | 'marketingSuppression'
+  | 'customer'
+  | 'marketingOptOut'
 > & {
   $transaction: <T>(callback: (tx: ProviderDb) => Promise<T>) => Promise<T>;
 };
@@ -466,6 +475,24 @@ export async function applyMarketingProviderEvent(
         },
         update: {},
       });
+      // A complaint is an opposition: it must survive the erasure of the customer record.
+      if (suppressionReason === 'COMPLAINED') {
+        const contact = await tx.customer.findFirst({
+          where: { id: message.customerId, restaurantId: message.campaign.restaurantId },
+          select: { phone: true, emailNormalized: true },
+        });
+        await registerMarketingOptOut(
+          {
+            restaurantId: message.campaign.restaurantId,
+            channel: message.channel,
+            address: message.channel === 'EMAIL' ? contact?.emailNormalized : contact?.phone,
+            reason: 'COMPLAINT',
+            source: `${input.provider.toUpperCase()}_WEBHOOK`,
+            occurredAt,
+          },
+          tx,
+        );
+      }
     }
 
     return {

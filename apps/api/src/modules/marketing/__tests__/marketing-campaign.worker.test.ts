@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingMessageStatus } from '@prisma/client';
 import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
+import { marketingOptOutHash } from '../marketing-opt-out.service';
 import {
   marketingRecipientAllowlist,
   processMarketingCampaignJob,
@@ -62,6 +63,7 @@ function makeDependencies() {
     },
     marketingPermission: { findUnique: vi.fn().mockResolvedValue(null) },
     marketingSuppression: { findFirst: vi.fn().mockResolvedValue(null) },
+    marketingOptOut: { findMany: vi.fn().mockResolvedValue([]) },
     marketingFrequencyWindow: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       create: vi.fn(),
@@ -95,6 +97,7 @@ describe('marketing campaign worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.API_URL = 'https://api.sokar.test';
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
   });
 
   it('recontrôle le consentement, rend le message et persiste un accept provider', async () => {
@@ -141,6 +144,41 @@ describe('marketing campaign worker', () => {
     expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { status: MarketingMessageStatus.CANCELLED, errorCode: 'OPTED_OUT' },
+      }),
+    );
+  });
+
+  it('n’envoie pas à une adresse inscrite au registre d’opposition, même avec un accord en base', async () => {
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    const hash = marketingOptOutHash('SMS', '+33601020304');
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([{ addressHash: hash }] as never);
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
+      processed: 1,
+      accepted: 0,
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingMessageStatus.CANCELLED, errorCode: 'OPTED_OUT_REGISTER' },
+      }),
+    );
+  });
+
+  it('n’envoie rien tant que la clé du registre est absente (échec fermé)', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+
+    await processMarketingCampaignJob(makeJob(), deps);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          status: MarketingMessageStatus.CANCELLED,
+          errorCode: 'OPT_OUT_REGISTER_UNAVAILABLE',
+        },
       }),
     );
   });
