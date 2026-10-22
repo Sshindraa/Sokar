@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useOnboarding } from './onboarding-provider';
 import { capturePlanChoice } from './pending-plan';
 import { ONBOARDING_TASK_KEYS } from './types';
+import { TRACK_STEPS } from './tracks';
 
 /** Un parcours reporté ou un état indisponible ne déverrouille jamais le dashboard. */
 export function OnboardingAccessBoundary({
@@ -14,11 +15,13 @@ export function OnboardingAccessBoundary({
   onboarding,
   controls,
   enforceAccess = true,
+  crmQualificationRestaurantIds = [],
 }: {
   children: ReactNode;
   onboarding: ReactNode;
   controls?: ReactNode;
   enforceAccess?: boolean;
+  crmQualificationRestaurantIds?: string[];
 }) {
   const { state, loading, refresh } = useOnboarding();
   const pathname = usePathname();
@@ -28,6 +31,17 @@ export function OnboardingAccessBoundary({
     ONBOARDING_TASK_KEYS.every((key) =>
       state.steps.some((step) => step.key === key && step.status === 'completed'),
     );
+
+  // Exception de qualification déclarée côté serveur : aucun canal n'est marqué terminé.
+  // L'API conserve ses contrôles Clerk, de rôle, de site et de formule.
+  const crmQualification = Boolean(
+    state?.restaurant?.id &&
+    crmQualificationRestaurantIds.includes(state.restaurant.id) &&
+    (pathname === '/dashboard/customers' || pathname.startsWith('/dashboard/customers/')) &&
+    TRACK_STEPS.socle.every((key) =>
+      state.steps.some((step) => step.key === key && step.status === 'completed'),
+    ),
+  );
 
   // La formule choisie sur la page Tarifs arrive dans l'adresse, que la redirection ci-dessous
   // efface : on la garde pour l'écran « Choisissez votre formule » de l'inscription.
@@ -39,14 +53,15 @@ export function OnboardingAccessBoundary({
     if (!enforceAccess || loading) return;
     if (complete && pathname === '/onboarding') {
       router.replace('/dashboard');
-    } else if (!complete && pathname.startsWith('/dashboard')) {
+    } else if (!complete && !crmQualification && pathname.startsWith('/dashboard')) {
       router.replace('/onboarding');
     }
-  }, [complete, enforceAccess, loading, pathname, router]);
+  }, [complete, crmQualification, enforceAccess, loading, pathname, router]);
 
   if (!enforceAccess) return <>{children}</>;
 
-  if (!loading && complete && pathname !== '/onboarding') return <>{children}</>;
+  if (!loading && (complete || crmQualification) && pathname !== '/onboarding')
+    return <>{children}</>;
   if (!loading && complete && pathname === '/onboarding') {
     return (
       <main

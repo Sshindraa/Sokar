@@ -1176,3 +1176,15 @@ This enables free cancellation before the frozen onboarding deadline, not paymen
 collection or refunds. No migration is required. Turn it off to restore phone contact.
 
 `RESERVATION_SELF_MODIFICATION_ENABLED` defaults to false. It enables signed, explicitly confirmed same-day time/party-size modifications from personal reservation links. Requires `RESERVATION_MANAGEMENT_ENABLED` and reliable frozen free-cancellation terms; independent of the cancellation flag. The original reservation stays allocated until a successful atomic replacement. No additional SMS, payment or migration.
+
+### Qualification CRM avant activation des canaux
+
+`CRM_QUALIFICATION_RESTAURANT_IDS` : variable serveur du dashboard, liste séparée par des
+virgules d’identifiants de restaurants dédiés à la recette RGPD. Vide par défaut ; `*` est ignoré.
+Après complétion des étapes `restaurant`, `hours` et `floor`, ces restaurants peuvent accéder à
+`/dashboard/customers` et ses sous-pages sans numéro Sokar ni activation des canaux. Les autres
+pages gardent le verrou d’onboarding complet. Ce réglage ne modifie aucune étape ni les contrôles
+API (Clerk, site, rôle, formule). Il ne confère pas la formule Pro : qualifier les droits requis
+séparément. Ne jamais publier le restaurant fictif. Retirer l’ID après la recette et redémarrer
+le dashboard pour appliquer les changements d’environnement. La preuve P2_CRM exige toujours
+l’exécution réelle des exports, effacements et refus croisés avec deux identités Clerk.
