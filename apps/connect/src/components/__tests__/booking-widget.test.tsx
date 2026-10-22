@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { BookingWidget } from '@/components/booking-widget';
 
 vi.mock('@/lib/tracking', () => ({
@@ -382,6 +383,96 @@ describe('BookingWidget waiting list flow', () => {
     const body = JSON.parse(String(call?.[1]?.body));
     expect(body.giftCardCode).toBe('SKR-TEST-01');
     expect(body.giftCardReservationAmount).toBeUndefined();
+  });
+
+  describe('consentement marketing facultatif', () => {
+    async function reachConfirmForm() {
+      setFetchSequence([
+        jsonResponse({
+          id: 'rest-1',
+          slug,
+          name: 'Chez Sokar',
+          connectAgentic: false,
+          city: 'Paris',
+          sections: [],
+        }),
+        jsonResponse({
+          date: todayIso(),
+          partySize: 2,
+          slots: [{ time: '19:00', available: true }],
+        }),
+        jsonResponse({ holdId: 'hold', holdToken: crypto.randomUUID(), status: 'pending' }),
+        jsonResponse({ reservationId: 'reservation', status: 'confirmed' }),
+      ]);
+      render(<BookingWidget slug={slug} />);
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+      fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: 'Marie' } });
+      fireEvent.change(screen.getByLabelText(/^Téléphone/i), {
+        target: { value: '+33612345678' },
+      });
+    }
+
+    function confirmBody() {
+      const call = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.find(([url]) => String(url).endsWith('/confirm'));
+      return JSON.parse(String(call?.[1]?.body));
+    }
+
+    it('reserve sans rien cocher : aucun bloc de consentement n’est envoyé', async () => {
+      await reachConfirmForm();
+      const sms = screen.getByRole('checkbox', { name: /par SMS/ });
+      expect(sms).not.toBeChecked();
+      fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+      await waitFor(() =>
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          `${baseUrl}/public/r/${slug}/confirm`,
+          expect.anything(),
+        ),
+      );
+      expect(confirmBody().marketingConsent).toBeUndefined();
+    });
+
+    it('envoie les canaux cochés avec la version du texte, e-mail compris', async () => {
+      await reachConfirmForm();
+      expect(screen.queryByRole('checkbox', { name: /par e-mail/ })).not.toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText(/^E-?mail/i), {
+        target: { value: 'marie@example.com' },
+      });
+      fireEvent.click(screen.getByRole('checkbox', { name: /par e-mail/ }));
+      fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+      await waitFor(() =>
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          `${baseUrl}/public/r/${slug}/confirm`,
+          expect.anything(),
+        ),
+      );
+      expect(confirmBody().marketingConsent).toEqual({
+        email: true,
+        version: MARKETING_CONSENT_VERSION,
+      });
+    });
+
+    it('n’envoie pas une case cochée dont l’adresse a ensuite été effacée', async () => {
+      await reachConfirmForm();
+      const emailField = screen.getByLabelText(/^E-?mail/i);
+      fireEvent.change(emailField, { target: { value: 'marie@example.com' } });
+      fireEvent.click(screen.getByRole('checkbox', { name: /par e-mail/ }));
+      fireEvent.change(emailField, { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+      await waitFor(() =>
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          `${baseUrl}/public/r/${slug}/confirm`,
+          expect.anything(),
+        ),
+      );
+      expect(confirmBody().marketingConsent).toBeUndefined();
+    });
   });
 
   describe('créneau trop proche (délai minimum du restaurant)', () => {
