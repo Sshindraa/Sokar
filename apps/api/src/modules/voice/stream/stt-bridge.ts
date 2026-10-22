@@ -23,8 +23,6 @@ import * as Sentry from '@sentry/node';
 import { describeTranscript } from './pii-redact';
 import {
   voiceProviderErrorsTotal,
-  voiceSttAudioMessagesTotal,
-  voiceSttChunkBytes,
   voiceSilenceGuardTotal,
   voiceSttProviderAudioMessagesTotal,
   voiceSttProviderChunkBytes,
@@ -44,7 +42,6 @@ import {
   createScribeSttAdapter,
   type NormalizedSttProviderMessage,
   type SttProviderAdapter,
-  type SttProviderId,
   buildCartesiaTurnsUrl,
   createCartesiaTurnsSttAdapter,
 } from './stt-provider-adapter';
@@ -553,22 +550,15 @@ export function buildDeepgramSttUrl(
   return `wss://${voiceConfig.DEEPGRAM_API_HOST}/v1/listen?${params.toString()}`;
 }
 
-function createSttAdapter(session: CallSession, provider: SttProviderId): SttProviderAdapter {
-  return provider === 'deepgram'
-    ? createDeepgramSttAdapter({ model: resolveVoiceFeatureSnapshot(session).deepgramModel })
-    : createScribeSttAdapter({ model: configuredModel(session) });
-}
-
-/** Fournisseur de reconnaissance de la session (« deepgram », « scribe »), pour les journaux. */
+/** Fournisseur de reconnaissance de la session (« deepgram », « cartesia » en secours), pour les journaux. */
 export function sttProviderId(session: CallSession): SttProviderAdapter['id'] {
   return sttAdapterForSession(session).id;
 }
 
 function sttAdapterForSession(session: CallSession): SttProviderAdapter {
-  return (session.sttAdapter ??= createSttAdapter(
-    session,
-    resolveVoiceFeatureSnapshot(session).sttProvider,
-  ));
+  return (session.sttAdapter ??= createDeepgramSttAdapter({
+    model: resolveVoiceFeatureSnapshot(session).deepgramModel,
+  }));
 }
 
 interface SttTurnTiming {
@@ -1000,10 +990,6 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
   const chunkMs = String(getSttChunkMs());
   voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });
   voiceSttProviderChunkBytes.observe({ provider: adapter.id }, audio.length);
-  if (adapter.id === 'scribe') {
-    voiceSttAudioMessagesTotal.inc({ chunk_ms: chunkMs });
-    voiceSttChunkBytes.observe(audio.length);
-  }
 }
 
 function clearSttChunkTimer(session: CallSession): void {
@@ -1403,19 +1389,14 @@ function emitPartialTranscript(
   if (!cleanTranscript) return;
   if (isTranscriptWithoutCallerVoice(session, 'partial')) return;
 
-  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
-    const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
-    if (echo.suppressed) return;
-    cleanTranscript = echo.transcript;
-    allowBargeIn = hasBargeInWordThreshold(echo);
-  }
+  const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
+  if (echo.suppressed) return;
+  cleanTranscript = echo.transcript;
+  allowBargeIn = hasBargeInWordThreshold(echo);
   // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
 
-  if (
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
-    isVoiceDialogueIncompleteTranscript(cleanTranscript)
-  ) {
+  if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
         session,
@@ -1489,13 +1470,11 @@ function dispatchCommittedTranscript(
     return;
   }
 
-  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
-    const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
-    if (echo.suppressed) return;
-    cleanTranscript = echo.transcript;
-    allowBargeIn = hasBargeInWordThreshold(echo);
-    if (!allowBargeIn && session.state === 'SPEAKING') return;
-  }
+  const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
+  if (echo.suppressed) return;
+  cleanTranscript = echo.transcript;
+  allowBargeIn = hasBargeInWordThreshold(echo);
+  if (!allowBargeIn && session.state === 'SPEAKING') return;
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) {
     logger.info(
       {
@@ -1509,10 +1488,7 @@ function dispatchCommittedTranscript(
     return;
   }
 
-  if (
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
-    isVoiceDialogueIncompleteTranscript(cleanTranscript)
-  ) {
+  if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
         session,
@@ -1631,11 +1607,7 @@ function dispatchCommittedTranscript(
     dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
-  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
-    dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
-    return;
-  }
-  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
+  dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
 }
 
 function dispatchDeepgramFinalParts(
@@ -2423,53 +2395,40 @@ export function connectStt(
   const apiKey =
     adapter.id === 'deepgram'
       ? (process.env.DEEPGRAM_API_KEY ?? '')
-      : adapter.id === 'cartesia'
-        ? (process.env.CARTESIA_API_KEY ?? '')
-        : (process.env.ELEVENLABS_API_KEY ?? '');
+      : (process.env.CARTESIA_API_KEY ?? '');
   if (!apiKey) {
     triggerSttUnavailable(
       session,
       'configuration',
       adapter.id === 'deepgram'
         ? 'DEEPGRAM_API_KEY is not configured'
-        : adapter.id === 'cartesia'
-          ? 'CARTESIA_API_KEY is not configured'
-          : 'ELEVENLABS_API_KEY is not configured',
+        : 'CARTESIA_API_KEY is not configured',
     );
     return Promise.resolve();
   }
 
   session.sttModel = adapter.model;
-  const turnConfig = ensureSttTurnConfig(session);
+  ensureSttTurnConfig(session);
   ensureSttAvailabilityDeadline(session);
   let ws: WebSocket;
   try {
-    const deepgramFeatures =
-      adapter.id === 'deepgram' ? resolveVoiceFeatureSnapshot(session) : null;
+    const deepgramFeatures = resolveVoiceFeatureSnapshot(session);
     const url =
       adapter.id === 'cartesia'
         ? buildCartesiaTurnsUrl(session.codec, session.restaurantName)
-        : deepgramFeatures
-          ? buildDeepgramSttUrl(
-              session.codec,
-              deepgramFeatures.deepgramKeytermsEnabled
-                ? (session.deepgramKeyterms ?? [])
-                : buildSttKeyterms(session.restaurantName),
-              adapter.model as 'nova-3' | 'flux-general-multi',
-              {
-                numerals: deepgramFeatures.deepgramNumeralsEnabled,
-                punctuate: deepgramFeatures.deepgramPunctuateEnabled,
-              },
-            )
-          : buildSttUrl(adapter.model, session.codec, turnConfig.desired, {
-              restaurantName: session.restaurantName,
-            });
+        : buildDeepgramSttUrl(
+            session.codec,
+            session.deepgramKeyterms ?? [],
+            adapter.model as 'nova-3' | 'flux-general-multi',
+            {
+              numerals: deepgramFeatures.deepgramNumeralsEnabled,
+              punctuate: deepgramFeatures.deepgramPunctuateEnabled,
+            },
+          );
     const headers: Record<string, string> =
       adapter.id === 'deepgram'
         ? { Authorization: `Token ${apiKey}` }
-        : adapter.id === 'cartesia'
-          ? { 'X-API-Key': apiKey, 'Cartesia-Version': '2026-03-01' }
-          : { 'xi-api-key': apiKey };
+        : { 'X-API-Key': apiKey, 'Cartesia-Version': '2026-03-01' };
     ws = adapter.open({ url, headers, createSocket });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -2491,11 +2450,7 @@ export function connectStt(
       opened = true;
       session.sttProviderOpenedOnce = true;
       session.sttProviderUsed =
-        adapter.id === 'deepgram'
-          ? `deepgram-${adapter.model}`
-          : adapter.id === 'cartesia'
-            ? 'cartesia-ink-2'
-            : 'elevenlabs-scribe-v2-realtime';
+        adapter.id === 'deepgram' ? `deepgram-${adapter.model}` : 'cartesia-ink-2';
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
@@ -2532,7 +2487,6 @@ export function connectStt(
       );
       session.sttFirstAudioChunkSent = false;
       resumeSttAfterOpen(session);
-      if (adapter.id === 'scribe') turnConfig.applied = { ...turnConfig.desired };
       resolve();
     });
 

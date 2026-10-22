@@ -75,12 +75,9 @@ describe('reprise de l’accueil coupé par un bruit', () => {
   it('à travers le pont STT : le mot « rouge » qui suit une coupure rend l’accueil, sans tour', () => {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
-      sttProvider: 'deepgram',
-      dialogueListeningV2Enabled: true,
       deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     };
     session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const onEvent = vi.fn();

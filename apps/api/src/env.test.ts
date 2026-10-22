@@ -22,7 +22,7 @@ describe('Stripe environment guard', () => {
   });
 });
 
-describe('VOICE_DIALOGUE_LISTENING_V2 environment schema', () => {
+describe('voiceSttBooleanFlagSchema', () => {
   it('defaults to off and accepts only explicit boolean strings', () => {
     expect(voiceSttBooleanFlagSchema.parse(undefined)).toBe('false');
     expect(voiceSttBooleanFlagSchema.parse('true')).toBe('true');
@@ -67,22 +67,13 @@ describe('Span-01 model resolution', () => {
   });
 });
 
-describe('clé du fournisseur de reconnaissance vocale en production', () => {
+describe('clé de reconnaissance vocale en production', () => {
   const key = 'k'.repeat(24);
 
-  it('avec Deepgram, seule la clé Deepgram est exigée : aucune clé ElevenLabs', () => {
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', DEEPGRAM_API_KEY: key })).toBe(true);
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', ELEVENLABS_API_KEY: key })).toBe(
-      false,
-    );
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', DEEPGRAM_API_KEY: 'court' })).toBe(
-      false,
-    );
-  });
-
-  it('avec Scribe, la clé ElevenLabs reste exigée', () => {
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', ELEVENLABS_API_KEY: key })).toBe(true);
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'scribe', DEEPGRAM_API_KEY: key })).toBe(false);
+  it('exige la clé Deepgram, seul fournisseur de reconnaissance : aucune clé ElevenLabs', () => {
+    expect(hasSttProviderKey({ DEEPGRAM_API_KEY: key })).toBe(true);
+    expect(hasSttProviderKey({ DEEPGRAM_API_KEY: 'court' })).toBe(false);
+    expect(hasSttProviderKey({})).toBe(false);
   });
 });
 

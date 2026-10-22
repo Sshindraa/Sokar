@@ -46,12 +46,12 @@ function makeSession(codec: 'PCMA' | 'PCMU' | 'L16' = 'PCMU'): CallSession {
   });
 }
 
-/** Payloads audio effectivement envoyés à Scribe, dans l'ordre. */
+/** Payloads audio effectivement envoyés à Deepgram (binaire brut), dans l'ordre. */
 function sentAudio(ws: WebSocket): Buffer[] {
-  return vi.mocked(ws.send).mock.calls.map((call) => {
-    const payload = JSON.parse(String(call[0])) as { audio_base_64: string };
-    return Buffer.from(payload.audio_base_64, 'base64');
-  });
+  return vi
+    .mocked(ws.send)
+    .mock.calls.filter((call) => Buffer.isBuffer(call[0]))
+    .map((call) => Buffer.from(call[0] as Buffer));
 }
 
 function frame(seed: number): Buffer {
@@ -114,8 +114,9 @@ describe('regroupement des trames', () => {
       for (let i = 0; i < count; i++) sendFrame(session, networkFrame);
       flushSttChunkBuffer(session);
       expect(session.voiceUsage?.sttAudioSamples).toBe(count * (codec === 'PCMA' ? 160 : 320));
+      // Deepgram reçoit l'audio tel qu'il arrive du réseau, sans décodage : A-law 8 kHz ou PCM16 16 kHz.
       expect(Buffer.concat(sentAudio(session.sttWs)).length).toBe(
-        count * 320 * (codec === 'PCMA' ? 1 : 2),
+        count * (codec === 'PCMA' ? 160 : 640),
       );
     }
   });
@@ -163,15 +164,15 @@ describe('regroupement des trames', () => {
     expect(Buffer.concat(sentAudio(session.sttWs))).toEqual(Buffer.concat(frames));
   });
 
-  it('PCMA : la durée cible se compte après décodage en PCM16', () => {
+  it('PCMA : la durée cible se compte en échantillons, l’audio part en A-law brut', () => {
     vi.stubEnv('VOICE_STT_CHUNK_MS', '100');
     const session = makeSession('PCMA');
     session.sttWs = makeWsMock();
-    // 5 trames PCMA décodées = 5 × 320 octets PCM16 = 1600 octets = 100 ms.
+    // 5 trames PCMA de 160 octets = 800 échantillons à 8 kHz = 100 ms, envoyées sans décodage.
     for (let index = 0; index < 5; index++) sendFrame(session, frame(index));
     const sent = sentAudio(session.sttWs);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toHaveLength(5 * FRAME_BYTES * 2);
+    expect(sent[0]).toHaveLength(5 * FRAME_BYTES);
   });
 
   it('timer de sécurité : un tampon partiel part après la durée cible + 20 ms', () => {
