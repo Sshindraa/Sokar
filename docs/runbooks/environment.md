@@ -466,11 +466,6 @@ VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 # seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
 # appel. Toute panne retombe sur Deepgram seul.
 VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""
-# Vocabulaire de réservation dans les mots-clés Deepgram (restaurants listés, `*` = tous, vide = mots-clés inchangés) :
-# réservation, réserver, une table, personnes, couverts, ce soir, demain, midi, après les tailles de groupe. Les
-# mots-clés ne portaient que le nom et l'adresse : « une réservation » devenait « un arrêt de passion ». Effet seulement
-# là où `VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS` s'applique.
-VOICE_DEEPGRAM_RESERVATION_KEYTERMS_RESTAURANT_IDS=""
 # Fin de phrase sur silence local (restaurants listés, `*` = tous, vide = aucun) : une partielle Deepgram attend et
 # l'appelant se tait depuis `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS` (défaut 450, 300 à 1500) selon la détection
 # locale : `Finalize` part sans attendre 1,2 s de partielle figée (12 % des tours du 14 au 21/10, p90 1,56 s). Jamais

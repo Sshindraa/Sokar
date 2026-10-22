@@ -130,19 +130,6 @@ export function isVoiceCrmProfileEnabled(
   return ids.includes('*') || ids.includes(restaurantId);
 }
 
-/**
- * Vocabulaire de réservation dans les mots-clés Deepgram (voir `DEEPGRAM_RESERVATION_KEYTERMS`). Restaurants
- * listés (`VOICE_DEEPGRAM_RESERVATION_KEYTERMS_RESTAURANT_IDS`, `*` = tous) ; vide = aucun, mots-clés inchangés.
- */
-export function isVoiceDeepgramReservationKeytermsEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_DEEPGRAM_RESERVATION_KEYTERMS_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
-}
-
 export function isVoiceFeatureEnabledForRestaurant(
   feature: 'dialogueListeningV2' | 'deepgramStt',
   restaurantId: string,
