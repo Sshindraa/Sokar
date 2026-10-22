@@ -73,7 +73,7 @@ export async function processMarketingAutomationJob(
       await dependencies.enqueueCampaign(
         'send-campaign',
         { campaignId: campaign.id, restaurantId: campaign.restaurantId },
-        { jobId: `marketing-campaign:${campaign.id}` },
+        { jobId: `marketing-campaign-${campaign.id}` },
       );
       queued += 1;
     } catch (error) {
