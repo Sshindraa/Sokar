@@ -2,7 +2,7 @@ import { WebSocket } from 'ws';
 import type { SttWord } from './types';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 
-export type SttProviderId = 'scribe' | 'deepgram';
+export type SttProviderId = 'scribe' | 'deepgram' | 'cartesia';
 
 export type NormalizedSttProviderMessage =
   | { type: 'session_started' }
@@ -44,7 +44,7 @@ export interface SttProviderConnection {
 
 export interface SttProviderAdapter {
   readonly id: SttProviderId;
-  readonly metricLabel: 'elevenlabs_stt' | 'deepgram_stt';
+  readonly metricLabel: 'elevenlabs_stt' | 'deepgram_stt' | 'cartesia_stt';
   readonly model: string;
   open(connection: SttProviderConnection): WebSocket;
   sendAudio(ws: WebSocket, audio: Buffer, previousText?: string): void;
@@ -354,4 +354,108 @@ export function createScribeSttAdapter(options: SttProviderAdapterOptions): SttP
 
 export function createDeepgramSttAdapter(options: SttProviderAdapterOptions): SttProviderAdapter {
   return makeAdapter('deepgram', options);
+}
+
+/**
+ * Cartesia Ink-2 en mode tours (`/stt/turns/websocket`), STT de secours quand Deepgram tombe : Ink-2 décide
+ * lui-même de la fin de phrase (`turn.end`), rendue comme une phrase validée (`timestamped_commit`, le format
+ * déjà traité pour Scribe). Plus lent que Deepgram pour clore une phrase (banc du 22/10/2026 : médiane 0,5 s,
+ * p90 1,6 s avec `turn_end_timeout_ms=1500`), mais un appel continue au lieu d'être coupé.
+ */
+export function normalizeCartesiaTurnsMessage(
+  message: Record<string, unknown>,
+): NormalizedSttProviderMessage[] {
+  const type = typeof message.type === 'string' ? message.type : '';
+  const transcript = typeof message.transcript === 'string' ? message.transcript.trim() : '';
+  switch (type) {
+    case 'connected':
+      return [{ type: 'session_started' }];
+    case 'turn.start':
+      return [
+        { type: 'speech_started' },
+        ...(transcript ? [{ type: 'partial' as const, transcript }] : []),
+      ];
+    case 'turn.update':
+    case 'turn.eager_end':
+      return transcript ? [{ type: 'partial', transcript }] : [];
+    case 'turn.end':
+      return transcript ? [{ type: 'timestamped_commit', transcript }] : [];
+    case 'error':
+      return [
+        {
+          type: 'provider_error',
+          messageType: String(message.error_code ?? message.status_code ?? 'error'),
+          message: String(message.message ?? 'Cartesia error'),
+        },
+      ];
+    default:
+      return [];
+  }
+}
+
+export function createCartesiaTurnsSttAdapter(
+  options: SttProviderAdapterOptions,
+): SttProviderAdapter {
+  return {
+    id: 'cartesia',
+    metricLabel: 'cartesia_stt',
+    model: options.model,
+    open(connection) {
+      return connection.createSocket(connection.url, { headers: connection.headers });
+    },
+    sendAudio(ws, audio) {
+      ws.send(audio, { binary: true });
+    },
+    // Ink-2 clôt les tours lui-même : pas de commande de fin par phrase ni de maintien de connexion.
+    finalize() {},
+    keepAlive() {},
+    close(ws, code, reason) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'close' }));
+        ws.close(code, reason);
+      } else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
+    },
+    // A-law et µ-law 8 kHz tels quels (`pcm_alaw`, `pcm_mulaw`), L16 en PCM16 petit-boutiste 16 kHz.
+    toProviderAudio(codec, input) {
+      return codec === 'L16' ? decodeTelnyxToPcm16(codec, input) : input;
+    },
+    chunkBytesPerMs(codec) {
+      return telnyxBytesPerMs(codec);
+    },
+    samplesForAudio(codec, bytes) {
+      return codec === 'L16' ? bytes / 2 : bytes;
+    },
+    normalizeMessage(raw) {
+      try {
+        return normalizeCartesiaTurnsMessage(record(JSON.parse(raw.toString())));
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+
+/** Délai maximal avant qu'Ink-2 clôe un tour en secours : 1,5 s (5,6 s par défaut chez Cartesia). */
+export const CARTESIA_FALLBACK_TURN_END_TIMEOUT_MS = 1_500;
+
+export function buildCartesiaTurnsUrl(
+  codec: 'PCMA' | 'PCMU' | 'L16',
+  restaurantName?: string | null,
+): string {
+  const format =
+    codec === 'PCMA'
+      ? { encoding: 'pcm_alaw', sampleRate: 8000 }
+      : codec === 'PCMU'
+        ? { encoding: 'pcm_mulaw', sampleRate: 8000 }
+        : { encoding: 'pcm_s16le', sampleRate: 16_000 };
+  const params = new URLSearchParams({
+    model: 'ink-2',
+    language: 'fr',
+    encoding: format.encoding,
+    sample_rate: String(format.sampleRate),
+    turn_end_timeout_ms: String(CARTESIA_FALLBACK_TURN_END_TIMEOUT_MS),
+  });
+  const name = restaurantName?.trim();
+  if (name && name.length <= 80) params.append('keyterm', name);
+  return `wss://api.cartesia.ai/stt/turns/websocket?${params}`;
 }

@@ -10,7 +10,7 @@ export const STT_CONNECTION_ALERT_CALL_THRESHOLD = 5;
 const TERMINAL_ALERT_KEY = 'sokar:voice:stt:terminal-alert-cooldown';
 const CONNECTION_WINDOW_KEY = 'sokar:voice:stt:connection-unavailable:10m';
 const CONNECTION_ALERT_KEY = 'sokar:voice:stt:connection-alert-cooldown:10m';
-type SttProviderMetricLabel = 'elevenlabs_stt' | 'deepgram_stt';
+type SttProviderMetricLabel = 'elevenlabs_stt' | 'deepgram_stt' | 'cartesia_stt';
 
 type SttAlertStore = {
   set(

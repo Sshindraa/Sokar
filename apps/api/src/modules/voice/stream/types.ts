@@ -554,6 +554,8 @@ export interface CallSession {
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;
+  /** Le secours Ink-2 a déjà remplacé Deepgram pendant cet appel (une seule fois). */
+  sttInkFallbackUsed?: boolean;
   /** Cartesia Ink-2 en parallèle de Deepgram (voir stt-ink-parallel.ts). */
   sttInk?: import('./stt-ink-parallel').InkParallelState;
   /** L'ouverture d'Ink-2 a déjà été tentée pour cet appel. */
@@ -615,16 +617,6 @@ export interface CallSession {
     code: VoiceLanguageCode;
     count: number;
   } | null;
-  /** Relock Scribe en français différé jusqu'au début du prochain TTS. */
-  sttRelockPending?: boolean;
-  /** Le socket courant utilise le profil français sans détection. */
-  sttFrenchOnly?: boolean;
-  /** Un handshake de relock est en cours ; son échec restaure l'auto-détection. */
-  sttRelockAttempt?: boolean;
-  /** Socket auto-détection conservé jusqu'à l'ouverture du nouveau socket français. */
-  sttRelockPreviousWs?: WebSocket | null;
-  /** Appelé par la machine d'état uniquement à l'entrée en SPEAKING. */
-  onAgentSpeaking?: () => void;
   /** Le tour non français verrouillé doit emprunter la relance française. */
   forceFrenchReprompt?: boolean;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */

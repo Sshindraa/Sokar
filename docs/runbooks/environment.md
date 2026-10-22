@@ -466,6 +466,12 @@ VOICE_CRM_PROFILE_RESTAURANT_IDS=""
 # seconde envoyée ; plafond `VOICE_STT_INK_DAILY_SECONDS` (défaut 1800, compteur Redis tous appels) et 10 min par
 # appel. Toute panne retombe sur Deepgram seul.
 VOICE_STT_INK_PARALLEL_RESTAURANT_IDS=""
+# Secours Ink-2 quand Deepgram tombe (restaurants listés, `*` = tous, vide = aucun ; `CARTESIA_API_KEY`) : au lieu de
+# déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
+# (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du
+# restaurant en `keyterm`) ; Ink-2 décide alors seul de la fin de phrase. Une seconde panne suit le parcours normal
+# (message d'indisponibilité). Métrique `sokar_voice_provider_errors_total{provider="deepgram_stt",type="fallback_ink"}`.
+VOICE_STT_INK_FALLBACK_RESTAURANT_IDS=""
 # Fin de phrase sur silence local, adaptée à l'appelant (restaurants listés, `*` = tous, vide = aucun) : une partielle
 # Deepgram attend et l'appelant se tait depuis plus longtemps que ses propres pauses (80e centile de ses pauses
 # observées pendant l'appel + 150 ms, borné entre 350 et 1 100 ms ; `VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS`, défaut
@@ -879,21 +885,16 @@ valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → comm
 valeur fait échouer le démarrage (validation Zod). Suivre
 `sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
 
-`VOICE_STT_FILTER_BACKGROUND=true` transmet `filter_background_audio=true` à Scribe pour
-réduire les faux déclenchements dus aux conversations voisines et au bruit ambiant. Défaut
-`false` : aucun paramètre supplémentaire n'est envoyé. Le seuil VAD explicite actuel reste
-inchangé. ElevenLabs interdit de combiner ce filtre avec `include_timestamps` : lorsque le
-flag est actif, ce seul paramètre explicite est omis ; `include_language_detection` reste
-actif. Voir la [référence Scribe Realtime](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime).
+`VOICE_STT_FILTER_BACKGROUND` est sans effet depuis le 22/10 : le filtre Scribe n'est plus
+envoyé (Scribe n'est plus utilisé en production ; Deepgram ou le secours Ink-2).
 
 `VOICE_STT_LANGUAGE_LOCK=true` verrouille l'appel en français après le premier tour commité
 que Scribe identifie comme français et qui contient au moins deux mots. La langue de dialogue
 ne suit ensuite plus les détections ultérieures. Un contenu non français récupérable par
 l'extracteur du champ demandé suit le parcours normal de réservation ; sinon l'agent relance
-en français. Après le verrou, une nouvelle session Scribe forcée en français est tentée au
-début du prochain tour TTS, jamais pendant que le client parle. Si ce relock échoue, la
-session auto-détectée précédente est restaurée ; si elle s'est aussi fermée, la reconnexion
-existante reprend la détection automatique. Défaut `false` : comportement actuel.
+en français. Depuis le 22/10, plus aucune
+session Scribe forcée en français n'est rouverte après le verrou (relock retiré). Défaut
+`false` : comportement actuel.
 Les compteurs `sokar_voice_language_locked_total`,
 `sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
 `sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
