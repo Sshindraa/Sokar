@@ -128,6 +128,7 @@ const WaitlistListQuerySchema = z.object({
 });
 const JoinWaitlistBodySchema = z.object({
   customerId: z.string().trim().min(1).max(128).optional(),
+  phone: z.string().trim().min(6).max(32).optional(),
   quantity: z.number().int().min(1).max(100).default(1),
 });
 const PromoteWaitlistBodySchema = z.object({ ticketTypeId: z.string().trim().min(1).max(128) });
