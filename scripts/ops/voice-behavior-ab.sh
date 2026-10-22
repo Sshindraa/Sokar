@@ -26,7 +26,7 @@ trap 'rm -rf "$TMP"; ssh "$HOST" "rm -f /tmp/vbe-ref.json /tmp/vbe-cand.json /tm
 scp -q "$REF" "$HOST:/tmp/vbe-ref.json"
 scp -q "$CAND" "$HOST:/tmp/vbe-cand.json"
 scp -q "$ROOT/apps/api/scripts/voice-behavior-replay.mjs" "$HOST:/tmp/vbe-replay.mjs"
-ssh "$HOST" "VBE_ARM_B=/tmp/vbe-cand.json VBE_MAX_REQUESTS=$VBE_MAX_REQUESTS VBE_PROVIDER='${VBE_PROVIDER:-}' VBE_MODEL='${VBE_MODEL:-}' VBE_PROVIDER_ORDER='${VBE_PROVIDER_ORDER:-}' VBE_REASONING_OFF='${VBE_REASONING_OFF:-}' VBE_BASE_URL='${VBE_BASE_URL:-}' node /tmp/vbe-replay.mjs /tmp/vbe-ref.json" > "$TMP/ab.json"
+ssh "$HOST" "VBE_ARM_B=/tmp/vbe-cand.json VBE_MAX_REQUESTS=$VBE_MAX_REQUESTS VBE_PROVIDER='${VBE_PROVIDER:-}' VBE_MODEL='${VBE_MODEL:-}' VBE_PROVIDER_ORDER='${VBE_PROVIDER_ORDER:-}' VBE_REASONING_OFF='${VBE_REASONING_OFF:-}' VBE_REASONING_NONE='${VBE_REASONING_NONE:-}' VBE_SAMPLING='${VBE_SAMPLING:-}' VBE_BASE_URL='${VBE_BASE_URL:-}' node /tmp/vbe-replay.mjs /tmp/vbe-ref.json" > "$TMP/ab.json"
 [ -n "${VBE_JSON_OUT:-}" ] && cp "$TMP/ab.json" "$VBE_JSON_OUT"
 cd "$ROOT/apps/api"
 npx tsx scripts/voice-behavior-eval.ts ab ${VBE_AB_JUDGE:+--judge} "$TMP/ab.json"
