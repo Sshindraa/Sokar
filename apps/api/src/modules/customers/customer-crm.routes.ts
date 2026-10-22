@@ -31,6 +31,7 @@ import {
   hasSensitiveNoteRoleOverride,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
+import { withCustomerLifecycles } from './customer-lifecycle';
 
 const CustomerIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
@@ -424,7 +425,8 @@ export async function customerCrmRoutes(app: FastifyInstance) {
     const hasNextPage = customers.length > query.limit;
     const page = hasNextPage ? customers.slice(0, query.limit) : customers;
     const nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
-    return reply.send({ data: page, nextCursor });
+    const data = await withCustomerLifecycles(request.restaurantId!, page);
+    return reply.send({ data, nextCursor });
   });
 
   app.get('/crm/customers/:id', { preHandler: requireCrmAdvanced }, async (request, reply) => {
@@ -466,9 +468,13 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       request.siteRole,
       customer.restaurant?.crmSensitiveNoteRoles,
     );
+    const [{ lifecycle }] = await withCustomerLifecycles(request.restaurantId!, [
+      { id: customer.id },
+    ]);
     return reply.send({
       data: {
         ...customer,
+        lifecycle,
         notes: canViewNotes ? customer.notes : null,
         metrics: customer.metricSnapshot,
         preferences: customer.preferences,

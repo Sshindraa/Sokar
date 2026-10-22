@@ -45,6 +45,11 @@ interface PreferenceForVoice {
  */
 const PAST_VISIT_STATES = new Set(['HONORED', 'SEATED', 'CONFIRMED']);
 const UPCOMING_STATES = new Set(['PENDING', 'CONFIRMED']);
+
+/** Whether a reservation in this state, once past, counts as a real visit. */
+export function isPastVisitState(state: string): boolean {
+  return PAST_VISIT_STATES.has(state);
+}
 const HISTORY_LIMIT = 500;
 const MAX_TAGS = 8;
 const MAX_VALUE_LENGTH = 120;

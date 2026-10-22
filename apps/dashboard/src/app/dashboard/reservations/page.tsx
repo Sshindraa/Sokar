@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
+import { ServiceCardBadges, useServiceCards } from '@/components/reservation/service-card-badges';
 
 const reservationState = (reservation: Reservation): ReservationState =>
   reservation.state ?? reservation.status;
@@ -115,6 +116,8 @@ export default function ReservationsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+
+  const serviceCards = useServiceCards(reservations.map((reservation) => reservation.id));
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -478,6 +481,18 @@ export default function ReservationsPage() {
                         onClick: () => runReservationAction(res, action),
                       }))}
                       details={[
+                        ...(serviceCards.loading ||
+                        serviceCards.error ||
+                        (serviceCards.cards.get(res.id)?.badges.length ?? 0) > 0
+                          ? [
+                              {
+                                label: 'Fiche',
+                                value: (
+                                  <ServiceCardBadges reservationId={res.id} state={serviceCards} />
+                                ),
+                              },
+                            ]
+                          : []),
                         {
                           label: 'Heure · date',
                           value: (
@@ -575,6 +590,11 @@ export default function ReservationsPage() {
                                       {res.customerPhone}
                                     </p>
                                   ) : null}
+                                  <ServiceCardBadges
+                                    reservationId={res.id}
+                                    state={serviceCards}
+                                    className="mt-1.5"
+                                  />
                                 </div>
                               </TableCell>
                               <TableCell className="py-3 text-center font-medium tabular-nums">

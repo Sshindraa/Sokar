@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Users, Search, Star, Phone, Sparkles, StickyNote, X } from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
+import { CustomerLifecycleBadge } from '@/components/CustomerLifecycleBadge';
 
 type CustomerListResponse = Customer[] | { data?: Customer[]; total?: number };
 
@@ -92,11 +93,11 @@ function CustomerMobileCard({
           </div>
           <div className="px-2 text-center">
             <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Fidélité
+              Statut
             </p>
-            <p className="mt-1 text-base font-semibold text-foreground">
-              {Number(customer.loyaltyScore).toFixed(1)}
-            </p>
+            <div className="mt-1 flex justify-center">
+              <CustomerLifecycleBadge lifecycle={customer.lifecycle} />
+            </div>
           </div>
           <div className="min-w-0 px-2 text-center">
             <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
@@ -370,7 +371,7 @@ export default function CustomersPage() {
                   <TableHead>Nom</TableHead>
                   <TableHead>Téléphone</TableHead>
                   <TableHead>Visites</TableHead>
-                  <TableHead>Score fidélité</TableHead>
+                  <TableHead>Statut</TableHead>
                   <TableHead>VIP</TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead>Dernière visite</TableHead>
@@ -384,7 +385,9 @@ export default function CustomersPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{c.phone}</TableCell>
                     <TableCell>{c.visitCount}</TableCell>
-                    <TableCell>{Number(c.loyaltyScore).toFixed(1)}</TableCell>
+                    <TableCell className="max-w-[220px]">
+                      <CustomerLifecycleBadge lifecycle={c.lifecycle} showReason />
+                    </TableCell>
                     <TableCell>
                       <button
                         onClick={() => toggleVip(c.id, c.isVip)}
