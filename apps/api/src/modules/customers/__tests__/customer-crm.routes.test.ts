@@ -100,6 +100,7 @@ describe('customer CRM routes', () => {
       { id: 'customer-2', metricSnapshot: { honored365d: 4 } },
       { id: 'customer-3', metricSnapshot: { honored365d: 3 } },
     ] as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
 
     const response = await app.inject({
       method: 'GET',
@@ -110,8 +111,16 @@ describe('customer CRM routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       data: [
-        { id: 'customer-1', metricSnapshot: { honored365d: 5 } },
-        { id: 'customer-2', metricSnapshot: { honored365d: 4 } },
+        {
+          id: 'customer-1',
+          metricSnapshot: { honored365d: 5 },
+          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+        },
+        {
+          id: 'customer-2',
+          metricSnapshot: { honored365d: 4 },
+          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+        },
       ],
       nextCursor: 'customer-2',
     });
