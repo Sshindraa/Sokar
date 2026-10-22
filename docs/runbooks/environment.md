@@ -227,7 +227,6 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
 | `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
 | `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
-| `CRM_ADVANCED_RESTAURANT_IDS`    | Vide par défaut. Ouvre le CRM avancé (fiche, préférences, tags, doublons) aux seuls restaurants listés quand `CRM_ADVANCED_ENABLED` reste `false` ; la formule (`customers.advanced`) s'applique toujours.                         |
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
@@ -346,13 +345,11 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 # sokar_voice_structured_speculation_launch_total{result=started|capped}.
 VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
 VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
-# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (restaurants
-# listés, vide = aucun) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
+# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (tous les
+# restaurants depuis le 22/10, sans réglage) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
 # (« pour pour »). Même état, même historique, même schéma exigés ; tout chiffre, jour, heure, nom, lettre
 # épelée, négation, « euh », « merci » ou question ajoutée refuse la reprise (rejeu GPT-6 Luna du 20/10/2026).
-# Hors liste, la règle est seulement journalisée (`harmless` dans « Speculation outcome »).
 # Métrique : sokar_voice_structured_speculation_total{outcome=hit_tolerant}.
-VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS=""
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
@@ -459,14 +456,14 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # l'appelant. Jamais pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
 VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="600"
 VOICE_STT_INK_WAIT_MS="250"
-# Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
+# Suggestions CRM tirées des appels, pour tous les restaurants dès que `OPENROUTER_API_KEY` est présente
+# (depuis le 22/10, sans liste). Après le raccroché, une
 # requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
 # `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,
 # régime, accessibilité, langue ou occasion. Une suggestion n'est gardée que si sa preuve figure mot pour mot dans
 # la transcription ; elle est écrite `VOICE_SUGGESTION` non confirmée, expire à 90 jours et n'écrase jamais une
 # saisie de l'équipe. L'agent ne s'en sert qu'une fois confirmée dans la fiche CRM (Confirmer / Écarter), qui
-# exige `CRM_ADVANCED_ENABLED`. Une requête par appel concerné ; tâche en file, une seule tentative.
-VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS=""
+# suit la formule (`customers.advanced`). Une requête par appel concerné ; tâche en file, une seule tentative.
 VOICE_CRM_SUGGESTIONS_MODEL=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
@@ -595,13 +592,8 @@ VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx Krisp (bêta) sur l'audio de l'appelant, avant la transcription, pour tous les
 # restaurants depuis le 22/10 (aucun réglage). Facturée par direction et par minute (une seule direction
 # utilisée). Un échec n'arrête pas l'appel.
-VOICE_DEEPGRAM_MODEL="nova-3"
-# Optional; Flux is used only when this CSV contains the restaurant ID.
-VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_NUMERALS="true"
-VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_PUNCTUATE="false"
-VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS=""
+# Deepgram, pour tous les restaurants et sans réglage depuis le 22/10 : nova-3, chiffres en nombres
+# (`numerals=true`), sans ponctuation. Flux et la ponctuation restent mesurables au banc (scripts/voice-stt-bench).
 VOICE_DEEPGRAM_MIP_OPT_OUT="true"
 VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS=
 ```
@@ -824,12 +816,8 @@ y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commence
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
 pas un booléen et se pose directement dans le fichier d'environnement de l'API.
 
-`VOICE_SMART_ENDPOINT_ENABLED=true` (défaut `false`) active la fin de tour hybride.
-`VOICE_SMART_ENDPOINT_RESTAURANT_IDS` (IDs séparés par des virgules, vide = tous) la limite
-à certains restaurants. Pour ces appels, Scribe coupe après
-`VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS` (défaut `0.5`, bornes 0,2 à 3) au lieu de
-`ELEVENLABS_STT_VAD_SILENCE_SECS` (défaut `0.95`, qui reste la valeur des autres appels).
-Après le commit, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
+Fin de tour hybride (écoute Dialogue V2, tous les restaurants) :
+après la fin de phrase, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
 (ponctuation finale ou réponse d'un ou deux mots comme « oui »), 800 ms si elle finit en
 suspens (« demain à », « au nom de », « je suis »), 600 ms pour une correction commencée
 (« non, plutôt… »), 400 ms sans ponctuation. Si le client reprend pendant l'attente, la
@@ -949,13 +937,9 @@ comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
 allowlist vide ou absente reste en PCMA. Les autres appels restent PCMA. La
 valeur est évaluée à l'ouverture de l'appel et ne change pas pendant le flux.
 
-Le modèle Deepgram reste `nova-3` par défaut. Le canary Flux nécessite simultanément
-`VOICE_DEEPGRAM_MODEL=flux-general-multi` et l'identifiant du restaurant dans
-`VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS` ; sans les deux, le modèle résolu reste Nova-3. Flux
-utilise l'endpoint `/v2/listen` avec `language_hint=fr`. `flux-general-multi` est le modèle Flux
-documenté qui prend en charge le français ; les noms `DEEPGRAM_MODEL` historiques ne pilotent
-pas cette sélection. Ce flag ne sélectionne pas Deepgram à lui seul : le provider exige toujours
-`VOICE_STT_PROVIDER=deepgram` et `VOICE_STT_PROVIDER_RESTAURANT_IDS`.
+Le modèle Deepgram est `nova-3` pour tous les restaurants (le canary Flux par restaurant est retiré
+depuis le 22/10/2026). Flux (`/v2/listen`, `flux-general-multi`, `language_hint=fr`) reste mesurable
+au banc.
 
 Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
 `endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.

@@ -202,12 +202,6 @@ export const VoiceDeepgramConfigSchema = z.object({
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
-  VOICE_DEEPGRAM_MODEL: z.enum(['nova-3', 'flux-general-multi']).default('nova-3'),
-  VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_NUMERALS: z.enum(['true', 'false']).default('true'),
-  VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_PUNCTUATE: z.enum(['true', 'false']).default('false'),
-  VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_MIP_OPT_OUT: z.enum(['true', 'false']).default('true'),
 });
@@ -464,9 +458,8 @@ const EnvSchema = z
     // Le checkout d'abonnement reste désactivé en production tant que les
     // prix Stripe et le pilote Essential ne sont pas clôturés.
     BILLING_CHECKOUT_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Les fonctions CRM avancées et le control plane marketing restent
-    // désactivés en production tant que les preuves P2/P3 ne sont pas closes.
-    CRM_ADVANCED_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Le control plane marketing reste désactivé en production tant que les
+    // preuves P2/P3 ne sont pas closes. Le CRM avancé suit la formule seule.
     MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),

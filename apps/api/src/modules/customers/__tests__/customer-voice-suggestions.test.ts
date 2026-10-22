@@ -51,20 +51,11 @@ beforeEach(() => {
 });
 
 describe('isCrmVoiceSuggestionsEnabled', () => {
-  it('liste vide = aucun ; liste ou * = restaurants concernés', () => {
+  it('tous les restaurants dès que la clé OpenRouter est présente', () => {
+    expect(isCrmVoiceSuggestionsEnabled('r1', { OPENROUTER_API_KEY: 'k' })).toBe(true);
+    expect(isCrmVoiceSuggestionsEnabled('r2', { OPENROUTER_API_KEY: 'k' })).toBe(true);
     expect(isCrmVoiceSuggestionsEnabled('r1', {})).toBe(false);
-    expect(isCrmVoiceSuggestionsEnabled('r1', { VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS: 'r2' })).toBe(
-      false,
-    );
-    expect(
-      isCrmVoiceSuggestionsEnabled('r1', { VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS: 'r2,r1' }),
-    ).toBe(true);
-    expect(isCrmVoiceSuggestionsEnabled('r1', { VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS: '*' })).toBe(
-      true,
-    );
-    expect(isCrmVoiceSuggestionsEnabled(null, { VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS: '*' })).toBe(
-      false,
-    );
+    expect(isCrmVoiceSuggestionsEnabled(null, { OPENROUTER_API_KEY: 'k' })).toBe(false);
   });
 });
 
@@ -240,13 +231,12 @@ describe('saveVoiceSuggestion', () => {
 
 describe('runCrmVoiceSuggestionsJob', () => {
   const env = {
-    VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS: 'r1',
     OPENROUTER_API_KEY: 'k',
     VOICE_STRUCTURED_FALLBACK_MODEL: 'm',
   };
   const call = { id: 'call-1', restaurantId: 'r1', callerPhone: '+33612345678', transcript };
 
-  it('saute un restaurant non listé, une transcription courte, un appelant inconnu', async () => {
+  it('saute sans clé OpenRouter, une transcription courte, un appelant inconnu', async () => {
     dbMock.db.call.findUnique.mockResolvedValue(call);
     expect(await runCrmVoiceSuggestionsJob('leg', {})).toEqual({
       status: 'skipped',
@@ -289,18 +279,18 @@ describe('runCrmVoiceSuggestionsJob', () => {
 });
 
 describe('enqueueCrmVoiceSuggestions', () => {
-  it('ne met en file que pour un restaurant listé, une seule tentative', async () => {
+  it('ne met en file qu’avec la clé OpenRouter, une seule tentative', async () => {
     const queue = { add: vi.fn().mockResolvedValue(undefined) };
-    process.env.VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS = '';
+    vi.stubEnv('OPENROUTER_API_KEY', '');
     await enqueueCrmVoiceSuggestions('leg', 'r1', queue, 'job-1');
     expect(queue.add).not.toHaveBeenCalled();
-    process.env.VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS = 'r1';
+    vi.stubEnv('OPENROUTER_API_KEY', 'k');
     await enqueueCrmVoiceSuggestions('leg', 'r1', queue, 'job-1');
     expect(queue.add).toHaveBeenCalledWith(
       'crm-voice-suggestions',
       { callLegId: 'leg' },
       expect.objectContaining({ jobId: 'job-1', attempts: 1 }),
     );
-    delete process.env.VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS;
+    vi.unstubAllEnvs();
   });
 });

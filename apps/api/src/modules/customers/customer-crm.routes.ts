@@ -2,10 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
-import {
-  requireCapability,
-  requireRuntimeFlagOrRestaurant,
-} from '../entitlements/entitlement.guard';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   appendCustomerTimelineEvent,
   assignCustomerTag,
@@ -100,18 +97,7 @@ const ProjectionRepairPreviewQuerySchema = z.object({
   now: z.coerce.date().optional(),
 });
 
-// Ouvert partout par CRM_ADVANCED_ENABLED, ou seulement pour les restaurants de CRM_ADVANCED_RESTAURANT_IDS.
-const requireCrmAdvancedFeature = requireRuntimeFlagOrRestaurant(
-  'CRM_ADVANCED_ENABLED',
-  'CRM_ADVANCED_RESTAURANT_IDS',
-  'Le CRM avancé reste désactivé jusqu’à la qualification du chantier.',
-  'CRM_ADVANCED_DISABLED',
-);
-const requireCrmAdvanced = [
-  requireOrg(),
-  requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
-];
+const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced')];
 
 const SensitiveNoteRoleSchema = z.enum(['OWNER', 'MANAGER', 'STAFF', 'READ_ONLY', 'ORG_MEMBER']);
 const SensitiveNoteRolesBodySchema = z
@@ -181,36 +167,27 @@ async function requireCrmPrivacyOwner(
 const requireCrmMergePreview = [
   requireOrg(),
   requireCapability('crm.merge'),
-  requireCrmAdvancedFeature,
   requireMergePreviewRole,
 ];
 const requireCrmMergeMutation = [
   requireOrg(),
   requireCapability('crm.merge'),
-  requireCrmAdvancedFeature,
   requireMergeOwnerRole,
 ];
-const requireCrmProjectionRepairPreview = [
-  requireOrg(),
-  requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
-];
+const requireCrmProjectionRepairPreview = [requireOrg(), requireCapability('customers.advanced')];
 const requireCrmProjectionRepairMutation = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireProjectionRepairOwnerRole,
 ];
 const requireCrmAdvancedWrite = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireCrmWriteRole,
 ];
 const requireCrmPrivacy = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireCrmPrivacyOwner,
 ];
 

@@ -41,8 +41,6 @@ describe('VoiceConfigSchema', () => {
       VOICE_DEEPGRAM_ENDPOINTING_MS: 200,
       VOICE_DEEPGRAM_UTTERANCE_END_MS: 1000,
       VOICE_DEEPGRAM_SPELLING_SILENCE_MS: 800,
-      VOICE_DEEPGRAM_NUMERALS: 'true',
-      VOICE_DEEPGRAM_PUNCTUATE: 'false',
       VOICE_DEEPGRAM_MIP_OPT_OUT: 'true',
       VOICE_LLM_PROVIDER: 'cerebras',
       CEREBRAS_BASE_URL,
@@ -131,22 +129,10 @@ describe('VoiceConfigSchema', () => {
     ).toBe(false);
   });
 
-  it('utilise Nova par défaut et refuse un modèle Flux non documenté', () => {
-    expect(VoiceDeepgramConfigSchema.parse({}).VOICE_DEEPGRAM_MODEL).toBe('nova-3');
-    expect(VoiceDeepgramConfigSchema.parse({}).VOICE_DEEPGRAM_NUMERALS).toBe('true');
-    expect(VoiceDeepgramConfigSchema.parse({}).VOICE_DEEPGRAM_PUNCTUATE).toBe('false');
+  it('refuse un réglage MIP Deepgram inconnu', () => {
     expect(VoiceDeepgramConfigSchema.parse({}).VOICE_DEEPGRAM_MIP_OPT_OUT).toBe('true');
     expect(VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_MIP_OPT_OUT: 'yes' }).success).toBe(
       false,
     );
-    expect(VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_NUMERALS: 'on' }).success).toBe(
-      false,
-    );
-    expect(
-      VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_MODEL: 'flux-general-en' }).success,
-    ).toBe(false);
-    expect(
-      VoiceDeepgramConfigSchema.safeParse({ VOICE_DEEPGRAM_MODEL: 'flux-unknown' }).success,
-    ).toBe(false);
   });
 });
