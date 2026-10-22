@@ -386,7 +386,7 @@ function formatVoiceDate(iso: string, timezone: string, withTime: boolean): stri
   }).format(new Date(iso));
 }
 
-async function findCustomerForPhone(
+export async function findCustomerForPhone(
   restaurantId: string,
   phone: string,
   normalizedPhone: string | null,

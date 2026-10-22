@@ -220,6 +220,12 @@ const TIMELINE_LABELS: Record<string, string> = {
   'reservation.honored': 'Visite honorée',
   'reservation.no_show': 'Client absent (no-show)',
   'call.received': 'Appel reçu',
+  'waitlist.joined': "Inscrit sur la liste d'attente",
+  'waitlist.promoted': "Place obtenue depuis la liste d'attente",
+  'waitlist.cancelled': "Retiré de la liste d'attente",
+  'waitlist.expired': "Liste d'attente expirée",
+  'gift_card.purchased': 'Carte cadeau achetée',
+  'gift_card.redeemed': 'Carte cadeau utilisée',
   'customer.tag_assigned': 'Tag ajouté',
   'customer.tag_removed': 'Tag retiré',
   'customer.preference_updated': 'Préférence enregistrée',
@@ -1123,7 +1129,9 @@ export default function CrmCustomerPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Chronologie récente</CardTitle>
-            <CardDescription>Réservations, appels et modifications de la fiche.</CardDescription>
+            <CardDescription>
+              Réservations, appels, liste d’attente, cartes cadeaux et modifications de la fiche.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {customer.timeline.length === 0 ? (

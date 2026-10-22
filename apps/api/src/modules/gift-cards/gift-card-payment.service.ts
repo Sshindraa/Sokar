@@ -16,6 +16,7 @@ import { GiftCardService } from './gift-card.service';
 import { retrievePaymentIntent } from './stripe.service';
 import { logger } from '../../shared/logger/pino';
 import { enqueueGiftCardDelivery } from './gift-card-delivery.service';
+import { recordGiftCardPurchaseTimelineEvent } from '../customers/customer-activity-timeline';
 
 export type PurchaseWithPaymentInput = {
   restaurantId: string;
@@ -288,6 +289,7 @@ export class GiftCardPaymentService {
     }, DEFAULT_TRANSACTION_OPTIONS);
     if (!created) return card;
 
+    await recordGiftCardPurchaseTimelineEvent(card);
     return card;
   }
 

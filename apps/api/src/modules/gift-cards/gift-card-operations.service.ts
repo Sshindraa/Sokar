@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient, type GiftCardRedemption } from '@prisma/client';
 import { giftCardAmountCents, lockGiftCard } from './gift-card-finance.util';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
+import { recordGiftCardRedemptionTimelineEvent } from '../customers/customer-activity-timeline';
 
 export class GiftCardOperationError extends Error {
   constructor(
@@ -41,7 +42,7 @@ export class GiftCardOperationsService {
       throw new GiftCardOperationError('Référence du ticket invalide.', 400);
     const cents = giftCardAmountCents(input.billAmount);
     const operationKey = `gift-card-debit:${input.restaurantId}:${input.idempotencyKey}`;
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Serializes both a repeated request and the same bill presented with another card/key.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${operationKey}, 0))`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`gift-card-ticket:${input.restaurantId}:${input.ticketReference}`}, 0))`;
@@ -166,6 +167,15 @@ export class GiftCardOperationsService {
       });
       return receipt(redemption);
     }, DEFAULT_TRANSACTION_OPTIONS);
+    await recordGiftCardRedemptionTimelineEvent({
+      restaurantId: input.restaurantId,
+      giftCardId: result.giftCardId,
+      redemptionId: result.id,
+      amount: result.appliedAmount,
+      reservationId: result.reservationId,
+      redeemedAt: result.redeemedAt,
+    });
+    return result;
   }
 
   async overview(restaurantId: string) {
