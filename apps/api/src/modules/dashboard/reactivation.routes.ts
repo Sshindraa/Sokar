@@ -209,7 +209,7 @@ export async function reactivationRoutes(app: FastifyInstance) {
         await queues.marketingCampaign.add(
           'send-campaign',
           { campaignId: migration.marketingCampaignId, restaurantId },
-          { jobId: `marketing-campaign:${migration.marketingCampaignId}` },
+          { jobId: `marketing-campaign-${migration.marketingCampaignId}` },
         );
       } catch (error) {
         req.log.error({ err: error }, 'legacy reactivation queue enqueue failed');

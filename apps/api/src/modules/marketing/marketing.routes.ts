@@ -612,7 +612,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           await queues.marketingCampaign.add(
             'send-campaign',
             { campaignId: id, restaurantId: request.restaurantId! },
-            { jobId: `marketing-campaign:${id}`, delay },
+            { jobId: `marketing-campaign-${id}`, delay },
           );
         } catch (error) {
           await db.marketingCampaign.update({
@@ -653,7 +653,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           await queues.marketingCampaign.add(
             'send-campaign',
             { campaignId: id, restaurantId: request.restaurantId! },
-            { jobId: `marketing-campaign:${id}` },
+            { jobId: `marketing-campaign-${id}` },
           );
         } catch (error) {
           await db.marketingCampaign.update({
