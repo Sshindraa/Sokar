@@ -635,7 +635,7 @@ describe('marketing control plane routes', () => {
       'send-campaign',
       { campaignId: 'campaign-1', restaurantId: 'test-rest-1' },
       expect.objectContaining({
-        jobId: 'marketing-campaign:campaign-1',
+        jobId: 'marketing-campaign-campaign-1',
         delay: expect.any(Number),
       }),
     );
