@@ -37,6 +37,8 @@ export interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
+  /** En-têtes supplémentaires, par exemple `List-Unsubscribe` pour un message marketing. */
+  headers?: Record<string, string>;
   usage?: MessagingUsageContext;
 }
 
@@ -162,6 +164,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
+      ...(opts.headers ? { headers: opts.headers } : {}),
     }),
     DEFAULT_PROVIDER_TIMEOUT_MS,
     'resend.emails.send',

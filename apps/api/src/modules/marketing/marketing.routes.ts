@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
@@ -38,7 +38,15 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
-import { consumeMarketingUnsubscribeToken } from './marketing-unsubscribe.service';
+import {
+  consumeMarketingUnsubscribeToken,
+  verifyMarketingUnsubscribeToken,
+} from './marketing-unsubscribe.service';
+import {
+  renderUnsubscribeConfirmPage,
+  renderUnsubscribeDonePage,
+  renderUnsubscribeInvalidPage,
+} from './marketing-unsubscribe.page';
 import {
   getMarketingCampaignReport,
   marketingCampaignReportToCsv,
@@ -721,51 +729,75 @@ export async function marketingRoutes(app: FastifyInstance) {
     }
   });
 
-  // One-click unsubscribe endpoint. The token carries only opaque tenant and
-  // customer identifiers and is verified before changing the permission.
+  // Désinscription. Un GET (lien de l'e-mail, ouvert aussi par les anti-virus et aperçus de lien)
+  // ne change rien : il affiche une confirmation. Le POST désinscrit ; il accepte le jeton dans le
+  // corps (formulaire ou JSON) ou dans l'URL, comme le fait le « un clic » RFC 8058
+  // (`List-Unsubscribe-Post`) des messageries. La réponse ne reprend jamais téléphone ou e-mail.
+  const UnsubscribeTokenSchema = z.string().trim().min(20).max(4096);
+  const isUnsubscribeTokenError = (error: unknown): boolean =>
+    error instanceof Error &&
+    (error.message === 'INVALID_UNSUBSCRIBE_TOKEN' ||
+      error.message === 'UNSUBSCRIBE_TOKEN_EXPIRED' ||
+      error.message === 'MARKETING_UNSUBSCRIBE_SECRET_NOT_CONFIGURED');
+  const sendUnsubscribePage = (reply: FastifyReply, status: number, html: string) =>
+    reply
+      .status(status)
+      .header('cache-control', 'no-store')
+      .header('referrer-policy', 'no-referrer')
+      .header('x-robots-tag', 'noindex')
+      .header(
+        'content-security-policy',
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
+      )
+      .type('text/html; charset=utf-8')
+      .send(html);
+
   app.post('/marketing/unsubscribe', publicTokenRouteOptions, async (request, reply) => {
-    const body = z.object({ token: z.string().trim().min(20).max(4096) }).parse(request.body);
+    const body = (request.body ?? {}) as { token?: unknown };
+    const query = (request.query ?? {}) as { token?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(body.token ?? query.token);
+    const fromBrowserForm =
+      String(request.headers['content-type'] ?? '').startsWith(
+        'application/x-www-form-urlencoded',
+      ) && String(request.headers.accept ?? '').includes('text/html');
+    if (!candidate.success) {
+      if (fromBrowserForm) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      return reply.status(400).send({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
+    }
     try {
-      const result = await consumeMarketingUnsubscribeToken({ token: body.token });
+      const result = await consumeMarketingUnsubscribeToken({ token: candidate.data });
+      if (fromBrowserForm) {
+        return sendUnsubscribePage(reply, 200, renderUnsubscribeDonePage(result.channel));
+      }
       return reply.send({ data: { unsubscribed: true, channel: result.channel } });
     } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message === 'INVALID_UNSUBSCRIBE_TOKEN' ||
-          error.message === 'UNSUBSCRIBE_TOKEN_EXPIRED' ||
-          error.message === 'MARKETING_UNSUBSCRIBE_SECRET_NOT_CONFIGURED')
-      ) {
+      if (isUnsubscribeTokenError(error)) {
+        if (fromBrowserForm) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
         return reply.status(400).send({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
       }
       if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
+        if (fromBrowserForm) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
         return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
       }
       throw error;
     }
   });
 
-  // The same token is accepted through GET so the URL included in an SMS or
-  // email is actionable in a browser. The response remains deliberately
-  // minimal and never echoes a phone number or email address.
   app.get('/marketing/unsubscribe', publicTokenRouteOptions, async (request, reply) => {
-    const query = z.object({ token: z.string().trim().min(20).max(4096) }).parse(request.query);
+    const query = (request.query ?? {}) as { token?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(query.token);
+    if (!candidate.success) {
+      return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    }
     try {
-      const result = await consumeMarketingUnsubscribeToken({ token: query.token });
-      return reply.send({ data: { unsubscribed: true, channel: result.channel } });
+      verifyMarketingUnsubscribeToken(candidate.data);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message === 'INVALID_UNSUBSCRIBE_TOKEN' ||
-          error.message === 'UNSUBSCRIBE_TOKEN_EXPIRED' ||
-          error.message === 'MARKETING_UNSUBSCRIBE_SECRET_NOT_CONFIGURED')
-      ) {
-        return reply.status(400).send({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
-      }
-      if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
-        return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
       }
       throw error;
     }
+    return sendUnsubscribePage(reply, 200, renderUnsubscribeConfirmPage(candidate.data));
   });
 
   app.post(
