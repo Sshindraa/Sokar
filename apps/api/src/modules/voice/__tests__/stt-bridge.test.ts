@@ -1,3 +1,4 @@
+import { createScribeSttAdapter } from '../stream/stt-provider-adapter';
 import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import type { CallSession, SttEvent } from '../stream/types';
@@ -47,6 +48,13 @@ vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../stream/structured-turn/engine')>()),
   speculateStructuredTurn: vi.fn(),
 }));
+
+/** Session dont le fournisseur de reconnaissance est l'adaptateur Scribe (tests des messages au format Scribe). */
+function makeScribeSession(overrides: Partial<CallSession> = {}): CallSession {
+  const session = makeSession(overrides);
+  session.sttAdapter = createScribeSttAdapter({ model: 'scribe_v2_realtime' });
+  return session;
+}
 
 function makeWsMock(): WebSocket {
   return {
@@ -302,7 +310,7 @@ describe('sendAudioToStt', () => {
   });
 
   it('envoie un message JSON Scribe et convertit PCMA en PCM16', () => {
-    const session = makeSession({ codec: 'PCMA' });
+    const session = makeScribeSession({ codec: 'PCMA' });
     const ws = makeWsMock();
     session.sttWs = ws;
     sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
@@ -325,14 +333,14 @@ describe('handleSttMessage', () => {
   });
 
   it('transforme un partial puis un committed en événements normalisés', () => {
-    const session = makeSession();
+    const session = makeScribeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'Je voudrais réserver' });
     handleSttMessage(session, {
       message_type: 'committed_transcript_with_timestamps',
-      text: 'Je voudrais réserver',
+      text: 'Je voudrais réserver.',
       words: [{ word: 'réserver', start: 0.5, end: 1.1 }],
     });
 
@@ -341,7 +349,7 @@ describe('handleSttMessage', () => {
       2,
       expect.objectContaining({
         type: 'UtteranceEnd',
-        transcript: 'Je voudrais réserver',
+        transcript: 'Je voudrais réserver.',
         words: [{ word: 'réserver', start: 0.5, end: 1.1 }],
       }),
     );
@@ -513,21 +521,21 @@ describe('handleSttMessage', () => {
   });
 
   it('propage la langue détectée par Scribe sur le segment final', () => {
-    const session = makeSession();
+    const session = makeScribeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, { message_type: 'committed_transcript', text: 'I need a table' });
+    handleSttMessage(session, { message_type: 'committed_transcript', text: 'I need a table.' });
     handleSttMessage(session, {
       message_type: 'committed_transcript_with_timestamps',
-      text: 'I need a table',
+      text: 'I need a table.',
       language_code: 'en',
     });
 
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'UtteranceEnd',
-        transcript: 'I need a table',
+        transcript: 'I need a table.',
         languageCode: 'en',
       }),
     );
@@ -556,7 +564,7 @@ describe('handleSttMessage', () => {
   });
 
   it('remonte les erreurs fournisseur sous forme d’événement applicatif', () => {
-    const session = makeSession();
+    const session = makeScribeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
     handleSttMessage(session, { message_type: 'quota_exceeded', message: 'quota' });
@@ -571,7 +579,7 @@ describe('handleSttMessage', () => {
     ['auth_error', 'auth'],
     ['unaccepted_terms', 'terms'],
   ] as const)('%s est une erreur terminale sans demande de reconnexion', (messageType, reason) => {
-    const session = makeSession();
+    const session = makeScribeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
@@ -597,7 +605,7 @@ describe('handleSttMessage', () => {
     'chunk_size_exceeded',
     'insufficient_audio_activity',
   ])('remonte l’erreur Scribe %s', (messageType) => {
-    const session = makeSession();
+    const session = makeScribeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
     handleSttMessage(session, { message_type: messageType, message: messageType });
@@ -679,15 +687,6 @@ describe('handleSttMessage', () => {
         [{ type: 'UtteranceEnd', transcript: 'Demain à vingt heures.' }],
       ]);
     });
-
-    it('envoie directement sans écoute Dialogue V2', () => {
-      delete process.env.VOICE_DIALOGUE_LISTENING_V2;
-      const session = makeSession();
-      const onEvent = vi.fn();
-      session.onSttEvent = onEvent;
-      commit(session, 'Demain à');
-      expect(utteranceEnds(onEvent)).toHaveLength(1);
-    });
   });
 
   it.each([
@@ -723,12 +722,9 @@ describe('Deepgram final dispatch', () => {
   function deepgramSession() {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
-      sttProvider: 'deepgram',
-      dialogueListeningV2Enabled: true,
       deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     };
     session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const onEvent = vi.fn();
@@ -1723,12 +1719,9 @@ describe('assistant echo on Scribe', () => {
   it('supprime une phrase agent sans déclencher de barge-in', () => {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
-      sttProvider: 'scribe',
-      dialogueListeningV2Enabled: true,
       deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     };
     session.state = 'SPEAKING';
     session.recentAgentSpeechText =
@@ -1824,21 +1817,6 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
       text: "Mmh, est-ce que c'est en-",
     });
     expect(handleBargeIn).toHaveBeenCalledOnce();
-  });
-
-  it('garde le dispatch immédiat historique quand le flag est coupé', () => {
-    vi.stubEnv('VOICE_DIALOGUE_LISTENING_V2', 'false');
-    const session = makeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: "Mmh, est-ce que c'est en-",
-    });
-
-    expect(ends(onEvent)).toEqual([
-      { type: 'UtteranceEnd', transcript: "Mmh, est-ce que c'est en-" },
-    ]);
   });
 
   it('marque semantic_hold quand le délai hybride déclenche le dispatch', async () => {
@@ -2253,12 +2231,9 @@ describe('assemblage des segments autour d’une épellation (appel 3ba7c66f)', 
   function deepgramSession() {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
-      sttProvider: 'deepgram',
-      dialogueListeningV2Enabled: true,
       deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     };
     session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const onEvent = vi.fn();
@@ -2342,12 +2317,9 @@ describe('mot seul peu sûr : ni interruption, ni tour (appel f2200632)', () => 
   function greetingSession() {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
-      sttProvider: 'deepgram',
-      dialogueListeningV2Enabled: true,
       deepgramModel: 'nova-3',
       deepgramNumeralsEnabled: true,
       deepgramPunctuateEnabled: false,
-      deepgramKeytermsEnabled: false,
     };
     session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const onEvent = vi.fn();

@@ -48,7 +48,7 @@ function fakeRedis() {
 }
 
 describe('liveDemoUnavailableReason', () => {
-  const configured = { ELEVENLABS_API_KEY: 'k', CARTESIA_API_KEY: 'k' } as NodeJS.ProcessEnv;
+  const configured = { DEEPGRAM_API_KEY: 'k', CARTESIA_API_KEY: 'k' } as NodeJS.ProcessEnv;
 
   it('est disponible quand les fournisseurs sont configurés', () => {
     expect(liveDemoUnavailableReason(configured)).toBeNull();
@@ -60,19 +60,12 @@ describe('liveDemoUnavailableReason', () => {
     );
   });
 
-  it('exige la clé du fournisseur STT choisi', () => {
+  it('exige la clé Deepgram', () => {
     expect(liveDemoUnavailableReason({ CARTESIA_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBe(
       'stt_unconfigured',
     );
     expect(
       liveDemoUnavailableReason({
-        ...configured,
-        VOICE_STT_PROVIDER: 'deepgram',
-      } as NodeJS.ProcessEnv),
-    ).toBe('stt_unconfigured');
-    expect(
-      liveDemoUnavailableReason({
-        VOICE_STT_PROVIDER: 'deepgram',
         DEEPGRAM_API_KEY: 'k',
         CARTESIA_API_KEY: 'k',
       } as NodeJS.ProcessEnv),
@@ -80,7 +73,7 @@ describe('liveDemoUnavailableReason', () => {
   });
 
   it('exige la clé Cartesia', () => {
-    expect(liveDemoUnavailableReason({ ELEVENLABS_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBe(
+    expect(liveDemoUnavailableReason({ DEEPGRAM_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBe(
       'tts_unconfigured',
     );
   });

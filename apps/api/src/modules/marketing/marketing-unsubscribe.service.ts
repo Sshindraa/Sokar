@@ -92,6 +92,11 @@ function parseToken(token: string, now = new Date()): UnsubscribeTokenPayload {
   return candidate as UnsubscribeTokenPayload;
 }
 
+/** Vérifie signature et expiration sans modifier aucune permission. */
+export function verifyMarketingUnsubscribeToken(token: string, now = new Date()): void {
+  parseToken(token, now);
+}
+
 export function defaultUnsubscribeExpiry(issuedAt = new Date()): Date {
   const result = new Date(issuedAt);
   result.setDate(result.getDate() + DEFAULT_UNSUBSCRIBE_TTL_DAYS);

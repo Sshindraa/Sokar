@@ -222,28 +222,31 @@ la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEX
 Les variables suivantes sont nécessaires uniquement pour le contrôle marketing CRM en local ou en
 staging contrôlé. Elles ne doivent jamais être committées ni exposées au dashboard :
 
-| Variable                         | Rôle et défaut sûr                                                                                                                                                                                                                 |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
-| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
-| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
-| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
-| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
-| `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
-| `TELNYX_WHATSAPP_FROM`           | Expediteur WhatsApp dedie requis, distinct de la configuration voix ; aucun repli implicite sur `TELNYX_FROM_NUMBER`. Voir `whatsapp-reservation-activation.md`.                                                                   |
-| `WHATSAPP_PROVIDER`              | `telnyx` par defaut ; `meta` selectionne la Cloud API directe, sans modifier les SMS/voix.                                                                                                                                         |
-| `WHATSAPP_CONSENT_ENABLED`       | `false` par defaut ; autorise la collecte facultative de l'accord pour le rappel dans les deux parcours web. Ne declenche pas d'envoi a lui seul.                                                                                  |
-| `RESERVATION_MANAGEMENT_ENABLED` | `false` par defaut. Page personnelle et lien dans la confirmation SMS/web ; requiert cle et routage Dashboard qualifies. Voir `reservation-management.md`.                                                                         |
-| `RESERVATION_MANAGEMENT_SECRET`  | Secret dedie aleatoire 32 octets, encode en 64 caracteres hexadecimaux, `key_env` uniquement. Identique API/workers, stable entre releases ; rotation = invalidation des liens existants. Aucun secret reel configure dans ce lot. |
-| `META_WHATSAPP_ACCESS_TOKEN`     | Secret du compte Meta direct (`key_env` uniquement), absent tant que le compte n'est pas qualifie. Ne pas utiliser la cle Telnyx.                                                                                                  |
-| `META_WHATSAPP_PHONE_NUMBER_ID`  | Identifiant Meta du numero, pas le numero de telephone ni le WABA.                                                                                                                                                                 |
-| `META_WHATSAPP_GRAPH_VERSION`    | Version Graph explicite au format `vN.N`, a qualifier avant activation ; pas de selection automatique de version.                                                                                                                  |
-| `META_WHATSAPP_WEBHOOK_ENABLED`  | `false` par defaut. Active uniquement les callbacks signes `/webhooks/meta/whatsapp`, pas les envois.                                                                                                                              |
-| `META_WHATSAPP_APP_SECRET`       | Secret d'application Meta, `key_env` uniquement ; HMAC SHA-256 du corps brut obligatoire.                                                                                                                                          |
-| `META_WHATSAPP_VERIFY_TOKEN`     | Secret aleatoire de verification de l'abonnement GET, `key_env` uniquement. Ne jamais copier une URL contenant ce secret dans les logs ou captures.                                                                                |
-| `META_WHATSAPP_WABA_ID`          | Identifiant du compte WhatsApp autorise pour les callbacks ; filtre cumule avec `META_WHATSAPP_PHONE_NUMBER_ID`.                                                                                                                   |
-| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                                                                                                           |
-| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner).                                                                              |
+| Variable                         | Rôle et défaut sûr                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                                                                                                                                 |
+| `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                                                                                                                     |
+| `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                                                                                                                                |
+| `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                                                                                                                            |
+| `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                                                                                                                             |
+| `MARKETING_FEATURES_ENABLED`     | `false` par défaut ; ouvre segments et campagnes (lecture, brouillon, préparation) sans appeler de fournisseur. Production : `true`. Synchronisable par `sync-env.sh runtime-flags`.                                                                                                                                                   |
+| `MARKETING_RECIPIENT_ALLOWLIST`  | Vide par défaut (aucune restriction). Adresses e-mail ou numéros séparés par des virgules : seuls ces contacts reçoivent un message marketing (tous restaurants), les autres sont annulés `NOT_IN_TEST_ALLOWLIST`. Ne touche pas les e-mails transactionnels, contrairement à `EMAIL_TEST_ALLOWLIST`. Voir `marketing-email-pilot.md`. |
+| `RESEND_WEBHOOK_SECRET`          | Secret de signature (Svix) du webhook Resend `POST /marketing/webhooks/resend` ; absent = `503`. À poser à la main dans l'`.env` du VPS (aucun workflow ne le propage).                                                                                                                                                                |
+| `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                                                                                                                         |
+| `TELNYX_WHATSAPP_FROM`           | Expediteur WhatsApp dedie requis, distinct de la configuration voix ; aucun repli implicite sur `TELNYX_FROM_NUMBER`. Voir `whatsapp-reservation-activation.md`.                                                                                                                                                                       |
+| `WHATSAPP_PROVIDER`              | `telnyx` par defaut ; `meta` selectionne la Cloud API directe, sans modifier les SMS/voix.                                                                                                                                                                                                                                             |
+| `WHATSAPP_CONSENT_ENABLED`       | `false` par defaut ; autorise la collecte facultative de l'accord pour le rappel dans les deux parcours web. Ne declenche pas d'envoi a lui seul.                                                                                                                                                                                      |
+| `RESERVATION_MANAGEMENT_ENABLED` | `false` par defaut. Page personnelle et lien dans la confirmation SMS/web ; requiert cle et routage Dashboard qualifies. Voir `reservation-management.md`.                                                                                                                                                                             |
+| `RESERVATION_MANAGEMENT_SECRET`  | Secret dedie aleatoire 32 octets, encode en 64 caracteres hexadecimaux, `key_env` uniquement. Identique API/workers, stable entre releases ; rotation = invalidation des liens existants. Aucun secret reel configure dans ce lot.                                                                                                     |
+| `META_WHATSAPP_ACCESS_TOKEN`     | Secret du compte Meta direct (`key_env` uniquement), absent tant que le compte n'est pas qualifie. Ne pas utiliser la cle Telnyx.                                                                                                                                                                                                      |
+| `META_WHATSAPP_PHONE_NUMBER_ID`  | Identifiant Meta du numero, pas le numero de telephone ni le WABA.                                                                                                                                                                                                                                                                     |
+| `META_WHATSAPP_GRAPH_VERSION`    | Version Graph explicite au format `vN.N`, a qualifier avant activation ; pas de selection automatique de version.                                                                                                                                                                                                                      |
+| `META_WHATSAPP_WEBHOOK_ENABLED`  | `false` par defaut. Active uniquement les callbacks signes `/webhooks/meta/whatsapp`, pas les envois.                                                                                                                                                                                                                                  |
+| `META_WHATSAPP_APP_SECRET`       | Secret d'application Meta, `key_env` uniquement ; HMAC SHA-256 du corps brut obligatoire.                                                                                                                                                                                                                                              |
+| `META_WHATSAPP_VERIFY_TOKEN`     | Secret aleatoire de verification de l'abonnement GET, `key_env` uniquement. Ne jamais copier une URL contenant ce secret dans les logs ou captures.                                                                                                                                                                                    |
+| `META_WHATSAPP_WABA_ID`          | Identifiant du compte WhatsApp autorise pour les callbacks ; filtre cumule avec `META_WHATSAPP_PHONE_NUMBER_ID`.                                                                                                                                                                                                                       |
+| `SOKAR_INTERNAL_MARKETING_TOKEN` | Jeton opérateur séparé pour `/api/internal/marketing/reconciliation`; absent = route désactivée (`503`).                                                                                                                                                                                                                               |
+| `CRM_SENSITIVE_NOTE_ROLES`       | Fallback CSV des rôles pouvant lire les notes CRM ; `OWNER,MANAGER` par défaut. Une surcharge par site se configure via `PATCH /crm/privacy` (Owner).                                                                                                                                                                                  |
 
 ### POS, paiements et CRM groupe en qualification
 
@@ -583,28 +586,17 @@ VOICE_DEEPGRAM_SPELLING_SILENCE_MS="800"
 # Endpoint Deepgram : api.eu.deepgram.com (UE, ~7 ms depuis le VPS) ou api.deepgram.com (États-Unis,
 # ~110 ms, défaut). Seules ces deux valeurs sont acceptées : la clé API leur est envoyée.
 DEEPGRAM_API_HOST="api.deepgram.com"
-# Parcours vocal moderne par défaut : Deepgram (si VOICE_STT_PROVIDER=deepgram), mots-clés Deepgram et
-# écoute Dialogue V2 avec filtre d'écho, pour TOUT restaurant sans le lister. Défaut : false (seules les
-# listes explicites *_RESTAURANT_IDS s'appliquent). L'exclusion retire ces trois réglages à un restaurant
-# (Scribe, sans Dialogue V2) mais n'annule pas ses listes explicites. Le tour structuré est toujours actif.
-VOICE_V2_DEFAULT="false"
-VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx Krisp (bêta) sur l'audio de l'appelant, avant la transcription, pour tous les
 # restaurants depuis le 22/10 (aucun réglage). Facturée par direction et par minute (une seule direction
 # utilisée). Un échec n'arrête pas l'appel.
 # Deepgram, pour tous les restaurants et sans réglage depuis le 22/10 : nova-3, chiffres en nombres
 # (`numerals=true`), sans ponctuation. Flux et la ponctuation restent mesurables au banc (scripts/voice-stt-bench).
 VOICE_DEEPGRAM_MIP_OPT_OUT="true"
-VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS=
 ```
 
-Les réglages `numerals` et `punctuate` ne s'écartent de leurs valeurs actuelles
-(`true` et `false`) que pour un restaurant présent dans leur allowlist respective.
-`VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS` est vide par défaut ; renseignez-y
-uniquement les restaurants qui utilisent les keyterms générés. Hors allowlist,
-le chemin historique reste utilisé. Le budget généré est distinct de celui de
-Scribe et reste sous 200 tokens estimés (marge prudente sous la limite Deepgram
-de 500 tokens).
+Les mots-clés Deepgram sont générés à chaque appel pour tous les restaurants, sans liste ni
+interrupteur : le budget reste sous 200 tokens estimés (marge prudente sous la limite Deepgram de
+500 tokens).
 Le schéma actuel expose le nom, l'adresse, la ville et les
 types de cuisine; il ne contient pas de menu structuré ni de modèle de personnel.
 
@@ -851,12 +843,13 @@ Les compteurs `sokar_voice_language_locked_total`,
 `sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
 `sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
 
-`VOICE_DIALOGUE_LISTENING_V2=true` active le routage strict du dialogue : le chemin déterministe
+L'écoute Dialogue V2 est active pour tous les restaurants, sans réglage. Elle applique le routage
+strict du dialogue : le chemin déterministe
 est réservé à une réponse directe, unique et non ambiguë à la question en attente. Les questions,
 corrections, contradictions et tours en boucle sont traités par le LLM sans appliquer de slot
 implicite ; les questions n'exposent que l'outil de vérification de disponibilité en lecture seule.
 Les fins de tour manifestement coupées ou réduites à une hésitation sont fusionnées pendant 900 ms,
-puis relancées naturellement si aucune suite n'arrive. Défaut `false` : chemin historique.
+puis relancées naturellement si aucune suite n'arrive.
 
 `VOICE_TELNYX_CODEC` (défaut `PCMA`, valeurs `PCMA` ou `L16`) sélectionne le codec
 entrant et sortant du Media Stream Telnyx. Avec `L16`, demander 16 kHz dans les deux
@@ -920,15 +913,13 @@ uniquement par tunnel SSH ; ne publiez pas son port.
 
 ## Voice STT (Deepgram)
 
-Deepgram Nova-3 est le fournisseur de reconnaissance en production : `VOICE_STT_PROVIDER=deepgram`,
-avec `VOICE_V2_DEFAULT=true` tous les restaurants y passent ; sans `VOICE_V2_DEFAULT`, seuls les
-identifiants de `VOICE_STT_PROVIDER_RESTAURANT_IDS` (CSV) l'utilisent. Le fournisseur est résolu au début
-du Media Stream et reste figé pendant l'appel. **Il n'y a plus de secours vers ElevenLabs Scribe** : si
+Deepgram Nova-3 est le seul fournisseur de reconnaissance, pour tous les restaurants et sans réglage
+(ni `VOICE_STT_PROVIDER`, ni liste par restaurant). Les réglages Deepgram sont figés au début du Media
+Stream et restent identiques pendant l'appel. **Il n'y a plus de secours vers ElevenLabs Scribe** : si
 Deepgram ne s'ouvre pas (clé refusée, clé absente, réseau), l'appel suit le chemin « reconnaissance
 indisponible » existant (reconnexions à 500 ms, 1 s puis 2 s, échéance de 15 s, puis le message vocal et le
 transfert ; un refus d'authentification est terminal tout de suite). La clé `DEEPGRAM_API_KEY` est
-obligatoire en production avec `VOICE_STT_PROVIDER=deepgram` ; `ELEVENLABS_API_KEY` n'est exigée que si
-`VOICE_STT_PROVIDER=scribe` (option conservée pour les bancs et les essais, plus utilisée en production).
+obligatoire en production ; `ELEVENLABS_API_KEY` ne sert plus qu'à la synthèse vocale.
 Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
 
 Le codec Telnyx reste PCMA par défaut. `VOICE_TELNYX_CODEC=L16` conserve le

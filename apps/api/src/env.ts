@@ -92,13 +92,8 @@ export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('fals
  * La clé du fournisseur de reconnaissance vocale choisi est définie (≥20 caractères). Seule la clé du fournisseur
  * en service est exigée : avec Deepgram, aucune clé ElevenLabs.
  */
-export function hasSttProviderKey(data: {
-  VOICE_STT_PROVIDER: 'scribe' | 'deepgram';
-  DEEPGRAM_API_KEY?: string;
-  ELEVENLABS_API_KEY?: string;
-}): boolean {
-  const key =
-    data.VOICE_STT_PROVIDER === 'deepgram' ? data.DEEPGRAM_API_KEY : data.ELEVENLABS_API_KEY;
+export function hasSttProviderKey(data: { DEEPGRAM_API_KEY?: string }): boolean {
+  const key = data.DEEPGRAM_API_KEY;
   return !!key && key.length >= 20;
 }
 
@@ -202,7 +197,6 @@ export const VoiceDeepgramConfigSchema = z.object({
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
-  VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_MIP_OPT_OUT: z.enum(['true', 'false']).default('true'),
 });
 
@@ -389,13 +383,6 @@ const EnvSchema = z
     // Les deux restent strictement inactifs par défaut.
     VOICE_STT_FILTER_BACKGROUND: voiceSttBooleanFlagSchema,
     VOICE_STT_LANGUAGE_LOCK: voiceSttBooleanFlagSchema,
-    // Routage conversationnel strict : seul un slot direct et non ambigu reste déterministe.
-    VOICE_DIALOGUE_LISTENING_V2: voiceSttBooleanFlagSchema,
-    // Activation ciblée du routage strict ; s'ajoute au flag global.
-    VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS: z.string().optional(),
-    // Provider choisi avant ouverture de session ; Deepgram requiert aussi une allowlist.
-    VOICE_STT_PROVIDER: z.enum(['scribe', 'deepgram']).default('scribe'),
-    VOICE_STT_PROVIDER_RESTAURANT_IDS: z.string().optional(),
     // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
     // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
     VOICE_TELNYX_CODEC: telnyxCodecSchema,
@@ -463,6 +450,7 @@ const EnvSchema = z
     MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
+    MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
     // POS connectors remain disabled until a provider sandbox and pilot are
     // qualified. The adapter and import endpoints are still available locally
     // when explicitly enabled in a non-production environment.
@@ -582,14 +570,13 @@ const EnvSchema = z
       if (data.NODE_ENV !== 'production') return true;
       const voiceDisabled = process.env.VOICE_DISABLED === 'true';
       if (voiceDisabled) return true;
-      // La clé exigée est celle du fournisseur de reconnaissance réellement choisi : plus de clé ElevenLabs en
-      // production avec Deepgram (il n'y a plus de secours Scribe).
+      // Deepgram est le seul fournisseur de reconnaissance : seule sa clé est exigée.
       return hasSttProviderKey(data);
     },
     {
       message:
-        'En production, la clé du fournisseur de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY avec VOICE_STT_PROVIDER=deepgram, ELEVENLABS_API_KEY avec VOICE_STT_PROVIDER=scribe. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
-      path: ['VOICE_STT_PROVIDER'],
+        'En production, la clé de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['DEEPGRAM_API_KEY'],
     },
   )
   .refine(

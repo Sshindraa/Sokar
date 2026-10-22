@@ -542,7 +542,7 @@ describe('marketing control plane routes', () => {
       'send-campaign',
       { campaignId: 'campaign-1', restaurantId: 'test-rest-1' },
       expect.objectContaining({
-        jobId: 'marketing-campaign:campaign-1',
+        jobId: 'marketing-campaign-campaign-1',
         delay: expect.any(Number),
       }),
     );
@@ -579,5 +579,133 @@ describe('marketing control plane routes', () => {
         }),
       }),
     );
+  });
+
+  describe('désinscription publique', () => {
+    async function unsubscribeToken(): Promise<string> {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      const { createMarketingUnsubscribeToken } = await import('../marketing-unsubscribe.service');
+      return createMarketingUnsubscribeToken({
+        restaurantId: 'test-rest-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+      });
+    }
+
+    function mockWithdrawal() {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+      vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+        id: 'permission-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+        status: MarketingPermissionStatus.OPTED_OUT,
+      } as never);
+      vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+    }
+
+    it('un GET affiche une confirmation sans désinscrire (anti-virus, aperçus de lien)', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      vi.mocked(db.marketingPermission.upsert).mockClear();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/unsubscribe?token=${token}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(response.body).toContain('Me désinscrire');
+      expect(response.body).toContain(`value="${token}"`);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('un GET avec un jeton falsifié affiche une page lisible, sans rien modifier', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/unsubscribe?token=${token}x`,
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Ce lien n’est plus valide');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('le formulaire du navigateur désinscrit et confirme en français', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Vous êtes désinscrit');
+      expect(response.body).toContain('par e-mail');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            channel: 'EMAIL',
+            status: MarketingPermissionStatus.OPTED_OUT,
+            source: 'UNSUBSCRIBE_LINK',
+          }),
+        }),
+      );
+    });
+
+    it('le « un clic » de la messagerie (jeton dans l’URL, corps de formulaire) désinscrit', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/marketing/unsubscribe?token=${encodeURIComponent(token)}`,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload: 'List-Unsubscribe=One-Click',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { unsubscribed: true, channel: 'EMAIL' } });
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('le corps JSON reste accepté et un jeton invalide est refusé', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toEqual({ data: { unsubscribed: true, channel: 'EMAIL' } });
+
+      vi.mocked(db.marketingPermission.upsert).mockClear();
+      const bad = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token: `${token}x` },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(bad.json()).toEqual({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
+      const missing = await app.inject({ method: 'POST', url: '/marketing/unsubscribe' });
+      expect(missing.statusCode).toBe(400);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
   });
 });
