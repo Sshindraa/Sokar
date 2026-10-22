@@ -51,28 +51,6 @@ describe('CustomerService', () => {
     lastReservationName: null,
   };
 
-  describe('contexte client historique (restaurant hors profil CRM)', () => {
-    it('reste identique à avant', () => {
-      expect(
-        CustomerService.buildLegacyVipPromptExtra({
-          ...baseCustomer,
-          visitCount: 3,
-          isVip: true,
-          notes: 'Diabétique',
-        }),
-      ).toBe(
-        "Le client s'appelle Jean Dupont. C'est sa 4e visite. ⭐ Client VIP — sois particulièrement attentionné.",
-      );
-      expect(CustomerService.buildLegacyReturningGreeting({ ...baseCustomer, isVip: true })).toBe(
-        ', content de vous revoir M. Jean',
-      );
-      expect(CustomerService.buildLegacyReturningGreeting({ ...baseCustomer, visitCount: 1 })).toBe(
-        ', ravi de vous revoir Jean',
-      );
-      expect(CustomerService.buildLegacyReturningGreeting(baseCustomer)).toBe('');
-    });
-  });
-
   describe('buildVipPromptExtra', () => {
     it('client inconnu (pas de nom) → chaîne vide', () => {
       expect(CustomerService.buildVipPromptExtra({ ...baseCustomer, name: null })).toBe('');

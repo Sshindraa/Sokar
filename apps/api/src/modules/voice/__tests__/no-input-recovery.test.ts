@@ -51,7 +51,6 @@ function makeManager() {
 describe('no-input recovery', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.stubEnv('VOICE_NO_INPUT_RECOVERY_RESTAURANT_IDS', RESTAURANT);
     vi.mocked(speakTtsStreamed).mockClear();
     vi.mocked(generateRecoveryReply).mockReset();
     vi.mocked(generateRecoveryReply).mockResolvedValue(null);
@@ -148,11 +147,10 @@ describe('no-input recovery', () => {
     );
   });
 
-  it("ne dit rien pendant que l'agent parle, en clôture, ou hors des restaurants activés", async () => {
+  it("ne dit rien pendant que l'agent parle ou en clôture", async () => {
     for (const session of [
       makeSession({ state: 'SPEAKING' }),
       makeSession({ ending: { reason: 'test' } as unknown as CallSession['ending'] }),
-      makeSession({ restaurantId: 'autre-restaurant' }),
     ]) {
       armSilenceRecovery(session, makeManager());
       scheduleUnheardRecovery(session, makeManager());

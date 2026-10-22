@@ -8,19 +8,17 @@
  * manuel 23,8 % (phrases longues 24,2 % contre 31,7 %) ; `finalize` → transcription finale en 87 ms
  * (médiane), 128 ms (p90). Ink-2 rend vide un mot isolé (« F », « vingt ») : Deepgram le couvre.
  *
- * Restaurants listés seulement (`VOICE_STT_INK_PARALLEL_RESTAURANT_IDS`, vide par défaut, `*` = tous).
- * Plafond : secondes d'audio envoyées par jour (`VOICE_STT_INK_DAILY_SECONDS`, 3 crédits Cartesia par
- * seconde). Toute panne retombe sur Deepgram seul. Jamais de texte d'appel dans les journaux.
+ * Pour tous les restaurants dès que `CARTESIA_API_KEY` est présente. 3 crédits Cartesia par seconde envoyée,
+ * au plus 10 min par appel ; les secondes du jour sont comptées dans Redis (`stt-ink:seconds:<jour>`) pour suivre
+ * la dépense. Toute panne retombe sur Deepgram seul. Jamais de texte d'appel dans les journaux.
  */
 import WebSocket from 'ws';
 import { logger } from '../../../shared/logger/pino';
 import { redisCache } from '../../../shared/redis/client';
-import { parseRestaurantIdList } from './feature-flags';
 import { callerSilenceMs } from './caller-voice-activity';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import type { CallSession } from './types';
 
-const DEFAULT_DAILY_SECONDS = 1800;
 const DEFAULT_WAIT_MS = 250;
 /** Un mot isolé reste à Deepgram : Ink-2 les rend vides (banc du 22/10/2026). */
 export const INK_MIN_DEEPGRAM_WORDS = 2;
@@ -93,20 +91,6 @@ export interface InkDeps {
   now?: () => number;
 }
 
-export function isSttInkParallelEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_STT_INK_PARALLEL_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
-}
-
-function dailySecondsCap(env: NodeJS.ProcessEnv): number {
-  const parsed = Number(env.VOICE_STT_INK_DAILY_SECONDS);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_DAILY_SECONDS;
-}
-
 function waitMs(env: NodeJS.ProcessEnv): number {
   const parsed = Number(env.VOICE_STT_INK_WAIT_MS);
   return Number.isFinite(parsed) && parsed >= 50 && parsed <= 1000 ? parsed : DEFAULT_WAIT_MS;
@@ -135,27 +119,16 @@ export function comparableWordCount(text: string): number {
 }
 
 /**
- * Ouvre la socket Ink-2 de l'appel si le réglage le permet et que le plafond du jour n'est pas atteint.
+ * Ouvre la socket Ink-2 de l'appel (tous les restaurants, clé Cartesia requise).
  * Asynchrone et sans effet sur Deepgram : tant qu'elle n'est pas prête, Deepgram est seul.
  */
 export async function openInkParallel(session: CallSession, deps: InkDeps = {}): Promise<void> {
   const env = deps.env ?? process.env;
   if (session.sttInk || session.sttInkAttempted) return;
   session.sttInkAttempted = true;
-  if (!isSttInkParallelEnabled(session.restaurantId, env)) return;
+  if (!session.restaurantId) return;
   const apiKey = (env.CARTESIA_API_KEY ?? '').trim();
   if (!apiKey) return;
-  const spend = deps.spend ?? redisCache;
-  const now = deps.now ?? Date.now;
-  try {
-    const used = Number(await spend.get(spendKey(now()))) || 0;
-    if (used >= dailySecondsCap(env)) {
-      logger.info({ callId: session.callControlId }, '[stt-ink] daily cap reached');
-      return;
-    }
-  } catch {
-    return;
-  }
   const { encoding, sampleRate } = inkAudioFormat(session.codec);
   const query = new URLSearchParams({
     model: 'ink-2',

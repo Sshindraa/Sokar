@@ -19,8 +19,7 @@
  * La vraie réponse attend la fin du son (`waitForVoiceFiller`), sans chevauchement ni coupure. L'appelant qui parle
  * pendant le son le coupe (voix claire, qu'un écho n'atteint pas) ; un barge-in ou une nouvelle réponse aussi.
  *
- * Seulement pour les restaurants listés (`VOICE_FILLER_RESTAURANT_IDS`, `*` = tous), vide = aucun, et seulement sur
- * le chemin ElevenLabs Dialogue (voix de production). Rien n'est généré tant que la liste est vide.
+ * Pour tous les restaurants, seulement sur le chemin ElevenLabs Dialogue (voix de production).
  */
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
@@ -33,7 +32,6 @@ import { TTS_PACE_PAUSE_MS } from './constants';
 import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 import { getElevenLabsTtsVoiceId } from './elevenlabs-context';
 import { buildElevenLabsTtsRequest, elevenLabsTtsModel } from './elevenlabs-tts';
-import { parseRestaurantIdList } from './feature-flags';
 import { spelledLettersOf } from './structured-turn/fact-guards';
 import {
   decodeTelnyxToPcm16,
@@ -109,21 +107,6 @@ export function voiceFillerTexts(): string[] {
     for (const clips of Object.values(purposes)) for (const clip of clips) texts.add(clip.text);
   }
   return [...texts];
-}
-
-// ─── Réglages ───────────────────────────────────────────────────────
-
-export function isVoiceFillerEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!restaurantId) return false;
-  const ids = parseRestaurantIdList(env.VOICE_FILLER_RESTAURANT_IDS);
-  return ids.includes('*') || ids.includes(restaurantId);
-}
-
-function anyVoiceFillerRestaurant(env: NodeJS.ProcessEnv = process.env): boolean {
-  return parseRestaurantIdList(env.VOICE_FILLER_RESTAURANT_IDS).length > 0;
 }
 
 /**
@@ -313,11 +296,10 @@ async function loadOrGenerate(text: string, codec: TelnyxCodec): Promise<'redis'
 }
 
 /**
- * Précharge la banque (RAM, Redis 30 jours) pour un codec. Ne fait rien tant qu'aucun restaurant n'est listé :
- * aucun caractère ElevenLabs n'est dépensé pour une fonction coupée. Environ 200 caractères par voix et par codec.
+ * Précharge la banque (RAM, Redis 30 jours) pour un codec. Environ 200 caractères par voix et par codec.
  */
 export function initVoiceFillerCache(codec: TelnyxCodec = getTelnyxCodec()): Promise<void> {
-  if (!anyVoiceFillerRestaurant() || !process.env.ELEVENLABS_API_KEY?.trim()) {
+  if (!process.env.ELEVENLABS_API_KEY?.trim()) {
     return Promise.resolve();
   }
   const variant = cacheVariant(codec);
@@ -569,6 +551,5 @@ export function createTurnFiller(
   options: TurnFillerOptions & { callerFinished?: boolean },
 ): TurnFiller | null {
   if (provider !== 'elevenlabs' || options.callerFinished) return null;
-  if (!isVoiceFillerEnabled(session.restaurantId, options.env)) return null;
   return new TurnFiller(session, options);
 }

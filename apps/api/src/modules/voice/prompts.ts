@@ -79,8 +79,6 @@ export interface SystemPromptContext {
   name: string;
   openingHours: OpeningHours;
   customerExtra?: string;
-  /** Fragment d'accueil figé de l'ancien contexte client (restaurants hors profil CRM). */
-  customerGreeting?: string;
   /** Prénom d'un client que le restaurant connaît ; l'agent le reconnaît avec ses propres mots. */
   returningCustomerFirstName?: string;
   timezone?: string;
@@ -172,13 +170,10 @@ export function buildPersonalityStyleBlock(ctx: SystemPromptContext): string {
 
 function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
   // Returning-caller acknowledgement: a principle with the CRM voice profile
-  // (see CustomerService.returningCustomerFirstName), otherwise the legacy
-  // fixed fragment (see CustomerService.buildLegacyReturningGreeting).
+  // (see CustomerService.returningCustomerFirstName).
   const vipGreeting = ctx.returningCustomerFirstName
     ? `\nCLIENT CONNU : l'appelant est un client que la maison connaît, prénom ${ctx.returningCustomerFirstName}. Lors de ta première réponse utile, montre-lui une seule fois, avec tes propres mots, que tu le reconnais, sans refaire l'accueil et sans deviner sa civilité (ni Monsieur ni Madame).`
-    : ctx.customerGreeting
-      ? `\nCLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${ctx.customerGreeting}".`
-      : '';
+    : '';
   const groupThreshold = (ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE) + 1;
   const timezone = ctx.timezone ?? 'Europe/Paris';
   const currentDate = new Intl.DateTimeFormat('fr-FR', {

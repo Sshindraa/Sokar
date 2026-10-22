@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { buildSystemPrompt, type OpeningHours } from '../prompts';
-import { isVoicePracticalInfoEnabled } from '../stream/feature-flags';
 
 const hours: OpeningHours = { tue: { open: '12:00', close: '22:00' } } as unknown as OpeningHours;
 const now = new Date('2026-10-07T10:00:00Z');
@@ -29,21 +28,5 @@ describe('bloc « ce que tu sais du restaurant »', () => {
     const without = buildSystemPrompt(base, now);
     const withFacts = buildSystemPrompt({ ...base, restaurantFacts: ['Fait.'] }, now);
     expect(withFacts.startsWith(without.trimEnd())).toBe(true);
-  });
-});
-
-describe('isVoicePracticalInfoEnabled', () => {
-  it('est désactivé par défaut et sans identifiant', () => {
-    expect(isVoicePracticalInfoEnabled('r1', {})).toBe(false);
-    expect(
-      isVoicePracticalInfoEnabled(undefined, { VOICE_PRACTICAL_INFO_RESTAURANT_IDS: 'r1' }),
-    ).toBe(false);
-  });
-
-  it('n’active que les restaurants listés', () => {
-    const env = { VOICE_PRACTICAL_INFO_RESTAURANT_IDS: 'r1, r2' };
-    expect(isVoicePracticalInfoEnabled('r1', env)).toBe(true);
-    expect(isVoicePracticalInfoEnabled('r2', env)).toBe(true);
-    expect(isVoicePracticalInfoEnabled('r3', env)).toBe(false);
   });
 });

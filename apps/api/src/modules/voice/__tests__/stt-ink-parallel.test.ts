@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../shared/redis/client', () => ({ redisCache: {} }));
+vi.unmock('../stream/stt-ink-parallel');
 
 import {
   closeInkParallel,
   inkAudioFormat,
-  isSttInkParallelEnabled,
   openInkParallel,
   resolveInkTranscript,
   sendInkAudio,
@@ -40,7 +40,7 @@ class FakeSocket implements InkSocket {
   }
 }
 
-const env = { VOICE_STT_INK_PARALLEL_RESTAURANT_IDS: 'r1', CARTESIA_API_KEY: 'k' };
+const env = { CARTESIA_API_KEY: 'k' };
 
 function store(used = 0) {
   return {
@@ -70,17 +70,7 @@ async function openSession(overrides: Partial<CallSession> = {}, deps = {}) {
   return { session, socket };
 }
 
-describe('réglage et format', () => {
-  it('liste vide = aucun ; liste ou * = restaurants concernés', () => {
-    expect(isSttInkParallelEnabled('r1', {})).toBe(false);
-    expect(isSttInkParallelEnabled('r1', { VOICE_STT_INK_PARALLEL_RESTAURANT_IDS: 'r2' })).toBe(
-      false,
-    );
-    expect(isSttInkParallelEnabled('r1', { VOICE_STT_INK_PARALLEL_RESTAURANT_IDS: '*' })).toBe(
-      true,
-    );
-  });
-
+describe('format', () => {
   it('envoie le flux Telnyx sans conversion en A-law et µ-law, en PCM16 16 kHz pour L16', () => {
     expect(inkAudioFormat('PCMA')).toEqual({ encoding: 'pcm_alaw', sampleRate: 8000 });
     expect(inkAudioFormat('PCMU')).toEqual({ encoding: 'pcm_mulaw', sampleRate: 8000 });
@@ -103,21 +93,16 @@ describe('ouverture', () => {
     expect(session.sttInk?.ready).toBe(true);
   });
 
-  it("n'ouvre rien sans réglage, sans clé, ou plafond du jour atteint, et ne retente pas", async () => {
+  it("n'ouvre rien sans clé ni restaurant, et ne retente pas", async () => {
     const create = vi.fn();
     const base = { callControlId: 'c', restaurantId: 'r1', codec: 'PCMA' } as CallSession;
-    await openInkParallel({ ...base }, { env: {}, createSocket: create, spend: store() });
     await openInkParallel(
       { ...base },
-      { env: { ...env, CARTESIA_API_KEY: '' }, createSocket: create, spend: store() },
+      { env: { CARTESIA_API_KEY: '' }, createSocket: create, spend: store() },
     );
     await openInkParallel(
-      { ...base },
-      {
-        env: { ...env, VOICE_STT_INK_DAILY_SECONDS: '60' },
-        createSocket: create,
-        spend: store(60),
-      },
+      { ...base, restaurantId: '' },
+      { env, createSocket: create, spend: store() },
     );
     const once = { ...base };
     await openInkParallel(once, { env: {}, createSocket: create, spend: store() });
