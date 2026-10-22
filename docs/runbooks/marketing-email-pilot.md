@@ -137,7 +137,8 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   qu'un accord donné par le client lui-même. De plus, le texte est reconstruit avec le **nom actuel** du
   restaurant : si ce nom change, l'empreinte ne se vérifie plus. Conserver le texte réellement présenté (ou le
   nom à l'époque) et l'auteur nécessite une colonne en plus : **changement de schéma additif, non fait,
-  à décider** avant d'écrire à de vrais clients.
+  à décider** avant d'écrire à de vrais clients. Voir la [proposition](../architecture/proposal-marketing-proof-and-optout-register.md)
+  (colonnes, registre d'opposition séparé, SQL à relire, décisions attendues).
 - **Suivi des ouvertures et des clics : désactivé par défaut pour le pilote.** L'accord pour recevoir des
   offres ne vaut pas accord pour suivre individuellement leur ouverture ou leurs clics (recommandation CNIL
   sur les pixels, avril 2026 : certains usages exigent un consentement, d'autres une exemption encadrée).
