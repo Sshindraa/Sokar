@@ -21,6 +21,8 @@ export type MarketingProviderChannelReadiness = {
 export type MarketingProviderReadiness = {
   sendsEnabled: boolean;
   sendGate: { enabled: boolean; missing: string[] };
+  /** Vrai quand `MARKETING_RECIPIENT_ALLOWLIST` limite les envois à des contacts de test. */
+  recipientAllowlistActive: boolean;
   sms: MarketingProviderChannelReadiness;
   email: MarketingProviderChannelReadiness;
   whatsapp: MarketingProviderChannelReadiness;
@@ -82,6 +84,7 @@ export function getMarketingProviderReadiness(
       enabled: sendsEnabled,
       missing: sendsEnabled ? [] : ['MARKETING_SENDS_ENABLED'],
     },
+    recipientAllowlistActive: Boolean(environment.MARKETING_RECIPIENT_ALLOWLIST?.trim()),
     sms,
     email,
     whatsapp,
@@ -115,7 +118,10 @@ type ProviderTransition = {
 
 type ProviderDb = Pick<
   PrismaClient,
-  'campaignMessage' | 'marketingCampaign' | 'marketingProviderReconciliation'
+  | 'campaignMessage'
+  | 'marketingCampaign'
+  | 'marketingProviderReconciliation'
+  | 'marketingSuppression'
 > & {
   $transaction: <T>(callback: (tx: ProviderDb) => Promise<T>) => Promise<T>;
 };
@@ -350,6 +356,7 @@ export async function applyMarketingProviderEvent(
         id: true,
         campaignId: true,
         customerId: true,
+        channel: true,
         status: true,
         acceptedAt: true,
         sentAt: true,
@@ -440,6 +447,27 @@ export async function applyMarketingProviderEvent(
       });
     }
 
+    const suppressionReason = suppressionReasonFor(transition);
+    if (suppressionReason && message.channel && message.campaign?.restaurantId) {
+      await tx.marketingSuppression.upsert({
+        where: {
+          customerId_channel_reason: {
+            customerId: message.customerId,
+            channel: message.channel,
+            reason: suppressionReason,
+          },
+        },
+        create: {
+          restaurantId: message.campaign.restaurantId,
+          customerId: message.customerId,
+          channel: message.channel,
+          reason: suppressionReason,
+          source: `${input.provider.toUpperCase()}_WEBHOOK`,
+        },
+        update: {},
+      });
+    }
+
     return {
       matched: true,
       changed: true,
@@ -448,6 +476,22 @@ export async function applyMarketingProviderEvent(
       customerId: message.customerId,
     };
   });
+}
+
+/**
+ * A spam complaint or a permanent bounce must stop every later send to this
+ * contact: both hurt sender reputation and a complaint withdraws consent. A
+ * transient bounce (full mailbox) is retried by the provider and never blocks.
+ */
+function suppressionReasonFor(transition: ProviderTransition): string | null {
+  if (transition.status === MarketingMessageStatus.COMPLAINED) return 'COMPLAINED';
+  if (
+    transition.status === MarketingMessageStatus.BOUNCED &&
+    transition.errorCode !== 'TRANSIENT'
+  ) {
+    return 'HARD_BOUNCE';
+  }
+  return null;
 }
 
 export type MarketingProviderReconciliationView = {
@@ -516,6 +560,14 @@ export type MarketingProviderReconciliationSummary = {
   stillOpen: number;
 };
 
+/**
+ * The Resend webhook receives the events of every email sent by the account,
+ * transactional ones included, and those never match a campaign message. A
+ * genuine race (callback before the provider id is stored) resolves within
+ * seconds, so older unmatched rows are closed instead of crowding the oldest-first scan.
+ */
+export const RECONCILIATION_EXPIRY_MS = 2 * 60 * 60 * 1000;
+
 /** Attach open callbacks to messages that appeared after the callback. */
 export async function reconcileMarketingProviderEvents(args: {
   provider?: MarketingProvider;
@@ -525,6 +577,19 @@ export async function reconcileMarketingProviderEvents(args: {
   now?: Date;
 }): Promise<MarketingProviderReconciliationSummary> {
   const database = args.database ?? db;
+  const now = args.now ?? new Date();
+  await database.marketingProviderReconciliation.updateMany({
+    where: {
+      status: MarketingProviderReconciliationStatus.OPEN,
+      ...(args.provider ? { provider: args.provider } : {}),
+      firstSeenAt: { lt: new Date(now.getTime() - RECONCILIATION_EXPIRY_MS) },
+    },
+    data: {
+      status: MarketingProviderReconciliationStatus.IGNORED,
+      resolvedAt: now,
+      resolutionCode: 'AUTO_EXPIRED_NO_CAMPAIGN_MESSAGE',
+    },
+  });
   const rows = await listMarketingProviderReconciliations({
     status: MarketingProviderReconciliationStatus.OPEN,
     provider: args.provider,
@@ -568,7 +633,7 @@ export async function reconcileMarketingProviderEvents(args: {
         status: MarketingProviderReconciliationStatus.RESOLVED,
         restaurantId: message.campaign.restaurantId,
         campaignMessageId: message.id,
-        resolvedAt: args.now ?? new Date(),
+        resolvedAt: now,
         resolutionCode: result.changed ? 'RECONCILED_APPLIED' : 'RECONCILED_ALREADY_APPLIED',
       },
     });

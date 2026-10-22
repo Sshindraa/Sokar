@@ -7,6 +7,7 @@ import {
   prepareMarketingCampaign,
   previewMarketingAudience,
   previewMarketingCampaign,
+  toMarketingHtml,
   updateMarketingCampaign,
 } from '../marketing-campaign.service';
 
@@ -334,5 +335,14 @@ describe('marketing campaign control plane', () => {
     expect(db.marketingCampaign.findFirst).toHaveBeenCalledWith({
       where: { id: 'campaign-1', restaurantId: 'restaurant-1' },
     });
+  });
+  it('rend les adresses cliquables dans l’e-mail sans laisser passer de balise', () => {
+    expect(
+      toMarketingHtml(
+        'Réservez : https://sokar.tech/book/chez-sokar?a=1&b=2.\n<script>x</script> (https://exemple.test/u?token=abc)',
+      ),
+    ).toBe(
+      'Réservez : <a href="https://sokar.tech/book/chez-sokar?a=1&amp;b=2">https://sokar.tech/book/chez-sokar?a=1&amp;b=2</a>.<br>&lt;script&gt;x&lt;/script&gt; (<a href="https://exemple.test/u?token=abc">https://exemple.test/u?token=abc</a>)',
+    );
   });
 });
