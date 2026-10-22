@@ -4,8 +4,8 @@
  * final. Rien n'est dit ni exécuté : quand la fin de phrase arrive, le moteur
  * reprend ce flux déjà commencé seulement si sa requête est identique au
  * caractère près (même phrase, même historique, même état), sinon il l'abandonne.
- * Exception, pour les restaurants de VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS : seule la
- * phrase diffère, et d'un écart sans conséquence (voir harmlessTranscriptGap).
+ * Exception, pour tous les restaurants : seule la phrase diffère, et d'un écart sans conséquence (voir
+ * harmlessTranscriptGap).
  *
  * Rejeu des appels réels du 27/09 : la partielle est déjà la phrase finale dans
  * ~40–50 % des tours, stable ~300–450 ms avant la fin officielle.
@@ -14,7 +14,6 @@ import type { CallSession, ChatMessage, VoiceSpeculationCounters } from '../type
 import type { CallSessionManager } from '../manager';
 import { logger } from '../../../../shared/logger/pino';
 import { logVoiceDebugText } from '../debug-dialogue';
-import { parseRestaurantIdList } from '../feature-flags';
 import { ensureVoiceUsage, estimateMessagesTokens } from '../../../usage/voice-usage.service';
 import {
   voiceStructuredSpeculationLaunchTotal,
@@ -113,23 +112,6 @@ function requestKey(messages: ChatMessage[], format: StructuredFormat): string {
 
 export function isStructuredSpeculationEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.VOICE_STRUCTURED_SPECULATION_ENABLED === 'true';
-}
-
-/**
- * Reprise d'une anticipation dont la phrase diffère de la finale par un écart sans conséquence
- * (harmlessTranscriptGap). Restaurants listés, vide = aucun : ailleurs, la règle est seulement
- * journalisée (`harmless`) pour mesurer ce qu'elle reprendrait.
- */
-export function isTolerantSpeculationEnabled(
-  restaurantId: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return Boolean(
-    restaurantId &&
-    parseRestaurantIdList(env.VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS).includes(
-      restaurantId,
-    ),
-  );
 }
 
 export type SpeculationOutcome =
@@ -380,7 +362,7 @@ export function takeSpeculation(
   if (speculation.key !== requestKey(messages, format)) {
     const harmless = harmlessGapOf(speculation, messages, format);
     const wordGap = speculationWordGap(speculation.messages, messages);
-    if (harmless && isTolerantSpeculationEnabled(session.restaurantId)) {
+    if (harmless) {
       recordOutcome(session, 'hit_tolerant', {
         inputTokens: speculation.inputTokens,
         wordGap,

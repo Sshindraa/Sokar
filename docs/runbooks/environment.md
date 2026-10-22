@@ -227,7 +227,6 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_ATTRIBUTION_SECRET`   | Secret HMAC des liens d'attribution, au moins 32 caractères ; absence = liens refusés.                                                                                                                                             |
 | `MARKETING_UNSUBSCRIBE_SECRET`   | Secret HMAC des désinscriptions, au moins 32 caractères ; à séparer du secret d'attribution en environnement réel.                                                                                                                 |
 | `MARKETING_UNSUBSCRIBE_BASE_URL` | URL absolue optionnelle de la route publique de désinscription ; sinon `API_URL/marketing/unsubscribe`.                                                                                                                            |
-| `CRM_ADVANCED_RESTAURANT_IDS`    | Vide par défaut. Ouvre le CRM avancé (fiche, préférences, tags, doublons) aux seuls restaurants listés quand `CRM_ADVANCED_ENABLED` reste `false` ; la formule (`customers.advanced`) s'applique toujours.                         |
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                        |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                         |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                     |
@@ -291,23 +290,18 @@ VOICE_LLM_MODEL="qwen-3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
 # Premier fragment du modèle principal (tour structuré) : au-delà, OpenRouter prend le tour (500 à 8000 ms).
 VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS="2500"
-# Hedging (tour structuré) : si le principal n'a pas produit son premier fragment après ce délai, la même
-# requête part chez OpenRouter et le premier flux gardé ; l'autre est annulé. 0 = désactivé (0 à 4000 ms).
-# Exige OPENROUTER_API_KEY. Trois tours de suite gagnés par le doublon ouvrent le disjoncteur du principal.
-VOICE_LLM_HEDGE_MS="700"
 ```
 
 En production, `CEREBRAS_API_KEY` est obligatoire (≥20 caractères). Les
 clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
 
-Secours du tour structuré :
-si le provider principal échoue avant le premier fragment (402 quota, 429, 5xx,
-réseau, circuit ouvert), la même requête JSON Schema stricte part vers
-OpenRouter, routée vers l'hébergeur le plus rapide qui respecte
-`response_format`. Sans `OPENROUTER_API_KEY`, pas de secours : le tour dit la
-phrase de repli. Mesuré le 26 septembre (banc réel) : 0 sortie invalide, mais
-début de phrase vers 2 s au lieu de ~350 ms, et `awaiting` parfois `open`.
-C'est un filet d'urgence, pas un provider de production.
+Modèle principal du tour structuré (depuis le 22/10/2026, pour tous les restaurants, sans liste) :
+GPT-6 Luna via OpenRouter, dès que `OPENROUTER_API_KEY` est présente, avec les réglages
+`VOICE_STRUCTURED_FALLBACK_*` (fournisseur le plus rapide d'abord, sans raisonnement). Le tour part en deux
+requêtes OpenRouter identiques ; le premier texte gagne. Cerebras (`VOICE_LLM_MODEL`) devient le doublon
+après `VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS` (0 = seulement en repli) et le repli immédiat si OpenRouter
+refuse (401, 402, 403 : alerte « secours OpenRouter refusé »). Sans `OPENROUTER_API_KEY`, Cerebras reste seul.
+Le juge de fin de tour passe toujours par Cerebras : son crédit reste indispensable.
 
 ```dotenv
 OPENROUTER_API_KEY=<clé OpenRouter, secret local au VPS>
@@ -321,15 +315,9 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"        # défaut ; Jev (API d
 # VOICE_STRUCTURED_FALLBACK_MODEL="openai/gpt-6-luna"  VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER="openai/fast"
 # VOICE_STRUCTURED_FALLBACK_REASONING="none"   # défaut disabled ; Luna exige un effort nul
 # VOICE_STRUCTURED_FALLBACK_SAMPLING="false"   # défaut true ; Luna refuse temperature et top_p
-# Restaurants dont le tour part d'abord chez OpenRouter (modèle et réglages ci-dessus), Cerebras devenant
-# leur doublon (à VOICE_LLM_HEDGE_MS) et leur repli. Vide = Cerebras en principal partout. `*` = tous
-# les restaurants, y compris ceux créés après le réglage (sinon un nouveau restaurant part d'abord chez
-# Cerebras). Liste explicite : seulement les identifiants listés, séparés par des virgules.
-# VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS=""
-# Délai avant le doublon Cerebras pour ces restaurants (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s).
-# Deux requêtes OpenRouter identiques et simultanées pour ces restaurants (ou *) : le premier texte gagne, l'autre est
-# annulée. Banc du 20/10 (40 paires, GPT-6 Luna) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ; ~0,00015 $ de plus par tour.
-# VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS=""
+# Délai avant le doublon Cerebras (défaut 1500 ; Luna ~0,8 s, pire mesuré 1,4 s ; prod : 0, Cerebras en repli seul).
+# Deux requêtes Luna par tour, banc du 20/10 (40 paires) : moyenne 1,04 → 0,92 s, pire tour 2,48 → 1,37 s ;
+# ~0,00015 $ de plus par tour.
 # VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS="1500"
 # Adresse du SEUL secours vocal (tour structuré, chemin à outils, doublon de hedging) ; vide = OPENROUTER_BASE_URL.
 # Routage UE : https://eu.openrouter.ai/api/v1. Séparée parce que Jev n'existe pas en UE (decisions répond 404).
@@ -357,13 +345,11 @@ VOICE_STRUCTURED_SPECULATION_MS="250"
 # sokar_voice_structured_speculation_launch_total{result=started|capped}.
 VOICE_STRUCTURED_SPECULATION_PAUSE_MS="150"
 VOICE_STRUCTURED_SPECULATION_MAX_LAUNCHES="3"
-# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (restaurants
-# listés, vide = aucun) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
+# Reprise de l'anticipation malgré un écart sans conséquence entre la partielle et la finale (tous les
+# restaurants depuis le 22/10, sans réglage) : ponctuation et casse, « s'il vous plaît » complet en fin de phrase, mot outil répété
 # (« pour pour »). Même état, même historique, même schéma exigés ; tout chiffre, jour, heure, nom, lettre
 # épelée, négation, « euh », « merci » ou question ajoutée refuse la reprise (rejeu GPT-6 Luna du 20/10/2026).
-# Hors liste, la règle est seulement journalisée (`harmless` dans « Speculation outcome »).
 # Métrique : sokar_voice_structured_speculation_total{outcome=hit_tolerant}.
-VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS=""
 # Partielle Deepgram figée : Finalize après ce délai (appel 25650799 : 8 s).
 VOICE_DEEPGRAM_STALL_FINALIZE_MS="1200"
 # Même chose pour une partielle d'un ou deux mots (« 4 », « oui », « demain ») :
@@ -470,14 +456,14 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # l'appelant. Jamais pendant une épellation ni sans voix entendue. Déclencheur `silence_finalize` dans la métrique.
 VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS="600"
 VOICE_STT_INK_WAIT_MS="250"
-# Suggestions CRM tirées des appels (restaurants listés, `*` = tous, vide = aucun). Après le raccroché, une
+# Suggestions CRM tirées des appels, pour tous les restaurants dès que `OPENROUTER_API_KEY` est présente
+# (depuis le 22/10, sans liste). Après le raccroché, une
 # requête OpenRouter (`OPENROUTER_API_KEY`, modèle `VOICE_CRM_SUGGESTIONS_MODEL`, sinon
 # `VOICE_STRUCTURED_FALLBACK_MODEL`) lit la seule voix de l'appelant d'un client reconnu et propose zone, table,
 # régime, accessibilité, langue ou occasion. Une suggestion n'est gardée que si sa preuve figure mot pour mot dans
 # la transcription ; elle est écrite `VOICE_SUGGESTION` non confirmée, expire à 90 jours et n'écrase jamais une
 # saisie de l'équipe. L'agent ne s'en sert qu'une fois confirmée dans la fiche CRM (Confirmer / Écarter), qui
-# exige `CRM_ADVANCED_ENABLED`. Une requête par appel concerné ; tâche en file, une seule tentative.
-VOICE_CRM_SUGGESTIONS_RESTAURANT_IDS=""
+# suit la formule (`customers.advanced`). Une requête par appel concerné ; tâche en file, une seule tentative.
 VOICE_CRM_SUGGESTIONS_MODEL=""
 # Délai maximal du juge en ms (200 à 3000, défaut 800) ; p90 mesuré sur Cerebras : 267 ms.
 VOICE_TURN_JUDGE_TIMEOUT_MS="800"
@@ -606,13 +592,8 @@ VOICE_V2_DISABLED_RESTAURANT_IDS=""
 # Suppression de bruit Telnyx Krisp (bêta) sur l'audio de l'appelant, avant la transcription, pour tous les
 # restaurants depuis le 22/10 (aucun réglage). Facturée par direction et par minute (une seule direction
 # utilisée). Un échec n'arrête pas l'appel.
-VOICE_DEEPGRAM_MODEL="nova-3"
-# Optional; Flux is used only when this CSV contains the restaurant ID.
-VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_NUMERALS="true"
-VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS=""
-VOICE_DEEPGRAM_PUNCTUATE="false"
-VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS=""
+# Deepgram, pour tous les restaurants et sans réglage depuis le 22/10 : nova-3, chiffres en nombres
+# (`numerals=true`), sans ponctuation. Flux et la ponctuation restent mesurables au banc (scripts/voice-stt-bench).
 VOICE_DEEPGRAM_MIP_OPT_OUT="true"
 VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS=
 ```
@@ -835,12 +816,8 @@ y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commence
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
 pas un booléen et se pose directement dans le fichier d'environnement de l'API.
 
-`VOICE_SMART_ENDPOINT_ENABLED=true` (défaut `false`) active la fin de tour hybride.
-`VOICE_SMART_ENDPOINT_RESTAURANT_IDS` (IDs séparés par des virgules, vide = tous) la limite
-à certains restaurants. Pour ces appels, Scribe coupe après
-`VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS` (défaut `0.5`, bornes 0,2 à 3) au lieu de
-`ELEVENLABS_STT_VAD_SILENCE_SECS` (défaut `0.95`, qui reste la valeur des autres appels).
-Après le commit, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
+Fin de tour hybride (écoute Dialogue V2, tous les restaurants) :
+après la fin de phrase, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
 (ponctuation finale ou réponse d'un ou deux mots comme « oui »), 800 ms si elle finit en
 suspens (« demain à », « au nom de », « je suis »), 600 ms pour une correction commencée
 (« non, plutôt… »), 400 ms sans ponctuation. Si le client reprend pendant l'attente, la
@@ -960,13 +937,9 @@ comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
 allowlist vide ou absente reste en PCMA. Les autres appels restent PCMA. La
 valeur est évaluée à l'ouverture de l'appel et ne change pas pendant le flux.
 
-Le modèle Deepgram reste `nova-3` par défaut. Le canary Flux nécessite simultanément
-`VOICE_DEEPGRAM_MODEL=flux-general-multi` et l'identifiant du restaurant dans
-`VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS` ; sans les deux, le modèle résolu reste Nova-3. Flux
-utilise l'endpoint `/v2/listen` avec `language_hint=fr`. `flux-general-multi` est le modèle Flux
-documenté qui prend en charge le français ; les noms `DEEPGRAM_MODEL` historiques ne pilotent
-pas cette sélection. Ce flag ne sélectionne pas Deepgram à lui seul : le provider exige toujours
-`VOICE_STT_PROVIDER=deepgram` et `VOICE_STT_PROVIDER_RESTAURANT_IDS`.
+Le modèle Deepgram est `nova-3` pour tous les restaurants (le canary Flux par restaurant est retiré
+depuis le 22/10/2026). Flux (`/v2/listen`, `flux-general-multi`, `language_hint=fr`) reste mesurable
+au banc.
 
 Les tours incluent maintenant `endOfSpeechToSttFinalMs`, `holdMs`,
 `endOfSpeechToFirstAudioMs`, `firstAudioIsFiller` et `speechEndAt` lorsque mesurables.

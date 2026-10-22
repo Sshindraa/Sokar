@@ -3,7 +3,6 @@ import {
   cancelSpeculation,
   classifySpeculationMiss,
   harmlessTranscriptGap,
-  isTolerantSpeculationEnabled,
   parseTurnCompleteVerdict,
   speculationWordGap,
   startSpeculation,
@@ -414,18 +413,7 @@ describe('reprise malgré un écart sans conséquence', () => {
     expect(harmlessTranscriptGap('oui', "oui s'il vous plaît")).toBe('politeness');
   });
 
-  it('lit la liste des restaurants, vide par défaut', () => {
-    expect(isTolerantSpeculationEnabled('r1', {})).toBe(false);
-    expect(
-      isTolerantSpeculationEnabled('r1', {
-        VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS: 'r0, r1',
-      }),
-    ).toBe(true);
-    expect(isTolerantSpeculationEnabled(undefined, {})).toBe(false);
-  });
-
-  it('reprend l’anticipation pour un restaurant listé quand seul un écart sans conséquence la sépare', async () => {
-    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
+  it('reprend l’anticipation quand seul un écart sans conséquence la sépare', async () => {
     const info = vi.spyOn(logger, 'info');
     const session = { callControlId: 'c-tol', restaurantId: 'r-tol' } as CallSession;
     const mgr = manager();
@@ -454,8 +442,7 @@ describe('reprise malgré un écart sans conséquence', () => {
     expect(JSON.stringify(line?.[0])).not.toMatch(/quatre|plaît/);
   });
 
-  it('ne reprend jamais un chiffre, un jour ou une négation changés, même pour un restaurant listé', () => {
-    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
+  it('ne reprend jamais un chiffre, un jour ou une négation changés', () => {
     const session = { callControlId: 'c-tol2', restaurantId: 'r-tol' } as CallSession;
     for (const [speculated, final] of [
       ['nous serons quatre', 'nous serons cinq'],
@@ -469,21 +456,8 @@ describe('reprise malgré un écart sans conséquence', () => {
   });
 
   it('ne reprend pas quand l’état ou l’historique diffère, même avec une phrase équivalente', () => {
-    vi.stubEnv('VOICE_STRUCTURED_SPECULATION_TOLERANT_RESTAURANT_IDS', 'r-tol');
     const session = { callControlId: 'c-tol3', restaurantId: 'r-tol' } as CallSession;
     startSpeculation(session, manager() as never, request('demain soir'), format);
     expect(take(session, 'Demain soir.', 'état B')).toBeNull();
-  });
-
-  it('hors liste, jette l’anticipation mais journalise ce que la règle aurait repris', () => {
-    const info = vi.spyOn(logger, 'info');
-    const session = { callControlId: 'c-shadow', restaurantId: 'r-other' } as CallSession;
-    startSpeculation(session, manager() as never, request('pour pour demain'), format);
-    expect(take(session, 'pour demain')).toBeNull();
-    const line = info.mock.calls.find(
-      (call) => call[1] === '[structured-turn] Speculation outcome',
-    );
-    expect(line?.[0]).toMatchObject({ outcome: 'miss_transcript_changed', harmless: 'stutter' });
-    expect(session.voiceUsage?.speculation?.tolerantHits).toBe(0);
   });
 });

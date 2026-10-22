@@ -397,39 +397,14 @@ function readConfiguredNumber(envName: string, fallback: number, min: number, ma
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-/** Silence Scribe par défaut quand la fin de tour hybride est active. */
-export const SMART_ENDPOINT_VAD_SILENCE_SECS = 0.5;
-
-/**
- * Fin de tour hybride : Scribe commite après un silence court et
- * l'application décide d'attendre ou non selon la phrase. Activée par
- * VOICE_SMART_ENDPOINT_ENABLED, limitée à VOICE_SMART_ENDPOINT_RESTAURANT_IDS
- * quand la liste est renseignée.
- */
-export function isSmartEndpointEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
-  if (process.env.VOICE_SMART_ENDPOINT_ENABLED !== 'true') return false;
-  const restaurantIds = (process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
-}
-
-function getBaseSttTurnConfig(smartEndpoint = false): SttTurnConfig {
+function getBaseSttTurnConfig(): SttTurnConfig {
   return {
-    vadSilenceThresholdSecs: smartEndpoint
-      ? readConfiguredNumber(
-          'VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS',
-          SMART_ENDPOINT_VAD_SILENCE_SECS,
-          0.2,
-          3,
-        )
-      : readConfiguredNumber(
-          'ELEVENLABS_STT_VAD_SILENCE_SECS',
-          DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
-          0.2,
-          3,
-        ),
+    vadSilenceThresholdSecs: readConfiguredNumber(
+      'ELEVENLABS_STT_VAD_SILENCE_SECS',
+      DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
+      0.2,
+      3,
+    ),
     minSpeechDurationMs: readConfiguredNumber(
       'ELEVENLABS_STT_MIN_SPEECH_MS',
       DEFAULT_STT_TURN_CONFIG.minSpeechDurationMs,
@@ -451,7 +426,7 @@ function cloneSttTurnConfig(config: SttTurnConfig): SttTurnConfig {
 
 function ensureSttTurnConfig(session: CallSession): NonNullable<CallSession['sttTurnConfig']> {
   if (!session.sttTurnConfig) {
-    const base = getBaseSttTurnConfig(isSmartEndpointEnabled(session));
+    const base = getBaseSttTurnConfig();
     session.sttTurnConfig = {
       base,
       desired: cloneSttTurnConfig(base),
@@ -1656,10 +1631,7 @@ function dispatchCommittedTranscript(
     dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
-  if (
-    isSmartEndpointEnabled(session) ||
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled
-  ) {
+  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
     dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
@@ -2719,7 +2691,7 @@ export function closeStt(session: CallSession): void {
   }
 }
 
-/** Attentes ajoutées après le commit Scribe, selon la forme de la phrase. */
+/** Attentes ajoutées après la fin de phrase (écoute Dialogue V2), selon la forme de la phrase. */
 export const SMART_ENDPOINT_HOLD_COMPLETE_MS = 0;
 export const SMART_ENDPOINT_HOLD_SUSPENDED_MS = 800;
 export const SMART_ENDPOINT_HOLD_CORRECTION_MS = 600;

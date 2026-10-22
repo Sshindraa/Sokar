@@ -82,20 +82,11 @@ export function resolveVoiceFeatureSnapshot(
     sttProvider: isVoiceFeatureEnabledForRestaurant('deepgramStt', session.restaurantId, env)
       ? 'deepgram'
       : 'scribe',
-    deepgramModel:
-      env.VOICE_DEEPGRAM_MODEL === 'flux-general-multi' &&
-      parseRestaurantIdList(env.VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS).includes(session.restaurantId)
-        ? 'flux-general-multi'
-        : 'nova-3',
-    deepgramNumeralsEnabled: parseRestaurantIdList(
-      env.VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS,
-    ).includes(session.restaurantId)
-      ? env.VOICE_DEEPGRAM_NUMERALS !== 'false'
-      : true,
-    deepgramPunctuateEnabled:
-      parseRestaurantIdList(env.VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS).includes(
-        session.restaurantId,
-      ) && env.VOICE_DEEPGRAM_PUNCTUATE === 'true',
+    // Pour tous les restaurants : nova-3, chiffres en nombres, sans ponctuation (le réglage de production
+    // depuis septembre ; Flux et la ponctuation restent mesurables au banc, scripts/voice-stt-bench).
+    deepgramModel: 'nova-3',
+    deepgramNumeralsEnabled: true,
+    deepgramPunctuateEnabled: false,
     deepgramKeytermsEnabled: isVoiceDeepgramKeytermsEnabled(session.restaurantId, env),
   };
   session.voiceFeatureSnapshot = snapshot;

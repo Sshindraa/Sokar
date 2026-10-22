@@ -80,8 +80,6 @@ const PROD_HOST_ALLOWLIST = [
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 /** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
 const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
-/** Délai avant de lancer la requête de doublon chez le secours (tour structuré) ; 0 = désactivé. */
-const DEFAULT_VOICE_LLM_HEDGE_MS = 700;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
 
@@ -141,14 +139,6 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
 }, z.number().positive());
-
-const voiceLlmHedgeSchema = z.preprocess((value) => {
-  if (value === undefined || value === '') return DEFAULT_VOICE_LLM_HEDGE_MS;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 4000
-    ? parsed
-    : DEFAULT_VOICE_LLM_HEDGE_MS;
-}, z.number().min(0));
 
 const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
@@ -212,12 +202,6 @@ export const VoiceDeepgramConfigSchema = z.object({
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
-  VOICE_DEEPGRAM_MODEL: z.enum(['nova-3', 'flux-general-multi']).default('nova-3'),
-  VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_NUMERALS: z.enum(['true', 'false']).default('true'),
-  VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_PUNCTUATE: z.enum(['true', 'false']).default('false'),
-  VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_MIP_OPT_OUT: z.enum(['true', 'false']).default('true'),
 });
@@ -228,7 +212,6 @@ export const VoiceConfigSchema = z
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
-    VOICE_LLM_HEDGE_MS: voiceLlmHedgeSchema,
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
@@ -265,13 +248,7 @@ export const VoiceConfigSchema = z
     VOICE_STRUCTURED_FALLBACK_REASONING: z.enum(['disabled', 'none']).default('disabled'),
     // false : ni temperature ni top_p, refusés par les modèles à raisonnement d'OpenAI.
     VOICE_STRUCTURED_FALLBACK_SAMPLING: z.enum(['true', 'false']).default('true'),
-    // Restaurants dont le tour structuré part d'abord chez OpenRouter (modèle et réglages du relais),
-    // Cerebras devenant leur doublon et leur repli. Vide = Cerebras en principal partout.
-    VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: z.string().optional(),
-    // Restaurants (ou *) dont le tour part chez OpenRouter en deux requêtes identiques simultanées :
-    // le premier texte gagne, l'autre est annulée. Coupe les pics de GPT-6 Luna (banc du 20/10). Vide = une requête.
-    VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: z.string().optional(),
-    // Délai avant le doublon Cerebras pour ces restaurants. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
+    // Délai avant le doublon Cerebras quand GPT-6 Luna (OpenRouter) est en principal. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
     // au délai normal (700 ms), Cerebras gagnerait la moitié des tours. 0 = Cerebras seulement en repli.
     VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: z.preprocess((value) => {
       if (value === undefined || value === '') return 1500;
@@ -481,9 +458,8 @@ const EnvSchema = z
     // Le checkout d'abonnement reste désactivé en production tant que les
     // prix Stripe et le pilote Essential ne sont pas clôturés.
     BILLING_CHECKOUT_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Les fonctions CRM avancées et le control plane marketing restent
-    // désactivés en production tant que les preuves P2/P3 ne sont pas closes.
-    CRM_ADVANCED_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Le control plane marketing reste désactivé en production tant que les
+    // preuves P2/P3 ne sont pas closes. Le CRM avancé suit la formule seule.
     MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),

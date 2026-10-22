@@ -5,7 +5,7 @@ import {
   hasPlanCapability,
   normalizeCommercialPlan,
 } from '@sokar/config';
-import { isRuntimeFlagEnabled, isRuntimeFlagEnabledForRestaurant } from '../entitlement.guard';
+import { isRuntimeFlagEnabled } from '../entitlement.guard';
 
 describe('entitlement contract', () => {
   it('defines every capability for every commercial plan', () => {
@@ -33,37 +33,16 @@ describe('entitlement contract', () => {
     }
   });
 
-  it('opens a production runtime flag for listed restaurants only', () => {
-    const env = { NODE_ENV: 'production', CRM_ADVANCED_RESTAURANT_IDS: 'r-2, r-1' };
-    const open = (restaurantId: string | undefined, environment: NodeJS.ProcessEnv = env) =>
-      isRuntimeFlagEnabledForRestaurant(
-        'CRM_ADVANCED_ENABLED',
-        'CRM_ADVANCED_RESTAURANT_IDS',
-        restaurantId,
-        environment,
-      );
-    expect(open('r-1')).toBe(true);
-    expect(open('r-3')).toBe(false);
-    expect(open(undefined)).toBe(false);
-    expect(open('r-1', { NODE_ENV: 'production' })).toBe(false);
-    expect(
-      open('r-1', {
-        NODE_ENV: 'production',
-        CRM_ADVANCED_ENABLED: 'false',
-        CRM_ADVANCED_RESTAURANT_IDS: 'r-1',
-      }),
-    ).toBe(true);
-    expect(open('r-3', { NODE_ENV: 'production', CRM_ADVANCED_ENABLED: 'true' })).toBe(true);
-  });
-
   it('fails closed for an absent production runtime flag', () => {
-    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'production' })).toBe(false);
+    expect(isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', { NODE_ENV: 'production' })).toBe(
+      false,
+    );
     expect(
-      isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', {
+      isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', {
         NODE_ENV: 'production',
-        CRM_ADVANCED_ENABLED: 'true',
+        MARKETING_FEATURES_ENABLED: 'true',
       }),
     ).toBe(true);
-    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'test' })).toBe(true);
+    expect(isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', { NODE_ENV: 'test' })).toBe(true);
   });
 });

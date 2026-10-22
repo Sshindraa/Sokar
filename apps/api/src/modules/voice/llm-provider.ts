@@ -32,28 +32,20 @@ export function getVoiceLlmEndpoint(): {
 }
 
 /**
- * Restaurants dont le tour structuré part d'abord chez OpenRouter (VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS),
- * avec le modèle et les réglages du relais ; Cerebras devient leur doublon et leur repli.
- * `*` dans la liste vaut pour tous les restaurants, y compris ceux créés après le réglage.
+ * GPT-6 Luna (OpenRouter, modèle et réglages du relais) est le modèle principal du tour structuré pour tous les
+ * restaurants dès que `OPENROUTER_API_KEY` est présente ; Cerebras devient le doublon et le repli. Sans clé,
+ * Cerebras reste seul.
  */
 export function isOpenRouterPrimaryFor(restaurantId: string | null | undefined): boolean {
-  if (!restaurantId) return false;
-  const ids = (voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((id) => id.trim());
-  return ids.includes('*') || ids.includes(restaurantId);
+  return Boolean(restaurantId && voiceConfig.OPENROUTER_API_KEY?.trim());
 }
 
 /**
- * Restaurants (ou `*`) dont le tour, quand il part chez OpenRouter en principal, est envoyé en deux
- * requêtes identiques simultanées (VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS).
+ * Le tour principal OpenRouter part en deux requêtes identiques simultanées : le premier texte gagne, l'autre est
+ * annulée. Coupe les pics de GPT-6 Luna (banc du 20/10), pour tous les restaurants.
  */
 export function isOpenRouterParallelFor(restaurantId: string | null | undefined): boolean {
-  if (!restaurantId) return false;
-  const ids = (voiceConfig.VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((id) => id.trim());
-  return ids.includes('*') || ids.includes(restaurantId);
+  return isOpenRouterPrimaryFor(restaurantId);
 }
 
 /** Fournisseur et modèle principaux d'un restaurant, pour la télémétrie et le rapport d'appel. */

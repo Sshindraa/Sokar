@@ -106,7 +106,6 @@ beforeEach(() => {
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceConfig.VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS,
-    VOICE_LLM_HEDGE_MS: voiceConfig.VOICE_LLM_HEDGE_MS,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER,
     VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE:
@@ -114,17 +113,12 @@ beforeEach(() => {
     VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: voiceConfig.VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION,
     VOICE_STRUCTURED_FALLBACK_REASONING: voiceConfig.VOICE_STRUCTURED_FALLBACK_REASONING,
     VOICE_STRUCTURED_FALLBACK_SAMPLING: voiceConfig.VOICE_STRUCTURED_FALLBACK_SAMPLING,
-    VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS:
-      voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS,
     VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: voiceConfig.VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS,
-    VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS:
-      voiceConfig.VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS,
   };
   Object.assign(voiceConfig, {
     CEREBRAS_API_KEY: PRIMARY_KEY,
     OPENROUTER_API_KEY: FALLBACK_KEY,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: 60,
-    VOICE_LLM_HEDGE_MS: 0,
     VOICE_LLM_TIMEOUT_MS: 1_000,
   });
   (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
@@ -142,262 +136,6 @@ afterEach(() => {
 
 const urlOf = (call: unknown[]): string => String(call[0]);
 const bodyOf = (call: unknown[]) => JSON.parse(String((call[1] as { body: string }).body));
-
-describe('repli du tour structuré', () => {
-  it('bascule sur OpenRouter quand le quota est épuisé (402) et renvoie la réponse du repli', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock
-      .mockResolvedValueOnce(new Response('{"code":"payment_required"}', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,', '"say":"Bonjour."}']));
-    const deltas: string[] = [];
-
-    const text = await mgr.streamStructuredCompletion(session, messages, format as never, {
-      onDelta: (delta) => deltas.push(delta),
-    });
-
-    expect(text).toBe('{"turnComplete":true,"say":"Bonjour."}');
-    expect(deltas.join('')).toBe(text);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-    expect(bodyOf(fetchMock.mock.calls[1])).toMatchObject({
-      model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL,
-      response_format: format,
-      provider: {
-        require_parameters: true,
-        order: voiceConfig.VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER.split(',').map((n) => n.trim()),
-        allow_fallbacks: true,
-      },
-    });
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        value: 1,
-        labels: { path: 'structured', outcome: 'used', reason: 'quota' },
-      }),
-    );
-  });
-
-  it("impose l'ordre d'hébergeurs configuré, ou retombe sur le tri par latence quand il est vide", async () => {
-    const mgr = CallSessionManager.getInstance();
-    Object.assign(voiceConfig, { VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: ' Cohere , Wafer ,' });
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
-      require_parameters: true,
-      zdr: true,
-      data_collection: 'deny',
-      order: ['Cohere', 'Wafer'],
-      allow_fallbacks: true,
-    });
-
-    fetchMock.mockClear();
-    Object.assign(voiceConfig, { VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: '' });
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
-      require_parameters: true,
-      zdr: true,
-      data_collection: 'deny',
-      sort: 'latency',
-    });
-  });
-
-  it('n’exige plus zéro conservation quand le réglage est à false (choix de performance)', async () => {
-    const mgr = CallSessionManager.getInstance();
-    Object.assign(voiceConfig, {
-      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
-      VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: 'false',
-    });
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
-      require_parameters: true,
-      order: ['ModelRun'],
-      allow_fallbacks: true,
-    });
-  });
-
-  it('envoie le raisonnement et l’échantillonnage réglés pour un modèle de repli à raisonnement (GPT-6 Luna)', async () => {
-    const mgr = CallSessionManager.getInstance();
-    Object.assign(voiceConfig, {
-      VOICE_STRUCTURED_FALLBACK_REASONING: 'none',
-      VOICE_STRUCTURED_FALLBACK_SAMPLING: 'false',
-    });
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    const body = bodyOf(fetchMock.mock.calls[1]);
-    expect(body.reasoning).toEqual({ effort: 'none' });
-    expect(body).not.toHaveProperty('temperature');
-    expect(body).not.toHaveProperty('top_p');
-  });
-
-  it('garde par défaut le raisonnement désactivé et l’échantillonnage du tour', async () => {
-    const mgr = CallSessionManager.getInstance();
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    const body = bodyOf(fetchMock.mock.calls[1]);
-    expect(body.reasoning).toEqual({ enabled: false });
-    expect(body.temperature).toBe(0.3);
-    expect(body.top_p).toBe(0.8);
-  });
-
-  it('exclut les hébergeurs listés, en exigeant zéro conservation des données par défaut', async () => {
-    const mgr = CallSessionManager.getInstance();
-    Object.assign(voiceConfig, {
-      VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'ModelRun',
-      VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE: ' DekaLLM , Chutes ,',
-    });
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-
-    await mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    expect(bodyOf(fetchMock.mock.calls[1]).provider).toEqual({
-      require_parameters: true,
-      zdr: true,
-      data_collection: 'deny',
-      order: ['ModelRun'],
-      allow_fallbacks: true,
-      ignore: ['DekaLLM', 'Chutes'],
-    });
-  });
-
-  it('bascule aussi quand le premier fragment tarde (modèle principal lent)', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock
-      .mockResolvedValueOnce(neverEmits())
-      .mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Oui."}']));
-
-    const text = await mgr.streamStructuredCompletion(session, messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    expect(text).toBe('{"turnComplete":true,"say":"Oui."}');
-    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        labels: { path: 'structured', outcome: 'used', reason: 'first_chunk_timeout' },
-      }),
-    );
-  });
-
-  it('garde le principal lent quand le repli échoue aussi, au lieu de rendre une erreur', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    const encoder = new TextEncoder();
-    const late = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          setTimeout(() => {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ choices: [{ delta: { content: 'Ok.' } }] })}\n\n`,
-              ),
-            );
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-            controller.close();
-          }, 200);
-        },
-      }),
-      { status: 200 },
-    );
-    fetchMock
-      .mockResolvedValueOnce(late)
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-    const text = await mgr.streamStructuredCompletion(session, messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    expect(text).toBe('Ok.');
-    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-  });
-
-  it('ne bascule pas quand le modèle principal répond à temps', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock.mockResolvedValueOnce(sse(['{"turnComplete":true,"say":"Ok."}']));
-
-    const text = await mgr.streamStructuredCompletion(session, messages, format as never, {
-      onDelta: () => undefined,
-    });
-
-    expect(text).toBe('{"turnComplete":true,"say":"Ok."}');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('échoue proprement quand les deux fournisseurs échouent', async () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(new Response('down', { status: 503 }));
-
-    await expect(
-      mgr.streamStructuredCompletion(session, messages, format as never, {
-        onDelta: () => undefined,
-      }),
-    ).rejects.toThrow();
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        labels: { path: 'structured', outcome: 'failed', reason: 'quota' },
-      }),
-    );
-  });
-
-  it("sans clé de repli, l'erreur du principal remonte et l'absence de clé est comptée", async () => {
-    Object.assign(voiceConfig, { OPENROUTER_API_KEY: undefined });
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    fetchMock.mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-    await expect(
-      mgr.streamStructuredCompletion(session, messages, format as never, {
-        onDelta: () => undefined,
-      }),
-    ).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const counter = await voiceLlmFallbackTotal.get();
-    expect(counter.values).toContainEqual(
-      expect.objectContaining({
-        labels: { path: 'structured', outcome: 'no_key', reason: 'quota' },
-      }),
-    );
-  });
-});
 
 describe('repli du chemin à outils (restaurants hors tour structuré)', () => {
   const tools = [{ type: 'function', function: { name: 'check_availability' } }];
@@ -438,278 +176,7 @@ describe('repli du chemin à outils (restaurants hors tour structuré)', () => {
   });
 });
 
-describe('hedging du tour structuré (requête de doublon quand le principal tarde)', () => {
-  const answer = (say: string) => `{"turnComplete":true,"say":"${say}"}`;
-  const delayedSse = (delayMs: number, chunks: string[]): Response => {
-    const encoder = new TextEncoder();
-    return new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          setTimeout(() => {
-            for (const chunk of chunks) {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`,
-                ),
-              );
-            }
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-            controller.close();
-          }, delayMs);
-        },
-      }),
-      { status: 200 },
-    );
-  };
-  const signalOf = (index: number) =>
-    (fetchMock.mock.calls[index][1] as { signal: AbortSignal }).signal;
-  const run = (mgr: CallSessionManager) =>
-    mgr.streamStructuredCompletion(makeSession(), messages, format as never, {
-      onDelta: () => undefined,
-    });
-  const hedgeCount = async (outcome: string) =>
-    (await voiceLlmHedgeTotal.get()).values.find((v) => v.labels.outcome === outcome)?.value ?? 0;
-
-  beforeEach(() => {
-    Object.assign(voiceConfig, { VOICE_LLM_HEDGE_MS: 30, VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: 400 });
-    voiceLlmHedgeTotal.reset();
-    voiceLlmFallbackTotal.reset();
-  });
-
-  it('le doublon gagne quand le principal est bloqué : le secours répond, le principal est annulé', async () => {
-    fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Oui.'));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-    expect(signalOf(0).aborted).toBe(true);
-    expect(await hedgeCount('hedge_won')).toBe(1);
-    // Un doublon n'est pas un repli : pas de série « used » pour la raison hedge.
-    expect(
-      (await voiceLlmFallbackTotal.get()).values.some((v) => v.labels.reason === 'hedge'),
-    ).toBe(false);
-  });
-
-  it('le doublon part quand le principal n’envoie qu’un fragment vide puis se tait', async () => {
-    // Appel 80a153e6 du 16/10/2026 : Cerebras ouvre le flux par un fragment sans texte (rôle seul),
-    // puis le texte tarde. Ce fragment vide ne doit pas compter comme un premier fragment.
-    const encoder = new TextEncoder();
-    const emptyThenSilent = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', content: '' } }] })}\n\n`,
-            ),
-          );
-        },
-      }),
-      { status: 200 },
-    );
-    fetchMock.mockResolvedValueOnce(emptyThenSilent).mockResolvedValueOnce(sse([answer('Oui.')]));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Oui.'));
-    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-    expect(await hedgeCount('hedge_won')).toBe(1);
-  });
-
-  it('garde le texte des fragments lus avant le premier texte', async () => {
-    const encoder = new TextEncoder();
-    const roleThenText = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', content: '' } }] })}\n\n`,
-            ),
-          );
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { content: answer('Ok.') } }] })}\n\ndata: [DONE]\n\n`,
-            ),
-          );
-          controller.close();
-        },
-      }),
-      { status: 200 },
-    );
-    fetchMock.mockResolvedValueOnce(roleThenText);
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Ok.'));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('le principal gagne quand il finit par répondre avant le secours : le doublon est annulé', async () => {
-    fetchMock
-      .mockResolvedValueOnce(delayedSse(80, [answer('Bonjour.')]))
-      .mockResolvedValueOnce(neverEmits());
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Bonjour.'));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(signalOf(1).aborted).toBe(true);
-    expect(signalOf(0).aborted).toBe(false);
-    expect(await hedgeCount('primary_won')).toBe(1);
-  });
-
-  it('ne lance aucun doublon quand le principal répond avant le délai', async () => {
-    fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Ok.'));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(await hedgeCount('hedge_won')).toBe(0);
-  });
-
-  it("garde le repli immédiat d'un échec net du principal, sans doublon supplémentaire", async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
-      .mockResolvedValueOnce(delayedSse(80, [answer('Repli.')]));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Repli.'));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(await hedgeCount('hedge_won')).toBe(0);
-  });
-
-  it('garde le principal lent quand le doublon échoue : réponse tardive plutôt que « pas compris » (appel du 19/10)', async () => {
-    fetchMock
-      .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
-      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Pour combien ?'));
-    expect(await hedgeCount('primary_won')).toBe(1);
-  });
-
-  describe('alertes (appel du 19/10 22h09)', () => {
-    beforeEach(() => {
-      alerts.bothFailed.mockClear();
-      alerts.fallbackUnavailable.mockClear();
-    });
-
-    it('principal lent mais qui répond, secours en 402 : alerte secours, aucun tour compté en échec', async () => {
-      fetchMock
-        .mockResolvedValueOnce(delayedSse(600, [answer('Pour combien ?')]))
-        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-      await run(CallSessionManager.getInstance());
-
-      expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
-      expect(alerts.bothFailed).not.toHaveBeenCalled();
-    });
-
-    it('principal muet jusqu’au délai total, secours en 402 : un seul tour compté, cause « lent »', async () => {
-      fetchMock
-        .mockResolvedValueOnce(neverEmits())
-        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-      await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
-
-      expect(alerts.bothFailed).toHaveBeenCalledTimes(1);
-      expect(alerts.bothFailed).toHaveBeenCalledWith('primary_slow');
-    });
-
-    it('principal en erreur, secours en 402 : un seul tour compté, cause « erreur »', async () => {
-      fetchMock
-        .mockResolvedValueOnce(new Response('down', { status: 503 }))
-        .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-
-      await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
-
-      expect(alerts.bothFailed).toHaveBeenCalledTimes(1);
-      expect(alerts.bothFailed).toHaveBeenCalledWith('primary_failed');
-    });
-
-    it('le juge et l’anticipation en échec ne comptent pas : l’appelant n’entend rien', async () => {
-      for (const kind of ['judge', 'speculation'] as const) {
-        fetchMock
-          .mockResolvedValueOnce(new Response('down', { status: 503 }))
-          .mockResolvedValueOnce(new Response('quota', { status: 402 }));
-        await expect(
-          CallSessionManager.getInstance().streamStructuredCompletion(
-            makeSession(),
-            messages,
-            format as never,
-            { kind, onDelta: () => undefined },
-          ),
-        ).rejects.toThrow();
-      }
-
-      expect(alerts.bothFailed).not.toHaveBeenCalled();
-    });
-  });
-
-  it('échoue quand le principal est bloqué et que le doublon échoue aussi', async () => {
-    fetchMock
-      .mockResolvedValueOnce(neverEmits())
-      .mockResolvedValueOnce(new Response('down', { status: 503 }));
-
-    await expect(run(CallSessionManager.getInstance())).rejects.toThrow();
-    expect(await hedgeCount('both_failed')).toBe(1);
-  });
-
-  it('ouvre le disjoncteur quand le doublon gagne trois tours de suite : le principal est ensuite ignoré', async () => {
-    const mgr = CallSessionManager.getInstance();
-    for (let i = 0; i < 3; i++) {
-      fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-      await run(mgr);
-    }
-    fetchMock.mockClear();
-    fetchMock.mockResolvedValueOnce(sse([answer('Direct.')]));
-
-    const text = await run(mgr);
-
-    expect(text).toBe(answer('Direct.'));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
-  });
-
-  it('un tour gagné par le principal remet le compte du disjoncteur à zéro', async () => {
-    const mgr = CallSessionManager.getInstance();
-    for (let i = 0; i < 2; i++) {
-      fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-      await run(mgr);
-    }
-    fetchMock.mockResolvedValueOnce(sse([answer('Principal.')]));
-    await run(mgr);
-    fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-    await run(mgr);
-    fetchMock.mockClear();
-    fetchMock.mockResolvedValueOnce(sse([answer('Encore le principal.')]));
-
-    await run(mgr);
-
-    expect(urlOf(fetchMock.mock.calls[0])).not.toContain('openrouter');
-  });
-
-  it('est désactivé avec VOICE_LLM_HEDGE_MS=0 : repli séquentiel après le délai maximal', async () => {
-    Object.assign(voiceConfig, { VOICE_LLM_HEDGE_MS: 0, VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: 60 });
-    fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-
-    const text = await run(CallSessionManager.getInstance());
-
-    expect(text).toBe(answer('Oui.'));
-    expect(await hedgeCount('hedge_won')).toBe(0);
-    expect(
-      (await voiceLlmFallbackTotal.get()).values.some(
-        (v) => v.labels.reason === 'first_chunk_timeout' && v.labels.outcome === 'used',
-      ),
-    ).toBe(true);
-  });
-});
-
-describe('OpenRouter en principal pour les restaurants listés (Cerebras en relais)', () => {
+describe('GPT-6 Luna (OpenRouter) en principal pour tous les restaurants, Cerebras en relais', () => {
   const answer = (say: string) => `{"turnComplete":true,"say":"${say}"}`;
   const run = () =>
     CallSessionManager.getInstance().streamStructuredCompletion(
@@ -720,12 +187,12 @@ describe('OpenRouter en principal pour les restaurants listés (Cerebras en rela
     );
   const hedgeCount = async (outcome: string) =>
     (await voiceLlmHedgeTotal.get()).values.find((v) => v.labels.outcome === outcome)?.value ?? 0;
+  const signalAt = (index: number) =>
+    (fetchMock.mock.calls[index][1] as { signal: AbortSignal }).signal;
 
   beforeEach(() => {
     Object.assign(voiceConfig, {
-      VOICE_LLM_HEDGE_MS: 30,
       VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 30,
-      VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: 'autre-resto, rest-1',
       VOICE_STRUCTURED_FALLBACK_MODEL: 'openai/gpt-6-luna',
       VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: 'openai/fast',
       VOICE_STRUCTURED_FALLBACK_REASONING: 'none',
@@ -735,138 +202,108 @@ describe('OpenRouter en principal pour les restaurants listés (Cerebras en rela
     alerts.fallbackUnavailable.mockClear();
   });
 
-  it('envoie le tour d’abord à OpenRouter, avec les réglages du relais', async () => {
-    fetchMock.mockResolvedValueOnce(sse([answer('Pour quel jour ?')]));
-
-    const text = await run();
-
-    expect(text).toBe(answer('Pour quel jour ?'));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
-    const body = bodyOf(fetchMock.mock.calls[0]);
-    expect(body.model).toBe('openai/gpt-6-luna');
-    expect(body.reasoning).toEqual({ effort: 'none' });
-    expect(body).not.toHaveProperty('temperature');
-    expect(body.provider.order).toEqual(['openai/fast']);
-  });
-
-  it('lance Cerebras en doublon quand OpenRouter tarde, et garde le premier qui répond', async () => {
+  it('envoie le tour à OpenRouter en deux requêtes identiques, avec les réglages du relais, et garde la première qui écrit', async () => {
     fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
 
     const text = await run();
 
     expect(text).toBe(answer('Oui.'));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
-    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
-    expect(bodyOf(fetchMock.mock.calls[1]).reasoning_effort).toBe('none');
+    expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
+    const body = bodyOf(fetchMock.mock.calls[0]);
+    expect(body.model).toBe('openai/gpt-6-luna');
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.provider.order).toEqual(['openai/fast']);
+    expect(bodyOf(fetchMock.mock.calls[1])).toEqual(body);
+    expect(signalAt(0).aborted).toBe(true);
+    expect(signalAt(1).aborted).toBe(false);
+  });
+
+  it('garde la requête qui répond quand l’autre est refusée', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('busy', { status: 503 }))
+      .mockResolvedValueOnce(sse([answer('Bonjour.')]));
+
+    const text = await run();
+
+    expect(text).toBe(answer('Bonjour.'));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('lance Cerebras en doublon quand OpenRouter tarde, et garde le premier qui répond', async () => {
+    fetchMock
+      .mockResolvedValueOnce(neverEmits())
+      .mockResolvedValueOnce(neverEmits())
+      .mockResolvedValueOnce(sse([answer('Oui.')]));
+
+    const text = await run();
+
+    expect(text).toBe(answer('Oui.'));
+    expect(urlOf(fetchMock.mock.calls[2])).not.toContain('openrouter');
+    expect(bodyOf(fetchMock.mock.calls[2]).reasoning_effort).toBe('none');
     expect(await hedgeCount('hedge_won')).toBe(1);
   });
 
   it('passe tout de suite à Cerebras quand OpenRouter refuse, et signale le relais hors service', async () => {
     fetchMock
       .mockResolvedValueOnce(new Response('quota', { status: 402 }))
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }))
       .mockResolvedValueOnce(sse([answer('Bonjour.')]));
 
     const text = await run();
 
     expect(text).toBe(answer('Bonjour.'));
-    expect(urlOf(fetchMock.mock.calls[1])).not.toContain('openrouter');
+    expect(urlOf(fetchMock.mock.calls[2])).not.toContain('openrouter');
     expect(alerts.fallbackUnavailable).toHaveBeenCalledWith(402);
     expect(await hedgeCount('hedge_won')).toBe(0);
   });
 
-  it('attend son propre délai avant le doublon Cerebras : Luna plus lent que le doublon normal garde la main', async () => {
-    Object.assign(voiceConfig, {
-      VOICE_LLM_HEDGE_MS: 30,
-      VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 300,
-    });
+  it('échoue proprement quand OpenRouter et Cerebras refusent tous les deux', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('quota', { status: 401 }))
+      .mockResolvedValueOnce(new Response('quota', { status: 401 }))
+      .mockResolvedValueOnce(new Response('quota', { status: 402 }));
+
+    await expect(run()).rejects.toThrow('OpenRouter 401');
+  });
+
+  it('attend son propre délai avant le doublon Cerebras : Luna lent mais dans le délai garde la main', async () => {
+    Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 300 });
     const encoder = new TextEncoder();
-    const slowLuna = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          setTimeout(() => {
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ choices: [{ delta: { content: answer('Luna.') } }] })}\n\ndata: [DONE]\n\n`,
-              ),
-            );
-            controller.close();
-          }, 120);
-        },
-      }),
-      { status: 200 },
-    );
-    fetchMock.mockResolvedValueOnce(slowLuna);
+    const slowLuna = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            setTimeout(() => {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { content: answer('Luna.') } }] })}\n\ndata: [DONE]\n\n`,
+                ),
+              );
+              controller.close();
+            }, 120);
+          },
+        }),
+        { status: 200 },
+      );
+    fetchMock.mockResolvedValueOnce(slowLuna()).mockResolvedValueOnce(slowLuna());
 
     const text = await run();
 
     expect(text).toBe(answer('Luna.'));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every((call) => urlOf(call).includes('openrouter'))).toBe(true);
   });
 
-  describe('deux requêtes OpenRouter en parallèle (restaurants listés)', () => {
-    const signalAt = (index: number) =>
-      (fetchMock.mock.calls[index][1] as { signal: AbortSignal }).signal;
-
-    beforeEach(() => {
-      Object.assign(voiceConfig, {
-        VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: 0,
-        VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: 'rest-1',
-      });
-    });
-
-    it('envoie deux requêtes identiques en même temps et garde la première qui écrit', async () => {
-      fetchMock.mockResolvedValueOnce(neverEmits()).mockResolvedValueOnce(sse([answer('Oui.')]));
-
-      const text = await run();
-
-      expect(text).toBe(answer('Oui.'));
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(urlOf(fetchMock.mock.calls[0])).toContain('openrouter');
-      expect(urlOf(fetchMock.mock.calls[1])).toContain('openrouter');
-      expect(bodyOf(fetchMock.mock.calls[1])).toEqual(bodyOf(fetchMock.mock.calls[0]));
-      expect(signalAt(0).aborted).toBe(true);
-      expect(signalAt(1).aborted).toBe(false);
-    });
-
-    it('garde la requête qui répond quand l’autre est refusée', async () => {
-      fetchMock
-        .mockResolvedValueOnce(new Response('busy', { status: 503 }))
-        .mockResolvedValueOnce(sse([answer('Bonjour.')]));
-
-      const text = await run();
-
-      expect(text).toBe(answer('Bonjour.'));
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-
-    it('accepte * pour tous les restaurants', async () => {
-      Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: '*' });
-      fetchMock.mockResolvedValueOnce(sse([answer('Ok.')])).mockResolvedValueOnce(neverEmits());
-
-      const text = await run();
-
-      expect(text).toBe(answer('Ok.'));
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(signalAt(1).aborted).toBe(true);
-    });
-
-    it('n’envoie qu’une requête pour un restaurant non listé', async () => {
-      Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PARALLEL_RESTAURANT_IDS: 'autre-resto' });
-      fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
-
-      await run();
-
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('laisse les autres restaurants sur Cerebras en principal', async () => {
-    Object.assign(voiceConfig, { VOICE_LLM_OPENROUTER_PRIMARY_RESTAURANT_IDS: 'autre-resto' });
+  it('reste sur Cerebras seul sans clé OpenRouter', async () => {
+    Object.assign(voiceConfig, { OPENROUTER_API_KEY: '' });
     fetchMock.mockResolvedValueOnce(sse([answer('Ok.')]));
 
     await run();
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(urlOf(fetchMock.mock.calls[0])).not.toContain('openrouter');
   });
 });
