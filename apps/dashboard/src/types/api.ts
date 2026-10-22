@@ -28,6 +28,33 @@ export interface BillingStatus {
   trial?: BillingTrial;
 }
 
+export interface BillingDetails {
+  hasCustomer: boolean;
+  hasPaymentMethod: boolean;
+  subscription: {
+    status: string;
+    canUpdatePlan: boolean;
+    plan: BillingPlan | null;
+    recurringAmount: number | null;
+    currency: string;
+    interval: string | null;
+    intervalCount: number | null;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+  } | null;
+  paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+  invoices: {
+    number: string | null;
+    createdAt: string;
+    status: string | null;
+    total: number;
+    currency: string;
+    pdfUrl: string | null;
+    hostedUrl: string | null;
+  }[];
+  hasMoreInvoices: boolean;
+}
+
 export interface BillingTrial {
   startedAt: string;
   endsAt: string;
