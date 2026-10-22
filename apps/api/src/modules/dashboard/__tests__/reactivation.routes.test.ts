@@ -205,7 +205,7 @@ describe('POST /dashboard/reactivation/:id/send', () => {
     expect(queues.marketingCampaign.add).toHaveBeenCalledWith(
       'send-campaign',
       { campaignId: 'legacy-marketing-camp-1', restaurantId: RESTAURANT_ID },
-      { jobId: 'marketing-campaign:legacy-marketing-camp-1' },
+      { jobId: 'marketing-campaign-legacy-marketing-camp-1' },
     );
   });
 
