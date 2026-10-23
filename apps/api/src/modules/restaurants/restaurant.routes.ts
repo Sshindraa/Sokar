@@ -849,6 +849,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           where: { id },
           select: {
             id: true,
+            slug: true,
             name: true,
             openingHours: true,
             phoneNumber: true,

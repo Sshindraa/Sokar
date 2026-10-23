@@ -180,21 +180,27 @@ test.describe('Widget réservation public', () => {
 
   test('préserve les coordonnées au retour et confirme après le succès API', async ({ page }) => {
     let reservationPayload: Record<string, unknown> | undefined;
+    let holdPayload: Record<string, unknown> | undefined;
+    const holdToken = crypto.randomUUID();
     await page.route('**/api/proxy/**', async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (request.method() === 'POST' && url.pathname.endsWith('/reservations')) {
+      if (request.method() === 'POST' && url.pathname.endsWith('/hold')) {
+        holdPayload = request.postDataJSON() as Record<string, unknown>;
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ holdToken }),
+        });
+        return;
+      }
+      if (request.method() === 'POST' && url.pathname.endsWith('/confirm')) {
         reservationPayload = request.postDataJSON() as Record<string, unknown>;
         await route.fulfill({
           status: 201,
           contentType: 'application/json',
           body: JSON.stringify({
-            id: 'e2e-confirmed-reservation',
-            restaurantId: DEMO_RESTAURANT.id,
-            reservedAt: reservationPayload.reservedAt,
-            partySize: reservationPayload.partySize,
-            customerName: reservationPayload.customerName,
-            customerPhone: reservationPayload.customerPhone,
+            reservationId: 'e2e-confirmed-reservation',
             status: 'CONFIRMED',
           }),
         });
@@ -265,11 +271,14 @@ test.describe('Widget réservation public', () => {
     await expect(customerPhone).toHaveValue('0600000000');
     await page.getByRole('button', { name: 'Valider la réservation' }).click();
     await expect(page.getByRole('heading', { name: 'Table réservée !' })).toBeVisible();
-    expect(reservationPayload).toMatchObject({
+    expect(holdPayload).toMatchObject({
+      date: secondDateParam,
+      time: scenario.secondTime,
       partySize: CHANGED_PARTY_SIZE,
-      customerName: 'Alice Martin',
-      customerPhone: '+33600000000',
     });
-    expect(reservationPayload?.reservedAt).toBeTruthy();
+    expect(reservationPayload).toMatchObject({
+      holdToken,
+      customer: { firstName: 'Alice Martin', phone: '+33600000000' },
+    });
   });
 });
