@@ -248,6 +248,10 @@ export default function ReservationWidget({
   const requestedDate = parseRequestedDate(requestedDateParam, new Date());
   const isEmbedded = Boolean(modification) || searchParams.get('embedded') === '1';
   const marketingAttributionToken = searchParams.get('marketingAttributionToken') ?? '';
+  // Any present test parameter must stay in the test path, including an invalid/empty token.
+  // The API rejects it; never fall back to creating a real reservation.
+  const testBookingToken = searchParams.get('testBooking');
+  const testBooking = testBookingToken !== null;
   // Origine explicite du parent, passée par le snippet embed Sokar.
   // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
   const explicitParentOrigin = searchParams.get('parentOrigin');
@@ -257,11 +261,12 @@ export default function ReservationWidget({
   // campaign identifiers. Invalid/expired links are ignored so attribution
   // cannot affect the booking UX.
   useEffect(() => {
+    if (testBooking) return;
     if (marketingAttributionToken.length < 20 || marketingAttributionToken.length > 4096) return;
     void publicApiFetch('POST', 'marketing/attribution/click', {
       token: marketingAttributionToken,
     }).catch(() => undefined);
-  }, [marketingAttributionToken]);
+  }, [marketingAttributionToken, testBooking]);
 
   const [modificationSlots, setModificationSlots] = useState<
     Array<{ time: string; proposalToken: string }>
@@ -705,25 +710,60 @@ export default function ReservationWidget({
 
     try {
       const normalizedPhone = customerPhone.replace(/\s/g, '');
-      const res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
-        restaurantId: restaurant.id,
-        reservedAt: reservedAt.toISOString(),
-        partySize,
-        customerName,
-        customerPhone: normalizedPhone.startsWith('+')
-          ? normalizedPhone
-          : `+33${normalizedPhone.replace(/^0/, '')}`,
-        customerEmail: customerEmail || undefined,
-        ...(restaurant.whatsappReminderOptInEnabled
-          ? {
-              whatsappReminderConsent: {
-                accepted: whatsappOptIn,
-                version: 'whatsapp-reminder-2026-10-17',
-              },
-            }
-          : {}),
-        ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
-      });
+      const phone = normalizedPhone.startsWith('+')
+        ? normalizedPhone
+        : `+33${normalizedPhone.replace(/^0/, '')}`;
+      let res: ConfirmedReservation;
+      if (testBooking) {
+        const path = `public/r/${encodeURIComponent(restaurantId)}`;
+        const hold = await publicApiFetch<{ holdToken: string }>('POST', `${path}/hold`, {
+          date: formatDateParam(selectedDate),
+          time: selectedTime,
+          partySize,
+          source: 'web',
+          testBookingToken,
+        });
+        const confirmation = await publicApiFetch<{
+          reservationId: string;
+          status: string;
+          managementUrl?: string;
+        }>('POST', `${path}/confirm`, {
+          holdToken: hold.holdToken,
+          customer: { firstName: customerName, phone, email: customerEmail || undefined },
+          source: 'web',
+          testBookingToken,
+        });
+        res = {
+          id: confirmation.reservationId,
+          restaurantId: restaurant.id,
+          reservedAt: reservedAt.toISOString(),
+          partySize,
+          customerName,
+          customerPhone: phone,
+          status: confirmation.status,
+          managementUrl: confirmation.managementUrl,
+        };
+      } else {
+        res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
+          restaurantId: restaurant.id,
+          reservedAt: reservedAt.toISOString(),
+          partySize,
+          customerName,
+          customerPhone: normalizedPhone.startsWith('+')
+            ? normalizedPhone
+            : `+33${normalizedPhone.replace(/^0/, '')}`,
+          customerEmail: customerEmail || undefined,
+          ...(restaurant.whatsappReminderOptInEnabled
+            ? {
+                whatsappReminderConsent: {
+                  accepted: whatsappOptIn,
+                  version: 'whatsapp-reminder-2026-10-17',
+                },
+              }
+            : {}),
+          ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
+        });
+      }
 
       setConfirmedReservation(res);
       setSuccess(true);
@@ -1004,7 +1044,7 @@ export default function ReservationWidget({
         >
           {!isEmbedded && (
             <Link
-              href={`/restaurant/${restaurantId}`}
+              href={`/restaurant/${restaurantId}${testBooking ? `?${new URLSearchParams({ testBooking: testBookingToken })}` : ''}`}
               className="absolute left-4 top-4 z-[3] inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/25 px-3 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/35 hover:gap-2.5"
             >
               <ArrowLeft size={16} />
@@ -1015,9 +1055,9 @@ export default function ReservationWidget({
             <p className="rounded-full bg-[hsl(var(--reservation-scrim)/0.3)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--reservation-panel)/0.9)] backdrop-blur-md">
               {success ? 'Confirmation' : modification ? 'Modifier la réservation' : 'Réserver'}
             </p>
-            {modification?.demo && (
+            {(modification?.demo || testBooking) && (
               <span className="rounded-full bg-[hsl(var(--reservation-scrim)/0.3)] px-2.5 py-1.5 text-[10px] font-medium text-[hsl(var(--reservation-panel)/0.85)] backdrop-blur-md">
-                Mode démo
+                {testBooking ? 'Réservation test' : 'Mode démo'}
               </span>
             )}
           </div>
@@ -1117,6 +1157,16 @@ export default function ReservationWidget({
                 </div>
               </div>
             </header>
+
+            {testBooking && (
+              <p
+                role="status"
+                className="rounded-2xl border border-border bg-background p-3 text-sm text-foreground"
+              >
+                Réservation test · supprimée automatiquement sous 24 h. Les messages sont envoyés,
+                mais rien n’apparaît dans votre restaurant.
+              </p>
+            )}
 
             {success ? (
               <div className="animate-in fade-in zoom-in-95 duration-500 space-y-5 text-center">
@@ -1870,21 +1920,24 @@ export default function ReservationWidget({
                     </div>
                   )}
 
-                  {step === 2 && !modification && restaurant?.whatsappReminderOptInEnabled && (
-                    <label className="flex items-start gap-3 text-sm text-[hsl(var(--reservation-ink))]">
-                      <input
-                        type="checkbox"
-                        checked={whatsappOptIn}
-                        onChange={(event) => setWhatsappOptIn(event.target.checked)}
-                        disabled={submitting}
-                        className="mt-1 h-4 w-4 shrink-0 transition-all duration-200"
-                      />
-                      <span>
-                        J’accepte le rappel de cette réservation sur WhatsApp. Facultatif, sans
-                        publicité. Retrait possible après confirmation ou auprès du restaurant.
-                      </span>
-                    </label>
-                  )}
+                  {step === 2 &&
+                    !modification &&
+                    !testBooking &&
+                    restaurant?.whatsappReminderOptInEnabled && (
+                      <label className="flex items-start gap-3 text-sm text-[hsl(var(--reservation-ink))]">
+                        <input
+                          type="checkbox"
+                          checked={whatsappOptIn}
+                          onChange={(event) => setWhatsappOptIn(event.target.checked)}
+                          disabled={submitting}
+                          className="mt-1 h-4 w-4 shrink-0 transition-all duration-200"
+                        />
+                        <span>
+                          J’accepte le rappel de cette réservation sur WhatsApp. Facultatif, sans
+                          publicité. Retrait possible après confirmation ou auprès du restaurant.
+                        </span>
+                      </label>
+                    )}
 
                   {step === 2 && !modification && selectedDate && selectedTime && (
                     <div className="rounded-2xl border border-white/70 bg-white/45 p-3 text-sm font-semibold text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
@@ -2003,7 +2056,7 @@ export default function ReservationWidget({
 
             {/* Bouton « Offrir une carte cadeau » — footer du bottom sheet.
                 Ouvre un overlay qui embed la page Connect /widget/[slug]/gift-card. */}
-            {!modification && (
+            {!modification && !testBooking && (
               <button
                 type="button"
                 onClick={() => setShowGiftCard(true)}

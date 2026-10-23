@@ -642,3 +642,91 @@ describe('widget embarqué — listener entrant', () => {
     });
   });
 });
+
+describe('réservation test sur le widget public réellement servi par /book', () => {
+  async function submitTest(token: string, rejectHold = false) {
+    const date = new Date();
+    date.setDate(date.getDate() + 2);
+    const dateValue = dateParam(date);
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    navMocks.setSearch(
+      new URLSearchParams({
+        date: dateValue,
+        time: '20:30',
+        partySize: '2',
+        testBooking: token,
+        marketingAttributionToken: 'a'.repeat(24),
+      }).toString(),
+    );
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/availability'))
+        return jsonResponse({
+          restaurantId: 'r1',
+          date: dateValue,
+          partySize: 2,
+          slots: ['20:30'],
+        });
+      if (url.endsWith('/hold'))
+        return rejectHold
+          ? ({
+              ok: false,
+              status: 403,
+              text: async () => JSON.stringify({ error: 'Ce lien de test a expiré.' }),
+            } as Response)
+          : jsonResponse({ holdToken: crypto.randomUUID() });
+      if (url.endsWith('/confirm'))
+        return jsonResponse({
+          reservationId: 'test-reservation',
+          status: 'confirmed',
+          managementUrl: '/r?test',
+        });
+      return bookingRestaurantResponse();
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const widget = render(<ReservationWidget />);
+    fireEvent.click(await widget.findByRole('button', { name: /Continuer · 20h30/ }));
+    fireEvent.change(await widget.findByLabelText('Nom complet *'), {
+      target: { value: 'Recette Sokar' },
+    });
+    fireEvent.change(widget.getByLabelText('Téléphone *'), { target: { value: '0600000000' } });
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+    return { widget, fetchSpy };
+  }
+
+  it('transmet le jeton au hold puis à la confirmation, sans création réelle ni attribution', async () => {
+    const token = crypto.randomUUID();
+    const { widget, fetchSpy } = await submitTest(token);
+    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([url]) => url)).toEqual([
+      '/api/proxy/public/r/chez-sokar/hold',
+      '/api/proxy/public/r/chez-sokar/confirm',
+    ]);
+    for (const [, init] of posts) {
+      const body = JSON.parse(init!.body as string);
+      expect(body.testBookingToken).toBe(token);
+      expect(body).not.toHaveProperty('marketingAttributionToken');
+      expect(body).not.toHaveProperty('whatsappReminderConsent');
+    }
+    expect(widget.getByText(/supprimée automatiquement sous 24 h/)).toBeTruthy();
+    expect(widget.getByRole('link', { name: 'Gérer ma réservation' }).getAttribute('href')).toBe(
+      '/r?test',
+    );
+    expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toContain(
+      'testBooking=',
+    );
+    expect(widget.queryByRole('button', { name: 'Offrir une carte cadeau' })).toBeNull();
+  });
+
+  it.each(['', 'expired'])(
+    'ne revient jamais à une réservation réelle si le jeton est refusé : %j',
+    async (token) => {
+      const { widget, fetchSpy } = await submitTest(token, true);
+      expect(await widget.findByText('Ce lien de test a expiré.')).toBeTruthy();
+      expect(widget.queryByText('Table réservée !')).toBeNull();
+      const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
+      expect(posts.map(([url]) => url)).toEqual(['/api/proxy/public/r/chez-sokar/hold']);
+      expect(JSON.parse(posts[0][1]!.body as string).testBookingToken).toBe(token);
+    },
+  );
+});

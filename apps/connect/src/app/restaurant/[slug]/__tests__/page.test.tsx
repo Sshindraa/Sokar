@@ -167,11 +167,12 @@ describe('parcours de réservation test depuis l’onboarding', () => {
   it.each([
     ['vide', ''],
     ['de plus de 100 caractères', 'a'.repeat(101)],
-  ])('traite une valeur %s comme absente', async (_label, value) => {
+  ])('refuse une valeur %s sans revenir au parcours réel', async (_label, value) => {
     const html = await markup({ testBooking: value });
     expect(bookHrefs(html).length).toBeGreaterThan(0);
-    expect(html).not.toContain('testBooking');
-    expect(html).not.toContain('Réservation test');
+    for (const href of bookHrefs(html)) expect(href).toContain('testBooking=invalid');
+    expect(html).toContain(banner);
+    expect(mocks.PageViewTracker).not.toHaveBeenCalled();
   });
 
   it('ne compte pas l’aperçu des disponibilités en mode test', async () => {

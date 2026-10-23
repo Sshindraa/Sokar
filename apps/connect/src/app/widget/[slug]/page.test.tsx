@@ -63,11 +63,11 @@ describe('page widget : réservation test', () => {
   it.each([
     ['vide', ''],
     ['de plus de 100 caractères', 'a'.repeat(101)],
-  ])('traite une valeur %s comme absente', async (_label, value) => {
+  ])('refuse une valeur %s sans revenir au parcours réel', async (_label, value) => {
     const html = await markup({ testBooking: value });
-    expect(mocks.trackEventAsync).toHaveBeenCalledOnce();
-    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBeUndefined();
-    expect(html).toContain('href="/restaurant/chez-sokar"');
+    expect(mocks.trackEventAsync).not.toHaveBeenCalled();
+    expect(mocks.bookingWidget.mock.calls[0][0].testBookingToken).toBe('invalid');
+    expect(html).toContain('href="/restaurant/chez-sokar?testBooking=invalid"');
   });
 
   it('compte la visite et garde le parcours normal sans le paramètre', async () => {
