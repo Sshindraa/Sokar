@@ -506,6 +506,7 @@ export class FloorPlanService {
       include: {
         reservations: {
           where: {
+            isTest: false,
             startsAt: { gte: new Date() },
             state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
           },

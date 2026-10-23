@@ -26,7 +26,7 @@ export const PLAN_LABELS: Record<Plan, string> = {
   ESSENTIAL: 'Essential',
   STARTER: 'Essential', // legacy alias — DB still emits STARTER for old accounts
   PRO: 'Pro',
-  PREMIUM: 'Multi-site',
+  PREMIUM: 'Multi-restaurant',
 };
 
 /**

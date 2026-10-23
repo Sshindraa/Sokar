@@ -153,10 +153,9 @@ test.describe('Régression visuelle — pages critiques', () => {
         await pwPage.getByRole('switch').click();
         await pwPage.getByLabel('Nombre d’établissements').selectOption('3');
         await expect(pwPage.getByText(/Total pour 3 établissements : 497 €\/mois/)).toBeVisible();
-        await expect(pwPage.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
-          'href',
-          '/demo?plan=multi-site&billing=monthly&sites=3',
-        );
+        await expect(
+          pwPage.getByRole('link', { name: 'Découvrir Multi-restaurant' }),
+        ).toHaveAttribute('href', '/demo?plan=multi-site&billing=monthly&sites=3');
       }
     });
   }

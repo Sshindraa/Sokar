@@ -18,6 +18,8 @@ type Props = {
   restaurantId: string;
   restaurantSlug: string;
   source?: string;
+  /** false pour le parcours d'essai de l'onboarding : le clic n'est pas compté. */
+  track?: boolean;
   className?: string;
   children: ReactNode;
 };
@@ -27,6 +29,7 @@ export function BookCtaLink({
   restaurantId,
   restaurantSlug,
   source,
+  track = true,
   className,
   children,
 }: Props) {
@@ -35,7 +38,7 @@ export function BookCtaLink({
       href={href}
       className={className}
       onClick={() => {
-        trackBookCta({ restaurantId, restaurantSlug, source });
+        if (track) trackBookCta({ restaurantId, restaurantSlug, source });
       }}
     >
       {children}

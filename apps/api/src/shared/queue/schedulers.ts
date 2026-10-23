@@ -89,6 +89,14 @@ export async function registerJobSchedulers(): Promise<void> {
       { name: 'voice-finalization', data: { kind: 'voice-finalization' } },
     ),
   );
+  // Purge horaire des réservations test de plus de 24 h.
+  await register('reconciliation/test-reservation-purge', () =>
+    queues.reconciliation.upsertJobScheduler(
+      'test-reservation-purge',
+      { pattern: '5 * * * *', tz: 'Europe/Paris' },
+      { name: 'test-reservation-purge', data: { kind: 'test-reservation-purge' } },
+    ),
+  );
 
   // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
   await register('confirmation-sms/scan', () =>

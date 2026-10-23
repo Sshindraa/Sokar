@@ -86,6 +86,21 @@ describe('Ma reservation', () => {
     ).toHaveAttribute('href', 'tel:+33100000000');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it('flags a test reservation only when the server says so', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ ...data, test: true }))
+      .mockResolvedValueOnce(Response.json({ ...data, test: false }));
+    vi.stubGlobal('fetch', fetch);
+    const first = render(<Page />);
+    expect(
+      await screen.findByText('Réservation test · supprimée automatiquement sous 24 h'),
+    ).toBeInTheDocument();
+    first.unmount();
+    render(<Page />);
+    await screen.findByText('Restaurant Exemple');
+    expect(screen.queryByText(/Réservation test/)).not.toBeInTheDocument();
+  });
   it('only announces withdrawal after server acknowledgement', async () => {
     const fetch = vi
       .fn()

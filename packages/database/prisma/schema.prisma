@@ -510,6 +510,9 @@ model Reservation {
   consumedHoldId         String?            @unique @map("consumed_hold_id")
   source                 String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
 
+  // Réservation test (dashboard) : jamais visible dans le restaurant, purgée après 24 h.
+  isTest Boolean @default(false) @map("is_test")
+
   // SMS confirmation J-1
   confirmationStatus ConfirmationStatus @default(NOT_REQUIRED) @map("confirmation_status")
   confirmationSentAt DateTime?          @map("confirmation_sent_at")

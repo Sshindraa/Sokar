@@ -13,7 +13,7 @@ export type BillingCadence = 'monthly' | 'annual';
 export type PlanChoice = {
   plan: PlanSlug;
   billing: BillingCadence;
-  /** Nombre d'établissements, Multi-site uniquement (2 à 100). */
+  /** Nombre d'établissements, Multi-restaurant uniquement (2 à 100). */
   siteCount?: number;
 };
 

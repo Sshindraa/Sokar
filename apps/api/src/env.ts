@@ -354,7 +354,7 @@ const EnvSchema = z
     VOICE_TELNYX_CODEC_RESTAURANT_IDS: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
-    // Stripe Billing — recurring base prices plus Multi-site establishment add-ons.
+    // Stripe Billing — recurring base prices plus Multi-restaurant establishment add-ons.
     // They remain optional so the API can start before Billing is configured;
     // the checkout endpoint returns a sanitized 503 until they are present.
     STRIPE_PRICE_ESSENTIAL_MONTHLY: z.string().optional(),

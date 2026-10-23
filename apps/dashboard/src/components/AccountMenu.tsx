@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useClerk, useUser } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { LogOut, Settings as SettingsIcon, User } from 'lucide-react';
+import { CreditCard, LogOut, Settings as SettingsIcon, User } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -113,6 +113,18 @@ function AccountMenuInner() {
             )}
           </div>
           <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              router.push('/dashboard/billing');
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-200 hover:bg-accent"
+          >
+            <CreditCard size={15} aria-hidden />
+            Mon abonnement
+          </button>
           <button
             type="button"
             role="menuitem"

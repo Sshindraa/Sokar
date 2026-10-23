@@ -14,5 +14,13 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // Les layouts imbriqués doivent aussi appeler setRequestLocale pour que
   // leurs Server Components voient la bonne locale.
   setRequestLocale(locale);
-  return <DashboardLayoutClient>{children}</DashboardLayoutClient>;
+  const crmQualificationRestaurantIds = (process.env.CRM_QUALIFICATION_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id && id !== '*');
+  return (
+    <DashboardLayoutClient crmQualificationRestaurantIds={crmQualificationRestaurantIds}>
+      {children}
+    </DashboardLayoutClient>
+  );
 }

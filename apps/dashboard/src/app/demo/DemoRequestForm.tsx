@@ -52,7 +52,7 @@ export default function DemoRequestForm() {
       pageVersion: fromVoiceSolution
         ? 'demo-assistant-tel-v1'
         : selection
-          ? `demo-${selection.plan.toLowerCase()}-${selection.yearly ? 'annual' : 'monthly'}${selection.plan === 'Multi-site' ? `-${selection.siteCount}` : ''}-2026-10`
+          ? `demo-${selection.plan === 'Multi-restaurant' ? 'multi-site' : selection.plan.toLowerCase()}-${selection.yearly ? 'annual' : 'monthly'}${selection.plan === 'Multi-restaurant' ? `-${selection.siteCount}` : ''}-2026-10`
           : PAGE_VERSION,
       website: text('website') || undefined,
     };
@@ -116,7 +116,7 @@ export default function DemoRequestForm() {
         <p className="text-sm text-muted-foreground">
           Votre demande concerne {selection.plan}, en facturation{' '}
           {selection.yearly ? 'annuelle' : 'mensuelle'}
-          {selection.plan === 'Multi-site'
+          {selection.plan === 'Multi-restaurant'
             ? `, pour ${selection.siteCount} ${selection.siteCount === 1 ? 'établissement' : 'établissements'}`
             : ''}
           . Votre choix sera conservé à l’inscription.

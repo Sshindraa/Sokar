@@ -1,13 +1,13 @@
-export type PublicPlan = 'Essential' | 'Pro' | 'Multi-site';
+export type PublicPlan = 'Essential' | 'Pro' | 'Multi-restaurant';
 
 const PLAN_SLUGS: Record<PublicPlan, string> = {
   Essential: 'essential',
   Pro: 'pro',
-  'Multi-site': 'multi-site',
+  'Multi-restaurant': 'multi-site',
 };
 
 /**
- * Keeps the selected offer, billing cadence, and Multi-site establishment count
+ * Keeps the selected offer, billing cadence, and Multi-restaurant establishment count
  * when a visitor starts signup. The registration flow remains the source of
  * truth for account creation and forwards the selection to Checkout.
  */
@@ -17,7 +17,7 @@ export function getPlanSignupHref(plan: PublicPlan, yearly: boolean, siteCount =
     billing: yearly ? 'annual' : 'monthly',
   });
 
-  if (plan === 'Multi-site') params.set('sites', String(siteCount));
+  if (plan === 'Multi-restaurant') params.set('sites', String(siteCount));
 
   return `/register?${params.toString()}`;
 }

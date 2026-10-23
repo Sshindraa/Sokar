@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
+import { toApiError } from '@/lib/api-error';
 import { ConnectActivationStep } from './ConnectActivationStep';
 
 const mocks = vi.hoisted(() => ({
@@ -89,10 +90,11 @@ it('publie puis montre la diffusion sans clore l’étape', async () => {
   expect(
     await screen.findByText('Votre page est en ligne. Partagez-la dès maintenant.'),
   ).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /Réserver sur ma page/ })).toHaveAttribute(
-    'href',
-    expect.stringContaining('/restaurant/chez-emile'),
-  );
+  expect(screen.getByRole('button', { name: /Réserver sur ma page/ })).toBeEnabled();
+  expect(
+    screen.getByText('Faites le parcours d’un client, jusqu’à la confirmation.'),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/rien n’apparaît/)).not.toBeInTheDocument();
   expect(screen.getByText(/data-slug="chez-emile"/)).toBeInTheDocument();
   // Sans conditions modifiées ni IA activée, rien d'autre n'est écrit.
   expect(mocks.put).not.toHaveBeenCalled();
@@ -177,4 +179,54 @@ it('adapte le guide d’installation à l’outil du site', async () => {
   expect(screen.getByRole('button', { name: 'Wix' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByText(/Intégrer du code › Intégrer HTML/)).toBeInTheDocument();
   await screen.findByText('8 personnes');
+});
+
+it('lance la réservation test par l’API et montre l’erreur sans ouvrir de page', async () => {
+  mocks.ready = true;
+  mocks.published = true;
+  const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+  window.open = vi.fn(() => tab) as unknown as typeof window.open;
+  mocks.post.mockImplementation(async (path: string) => {
+    if (path === 'restaurant/test-booking-link') {
+      throw toApiError(409, {
+        code: 'PAGE_NOT_PUBLISHED',
+        error: 'Publiez d’abord votre page pour la tester.',
+      });
+    }
+    return {};
+  });
+  render(<ConnectActivationStep onComplete={vi.fn()} onNavigate={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Réserver sur ma page/ }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Publiez d’abord votre page pour la tester.',
+  );
+  expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
+  expect(tab.close).toHaveBeenCalled();
+});
+
+it('prévient sous le bouton que la réservation sera réelle quand le mode test est coupé', async () => {
+  mocks.ready = true;
+  mocks.published = true;
+  const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+  window.open = vi.fn(() => tab) as unknown as typeof window.open;
+  mocks.post.mockImplementation(async (path: string) => {
+    if (path === 'restaurant/test-booking-link') {
+      throw toApiError(404, { code: 'TEST_BOOKING_DISABLED' });
+    }
+    return {};
+  });
+  render(<ConnectActivationStep onComplete={vi.fn()} onNavigate={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /Réserver sur ma page/ }));
+
+  const notice = await screen.findByText(
+    'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+  );
+  expect(notice).toHaveAttribute('role', 'status');
+  expect(notice).toHaveClass('text-muted-foreground');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(tab.close).not.toHaveBeenCalled();
+  expect(tab.location.href).not.toBe('about:blank');
 });

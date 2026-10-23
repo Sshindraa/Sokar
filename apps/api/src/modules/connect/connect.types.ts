@@ -145,6 +145,9 @@ export const HoldInputSchema = z.object({
   partySize: z.number().int().min(1).max(50),
   preferredSectionId: z.string().uuid().optional(),
   source: SourceEnum.optional().default('web'),
+  // Réservation test : jeton signé du tableau de bord. Format et signature sont
+  // vérifiés par la route, pour qu'un jeton mal formé reçoive le même 403 clair.
+  testBookingToken: z.string().max(100).optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),
 });
@@ -178,6 +181,8 @@ export const ConfirmInputSchema = z.object({
       version: z.literal('whatsapp-reminder-2026-10-17'),
     })
     .optional(),
+  // Réservation test : même contrat que pour le hold.
+  testBookingToken: z.string().max(100).optional(),
   // Cases de consentement marketing (jamais cochées par défaut, jamais obligatoires).
   marketingConsent: BookingMarketingConsentSchema.optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.

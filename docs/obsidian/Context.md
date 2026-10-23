@@ -8,6 +8,7 @@
 
 ## TODOs actifs
 
+- [ ] Réservation test (#509) : qualifier en staging (SMS, page Ma réservation, modification, annulation, purge) puis activer TEST_BOOKING_ENABLED en prod.
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
 - [ ] WhatsApp : local, flags off. Telephone = confirmation SMS sans rappel; WEB avec accord = rappel WhatsApp sans secours SMS. Callbacks Meta signes implementes (recus 7 j, rapprochement par ID; timeout sans ID manuel). Template fr/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta et qualification staging; confirmation SMS a qualifier. Voir `whatsapp-reservation-activation.md`.
 - [ ] SEO : accueil/privacy livrés (#438–#442); GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Confidentialité locale Dashboard/Connect/API : notice commune par catégories, annexe nominative clients en projet (`privacy-client-annex.md`), preuves techniques internes; Workspace constaté Business Starter actif, stockage « Aucune préférence » : ne pas promettre une résidence UE. ATDC Google accepté sur autorisation spécifique. Notifications démo minimisées en local (référence + lien admin). Resend Free constaté et DPA signé fournisseur archivé en privé; conservation effective et autres contrats restent à valider. Dashboard `/privacy` noindex et en vérification. Mentions légales : nom/prénom de l'EI non autorisés à publier; adresse seule autorisée. La page reste incomplète sans identité d'éditeur; réseaux facultatifs.
@@ -21,7 +22,6 @@
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
 - [ ] Onboarding v2 : #404–#411 livrés; téléphone et en ligne restent requis, attribution du numéro manuelle avant ouverture. En local : proposition de formule après appel test, équipe/rôles à valider avec un compte Clerk. Décider l'attribution Telnyx automatique et le compte Stripe unique après l'audit phase 1.6; paiement après onboarding. UI locale à valider.
-- [ ] Onboarding en ligne : bouton « Annuler la réservation test » dans l’étape Règles et diffusion (aujourd’hui le restaurateur réserve sur sa vraie page puis annule à la main).
 - [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 - [ ] Banc voix : décider phase 1b et annoter humainement `bf3893ae` (`truthStatus: unverified`); ablation/substitution ne discriminent pas.
@@ -35,7 +35,7 @@
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
 - [ ] Après phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
-- [ ] Avant Flux, comprendre les 9/31 finals manquants; garder l’allowlist vide jusque-là.
+- [ ] Flux non retenu (20/10, courts/épellations perdus); allowlist vide. Mesurer les tours « inachevés ».
 - [ ] Phase A3 : décider du canary keyterms métier/L16 après revue des résultats et validation staging.
 - [ ] MCP : déployer le reset audité, nettoyer/rejouer le run staging et rejouer les écritures; tests Chez Sokar uniquement, sans `initialize`/`tools/list` bruts.
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.

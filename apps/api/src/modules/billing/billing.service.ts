@@ -106,7 +106,7 @@ export class BillingInvalidSiteCountError extends Error {
   readonly code = 'INVALID_SITE_COUNT';
 
   constructor() {
-    super('Multi-site requires between 1 and 100 establishments');
+    super('Multi-restaurant requires between 1 and 100 establishments');
     this.name = 'BillingInvalidSiteCountError';
   }
 }
@@ -378,7 +378,7 @@ function normalizeIdempotencyKey(value: string | undefined): string | undefined 
  * tenant or another plan. Without a client key, the 24-hour bucket still
  * absorbs double-clicks and network retries during the purchase window.
  */
-export type CheckoutReturnTo = 'settings' | 'onboarding';
+export type CheckoutReturnTo = 'settings' | 'onboarding' | 'billing';
 
 export function buildCheckoutIdempotencyKey(input: {
   restaurantId: string;
@@ -401,7 +401,7 @@ export function buildCheckoutIdempotencyKey(input: {
     input.siteCount,
     // Une session déjà créée garde ses adresses de retour : celle de l'inscription ne doit pas
     // réutiliser une session qui ramènerait vers les Réglages (ni l'inverse).
-    ...(input.returnTo === 'onboarding' ? ['return:onboarding'] : []),
+    ...(input.returnTo && input.returnTo !== 'settings' ? [`return:${input.returnTo}`] : []),
     normalizeIdempotencyKey(input.idempotencyKey) ?? `auto:${bucket}`,
   ].join('|');
   return `sokar-checkout-${createHash('sha256').update(source).digest('hex').slice(0, 48)}`;
@@ -690,14 +690,18 @@ export async function createCheckoutSession(input: {
           },
         },
         success_url: dashboardUrl(
-          input.returnTo === 'onboarding'
-            ? '/onboarding?step=canaux&billing=success&session_id={CHECKOUT_SESSION_ID}'
-            : '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
+          input.returnTo === 'billing'
+            ? '/dashboard/billing?billing=success&session_id={CHECKOUT_SESSION_ID}'
+            : input.returnTo === 'onboarding'
+              ? '/onboarding?step=canaux&billing=success&session_id={CHECKOUT_SESSION_ID}'
+              : '/dashboard/settings?billing=success&session_id={CHECKOUT_SESSION_ID}',
         ),
         cancel_url: dashboardUrl(
-          input.returnTo === 'onboarding'
-            ? '/onboarding?step=formule&billing=cancelled'
-            : '/pricing?billing=cancelled',
+          input.returnTo === 'billing'
+            ? '/dashboard/billing?billing=canceled'
+            : input.returnTo === 'onboarding'
+              ? '/onboarding?step=formule&billing=cancelled'
+              : '/pricing?billing=cancelled',
         ),
       },
       { idempotencyKey },
@@ -739,6 +743,138 @@ export async function createCheckoutSession(input: {
   }
 }
 
+/** Resolve only server-owned IDs; never accept customer/subscription IDs from the browser. */
+async function billingContext(input: { restaurantId: string; accountId?: string }) {
+  const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
+  if (!restaurant) throw new BillingRestaurantNotFoundError();
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
+    : null;
+  const anchor = accountId
+    ? ((await db.restaurant.findFirst({
+        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      })) ?? restaurant)
+    : restaurant;
+  const siteBilling = await db.restaurantBilling.findUnique({ where: { restaurantId: anchor.id } });
+  // An account billing row is authoritative, even before a Stripe customer is attached.
+  const billing = accountBilling ?? siteBilling;
+  return {
+    customerId: billing?.stripeCustomerId ?? null,
+    subscriptionId: billing?.stripeSubscriptionId ?? null,
+  };
+}
+
+export interface BillingDetails {
+  hasCustomer: boolean;
+  hasPaymentMethod: boolean;
+  subscription: {
+    status: string;
+    canUpdatePlan: boolean;
+    plan: PublicBillingPlan | null;
+    recurringAmount: number | null;
+    currency: string;
+    interval: string | null;
+    intervalCount: number | null;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+  } | null;
+  paymentMethod: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+  invoices: {
+    number: string | null;
+    createdAt: string;
+    status: string | null;
+    total: number;
+    currency: string;
+    pdfUrl: string | null;
+    hostedUrl: string | null;
+  }[];
+  hasMoreInvoices: boolean;
+}
+
+/** A bounded, read-only Stripe view. Full card/customer objects never leave the API. */
+export async function getBillingDetails(input: {
+  restaurantId: string;
+  accountId?: string;
+}): Promise<BillingDetails> {
+  const { customerId, subscriptionId } = await billingContext(input);
+  const empty: BillingDetails = {
+    hasCustomer: false,
+    hasPaymentMethod: false,
+    subscription: null,
+    paymentMethod: null,
+    invoices: [],
+    hasMoreInvoices: false,
+  };
+  if (!customerId) return empty;
+  const stripe = getStripe();
+  const [customer, subscription, invoices] = await Promise.all([
+    stripe.customers.retrieve(customerId, { expand: ['invoice_settings.default_payment_method'] }),
+    subscriptionId
+      ? stripe.subscriptions.retrieve(subscriptionId, { expand: ['default_payment_method'] })
+      : null,
+    stripe.invoices.list({ customer: customerId, limit: 20 }),
+  ]);
+  if (customer.deleted) throw new BillingCustomerNotFoundError();
+  // Do not display invoices or payment details if the stored subscription belongs elsewhere.
+  if (subscription && stripeObjectId(subscription.customer) !== customerId)
+    throw new BillingCustomerNotFoundError();
+  const payment =
+    subscription?.default_payment_method ?? customer.invoice_settings.default_payment_method;
+  const card = payment && typeof payment !== 'string' ? payment.card : null;
+  const items = subscription?.items.data ?? [];
+  const first = items[0]?.price;
+  const homogeneous =
+    items.length > 0 &&
+    items.every(
+      ({ price }) =>
+        price.unit_amount !== null &&
+        price.currency === first?.currency &&
+        price.recurring?.interval === first?.recurring?.interval &&
+        price.recurring?.interval_count === first?.recurring?.interval_count,
+    );
+  return {
+    hasCustomer: true,
+    hasPaymentMethod: Boolean(payment || subscription?.default_source || customer.default_source),
+    subscription: subscription
+      ? {
+          status: subscription.status,
+          canUpdatePlan:
+            subscription.items.data.length === 1 &&
+            !subscription.schedule &&
+            subscription.collection_method !== 'send_invoice',
+          plan: first ? getPublicPlanFromPriceId(first.id) : null,
+          recurringAmount: homogeneous
+            ? items.reduce(
+                (total, item) => total + item.price.unit_amount! * (item.quantity ?? 1),
+                0,
+              )
+            : null,
+          currency: subscription.currency,
+          interval: first?.recurring?.interval ?? null,
+          intervalCount: first?.recurring?.interval_count ?? null,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          currentPeriodEnd: subscriptionPeriodEnd(subscription)?.toISOString() ?? null,
+        }
+      : null,
+    paymentMethod: card
+      ? { brand: card.brand, last4: card.last4, expMonth: card.exp_month, expYear: card.exp_year }
+      : null,
+    invoices: invoices.data
+      .filter((invoice) => invoice.status !== 'draft')
+      .map((invoice) => ({
+        number: invoice.number,
+        createdAt: new Date(invoice.created * 1000).toISOString(),
+        status: invoice.status,
+        total: invoice.total,
+        currency: invoice.currency,
+        pdfUrl: invoice.invoice_pdf ?? null,
+        hostedUrl: invoice.hosted_invoice_url ?? null,
+      })),
+    hasMoreInvoices: invoices.has_more,
+  };
+}
+
 /**
  * Opens Stripe's hosted customer portal. Billing remains account-scoped for
  * multi-site customers, while legacy restaurants keep their existing billing
@@ -747,38 +883,48 @@ export async function createCheckoutSession(input: {
 export async function createBillingPortalSession(input: {
   restaurantId: string;
   accountId?: string;
+  intent?: 'manage' | 'payment_method' | 'subscription_update' | 'subscription_cancel';
+  returnTo?: 'settings' | 'billing';
 }): Promise<{ url: string }> {
-  const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
-  if (!restaurant) throw new BillingRestaurantNotFoundError();
-
-  const accountId = restaurant.accountId ?? input.accountId;
-  const accountBilling = accountId
-    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
-    : null;
-  const billingAnchor = accountId
-    ? ((await db.restaurant.findFirst({
-        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
-      })) ?? restaurant)
-    : restaurant;
-  const billing = await db.restaurantBilling.findUnique({
-    where: { restaurantId: billingAnchor.id },
-  });
-  const customerId = accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId;
+  const { customerId, subscriptionId } = await billingContext(input);
   if (!customerId) throw new BillingCustomerNotFoundError();
-
+  const returnUrl = dashboardUrl(
+    input.returnTo === 'billing'
+      ? '/dashboard/billing?billing=portal-return'
+      : '/dashboard/settings?billing=portal-return',
+  );
+  const type = input.intent === 'payment_method' ? 'payment_method_update' : input.intent;
+  let flow: Stripe.BillingPortal.SessionCreateParams.FlowData | undefined;
+  if (type === 'payment_method_update') {
+    const subscription = subscriptionId
+      ? await getStripe().subscriptions.retrieve(subscriptionId)
+      : null;
+    // This deep link changes only the customer's default. When the subscription overrides
+    // that default, use the full portal so its payment settings remain visible.
+    if (!subscription?.default_payment_method && !subscription?.default_source) {
+      flow = { type, after_completion: { type: 'redirect', redirect: { return_url: returnUrl } } };
+    }
+  } else if (type === 'subscription_update' || type === 'subscription_cancel') {
+    if (!subscriptionId) throw new BillingCustomerNotFoundError();
+    flow = {
+      type,
+      [type]: { subscription: subscriptionId },
+      after_completion: { type: 'redirect', redirect: { return_url: returnUrl } },
+    };
+  }
   try {
     const session = await getStripe().billingPortal.sessions.create({
       customer: customerId,
-      return_url: dashboardUrl('/dashboard/settings?billing=portal-return'),
+      return_url: returnUrl,
+      locale: 'fr',
+      ...(flow ? { flow_data: flow } : {}),
     });
     if (!session.url) throw new BillingCheckoutError();
     return { url: session.url };
   } catch (error) {
     if (error instanceof BillingCheckoutError) throw error;
-    logger.error(
-      { err: error instanceof Error ? error.message : String(error), accountId: accountId ?? null },
-      '[billing] Stripe customer portal session creation failed',
-    );
+    // Stripe errors may contain customer data or session URLs; keep logs bounded.
+    logger.error({ restaurantId: input.restaurantId }, '[billing] Stripe portal unavailable');
     throw new BillingCheckoutError();
   }
 }

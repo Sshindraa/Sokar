@@ -8,6 +8,8 @@ import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytic
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
 import { env } from '../../env';
+import { isPublicConnectPage } from '../connect/connect.types';
+import { isTestBookingEnabled, issueTestBookingToken } from '../connect/test-booking';
 import {
   getOnboardingPlaceDetails,
   isOnboardingPlacesEnabled,
@@ -625,7 +627,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (activeSiteCount >= entitledSiteCount) {
       return reply.status(402).send({
         error: 'MULTI_SITE_SUBSCRIPTION_REQUIRED',
-        message: 'La formule Multi-site est nécessaire pour ajouter un établissement.',
+        message: 'La formule Multi-restaurant est nécessaire pour ajouter un établissement.',
       });
     }
 
@@ -1490,6 +1492,37 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
+
+  // Lien Connect signé pour réserver « comme un client » sans polluer le restaurant.
+  // Le jeton n'est jamais journalisé.
+  app.post(
+    '/restaurant/test-booking-link',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      if (!isTestBookingEnabled()) {
+        return reply.status(404).send({ code: 'TEST_BOOKING_DISABLED' });
+      }
+      const restaurant = await app.db.restaurant.findUnique({
+        where: { id: req.restaurantId },
+        select: {
+          slug: true,
+          publishedAt: true,
+          agenticOptIn: true,
+          exposureSettings: { select: { connectPublished: true } },
+        },
+      });
+      if (!restaurant || !restaurant.slug || !isPublicConnectPage(restaurant)) {
+        return reply.status(409).send({
+          code: 'PAGE_NOT_PUBLISHED',
+          error: 'Publiez d’abord votre page pour la tester.',
+        });
+      }
+      const url = new URL(`/restaurant/${encodeURIComponent(restaurant.slug)}`, env.SITE_URL);
+      url.searchParams.set('testBooking', issueTestBookingToken(req.restaurantId));
+      return reply.send({ url: url.toString() });
+    },
+  );
 
   const postOnboardingPlaceSearch = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!isOnboardingPlacesEnabled()) {

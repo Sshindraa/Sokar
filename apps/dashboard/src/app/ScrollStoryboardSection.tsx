@@ -107,20 +107,14 @@ export default function ScrollStoryboardSection() {
   return (
     <section ref={containerRef} data-scroll-storyboard className="relative h-[260vh] w-full">
       <div className="sticky top-0 flex h-screen w-full items-center justify-center overflow-hidden px-4 py-16 sm:px-6 lg:px-10">
-        <motion.div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(85,108,140,0.2),transparent_24rem),radial-gradient(circle_at_82%_54%,rgba(255,255,255,0.08),transparent_24rem)]"
-          style={{ scale: screenScale }}
-        />
-        <motion.div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[length:84px_84px] opacity-35"
-          style={{ scale: screenScale }}
-        />
+        {/* Fade the decoration in from the hero's black edge; keep it fixed while content scales. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-[18%] h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-pricing-accent/10 blur-2xl"
-        />
+          className="pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_bottom,transparent,black_30%,black_75%,transparent)]"
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,hsl(var(--pricing-accent)/0.08),transparent_65%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--foreground)/0.025)_1px,transparent_1px),linear-gradient(180deg,hsl(var(--foreground)/0.025)_1px,transparent_1px)] bg-[length:84px_84px]" />
+        </div>
         <motion.div
           data-storyboard-screen
           className="relative h-full w-full overflow-hidden"

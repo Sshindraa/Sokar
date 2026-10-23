@@ -35,6 +35,7 @@ export async function collectVoiceReservationQualitySnapshot(
       SELECT r.id, r.created_at
       FROM reservations AS r
       WHERE r.channel = 'PHONE'
+        AND r.is_test = false
         AND r.call_id IS NOT NULL
         AND r.created_at >= ${since}
         AND r.created_at < ${now}

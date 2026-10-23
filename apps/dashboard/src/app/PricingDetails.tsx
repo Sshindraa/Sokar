@@ -138,7 +138,7 @@ const questions = [
   ],
   [
     'Combien coûte un groupe de restaurants ?',
-    `La base Multi-site à ${PRICING_CATALOG['multi-site'].monthlyCents / 100} €/mois inclut le premier établissement. Chaque adresse supplémentaire ajoute ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois. La réduction annuelle de ${ANNUAL_DISCOUNT_PERCENT} % s’applique à la base et aux établissements supplémentaires. Le montant annuel exact est indiqué avant paiement. Le sélecteur affiche le total pour votre nombre d’établissements et transmet ce choix à l’inscription. Chaque adresse conserve ses propres horaires, règles et fichier client. Les accès des équipes sont vérifiés lors de la mise en service.`,
+    `La base Multi-restaurant à ${PRICING_CATALOG['multi-site'].monthlyCents / 100} €/mois inclut le premier établissement. Chaque adresse supplémentaire ajoute ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois. La réduction annuelle de ${ANNUAL_DISCOUNT_PERCENT} % s’applique à la base et aux établissements supplémentaires. Le montant annuel exact est indiqué avant paiement. Le sélecteur affiche le total pour votre nombre d’établissements et transmet ce choix à l’inscription. Chaque adresse conserve ses propres horaires, règles et fichier client. Les accès des équipes sont vérifiés lors de la mise en service.`,
   ],
 ];
 
@@ -160,7 +160,7 @@ export default function PricingDetails() {
               <th scope="col" className="p-5">
                 Votre usage
               </th>
-              {['Essential', 'Pro', 'Multi-site'].map((plan) => (
+              {['Essential', 'Pro', 'Multi-restaurant'].map((plan) => (
                 <th key={plan} scope="col" className="p-5">
                   {plan}
                 </th>

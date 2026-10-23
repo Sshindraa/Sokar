@@ -385,6 +385,93 @@ describe('BookingWidget waiting list flow', () => {
     expect(body.giftCardReservationAmount).toBeUndefined();
   });
 
+  describe('réservation test (jeton signé)', () => {
+    const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
+    const banner =
+      'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+    const restaurantDto = {
+      id: 'rest-1',
+      slug,
+      name: 'Chez Sokar',
+      connectAgentic: false,
+      city: 'Paris',
+      sections: [],
+    };
+    const availability = () =>
+      jsonResponse({
+        date: todayIso(),
+        partySize: 2,
+        slots: [{ time: '19:00', available: true }],
+      });
+
+    async function fillAndConfirm(responses: Response[]) {
+      setFetchSequence([jsonResponse(restaurantDto), availability(), ...responses]);
+      render(
+        <BookingWidget
+          slug={slug}
+          marketingAttributionToken={'x'.repeat(40)}
+          testBookingToken={token}
+        />,
+      );
+      expect(screen.getByText(banner)).toBeInTheDocument();
+      await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /créneau à 19:00/i })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: /créneau à 19:00/i }));
+      fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: 'Marie' } });
+      fireEvent.change(screen.getByLabelText(/^Téléphone/i), { target: { value: '+33612345678' } });
+      fireEvent.click(screen.getByRole('button', { name: /confirmer la réservation/i }));
+    }
+
+    const posts = () =>
+      vi
+        .mocked(globalThis.fetch)
+        .mock.calls.filter(([, init]) => init?.method === 'POST')
+        .map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init?.body)) }));
+
+    it('envoie le jeton à hold et confirm, sans attribution, et affiche la réponse réelle', async () => {
+      await fillAndConfirm([
+        jsonResponse({ holdId: 'h1', holdToken: 'ht1' }),
+        jsonResponse({
+          reservationId: 'res-123',
+          restaurantName: 'Chez Sokar',
+          date: todayIso(),
+          time: '19:00',
+          partySize: 2,
+          managementUrl: 'https://sokar.tech/r/abc',
+        }),
+      ]);
+      expect(await screen.findByText('Réservation confirmée')).toBeInTheDocument();
+      expect(screen.getByText('res-123')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /gérer ma réservation/i })).toBeInTheDocument();
+      const calls = posts();
+      const hold = calls.find((c) => c.url.endsWith('/hold'));
+      const confirm = calls.find((c) => c.url.endsWith('/confirm'));
+      expect(hold?.body.testBookingToken).toBe(token);
+      expect(confirm?.body.testBookingToken).toBe(token);
+      expect(confirm?.body.marketingAttributionToken).toBeUndefined();
+      expect(calls.some((c) => c.url.includes('/marketing/attribution/click'))).toBe(false);
+    });
+
+    it.each([403, 429])('affiche le message de l’API pour un hold refusé (%i)', async (status) => {
+      await fillAndConfirm([jsonResponse({ error: 'Message du serveur.' }, status)]);
+      expect(await screen.findByText('Message du serveur.')).toBeInTheDocument();
+    });
+
+    it.each([403, 429])(
+      'affiche le message de l’API pour un confirm refusé (%i)',
+      async (status) => {
+        await fillAndConfirm([
+          jsonResponse({ holdId: 'h1', holdToken: 'ht1' }),
+          jsonResponse({ error: 'Message du serveur.' }, status),
+        ]);
+        expect(await screen.findByText('Message du serveur.')).toBeInTheDocument();
+      },
+    );
+  });
+
   describe('consentement marketing facultatif', () => {
     async function reachConfirmForm() {
       setFetchSequence([

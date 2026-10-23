@@ -45,7 +45,7 @@ import { TrialRecap, TrialTrack } from '@/features/billing/trial';
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
   STARTER: { label: 'Essential', calls: 'Appels inclus' },
   PRO: { label: 'Pro', calls: 'Appels inclus, copilote de service' },
-  PREMIUM: { label: 'Multi-site', calls: 'Appels inclus, plusieurs adresses' },
+  PREMIUM: { label: 'Multi-restaurant', calls: 'Appels inclus, plusieurs adresses' },
 };
 
 const PROFILE_OPTIONS = [
@@ -842,6 +842,12 @@ export default function SettingsPage() {
                 )}
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button asChild>
+                <a href="/dashboard/billing">
+                  Mon abonnement
+                  <ArrowUpRight size={14} className="ml-1" />
+                </a>
+              </Button>
               {canManageBilling && (
                 <Button
                   variant={billingStatus?.subscriptionStatus === 'trialing' ? 'default' : 'outline'}

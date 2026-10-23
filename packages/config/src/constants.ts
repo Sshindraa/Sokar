@@ -3,14 +3,17 @@ import { PRICING_CATALOG } from '@sokar/shared';
 export const PLANS = {
   ESSENTIAL: { label: 'Essential', price: PRICING_CATALOG.essential.monthlyCents / 100 },
   PRO: { label: 'Pro', price: PRICING_CATALOG.pro.monthlyCents / 100 },
-  MULTI_SITE: { label: 'Multi-site', price: PRICING_CATALOG['multi-site'].monthlyCents / 100 },
+  MULTI_SITE: {
+    label: 'Multi-restaurant',
+    price: PRICING_CATALOG['multi-site'].monthlyCents / 100,
+  },
 } as const;
 
 // Legacy mapping — DB still uses STARTER / PREMIUM until migration
 export const PLAN_LABEL_MAP: Record<string, string> = {
   STARTER: 'Essential',
   PRO: 'Pro',
-  PREMIUM: 'Multi-site',
+  PREMIUM: 'Multi-restaurant',
 };
 
 export const PLAN_PRICE_MAP: Record<string, number> = {

@@ -15,7 +15,7 @@ describe('PlanComparison', () => {
     render(<PlanComparison />);
     const table = screen.getByRole('table');
 
-    for (const name of ['Essential', 'Pro', 'Multi-site']) {
+    for (const name of ['Essential', 'Pro', 'Multi-restaurant']) {
       expect(within(table).getByRole('columnheader', { name })).toBeInTheDocument();
     }
     for (const feature of CATALOG_FEATURES) {
@@ -41,7 +41,7 @@ describe('PlanComparison', () => {
     expect(within(row).queryByText('Bientôt')).not.toBeInTheDocument();
   });
 
-  it('réserve les fonctionnalités Multi-site à la formule Multi-site', () => {
+  it('réserve les fonctionnalités Multi-restaurant à la formule Multi-restaurant', () => {
     render(<PlanComparison />);
     const row = rowFor('Facturation groupée');
 

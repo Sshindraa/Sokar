@@ -22,7 +22,7 @@ import '../../brand-palette.css';
 const SIGNUP_PLANS = {
   essential: { label: 'Essential', billingLabel: 'facturation annuelle' },
   pro: { label: 'Pro', billingLabel: 'facturation annuelle' },
-  'multi-site': { label: 'Multi-site', billingLabel: 'facturation annuelle' },
+  'multi-site': { label: 'Multi-restaurant', billingLabel: 'facturation annuelle' },
 } as const;
 
 type SignupSelection = {

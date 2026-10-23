@@ -14,6 +14,7 @@ import {
   createBillingPortalSession,
   createCheckoutSession,
   getBillingStatus,
+  getBillingDetails,
   startTrial,
 } from './billing.service';
 
@@ -31,8 +32,17 @@ const CheckoutSchema = z.object({
   siteCount: z.number().int().min(1).max(100).optional(),
   // Où Stripe ramène le restaurateur : les Réglages (défaut) ou l'inscription en cours, dont
   // l'espace n'est pas encore ouvert.
-  returnTo: z.enum(['settings', 'onboarding']).optional(),
+  returnTo: z.enum(['settings', 'onboarding', 'billing']).optional(),
 });
+
+const PortalSchema = z
+  .object({
+    intent: z
+      .enum(['manage', 'payment_method', 'subscription_update', 'subscription_cancel'])
+      .optional(),
+    returnTo: z.enum(['settings', 'billing']).optional(),
+  })
+  .strict();
 
 export async function billingRoutes(app: FastifyInstance) {
   app.get('/billing/status', { preHandler: requireOrg() }, async (req, reply) => {
@@ -58,6 +68,31 @@ export async function billingRoutes(app: FastifyInstance) {
       return reply.status(500).send({
         error: 'BILLING_STATUS_FAILED',
         message: 'Impossible de charger le statut de la facturation.',
+      });
+    }
+  });
+
+  app.get('/billing/details', { preHandler: requireOrg() }, async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    if (req.siteRole !== 'OWNER') {
+      return reply.status(403).send({
+        error: 'BILLING_OWNER_REQUIRED',
+        message: 'Seul le propriétaire du compte peut consulter la facturation.',
+      });
+    }
+    try {
+      return reply.send(
+        await getBillingDetails({ restaurantId: req.restaurantId!, accountId: req.accountId }),
+      );
+    } catch (error) {
+      if (error instanceof BillingRestaurantNotFoundError)
+        return reply
+          .status(404)
+          .send({ error: 'RESTAURANT_NOT_FOUND', message: 'Restaurant introuvable.' });
+      req.log.warn('[billing] Billing details unavailable');
+      return reply.status(502).send({
+        error: 'BILLING_DETAILS_FAILED',
+        message: 'Impossible de charger les informations Stripe. Réessayez dans un instant.',
       });
     }
   });
@@ -107,7 +142,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (error instanceof BillingInvalidSiteCountError) {
         return reply.status(400).send({
           error: 'INVALID_SITE_COUNT',
-          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-restaurant.',
         });
       }
       if (error instanceof BillingCheckoutError) {
@@ -165,7 +200,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (error instanceof BillingInvalidSiteCountError) {
         return reply.status(400).send({
           error: 'INVALID_SITE_COUNT',
-          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-restaurant.',
         });
       }
       if (error instanceof BillingTrialAlreadyUsedError) {
@@ -193,11 +228,14 @@ export async function billingRoutes(app: FastifyInstance) {
       });
     }
 
+    const input = PortalSchema.parse(req.body ?? {});
+    reply.header('Cache-Control', 'no-store');
     try {
       return reply.send(
         await createBillingPortalSession({
           restaurantId: req.restaurantId!,
           accountId: req.accountId,
+          ...input,
         }),
       );
     } catch (error) {

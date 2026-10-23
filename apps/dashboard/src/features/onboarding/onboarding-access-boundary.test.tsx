@@ -112,3 +112,89 @@ it('garde la formule choisie sur la page Tarifs avant de renvoyer vers l’inscr
   window.history.replaceState(null, '', '/');
   window.localStorage.clear();
 });
+
+function qualificationState() {
+  const state = stateWith('pending');
+  state.restaurant = { id: 'qualification-site' } as OnboardingState['restaurant'];
+  for (const step of state.steps) {
+    if (['restaurant', 'hours', 'floor'].includes(step.key)) step.status = 'completed';
+  }
+  return state;
+}
+
+function mountQualification(ids = ['qualification-site']) {
+  return render(
+    <OnboardingAccessBoundary
+      crmQualificationRestaurantIds={ids}
+      onboarding={<p>Parcours de configuration</p>}
+    >
+      <p>CRM accessible</p>
+    </OnboardingAccessBoundary>,
+  );
+}
+
+it.each(['/dashboard/customers', '/dashboard/customers/crm', '/dashboard/customers/crm/client'])(
+  'ouvre uniquement le CRM qualifié après le socle : %s',
+  (pathname) => {
+    mocks.state = qualificationState();
+    mocks.pathname = pathname;
+    mountQualification();
+    expect(screen.getByText('CRM accessible')).toBeInTheDocument();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(mocks.state.steps.find((step) => step.key === 'phone')?.status).toBe('pending');
+  },
+);
+
+it.each(['/dashboard', '/dashboard/settings', '/dashboard/customers-other', '/dashboard/connect'])(
+  'conserve le verrou hors du CRM : %s',
+  (pathname) => {
+    mocks.state = qualificationState();
+    mocks.pathname = pathname;
+    mountQualification();
+    expect(screen.queryByText('CRM accessible')).not.toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenCalledWith('/onboarding');
+  },
+);
+
+it.each([[], ['another-site'], ['*']])('refuse une qualification sans ID exact : %j', (...ids) => {
+  mocks.state = qualificationState();
+  mocks.pathname = '/dashboard/customers/crm';
+  mountQualification(ids.flat());
+  expect(screen.queryByText('CRM accessible')).not.toBeInTheDocument();
+});
+
+it.each(['pending', 'skipped', 'blocked', 'current'] as const)(
+  'refuse un socle incomplet : %s',
+  (status) => {
+    mocks.state = qualificationState();
+    mocks.state.steps.find((step) => step.key === 'floor')!.status = status;
+    mocks.pathname = '/dashboard/customers/crm';
+    mountQualification();
+    expect(screen.queryByText('CRM accessible')).not.toBeInTheDocument();
+  },
+);
+
+it('attend le chargement même sur le CRM qualifié', () => {
+  mocks.state = qualificationState();
+  mocks.pathname = '/dashboard/customers/crm';
+  mocks.loading = true;
+  mountQualification();
+  expect(screen.queryByText('CRM accessible')).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toBeInTheDocument();
+});
+
+it('referme le CRM si le restaurant courant sort de la liste', () => {
+  mocks.state = qualificationState();
+  mocks.pathname = '/dashboard/customers/crm';
+  const view = mountQualification();
+  mocks.state = { ...qualificationState(), restaurant: { id: 'another-site' } } as OnboardingState;
+  view.rerender(
+    <OnboardingAccessBoundary
+      crmQualificationRestaurantIds={['qualification-site']}
+      onboarding={<p>Parcours de configuration</p>}
+    >
+      <p>CRM accessible</p>
+    </OnboardingAccessBoundary>,
+  );
+  expect(screen.queryByText('CRM accessible')).not.toBeInTheDocument();
+});
