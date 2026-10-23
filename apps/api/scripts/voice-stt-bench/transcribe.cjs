@@ -12,10 +12,8 @@
  * Sortie par phrase : transcription, mots avec `logprob`, transcriptions partielles.
  */
 const fs = require('node:fs');
-const path = require('node:path');
 const WebSocket = require('ws');
 
-const apiRoot = path.resolve(__dirname, '../..');
 const { buildSttUrl } = require('./scribe-url.cjs');
 
 const CONCURRENCY = Number(process.env.BENCH_CONCURRENCY ?? 4);
