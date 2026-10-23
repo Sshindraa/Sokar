@@ -15,6 +15,12 @@ La première réservation test a été confirmée sans SMS (option SMS du restau
 
 La migration `20261023180000_reservation_test_overlap_exclusion` installe d’abord une contrainte équivalente limitée aux réservations normales, puis remplace l’ancienne dans la même transaction (verrou borné à 5 secondes). Aucune donnée n’est modifiée ou supprimée ; les réservations normales gardent la même protection. Le test PostgreSQL réel vérifie deux tests superposés, la modification d’une réservation normale sur leur table et le refus d’un vrai doublon. Les 10 tests de modification sur une base locale isolée passent après application de toutes les migrations.
 
+## Défaut de purge du journal d’audit
+
+La purge réelle d’un test vieilli de 25 h a échoué sur le trigger append-only du journal, avant toute suppression (transaction annulée). La migration `20261023181000_test_reservation_audit_purge` garde toutes les mises à jour interdites et n’autorise une suppression d’audit que si sa réservation existe encore, est marquée test et a plus de 24 h. Les audits normaux, récents et sans réservation restent protégés. La migration ne supprime aucune donnée.
+
+Un test PostgreSQL réel couvre la suppression de la réservation test expirée avec son audit et son outbox, la conservation d’une réservation normale ancienne et d’un test récent, et le refus de modifier un audit même pour un test expiré. Les deux suites de modification et purge passent : 11 tests.
+
 ## Matrice de recette
 
 | Contrôle                                  | Preuve / état                                                                                       |
@@ -39,7 +45,7 @@ Le portail Telnyx confirme que la clé dédiée `SOKAR_STAGING_VOICE01` a expir�
 - API : 95 tests ciblés passent (jeton, routes Connect et génération du lien, gestion, exclusion des lectures/SQL, purge).
 - Dashboard : 28 tests ciblés passent, dont transmission du jeton jusqu’à la confirmation et refus sans repli réel ; TypeScript vert, ESLint sans erreur.
 - Connect : 20 tests ciblés passent, y compris les valeurs hors contrat qui restent en mode test.
-- PostgreSQL réel : 10 tests de modification passent sur une base locale isolée, y compris les chevauchements test/test et test/réservation normale.
+- PostgreSQL réel : 11 tests de modification et purge passent sur une base locale isolée, y compris les chevauchements test/test et test/réservation normale.
 - CI de la première version widget verte ; nouvelle CI requise pour inclure la migration avant livraison.
 - Recette réelle : à compléter après livraison. L’option SMS de Chez Sokar staging a été activée pour la recette (initialement false), sans modification d’autre restaurant ni de production.
 
