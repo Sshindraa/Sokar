@@ -133,6 +133,8 @@ describe('CrmCustomerPage', () => {
     expect(screen.queryByText('reservation.honored')).not.toBeInTheDocument();
     expect(screen.queryByText('Table calme')).not.toBeInTheDocument();
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1');
+    expect(await screen.findByText('Consentement marketing')).toBeInTheDocument();
+    expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
   });
 
   it('protège et télécharge l’export CRM après code SMS', async () => {

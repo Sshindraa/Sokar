@@ -72,7 +72,8 @@ function normalizeChannel(value: MarketingChannelCode): MarketingChannel {
 /**
  * Resolves an eventual channel permission without making a provider call.
  * During the migration, an explicit legacy marketingOptIn can temporarily
- * grant SMS/email only. WhatsApp always requires a channel-specific opt-in.
+ * grant SMS only. E-mail and WhatsApp always require a channel-specific opt-in: a flag
+ * attached to a phone number does not show that the person accepted e-mail prospecting.
  */
 export function resolveMarketingPermission(args: {
   channel: MarketingChannelCode;
@@ -96,7 +97,7 @@ export function resolveMarketingPermission(args: {
     };
   }
 
-  if (args.channel !== 'WHATSAPP' && args.legacyMarketingOptIn) {
+  if (args.channel === 'SMS' && args.legacyMarketingOptIn) {
     return {
       allowed: true,
       status: MarketingPermissionStatus.OPTED_IN,

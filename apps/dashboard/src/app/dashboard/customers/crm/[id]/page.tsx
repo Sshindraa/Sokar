@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
 import { useApi } from '@/lib/api';
 import { ApiError } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
@@ -893,6 +894,8 @@ export default function CrmCustomerPage() {
           </CardContent>
         </Card>
       </div>
+
+      <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
