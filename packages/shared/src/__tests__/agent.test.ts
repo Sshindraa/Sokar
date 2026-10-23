@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { PROFILE_TYPE_VALUES, PROFILE_TYPE_LABELS, FILLER_STYLE_VALUES, FILLER_STYLE_LABELS } from '../agent';
+import {
+  PROFILE_TYPE_VALUES,
+  PROFILE_TYPE_LABELS,
+  FILLER_STYLE_VALUES,
+  FILLER_STYLE_LABELS,
+} from '../agent';
 
 describe('agent', () => {
   it('every ProfileType has a French label', () => {

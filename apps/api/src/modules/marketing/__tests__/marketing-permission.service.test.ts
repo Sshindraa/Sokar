@@ -39,8 +39,12 @@ describe('marketing permission projection', () => {
       resolveMarketingPermission({ channel: 'WHATSAPP', legacyMarketingOptIn: true }),
     ).toMatchObject({ allowed: false, reason: 'NO_LEGACY_CONSENT' });
     expect(
-      resolveMarketingPermission({ channel: 'EMAIL', legacyMarketingOptIn: true }),
+      resolveMarketingPermission({ channel: 'SMS', legacyMarketingOptIn: true }),
     ).toMatchObject({ allowed: true, source: 'LEGACY_CUSTOMER_CONSENT' });
+    // A legacy flag tied to a phone number never authorises e-mail prospecting.
+    expect(
+      resolveMarketingPermission({ channel: 'EMAIL', legacyMarketingOptIn: true }),
+    ).toMatchObject({ allowed: false, source: 'NONE', reason: 'NO_LEGACY_CONSENT' });
   });
 
   it('stores only a proof hash and appends a permission event', async () => {
