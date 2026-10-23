@@ -14,13 +14,18 @@ test('WhatsApp choice and withdrawal are explicit and do not send provider traff
     const url = route.request().url();
     let body: unknown;
     if (url.includes('/whatsapp-consent/withdraw')) {
+      expect(new URL(url).pathname).toBe(
+        '/api/proxy/public/r/restaurant-exemple/whatsapp-consent/withdraw',
+      );
       expect(route.request().postDataJSON()).toMatchObject({
         reservationId: 'local-test-reservation',
       });
       body = { status: 'withdrawn' };
     } else if (url.includes('/availability')) {
       body = { restaurantId: 'local-test-restaurant', date: day, partySize: 2, slots: ['20:30'] };
-    } else if (url.endsWith('/reservations')) {
+    } else if (url.endsWith('/hold')) {
+      body = { holdToken: crypto.randomUUID() };
+    } else if (url.endsWith('/confirm')) {
       const request = route.request().postDataJSON();
       expect(request.whatsappReminderConsent).toEqual({
         accepted: true,
@@ -28,7 +33,7 @@ test('WhatsApp choice and withdrawal are explicit and do not send provider traff
       });
       body = {
         ...request,
-        id: 'local-test-reservation',
+        reservationId: 'local-test-reservation',
         status: 'CONFIRMED',
         whatsappWithdrawalToken: ['local', 'test', 'receipt'].join('-'),
       };
