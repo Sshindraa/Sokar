@@ -849,14 +849,25 @@ export async function restaurantRoutes(app: FastifyInstance) {
           where: { id },
           select: {
             id: true,
+            publishedAt: true,
+            agenticOptIn: true,
+            exposureSettings: { select: { connectPublished: true } },
             slug: true,
+            giftCardEnabled: true,
             name: true,
             openingHours: true,
             phoneNumber: true,
           },
         });
+        const {
+          publishedAt: _publishedAt,
+          agenticOptIn: _agenticOptIn,
+          exposureSettings: _exposureSettings,
+          ...publicRestaurant
+        } = restaurant;
         return reply.send({
-          ...restaurant,
+          ...publicRestaurant,
+          bookingEnabled: isPublicConnectPage(restaurant),
           whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
         });
       } catch (err) {
@@ -872,8 +883,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
   // Pas d'auth : endpoint public, même politique que /restaurants/:id/public.
   //
   // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Sokar Connect) parce
-  // que ce dernier filtre sur connectPublished. Le widget doit fonctionner
-  // pour tous les restos, pas seulement ceux publiés sur Sokar Connect.
+  // que ce dernier filtre sur connectPublished. Les métadonnées restent accessibles
+  // pour les aperçus/cartes cadeaux ; bookingEnabled annonce la capacité de réserver.
   app.get(
     '/public/widget/:slug',
     { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
@@ -884,6 +895,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
           where: { slug },
           select: {
             id: true,
+            publishedAt: true,
+            agenticOptIn: true,
+            exposureSettings: { select: { connectPublished: true } },
             name: true,
             openingHours: true,
             phoneNumber: true,
@@ -906,8 +920,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
           },
         });
         const defaultFloorPlan = restaurant.floorPlans?.[0];
+        const {
+          publishedAt: _publishedAt,
+          agenticOptIn: _agenticOptIn,
+          exposureSettings: _exposureSettings,
+          ...publicRestaurant
+        } = restaurant;
         return reply.send({
-          ...restaurant,
+          ...publicRestaurant,
+          bookingEnabled: isPublicConnectPage(restaurant),
           sections: defaultFloorPlan?.sections ?? [],
           whatsappReminderOptInEnabled: process.env.WHATSAPP_CONSENT_ENABLED === 'true',
         });

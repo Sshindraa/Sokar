@@ -117,9 +117,11 @@ export function GiftCardTypeStep({
                 <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
                   {packsLoading
                     ? 'Chargement...'
-                    : packs.length === 0
-                      ? 'Aucun pack disponible'
-                      : `${packs.length} pack${packs.length > 1 ? 's' : ''} disponible${packs.length > 1 ? 's' : ''}`}
+                    : flow.packsError
+                      ? 'Chargement impossible. Veuillez recharger la page.'
+                      : packs.length === 0
+                        ? 'Aucun pack disponible'
+                        : `${packs.length} pack${packs.length > 1 ? 's' : ''} disponible${packs.length > 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>

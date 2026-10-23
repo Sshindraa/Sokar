@@ -113,7 +113,7 @@ export async function recommendGiftCard(input: {
 
 export async function listGiftCardPacks(slug: string): Promise<GiftCardPack[]> {
   const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/packs/${slug}`);
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error('Impossible de charger les packs cadeaux. Veuillez réessayer.');
   return res.json();
 }
 

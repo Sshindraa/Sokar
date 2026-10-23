@@ -94,4 +94,15 @@ Correction : décider explicitement si le widget autonome exige la publication C
 3. Trancher le contrat widget autonome / Connect, puis qualifier les variantes Connect et ChatGPT.
 4. Ajouter des tests qui traversent le reverse proxy et le composant réellement déployé : des mocks qui répondent à une URL attendue ne détectent pas une destination Nginx manquante.
 
-Aucune correction fonctionnelle ni activation supplémentaire n'est incluse dans cet audit.
+L’audit initial était sans modification. Sur demande de Hamza, les corrections ci-dessous ont ensuite été implémentées.
+
+## Corrections implémentées — en qualification
+
+- A/B : règles Nginx limitées aux familles publiques `gift-cards`, `r`, `widget`, aux événements analytiques et au clic signé, plus `/gift-card/` vers Connect. Même origine, CSP et authentification API conservées ; limites spécifiques hold/confirm préservées. Contrôles de déploiement ajoutés sur le domaine principal.
+- C : paramètre `crowdfund` consommé par la page cadeau, composant de contribution monté ; lien construit avec `URL.searchParams`, conservation des paramètres et retrait du mode iframe.
+- D/E : code cadeau transmis à la confirmation normale sans montant de débit, ignoré en test ; lien cadeau utilisant le slug résolu de l’établissement.
+- F : texte neutre avant confirmation ; échec de packs distingué d’une vraie liste vide.
+- G : capacité publique additive `bookingEnabled` ; formulaire bloqué avant les coordonnées si la publication actuelle ne permet pas de réserver. Aucune publication automatique ni modification de l’éligibilité serveur.
+- Variantes : lien de gestion sur le widget ChatGPT ; absence d’achat cadeau et de consentement WhatsApp dans le parcours test Connect.
+
+Vérifications locales : TypeScript des quatre applications vert ; suites ciblées API/Dashboard/Connect/ChatGPT vertes ; suite Connect complète verte. Vérification réelle Nginx sur un port temporaire isolé : packs/widget/page bénéficiaire 200, famille publique non autorisée 404. Le processus temporaire a été arrêté. Qualification staging/production encore à compléter ; aucune transaction Stripe ou notification fournisseur n’a été déclenchée par ces vérifications.

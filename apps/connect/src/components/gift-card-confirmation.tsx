@@ -80,6 +80,8 @@ export function GiftCardConfirmation({
       <a
         className="underline"
         href={`/gift-card/${encodeURIComponent(result.shortCode ?? result.code)}`}
+        target="_blank"
+        rel="noopener noreferrer"
       >
         Consulter la carte comme bénéficiaire
       </a>

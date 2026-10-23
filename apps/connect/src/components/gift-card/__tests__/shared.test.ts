@@ -84,3 +84,19 @@ describe('reservationTheme', () => {
     expect(Object.keys(reservationTheme)).toHaveLength(9);
   });
 });
+
+describe('crowdfundingContributionUrl', () => {
+  it('remplace le code sans perdre la source ni conserver un iframe dans le lien partagé', async () => {
+    const { crowdfundingContributionUrl } = await import('../shared');
+    const url = new URL(
+      crowdfundingContributionUrl(
+        'https://sokar.tech/widget/demo/gift-card?embedded=1&source=restaurant&crowdfund=old',
+        'new-code',
+      ),
+    );
+    expect(url.searchParams.get('crowdfund')).toBe('new-code');
+    expect(url.searchParams.get('source')).toBe('restaurant');
+    expect(url.searchParams.has('embedded')).toBe(false);
+    expect([...url.searchParams.keys()].filter((key) => key === 'crowdfund')).toHaveLength(1);
+  });
+});

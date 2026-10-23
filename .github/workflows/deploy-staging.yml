@@ -223,6 +223,14 @@ jobs:
 
           echo "=== Health checks ==="
 
+          # Exercise the primary-domain routing, not only the API hostname.
+          for PUBLIC_PATH in /public/widget/chez-sokar-demo /public/gift-cards/packs/chez-sokar-demo /gift-card/sokar-route-smoke; do
+            PUBLIC_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$STAGING_URL$PUBLIC_PATH")
+            echo "$PUBLIC_PATH → $PUBLIC_STATUS"
+            [ "$PUBLIC_STATUS" = "200" ] || exit 1
+          done
+
+
           # /health via api-staging.sokar.tech
           HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 10 "$API_STAGING_URL/health" || echo "FAIL")

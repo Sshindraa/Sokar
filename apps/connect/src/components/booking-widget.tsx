@@ -50,6 +50,7 @@ type PublicRestaurant = {
   slug: string;
   name: string;
   connectAgentic: boolean;
+  bookingEnabled?: boolean;
   giftCardEnabled: boolean;
   whatsappReminderOptInEnabled?: boolean;
   address: { city: string };
@@ -159,6 +160,7 @@ export function BookingWidget({
         if (!data) return setRestaurant(null);
         setRestaurant({
           id: data.id,
+          bookingEnabled: data.bookingEnabled,
           slug: data.slug ?? slug,
           name: data.name,
           connectAgentic: data.connectAgentic ?? false,
@@ -327,8 +329,8 @@ export function BookingWidget({
             ...(email.trim() ? { email: email.trim() } : {}),
           },
           specialRequests: specialRequests.trim() || undefined,
-          giftCardCode: giftCardCode.trim() || undefined,
-          ...(restaurant?.whatsappReminderOptInEnabled
+          ...(!testBooking && giftCardCode.trim() ? { giftCardCode: giftCardCode.trim() } : {}),
+          ...(!testBooking && restaurant?.whatsappReminderOptInEnabled
             ? {
                 whatsappReminderConsent: {
                   accepted: whatsappOptIn,
@@ -501,6 +503,14 @@ export function BookingWidget({
     '--widget-accent': accentColor,
     '--widget-accent-light': `color-mix(in srgb, ${accentColor} 10%, transparent)`,
   } as React.CSSProperties;
+
+  if (restaurant?.bookingEnabled === false) {
+    return (
+      <p role="status">
+        La réservation en ligne n’est pas disponible pour ce restaurant. Veuillez le contacter.
+      </p>
+    );
+  }
 
   return (
     <div style={widgetStyle}>
@@ -751,7 +761,7 @@ export function BookingWidget({
               setHoneypot={setHoneypot}
             />
 
-            {(restaurant?.giftCardEnabled || initialGiftCardCode) && (
+            {!testBooking && (restaurant?.giftCardEnabled || initialGiftCardCode) && (
               <div className="space-y-2">
                 <label htmlFor="booking-gift-card-code" className="block text-sm font-medium">
                   Code carte cadeau (facultatif)
@@ -770,7 +780,7 @@ export function BookingWidget({
               </div>
             )}
 
-            {restaurant?.whatsappReminderOptInEnabled && (
+            {!testBooking && restaurant?.whatsappReminderOptInEnabled && (
               <label className="flex items-start gap-3 text-sm text-[var(--widget-primary)]">
                 <input
                   type="checkbox"
@@ -828,7 +838,7 @@ export function BookingWidget({
       ) : (
         <div className="space-y-4">
           {/* Lien vers l'achat de carte cadeau */}
-          {restaurant?.giftCardEnabled && (
+          {!testBooking && restaurant?.giftCardEnabled && (
             <div className="flex justify-end">
               <a
                 href={`/widget/${slug}/gift-card?embedded=${embedded ? '1' : '0'}&primary=${primaryColor.replace('#', '')}&accent=${accentColor.replace('#', '')}&source=${source}`}

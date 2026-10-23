@@ -48,9 +48,26 @@ describe('GET /public/widget/:slug', () => {
       select: expect.objectContaining({ id: true, name: true, openingHours: true }),
     });
     const body = res.json();
+    expect(body.bookingEnabled).toBe(false);
+    expect(body).not.toHaveProperty('exposureSettings');
     expect(body.id).toBe('rest-uuid-123');
     expect(body.slug).toBe('chez-sokar-demo');
     expect(body.sections).toEqual([{ id: 'section-terrasse', name: 'Terrasse' }]);
+  });
+
+  it('annonce la réservation disponible seulement pour une publication complète', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      id: 'rest-1',
+      slug: 'chez-sokar-demo',
+      name: 'Chez Sokar',
+      publishedAt: new Date(),
+      agenticOptIn: true,
+      exposureSettings: { connectPublished: true },
+    } as never);
+    const response = await app.inject({ method: 'GET', url: '/public/widget/chez-sokar-demo' });
+    expect(response.json().bookingEnabled).toBe(true);
+    expect(response.json()).not.toHaveProperty('agenticOptIn');
   });
 
   it('renvoie 404 quand le slug est inconnu', async () => {

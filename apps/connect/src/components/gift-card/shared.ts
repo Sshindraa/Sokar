@@ -46,3 +46,11 @@ export function todayIso(): string {
 }
 
 export { formatEuro };
+
+/** Preserve existing campaign parameters and make shared links standalone. */
+export function crowdfundingContributionUrl(currentUrl: string, code: string): string {
+  const url = new URL(currentUrl);
+  url.searchParams.set('crowdfund', code);
+  url.searchParams.delete('embedded');
+  return url.toString();
+}

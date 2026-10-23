@@ -644,7 +644,12 @@ describe('widget embarqué — listener entrant', () => {
 });
 
 describe('réservation publique sur le widget réellement servi par /book', () => {
-  async function submitTest(token: string | undefined, rejectHold = false, legacyId = false) {
+  async function submitTest(
+    token: string | undefined,
+    rejectHold = false,
+    legacyId = false,
+    giftCode?: string,
+  ) {
     const date = new Date();
     date.setDate(date.getDate() + 2);
     const dateValue = dateParam(date);
@@ -656,6 +661,7 @@ describe('réservation publique sur le widget réellement servi par /book', () =
         partySize: '2',
         ...(token === undefined ? {} : { testBooking: token }),
         marketingAttributionToken: 'a'.repeat(24),
+        ...(giftCode ? { giftCardCode: giftCode } : {}),
       }).toString(),
     );
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
@@ -730,6 +736,40 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toContain('/api/proxy/public/r/chez-sokar/confirm');
     expect(posts.some(([url]) => url.includes('/public/r/r1/'))).toBe(false);
+    fireEvent.click(widget.getByRole('button', { name: 'Offrir une carte cadeau' }));
+    expect(widget.container.querySelector('iframe')?.getAttribute('src')).toContain(
+      '/widget/chez-sokar/gift-card?embedded=1',
+    );
+  });
+
+  it('associe le code cadeau fourni au parcours normal, sans montant de débit', async () => {
+    const { widget, fetchSpy } = await submitTest(undefined, false, false, 'SKR-TEST-01');
+    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
+    const body = JSON.parse(call![1]!.body as string);
+    expect(body.giftCardCode).toBe('SKR-TEST-01');
+    expect(body.giftCardReservationAmount).toBeUndefined();
+  });
+
+  it('ne transmet pas de carte cadeau depuis un lien de test', async () => {
+    const { widget, fetchSpy } = await submitTest(crypto.randomUUID(), false, false, 'SKR-TEST-01');
+    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    const call = fetchSpy.mock.calls.find(([url]) => url.endsWith('/confirm'));
+    expect(JSON.parse(call![1]!.body as string).giftCardCode).toBeUndefined();
+  });
+
+  it('bloque le formulaire avant les coordonnées si la publication ne permet pas de réserver', async () => {
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ id: 'r1', name: 'Chez Sokar', bookingEnabled: false, openingHours: {} }),
+      ),
+    );
+    const widget = render(<ReservationWidget />);
+    expect(await widget.findByText(/La réservation en ligne n’est pas disponible/)).toBeTruthy();
+    expect(widget.queryByLabelText('Nom complet *')).toBeNull();
+    expect(widget.queryByRole('button', { name: /Continuer/ })).toBeNull();
   });
 
   it('ne confirme pas et ne contourne pas un refus du hold public', async () => {
