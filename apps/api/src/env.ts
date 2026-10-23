@@ -150,25 +150,6 @@ const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
  * bloqué la promotion staging → production. Une valeur vide doit se lire
  * « non configuré », pas « invalide ».
  */
-/**
- * Rapport automatique de chaque appel de test : il se construit à partir de l'enregistrement et de
- * transcriptions après coup (Deepgram). Sans l'un ou l'autre, l'activer ne produirait que des erreurs.
- */
-export function callReportConfigProblem(data: {
-  CALL_REPORT_ENABLED?: string;
-  CALL_RECORDING_ENABLED?: string;
-  DEEPGRAM_API_KEY?: string;
-}): string | null {
-  if (data.CALL_REPORT_ENABLED !== 'true') return null;
-  if (data.CALL_RECORDING_ENABLED !== 'true') {
-    return 'CALL_RECORDING_ENABLED=true is required when CALL_REPORT_ENABLED=true (the report is built from the recording)';
-  }
-  if (!data.DEEPGRAM_API_KEY) {
-    return 'DEEPGRAM_API_KEY is required when CALL_REPORT_ENABLED=true (after-the-fact transcriptions)';
-  }
-  return null;
-}
-
 export const optionalUrlSchema = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
   // Le trim évite qu'un espace invisible dans un secret GitHub produise une
@@ -205,7 +186,6 @@ export const VoiceConfigSchema = z
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
-    VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
     /** `openrouter` passe par `/alpha/decisions` ; `respan` garde le client direct. */
     VOICE_SEMANTIC_SIGNALS_PROVIDER: z.enum(['openrouter', 'respan']).default('openrouter'),
@@ -336,8 +316,7 @@ const EnvSchema = z
     RGPD_ANONYMIZATION_ENABLED: z.enum(['true', 'false']).default('false'),
     // Liste CSV des seuls restaurants de test autorisés à lancer un enregistrement.
     CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
-    // Rapport automatique de chaque appel de test (docs/runbooks/call-reports.md) : opt-in, désactivé par défaut.
-    CALL_REPORT_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Rapport automatique de chaque appel enregistré (docs/runbooks/call-reports.md).
     // Plafond du nombre de rapports générés (coût Deepgram) ; absent = illimité.
     CALL_REPORT_MAX_REPORTS: z.coerce.number().int().positive().optional(),
     // Dossier des journaux de l'API lus par le worker pour le rapport (défaut /var/log/sokar).
@@ -365,9 +344,6 @@ const EnvSchema = z
     VOICE_TTS_PROVIDER: z.enum(['cartesia', 'elevenlabs']).default('cartesia'),
     ELEVENLABS_TTS_VOICE_ID: z.string().optional(),
     ELEVENLABS_TTS_MODEL: z.string().default('eleven_v4_turbo'),
-    // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
-    // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
-    VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),
     // Regroupement des trames audio avant envoi au fournisseur STT : 20 (défaut, envoi
     // immédiat trame par trame) ou un multiple de 20 entre 40 et 200.
     VOICE_STT_CHUNK_MS: sttChunkMsSchema,
@@ -430,12 +406,6 @@ const EnvSchema = z
     SOKAR_INTERNAL_MARKETING_TOKEN: z.string().optional(),
     // Les envois marketing restent verrouillés par défaut, même si les clés
     // provider sont présentes. Ces flags sont lus aussi par les workers.
-    // Le checkout d'abonnement reste désactivé en production tant que les
-    // prix Stripe et le pilote Essential ne sont pas clôturés.
-    BILLING_CHECKOUT_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Le control plane marketing reste désactivé en production tant que les
-    // preuves P2/P3 ne sont pas closes. Le CRM avancé suit la formule seule.
-    MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
@@ -464,10 +434,6 @@ const EnvSchema = z
     DISTRIBUTION_ENABLED: z.enum(['true', 'false']).default('false'),
   })
   .merge(VoiceConfigSchema)
-  .refine((data) => callReportConfigProblem(data) === null, {
-    message: 'CALL_REPORT_ENABLED requires CALL_RECORDING_ENABLED=true and DEEPGRAM_API_KEY',
-    path: ['CALL_REPORT_ENABLED'],
-  })
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {
     message: 'CALL_RECORDINGS_BUCKET is required when CALL_RECORDING_ENABLED=true',
     path: ['CALL_RECORDINGS_BUCKET'],
@@ -687,14 +653,6 @@ export const env: typeof parsedEnv = {
     parsedEnv.VOICE_SEMANTIC_SIGNALS_MODEL,
   ),
 };
-if (env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true') {
-  const key =
-    env.VOICE_SEMANTIC_SIGNALS_PROVIDER === 'respan' ? env.RESPAN_API_KEY : env.OPENROUTER_API_KEY;
-  if (!key?.trim())
-    console.warn(
-      `[voice-semantic] enabled without ${env.VOICE_SEMANTIC_SIGNALS_PROVIDER === 'respan' ? 'RESPAN_API_KEY' : 'OPENROUTER_API_KEY'}; shadow scoring disabled`,
-    );
-}
 
 // Vue typée dédiée au pipeline voice. Elle référence le même objet validé que
 // `env` afin d'éviter une seconde source de vérité ou une copie de secrets.

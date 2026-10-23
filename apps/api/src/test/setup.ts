@@ -825,7 +825,6 @@ process.env.API_URL ??= 'http://localhost:4000';
 process.env.TELNYX_API_KEY = 'test-telnyx-key';
 process.env.TELNYX_WEBHOOK_SECRET = 'test-telnyx-secret';
 process.env.TELNYX_FROM_NUMBER = '+331****0000';
-process.env.TTS_CACHE_ENABLED = 'false';
 process.env.VIP_PUSH_ENABLED = 'false';
 process.env.CLERK_PUBLISHABLE_KEY = 'pk_test_dummy-test-key';
 process.env.CLERK_SECRET_KEY = 'sk_test_dummy-secret-key';

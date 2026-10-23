@@ -67,11 +67,6 @@ interface CartesiaContextMessage {
   message?: string;
 }
 
-/** Le flag est volontairement opt-in : le chemin HTTP reste la référence. */
-export function isCartesiaContextV2Enabled(): boolean {
-  return process.env.VOICE_TTS_CONTEXT_V2_ENABLED === 'true';
-}
-
 export function buildCartesiaWebSocketUrl(): string {
   const url = new URL(CARTESIA_WEBSOCKET_URL);
   url.searchParams.set('cartesia_version', CARTESIA_VERSION);
@@ -459,11 +454,7 @@ export class CartesiaContextTurn {
   }
 }
 
-export function createCartesiaContextTurn(
-  session: CallSession,
-  canaryEnabled = isCartesiaContextV2Enabled(),
-): CartesiaContextTurn | null {
-  if (!canaryEnabled) return null;
+export function createCartesiaContextTurn(session: CallSession): CartesiaContextTurn | null {
   const apiKey = process.env.CARTESIA_API_KEY;
   const voiceId = getCartesiaVoiceId(session);
   if (!apiKey) return null;

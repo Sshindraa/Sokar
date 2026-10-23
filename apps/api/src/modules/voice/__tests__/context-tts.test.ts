@@ -12,7 +12,6 @@ function sessionFor(restaurantId: string): CallSession {
 }
 
 beforeEach(() => {
-  vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'false');
   createElevenLabsContextTurn.mockReset();
 });
 
@@ -23,6 +22,7 @@ afterEach(() => {
 describe('context-tts : fournisseur du tour en contexte', () => {
   it('reste sur le chemin HTTP sans clé ElevenLabs', () => {
     vi.stubEnv('ELEVENLABS_API_KEY', '');
+    vi.stubEnv('CARTESIA_API_KEY', '');
 
     expect(createContextTtsTurn(sessionFor('resto-a'))).toBeNull();
     expect(createElevenLabsContextTurn).not.toHaveBeenCalled();

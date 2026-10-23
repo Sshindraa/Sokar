@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  callReportConfigProblem,
   hasElevenLabsTtsConfig,
   hasSttProviderKey,
   isLiveStripeSecretKey,
@@ -92,37 +91,5 @@ describe('synthèse ElevenLabs du téléphone en production', () => {
         ELEVENLABS_TTS_VOICE_ID: 'voix',
       }),
     ).toBe(false);
-  });
-});
-
-describe('CALL_REPORT_ENABLED environment guard', () => {
-  it('accepts the default (off) without any other setting', () => {
-    expect(callReportConfigProblem({ CALL_REPORT_ENABLED: 'false' })).toBeNull();
-  });
-
-  it('needs recordings enabled, since the report is built from the recording', () => {
-    expect(
-      callReportConfigProblem({
-        CALL_REPORT_ENABLED: 'true',
-        CALL_RECORDING_ENABLED: 'false',
-        DEEPGRAM_API_KEY: 'k'.repeat(24),
-      }),
-    ).toMatch(/CALL_RECORDING_ENABLED/);
-  });
-
-  it('needs the Deepgram key, for the after-the-fact transcriptions', () => {
-    expect(
-      callReportConfigProblem({ CALL_REPORT_ENABLED: 'true', CALL_RECORDING_ENABLED: 'true' }),
-    ).toMatch(/DEEPGRAM_API_KEY/);
-  });
-
-  it('is valid once recordings and the Deepgram key are set', () => {
-    expect(
-      callReportConfigProblem({
-        CALL_REPORT_ENABLED: 'true',
-        CALL_RECORDING_ENABLED: 'true',
-        DEEPGRAM_API_KEY: 'k'.repeat(24),
-      }),
-    ).toBeNull();
   });
 });

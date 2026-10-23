@@ -660,7 +660,6 @@ describe('validation and comparison', () => {
 });
 
 const config: SemanticShadowConfig = {
-  enabled: true,
   sampleRate: 1,
   provider: 'respan',
   model: 'span-01-pro',
@@ -809,25 +808,7 @@ describe('shadow boundary', () => {
     expect(sent.questions).not.toHaveProperty('proposal_response_choice');
   });
 
-  it('does not fetch or count disabled when the flag is off', () => {
-    const increment = vi.spyOn(voiceSemanticStatusTotal, 'inc');
-    const fetcher = response(200, resultBody);
-    observeSemanticSignalsShadow(
-      session,
-      {
-        transcript: 'Bonjour',
-        reply: 'Bonjour',
-        previousQuestion: null,
-        activeInteraction: 'none',
-      },
-      { config: { ...config, enabled: false }, fetcher },
-    );
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(increment).not.toHaveBeenCalled();
-    increment.mockRestore();
-  });
-
-  it('counts missing_key only when enabled without a key', () => {
+  it('counts missing_key when there is no key', () => {
     const increment = vi.spyOn(voiceSemanticStatusTotal, 'inc');
     const fetcher = response(200, resultBody);
     observeSemanticSignalsShadow(

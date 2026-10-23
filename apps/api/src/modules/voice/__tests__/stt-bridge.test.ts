@@ -769,7 +769,6 @@ describe('Deepgram final dispatch', () => {
   describe('fin de tour jugée par le modèle', () => {
     function pendingSession(partial: string) {
       vi.useFakeTimers();
-      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
       const { session } = deepgramSession();
       const ws = makeWsMock();
       session.sttWs = ws;
@@ -804,12 +803,9 @@ describe('Deepgram final dispatch', () => {
       expect(ws.send).not.toHaveBeenCalled();
     });
 
-    it("n'agit pas pendant que l'agent parle, ni quand la fonction est désactivée", () => {
+    it("n'agit pas pendant que l'agent parle", () => {
       const { session, ws } = pendingSession('oui');
       session.state = 'SPEAKING';
-      expect(finalizeOnSemanticEndOfTurn(session, 'oui', true)).toBe(false);
-      session.state = 'LISTENING';
-      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'false');
       expect(finalizeOnSemanticEndOfTurn(session, 'oui', true)).toBe(false);
       expect(ws.send).not.toHaveBeenCalled();
     });
@@ -1142,7 +1138,6 @@ describe('Deepgram final dispatch', () => {
 
     it('le verdict « fini » du modèle sur le texte relevé clôt le tour tout de suite', () => {
       const { session, onEvent, ws } = listening();
-      vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
       spoke(session);
       vi.advanceTimersByTime(700);
       maybeFlushDeepgramOnSilence(session);
@@ -1297,7 +1292,6 @@ describe('Deepgram final dispatch', () => {
       function spellingSession(partial: string, silentMs: number) {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-10-02T12:00:00Z'));
-        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
         const { session } = deepgramSession();
         const ws = makeWsMock();
         session.sttWs = ws;
@@ -1332,7 +1326,6 @@ describe('Deepgram final dispatch', () => {
 
       it('ne change rien hors d’une épellation : la garde normale de 350 ms', () => {
         vi.useFakeTimers();
-        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
         const { session } = deepgramSession();
         const ws = makeWsMock();
         session.sttWs = ws;
@@ -1347,7 +1340,6 @@ describe('Deepgram final dispatch', () => {
 
       it('une réponse qui n’est pas de l’épellation (« oui c’est ça ») après la relecture garde la garde normale', () => {
         vi.useFakeTimers();
-        vi.stubEnv('VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED', 'true');
         const { session } = deepgramSession();
         const ws = makeWsMock();
         session.sttWs = ws;

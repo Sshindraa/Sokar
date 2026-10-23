@@ -1775,10 +1775,6 @@ function requestDeepgramFinalize(
   return true;
 }
 
-export function isSemanticEndOfTurnEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED === 'true';
-}
-
 /**
  * Fin de tour jugée par le modèle, sans liste de phrases : le premier passage
  * spéculatif dit si l'appelant a fini (`turnComplete`). Vrai, et la partielle n'a
@@ -1790,7 +1786,7 @@ export function finalizeOnSemanticEndOfTurn(
   speculatedTranscript: string,
   turnComplete: boolean,
 ): boolean {
-  if (!turnComplete || !isSemanticEndOfTurnEnabled()) return false;
+  if (!turnComplete) return false;
   if (session.state !== 'LISTENING') return false;
   if (session.sttDeepgramPartials?.lastText !== speculatedTranscript) return false;
   return requestDeepgramFinalize(session, {

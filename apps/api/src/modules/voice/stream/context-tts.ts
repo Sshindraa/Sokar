@@ -1,6 +1,6 @@
 import type { SpokenAlignment } from './interrupted-reply';
 import type { CallSession } from './types';
-import { createCartesiaContextTurn, isCartesiaContextV2Enabled } from './cartesia-context';
+import { createCartesiaContextTurn } from './cartesia-context';
 import { createElevenLabsContextTurn } from './elevenlabs-context';
 import { isElevenLabsDialogueEnabledFor } from './elevenlabs-dialogue-context';
 
@@ -35,13 +35,12 @@ export interface ContextTtsTurn {
 /**
  * Choisit le fournisseur du tour. Le chemin ElevenLabs s'applique à tous les restaurants dès que la clé est
  * présente (voir `isElevenLabsDialogueEnabledFor`) et passe devant Cartesia.
- * Sans aucun drapeau, le résultat est `null` : le chemin HTTP habituel reste en place.
+ * Sans clé de fournisseur, le résultat est `null` : le chemin HTTP habituel reste en place.
  */
 export function createContextTtsTurn(session: CallSession): ContextTtsTurn | null {
   if (isElevenLabsDialogueEnabledFor(session.restaurantId)) {
     const elevenLabsTurn = createElevenLabsContextTurn(session);
     if (elevenLabsTurn) return elevenLabsTurn;
   }
-  if (isCartesiaContextV2Enabled()) return createCartesiaContextTurn(session, true);
-  return null;
+  return createCartesiaContextTurn(session);
 }

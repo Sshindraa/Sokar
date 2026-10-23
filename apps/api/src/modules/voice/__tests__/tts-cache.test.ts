@@ -8,10 +8,6 @@ vi.mock('../../../shared/redis/client', () => ({
 }));
 
 describe('TTS Cache', () => {
-  beforeEach(() => {
-    process.env.TTS_CACHE_ENABLED = 'true';
-  });
-
   it('retourne null si cache vide', async () => {
     const { getTtsCached } = await import('../../../modules/voice/tts-cache');
     const { redisCache } = await import('../../../shared/redis/client');
