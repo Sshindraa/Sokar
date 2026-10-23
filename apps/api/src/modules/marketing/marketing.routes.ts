@@ -286,6 +286,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           proofVersion: body.proofVersion,
           proof: body.proof,
           proofHash: body.proofHash,
+          actorUserId: request.userId,
           occurredAt: new Date(),
         });
         return reply.send({ data: permission });
@@ -309,6 +310,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           customerId: id,
           channel,
           method,
+          actorUserId: request.userId,
         });
         return reply.send({ data: permission });
       } catch (error) {
@@ -334,6 +336,7 @@ export async function marketingRoutes(app: FastifyInstance) {
           customerId: id,
           channel,
           source: 'DASHBOARD_WITHDRAWAL',
+          actorUserId: request.userId,
         });
         return reply.send({ data: permission });
       } catch (error) {

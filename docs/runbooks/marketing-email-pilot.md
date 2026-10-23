@@ -113,7 +113,7 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
-- **Durées de conservation : trois obligations distinctes, aucune n'est encore appliquée par le code.**
+- **Durées de conservation : trois obligations distinctes.** Le registre d'opposition est conservé **3 ans** (décision de Hamza du 23/10/2026, appliquée par une purge sur le worker de réconciliation). Le fichier de prospection et la preuve n'ont pas encore de durée appliquée par le code.
   La politique de confidentialité (`PRIVACY_RETENTION_RULES`) n'a pas de ligne marketing. Les durées
   ci-dessous sont des **recommandations de la CNIL à contextualiser, pas une durée universelle ni une
   décision validée** :
@@ -122,23 +122,29 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | Fichier de prospection           | Durée adaptée ; la CNIL recommande 3 ans après la fin de la relation client, ou après la collecte ou le dernier contact **venant du prospect** (un e-mail envoyé par le restaurant n'en est pas un) |
   | Preuve du consentement           | Conservation probatoire distincte, justifiée et à accès limité (aujourd'hui : avec la fiche client)                                                                                                 |
-  | Liste d'opposition (désinscrits) | Au moins 3 ans recommandés, uniquement pour empêcher une nouvelle sollicitation                                                                                                                     |
+  | Liste d'opposition (désinscrits) | **3 ans retenus**, uniquement pour empêcher une nouvelle sollicitation (table `marketing_opt_outs`, voir ci-dessous)                                                                                |
 
-  Point à vérifier : la preuve et l'état « retiré » sont aujourd'hui supprimés **en cascade** avec la fiche
-  client (effacement RGPD). Une personne désinscrite pourrait alors être réimportée puis sollicitée de
-  nouveau. Il faut une liste d'opposition minimale et séparée (par exemple l'empreinte de l'adresse et la
-  date), conservée après l'effacement de la fiche. **Non faite.**
+  **Registre d'opposition (livré, migration `20261023120000_marketing_opt_out_register`)** : la preuve et
+  l'état « retiré » restent supprimés en cascade avec la fiche client (effacement RGPD), mais chaque retrait
+  (lien de désinscription, dashboard) et chaque plainte inscrit aussi, **par restaurant et par canal**, un
+  **HMAC-SHA256** de l'adresse ou du numéro dans `marketing_opt_outs`, sans lien avec la fiche : il survit à
+  l'effacement. Il gagne sur un accord en base (exclusion `OPTED_OUT_REGISTER` dans l'aperçu et au dernier
+  contrôle avant envoi, y compris pour les automatisations). Une nouvelle case cochée par la personne le lève
+  (le journal garde les deux actes). Sans `MARKETING_OPTOUT_HASH_SECRET`, aucun message n'est envoyé. Les
+  retraits antérieurs à la migration se reprennent avec
+  `pnpm --filter @sokar/api exec tsx scripts/backfill-marketing-opt-out-register.ts --dry-run` puis `--apply`
+  (comptes seulement, jamais d'adresse). Le registre est une donnée personnelle pseudonymisée : il doit
+  figurer dans la politique et l'annexe client (**non fait**).
 
-- **Limites connues de la preuve** : l'empreinte de `version|canal|phrase` permet de vérifier un texte, elle ne
-  prouve pas à elle seule que le titulaire de l'adresse l'a accepté. Il faut pouvoir rattacher l'acte à la
-  personne : date, adresse concernée, parcours, version présentée (déjà conservés) et, pour une saisie par le
-  restaurant, **l'auteur de la saisie et les circonstances du recueil** (la méthode seule est conservée
-  aujourd'hui, pas l'auteur). Une déclaration du restaurateur dans le dashboard est une preuve plus fragile
-  qu'un accord donné par le client lui-même. De plus, le texte est reconstruit avec le **nom actuel** du
-  restaurant : si ce nom change, l'empreinte ne se vérifie plus. Conserver le texte réellement présenté (ou le
-  nom à l'époque) et l'auteur nécessite une colonne en plus : **changement de schéma additif, non fait,
-  à décider** avant d'écrire à de vrais clients. Voir la [proposition](../architecture/proposal-marketing-proof-and-optout-register.md)
-  (colonnes, registre d'opposition séparé, SQL à relire, décisions attendues).
+- **Preuve : ce qui est conservé** : l'empreinte de `version|canal|phrase` seule ne prouve pas que le
+  titulaire de l'adresse a accepté. Chaque ligne du journal `MarketingPermissionEvent` conserve donc
+  désormais aussi **la chaîne exacte hachée** (`proof_text` : version, canal, phrase avec le nom du
+  restaurant à ce moment-là, méthode pour une saisie manuelle), qui n'est pas une donnée personnelle, et
+  **l'auteur d'une saisie ou d'un retrait par l'équipe** (`actor_user_id`, identifiant opaque de la session
+  du dashboard ; vide quand c'est le client lui-même). Les lignes antérieures à la migration n'ont que
+  l'empreinte. Une déclaration du restaurateur dans le dashboard reste une preuve plus fragile qu'un accord
+  donné par le client lui-même ; l'auteur n'est pas inclus dans l'export RGPD du client (l'export liste les
+  permissions, pas le journal). Toujours **non fait** : la double confirmation par e-mail.
 - **Suivi des ouvertures et des clics : désactivé par défaut pour le pilote.** L'accord pour recevoir des
   offres ne vaut pas accord pour suivre individuellement leur ouverture ou leurs clics (recommandation CNIL
   sur les pixels, avril 2026 : certains usages exigent un consentement, d'autres une exemption encadrée).
@@ -186,15 +192,15 @@ production la fenêtre d'envoi.
 
 ### Étape A — Configuration (aucun envoi)
 
-| #   | Action                                                                                                                                                                                                                                                                                                                                               | Critère de réussite                                                                                                                 |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`                                                                                                                                                                          | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
-| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                              | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
-| A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET` | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
-| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe`                                                                                                                                              | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
-| A5  | `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                                                                                                                  | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
-| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                                                        | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
-| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                                                            | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
+| #   | Action                                                                                                                                                                                                                                                                                                                                                        | Critère de réussite                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`                                                                                                                                                                                   | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
+| A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                                       | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
+| A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET`          | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
+| A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_OPTOUT_HASH_SECRET` (≥ 32 caractères, **à sauvegarder** : sans elle aucun envoi, et la perdre rend le registre d'opposition inutilisable), et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe` | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
+| A5  | `MARKETING_WHATSAPP_ENABLED=false`, `MARKETING_SENDS_ENABLED=false`                                                                                                                                                                                                                                                                                           | `GET /marketing/providers/readiness` : `sendsEnabled=false`, `whatsapp.configured=false`                                            |
+| A6  | `MARKETING_RECIPIENT_ALLOWLIST=<adresse-1>,<adresse-2>` (vos adresses de test, en minuscules)                                                                                                                                                                                                                                                                 | `readiness.recipientAllowlistActive=true` (la liste elle-même n'est jamais renvoyée)                                                |
+| A7  | Chez Sokar a la capacité `marketing.campaigns` (plan Pro)                                                                                                                                                                                                                                                                                                     | Le menu Marketing du dashboard s'ouvre sans message de plan                                                                         |
 
 ### Étape B — Destinataires de test et consentement
 
@@ -302,7 +308,7 @@ exporter le rapport, ajouter une entrée au Journal, mettre à jour les bloqueur
 
 ## 7. Retour arrière
 
-Aucune migration n'est ajoutée. Pour couper : `MARKETING_SENDS_ENABLED=false` et rechargement ; les messages
+La migration `20261023120000_marketing_opt_out_register` est additive (voir la PR du registre) ; le retrait du code se fait avant celui de la migration. Pour couper : `MARKETING_SENDS_ENABLED=false` et rechargement ; les messages
 `PENDING` restent en attente et la campagne peut être annulée (`POST /marketing/campaigns/:id/cancel`).
 Les suppressions créées automatiquement se retirent une à une en base (ligne `marketing_suppressions`) après
 vérification de l'adresse concernée. **Retirer une suppression ne recrée pas un consentement** : une plainte

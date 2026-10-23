@@ -165,6 +165,7 @@ model Restaurant {
   @@index([city, publishedAt], map: "restaurants_city_published_at_idx")
   @@index([accountId, siteStatus], map: "restaurants_account_site_status_idx")
   @@map("restaurants")
+  marketingOptOuts MarketingOptOut[]
 }
 
 /// Compte commercial multi-site. Clerk reste la source de vérité de
@@ -1972,6 +1973,11 @@ model MarketingPermissionEvent {
   source       String
   proofVersion String?                   @map("proof_version")
   proofHash    String?                   @map("proof_hash")
+  /// Exact string that was hashed (version, channel, sentence shown, restaurant name at the time).
+  /// Not personal data: the same sentence is shown to everyone.
+  proofText    String?                   @map("proof_text")
+  /// Authenticated team member who recorded a manual entry; null for the customer's own acts.
+  actorUserId  String?                   @map("actor_user_id")
   occurredAt   DateTime                  @map("occurred_at")
   createdAt    DateTime                  @default(now()) @map("created_at")
 
@@ -1982,6 +1988,28 @@ model MarketingPermissionEvent {
   @@index([restaurantId, channel, occurredAt], map: "marketing_permission_events_restaurant_channel_idx")
   @@index([customerId, channel, occurredAt], map: "marketing_permission_events_customer_channel_idx")
   @@map("marketing_permission_events")
+}
+
+/// Minimal opt-out register: only a keyed hash of the address, so a person who objected is not
+/// solicited again even after their customer record is erased. Used only to exclude, never to send.
+model MarketingOptOut {
+  id           String           @id @default(uuid())
+  restaurantId String           @map("restaurant_id")
+  channel      MarketingChannel
+  /// HMAC-SHA256 (hex) of the normalized e-mail or E.164 phone, keyed by MARKETING_OPTOUT_HASH_SECRET.
+  addressHash  String           @map("address_hash")
+  /// UNSUBSCRIBE | COMPLAINT | MANUAL
+  reason       String
+  source       String
+  optedOutAt   DateTime         @map("opted_out_at")
+  retainUntil  DateTime         @map("retain_until")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, channel, addressHash], map: "marketing_opt_outs_restaurant_channel_hash_key")
+  @@index([retainUntil], map: "marketing_opt_outs_retain_until_idx")
+  @@map("marketing_opt_outs")
 }
 
 /// Explicit operator/provider suppression. A suppression always wins over an
