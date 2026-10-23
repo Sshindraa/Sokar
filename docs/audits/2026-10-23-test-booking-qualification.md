@@ -60,3 +60,13 @@ Avant activation production : prouver la réception SMS, les parcours de gestion
 Production au commit `90f941362779300aabc3e6101895f1d3db66e6ef` ; workflows staging `40035432648` et production `40035928028` réussis. Les deux migrations sont appliquées. Sauvegarde privée préalable de l’environnement, secret dédié généré côté serveur et `TEST_BOOKING_ENABLED=true` chargé dans API et workers (PM2 online et sauvegardé). Santé complète verte ; génération de lien sans authentification toujours refusée (401). Aucune réservation ni aucun SMS de recette créé en production.
 
 Les drapeaux globaux de gestion, modification et annulation restent désactivés en production. Les parcours correspondants sont qualifiés en staging ; leur disponibilité client en production conserve la politique actuelle, distincte du mode test. Retrait : `TEST_BOOKING_ENABLED=false`, rechargement API/workers avec environnement actualisé ; sauvegarde dans `releases/test-booking-activation-*/api.env.before`.
+
+## Parcours normal — correctif complémentaire du 24 octobre
+
+Après la recette du mode test, Hamza a essayé le lien public sans jeton : le widget normal utilisait encore `POST /reservations`, désormais réservé aux services internes, et affichait `RESERVATION_SERVICE_AUTH_REQUIRED`. La qualification précédente du mode test ne couvrait pas cette confirmation normale.
+
+La PR #575 (`ab1ca2f57`) fait utiliser les routes publiques `hold` puis `confirm` aux réservations normales également, en conservant attribution marketing, choix WhatsApp et retrait du consentement sur la route publique correspondante. Le slug est fourni aux anciennes URLs de widget par identifiant. La route interne reste protégée ; aucun secret de service ne passe dans le navigateur.
+
+Validation : 30 tests widget, 2 995 tests API et 1 010 tests dashboard lors du pré-push ; 4 scénarios Playwright ciblés verts en local puis CI complète verte. Confirmation normale réellement observée en staging pour 13 h / 2 personnes, réservation vérifiée `isTest=false`, puis annulée par le parcours de gestion. SMS désactivés, conditions temporaires de la démo restaurées. Cette réservation normale de contrôle est conservée annulée, distincte des tests purgés plus tôt. Preuve privée : `releases/reservation-normal-widget-20261024/proof.json`.
+
+Livraison finale : staging `40040057174` et production `40040560013` verts ; production au commit `ab1ca2f57d36ddc5a6bbb44ba2b589231b0ce358`, santé de tous les fournisseurs et workers verte, page /book HTTP 200. Mode test toujours actif après ce déploiement. L’option SMS de la démo production reste désactivée ; aucune réservation de recette supplémentaire en production.
