@@ -1002,7 +1002,13 @@ function DashboardSiteBoundary({ children }: { children: ReactNode }) {
   return <SiteProvider organizationId={organizationId}>{children}</SiteProvider>;
 }
 
-export default function DashboardLayoutClient({ children }: { children: ReactNode }) {
+export default function DashboardLayoutClient({
+  children,
+  crmQualificationRestaurantIds = [],
+}: {
+  children: ReactNode;
+  crmQualificationRestaurantIds?: string[];
+}) {
   return (
     <OnboardingProvider>
       <DashboardThemeProvider>
@@ -1011,6 +1017,7 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
             {hasClerkKey && <SyncOrganization />}
             <OnboardingAccessBoundary
               enforceAccess={hasClerkKey}
+              crmQualificationRestaurantIds={crmQualificationRestaurantIds}
               controls={
                 <div className="flex items-center gap-3">
                   <SiteSwitcher />
