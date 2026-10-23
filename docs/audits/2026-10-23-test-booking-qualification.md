@@ -1,6 +1,6 @@
 # Qualification de la réservation test — 23 octobre 2026
 
-Statut : en cours ; activation production bloquée tant que la recette fournisseur reste incomplète.
+Statut : recette staging validée le 24 octobre 2026 ; mode test activé en production après CI, staging et smoke production verts. Correctifs livrés par la PR #573 (`90f941362`).
 Périmètre : Chez Sokar de staging uniquement, destinataire de test fourni par Hamza (non conservé ici).
 
 ## Défaut découvert par la recette navigateur
@@ -23,18 +23,20 @@ Un test PostgreSQL réel couvre la suppression de la réservation test expirée 
 
 ## Matrice de recette
 
-| Contrôle                                  | Preuve / état                                                                                       |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Bouton page en ligne → page publique test | Observé en staging, bandeau présent                                                                 |
-| Jeton invalide                            | POST hold retourne 403, sans réservation                                                            |
-| Widget réellement servi par /book         | Défaut reproduit avant confirmation ; correctif en cours de livraison                               |
-| Bouton onboarding                         | Tests automatisés existants ; vérification navigateur restante                                      |
-| SMS reçu et lien ouvert sur téléphone     | En attente de clé Telnyx valide et de confirmation du testeur                                       |
-| Page Ma réservation : mention test        | Recette réelle restante                                                                             |
-| Modification et annulation                | Recette réelle restante                                                                             |
-| Planning / statistiques / CRM inchangés   | État initial relevé en staging : 18 réservations normales, 0 test, 4 clients ; comparaison restante |
-| Réservation normale voisine modifiable    | Recette réelle restante                                                                             |
-| Purge après 24 h avec audit et outbox     | Tests unitaires verts ; preuve base de données restante                                             |
+| Contrôle                                  | Preuve / état                                                                                                                            |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Bouton page en ligne → page publique test | Observé en staging, bandeau et jeton conservés                                                                                           |
+| Jeton invalide                            | POST hold retourne 403, sans réservation                                                                                                 |
+| Widget réellement servi par /book         | Confirmation navigateur après déploiement ; isTest=true, customerId=null                                                                 |
+| Bouton onboarding                         | Tests automatisés verts ; accès navigateur gardé par les étapes incomplètes de la démo, aucune donnée fictive ajoutée pour le contourner |
+| SMS reçu et lien ouvert sur téléphone     | Telnyx delivered, 1 segment ; Hamza confirme réception et ouverture du lien                                                              |
+| Page Ma réservation : mention test        | Observée avec confirmation puis annulation                                                                                               |
+| Modification et annulation                | 12 h / 2 → 13 h 30 / 3 après confirmation explicite ; conserver le dialogue ne change rien, puis annulation confirmée                    |
+| Planning / CRM                            | Aucun test visible dans le planning ; 18 réservations normales et 4 clients inchangés avant contrôle normal                              |
+| Réservation normale voisine modifiable    | Coexistence sur table/créneau du test, modification réelle à 19 h 30 ; vrai doublon toujours refusé                                      |
+| Purge après 24 h avec audit et outbox     | Helper déployé : 4 tests, 12 audits et 2 événements supprimés, aucun reste                                                               |
+
+Le contrôle normal est conservé annulé et explicitement nommé comme recette staging : 19 lignes normales après ce contrôle volontaire, dont les 18 lignes initiales inchangées (empreinte comparée). Toujours 4 clients. Les options SMS et conditions de la démo sont restaurées aux valeurs initiales. Un seul SMS a été envoyé pendant toute la recette. Les preuves détaillées sont privées dans `releases/reservation-test-20261023/` sur le staging ; aucun numéro ni jeton n’est copié ici.
 
 ## Blocage fournisseur
 
@@ -46,9 +48,15 @@ Le portail Telnyx confirme que la clé dédiée `SOKAR_STAGING_VOICE01` a expir�
 - Dashboard : 28 tests ciblés passent, dont transmission du jeton jusqu’à la confirmation et refus sans repli réel ; TypeScript vert, ESLint sans erreur.
 - Connect : 20 tests ciblés passent, y compris les valeurs hors contrat qui restent en mode test.
 - PostgreSQL réel : 11 tests de modification et purge passent sur une base locale isolée, y compris les chevauchements test/test et test/réservation normale.
-- CI de la première version widget verte ; nouvelle CI requise pour inclure la migration avant livraison.
-- Recette réelle : à compléter après livraison. L’option SMS de Chez Sokar staging a été activée pour la recette (initialement false), sans modification d’autre restaurant ni de production.
+- CI complète de la PR #573 verte, migrations et 11 tests PostgreSQL inclus.
+- Recette réelle terminée en staging après livraison ; réglages temporaires restaurés.
 
 ## Activation et retrait
 
 Avant activation production : prouver la réception SMS, les parcours de gestion, l’isolation et la purge. Puis installer un secret dédié `TEST_BOOKING_SECRET` (32 octets hex, key_env), activer `TEST_BOOKING_ENABLED=true` et recharger l’API. Aucune modification des drapeaux de gestion de réservations n’est incluse : leur activation production relève de leur qualification existante. Retour arrière : couper uniquement `TEST_BOOKING_ENABLED` et recharger l’API.
+
+## Activation effective — 24 octobre 2026
+
+Production au commit `90f941362779300aabc3e6101895f1d3db66e6ef` ; workflows staging `40035432648` et production `40035928028` réussis. Les deux migrations sont appliquées. Sauvegarde privée préalable de l’environnement, secret dédié généré côté serveur et `TEST_BOOKING_ENABLED=true` chargé dans API et workers (PM2 online et sauvegardé). Santé complète verte ; génération de lien sans authentification toujours refusée (401). Aucune réservation ni aucun SMS de recette créé en production.
+
+Les drapeaux globaux de gestion, modification et annulation restent désactivés en production. Les parcours correspondants sont qualifiés en staging ; leur disponibilité client en production conserve la politique actuelle, distincte du mode test. Retrait : `TEST_BOOKING_ENABLED=false`, rechargement API/workers avec environnement actualisé ; sauvegarde dans `releases/test-booking-activation-*/api.env.before`.
