@@ -131,7 +131,7 @@ describe('contexte Cartesia : aucun son avant le silence exigé', () => {
     vi.stubEnv('CARTESIA_API_KEY', 'test-key');
     const { createCartesiaContextTurn } = await import('../stream/cartesia-context');
     const session = makeSession(lastVoiceAt);
-    const turn = createCartesiaContextTurn(session, true)!;
+    const turn = createCartesiaContextTurn(session)!;
     const socket = fakeSockets[0];
     socket.handlers.open?.();
     turn.push('Bonjour. Pour quel jour ?');

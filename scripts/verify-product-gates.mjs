@@ -24,9 +24,7 @@ const requiredGateIds = [
 const validStatuses = new Set(['OPEN', 'LOCAL_ONLY', 'CLOSED']);
 const validReleaseModes = new Set(['SCOPED', 'FULL']);
 const knownFeatureFlags = new Set([
-  'BILLING_CHECKOUT_ENABLED',
   'CRM_ADVANCED_ENABLED',
-  'MARKETING_FEATURES_ENABLED',
   'MARKETING_SENDS_ENABLED',
   'MARKETING_WHATSAPP_ENABLED',
   'POS_CONNECTORS_ENABLED',

@@ -10,9 +10,8 @@
 #   demo-request    (sync-demo-request-config) optionnel
 #   operator        (sync-operator-allowlist)  optionnel
 #   reservation     (sync-reservation-token)   obligatoire
-#   runtime-flags   (sync-runtime-flags)       optionnel
 #   provider        (sync-staging-provider-config) optionnel, staging seulement
-#   stripe-prices   (sync-stripe-prices)       obligatoire, contrôle Stripe si checkout actif
+#   stripe-prices   (sync-stripe-prices)       obligatoire, contrôle du catalogue Stripe
 #
 # Groupes optionnels : une variable vide est ignorée (configuration existante
 # conservée). Groupes obligatoires : une variable vide ou invalide arrête le
@@ -73,12 +72,6 @@ case "$GROUP" in
     FILES="api"
     KEYS="RESERVATION_SERVICE_TOKEN"
     ;;
-  runtime-flags)
-    MODE=optional
-    FILES_FIRST=yes
-    FILES="api"
-    KEYS="MARKETING_FEATURES_ENABLED"
-    ;;
   provider)
     MODE=optional
     FILES="api"
@@ -132,8 +125,6 @@ is_valid() {
       [[ "$value" =~ ^user_[A-Za-z0-9_-]+(,user_[A-Za-z0-9_-]+)*$ ]] ;;
     RESERVATION_SERVICE_TOKEN)
       [[ "$value" =~ ^[^[:space:]]{32,}$ ]] ;;
-    MARKETING_FEATURES_ENABLED)
-      [[ "$value" == "true" || "$value" == "false" ]] ;;
     EMAIL_FROM)
       [[ "$value" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] ;;
     EMAIL_TEST_ALLOWLIST)
@@ -159,23 +150,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Contrôle du catalogue Stripe : sans cette étape, un identifiant pointant vers
-# l'ancien prix 149/249 € activerait le checkout au mauvais montant.
+# Contrôle du catalogue Stripe : le checkout est toujours ouvert, donc sans cette étape un
+# identifiant pointant vers l'ancien prix 149/249 € vendrait au mauvais montant.
 check_stripe_catalog() {
   local tmp_file="$1"
   local root="${SOKAR_ROOT:-$(cd "$(dirname "$API_ENV_FILE")/../.." && pwd)}"
   local verify_script="$root/scripts/ops/verify-stripe-catalog.mjs"
-  if grep -Eq '^BILLING_CHECKOUT_ENABLED=[[:space:]]*"?true"?[[:space:]]*$' "$tmp_file"; then
-    if [[ ! -f "$verify_script" ]] || ! command -v node >/dev/null 2>&1; then
-      echo "Contrôle du catalogue indisponible : activation du checkout refusée." >&2
-      exit 1
-    fi
-    if ! node --env-file="$tmp_file" "$verify_script"; then
-      echo "Catalogue Stripe non conforme : corriger les prix avant d'activer le checkout." >&2
-      exit 1
-    fi
-  elif [[ "$GROUP" == stripe-prices ]]; then
-    echo "Checkout abonnements désactivé pour $DEPLOY_ENV ; prix synchronisés, contrôle Stripe différé"
+  if [[ "$GROUP" != stripe-prices ]]; then
+    return 0
+  fi
+  if [[ ! -f "$verify_script" ]] || ! command -v node >/dev/null 2>&1; then
+    echo "Contrôle du catalogue indisponible : synchronisation des prix refusée." >&2
+    exit 1
+  fi
+  if ! node --env-file="$tmp_file" "$verify_script"; then
+    echo "Catalogue Stripe non conforme : corriger les prix avant de les synchroniser." >&2
+    exit 1
   fi
 }
 

@@ -38,8 +38,7 @@ const contextTurn: {
   hasAudioOutput: false,
 };
 vi.mock('../stream/cartesia-context', () => ({
-  isCartesiaContextV2Enabled: () => process.env.VOICE_TTS_CONTEXT_V2_ENABLED === 'true',
-  createCartesiaContextTurn: vi.fn(() => contextTurn),
+  createCartesiaContextTurn: vi.fn(() => null),
 }));
 vi.mock('../../../shared/telnyx/http-agent', () => ({
   telnyxFetch: vi.fn().mockResolvedValue({ ok: true }),
@@ -245,8 +244,6 @@ describe('juge de fin de tour séparé : décision de répondre', () => {
 });
 
 describe('juge de fin de tour séparé : clôture sémantique (partielle stable)', () => {
-  beforeEach(() => vi.stubEnv('VOICE_STRUCTURED_SPECULATION_ENABLED', 'true'));
-
   it('le verdict du juge ferme le tour à la place du turnComplete du modèle', async () => {
     const { session, mgr, outputs, judgeScript } = fixture();
     judgeScript.next = verdict(false);

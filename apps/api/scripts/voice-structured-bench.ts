@@ -10,7 +10,7 @@
  * Usage (depuis apps/api) : CEREBRAS_API_KEY=… node --env-file=.env --import tsx scripts/voice-structured-bench.ts [répétitions]
  * Clé de dev uniquement ; aucune donnée ni appel de production.
  *
- * `VOICE_TTS_CONTEXT_V2_ENABLED` est forcé à `false` ci-dessous : sinon le moteur
+ * Les clés de synthèse vocale sont retirées de l'environnement ci-dessous : sinon le moteur
  * ouvrirait une vraie connexion TTS. `BENCH_ONLY` filtre les scénarios,
  * `BENCH_PACE_MS` espace les appels, `BENCH_EXTRA_BODY` (JSON) est fusionné dans
  * le corps de la requête, par exemple pour épingler un hébergeur OpenRouter :
@@ -33,8 +33,9 @@ import type { CallSession, ChatMessage } from '../src/modules/voice/stream/types
 import type { CallSessionManager } from '../src/modules/voice/stream/manager';
 import type { StructuredTurnOutput } from '../src/modules/voice/stream/structured-turn/schema';
 
-// Lu à chaque tour par le moteur : le banc ne doit jamais ouvrir de connexion TTS.
-process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+// Lues à chaque tour par le moteur : sans clé de synthèse, le banc n'ouvre jamais de connexion TTS.
+delete process.env.CARTESIA_API_KEY;
+delete process.env.ELEVENLABS_API_KEY;
 
 const API_KEY = process.env.CEREBRAS_API_KEY;
 const MODEL = process.env.VOICE_LLM_MODEL ?? 'qwen-3.8-27b';

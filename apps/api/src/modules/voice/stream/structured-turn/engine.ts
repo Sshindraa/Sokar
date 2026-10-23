@@ -70,12 +70,7 @@ import {
 } from './turn-end-judge';
 import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
-import {
-  cancelSpeculation,
-  isStructuredSpeculationEnabled,
-  startSpeculation,
-  takeSpeculation,
-} from './speculation';
+import { cancelSpeculation, startSpeculation, takeSpeculation } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
 import { createTurnFiller, waitForVoiceFiller } from '../voice-filler';
 
@@ -283,7 +278,6 @@ function precomputeSilentCallerReply(
   mgr: CallSessionManager,
   fragment: string,
 ): void {
-  if (!isStructuredSpeculationEnabled()) return;
   const state = session.structuredTurn;
   if (!state) return;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
@@ -424,7 +418,6 @@ export function speculateStructuredTurn(
   partialTranscript: string,
   onVerdict?: (turnComplete: boolean) => void,
 ): void {
-  if (!isStructuredSpeculationEnabled()) return;
   if (session.ended || session.ending || session.state !== 'LISTENING') return;
   const state = session.structuredTurn ?? createStructuredTurnState();
   const transcript = [state.pendingFragment, partialTranscript]

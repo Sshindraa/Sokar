@@ -15,7 +15,6 @@ import { buildCallDetail } from '../voice-read.routes';
 import { transcribeWithDeepgram, type Transcriber } from './deepgram-batch';
 import {
   buildCallReportJob,
-  isCallReportEnabled,
   reportLimit,
   reserveReportSlot,
   type ReportCallRow,
@@ -95,7 +94,6 @@ export function createReportJobDeps(): ReportJobDeps {
 
 /** Exécutée par le worker : ne lève jamais d'exception. */
 export async function runCallReportJob(callLegId: string): Promise<ReportJobResult> {
-  if (!isCallReportEnabled()) return { status: 'skipped', reason: 'disabled' };
   return buildCallReportJob(callLegId, createReportJobDeps());
 }
 
@@ -107,7 +105,6 @@ export async function enqueueCallReport(
   callLegId: string,
   queue: { add: (name: string, data: unknown, opts: Record<string, unknown>) => Promise<unknown> },
 ): Promise<void> {
-  if (!isCallReportEnabled()) return;
   try {
     await queue.add(
       CALL_REPORT_JOB_NAME,
