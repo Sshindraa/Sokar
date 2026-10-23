@@ -56,7 +56,7 @@ function currentDialogue(
 export function recordDebugCallerText(session: CallSession, text: string): void {
   const dialogue = currentDialogue(session);
   if (!dialogue || !text.trim()) return;
-  // Un tour peut recevoir plusieurs commits Scribe (reprise de parole).
+  // Un tour peut recevoir plusieurs commits (reprise de parole).
   const clean = redactPii(text.trim());
   dialogue.callerText = dialogue.callerText ? `${dialogue.callerText} ${clean}` : clean;
 }

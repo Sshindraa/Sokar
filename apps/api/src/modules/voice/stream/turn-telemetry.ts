@@ -392,6 +392,12 @@ export function markVoiceTurnTtsSynthesisFirstByte(
 }
 
 const MAX_AGENT_AUDIO_SPANS = 8;
+/**
+ * Sans horloge audio du fournisseur, la fin de parole est estimée à `sttFinalAt` moins ce décalage. Valeur
+ * historique (le seuil de silence de l'ancienne reconnaissance Scribe, 0,95 s), conservée à l'identique pour ne
+ * pas déplacer la métrique `end_of_speech_to_first_audio_ms` ; à remplacer par l'endpointing Deepgram.
+ */
+const FALLBACK_END_OF_SPEECH_OFFSET_MS = 950;
 
 /**
  * L'audio de l'agent part vers l'appelant : ouvre un intervalle (fenêtre anti-écho). Appelé aussi
@@ -609,14 +615,9 @@ export function recordVoiceTurnEvent(
           trace.endOfSpeechToFirstAudioMs,
         );
       } else if (trace?.sttFinalAt !== undefined) {
-        const vadMs = Math.round(
-          (session.sttTurnConfig?.applied?.vadSilenceThresholdSecs ??
-            session.sttTurnConfig?.desired.vadSilenceThresholdSecs ??
-            0) * 1_000,
-        );
         voiceEndOfSpeechToFirstAudioMs.observe(
           { path: currentPath(session), restaurant_id: restaurantId },
-          Math.max(0, eventAt - trace.sttFinalAt + vadMs),
+          Math.max(0, eventAt - trace.sttFinalAt + FALLBACK_END_OF_SPEECH_OFFSET_MS),
         );
       }
       break;

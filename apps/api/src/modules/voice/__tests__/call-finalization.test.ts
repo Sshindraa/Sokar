@@ -200,10 +200,21 @@ describe('call finalization — écriture monotone', () => {
     expect(pickIntent(null, 'CANCEL')).toBe('CANCEL');
   });
 
+  it('étiquette un nouvel appel sans fournisseur observé, sans toucher à une ligne existante', () => {
+    const fresh = planCallFinalization(snapshot(), hints());
+    expect(fresh.data.sttProvider).toBe('deepgram-nova-3');
+
+    const historical = planCallFinalization(
+      snapshot({ sttProvider: 'elevenlabs-scribe-v2-realtime' }),
+      hints(),
+    );
+    expect(historical.data.sttProvider).toBeUndefined();
+  });
+
   it('n’écrit rien quand un rejeu porte exactement les mêmes faits', () => {
     const first = planCallFinalization(
       snapshot({ transcript: 'Bonjour', outcome: 'NO_ACTION', intent: 'HOURS' }),
-      hints({ transcript: 'Bonjour', sttProvider: 'elevenlabs-scribe-v2-realtime' }),
+      hints({ transcript: 'Bonjour', sttProvider: 'deepgram-nova-3' }),
     );
     const second = planCallFinalization(
       snapshot({
@@ -214,7 +225,7 @@ describe('call finalization — écriture monotone', () => {
         llmProvider: first.data.llmProvider ?? null,
         ttsProvider: first.data.ttsProvider ?? null,
       }),
-      hints({ transcript: 'Bonjour', sttProvider: 'elevenlabs-scribe-v2-realtime' }),
+      hints({ transcript: 'Bonjour', sttProvider: 'deepgram-nova-3' }),
     );
     expect(second.updatedFields).toEqual([]);
   });
@@ -305,7 +316,7 @@ describe('finalizeVoiceCall — idempotence et ordre des événements', () => {
       durationSec: 61,
       outcome: 'NO_ACTION',
       intent: 'RESERVATION',
-      sttProvider: 'elevenlabs-scribe-v2-realtime',
+      sttProvider: 'deepgram-nova-3',
       llmProvider: 'cerebras',
       ttsProvider: 'cartesia-sonic',
     });

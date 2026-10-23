@@ -1,21 +1,16 @@
-import { createScribeSttAdapter } from '../stream/stt-provider-adapter';
 import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import type { CallSession, SttEvent } from '../stream/types';
 import { CallSessionManager } from '../stream/manager';
 import {
-  buildSttUrl,
   buildDeepgramSttUrl,
   flushDeepgramFinalPartsForSafety,
   buildSttKeyterms,
-  DEFAULT_STT_LANGUAGES,
-  getSttLanguageCodes,
   sendAudioToStt,
   STT_AUDIO_BUFFER_MAX,
   handleSttMessage,
   handleNormalizedSttMessage,
   STT_SPELLING_EOT_GRACE_MS,
-  STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
   DIALOGUE_V2_INCOMPLETE_HOLD_MS,
   SMART_ENDPOINT_HOLD_CORRECTION_MS,
@@ -49,13 +44,6 @@ vi.mock('../stream/structured-turn/engine', async (importOriginal) => ({
   speculateStructuredTurn: vi.fn(),
 }));
 
-/** Session dont le fournisseur de reconnaissance est l'adaptateur Scribe (tests des messages au format Scribe). */
-function makeScribeSession(overrides: Partial<CallSession> = {}): CallSession {
-  const session = makeSession(overrides);
-  session.sttAdapter = createScribeSttAdapter({ model: 'scribe_v2_realtime' });
-  return session;
-}
-
 function makeWsMock(): WebSocket {
   return {
     readyState: WebSocket.OPEN,
@@ -82,112 +70,53 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
   });
 }
 
-describe('buildSttUrl', () => {
-  it('configure Scribe Realtime en détection multilingue avec le modèle attendu', () => {
-    const url = new URL(buildSttUrl('scribe_v2_realtime', 'PCMU'));
-    expect(url.protocol).toBe('wss:');
-    expect(url.host).toBe('api.elevenlabs.io');
-    expect(url.pathname).toBe('/v1/speech-to-text/realtime');
-    expect(url.searchParams.get('model_id')).toBe('scribe_v2_realtime');
-    expect(url.searchParams.get('language_code')).toBeNull();
-    expect(url.searchParams.get('include_language_detection')).toBe('true');
-    expect(url.searchParams.getAll('secondary_languages')).toEqual([...DEFAULT_STT_LANGUAGES]);
-    expect(url.searchParams.get('audio_format')).toBe('ulaw_8000');
-    expect(url.searchParams.get('commit_strategy')).toBe('vad');
-    expect(url.searchParams.getAll('keyterms')).toContain('réservation');
-  });
+type DeepgramWord = { word: string; start?: number; end?: number; confidence?: number };
 
-  it('accepte une liste de langues ciblée depuis la configuration', () => {
-    vi.stubEnv('ELEVENLABS_STT_LANGUAGES', 'fr, en, EN, invalid, spa');
-    expect(getSttLanguageCodes()).toEqual(['fr', 'en', 'spa']);
+/** Message Deepgram `Results` d'une phrase en cours (partielle). */
+function dgPartial(transcript: string): Record<string, unknown> {
+  return { type: 'Results', is_final: false, channel: { alternatives: [{ transcript }] } };
+}
 
-    const url = new URL(
-      buildSttUrl('scribe_v2_realtime', 'PCMU', undefined, {
-        languages: ['fr', 'en'],
-      }),
-    );
-    expect(url.searchParams.getAll('secondary_languages')).toEqual(['fr', 'en']);
-  });
-
-  it('active explicitement la couverture des 44 langues Sonic 3.6', () => {
-    vi.stubEnv('ELEVENLABS_STT_ALL_LANGUAGES', 'true');
-    const languages = getSttLanguageCodes();
-    expect(languages).toHaveLength(44);
-    expect(languages).toEqual(expect.arrayContaining(['fra', 'eng', 'ori', 'urd']));
-    expect(languages).toContain('fil');
-    expect(languages).not.toContain('tl');
-    vi.stubEnv('ELEVENLABS_STT_ALL_LANGUAGES', 'false');
-  });
-
-  it('normalise les alias Cartesia invalides pour Scribe', () => {
-    vi.stubEnv('ELEVENLABS_STT_LANGUAGES', 'fr,tl,zh,ja,ko');
-    expect(getSttLanguageCodes()).toEqual(['fr', 'fil', 'zho', 'jpn', 'kor']);
-
-    const url = new URL(
-      buildSttUrl('scribe_v2_realtime', 'PCMU', undefined, {
-        languages: ['tl'],
-      }),
-    );
-    expect(url.searchParams.getAll('secondary_languages')).toEqual(['fil']);
-  });
-
-  it('ajoute le nom du restaurant aux termes de contexte sans dépasser les limites Scribe', () => {
-    const keyterms = buildSttKeyterms('Chez La Grande Table');
-    const url = new URL(
-      buildSttUrl('scribe_v2_realtime', 'PCMU', undefined, {
-        restaurantName: 'Chez La Grande Table',
-      }),
-    );
-    expect(keyterms).toContain('Chez La Grande Table');
-    expect(url.searchParams.getAll('keyterms')).toContain('Chez La Grande Table');
-    expect(keyterms.length).toBeLessThanOrEqual(50);
-    expect(keyterms.every((term) => term.length <= 20)).toBe(true);
-  });
-
-  it('sélectionne PCM16 pour un stt Telnyx PCMA', () => {
-    const url = new URL(buildSttUrl('scribe_v2_realtime', 'PCMA'));
-    expect(url.searchParams.get('audio_format')).toBe('pcm_8000');
-  });
-
-  it.each(['PCMA', 'L16'] as const)(
-    'laisse l’URL %s identique quand le filtre est coupé et le transmet quand il est actif',
-    (codec) => {
-      const baseline = buildSttUrl('scribe_v2_realtime', codec);
-      const disabled = buildSttUrl('scribe_v2_realtime', codec, undefined, {
-        filterBackgroundAudio: false,
-      });
-      expect(disabled).toBe(baseline);
-      expect(new URL(disabled).searchParams.has('filter_background_audio')).toBe(false);
-
-      const enabled = new URL(
-        buildSttUrl('scribe_v2_realtime', codec, undefined, {
-          filterBackgroundAudio: true,
-        }),
-      );
-      expect(enabled.searchParams.get('filter_background_audio')).toBe('true');
-      expect(enabled.searchParams.has('include_timestamps')).toBe(false);
-      expect(enabled.searchParams.get('include_language_detection')).toBe('true');
-      expect(enabled.searchParams.get('audio_format')).toBe(
-        codec === 'L16' ? 'pcm_16000' : 'pcm_8000',
-      );
+/** Message Deepgram `Results` d'un segment final ; `speech_final` clôt la phrase par défaut. */
+function dgFinal(
+  transcript: string,
+  options: {
+    words?: DeepgramWord[];
+    languages?: string[];
+    speechFinal?: boolean;
+    fromFinalize?: boolean;
+  } = {},
+): Record<string, unknown> {
+  return {
+    type: 'Results',
+    is_final: true,
+    speech_final: options.speechFinal ?? true,
+    ...(options.fromFinalize ? { from_finalize: true } : {}),
+    channel: {
+      alternatives: [
+        {
+          transcript,
+          ...(options.words ? { words: options.words } : {}),
+          ...(options.languages ? { languages: options.languages } : {}),
+        },
+      ],
     },
-  );
+  };
+}
 
-  it('force le français sans détection ni langues secondaires lors du relock', () => {
-    const url = new URL(
-      buildSttUrl('scribe_v2_realtime', 'PCMA', undefined, {
-        forceFrench: true,
-        filterBackgroundAudio: true,
-      }),
-    );
-    expect(url.searchParams.get('language_code')).toBe('fr');
-    expect(url.searchParams.get('include_language_detection')).toBe('false');
-    expect(url.searchParams.getAll('secondary_languages')).toEqual([]);
-    expect(url.searchParams.get('filter_background_audio')).toBe('true');
-    expect(url.searchParams.has('include_timestamps')).toBe(false);
-    expect(url.searchParams.get('commit_strategy')).toBe('vad');
-  });
+/** Secours Ink-2 en mode tours : partielle, puis fin de tour décidée par le fournisseur. */
+const inkPartial = (transcript: string): Record<string, unknown> => ({
+  type: 'turn.update',
+  transcript,
 });
+const inkEnd = (transcript: string): Record<string, unknown> => ({ type: 'turn.end', transcript });
+
+/** Session dont la reconnaissance a basculé sur Ink-2 (secours quand Deepgram tombe). */
+function makeInkSession(overrides: Partial<CallSession> = {}): CallSession {
+  const session = makeSession(overrides);
+  session.sttAdapter = createCartesiaTurnsSttAdapter({ model: 'ink-2' });
+  return session;
+}
 
 describe('buildDeepgramSttUrl', () => {
   it("vise l'endpoint Deepgram configuré (UE) pour Nova-3 et Flux, sinon api.deepgram.com", () => {
@@ -309,40 +238,34 @@ describe('sendAudioToStt', () => {
     expect(session.audioBuffer.at(-1)?.toString()).toBe('chunk-' + STT_AUDIO_BUFFER_MAX);
   });
 
-  it('envoie un message JSON Scribe et convertit PCMA en PCM16', () => {
-    const session = makeScribeSession({ codec: 'PCMA' });
+  it("envoie l'A-law tel quel, en binaire, à Deepgram", () => {
+    const session = makeSession({ codec: 'PCMA' });
     const ws = makeWsMock();
     session.sttWs = ws;
     sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
-    const payload = JSON.parse(vi.mocked(ws.send).mock.calls[0][0] as string) as {
-      message_type: string;
-      audio_base_64: string;
-      previous_text?: string;
-    };
-    expect(payload.message_type).toBe('input_audio_chunk');
-    expect(Buffer.from(payload.audio_base_64, 'base64')).toHaveLength(2);
-    expect(payload.previous_text).toBeUndefined();
+    expect(vi.mocked(ws.send)).toHaveBeenCalledWith(Buffer.from([0xd5]), { binary: true });
   });
 });
 
 describe('handleSttMessage', () => {
   beforeEach(() => {
     delete process.env.SPECULATIVE_LLM_ENABLED;
+    vi.stubEnv('CARTESIA_API_KEY', '');
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
   });
+  afterEach(() => vi.unstubAllEnvs());
 
-  it('transforme un partial puis un committed en événements normalisés', () => {
-    const session = makeScribeSession();
+  it('transforme un partial puis un segment final Deepgram en événements normalisés', () => {
+    const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'Je voudrais réserver' });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Je voudrais réserver.',
-      words: [{ word: 'réserver', start: 0.5, end: 1.1 }],
-    });
+    handleSttMessage(session, dgPartial('Je voudrais réserver'));
+    handleSttMessage(
+      session,
+      dgFinal('Je voudrais réserver.', { words: [{ word: 'réserver', start: 0.5, end: 1.1 }] }),
+    );
 
     expect(onEvent).toHaveBeenNthCalledWith(1, { type: 'UtteranceStart' });
     expect(onEvent).toHaveBeenNthCalledWith(
@@ -362,13 +285,15 @@ describe('handleSttMessage', () => {
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
-      handleSttMessage(session, { message_type: 'partial_transcript', text: 'Demain soir' });
+      // Horloge audio de la connexion : sans elle, Deepgram ne date pas la fin de parole.
+      session.sttConnectionAudioStartedAt = Date.now();
+      session.sttConnectionAudioBytesSent = 800 * 8;
+      handleSttMessage(session, dgPartial('Demain soir'));
       vi.advanceTimersByTime(250);
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'Demain soir',
-        words: [{ word: 'soir', start: 0.4, end: 0.8 }],
-      });
+      handleSttMessage(
+        session,
+        dgFinal('Demain soir', { words: [{ word: 'soir', start: 0.4, end: 0.8 }] }),
+      );
 
       expect(onEvent).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -383,20 +308,21 @@ describe('handleSttMessage', () => {
     }
   });
 
-  it('convertit la log-probabilité Scribe en confiance de mot', () => {
+  it('conserve la confiance de chaque mot rendue par Deepgram', () => {
     const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'six personnes' });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'six personnes',
-      words: [
-        { text: 'six', start: 0.2, end: 0.5, logprob: Math.log(0.58) },
-        { text: 'personnes', start: 0.5, end: 1.1, logprob: Math.log(0.33) },
-      ],
-    });
+    handleSttMessage(session, dgPartial('six personnes'));
+    handleSttMessage(
+      session,
+      dgFinal('six personnes', {
+        words: [
+          { word: 'six', start: 0.2, end: 0.5, confidence: 0.58 },
+          { word: 'personnes', start: 0.5, end: 1.1, confidence: 0.33 },
+        ],
+      }),
+    );
 
     const end = onEvent.mock.calls.at(-1)?.[0] as { words: Array<{ confidence?: number }> };
     expect(end.words[0].confidence).toBeCloseTo(0.58, 5);
@@ -408,7 +334,7 @@ describe('handleSttMessage', () => {
     const mgr = CallSessionManager.getInstance();
     mgr.transition(session, 'SPEAKING');
     session.isSpeaking = true;
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'Attendez' });
+    handleSttMessage(session, dgPartial('Attendez'));
     expect(session.state).toBe('LISTENING');
     expect(session.isSpeaking).toBe(false);
   });
@@ -418,11 +344,7 @@ describe('handleSttMessage', () => {
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Euh, on se...',
-      language_code: 'sl',
-    });
+    handleSttMessage(session, dgFinal('Euh, on se...', { languages: ['sl'] }));
 
     expect(isLikelyIncompleteTranscript('Euh, on se...')).toBe(true);
     expect(onEvent).not.toHaveBeenCalled();
@@ -441,12 +363,8 @@ describe('handleSttMessage', () => {
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: '.' });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: '.',
-      language_code: 'fr',
-    });
+    handleSttMessage(session, dgPartial('.'));
+    handleSttMessage(session, dgFinal('.', { languages: ['fr'] }));
 
     expect(session.state).toBe('SPEAKING');
     expect(session.isSpeaking).toBe(true);
@@ -459,15 +377,11 @@ describe('handleSttMessage', () => {
     mgr.transition(session, 'SPEAKING');
     session.isSpeaking = true;
 
-    handleSttMessage(session, {
-      message_type: 'partial_transcript',
-      text: 'Waouh, waouh, waouh, waouh, qu',
-    });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Waouh, waouh, waouh, waouh, calme-toi.',
-      language_code: 'it',
-    });
+    handleSttMessage(session, dgPartial('Waouh, waouh, waouh, waouh, qu'));
+    handleSttMessage(
+      session,
+      dgFinal('Waouh, waouh, waouh, waouh, calme-toi.', { languages: ['it'] }),
+    );
 
     expect(isLikelyRepeatedNoiseTranscript('Waouh, waouh, waouh, waouh, calme-toi.')).toBe(true);
     expect(session.state).toBe('SPEAKING');
@@ -478,16 +392,22 @@ describe('handleSttMessage', () => {
     expect(isLikelyRepeatedNoiseTranscript('Oui oui oui, je confirme.')).toBe(false);
   });
 
-  it('attend la courte grâce pendant une collecte de nom', () => {
+  it('Deepgram : attend la pause d’épellation, endpointing déduit, pendant une collecte de nom', () => {
     vi.useFakeTimers();
     try {
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
       session.conversation.nameCollection.state = 'collecting';
-      handleSttMessage(session, { message_type: 'committed_transcript', text: 'A K' });
+      handleSttMessage(session, dgFinal('A K'));
       expect(onEvent).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(STT_TIMESTAMPED_COMMIT_GRACE_MS + STT_SPELLING_EOT_GRACE_MS);
+      vi.advanceTimersByTime(
+        Math.max(
+          0,
+          voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS -
+            voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
+        ),
+      );
       expect(onEvent).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'UtteranceEnd', transcript: 'A K' }),
       );
@@ -496,41 +416,30 @@ describe('handleSttMessage', () => {
     }
   });
 
-  it('préfère le commit horodaté au commit simple pour éviter un double tour', () => {
+  it('Ink-2 : attend la courte grâce pendant une collecte de nom', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeInkSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      session.conversation.nameCollection.state = 'collecting';
+      handleSttMessage(session, inkEnd('A K'));
+      expect(onEvent).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(STT_SPELLING_EOT_GRACE_MS);
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', transcript: 'A K' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('propage la langue du segment final Deepgram', () => {
     const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
 
-    handleSttMessage(session, { message_type: 'committed_transcript', text: 'Oui, demain' });
-    expect(onEvent).not.toHaveBeenCalled();
-
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Oui, demain',
-      words: [{ word: 'demain', start: 0.2, end: 0.6 }],
-    });
-
-    expect(onEvent).toHaveBeenCalledTimes(1);
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'UtteranceEnd',
-        transcript: 'Oui, demain',
-        words: [{ word: 'demain', start: 0.2, end: 0.6 }],
-      }),
-    );
-  });
-
-  it('propage la langue détectée par Scribe sur le segment final', () => {
-    const session = makeScribeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-
-    handleSttMessage(session, { message_type: 'committed_transcript', text: 'I need a table.' });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'I need a table.',
-      language_code: 'en',
-    });
+    handleSttMessage(session, dgFinal('I need a table.', { languages: ['en'] }));
 
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -542,92 +451,94 @@ describe('handleSttMessage', () => {
     expect(session.sttLanguageCode).toBe('en');
   });
 
-  it('utilise le commit simple si le commit horodaté ne revient pas', () => {
-    vi.useFakeTimers();
-    try {
+  it('Ink-2 : une fin de tour part comme une phrase validée', () => {
+    const session = makeInkSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+
+    handleSttMessage(session, inkPartial('Oui, demain'));
+    handleSttMessage(session, inkEnd('Oui, demain'));
+
+    expect(onEvent).toHaveBeenCalledTimes(2);
+    expect(onEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'UtteranceEnd', transcript: 'Oui, demain' }),
+    );
+  });
+
+  it('remonte une erreur de quota Deepgram comme indisponibilité terminale', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, { type: 'Error', code: 'quota_exceeded', description: 'quota' });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Unavailable',
+      reason: 'quota',
+      message: 'deepgram_stt provider error (quota_exceeded)',
+    });
+  });
+
+  it.each([
+    ['INVALID_AUTH', 'auth', 'auth'],
+    ['unaccepted_terms', 'terms', 'unaccepted_terms'],
+  ] as const)(
+    '%s est une erreur terminale sans demande de reconnexion',
+    (code, reason, safeType) => {
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
 
-      handleSttMessage(session, { message_type: 'committed_transcript', text: 'Deux personnes' });
-      vi.advanceTimersByTime(STT_TIMESTAMPED_COMMIT_GRACE_MS);
+      handleSttMessage(session, { type: 'Error', code, description: code });
 
-      expect(onEvent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'UtteranceEnd',
-          transcript: 'Deux personnes',
-        }),
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('remonte les erreurs fournisseur sous forme d’événement applicatif', () => {
-    const session = makeScribeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-    handleSttMessage(session, { message_type: 'quota_exceeded', message: 'quota' });
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'Unavailable',
-      reason: 'quota',
-      message: 'elevenlabs_stt provider error (quota_exceeded)',
-    });
-  });
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'Unavailable',
+        reason,
+        message: `deepgram_stt provider error (${safeType})`,
+      });
+      expect(session.sttTerminalFailure).toBe(true);
+      expect(session.sttFallbackTriggered).toBe(true);
+    },
+  );
 
   it.each([
-    ['auth_error', 'auth'],
-    ['unaccepted_terms', 'terms'],
-  ] as const)('%s est une erreur terminale sans demande de reconnexion', (messageType, reason) => {
-    const session = makeScribeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-
-    handleSttMessage(session, { message_type: messageType, message: messageType });
-
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'Unavailable',
-      reason,
-      message: `elevenlabs_stt provider error (${messageType})`,
-    });
-    expect(session.sttTerminalFailure).toBe(true);
-    expect(session.sttFallbackTriggered).toBe(true);
-  });
-
-  it.each([
-    'transcriber_error',
-    'input_error',
-    'invalid_request',
-    'commit_throttled',
-    'queue_overflow',
-    'resource_exhausted',
-    'session_time_limit_exceeded',
-    'chunk_size_exceeded',
-    'insufficient_audio_activity',
-  ])('remonte l’erreur Scribe %s', (messageType) => {
-    const session = makeScribeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-    handleSttMessage(session, { message_type: messageType, message: messageType });
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'Error',
-      message: `elevenlabs_stt provider error (${messageType})`,
-    });
-  });
-
-  it('ignore un avertissement et les entités sans écrire leur contenu dans l’événement vocal', () => {
+    ['DATA_REJECTED', 'provider_error'],
+    ['rate_limited', 'rate_limited'],
+    ['transcriber_error', 'transcriber_error'],
+  ])('remonte l’erreur Deepgram %s sans couper l’appel', (code, safeType) => {
     const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
-    handleSttMessage(session, { message_type: 'warning', warning: 'warning' });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_entities',
-      entities: [{ text: 'Hamza', type: 'name', start: 0, end: 5 }],
+    handleSttMessage(session, { type: 'Error', code, description: code });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Error',
+      message: `deepgram_stt provider error (${safeType})`,
     });
+    expect(session.sttTerminalFailure).toBeFalsy();
+  });
+
+  it('Ink-2 : une erreur de quota est terminale, sans second secours', () => {
+    vi.stubEnv('CARTESIA_API_KEY', 'test-cartesia-key');
+    const session = makeInkSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, { type: 'error', error_code: 'quota_exceeded', message: 'quota' });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Unavailable',
+      reason: 'quota',
+      message: 'cartesia_stt provider error (quota_exceeded)',
+    });
+    expect(session.sttTerminalFailure).toBe(true);
+  });
+
+  it('ignore les messages Deepgram sans texte (métadonnées, silence) sans événement vocal', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, { type: 'Metadata', request_id: 'req' });
+    handleSttMessage(session, dgPartial(''));
     expect(onEvent).not.toHaveBeenCalled();
   });
 
-  describe('fin de tour hybride (écoute Dialogue V2)', () => {
+  describe('Ink-2 : fin de tour hybride (écoute Dialogue V2)', () => {
     beforeEach(() => {
       process.env.VOICE_DIALOGUE_LISTENING_V2 = 'true';
       vi.useFakeTimers();
@@ -638,7 +549,7 @@ describe('handleSttMessage', () => {
     });
 
     function commit(session: ReturnType<typeof makeSession>, text: string) {
-      handleSttMessage(session, { message_type: 'committed_transcript_with_timestamps', text });
+      handleSttMessage(session, inkEnd(text));
     }
     const utteranceEnds = (onEvent: ReturnType<typeof vi.fn>) =>
       onEvent.mock.calls
@@ -659,7 +570,7 @@ describe('handleSttMessage', () => {
         });
 
     it('envoie immédiatement une phrase complète', () => {
-      const session = makeSession();
+      const session = makeInkSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
       commit(session, 'Pour deux personnes.');
@@ -672,13 +583,13 @@ describe('handleSttMessage', () => {
     });
 
     it('retient une fin en suspens puis fusionne la reprise en un seul tour', () => {
-      const session = makeSession();
+      const session = makeInkSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
       commit(session, 'Demain à');
       expect(utteranceEnds(onEvent)).toHaveLength(0);
 
-      handleSttMessage(session, { message_type: 'partial_transcript', text: 'vingt heures' });
+      handleSttMessage(session, inkPartial('vingt heures'));
       vi.advanceTimersByTime(SMART_ENDPOINT_HOLD_SUSPENDED_MS * 2);
       expect(utteranceEnds(onEvent)).toHaveLength(0);
 
@@ -1707,7 +1618,7 @@ describe('Deepgram final dispatch', () => {
   });
 });
 
-describe('assistant echo on Scribe', () => {
+describe('écho de l’agent dans la reconnaissance', () => {
   it('supprime une phrase agent sans déclencher de barge-in', () => {
     const session = makeSession();
     session.voiceFeatureSnapshot = {
@@ -1723,10 +1634,7 @@ describe('assistant echo on Scribe', () => {
       .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
       .mockImplementation(() => undefined);
 
-    handleSttMessage(session, {
-      message_type: 'partial_transcript',
-      text: 'Avec plaisir, pour combien de personnes',
-    });
+    handleSttMessage(session, dgPartial('Avec plaisir, pour combien de personnes'));
 
     expect(handleBargeIn).not.toHaveBeenCalled();
     expect(session.turnTranscript).toBe('');
@@ -1760,10 +1668,7 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
     const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text,
-    });
+    handleSttMessage(session, dgFinal(text));
 
     expect(ends(onEvent)).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(DIALOGUE_V2_INCOMPLETE_HOLD_MS - 1);
@@ -1777,18 +1682,9 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
     const session = makeSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: "Mmh, est-ce que c'est en-",
-    });
-    handleSttMessage(session, {
-      message_type: 'partial_transcript',
-      text: "Mmh, est-ce que c'est en terrasse ?",
-    });
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: "Mmh, est-ce que c'est en terrasse ?",
-    });
+    handleSttMessage(session, dgFinal("Mmh, est-ce que c'est en-"));
+    handleSttMessage(session, dgPartial("Mmh, est-ce que c'est en terrasse ?"));
+    handleSttMessage(session, dgFinal("Mmh, est-ce que c'est en terrasse ?"));
     await vi.advanceTimersByTimeAsync(DIALOGUE_V2_INCOMPLETE_HOLD_MS + 100);
 
     expect(ends(onEvent)).toHaveLength(1);
@@ -1804,21 +1700,15 @@ describe('hold de fin de phrase du routage dialogue V2', () => {
     const handleBargeIn = vi
       .spyOn(CallSessionManager.getInstance(), 'handleBargeIn')
       .mockImplementation(() => undefined);
-    handleSttMessage(session, {
-      message_type: 'partial_transcript',
-      text: "Mmh, est-ce que c'est en-",
-    });
+    handleSttMessage(session, dgPartial("Mmh, est-ce que c'est en-"));
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
 
-  it('marque semantic_hold quand le délai hybride déclenche le dispatch', async () => {
-    const session = makeSession();
+  it('Ink-2 : marque semantic_hold quand le délai hybride déclenche le dispatch', async () => {
+    const session = makeInkSession();
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Bonjour je suis Martin',
-    });
+    handleSttMessage(session, inkEnd('Bonjour je suis Martin'));
 
     expect(onEvent).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS);
@@ -1864,7 +1754,7 @@ describe('transcription sans voix dans l’audio entrant', () => {
         .mockImplementation(() => undefined);
       hear(session, 0, 50);
 
-      handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+      handleSttMessage(session, dgPartial('bonjour'));
 
       expect(handleBargeIn).not.toHaveBeenCalled();
       expect(session.turnTranscript).toBe('');
@@ -1882,7 +1772,7 @@ describe('transcription sans voix dans l’audio entrant', () => {
         .mockImplementation(() => undefined);
       hear(session, 3_000, 10);
 
-      handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+      handleSttMessage(session, dgPartial('bonjour'));
 
       expect(handleBargeIn).toHaveBeenCalledOnce();
     },
@@ -1897,11 +1787,8 @@ describe('transcription sans voix dans l’audio entrant', () => {
       session.onSttEvent = onEvent;
       hear(session, 0, 50);
 
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'bonjour',
-      });
-      await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+      handleSttMessage(session, dgFinal('bonjour'));
+      await vi.advanceTimersByTimeAsync(2_000);
 
       expect(ends(onEvent)).toHaveLength(0);
     },
@@ -1913,11 +1800,8 @@ describe('transcription sans voix dans l’audio entrant', () => {
     session.onSttEvent = onEvent;
     hear(session, 3_000, 10);
 
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'bonjour',
-    });
-    await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+    handleSttMessage(session, dgFinal('bonjour'));
+    await vi.advanceTimersByTimeAsync(2_000);
 
     expect(ends(onEvent)).toHaveLength(1);
   });
@@ -1931,7 +1815,7 @@ describe('transcription sans voix dans l’audio entrant', () => {
       .mockImplementation(() => undefined);
     hear(session, 0, 50);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+    handleSttMessage(session, dgPartial('bonjour'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
@@ -1975,11 +1859,8 @@ describe('texte validé en double d’un tour déjà traité', () => {
       session.onSttEvent = onEvent;
       const handleBargeIn = spyBargeIn();
 
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'Bonjour.',
-      });
-      await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + 2_000);
+      handleSttMessage(session, dgFinal('Bonjour.'));
+      await vi.advanceTimersByTimeAsync(2_000);
 
       expect(handleBargeIn).not.toHaveBeenCalled();
       expect(ends(onEvent)).toHaveLength(0);
@@ -1990,7 +1871,7 @@ describe('texte validé en double d’un tour déjà traité', () => {
     const session = speakingAfterTurn();
     const handleBargeIn = spyBargeIn();
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+    handleSttMessage(session, dgPartial('bonjour'));
 
     expect(handleBargeIn).not.toHaveBeenCalled();
     expect(session.turnTranscript).toBe('');
@@ -2000,7 +1881,7 @@ describe('texte validé en double d’un tour déjà traité', () => {
     const session = speakingAfterTurn();
     const handleBargeIn = spyBargeIn();
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'plutôt pour demain' });
+    handleSttMessage(session, dgPartial('plutôt pour demain'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
@@ -2010,7 +1891,7 @@ describe('texte validé en double d’un tour déjà traité', () => {
     const handleBargeIn = spyBargeIn();
     await vi.advanceTimersByTimeAsync(TRANSCRIPT_DEDUPE_WINDOW_MS + 100);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'bonjour' });
+    handleSttMessage(session, dgPartial('bonjour'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
@@ -2020,7 +1901,7 @@ describe('texte validé en double d’un tour déjà traité', () => {
     session.lastProcessedDialogueContext = 'customerName|À quel nom ?';
     const handleBargeIn = spyBargeIn();
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
+    handleSttMessage(session, dgPartial('oui'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
@@ -2061,8 +1942,7 @@ describe('collecte d’un nom : la pause d’épellation suit la voix de l’app
     session.conversation.nameCollection.state = 'collecting';
     return { session, onEvent };
   }
-  const commit = (session: CallSession, text: string) =>
-    handleSttMessage(session, { message_type: 'committed_transcript_with_timestamps', text });
+  const commit = (session: CallSession, text: string) => handleSttMessage(session, dgFinal(text));
 
   it('retient le segment tant que l’appelant parle encore, puis le rend quand il se tait', async () => {
     const { session, onEvent } = collectingName();
@@ -2083,7 +1963,7 @@ describe('collecte d’un nom : la pause d’épellation suit la voix de l’app
     commit(session, 'au nom de wet h');
 
     await caller(session, 800, 3_000);
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'o u e t' });
+    handleSttMessage(session, dgPartial('o u e t'));
     await caller(session, 400, 3_000);
     expect(ends(onEvent)).toHaveLength(0);
     commit(session, 'o u e t');
@@ -2099,7 +1979,7 @@ describe('collecte d’un nom : la pause d’épellation suit la voix de l’app
     commit(session, 'b a l');
 
     await caller(session, 400, 3_000);
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'l e' });
+    handleSttMessage(session, dgPartial('l e'));
     commit(session, 'l e');
     await caller(session, 1_500, 0);
 
@@ -2122,7 +2002,7 @@ describe('collecte d’un nom : la pause d’épellation suit la voix de l’app
     await caller(session, 800, 0);
     commit(session, 'a k');
 
-    await vi.advanceTimersByTimeAsync(STT_TIMESTAMPED_COMMIT_GRACE_MS + STT_SPELLING_EOT_GRACE_MS);
+    await vi.advanceTimersByTimeAsync(STT_SPELLING_EOT_GRACE_MS);
 
     expect(ends(onEvent)).toHaveLength(1);
   });
@@ -2175,7 +2055,7 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     const handleBargeIn = spyBargeIn();
     await caller(session, 1_300, 0);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
+    handleSttMessage(session, dgPartial('quatre'));
 
     expect(handleBargeIn).not.toHaveBeenCalled();
     expect(session.turnTranscript).toBe('');
@@ -2187,7 +2067,7 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     await caller(session, 600, 0);
     await caller(session, 400, 3_000);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre' });
+    handleSttMessage(session, dgPartial('quatre'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });
@@ -2200,7 +2080,7 @@ describe('voix déjà prise en compte par le tour précédent', () => {
     session.sttConsumedSpeechEndAt = Date.now() - 800;
     await caller(session, 80, 3_000);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'oui' });
+    handleSttMessage(session, dgPartial('oui'));
 
     expect(handleBargeIn).toHaveBeenCalledOnce();
   });

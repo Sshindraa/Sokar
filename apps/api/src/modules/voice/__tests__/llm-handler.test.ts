@@ -1,7 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  applyVoiceLanguageLock,
-  canRecoverNonFrenchReservationTurn,
   extractRestaurantName,
   handleSttEvent,
   invalidatePendingVoiceResponse,
@@ -9,8 +7,6 @@ import {
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { createConversationState } from '../stream/conversation-controller';
-import { extractConversationSlots } from '../stream/conversation-state';
-import { effectiveVoiceLanguage, effectiveVoiceLocale } from '../stream/voice-language';
 
 const session = {
   systemPrompt: "Tu es l'assistant vocal de Test Restaurant.",
@@ -29,93 +25,6 @@ describe('extractRestaurantName', () => {
         "Tu es l'assistant vocal chaleureux de Chez Michel. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.",
       ),
     ).toBe('Chez Michel');
-  });
-});
-
-describe('verrou français applicatif', () => {
-  afterEach(() => vi.unstubAllEnvs());
-
-  function makeLockSession(pendingQuestion: 'time' | 'partySize' = 'time'): CallSession {
-    return {
-      voiceLanguageCode: 'en',
-      voiceLanguageCandidate: { code: 'en', count: 1 },
-      forceFrenchReprompt: false,
-      abortController: null,
-      speculativeLlm: null,
-      speculativeResult: null,
-      speculativeTranscript: '',
-      timezone: 'Europe/Paris',
-      conversation: {
-        intent: 'reservation',
-        slots: {},
-        pendingQuestion,
-      },
-    } as unknown as CallSession;
-  }
-
-  it('ne verrouille pas sur un « oui » isolé, puis pose le verrou après deux mots FR', () => {
-    vi.stubEnv('VOICE_STT_LANGUAGE_LOCK', 'true');
-    const session = makeLockSession();
-
-    expect(applyVoiceLanguageLock(session, 'oui', 'fr').lockedNow).toBe(false);
-    expect(session.languageLocked).toBeUndefined();
-
-    expect(applyVoiceLanguageLock(session, 'Je souhaite réserver', 'fr').lockedNow).toBe(true);
-    expect(session.languageLocked).toBe('fr');
-    expect(session.voiceLanguageCode).toBe('fr');
-  });
-
-  it('ne modifie rien lorsque le flag est coupé', () => {
-    vi.stubEnv('VOICE_STT_LANGUAGE_LOCK', 'false');
-    const session = makeLockSession();
-
-    expect(applyVoiceLanguageLock(session, 'Je souhaite réserver', 'fr')).toEqual({
-      lockedNow: false,
-    });
-    expect(session.languageLocked).toBeUndefined();
-    expect(session.voiceLanguageCode).toBe('en');
-  });
-
-  it('garde le français pour LLM et Cartesia malgré une détection ultérieure en anglais', () => {
-    const session = {
-      languageLocked: 'fr',
-      sttLanguageCode: 'en',
-      voiceLanguageCode: 'en',
-    } as CallSession;
-
-    expect(effectiveVoiceLanguage(session)).toBe('fr');
-    expect(effectiveVoiceLocale(session)).toBe('fr-FR');
-  });
-
-  it('récupère la valeur anglaise attendue sans changer la langue verrouillée', () => {
-    vi.stubEnv('VOICE_STT_LANGUAGE_LOCK', 'true');
-    const session = makeLockSession('time');
-    session.languageLocked = 'fr';
-
-    expect(extractConversationSlots('At 11:00', 'Europe/Paris').time).toBe('11:00');
-    expect(canRecoverNonFrenchReservationTurn(session, 'At 11:00')).toBe(true);
-    expect(applyVoiceLanguageLock(session, 'At 11:00', 'en')).toEqual({
-      lockedNow: false,
-      nonFrenchOutcome: 'parsed',
-    });
-    expect(session.voiceLanguageCode).toBe('fr');
-    expect(session.forceFrenchReprompt).toBe(false);
-  });
-
-  it('reconnaît les couverts anglais et marque un tour non récupérable pour relance FR', () => {
-    vi.stubEnv('VOICE_STT_LANGUAGE_LOCK', 'true');
-    const partySession = makeLockSession('partySize');
-    partySession.languageLocked = 'fr';
-    expect(canRecoverNonFrenchReservationTurn(partySession, 'six people')).toBe(true);
-
-    const timeSession = makeLockSession('time');
-    timeSession.languageLocked = 'fr';
-    expect(applyVoiceLanguageLock(timeSession, 'Zo gaat ie', 'nl')).toEqual({
-      lockedNow: false,
-      nonFrenchOutcome: 'reprompt',
-    });
-    expect(timeSession.forceFrenchReprompt).toBe(true);
-    expect(timeSession.voiceLanguageCode).toBe('fr');
   });
 });
 

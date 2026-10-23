@@ -21,7 +21,7 @@ const call = {
   durationSec: 42,
   intent: 'RESERVATION',
   outcome: 'RESERVED',
-  sttProvider: 'scribe',
+  sttProvider: 'deepgram-nova-3',
   llmProvider: 'cerebras',
   ttsProvider: 'cartesia',
 };

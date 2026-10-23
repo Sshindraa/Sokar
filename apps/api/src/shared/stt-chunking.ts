@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Regroupement des trames audio avant envoi à Scribe (`VOICE_STT_CHUNK_MS`).
+ * Regroupement des trames audio avant envoi au fournisseur STT (`VOICE_STT_CHUNK_MS`).
  *
  * Telnyx livre des trames G.711 de 20 ms. Les envoyer une par une (comportement
  * historique) coûte un message WebSocket par trame. Le flag permet d'accumuler

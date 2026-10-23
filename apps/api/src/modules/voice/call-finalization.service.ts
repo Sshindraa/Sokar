@@ -97,7 +97,8 @@ const OUTCOME_RANK: Record<CallOutcome, number> = {
 const MENU_TRANSCRIPT_RE = /menus?|carte des plats|plats? du jour|prix/i;
 const INFO_TRANSCRIPT_RE = /horaire|ouvert|ferm[eé]|menus?|carte|prix/i;
 
-const DEFAULT_STT_PROVIDER = 'elevenlabs-scribe-v2-realtime';
+/** Étiquette des nouveaux appels sans fournisseur observé ; les lignes existantes ne sont pas modifiées. */
+const DEFAULT_STT_PROVIDER = 'deepgram-nova-3';
 
 /** Fournisseur TTS configuré, quand aucun tour n'en a observé un (appel sans réponse vocale). */
 export function defaultTtsProvider(): string {
