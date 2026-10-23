@@ -289,7 +289,7 @@ function tokenizeSpellingTranscript(value: string): LexicalToken[] {
 }
 
 /**
- * Tokens que Scribe peut produire quand l'appelant épelle un nom en français.
+ * Tokens que la reconnaissance peut produire quand l'appelant épelle un nom en français.
  * Les mots phonétiques ne sont interprétés comme des lettres que dans un
  * contexte qui ressemble réellement à une épellation.
  */
@@ -343,7 +343,7 @@ const SPOKEN_LETTER_TOKENS: Record<string, string> = {
   y: 'Y',
   zede: 'Z',
   z: 'Z',
-  // Prononciations anglaises fréquemment produites par Scribe.
+  // Prononciations anglaises fréquemment produites par la reconnaissance.
   ay: 'A',
   bee: 'B',
   see: 'C',
@@ -434,7 +434,7 @@ const FULL_RESTART_MARKER_PATTERN =
 const CONTINUATION_MARKER_PATTERN =
   /\b(?:la suite|le reste|continue(?:r|z)?|the rest|continuing|next)\b/u;
 /**
- * Scribe peut placer « non » ou « pardon » devant une nouvelle épellation.
+ * La reconnaissance peut placer « non » ou « pardon » devant une nouvelle épellation.
  * Retirer uniquement ce préfixe permet de reconnaître la correction sans
  * transformer une phrase ordinaire contenant « non » en suite de lettres.
  */
@@ -1372,7 +1372,7 @@ export function buildClosedTimeRepromptPlan(
 
 /**
  * Types sur lesquels la confirmation par la confiance agit vraiment
- * (le nombre de personnes) : la confiance Scribe
+ * (le nombre de personnes) : la confiance de l'ancien moteur Scribe
  * sépare bien les nombres justes des faux, pas les heures (banc difficile).
  * Hors portée, la décision est seulement observée (`wouldBe…`).
  */
@@ -1388,7 +1388,7 @@ const WOULD_BE = {
 
 /**
  * Pour chaque valeur retenue ce tour (nombre, jour, heure), vérifie la
- * confiance Scribe des mots qui la portent et la stabilité des partielles.
+ * confiance des mots qui la portent et la stabilité des partielles.
  * Une valeur douteuse avec un voisin confusable devient « X ou Y ? » ; une
  * valeur très douteuse sans voisin est redemandée ; une heure hors des
  * horaires d'ouverture n'est jamais acceptée d'office.

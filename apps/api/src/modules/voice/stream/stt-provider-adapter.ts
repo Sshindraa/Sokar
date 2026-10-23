@@ -2,18 +2,13 @@ import { WebSocket } from 'ws';
 import type { SttWord } from './types';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 
-export type SttProviderId = 'scribe' | 'deepgram' | 'cartesia';
+export type SttProviderId = 'deepgram' | 'cartesia';
 
 export type NormalizedSttProviderMessage =
   | { type: 'session_started' }
   | { type: 'partial'; transcript: string; words?: SttWord[]; languageCode?: string }
-  | {
-      type: 'plain_commit' | 'timestamped_commit';
-      transcript: string;
-      words?: SttWord[];
-      languageCode?: string;
-      speechEndOffsetMs?: number;
-    }
+  /** Tour clos par le fournisseur lui-même (Cartesia Ink-2 : `turn.end`). */
+  | { type: 'turn_commit'; transcript: string }
   | {
       type: 'final_segment';
       transcript: string;
@@ -32,8 +27,6 @@ export type NormalizedSttProviderMessage =
       providerLastWordEndMs?: number;
     }
   | { type: 'speech_started'; speechStartOffsetMs?: number }
-  | { type: 'warning'; message: string }
-  | { type: 'entities'; count: number }
   | { type: 'provider_error'; messageType: string; message: string };
 
 export interface SttProviderConnection {
@@ -44,7 +37,7 @@ export interface SttProviderConnection {
 
 export interface SttProviderAdapter {
   readonly id: SttProviderId;
-  readonly metricLabel: 'elevenlabs_stt' | 'deepgram_stt' | 'cartesia_stt';
+  readonly metricLabel: 'deepgram_stt' | 'cartesia_stt';
   readonly model: string;
   open(connection: SttProviderConnection): WebSocket;
   sendAudio(ws: WebSocket, audio: Buffer, previousText?: string): void;
@@ -61,24 +54,6 @@ export interface SttProviderAdapterOptions {
   model: string;
 }
 
-const SCRIBE_ERROR_TYPES = new Set([
-  'auth_error',
-  'quota_exceeded',
-  'transcriber_error',
-  'input_error',
-  'invalid_request',
-  'error',
-  'commit_throttled',
-  'unaccepted_terms',
-  'rate_limited',
-  'queue_overflow',
-  'resource_exhausted',
-  'session_time_limit_exceeded',
-  'chunk_size_exceeded',
-  'insufficient_audio_activity',
-  'scribe_error',
-]);
-
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
@@ -87,7 +62,7 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function normalizeWords(value: unknown, scribe = false): SttWord[] | undefined {
+function normalizeWords(value: unknown): SttWord[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const words = value.flatMap((rawWord) => {
     const item = record(rawWord);
@@ -97,74 +72,19 @@ function normalizeWords(value: unknown, scribe = false): SttWord[] | undefined {
       (typeof item.punctuated_word === 'string' && item.punctuated_word);
     if (!word) return [];
     const confidence = finiteNumber(item.confidence);
-    const logprob = finiteNumber(item.logprob);
     return [
       {
         word,
         ...(typeof item.punctuated_word === 'string'
           ? { punctuatedWord: item.punctuated_word }
           : {}),
-        ...(confidence !== undefined
-          ? { confidence }
-          : scribe && logprob !== undefined
-            ? { confidence: Math.min(1, Math.max(0, Math.exp(logprob))) }
-            : {}),
+        ...(confidence !== undefined ? { confidence } : {}),
         ...(finiteNumber(item.start) !== undefined ? { start: finiteNumber(item.start) } : {}),
         ...(finiteNumber(item.end) !== undefined ? { end: finiteNumber(item.end) } : {}),
       },
     ];
   });
   return words.length ? words : undefined;
-}
-
-function normalizeScribeMessage(message: Record<string, unknown>): NormalizedSttProviderMessage[] {
-  const messageType = typeof message.message_type === 'string' ? message.message_type : '';
-  const transcript = typeof message.text === 'string' ? message.text.trim() : '';
-  const words = normalizeWords(message.words, true);
-  const languageCode =
-    typeof message.language_code === 'string' ? message.language_code : undefined;
-  const speechEndOffsetMs = words?.reduce((end, word) => Math.max(end, (word.end ?? 0) * 1000), 0);
-  switch (messageType) {
-    case 'session_started':
-      return [{ type: 'session_started' }];
-    case 'partial_transcript':
-      return transcript ? [{ type: 'partial', transcript, words, languageCode }] : [];
-    case 'committed_transcript':
-      return [{ type: 'plain_commit', transcript, words, languageCode }];
-    case 'committed_transcript_with_timestamps':
-      return [{ type: 'timestamped_commit', transcript, words, languageCode, speechEndOffsetMs }];
-    case 'committed_transcript_entities':
-      return [
-        {
-          type: 'entities',
-          count: Array.isArray(message.entities) ? message.entities.length : 0,
-        },
-      ];
-    case 'warning':
-      return [
-        {
-          type: 'warning',
-          message:
-            (typeof message.warning === 'string' && message.warning) ||
-            (typeof message.message === 'string' && message.message) ||
-            'Scribe warning',
-        },
-      ];
-    default:
-      if (SCRIBE_ERROR_TYPES.has(messageType) || /error$/iu.test(messageType)) {
-        return [
-          {
-            type: 'provider_error',
-            messageType,
-            message:
-              (typeof message.error === 'string' && message.error) ||
-              (typeof message.message === 'string' && message.message) ||
-              'Scribe error',
-          },
-        ];
-      }
-      return [];
-  }
 }
 
 function normalizeDeepgramMessage(
@@ -281,36 +201,25 @@ function normalizeFluxMessage(message: Record<string, unknown>): NormalizedSttPr
   return [];
 }
 
-function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): SttProviderAdapter {
-  const deepgram = id === 'deepgram';
-  const flux = deepgram && options.model.startsWith('flux-');
-  const adapter: SttProviderAdapter = {
-    id,
-    metricLabel: deepgram ? 'deepgram_stt' : 'elevenlabs_stt',
+export function createDeepgramSttAdapter(options: SttProviderAdapterOptions): SttProviderAdapter {
+  const flux = options.model.startsWith('flux-');
+  return {
+    id: 'deepgram',
+    metricLabel: 'deepgram_stt',
     model: options.model,
     open(connection) {
       return connection.createSocket(connection.url, { headers: connection.headers });
     },
-    sendAudio(ws, audio, previousText) {
-      if (deepgram) {
-        ws.send(audio, { binary: true });
-      } else {
-        ws.send(
-          JSON.stringify({
-            message_type: 'input_audio_chunk',
-            audio_base_64: audio.toString('base64'),
-            ...(previousText ? { previous_text: previousText } : {}),
-          }),
-        );
-      }
+    sendAudio(ws, audio) {
+      ws.send(audio, { binary: true });
     },
     finalize(ws) {
-      if (deepgram && ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: flux ? 'ForceEndTurn' : 'Finalize' }));
       }
     },
     keepAlive(ws) {
-      if (deepgram && !flux && ws.readyState === WebSocket.OPEN) {
+      if (!flux && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'KeepAlive' }));
       }
     },
@@ -320,16 +229,15 @@ function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): Stt
         ws.close(code, reason);
       } else if (ws.readyState === WebSocket.CONNECTING) ws.terminate();
     },
+    // A-law et µ-law 8 kHz tels quels (`alaw`, `mulaw`), L16 en PCM16 petit-boutiste 16 kHz.
     toProviderAudio(codec, input) {
-      return deepgram && codec !== 'L16' ? input : decodeTelnyxToPcm16(codec, input);
+      return codec === 'L16' ? decodeTelnyxToPcm16(codec, input) : input;
     },
     chunkBytesPerMs(codec) {
-      const bytesPerMs = telnyxBytesPerMs(codec);
-      return !deepgram && codec === 'PCMA' ? bytesPerMs * 2 : bytesPerMs;
+      return telnyxBytesPerMs(codec);
     },
     samplesForAudio(codec, bytes) {
-      const isPcm16 = codec === 'L16' || (!deepgram && codec === 'PCMA');
-      return bytes / (isPcm16 ? 2 : 1);
+      return codec === 'L16' ? bytes / 2 : bytes;
     },
     normalizeMessage(raw) {
       let message: Record<string, unknown>;
@@ -338,29 +246,16 @@ function makeAdapter(id: SttProviderId, options: SttProviderAdapterOptions): Stt
       } catch {
         return [];
       }
-      return deepgram
-        ? flux
-          ? normalizeFluxMessage(message)
-          : normalizeDeepgramMessage(message)
-        : normalizeScribeMessage(message);
+      return flux ? normalizeFluxMessage(message) : normalizeDeepgramMessage(message);
     },
   };
-  return adapter;
-}
-
-export function createScribeSttAdapter(options: SttProviderAdapterOptions): SttProviderAdapter {
-  return makeAdapter('scribe', options);
-}
-
-export function createDeepgramSttAdapter(options: SttProviderAdapterOptions): SttProviderAdapter {
-  return makeAdapter('deepgram', options);
 }
 
 /**
  * Cartesia Ink-2 en mode tours (`/stt/turns/websocket`), STT de secours quand Deepgram tombe : Ink-2 décide
- * lui-même de la fin de phrase (`turn.end`), rendue comme une phrase validée (`timestamped_commit`, le format
- * déjà traité pour Scribe). Plus lent que Deepgram pour clore une phrase (banc du 22/10/2026 : médiane 0,5 s,
- * p90 1,6 s avec `turn_end_timeout_ms=1500`), mais un appel continue au lieu d'être coupé.
+ * lui-même de la fin de phrase (`turn.end`), rendue comme une phrase validée (`turn_commit`). Plus lent que
+ * Deepgram pour clore une phrase (banc du 22/10/2026 : médiane 0,5 s, p90 1,6 s avec
+ * `turn_end_timeout_ms=1500`), mais un appel continue au lieu d'être coupé.
  */
 export function normalizeCartesiaTurnsMessage(
   message: Record<string, unknown>,
@@ -379,7 +274,7 @@ export function normalizeCartesiaTurnsMessage(
     case 'turn.eager_end':
       return transcript ? [{ type: 'partial', transcript }] : [];
     case 'turn.end':
-      return transcript ? [{ type: 'timestamped_commit', transcript }] : [];
+      return transcript ? [{ type: 'turn_commit', transcript }] : [];
     case 'error':
       return [
         {

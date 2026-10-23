@@ -12,12 +12,11 @@ vi.mock('../stream/tts-handler', async (importOriginal) => {
   return { ...actual, speakTtsStreamed: mocks.speak };
 });
 
-describe('parcours du verrou français', () => {
+describe('heure anglaise dans un brouillon français', () => {
   let manager: CallSessionManager;
   let session: CallSession;
 
   beforeEach(() => {
-    vi.stubEnv('VOICE_STT_LANGUAGE_LOCK', 'true');
     manager = CallSessionManager.getInstance();
     const telnyxWs = {
       readyState: WebSocket.OPEN,
@@ -37,7 +36,6 @@ describe('parcours du verrou français', () => {
       callLegId: 'language-lock-flow-test',
       codec: 'PCMU',
     });
-    session.languageLocked = 'fr';
     session.voiceLanguageCode = 'fr';
     session.conversation.intent = 'reservation';
     session.conversation.pendingQuestion = 'time';
@@ -46,7 +44,6 @@ describe('parcours du verrou français', () => {
 
   afterEach(() => {
     manager.delete(session.callControlId);
-    vi.unstubAllEnvs();
     vi.clearAllMocks();
   });
 

@@ -338,7 +338,7 @@ export function extractConversationSlots(
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
-  // Scribe écrit « vingt et une heures » en « 20 et 1 heure » : sans cette
+  // L'ancien moteur Scribe écrivait « vingt et une heures » en « 20 et 1 heure » : sans cette
   // réécriture, l'heure lue était 01:00 (banc STT du 24/09).
   // Variantes : « 20 et 1 h 30 », « 20 h et 1 h 30 », « vingt et 1 h 30 ».
   const timeTranscript = correctedTranscript.replace(

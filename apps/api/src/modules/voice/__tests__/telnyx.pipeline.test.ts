@@ -936,7 +936,7 @@ describe('finalisation commune des appels — ordre, doublons et pannes', () => 
     transcript: 'Bonjour je voudrais réserver pour quatre personnes',
     intent: 'RESERVATION',
     outcome: 'NO_ACTION',
-    sttProvider: 'elevenlabs-scribe-v2-realtime',
+    sttProvider: 'deepgram-nova-3',
     llmProvider: 'cerebras',
     ttsProvider: 'cartesia-sonic',
     reservation: null,
@@ -1007,7 +1007,7 @@ describe('finalisation commune des appels — ordre, doublons et pannes', () => 
         where: { callSid: 'leg-1' },
         data: expect.objectContaining({
           outcome: 'NO_ACTION',
-          sttProvider: 'elevenlabs-scribe-v2-realtime',
+          sttProvider: 'deepgram-nova-3',
         }),
       }),
     );

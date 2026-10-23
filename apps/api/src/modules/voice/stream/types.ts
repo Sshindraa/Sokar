@@ -118,22 +118,6 @@ export type SttFinalTrigger =
   | 'spelling_hold'
   | 'semantic_hold';
 
-/** Paramètres de détection de fin de tour appliqués à la session STT. */
-export interface SttTurnConfig {
-  vadSilenceThresholdSecs: number;
-  minSpeechDurationMs: number;
-  minSilenceDurationMs: number;
-}
-
-export interface SttTurnConfigState {
-  base: SttTurnConfig;
-  desired: SttTurnConfig;
-  applied: SttTurnConfig | null;
-  spellingActive: boolean;
-  /** Profil réellement actif avant l'entrée dans le mode épellation. */
-  previous?: SttTurnConfig | null;
-}
-
 /**
  * Mémoire métier minimale d'un appel. Le LLM conserve la compréhension fine ;
  * cet état empêche les tours courts de réinitialiser artificiellement le dialogue.
@@ -521,7 +505,7 @@ export interface CallSession {
   sttReady: Promise<void> | null;
   /** Échecs consécutifs d’ouverture/fermeture avant une connexion STT stable. */
   sttConsecutiveFailures?: number;
-  /** Reconnexions Scribe déjà tentées pendant cet appel (l'ouverture initiale exclue). */
+  /** Reconnexions du fournisseur STT déjà tentées pendant cet appel (l'ouverture initiale exclue). */
   sttReconnectAttempts?: number;
   sttRetryTimer?: ReturnType<typeof setTimeout> | null;
   sttConnectTimeout?: ReturnType<typeof setTimeout> | null;
@@ -602,24 +586,20 @@ export interface CallSession {
     lastText: string;
     lastWordCount: number;
   };
-  /** Dernière langue détectée par Scribe sur un segment final. */
+  /** Dernière langue détectée par le fournisseur STT sur un segment final. */
   sttLanguageCode?: string;
-  /** Langue métier verrouillée après une preuve française fiable. */
-  languageLocked?: 'fr';
   /** Langue de dialogue active pour le LLM et le TTS. */
   voiceLanguageCode?: VoiceLanguageCode;
   /**
    * Candidat de changement de langue en attente d'un second segment fiable.
-   * Scribe peut attribuer une langue différente à un fragment bruité ; on
+   * Le fournisseur STT peut attribuer une langue différente à un fragment bruité ; on
    * ne change donc pas la langue de dialogue sur une seule détection fragile.
    */
   voiceLanguageCandidate?: {
     code: VoiceLanguageCode;
     count: number;
   } | null;
-  /** Le tour non français verrouillé doit emprunter la relance française. */
-  forceFrenchReprompt?: boolean;
-  /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */
+  /** Indique si le premier paquet audio de la socket STT a déjà été envoyé. */
   sttFirstAudioChunkSent?: boolean;
   /** Tampon de regroupement des trames avant envoi (`VOICE_STT_CHUNK_MS` > 20). */
   sttChunkBuffer?: Buffer | null;
@@ -631,17 +611,7 @@ export interface CallSession {
   l16EndianProbe?: import('./wideband').L16EndianProbe | null;
   l16MediaFormat?: { encoding: string; sample_rate: number; channels: number };
   l16EndianLogged?: boolean;
-  /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
-  sttTurnConfig?: SttTurnConfigState;
-  /** Commit simple en attente de son éventuel événement horodaté associé. */
-  sttPendingCommit?: {
-    transcript: string;
-    words?: SttWord[];
-    languageCode?: string;
-    timing?: { speechEndAt?: number; sttFinalAt?: number };
-    timer: ReturnType<typeof setTimeout>;
-  } | null;
-  /** Transcriptions partielles Scribe du tour en cours (signal d'instabilité). */
+  /** Transcriptions partielles du tour en cours (signal d'instabilité). */
   turnPartials?: string[];
   /**
    * Preuves STT de la phrase finale, lues par `recordUserTurn` : mots avec leur

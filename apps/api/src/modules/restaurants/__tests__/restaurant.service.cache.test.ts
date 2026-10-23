@@ -57,7 +57,6 @@ describe('RestaurantService context cache', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.CARTESIA_API_KEY;
-    process.env.ELEVENLABS_STT_MODEL = 'scribe_v2_realtime';
   });
 
   it('lit le contexte restaurant depuis Redis sans toucher Prisma en cache hit', async () => {
@@ -152,7 +151,7 @@ describe('RestaurantService context cache', () => {
     // local peut le surcharger, et c'est ce modèle-là qui part en cache.
     expect(cachedPayload).toContain(voiceConfig.VOICE_LLM_MODEL);
     expect(cachedPayload).toContain('cartesia');
-    expect(cachedPayload).toContain('scribe_v2_realtime');
+    expect(cachedPayload).toContain('nova-3');
     expect(cachedPayload).not.toContain('secret-refresh-token-never-cache');
     expect(cachedPayload).not.toContain('CARTESIA_API_KEY');
     expect(cachedPayload).not.toContain('test-cartesia-key');
