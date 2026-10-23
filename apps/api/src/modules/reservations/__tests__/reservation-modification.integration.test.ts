@@ -149,6 +149,53 @@ describe.skipIf(!enabled)('personal modification on PostgreSQL', () => {
       await app.close();
     }
   });
+  it('allows tests to overlap while real modification and real overlap protection remain effective', async () => {
+    const { row, app, post } = await fixture();
+    const startsAt = new Date('2099-06-05T18:00:00Z');
+    const testIds: string[] = [];
+    const data = {
+      restaurantId,
+      tableId: large,
+      startsAt,
+      reservedAt: startsAt,
+      endsAt: end(startsAt),
+      partySize: 3,
+      customerName: 'Local overlap test',
+      state: 'CONFIRMED' as const,
+      status: 'CONFIRMED' as const,
+    };
+    try {
+      for (let i = 0; i < 2; i++) {
+        const test = await db.reservation.create({ data: { ...data, isTest: true } });
+        testIds.push(test.id);
+      }
+      const choices = await post({ action: 'modification_options', partySize: 3 });
+      expect(choices.statusCode).toBe(200);
+      const selected = choices.json().slots.find((slot: { time: string }) => slot.time === '20:00');
+      expect(selected).toBeTruthy();
+      const changed = await post({
+        action: 'modify',
+        confirmed: true,
+        proposalToken: selected.proposalToken,
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(await db.reservation.findUnique({ where: { id: row.id } })).toMatchObject({
+        tableId: large,
+        startsAt,
+        partySize: 3,
+      });
+      await expect(db.reservation.create({ data: { ...data, isTest: false } })).rejects.toThrow(
+        /reservations_no_overlap_active/,
+      );
+    } finally {
+      if (testIds.length)
+        await db.reservation.updateMany({
+          where: { restaurantId, id: { in: testIds }, isTest: true },
+          data: { state: 'CANCELLED', status: 'CANCELLED' },
+        });
+      await app.close();
+    }
+  });
   it('moves to another day atomically, preserves the original link and rejects invalid dates', async () => {
     const { row, app, post } = await fixture();
     const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
