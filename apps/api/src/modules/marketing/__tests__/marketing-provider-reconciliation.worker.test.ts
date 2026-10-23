@@ -5,9 +5,13 @@ import {
   type MarketingProviderReconciliationWorkerDependencies,
 } from '../marketing-provider-reconciliation.worker';
 import { reconcileMarketingProviderEvents } from '../marketing-provider.service';
+import { purgeExpiredMarketingOptOuts } from '../marketing-opt-out.service';
 
 vi.mock('../marketing-provider.service', () => ({
   reconcileMarketingProviderEvents: vi.fn(),
+}));
+vi.mock('../marketing-opt-out.service', () => ({
+  purgeExpiredMarketingOptOuts: vi.fn(),
 }));
 
 function makeJob(data: { provider?: 'telnyx' | 'resend'; limit?: number } = {}) {
@@ -25,6 +29,25 @@ describe('marketing provider reconciliation worker', () => {
       scanned: 4,
       resolved: 3,
       stillOpen: 1,
+    });
+    vi.mocked(purgeExpiredMarketingOptOuts).mockResolvedValue(0);
+  });
+
+  it('purge le registre d’opposition échu sans jamais faire échouer la réconciliation', async () => {
+    const now = new Date('2029-10-24T00:00:00.000Z');
+    const deps: MarketingProviderReconciliationWorkerDependencies = {
+      db: {} as never,
+      reconcile: vi.fn().mockResolvedValue({ scanned: 0, resolved: 0, stillOpen: 0 }),
+      now: () => now,
+    };
+    await processMarketingProviderReconciliationJob(makeJob(), deps);
+    expect(purgeExpiredMarketingOptOuts).toHaveBeenCalledWith(now, deps.db);
+
+    vi.mocked(purgeExpiredMarketingOptOuts).mockRejectedValue(new Error('db down'));
+    await expect(processMarketingProviderReconciliationJob(makeJob(), deps)).resolves.toEqual({
+      scanned: 0,
+      resolved: 0,
+      stillOpen: 0,
     });
   });
 

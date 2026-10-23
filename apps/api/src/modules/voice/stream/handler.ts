@@ -1,18 +1,18 @@
 /**
  * Handler WebSocket Telnyx Media Stream — orchestrator.
  *
- * Reçoit l'audio en temps réel de Telnyx, le forwarde à ElevenLabs Scribe,
+ * Reçoit l'audio en temps réel de Telnyx, le forwarde à Deepgram (Cartesia Ink-2 en secours),
  * reçoit les transcripts, les envoie au LLM, génère du TTS Cartesia,
  * et renvoie l'audio à Telnyx via le stream bidirectionnel.
  *
- * Barge-in : quand le caller parle pendant le TTS, Scribe détecte
+ * Barge-in : quand le caller parle pendant le TTS, la reconnaissance détecte
  * UtteranceStart → on clear le buffer Telnyx → on réécoute.
  *
  * Architecture :
  *   - debug-log.ts       → writeDebugLog (utilitaire partagé)
  *   - session-persistence.ts → persistSttCall, persistLatencyTrace (DB)
  *   - tts-handler.ts     → speakTtsStreamed, cleanTextForTts, etc. (Cartesia)
- *   - llm-handler.ts     → handleSttEvent, processTranscriptStreaming, etc. (ElevenLabs Scribe)
+ *   - llm-handler.ts     → handleSttEvent, processTranscriptStreaming, etc. (Deepgram, Ink-2)
  *   - handler.ts (this)  → registerMediaStreamRoutes, handleTelnyxMessage (orchestrator)
  *
  * NOTE: audio-buffer.ts n'a pas été créé car la gestion du buffer audio
@@ -380,7 +380,7 @@ export function handleTelnyxMessage(
       if (!payload) return;
 
       // Le flux demandé à Telnyx est inbound_track. Cette garde évite qu'une
-      // future modification du stream ne renvoie l'audio TTS sortant à Scribe
+      // future modification du stream ne renvoie l'audio TTS sortant à la reconnaissance
       // et ne crée des faux transcripts/interruptions par écho.
       const track = msg.media?.track;
       if (track && track !== 'inbound' && track !== 'inbound_track') {

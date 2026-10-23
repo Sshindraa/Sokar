@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCallReportJob,
-  isCallReportEnabled,
   reportLimit,
   reserveReportSlot,
   type ReportJobDeps,
@@ -51,24 +50,6 @@ function deps(overrides: Partial<ReportJobDeps> = {}): ReportJobDeps {
     ...overrides,
   };
 }
-
-describe('isCallReportEnabled', () => {
-  beforeEach(() => {
-    delete process.env.CALL_REPORT_ENABLED;
-  });
-
-  it('est désactivé par défaut', () => {
-    expect(isCallReportEnabled()).toBe(false);
-  });
-
-  it("ne s'active que par CALL_REPORT_ENABLED=true", () => {
-    process.env.CALL_REPORT_ENABLED = 'true';
-    expect(isCallReportEnabled()).toBe(true);
-    process.env.CALL_REPORT_ENABLED = '1';
-    expect(isCallReportEnabled()).toBe(false);
-    delete process.env.CALL_REPORT_ENABLED;
-  });
-});
 
 describe('buildCallReportJob', () => {
   it('stocke le JSON et le Markdown à côté de l’enregistrement', async () => {

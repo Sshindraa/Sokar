@@ -38,14 +38,14 @@ export function ensureVoiceUsage(session: CallSession): VoiceUsageCounters {
   return session.voiceUsage;
 }
 
-/** Count only audio actually handed to Scribe, after any codec conversion. */
+/** Count only audio actually handed to the STT provider, after any codec conversion. */
 export function addSttAudioSamples(session: CallSession, samples: number): void {
   if (!Number.isFinite(samples) || samples <= 0) return;
   ensureVoiceUsage(session).sttAudioSamples += samples;
 }
 
 export function sttSamplesForBuffer(session: CallSession, audioBytes: number): number {
-  // Comptage après conversion vers Scribe : PCMA et L16 sont PCM16,
+  // Comptage après conversion vers le fournisseur STT : PCMA et L16 sont PCM16,
   // PCMU reste en G.711 8 bits. Main divisait déjà PCMA par deux.
   return audioBytes / (session.codec === 'PCMU' ? 1 : 2);
 }

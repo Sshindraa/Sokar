@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { createDeepgramSttAdapter, createScribeSttAdapter } from '../stream/stt-provider-adapter';
+import { createDeepgramSttAdapter } from '../stream/stt-provider-adapter';
 
 function makeSocket(): WebSocket {
   return {
@@ -11,25 +11,6 @@ function makeSocket(): WebSocket {
 }
 
 describe('STT provider adapters', () => {
-  it('keeps Scribe PCMA decoding and message framing unchanged', () => {
-    const adapter = createScribeSttAdapter({ model: 'scribe_v2_realtime' });
-    const socket = makeSocket();
-    const decoded = adapter.toProviderAudio('PCMA', Buffer.from([0xd5]));
-
-    adapter.sendAudio(socket, decoded, 'Réservation');
-
-    expect(decoded).toEqual(Buffer.from([0x08, 0x00]));
-    expect(vi.mocked(socket.send)).toHaveBeenCalledWith(
-      JSON.stringify({
-        message_type: 'input_audio_chunk',
-        audio_base_64: Buffer.from([0x08, 0x00]).toString('base64'),
-        previous_text: 'Réservation',
-      }),
-    );
-    expect(adapter.chunkBytesPerMs('PCMA')).toBe(16);
-    expect(adapter.samplesForAudio('PCMA', decoded.length)).toBe(1);
-  });
-
   it('sends Deepgram audio as binary and converts Telnyx L16 to linear16 little-endian', () => {
     const adapter = createDeepgramSttAdapter({ model: 'nova-3' });
     const socket = makeSocket();
@@ -54,22 +35,21 @@ describe('STT provider adapters', () => {
     expect(adapter.samplesForAudio('PCMU', source.length)).toBe(3);
   });
 
-  it('uses Deepgram control messages but keeps Scribe control operations as no-ops', () => {
+  it('uses Deepgram control messages only on an open socket', () => {
     const deepgram = createDeepgramSttAdapter({ model: 'nova-3' });
-    const scribe = createScribeSttAdapter({ model: 'scribe_v2_realtime' });
-    const deepgramSocket = makeSocket();
-    const scribeSocket = makeSocket();
+    const openSocket = makeSocket();
+    const closedSocket = { ...makeSocket(), readyState: WebSocket.CLOSED } as unknown as WebSocket;
 
-    deepgram.finalize(deepgramSocket);
-    deepgram.keepAlive(deepgramSocket);
-    scribe.finalize(scribeSocket);
-    scribe.keepAlive(scribeSocket);
+    deepgram.finalize(openSocket);
+    deepgram.keepAlive(openSocket);
+    deepgram.finalize(closedSocket);
+    deepgram.keepAlive(closedSocket);
 
-    expect(vi.mocked(deepgramSocket.send).mock.calls).toEqual([
+    expect(vi.mocked(openSocket.send).mock.calls).toEqual([
       [JSON.stringify({ type: 'Finalize' })],
       [JSON.stringify({ type: 'KeepAlive' })],
     ]);
-    expect(scribeSocket.send).not.toHaveBeenCalled();
+    expect(closedSocket.send).not.toHaveBeenCalled();
   });
 
   it('normalizes Deepgram finals, partials, speech boundaries and provider errors', () => {
@@ -210,7 +190,7 @@ describe('Cartesia Ink-2 en mode tours (secours)', () => {
     ).toEqual([{ type: 'partial', transcript: 'je voudrais' }]);
     expect(
       normalizeCartesiaTurnsMessage({ type: 'turn.end', transcript: 'pour six personnes' }),
-    ).toEqual([{ type: 'timestamped_commit', transcript: 'pour six personnes' }]);
+    ).toEqual([{ type: 'turn_commit', transcript: 'pour six personnes' }]);
     expect(normalizeCartesiaTurnsMessage({ type: 'turn.end', transcript: '' })).toEqual([]);
     expect(normalizeCartesiaTurnsMessage({ type: 'turn.resume' })).toEqual([]);
     expect(

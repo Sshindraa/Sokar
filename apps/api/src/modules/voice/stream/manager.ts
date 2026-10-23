@@ -518,7 +518,6 @@ export class CallSessionManager {
       voiceLanguageCode: 'fr',
       voiceLanguageCandidate: null,
       sttFirstAudioChunkSent: false,
-      sttPendingCommit: null,
       audioBuffer: [],
       isSpeaking: false,
       ttsPlayback: Promise.resolve(),
@@ -576,10 +575,6 @@ export class CallSessionManager {
     if (session.sttEndOfTurnTimer) {
       clearTimeout(session.sttEndOfTurnTimer);
       session.sttEndOfTurnTimer = null;
-    }
-    if (session.sttPendingCommit?.timer) {
-      clearTimeout(session.sttPendingCommit.timer);
-      session.sttPendingCommit = null;
     }
     if (session.sttRetryTimer) clearTimeout(session.sttRetryTimer);
     if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);

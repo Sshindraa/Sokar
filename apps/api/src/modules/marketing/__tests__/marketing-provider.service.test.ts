@@ -14,6 +14,8 @@ vi.mock('../../../shared/db/client', () => ({
     campaignMessage: { findFirst: vi.fn(), updateMany: vi.fn() },
     marketingCampaign: { update: vi.fn() },
     marketingSuppression: { upsert: vi.fn() },
+    customer: { findFirst: vi.fn() },
+    marketingOptOut: { upsert: vi.fn() },
     marketingProviderReconciliation: {
       upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -31,6 +33,11 @@ describe('marketing provider reconciliation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.campaignMessage.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      phone: '+33601020304',
+      emailNormalized: 'alice@example.com',
+    } as never);
+    vi.mocked(db.marketingOptOut.upsert).mockResolvedValue({} as never);
     vi.mocked(db.marketingCampaign.update).mockResolvedValue({} as never);
     vi.mocked(db.marketingProviderReconciliation.upsert).mockResolvedValue({
       id: 'reconciliation-1',
@@ -54,6 +61,7 @@ describe('marketing provider reconciliation', () => {
       sendsEnabled: false,
       sendGate: { enabled: false, missing: ['MARKETING_SENDS_ENABLED'] },
       recipientAllowlistActive: false,
+      optOutRegisterConfigured: false,
       sms: { configured: true, callbackConfigured: true, missing: [], callbackMissing: [] },
       email: { configured: true, callbackConfigured: true, missing: [], callbackMissing: [] },
       whatsapp: {
@@ -80,6 +88,7 @@ describe('marketing provider reconciliation', () => {
       sendsEnabled: true,
       sendGate: { enabled: true, missing: [] },
       recipientAllowlistActive: false,
+      optOutRegisterConfigured: false,
       sms: {
         configured: true,
         callbackConfigured: false,
@@ -175,6 +184,85 @@ describe('marketing provider reconciliation', () => {
       where: { id: 'campaign-1' },
       data: { deliveredCount: { increment: 1 } },
     });
+  });
+
+  it("réévalue l'événement qui perd la course contre un autre callback du même message", async () => {
+    // `email.sent` et `email.delivered` arrivent à quelques millisecondes d'intervalle : le second lit
+    // ACCEPTED, le premier passe le message à SENT, puis la mise à jour conditionnelle du second échoue.
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    const result = await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.delivered',
+      occurredAt: new Date('2026-09-13T10:01:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      matched: true,
+      changed: true,
+      status: MarketingMessageStatus.DELIVERED,
+    });
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.ACCEPTED },
+      }),
+    );
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.SENT },
+        data: expect.objectContaining({ status: MarketingMessageStatus.DELIVERED }),
+      }),
+    );
+    expect(db.marketingCampaign.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne perd pas un rebond qui perd la course contre un callback précédent', async () => {
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      channel: 'EMAIL',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Permanent',
+    });
+
+    expect(db.marketingSuppression.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ customerId: 'customer-1', reason: 'HARD_BOUNCE' }),
+      }),
+    );
   });
 
   it('ignore un événement en retard après une livraison', async () => {
@@ -344,6 +432,35 @@ describe('marketing provider reconciliation', () => {
       },
       update: {},
     });
+  });
+
+  it('inscrit une plainte au registre d’opposition (haché), pas un rebond', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.complained',
+    });
+    const call = vi.mocked(db.marketingOptOut.upsert).mock.calls[0]?.[0];
+    expect(call?.create).toMatchObject({
+      restaurantId: 'restaurant-1',
+      channel: 'EMAIL',
+      reason: 'COMPLAINT',
+      source: 'RESEND_WEBHOOK',
+    });
+    expect(call?.create.addressHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(call)).not.toContain('alice@example.com');
+
+    vi.mocked(db.marketingOptOut.upsert).mockClear();
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Permanent',
+    });
+    expect(db.marketingOptOut.upsert).not.toHaveBeenCalled();
   });
 
   it('supprime le contact après un rebond définitif mais pas après un rebond temporaire', async () => {

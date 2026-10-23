@@ -5,7 +5,7 @@ import {
   encodeTelnyxFromPcm16,
   telnyxFrameBytes,
 } from '../stream/telnyx-codec';
-import { sttAudioFormatForCodec } from '../stream/stt-bridge';
+import { buildDeepgramSttUrl } from '../stream/stt-bridge';
 import { highFrequencyEnergyRatio, L16EndianProbe, WidebandProbe } from '../stream/wideband';
 
 function tone(frequency: number, durationMs = 3000): Buffer {
@@ -36,8 +36,10 @@ describe('Telnyx L16', () => {
     });
   });
 
-  it('utilise pcm_16000, 3200 octets par 100 ms et convertit le réseau big-endian', () => {
-    expect(sttAudioFormatForCodec('L16')).toBe('pcm_16000');
+  it('utilise linear16 à 16 kHz, 3200 octets par 100 ms et convertit le réseau big-endian', () => {
+    const deepgramUrl = new URL(buildDeepgramSttUrl('L16', []));
+    expect(deepgramUrl.searchParams.get('encoding')).toBe('linear16');
+    expect(deepgramUrl.searchParams.get('sample_rate')).toBe('16000');
     expect(telnyxFrameBytes('L16')).toBe(3200);
     const pcm = Buffer.from([0x34, 0x12, 0xcd, 0xab]);
     const network = encodeTelnyxFromPcm16('L16', pcm);

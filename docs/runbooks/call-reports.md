@@ -1,7 +1,8 @@
 # Runbook — Rapport automatique de chaque appel
 
-> **Statut : ACTIF en production depuis le 3 octobre 2026** (`CALL_REPORT_ENABLED=true` sur
-> `sokar-workers`, restaurants de test uniquement). Défaut du code : `false`. Validation sur les appels
+> **Statut : ACTIF en production depuis le 3 octobre 2026** (restaurants de test uniquement,
+> puisqu'il suit l'enregistrement). Depuis le 23/10/2026 le drapeau `CALL_REPORT_ENABLED` n'existe plus : le rapport est
+> construit pour tout appel enregistré. Validation sur les appels
 > 8043662c, 935ff343, 03b19223 et 3ba7c66f : voir « Validation du 03/10/2026 ».
 
 Après chaque appel d'un restaurant de test, le worker produit le rapport que l'on faisait à la main :
@@ -31,11 +32,10 @@ generated_at, issues_json, counters, storage_key)`, utile seulement si on veut i
 
 Prérequis : `CALL_RECORDING_ENABLED=true`, `CALL_RECORDINGS_BUCKET` et ses accès,
 `DEEPGRAM_API_KEY`, `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` contenant le restaurant (sans elle, le
-dialogue par tour n'existe pas et le rapport est réduit : il le dit). Le démarrage refuse
-`CALL_REPORT_ENABLED=true` sans l'enregistrement et la clé Deepgram.
+dialogue par tour n'existe pas et le rapport est réduit : il le dit). Sans la clé Deepgram,
+la transcription après coup échoue et le rapport est abandonné (l'appel n'est jamais touché).
 
 ```text
-CALL_REPORT_ENABLED=true          # défaut false
 CALL_REPORT_LOG_DIR=/var/log/sokar  # défaut ; dossier des journaux de l'API, lu par le worker
 CALL_REPORT_MAX_REPORTS=100       # plafond du nombre de rapports ; absent = illimité
 ```

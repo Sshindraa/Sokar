@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { redisQueue } from '../../shared/redis/client';
 import { jobLogger, setupWorkerListeners } from '../../shared/queue/workers/helper';
+import { purgeExpiredMarketingOptOuts } from './marketing-opt-out.service';
 import {
   reconcileMarketingProviderEvents,
   type MarketingProvider,
@@ -55,6 +56,18 @@ export async function processMarketingProviderReconciliationJob(
     now,
   });
   jobLogger(job).info(result, 'marketing provider reconciliation completed');
+
+  // Housekeeping on the same 5-minute schedule: drop the opt-out register entries whose retention
+  // (3 years) has elapsed. It must never fail the reconciliation.
+  try {
+    const purged = await purgeExpiredMarketingOptOuts(now, dependencies.db);
+    if (purged > 0) jobLogger(job).info({ purged }, 'marketing opt-out register purged');
+  } catch (error) {
+    jobLogger(job).warn(
+      { err: error instanceof Error ? error.name : 'unknown' },
+      'marketing opt-out register purge failed',
+    );
+  }
   return result;
 }
 

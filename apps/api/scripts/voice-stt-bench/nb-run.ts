@@ -9,7 +9,7 @@
  *   F : B avec filtrage Scribe du bruit de fond
  *
  * Les paramètres Scribe (langues, keyterms, VAD, stratégie de commit) sont lus
- * depuis `stt-bridge.ts` via son build compilé. E et F ne changent que leur
+ * depuis `scribe-url.cjs` (l'ancienne URL de production, sortie de `stt-bridge.ts`). E et F ne changent que leur
  * condition; F omet aussi `include_timestamps`, incompatible avec le filtre.
  *
  * À lancer depuis `apps/api`, où se trouvent les clés :
@@ -44,7 +44,7 @@ import {
   requireSharedKey,
 } from './nb-keys';
 
-const { buildSttUrl } = require('../../dist/modules/voice/stream/stt-bridge.js') as {
+const { buildSttUrl } = require('./scribe-url.cjs') as {
   buildSttUrl: (
     model?: string,
     codec?: 'PCMA' | 'PCMU',

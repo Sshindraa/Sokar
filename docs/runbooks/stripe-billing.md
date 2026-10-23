@@ -100,7 +100,7 @@ Les prix `MULTI_SITE` couvrent la base ; les prix `MULTI_SITE_ADDON` couvrent ch
 supplémentaire. Le checkout reçoit `siteCount` (minimum 1, 2 par défaut, maximum 100) et ajoute une ligne
 Stripe pour les établissements supplémentaires, quantité `siteCount - 1` (aucune ligne addon pour un seul établissement). Tant qu'une valeur manque, l'API renvoie
 `503 BILLING_NOT_CONFIGURED` et aucune session n'est créée. La commande
-`scripts/ops/sync-env.sh stripe-prices` ne crée pas ces prix ; elle contrôle le catalogue lorsque le checkout est ouvert avant de publier les `priceId`.
+`scripts/ops/sync-env.sh stripe-prices` ne crée pas ces prix ; elle contrôle le catalogue avant de publier les `priceId`.
 
 Les identifiants de prix sont conservés comme variables GitHub Actions non secrètes (`STRIPE_STAGING_*` et `STRIPE_PRODUCTION_*`). Chaque déploiement les synchronise dans le fichier `.env` du VPS avant le build ; une variable manquante ou invalide bloque le déploiement au lieu de publier une API partiellement configurée. La clé Stripe (`STRIPE_SECRET_KEY`) reste, elle, un secret géré séparément.
 
@@ -108,10 +108,9 @@ Les identifiants de prix sont conservés comme variables GitHub Actions non secr
 
 `scripts/ops/verify-stripe-catalog.mjs` lit chaque `price_...` côté Stripe et compare montant, devise,
 cadence et état au catalogue partagé `packages/shared/src/pricing-catalog.cjs` (199/299/299 + 99 €, annuel −10 %). Il est en **lecture seule**
-côté Stripe. `scripts/ops/sync-env.sh stripe-prices` propage toujours les `priceId`, y compris quand le
-checkout reste fermé : cette synchronisation ne crée pas de session et évite qu'une activation future
-ne redémarre avec les anciens tarifs. Dès que `BILLING_CHECKOUT_ENABLED=true`, le script vérifie le
-catalogue dans un fichier temporaire et échoue avant toute publication si un `priceId` pointe vers
+côté Stripe. `scripts/ops/sync-env.sh stripe-prices` vérifie toujours le catalogue (le checkout est ouvert en
+permanence, le drapeau `BILLING_CHECKOUT_ENABLED` est retiré depuis le 23/10/2026) :
+le script vérifie le catalogue dans un fichier temporaire et échoue avant toute publication si un `priceId` pointe vers
 l'ancien tarif 149/249 €, si le script de contrôle est absent ou si Stripe est indisponible.
 
 ```zsh
@@ -263,8 +262,8 @@ dans `docs/audits/`.
 | 7. Annulation              | `cancel_at_period_end` puis `customer.subscription.deleted` → rétrogradation | réponses `/billing/status`                  |
 | 8. Réactivation            | second Checkout possible après annulation                                    | capture                                     |
 
-`BILLING_CHECKOUT_ENABLED` est à `true` en production depuis le 22 septembre
-2026, après ces huit étapes et la vérification du catalogue.
+Le checkout est ouvert en production depuis le 22 septembre
+2026 (drapeau `BILLING_CHECKOUT_ENABLED`, retiré depuis le 23/10/2026), après ces huit étapes et la vérification du catalogue.
 
 Le dernier rejeu sandbox est archivé dans
 [`docs/audits/2026-09-21-billing-replay.md`](../audits/2026-09-21-billing-replay.md), avec les

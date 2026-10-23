@@ -110,10 +110,6 @@ function requestKey(messages: ChatMessage[], format: StructuredFormat): string {
   return JSON.stringify([messages, format]);
 }
 
-export function isStructuredSpeculationEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VOICE_STRUCTURED_SPECULATION_ENABLED === 'true';
-}
-
 export type SpeculationOutcome =
   | 'hit'
   | 'hit_tolerant'

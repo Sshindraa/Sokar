@@ -58,16 +58,16 @@ check "contenu inchangé" "$before" "$(cat "$d/api.env")"
 
 echo "Valeur invalide : échec et aucun fichier modifié (même sur un autre groupe)"
 d="$(fixture)"; before="$(cat "$d/api.env")"
-check "exit 1" 1 "$(run "$d" runtime-flags staging MARKETING_FEATURES_ENABLED=yes)"
+check "exit 1" 1 "$(run "$d" operator staging SOKAR_OPERATOR_USER_IDS=oui)"
 check "contenu inchangé" "$before" "$(cat "$d/api.env")"
 
 echo "Valeur valide : remplacement de la ligne existante ou ajout en fin de fichier"
 d="$(fixture)"
-printf 'MARKETING_FEATURES_ENABLED=false\n' >> "$d/api.env"
-check "exit 0" 0 "$(run "$d" runtime-flags staging MARKETING_FEATURES_ENABLED=true)"
-check "ligne remplacée une seule fois" "1" "$(grep -c '^MARKETING_FEATURES_ENABLED=' "$d/api.env")"
-check "valeur écrite" "MARKETING_FEATURES_ENABLED=true" "$(grep '^MARKETING_FEATURES_ENABLED=' "$d/api.env")"
-check "lignes non concernées conservées" "$BASE" "$(grep -v '^MARKETING_FEATURES_ENABLED=' "$d/api.env")"
+printf 'SOKAR_OPERATOR_USER_IDS=user_ancien\n' >> "$d/api.env"
+check "exit 0" 0 "$(run "$d" operator staging SOKAR_OPERATOR_USER_IDS=user_nouveau)"
+check "ligne remplacée une seule fois" "1" "$(grep -c '^SOKAR_OPERATOR_USER_IDS=' "$d/api.env")"
+check "valeur écrite" "SOKAR_OPERATOR_USER_IDS=user_nouveau" "$(grep '^SOKAR_OPERATOR_USER_IDS=' "$d/api.env")"
+check "lignes non concernées conservées" "$BASE" "$(grep -v '^SOKAR_OPERATOR_USER_IDS=' "$d/api.env")"
 mode_of() { if stat -c %a "$1" >/dev/null 2>&1; then stat -c %a "$1"; else stat -f %Lp "$1"; fi; }
 check "mode 600" "600" "$(mode_of "$d/api.env")"
 
@@ -87,8 +87,8 @@ d="$(fixture)"; before="$(cat "$d/dashboard.env")"
 check "exit 1" 1 "$(run "$d" clerk prod CLERK_SECRET_KEY=sk_test_FIXTURE)"
 check "dashboard inchangé" "$before" "$(cat "$d/dashboard.env")"
 
-echo "Stripe : checkout activé sans contrôle disponible, refus et fichier inchangé"
-d="$(fixture)"; printf 'BILLING_CHECKOUT_ENABLED=true\n' >> "$d/api.env"; before="$(cat "$d/api.env")"
+echo "Stripe : prix synchronisés sans contrôle du catalogue disponible, refus et fichier inchangé"
+d="$(fixture)"; before="$(cat "$d/api.env")"
 prices=(STRIPE_PRICE_ESSENTIAL_MONTHLY=price_a1 STRIPE_PRICE_ESSENTIAL_ANNUAL=price_a2
   STRIPE_PRICE_PRO_MONTHLY=price_a3 STRIPE_PRICE_PRO_ANNUAL=price_a4
   STRIPE_PRICE_MULTI_SITE_MONTHLY=price_a5 STRIPE_PRICE_MULTI_SITE_ANNUAL=price_a6

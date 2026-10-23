@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { MARKETING_CONSENT_CHANNELS, MARKETING_CONSENT_COLLECTION_METHODS } from '@sokar/shared';
 import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { requireOrg } from '../../plugins/clerk';
-import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import { CustomerSegmentDefinitionSchema } from '../customers/customer-segment.service';
 import {
   CAMPAIGN_CHANNELS,
@@ -38,6 +39,7 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
+import { recordStaffMarketingConsent } from './marketing-consent.service';
 import {
   consumeMarketingUnsubscribeToken,
   verifyMarketingUnsubscribeToken,
@@ -80,6 +82,13 @@ const PermissionBodySchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/)
     .nullable()
     .optional(),
+});
+
+const StaffConsentParamsSchema = CustomerIdParamsSchema.extend({
+  channel: z.enum(MARKETING_CONSENT_CHANNELS),
+});
+const StaffConsentBodySchema = z.object({
+  method: z.enum(MARKETING_CONSENT_COLLECTION_METHODS),
 });
 
 const AudiencePreviewSchema = z
@@ -152,27 +161,10 @@ const DeactivateConversionBodySchema = z.object({
   reservationId: z.string().trim().min(1).max(128),
 });
 
-const requireMarketingFeature = requireRuntimeFlag(
-  'MARKETING_FEATURES_ENABLED',
-  'Les campagnes et segments restent désactivés jusqu’à la qualification du pilote.',
-  'MARKETING_FEATURES_DISABLED',
-);
 const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced')];
-const requireMarketingCampaigns = [
-  requireOrg(),
-  requireCapability('marketing.campaigns'),
-  requireMarketingFeature,
-];
-const requireMarketingAutomations = [
-  requireOrg(),
-  requireCapability('marketing.automations'),
-  requireMarketingFeature,
-];
-const requireMarketingAttribution = [
-  requireOrg(),
-  requireCapability('marketing.attribution'),
-  requireMarketingFeature,
-];
+const requireMarketingCampaigns = [requireOrg(), requireCapability('marketing.campaigns')];
+const requireMarketingAutomations = [requireOrg(), requireCapability('marketing.automations')];
+const requireMarketingAttribution = [requireOrg(), requireCapability('marketing.attribution')];
 
 function statusForError(error: unknown): number {
   if (!(error instanceof Error)) return 500;
@@ -294,12 +286,40 @@ export async function marketingRoutes(app: FastifyInstance) {
           proofVersion: body.proofVersion,
           proof: body.proof,
           proofHash: body.proofHash,
+          actorUserId: request.userId,
           occurredAt: new Date(),
         });
         return reply.send({ data: permission });
       } catch (error) {
         const status = statusForError(error);
         if (status === 404) return reply.status(status).send({ error: 'CUSTOMER_NOT_FOUND' });
+        throw error;
+      }
+    },
+  );
+
+  app.post(
+    '/crm/customers/:id/marketing-permissions/:channel/consent',
+    { preHandler: requireCrmAdvanced },
+    async (request, reply) => {
+      const { id, channel } = StaffConsentParamsSchema.parse(request.params);
+      const { method } = StaffConsentBodySchema.parse(request.body);
+      try {
+        const permission = await recordStaffMarketingConsent({
+          restaurantId: request.restaurantId!,
+          customerId: id,
+          channel,
+          method,
+          actorUserId: request.userId,
+        });
+        return reply.send({ data: permission });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'CUSTOMER_NOT_FOUND') {
+          return reply.status(404).send({ error: 'CUSTOMER_NOT_FOUND' });
+        }
+        if (error instanceof Error && error.message === 'CUSTOMER_EMAIL_REQUIRED') {
+          return reply.status(409).send({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+        }
         throw error;
       }
     },
@@ -315,7 +335,8 @@ export async function marketingRoutes(app: FastifyInstance) {
           restaurantId: request.restaurantId!,
           customerId: id,
           channel,
-          source: 'UNSUBSCRIBE',
+          source: 'DASHBOARD_WITHDRAWAL',
+          actorUserId: request.userId,
         });
         return reply.send({ data: permission });
       } catch (error) {

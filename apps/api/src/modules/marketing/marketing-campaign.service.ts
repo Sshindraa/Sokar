@@ -11,6 +11,7 @@ import {
   compileCustomerSegmentWhere,
   parseCustomerSegmentDefinition,
 } from '../customers/customer-segment.service';
+import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
 import {
   loadLegacyMarketingOptIns,
   resolveMarketingPermission,
@@ -45,6 +46,8 @@ export type CampaignAudiencePreview = {
   candidateCount: number;
   eligibleCount: number;
   excludedByReason: Record<string, number>;
+  /** False when the opt-out register key is missing: the register could not be consulted. */
+  optOutRegisterChecked?: boolean;
   sample: Array<{ id: string; name: string | null; isVip: boolean; inclusionReason: string }>;
   members: CampaignAudienceMemberDraft[];
 };
@@ -316,6 +319,11 @@ async function buildAudience(args: {
     loadLegacyMarketingOptIns({ restaurantId: args.restaurantId, customers: candidates }),
   ]);
 
+  const optOutRegister = await loadOptedOutCustomerIds({
+    restaurantId: args.restaurantId,
+    channel,
+    customers: candidates,
+  });
   const permissionByCustomer = new Map(
     (permissions ?? []).map((permission) => [permission.customerId, permission]),
   );
@@ -341,6 +349,10 @@ async function buildAudience(args: {
     const suppressionReason = suppressionByCustomer.get(customer.id);
     if (suppressionReason) {
       incrementReason(excludedByReason, `SUPPRESSED:${suppressionReason}`);
+      continue;
+    }
+    if (optOutRegister.optedOut.has(customer.id)) {
+      incrementReason(excludedByReason, 'OPTED_OUT_REGISTER');
       continue;
     }
     if (frequencyByCustomer.has(customer.id)) {
@@ -379,6 +391,7 @@ async function buildAudience(args: {
     candidateCount: candidates.length,
     eligibleCount: members.length,
     excludedByReason,
+    optOutRegisterChecked: optOutRegister.checked,
     sample: candidates
       .filter((customer) => eligibleIds.has(customer.id))
       .slice(0, sampleLimit)
