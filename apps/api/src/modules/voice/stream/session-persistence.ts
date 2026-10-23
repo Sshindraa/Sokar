@@ -15,7 +15,7 @@ import { writeDebugLog } from './debug-log';
 import { VOICE_DEBUG_DIALOGUE_RETENTION_DAYS, formatDebugSpeech } from './debug-dialogue';
 import { MS_TO_SECONDS } from '../../../shared/constants/time.js';
 
-/** Crée ou met à jour un enregistrement Call en base pour un appel Scribe */
+/** Crée ou met à jour un enregistrement Call en base pour un appel avec reconnaissance vocale */
 export async function persistSttCall(session: CallSession): Promise<void> {
   try {
     const { db } = await import('../../../shared/db/client');
@@ -94,10 +94,7 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
 
     const callProviders = {
       sttProvider:
-        session.sttProviderUsed ??
-        callRecord.sttProvider ??
-        session.sttModel ??
-        'elevenlabs-scribe-v2-realtime',
+        session.sttProviderUsed ?? callRecord.sttProvider ?? session.sttModel ?? 'deepgram-nova-3',
       // Le stream courant est toujours routé par le provider canonique. Ne
       // recopions pas une valeur éventuellement fournie par un ancien webhook
       // dans la télémétrie de cette session.

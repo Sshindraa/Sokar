@@ -1,5 +1,5 @@
 /**
- * Événements de transcription (Deepgram, Scribe) : fins de tour, reprises de parole, verrou de langue,
+ * Événements de transcription (Deepgram, Ink-2 en secours) : fins de tour, reprises de parole,
  * indisponibilité de la reconnaissance, puis remise du tour au moteur structuré
  * (`structured-turn/engine.ts`), qui comprend le tour, répond et exécute les actions.
  *
@@ -20,11 +20,7 @@ import { describeTranscript } from './pii-redact';
 import { speakTtsStreamed } from './tts-handler';
 import { recordVoiceTurnEvent, completeVoiceTurnInput, startVoiceTurn } from './turn-telemetry';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
-import { extractConversationSlots, isNameCollectionBlocking } from './conversation-state';
-import {
-  voiceLanguageLockedTotal,
-  voiceNonFrTranscriptAfterLockTotal,
-} from '../../../shared/observability/metrics';
+import { isNameCollectionBlocking } from './conversation-state';
 import {
   dialogueContextOf,
   isRepeatOfLastProcessedTurn,
@@ -33,7 +29,6 @@ import {
 import {
   effectiveVoiceLanguage,
   hasReliableLanguageEvidence,
-  isFrenchLanguageLockEvidence,
   normalizeVoiceLanguage,
   resolveVoiceLanguage,
 } from './voice-language';
@@ -42,72 +37,6 @@ const recentTranscripts = new WeakMap<
   CallSession,
   { normalized: string; at: number; dialogueContext: string }
 >();
-
-type RecoverableReservationField = 'date' | 'time' | 'partySize';
-
-/** Use the same slot extractor as reservation turns, constrained to the asked field. */
-export function canRecoverNonFrenchReservationTurn(
-  session: CallSession,
-  transcript: string,
-): boolean {
-  const question = session.conversation.pendingQuestion;
-  let field: RecoverableReservationField | null =
-    question === 'date'
-      ? 'date'
-      : question === 'time' || question === 'timeChoice'
-        ? 'time'
-        : question === 'partySize' || question === 'partySizeConfirmation'
-          ? 'partySize'
-          : null;
-
-  if (
-    !field &&
-    (session.conversation.intent === 'reservation' ||
-      session.conversation.intent === 'availability')
-  ) {
-    if (!session.conversation.slots.date) field = 'date';
-    else if (!session.conversation.slots.time) field = 'time';
-    else if (session.conversation.slots.partySize === undefined) field = 'partySize';
-  }
-  if (!field) return false;
-
-  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
-  return field === 'date'
-    ? Boolean(extracted.date)
-    : field === 'time'
-      ? Boolean(extracted.time)
-      : extracted.partySize !== undefined;
-}
-
-export function applyVoiceLanguageLock(
-  session: CallSession,
-  transcript: string,
-  languageCode: string | null | undefined,
-): { lockedNow: boolean; nonFrenchOutcome?: 'parsed' | 'reprompt' } {
-  if (process.env.VOICE_STT_LANGUAGE_LOCK !== 'true') return { lockedNow: false };
-  const detectedLanguage = normalizeVoiceLanguage(languageCode);
-  const lockedNow =
-    !session.languageLocked && isFrenchLanguageLockEvidence(transcript, languageCode);
-  if (lockedNow) {
-    session.languageLocked = 'fr';
-    voiceLanguageLockedTotal.inc();
-    session.abortController?.abort();
-    session.abortController = null;
-  }
-  if (session.languageLocked !== 'fr') return { lockedNow };
-
-  session.voiceLanguageCode = 'fr';
-  session.voiceLanguageCandidate = null;
-  if (!detectedLanguage || detectedLanguage === 'fr') return { lockedNow };
-
-  const parsed = canRecoverNonFrenchReservationTurn(session, transcript);
-  const nonFrenchOutcome = parsed ? 'parsed' : 'reprompt';
-  voiceNonFrTranscriptAfterLockTotal.inc({ outcome: nonFrenchOutcome });
-  session.forceFrenchReprompt = !parsed;
-  session.abortController?.abort();
-  session.abortController = null;
-  return { lockedNow, nonFrenchOutcome };
-}
 
 export { normalizeTranscriptForDedupe };
 
@@ -233,7 +162,7 @@ function buildSttUnavailableCopy(session: CallSession): {
 }
 
 /**
- * Gère les événements provenant de ElevenLabs Scribe.
+ * Gère les événements de transcription (Deepgram, ou Ink-2 en secours).
  */
 export function handleSttEvent(
   event: SttEvent,
@@ -308,8 +237,7 @@ export function handleSttEvent(
         startVoiceTurn(session, event.transcript);
       }
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
-      applyVoiceLanguageLock(session, event.transcript, event.languageCode);
-      if (!session.languageLocked && detectedLanguage) {
+      if (detectedLanguage) {
         const previousLanguage = effectiveVoiceLanguage(session);
         const languageDecision = resolveVoiceLanguage(
           previousLanguage,
@@ -333,7 +261,7 @@ export function handleSttEvent(
           );
         }
         if (languageDecision.changed) {
-          // Une spéculation lancée avant le commit Scribe peut avoir utilisé
+          // Une spéculation lancée avant le commit peut avoir utilisé
           // l'ancienne langue (notamment sur un premier « yes »). Elle ne doit
           // jamais être réutilisée après un changement de langue détecté.
           session.abortController?.abort();
@@ -344,7 +272,7 @@ export function handleSttEvent(
               previousLanguage,
               language: languageDecision.language,
             },
-            '[voice-language] Updated dialogue language from Scribe',
+            '[voice-language] Updated dialogue language from the STT provider',
           );
         }
       }
@@ -387,7 +315,7 @@ export function handleSttEvent(
         { callId: session.callControlId, errorMsg: event.message },
         `[stt] Error: ${event.message}`,
       );
-      const err = new Error(`Scribe error: ${event.message}`);
+      const err = new Error(`STT error: ${event.message}`);
       captureException(err, {
         tags: { service: 'handler', event: 'stt-error' },
         extra: { callId: session.callControlId },
@@ -480,7 +408,6 @@ export async function processTranscriptStreaming(
   mgr: CallSessionManager,
 ): Promise<void> {
   const transcript = normalizeSttTranscript(rawTranscript);
-  session.forceFrenchReprompt = false;
   if (!transcript.trim()) return;
   if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);

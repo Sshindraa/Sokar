@@ -100,7 +100,7 @@ les mêmes clips et les mêmes seeds** :
 | `F`       | comme `B`, `filter_background_audio=true`                 | `pcm_8000`  | 20 ms  |
 
 Tous les paramètres Scribe (langues, `keyterms`, VAD, `commit_strategy`) sont
-lus depuis `stt-bridge.ts` via son build compilé : seuls `audio_format` et la
+lus depuis `scribe-url.cjs` (l'URL de production de Scribe avant son retrait, conservée ici pour que le banc continue de mesurer Scribe comme référence) : seuls `audio_format` et la
 taille de chunk changent, sauf E (langue) et F (filtre), dont le nom décrit
 l'unique réglage de modèle modifié. ElevenLabs interdit de combiner le filtre
 avec `include_timestamps`; F omet donc ce paramètre explicite tout en gardant

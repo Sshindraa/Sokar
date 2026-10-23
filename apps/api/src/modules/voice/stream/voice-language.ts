@@ -1,7 +1,7 @@
 import type { CallSession } from './types';
 
 /**
- * Codes de langue acceptés par Cartesia Sonic. Scribe peut retourner un code
+ * Codes de langue acceptés par Cartesia Sonic. Le fournisseur STT peut retourner un code
  * ISO court ou un code enrichi (par exemple `en-US`) ; le pipeline conserve
  * ici le code court attendu par le TTS.
  */
@@ -211,7 +211,7 @@ export const CARTESIA_DEFAULT_LOCALE_BY_LANGUAGE: Record<VoiceLanguageCode, stri
 
 export type VoiceLocaleCode = string;
 
-/** Normalise un code Scribe/BCP-47 en code Cartesia, ou null si inconnu. */
+/** Normalise un code de langue BCP-47 en code Cartesia, ou null si inconnu. */
 export function normalizeVoiceLanguage(code: string | null | undefined): VoiceLanguageCode | null {
   if (!code) return null;
   const normalized = code.trim().toLowerCase().replace(/_/g, '-');
@@ -222,7 +222,7 @@ export function normalizeVoiceLanguage(code: string | null | undefined): VoiceLa
 
 /**
  * Normalise un code BCP-47 vers une locale Cartesia. Une région fournie par
- * Scribe est conservée (`en-GB`, `fr-CA`, …) ; sans région, nous utilisons la
+ * le fournisseur STT est conservée (`en-GB`, `fr-CA`, …) ; sans région, nous utilisons la
  * région par défaut de Sonic 3.6 pour la langue détectée.
  */
 export function normalizeVoiceLocale(code: string | null | undefined): VoiceLocaleCode | null {
@@ -240,42 +240,24 @@ export function normalizeVoiceLocale(code: string | null | undefined): VoiceLoca
 
 /** Langue active d'un appel ; le français reste le comportement historique. */
 export function effectiveVoiceLanguage(
-  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode' | 'languageLocked'>,
+  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode'>,
 ): VoiceLanguageCode {
-  return (
-    session.languageLocked ??
-    session.voiceLanguageCode ??
-    normalizeVoiceLanguage(session.sttLanguageCode) ??
-    'fr'
-  );
+  return session.voiceLanguageCode ?? normalizeVoiceLanguage(session.sttLanguageCode) ?? 'fr';
 }
 
 /** Locale Cartesia active pour un appel. */
 export function effectiveVoiceLocale(
-  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode' | 'languageLocked'>,
+  session: Pick<CallSession, 'voiceLanguageCode' | 'sttLanguageCode'>,
 ): VoiceLocaleCode {
-  if (session.languageLocked) {
-    return CARTESIA_DEFAULT_LOCALE_BY_LANGUAGE[session.languageLocked];
-  }
   return (
     normalizeVoiceLocale(session.sttLanguageCode) ??
     CARTESIA_DEFAULT_LOCALE_BY_LANGUAGE[effectiveVoiceLanguage(session)]
   );
 }
 
-/** Un premier tour français de deux mots minimum pose le verrou applicatif. */
-export function isFrenchLanguageLockEvidence(
-  transcript: string,
-  detectedLanguage: string | null | undefined,
-): boolean {
-  if (normalizeVoiceLanguage(detectedLanguage) !== 'fr') return false;
-  const wordCount = transcript.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
-  return wordCount >= 2;
-}
-
 /**
  * Vérifie qu'un segment final contient suffisamment de signal pour influencer
- * la langue du dialogue. La détection Scribe est très utile sur une phrase
+ * la langue du dialogue. La détection du fournisseur STT est très utile sur une phrase
  * complète, mais un fragment VAD, un écho ou une répétition peut recevoir une
  * langue arbitraire. Ces segments ne doivent jamais faire basculer le LLM et
  * Cartesia au milieu d'un appel.

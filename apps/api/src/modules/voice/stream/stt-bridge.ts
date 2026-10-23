@@ -11,7 +11,7 @@ import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { CallSession, SttEvent, SttFinalTrigger, SttTurnConfig, SttWord } from './types';
+import type { CallSession, SttEvent, SttFinalTrigger, SttWord } from './types';
 import { CallSessionManager } from './manager';
 import { speculateStructuredTurn } from './structured-turn/engine';
 import {
@@ -39,7 +39,6 @@ import { buildSttKeyterms } from './stt-keyterms';
 export { buildSttKeyterms } from './stt-keyterms';
 import {
   createDeepgramSttAdapter,
-  createScribeSttAdapter,
   type NormalizedSttProviderMessage,
   type SttProviderAdapter,
   buildCartesiaTurnsUrl,
@@ -66,8 +65,6 @@ import {
   sendInkAudio,
 } from './stt-ink-parallel';
 
-const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
-const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
 export const STT_RETRY_BACKOFF_MS = [500, 1_000, 2_000] as const;
 export const STT_MAX_CONSECUTIVE_FAILURES = 4;
 export const STT_MAX_RECONNECTIONS_PER_CALL = 8;
@@ -256,124 +253,11 @@ function handleSttConnectionFailure(
   }, delay);
 }
 
-/**
- * Langues touristiques activées par défaut pour les appels de restaurant.
- * Scribe accepte plus de 90 langues, mais limiter la détection à ce périmètre
- * améliore l'identification sur un appel court et évite de promettre une
- * couverture que le restaurant n'a pas validée.
- */
-// Banc du 24/09/2026 (voix téléphonique A-law 8 kHz, 21 essais) : toutes les
-// langues → 33 % d'informations critiques justes (Scribe transcrit en allemand,
-// néerlandais…), fr+en → 76 %. Chaque langue ajoutée augmente les confusions.
-export const DEFAULT_STT_LANGUAGES = ['fr', 'en'] as const;
-const STT_LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}$/u;
-
-/**
- * Codes accepted by ElevenLabs Scribe for the 44-language opt-in.
- *
- * Cartesia uses short internal codes (for example `tl` for Tagalog), while
- * Scribe validates this list against its supported ISO codes (`fil` for
- * Filipino/Tagalog, `jpn` for Japanese, ...). Keeping this list separate is
- * important: the result is normalized back to Cartesia's short code later in
- * the voice pipeline.
- */
-export const ALL_STT_LANGUAGES = [
-  'eng',
-  'fra',
-  'deu',
-  'spa',
-  'por',
-  'zho',
-  'jpn',
-  'hin',
-  'ita',
-  'kor',
-  'nld',
-  'pol',
-  'rus',
-  'swe',
-  'tur',
-  'fil',
-  'bul',
-  'ron',
-  'ara',
-  'ces',
-  'ell',
-  'fin',
-  'hrv',
-  'msa',
-  'slk',
-  'dan',
-  'tam',
-  'ukr',
-  'hun',
-  'nor',
-  'vie',
-  'ben',
-  'tha',
-  'heb',
-  'kat',
-  'ind',
-  'tel',
-  'guj',
-  'kan',
-  'mal',
-  'mar',
-  'pan',
-  'ori',
-  'urd',
-] as const;
-
-/** Aliases accepted in local configuration, normalized to Scribe's codes. */
-const STT_LANGUAGE_ALIASES: Record<string, string> = {
-  tl: 'fil',
-  zh: 'zho',
-  ja: 'jpn',
-  ko: 'kor',
-};
-
-function normalizeSttLanguageCode(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  return STT_LANGUAGE_ALIASES[normalized] ?? normalized;
-}
-
-export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
-  // 120 ms séparait trop souvent une phrase sur une micro-pause naturelle.
-  // Une pause téléphonique de 220 ms reste réactive tout en laissant Scribe
-  // stabiliser « on sera quatre personnes » en un seul segment.
-  vadSilenceThresholdSecs: 0.95,
-  minSpeechDurationMs: 80,
-  minSilenceDurationMs: 220,
-};
 export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
 const MAX_TURN_PARTIALS = 30;
-/** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
-export const STT_TIMESTAMPED_COMMIT_GRACE_MS = 250;
 
-/**
- * Lit la liste CSV des langues Scribe autorisées. Les codes ISO-639-1 et
- * ISO-639-3 sont acceptés par ElevenLabs ; les valeurs invalides sont
- * ignorées afin de conserver une poignée de main valide.
- */
-export function getSttLanguageCodes(): string[] {
-  if (process.env.ELEVENLABS_STT_ALL_LANGUAGES === 'true') {
-    return [...ALL_STT_LANGUAGES];
-  }
-  const configured = process.env.ELEVENLABS_STT_LANGUAGES;
-  const candidates = configured
-    ? configured.split(',').map(normalizeSttLanguageCode)
-    : [...DEFAULT_STT_LANGUAGES];
-  const languages = candidates.filter((value) => STT_LANGUAGE_CODE_PATTERN.test(value));
-  return [...new Set(languages.length ? languages : DEFAULT_STT_LANGUAGES)];
-}
-
-/**
- * Construit les termes Scribe pour un restaurant donné. Les termes Realtime
- * sont limités à 20 caractères et 50 valeurs ; les valeurs invalides sont
- * ignorées afin de ne jamais rendre la poignée de main provider invalide.
- */
 function writeDebugLog(msg: string, err?: unknown): void {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
   const timestamp = new Date().toISOString();
@@ -387,116 +271,6 @@ function writeDebugLog(msg: string, err?: unknown): void {
   } catch (writeError) {
     logger.error({ err: writeError }, 'Failed to write debug log');
   }
-}
-
-function readConfiguredNumber(envName: string, fallback: number, min: number, max: number): number {
-  const parsed = Number(process.env[envName]);
-  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
-}
-
-function getBaseSttTurnConfig(): SttTurnConfig {
-  return {
-    vadSilenceThresholdSecs: readConfiguredNumber(
-      'ELEVENLABS_STT_VAD_SILENCE_SECS',
-      DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
-      0.2,
-      3,
-    ),
-    minSpeechDurationMs: readConfiguredNumber(
-      'ELEVENLABS_STT_MIN_SPEECH_MS',
-      DEFAULT_STT_TURN_CONFIG.minSpeechDurationMs,
-      40,
-      1_000,
-    ),
-    minSilenceDurationMs: readConfiguredNumber(
-      'ELEVENLABS_STT_MIN_SILENCE_MS',
-      DEFAULT_STT_TURN_CONFIG.minSilenceDurationMs,
-      40,
-      1_000,
-    ),
-  };
-}
-
-function cloneSttTurnConfig(config: SttTurnConfig): SttTurnConfig {
-  return { ...config };
-}
-
-function ensureSttTurnConfig(session: CallSession): NonNullable<CallSession['sttTurnConfig']> {
-  if (!session.sttTurnConfig) {
-    const base = getBaseSttTurnConfig();
-    session.sttTurnConfig = {
-      base,
-      desired: cloneSttTurnConfig(base),
-      applied: null,
-      spellingActive: false,
-      previous: null,
-    };
-  }
-  return session.sttTurnConfig;
-}
-
-function configuredModel(session: CallSession): string {
-  return session.sttModel ?? process.env.ELEVENLABS_STT_MODEL ?? DEFAULT_STT_MODEL;
-}
-
-function getSttHost(): string {
-  return process.env.ELEVENLABS_STT_HOST ?? 'api.elevenlabs.io';
-}
-
-/** Format audio Scribe correspondant au codec Telnyx entrant. */
-export function sttAudioFormatForCodec(
-  codec: CallSession['codec'],
-): 'ulaw_8000' | 'pcm_8000' | 'pcm_16000' {
-  if (codec === 'PCMU') return 'ulaw_8000';
-  // L16 arrive en PCM16 16 kHz, déjà dans le format attendu par Scribe.
-  return codec === 'L16' ? 'pcm_16000' : 'pcm_8000';
-}
-
-/**
- * Construit l'URL Scribe Realtime. PCMU est envoyé directement en ulaw_8000.
- * PCMA est converti en PCM16 avant émission et utilise pcm_8000. L16 est du
- * PCM16 16 kHz et utilise pcm_16000, sans décodage.
- */
-export function buildSttUrl(
-  model: string = DEFAULT_STT_MODEL,
-  codec: 'PCMA' | 'PCMU' | 'L16' = 'PCMU',
-  turnConfig: SttTurnConfig = getBaseSttTurnConfig(),
-  options: {
-    restaurantName?: string;
-    keyterms?: readonly string[];
-    languages?: readonly string[];
-    filterBackgroundAudio?: boolean;
-    forceFrench?: boolean;
-  } = {},
-): string {
-  const params = new URLSearchParams({
-    model_id: model,
-    audio_format: sttAudioFormatForCodec(codec),
-    commit_strategy: 'vad',
-    vad_silence_threshold_secs: String(turnConfig.vadSilenceThresholdSecs),
-    vad_threshold: '0.4',
-    min_speech_duration_ms: String(turnConfig.minSpeechDurationMs),
-    min_silence_duration_ms: String(turnConfig.minSilenceDurationMs),
-    // Scribe rejects `filter_background_audio` together with `include_timestamps`.
-    ...(!options.filterBackgroundAudio ? { include_timestamps: 'true' } : {}),
-    include_language_detection: options.forceFrench ? 'false' : 'true',
-  });
-
-  if (options.forceFrench) {
-    params.set('language_code', 'fr');
-  } else {
-    for (const language of options.languages ?? getSttLanguageCodes()) {
-      const normalized = normalizeSttLanguageCode(language);
-      if (STT_LANGUAGE_CODE_PATTERN.test(normalized)) {
-        params.append('secondary_languages', normalized);
-      }
-    }
-  }
-  if (options.filterBackgroundAudio) params.set('filter_background_audio', 'true');
-  for (const keyterm of buildSttKeyterms(options.restaurantName, options.keyterms)) {
-    params.append('keyterms', keyterm);
-  }
-  return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
 export const DEEPGRAM_ENDPOINTING_MS = 200;
@@ -766,7 +540,7 @@ function armSemanticHoldTimer(
 }
 
 /**
- * Fin de tour hybride : après le commit Scribe, attend un délai variable
+ * Fin de tour hybride (secours Ink-2) : après la fin de tour du fournisseur, attend un délai variable
  * selon la phrase. Si le client reprend pendant l'attente, la suite est
  * fusionnée au texte retenu au lieu de créer un second tour.
  */
@@ -777,7 +551,7 @@ function dispatchOrHoldUtteranceEnd(
   languageCode?: string,
   timing?: SttTurnTiming,
 ): void {
-  // Fin de tour détectée : vider le tampon pour que Scribe ait vu tout l'audio
+  // Fin de tour détectée : vider le tampon pour que le fournisseur ait vu tout l'audio
   // avant que le tour soit traité.
   flushSttChunkBuffer(session);
   const previous = clearSemanticHold(session);
@@ -1017,11 +791,7 @@ function deliverSttAudio(session: CallSession, audio: Buffer): void {
     sendSessionAudioChunk(session, audio);
     return;
   }
-  if (
-    session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX &&
-    !(process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && session.languageLocked === 'fr')
-  )
-    session.audioBuffer.shift();
+  if (session.audioBuffer.length >= STT_AUDIO_BUFFER_MAX) session.audioBuffer.shift();
   session.audioBuffer.push(audio);
 }
 
@@ -1058,31 +828,6 @@ export function resumeSttAfterOpen(session: CallSession): void {
   flushSttChunkBuffer(session);
 }
 
-export interface ElevenLabsSttMessage {
-  message_type?: string;
-  text?: string;
-  error?: string;
-  message?: string;
-  warning?: string;
-  language_code?: string;
-  entities?: Array<{
-    text?: string;
-    type?: string;
-    start?: number;
-    end?: number;
-  }>;
-  words?: Array<{
-    word?: string;
-    text?: string;
-    start?: number;
-    end?: number;
-    confidence?: number;
-    /** Scribe Realtime envoie une log-probabilité, pas une confiance. */
-    logprob?: number;
-    type?: string;
-  }>;
-}
-
 const SAFE_STT_PROVIDER_ERROR_TYPES = new Set([
   'auth_error',
   'quota_exceeded',
@@ -1098,7 +843,6 @@ const SAFE_STT_PROVIDER_ERROR_TYPES = new Set([
   'session_time_limit_exceeded',
   'chunk_size_exceeded',
   'insufficient_audio_activity',
-  'scribe_error',
 ]);
 
 function sttErrorMetricType(messageType: string | undefined): string {
@@ -1112,17 +856,6 @@ function sttErrorMetricType(messageType: string | undefined): string {
   if (/input|chunk/iu.test(messageType)) return 'input';
   if (/invalid/iu.test(messageType)) return 'invalid_request';
   return 'provider_error';
-}
-
-function clearPendingSttCommit(session: CallSession): CallSession['sttPendingCommit'] {
-  const pending = session.sttPendingCommit;
-  if (pending?.timer) clearTimeout(pending.timer);
-  session.sttPendingCommit = null;
-  return pending;
-}
-
-function sameTranscript(left: string, right: string): boolean {
-  return left.trim().toLocaleLowerCase('fr-FR') === right.trim().toLocaleLowerCase('fr-FR');
 }
 
 /** Un commit terminé par une ellipse est un fragment, pas un tour exploitable. */
@@ -1175,87 +908,6 @@ function lowSignalTranscriptReason(
   if (isLikelyIncompleteTranscript(transcript)) return 'incomplete';
   if (isLikelyRepeatedNoiseTranscript(transcript)) return 'repetition';
   return null;
-}
-
-/**
- * L'API peut envoyer un commit stable puis son événement horodaté. On attend
- * brièvement le second pour ne pas déclencher deux tours LLM pour une seule
- * phrase, tout en gardant un repli si l'événement horodaté manque.
- */
-function queuePlainCommittedTranscript(
-  session: CallSession,
-  transcript: string,
-  words?: SttWord[],
-  languageCode?: string,
-  timing?: SttTurnTiming,
-): void {
-  const cleanTranscript = transcript.trim();
-  if (!cleanTranscript) return;
-
-  const previous = clearPendingSttCommit(session);
-  if (previous)
-    dispatchCommittedTranscript(
-      session,
-      previous.transcript,
-      previous.words,
-      previous.languageCode,
-      previous.timing,
-    );
-  // Le commit clôt ce segment même si l'événement horodaté arrive quelques
-  // millisecondes plus tard ; un nouveau partial doit démarrer un tour neuf.
-  session.turnTranscript = '';
-
-  const timer = setTimeout(() => {
-    const pending = session.sttPendingCommit;
-    if (!pending) return;
-    session.sttPendingCommit = null;
-    dispatchCommittedTranscript(
-      session,
-      pending.transcript,
-      pending.words,
-      pending.languageCode,
-      pending.timing,
-    );
-  }, STT_TIMESTAMPED_COMMIT_GRACE_MS);
-  session.sttPendingCommit = {
-    transcript: cleanTranscript,
-    ...(words ? { words } : {}),
-    ...(languageCode ? { languageCode } : {}),
-    ...(timing ? { timing } : {}),
-    timer,
-  };
-}
-
-function dispatchTimestampedCommittedTranscript(
-  session: CallSession,
-  transcript: string,
-  words?: SttWord[],
-  languageCode?: string,
-  timing?: SttTurnTiming,
-): void {
-  const pending = session.sttPendingCommit;
-  if (pending && (!transcript.trim() || sameTranscript(pending.transcript, transcript))) {
-    clearPendingSttCommit(session);
-    dispatchCommittedTranscript(
-      session,
-      transcript.trim() || pending.transcript,
-      words ?? pending.words,
-      languageCode ?? pending.languageCode,
-      mergeSttTiming(pending.timing, timing),
-    );
-    return;
-  }
-  if (pending) {
-    clearPendingSttCommit(session);
-    dispatchCommittedTranscript(
-      session,
-      pending.transcript,
-      pending.words,
-      pending.languageCode,
-      pending.timing,
-    );
-  }
-  dispatchCommittedTranscript(session, transcript, words, languageCode, timing);
 }
 
 /** La reconnaissance livre ses mots après le son qui les a produits : marge avant le début d'énoncé. */
@@ -1546,7 +1198,7 @@ function dispatchCommittedTranscript(
     return;
   }
 
-  // Le partial est normalement le premier signal de barge-in, mais Scribe
+  // Le partial est normalement le premier signal de barge-in, mais le fournisseur
   // peut engager un transcript sans partial observable sur une connexion
   // courte. Le commit doit donc rester suffisant pour interrompre le TTS.
   if (allowBargeIn)
@@ -2123,10 +1775,6 @@ function requestDeepgramFinalize(
   return true;
 }
 
-export function isSemanticEndOfTurnEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED === 'true';
-}
-
 /**
  * Fin de tour jugée par le modèle, sans liste de phrases : le premier passage
  * spéculatif dit si l'appelant a fini (`turnComplete`). Vrai, et la partielle n'a
@@ -2138,7 +1786,7 @@ export function finalizeOnSemanticEndOfTurn(
   speculatedTranscript: string,
   turnComplete: boolean,
 ): boolean {
-  if (!turnComplete || !isSemanticEndOfTurnEnabled()) return false;
+  if (!turnComplete) return false;
   if (session.state !== 'LISTENING') return false;
   if (session.sttDeepgramPartials?.lastText !== speculatedTranscript) return false;
   return requestDeepgramFinalize(session, {
@@ -2153,9 +1801,6 @@ export function handleNormalizedSttMessage(
 ): void {
   switch (event.type) {
     case 'session_started':
-      if (metricProvider(session) === 'elevenlabs_stt') {
-        logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe session started');
-      }
       return;
     case 'partial':
       if (event.transcript.trim()) {
@@ -2193,24 +1838,14 @@ export function handleNormalizedSttMessage(
       }
       emitPartialTranscript(session, event.transcript, event.words);
       return;
-    case 'plain_commit':
+    case 'turn_commit':
       if (event.transcript.trim()) session.sttConsecutiveFailures = 0;
-      queuePlainCommittedTranscript(
+      dispatchCommittedTranscript(
         session,
         event.transcript,
-        event.words,
-        event.languageCode,
-        sttTimingFromOffset(session, event.speechEndOffsetMs),
-      );
-      return;
-    case 'timestamped_commit':
-      if (event.transcript.trim()) session.sttConsecutiveFailures = 0;
-      dispatchTimestampedCommittedTranscript(
-        session,
-        event.transcript,
-        event.words,
-        event.languageCode,
-        sttTimingFromOffset(session, event.speechEndOffsetMs),
+        undefined,
+        undefined,
+        sttTimingFromOffset(session),
       );
       return;
     case 'final_segment': {
@@ -2331,18 +1966,6 @@ export function handleNormalizedSttMessage(
           : Date.now();
       session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt;
       return;
-    case 'warning':
-      logger.warn(
-        { callId: session.callControlId, provider: metricProvider(session) },
-        '[stt] Provider warning',
-      );
-      return;
-    case 'entities':
-      logger.debug(
-        { callId: session.callControlId, entityCount: event.count },
-        '[stt] Provider entities received',
-      );
-      return;
     case 'provider_error': {
       const safeType = SAFE_STT_PROVIDER_ERROR_TYPES.has(event.messageType)
         ? event.messageType
@@ -2368,10 +1991,15 @@ export function handleNormalizedSttMessage(
   }
 }
 
-export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage): void {
-  const adapter = createScribeSttAdapter({ model: configuredModel(session) });
-  const normalized = adapter.normalizeMessage(Buffer.from(JSON.stringify(msg)));
-  for (const event of normalized) handleNormalizedSttMessage(session, event);
+/**
+ * Traite un message brut du fournisseur de la session (Deepgram, ou Ink-2 en secours), comme le fait la
+ * socket : normalisation par l'adaptateur, puis `handleNormalizedSttMessage`.
+ */
+export function handleSttMessage(session: CallSession, msg: Record<string, unknown>): void {
+  const adapter = sttAdapterForSession(session);
+  for (const event of adapter.normalizeMessage(Buffer.from(JSON.stringify(msg)))) {
+    handleNormalizedSttMessage(session, event);
+  }
 }
 
 export function connectStt(
@@ -2408,7 +2036,6 @@ export function connectStt(
   }
 
   session.sttModel = adapter.model;
-  ensureSttTurnConfig(session);
   ensureSttAvailabilityDeadline(session);
   let ws: WebSocket;
   try {
@@ -2625,7 +2252,6 @@ export function closeStt(session: CallSession): void {
   closeInkParallel(session).catch(() => undefined);
   clearPendingSttEndOfTurn(session);
   clearSemanticHold(session);
-  clearPendingSttCommit(session);
   clearSttRecoveryTimers(session);
   clearDeepgramStallTimer(session);
   const ws = session.sttWs;
@@ -2674,7 +2300,7 @@ const SHORT_ANSWER = /^(?:\S+)(?:\s+\S+)?$/;
 
 /**
  * Délai d'attente supplémentaire avant d'envoyer un tour, une fois le
- * silence Scribe écoulé. 0 ms signifie que la phrase part tout de suite.
+ * silence du fournisseur écoulé. 0 ms signifie que la phrase part tout de suite.
  */
 export function getSmartEndpointDelay(transcript: string): {
   holdMs: number;

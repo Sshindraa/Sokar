@@ -33,6 +33,8 @@ vi.mock('../stream/tts-handler', () => ({
   isSessionActiveForTts: vi.fn().mockReturnValue(true),
   cleanTextForTts: (text: string) => text,
 }));
+// Le tour Cartesia en contexte n'existe que pour les tests qui l'allument ; sinon le chemin HTTP reste en place.
+const cartesiaContext = { enabled: false };
 const contextTurn: {
   push: ReturnType<typeof vi.fn>;
   finish: ReturnType<typeof vi.fn>;
@@ -59,8 +61,7 @@ vi.mock('../stream/elevenlabs-context', async (importOriginal) => ({
   createElevenLabsContextTurn: vi.fn(() => null),
 }));
 vi.mock('../stream/cartesia-context', () => ({
-  isCartesiaContextV2Enabled: () => process.env.VOICE_TTS_CONTEXT_V2_ENABLED === 'true',
-  createCartesiaContextTurn: vi.fn(() => contextTurn),
+  createCartesiaContextTurn: vi.fn(() => (cartesiaContext.enabled ? contextTurn : null)),
 }));
 vi.mock('../../../shared/telnyx/http-agent', () => ({
   telnyxFetch: vi.fn().mockResolvedValue({ ok: true }),
@@ -166,6 +167,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   return () => {
     for (const session of fixtureSessions.splice(0)) session.ended = true;
+    cartesiaContext.enabled = false;
     vi.unstubAllEnvs();
   };
 });
@@ -1539,7 +1541,7 @@ describe('tour structuré (canary)', () => {
   });
 
   it('jette la réponse préparée comme un barge-in quand l’appelant reprend avant le premier son', async () => {
-    vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'true');
+    cartesiaContext.enabled = true;
     const { session, mgr, outputs } = fixture();
     outputs.push(turn({ say: 'Bonjour. Pour quel jour ?', awaiting: 'date' }));
     contextTurn.onHoldCancelled = undefined;
@@ -1581,13 +1583,17 @@ describe('tour structuré (canary)', () => {
 
   it('se tait quand l’appelant n’a pas fini et recolle le fragment (appel d89cdb48)', async () => {
     const { session, mgr, outputs } = fixture();
+    const answer = turn({
+      interpretation: 'question',
+      awaiting: 'open',
+      say: 'Pour six, je n’ai rien demain. Voulez-vous un autre jour ?',
+    });
+    // Le premier fragment inachevé prépare déjà une réponse (spéculation, toujours active) : elle
+    // consomme une sortie du modèle, la seconde sert le tour recollé.
     outputs.push(
       turn({ turnComplete: false, interpretation: 'unclear', confidence: 'low' }),
-      turn({
-        interpretation: 'question',
-        awaiting: 'open',
-        say: 'Pour six, je n’ai rien demain. Voulez-vous un autre jour ?',
-      }),
+      answer,
+      answer,
     );
 
     await processTranscriptStreaming(session, 'pourquoi parce que vous n’acceptez pas les', mgr);
@@ -1757,7 +1763,7 @@ describe('tour structuré (canary)', () => {
 
   describe('contexte Cartesia (phrases enchaînées)', () => {
     beforeEach(() => {
-      vi.stubEnv('VOICE_TTS_CONTEXT_V2_ENABLED', 'true');
+      cartesiaContext.enabled = true;
       contextTurn.finish.mockResolvedValue(undefined);
       contextTurn.hasAudioOutput = false;
     });
@@ -2048,8 +2054,6 @@ describe('tour structuré (canary)', () => {
   });
 
   describe('spéculation sur partielle stable', () => {
-    beforeEach(() => vi.stubEnv('VOICE_STRUCTURED_SPECULATION_ENABLED', 'true'));
-
     it('reprend la requête lancée sur la partielle quand la phrase finale est identique', async () => {
       const { session, mgr, outputs } = fixture();
       outputs.push(turn({ awaiting: 'date', say: 'Bien sûr. Pour quel jour ?' }));

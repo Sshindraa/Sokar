@@ -306,7 +306,7 @@ Rollback immédiat si l’un des événements suivants apparaît :
 - Cartesia reçoit désormais `locale` (`fr-FR`, `en-US`, région Scribe si disponible), `normalization=auto` et `generation_config` pour vitesse, volume et émotion explicitement configurée ;
 - la voix et le dictionnaire de prononciation peuvent être définis par restaurant (`AgentPersonality`) avec un fallback global `CARTESIA_PRONUNCIATION_DICT_ID` ;
 - les caches incluent modèle, voix, locale, codec, réglages et dictionnaire ;
-- Context V2 reste un canary à double verrou (`VOICE_TTS_CONTEXT_V2_ENABLED` puis ciblage ConfigCat) ;
+- Context V2 était un canary à double verrou ; le drapeau `VOICE_TTS_CONTEXT_V2_ENABLED` est retiré (23/10/2026), le chemin contexte s'active dès que la clé du fournisseur est présente ;
 - les 44 langues Sonic 3.6 sont disponibles via `ELEVENLABS_STT_ALL_LANGUAGES=true`, sans modifier le ciblage fiable par défaut ; les langues autres que français/anglais repassent au LLM pour les réponses conversationnelles au lieu d'utiliser une phrase déterministe française ;
 - `tools/diagnostics/benchmark-cartesia-voices.mjs` génère un corpus FR/EN pour comparer les voix dès qu'une clé Cartesia valide est disponible.
 

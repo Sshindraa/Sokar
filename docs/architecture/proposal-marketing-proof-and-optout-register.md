@@ -1,7 +1,10 @@
 # Proposition : preuve du consentement complète et liste d'opposition séparée
 
-Statut : **proposition à relire, rien n'est appliqué.** Aucun fichier `schema.prisma` ni migration n'est
-modifié par la PR qui contient ce document. Le SQL ci-dessous a été généré avec
+Statut : **acceptée le 23/10/2026 et implémentée** (durée 3 ans, portée par restaurant, texte présenté et
+auteur conservés ; migration `20261023120000_marketing_opt_out_register`). Le texte d'origine de la
+proposition suit.
+
+Ancien statut : proposition à relire, rien n'était appliqué. Le SQL ci-dessous a été généré avec
 `prisma migrate diff --from-schema-datamodel <schéma actuel> --to-schema-datamodel <schéma proposé> --script`
 (aucune base n'a été contactée) ; il ne contient ni `DROP` ni `TRUNCATE`.
 

@@ -12,10 +12,6 @@ import { renderMarkdown } from './markdown';
 import { reportStorageKeys } from '../call-recording.service';
 import type { ReportCall, ReportTurnRow } from './types';
 
-export function isCallReportEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CALL_REPORT_ENABLED === 'true';
-}
-
 /**
  * Plafond du nombre de rapports (`CALL_REPORT_MAX_REPORTS`) : chaque rapport coûte des transcriptions
  * Deepgram, le plafond borne la dépense. Absent ou invalide : pas de plafond.

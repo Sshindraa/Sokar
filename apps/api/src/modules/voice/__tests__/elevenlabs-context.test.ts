@@ -11,8 +11,8 @@ import {
 import type { CallSession } from '../stream/types';
 
 const ENV_KEYS = [
-  'VOICE_TTS_CONTEXT_V2_ENABLED',
   'ELEVENLABS_API_KEY',
+  'CARTESIA_API_KEY',
   'ELEVENLABS_TTS_VOICE_ID',
   'ELEVENLABS_PRONUNCIATION_DICTIONARY_ID',
   'ELEVENLABS_PRONUNCIATION_DICTIONARY_VERSION_ID',
@@ -97,9 +97,9 @@ describe('ElevenLabs context TTS : format et voix', () => {
 });
 
 describe('ElevenLabs context TTS : fabrique', () => {
-  it('ne crée aucun tour de contexte sans clé ElevenLabs ni contexte Cartesia', () => {
+  it('ne crée aucun tour de contexte sans clé ElevenLabs ni Cartesia', () => {
     delete process.env.ELEVENLABS_API_KEY;
-    process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+    delete process.env.CARTESIA_API_KEY;
     expect(createContextTtsTurn(makeSession().session)).toBeNull();
   });
 });

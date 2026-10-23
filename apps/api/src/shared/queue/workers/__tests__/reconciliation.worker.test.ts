@@ -605,7 +605,7 @@ describe('reconciliation.worker voice finalization sweep', () => {
       makeCallRow({
         outcome: 'RESERVED',
         intent: 'RESERVATION',
-        sttProvider: 'elevenlabs-scribe-v2-realtime',
+        sttProvider: 'deepgram-nova-3',
         llmProvider: 'cerebras',
         ttsProvider: 'cartesia-sonic',
         reservation: { id: 'res-1' },

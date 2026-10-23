@@ -42,7 +42,7 @@ function makeSession(): CallSession {
     restaurantId: 'restaurant-1',
     transcript: '',
     ended: true,
-    sttModel: 'elevenlabs-scribe-v2-realtime',
+    sttModel: 'deepgram-nova-3',
     currentTurn: null,
     voiceTurnHistory: [],
     voiceCallTelemetry: {},
@@ -55,7 +55,7 @@ describe('voice session persistence', () => {
     vi.clearAllMocks();
     mockDb.call.findUnique.mockResolvedValue({
       id: 'call-db-1',
-      sttProvider: 'elevenlabs-scribe-v2-realtime',
+      sttProvider: 'deepgram-nova-3',
       llmProvider: 'cerebras',
       ttsProvider: 'cartesia-sonic',
       intent: 'RESERVATION',

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingPermissionStatus, Prisma } from '@prisma/client';
 import { db } from '../../../shared/db/client';
+import { marketingOptOutHash } from '../marketing-opt-out.service';
 import {
   cancelMarketingCampaign,
   createMarketingCampaign,
@@ -20,6 +21,7 @@ vi.mock('../../../shared/db/client', () => ({
     marketingPermission: { findMany: vi.fn() },
     marketingSuppression: { findMany: vi.fn() },
     marketingFrequencyWindow: { findMany: vi.fn() },
+    marketingOptOut: { findMany: vi.fn() },
     usageTariff: { findFirst: vi.fn() },
     marketingCampaign: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     campaignAudienceMember: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
@@ -34,6 +36,8 @@ const DEFINITION = {
 };
 
 describe('marketing campaign control plane', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.customerSegment.findFirst).mockResolvedValue({
@@ -75,6 +79,7 @@ describe('marketing campaign control plane', () => {
       { customerId: 'c2', sendCount: 3 },
     ] as never);
     vi.mocked(db.customerConsent.findMany).mockResolvedValue([]);
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([]);
     vi.mocked(db.usageTariff.findFirst).mockResolvedValue(null);
   });
 
@@ -96,6 +101,43 @@ describe('marketing campaign control plane', () => {
     expect(db.customer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ restaurantId: 'restaurant-1' }) }),
     );
+  });
+
+  it('excludes an address found in the opt-out register even with a stored opt-in', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
+      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+    ] as never);
+
+    const preview = await previewMarketingAudience({
+      restaurantId: 'restaurant-1',
+      channel: 'SMS',
+      segmentId: 'segment-1',
+      now: new Date('2026-09-13T12:00:00.000Z'),
+    });
+
+    expect(preview).toMatchObject({
+      eligibleCount: 0,
+      optOutRegisterChecked: true,
+      excludedByReason: expect.objectContaining({ OPTED_OUT_REGISTER: 1 }),
+    });
+    expect(db.marketingOptOut.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ restaurantId: 'restaurant-1', channel: 'SMS' }),
+      }),
+    );
+  });
+
+  it('says so when the register could not be consulted because its key is missing', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', '');
+    const preview = await previewMarketingAudience({
+      restaurantId: 'restaurant-1',
+      channel: 'SMS',
+      segmentId: 'segment-1',
+      now: new Date('2026-09-13T12:00:00.000Z'),
+    });
+    expect(preview.optOutRegisterChecked).toBe(false);
+    expect(db.marketingOptOut.findMany).not.toHaveBeenCalled();
   });
 
   it('creates a draft and stores an immutable audience snapshot in one transaction', async () => {

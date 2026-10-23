@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MarketingAutomationDispatchStatus,
   MarketingAutomationType,
@@ -6,6 +6,7 @@ import {
   MarketingPermissionStatus,
 } from '@prisma/client';
 import { db } from '../../../shared/db/client';
+import { marketingOptOutHash } from '../marketing-opt-out.service';
 import {
   createMarketingAutomationCampaign,
   evaluateMarketingAutomation,
@@ -21,6 +22,7 @@ vi.mock('../../../shared/db/client', () => ({
     marketingPermission: { findMany: vi.fn() },
     marketingSuppression: { findMany: vi.fn() },
     marketingFrequencyWindow: { findMany: vi.fn() },
+    marketingOptOut: { findMany: vi.fn() },
     marketingAutomation: { update: vi.fn(), upsert: vi.fn() },
     marketingAutomationDispatch: { create: vi.fn() },
     marketingCampaign: { create: vi.fn(), update: vi.fn() },
@@ -56,7 +58,10 @@ describe('marketing automation engine', () => {
     ] as never);
     vi.mocked(db.marketingSuppression.findMany).mockResolvedValue([]);
     vi.mocked(db.marketingFrequencyWindow.findMany).mockResolvedValue([]);
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([]);
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it('normalise un config par type et refuse un template sans désinscription', () => {
     expect(
@@ -101,6 +106,35 @@ describe('marketing automation engine', () => {
         where: expect.objectContaining({ restaurantId: 'restaurant-1', archivedAt: null }),
       }),
     );
+  });
+
+  it('exclut une adresse inscrite au registre d’opposition, même consentie en base', async () => {
+    vi.stubEnv('MARKETING_OPTOUT_HASH_SECRET', 'k'.repeat(40));
+    vi.mocked(db.customer.findMany).mockResolvedValue([
+      {
+        id: 'customer-1',
+        name: 'Alice',
+        phone: '+33601020304',
+        emailNormalized: null,
+        timelineEvents: [
+          {
+            id: 'event-1',
+            sourceId: 'reservation-1',
+            occurredAt: new Date('2026-09-12T10:00:00.000Z'),
+          },
+        ],
+      },
+    ] as never);
+    vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([
+      { addressHash: marketingOptOutHash('SMS', '+33601020304') },
+    ] as never);
+
+    vi.mocked(db.marketingAutomation.update).mockResolvedValue({} as never);
+
+    await expect(
+      evaluateMarketingAutomation({ automation: AUTOMATION, now: NOW }),
+    ).resolves.toEqual({ candidateCount: 1, eligibleCount: 0, campaignId: null });
+    expect(db.marketingCampaign.create).not.toHaveBeenCalled();
   });
 
   it('exclut un client dormant qui a déjà une réservation future', async () => {

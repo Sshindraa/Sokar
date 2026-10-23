@@ -4,7 +4,7 @@
  * Le rapprochement phonétique (`expected-answer.ts`) ne voit pas les erreurs
  * les plus dangereuses : un mot propre mais faux, que l'analyse exacte accepte
  * (« dix » transcrit « six », « vingt-deux heures » transcrit « 20h »). Ce module
- * les repère avec les signaux déjà disponibles — confiance Scribe des mots qui
+ * les repère avec les signaux déjà disponibles — confiance des mots qui
  * portent la valeur, stabilité des transcriptions partielles, voisins
  * confusables — et décide s'il faut confirmer. Il ne dépend pas de la session :
  * le contrôleur lui fournit les valeurs et applique la décision.
@@ -20,7 +20,7 @@ export interface SlotWord {
 
 /**
  * Seuils réglés sur le banc « difficile », jeu de calibration uniquement (24/09) :
- * au téléphone, Scribe donne des confiances basses même aux mots justes, d'où
+ * au téléphone, l'ancien moteur Scribe donnait des confiances basses même aux mots justes, d'où
  * des valeurs bien plus faibles qu'attendu.
  */
 export const SLOT_CONFIDENCE_THRESHOLDS = {
@@ -104,7 +104,7 @@ function normalizeWord(word: string): string {
     .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
-/** Formes écrites que Scribe peut produire pour la valeur (« 20h », « vingt », « 20:15 »…). */
+/** Formes écrites que la reconnaissance peut produire pour la valeur (« 20h », « vingt », « 20:15 »…). */
 function valueTokens(kind: ConfidenceSlotKind, value: string): (token: string) => boolean {
   if (kind === 'weekday') {
     return (token) => token === value || token === 'demain' || token === 'aujourdhui';
@@ -122,14 +122,14 @@ function valueTokens(kind: ConfidenceSlotKind, value: string): (token: string) =
     ...(FRENCH_NUMBER_WORDS[hour % 12 || 12] ?? []),
     ...(minute ? [String(minute), pad(minute), ...(FRENCH_NUMBER_WORDS[minute] ?? [])] : []),
   ]);
-  // « 20h », « 20h15 », « 20:15 » : un seul mot Scribe porte toute l'heure.
+  // « 20h », « 20h15 », « 20:15 » : un seul mot porte toute l'heure.
   return (token) => words.has(token) || new RegExp(`^${hour}h?\\d{0,2}$`).test(token);
 }
 
 /**
  * Confiance des mots qui portent la valeur : la plus faible d'entre eux, car
  * une seule syllabe mal entendue suffit à changer « vingt-deux » en « vingt ».
- * `null` quand Scribe n'a pas fourni de confiance ou qu'aucun mot ne correspond.
+ * `null` quand la reconnaissance n'a pas fourni de confiance ou qu'aucun mot ne correspond.
  */
 export function valueConfidence(
   kind: ConfidenceSlotKind,

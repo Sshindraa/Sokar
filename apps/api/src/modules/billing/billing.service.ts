@@ -57,17 +57,6 @@ const STRIPE_EVENT_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
  */
 const SUSPENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired', 'unpaid'];
 
-/**
- * Checkout is deliberately opt-in in production. Local development and tests
- * keep the historical default enabled so the billing contract remains easy to
- * exercise without requiring a real deployment flag.
- */
-export function isBillingCheckoutEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-  const configured = environment.BILLING_CHECKOUT_ENABLED?.trim().toLowerCase();
-  if (configured === undefined) return environment.NODE_ENV !== 'production';
-  return configured === 'true';
-}
-
 export class BillingNotConfiguredError extends Error {
   readonly code = 'BILLING_NOT_CONFIGURED';
 
@@ -481,7 +470,6 @@ export async function startTrial(input: {
   billing?: BillingInterval;
   siteCount?: number;
 }): Promise<{ status: 'trialing'; trialEndsAt: string }> {
-  if (!isBillingCheckoutEnabled()) throw new BillingNotConfiguredError();
   const plan = input.plan ?? 'essential';
   const interval = input.billing ?? 'monthly';
   const siteCount = normalizeSiteCount(plan, input.siteCount);
@@ -602,9 +590,6 @@ export async function createCheckoutSession(input: {
   returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
 }): Promise<{ id: string; url: string }> {
-  if (!isBillingCheckoutEnabled()) {
-    throw new BillingNotConfiguredError();
-  }
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
   const addonPriceId =
