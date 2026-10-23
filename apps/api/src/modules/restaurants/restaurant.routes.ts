@@ -625,7 +625,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (activeSiteCount >= entitledSiteCount) {
       return reply.status(402).send({
         error: 'MULTI_SITE_SUBSCRIPTION_REQUIRED',
-        message: 'La formule Multi-site est nécessaire pour ajouter un établissement.',
+        message: 'La formule Multi-restaurant est nécessaire pour ajouter un établissement.',
       });
     }
 

@@ -46,7 +46,7 @@ export interface PricingPlan {
   label: PlanLabel;
   /** Prix mensuel sans engagement, en euros. */
   price: string;
-  /** Prix mensuel par établissement (Multi-site uniquement), en euros. */
+  /** Prix mensuel par établissement (Multi-restaurant uniquement), en euros. */
   sitePrice?: string;
   description: string;
   promise: string;
@@ -66,14 +66,14 @@ export const PLANS: PricingPlan[] = [
   {
     label: 'Essential',
     price: String(PLAN_PRICES_EUR.ESSENTIAL),
-    promise: 'Vos appels et vos réservations, au même endroit.',
+    promise: 'Tout l’essentiel pour faire évoluer votre restaurant',
     description: 'Plus aucune réservation perdue, même en plein service.',
     features: toFeatureLines('Essential'),
   },
   {
     label: 'Pro',
     price: String(PLAN_PRICES_EUR.PRO),
-    promise: 'Gardez la main quand le service change.',
+    promise: 'L’exigence évolue, votre restaurant garde le cap',
     description: 'Le copilote de service propose, votre équipe décide.',
     demoFirst: true,
     inherits: 'Tout Essential, plus :',
@@ -81,14 +81,14 @@ export const PLANS: PricingPlan[] = [
     note: 'Démonstration du copilote avant de choisir.',
   },
   {
-    label: 'Multi-site',
+    label: 'Multi-restaurant',
     price: String(PLAN_PRICES_EUR.PREMIUM),
     sitePrice: String(PRICING_CATALOG['multi-site-addon'].monthlyCents / 100),
     demoFirst: true,
-    promise: 'L’esprit de chaque maison. Une vue d’ensemble.',
+    promise: 'Une offre groupée, un même regard',
     description: 'Plusieurs adresses, un seul espace.',
     inherits: 'Tout Pro, pour chaque établissement, plus :',
-    features: toFeatureLines('Multi-site'),
+    features: toFeatureLines('Multi-restaurant'),
     note: 'Présentation avant de choisir.',
   },
 ];
@@ -111,7 +111,7 @@ export const FAQS = [
   },
   {
     question: 'Combien coûte Sokar ?',
-    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-site à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
+    answer: `Essential à ${PLAN_PRICES_EUR.ESSENTIAL} €/mois, Pro à ${PLAN_PRICES_EUR.PRO} €/mois et Multi-restaurant à ${PLAN_PRICES_EUR.PREMIUM} €/mois pour le premier établissement, puis ${PRICING_CATALOG['multi-site-addon'].monthlyCents / 100} €/mois par établissement supplémentaire (${VAT_MENTION}). Le paiement annuel engage douze mois avec ${ANNUAL_DISCOUNT_PERCENT} % de réduction. Consultez les inclusions actuelles sur la page Tarifs.`,
   },
   {
     question: 'Y a-t-il un engagement de durée ?',

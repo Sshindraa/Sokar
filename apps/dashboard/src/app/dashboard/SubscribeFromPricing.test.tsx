@@ -60,7 +60,7 @@ describe('SubscribeFromPricing', () => {
     );
   });
 
-  it('transmet le nombre de sites pour une souscription Multi-site', async () => {
+  it('transmet le nombre de sites pour une souscription Multi-restaurant', async () => {
     mocks.search = 'subscribe_plan=multi-site&billing=monthly&sites=4';
     mocks.post.mockResolvedValue({ url: 'https://checkout.stripe.test/session' });
 

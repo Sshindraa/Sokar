@@ -107,7 +107,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (error instanceof BillingInvalidSiteCountError) {
         return reply.status(400).send({
           error: 'INVALID_SITE_COUNT',
-          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-restaurant.',
         });
       }
       if (error instanceof BillingCheckoutError) {
@@ -165,7 +165,7 @@ export async function billingRoutes(app: FastifyInstance) {
       if (error instanceof BillingInvalidSiteCountError) {
         return reply.status(400).send({
           error: 'INVALID_SITE_COUNT',
-          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-site.',
+          message: 'Choisissez entre 1 et 100 établissements pour la formule Multi-restaurant.',
         });
       }
       if (error instanceof BillingTrialAlreadyUsedError) {

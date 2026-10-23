@@ -20,7 +20,7 @@ describe('catalogue des fonctionnalités', () => {
 
     expect(featuresIncludedIn('Essential')).toEqual(essentialOnly);
     expect(featuresIncludedIn('Pro')).toEqual([...essentialOnly, ...proOnly]);
-    expect(featuresIncludedIn('Multi-site')).toHaveLength(CATALOG_FEATURES.length);
+    expect(featuresIncludedIn('Multi-restaurant')).toHaveLength(CATALOG_FEATURES.length);
   });
 
   it("n'inclut pas une fonctionnalité d'une formule supérieure", () => {
@@ -28,7 +28,7 @@ describe('catalogue des fonctionnalités', () => {
 
     expect(planIncludes('Essential', proFeature)).toBe(false);
     expect(planIncludes('Pro', proFeature)).toBe(true);
-    expect(planIncludes('Multi-site', proFeature)).toBe(true);
+    expect(planIncludes('Multi-restaurant', proFeature)).toBe(true);
   });
 
   it('marque comme prévues les intégrations non livrées, jamais comme disponibles', () => {
@@ -67,7 +67,7 @@ describe('catalogue des fonctionnalités', () => {
     );
   });
 
-  it('réserve le copilote de service à Pro et Multi-site, jamais à Essential', () => {
+  it('réserve le copilote de service à Pro et Multi-restaurant, jamais à Essential', () => {
     const copilot = CATALOG_FEATURES.filter((feature) => feature.id.startsWith('copilot-'));
 
     expect(copilot.length).toBeGreaterThan(0);
@@ -80,6 +80,6 @@ describe('catalogue des fonctionnalités', () => {
   });
 
   it('couvre les trois formules dans l’ordre d’affichage', () => {
-    expect(PLAN_ORDER).toEqual(['Essential', 'Pro', 'Multi-site']);
+    expect(PLAN_ORDER).toEqual(['Essential', 'Pro', 'Multi-restaurant']);
   });
 });

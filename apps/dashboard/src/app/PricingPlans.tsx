@@ -113,8 +113,8 @@ export default function PricingPlans({
         {TRIAL_DAYS} jours offerts, sans carte bancaire · {VAT_MENTION}
       </p>
       {/*
-      Cards Grid. En md+, chaque carte est une sous-grille de 5 lignes
-      (en-tête, prix, description, bouton, avantages) : les lignes sont
+      Cards Grid. En md+, chaque carte est une sous-grille de 4 lignes
+      (en-tête, prix, bouton, avantages) : les lignes sont
       partagées entre les cartes, donc les boutons et les listes restent
       alignés quelle que soit la longueur des textes.
     */}
@@ -127,7 +127,7 @@ export default function PricingPlans({
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 md:p-8 lg:row-span-5 lg:grid lg:grid-rows-subgrid',
+                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300 md:p-8 lg:row-span-4 lg:grid lg:grid-rows-subgrid',
                 plan.featured
                   ? 'border-pricing-accent/25 bg-white/[0.08] shadow-[0_0_40px_hsl(var(--pricing-accent)_/_0.15)] hover:shadow-[0_0_60px_hsl(var(--pricing-accent)_/_0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
@@ -163,16 +163,11 @@ export default function PricingPlans({
                   <span className="text-sm font-semibold text-white/60">€/mois</span>
                 </div>
                 <p className="mt-2 text-xs text-white/50">
-                  {yearly ? 'Facturé à l’année, engagement 12 mois' : 'Sans engagement'}
+                  {yearly ? 'Engagement 12 mois' : 'Sans engagement'}
                 </p>
               </div>
 
-              {/* 3. Description */}
-              <p className="relative z-10 mb-6 text-sm leading-relaxed text-white/55">
-                {plan.description}
-              </p>
-
-              {/* 4. CTA */}
+              {/* 3. CTA */}
               <Link
                 href={(plan.demoFirst ? getPlanDemoHref : getPlanSignupHref)(
                   plan.label as PublicPlan,
@@ -191,7 +186,7 @@ export default function PricingPlans({
                 <ArrowUpRight size={14} />
               </Link>
 
-              {/* 5. Contenu : formule précédente, puis ce que la formule ajoute ; le non livré en dernier */}
+              {/* 4. Contenu : formule précédente, puis ce que la formule ajoute ; le non livré en dernier */}
               <div className="relative z-10 mt-7 border-t border-white/10 pt-6">
                 {plan.sitePrice && yearlySitePrice && (
                   <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-white/70">
@@ -240,12 +235,6 @@ export default function PricingPlans({
           );
         })}
       </div>
-
-      {yearly && (
-        <p className="mt-6 text-center text-xs text-white/40">
-          Équivalents mensuels arrondis ; montant exact indiqué avant paiement.
-        </p>
-      )}
 
       {showComparison && (
         <div className="mt-20 w-full">

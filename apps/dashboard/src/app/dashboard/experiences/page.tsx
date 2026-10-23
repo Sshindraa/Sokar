@@ -584,7 +584,7 @@ export default function ExperiencesPage() {
                 {accessBlock === 'pilot'
                   ? 'Expériences bientôt disponibles'
                   : accessBlock === 'plan'
-                    ? 'Accès réservé aux formules Pro et Multi-site'
+                    ? 'Accès réservé aux formules Pro et Multi-restaurant'
                     : 'Impossible de charger les expériences'}
               </p>
               <p className="text-muted-foreground">

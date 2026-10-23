@@ -136,7 +136,7 @@ export const PLAN_ENTITLEMENTS: Readonly<Record<CommercialPlanId, PlanEntitlemen
   },
   'multi-site': {
     id: 'multi-site',
-    label: 'Multi-site',
+    label: 'Multi-restaurant',
     capabilities: {
       ...PRO_CAPABILITIES,
       'account.multiSite': true,

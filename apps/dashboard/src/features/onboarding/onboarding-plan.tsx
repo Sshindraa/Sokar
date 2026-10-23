@@ -20,7 +20,7 @@ import {
 const SLUG_BY_LABEL: Record<(typeof PLANS)[number]['label'], PlanSlug> = {
   Essential: 'essential',
   Pro: 'pro',
-  'Multi-site': 'multi-site',
+  'Multi-restaurant': 'multi-site',
 };
 
 /**

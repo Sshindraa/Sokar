@@ -28,7 +28,7 @@ describe('parsePlanChoice', () => {
     });
   });
 
-  it('garde le nombre d’établissements du Multi-site, borné entre 2 et 100', () => {
+  it('garde le nombre d’établissements du Multi-restaurant, borné entre 2 et 100', () => {
     expect(parsePlanChoice('?subscribe_plan=multi-site&billing=annual&sites=5')).toEqual({
       plan: 'multi-site',
       billing: 'annual',

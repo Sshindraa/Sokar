@@ -45,7 +45,7 @@ import { TrialRecap, TrialTrack } from '@/features/billing/trial';
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
   STARTER: { label: 'Essential', calls: 'Appels inclus' },
   PRO: { label: 'Pro', calls: 'Appels inclus, copilote de service' },
-  PREMIUM: { label: 'Multi-site', calls: 'Appels inclus, plusieurs adresses' },
+  PREMIUM: { label: 'Multi-restaurant', calls: 'Appels inclus, plusieurs adresses' },
 };
 
 const PROFILE_OPTIONS = [

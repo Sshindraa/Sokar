@@ -117,7 +117,7 @@ export class BillingInvalidSiteCountError extends Error {
   readonly code = 'INVALID_SITE_COUNT';
 
   constructor() {
-    super('Multi-site requires between 1 and 100 establishments');
+    super('Multi-restaurant requires between 1 and 100 establishments');
     this.name = 'BillingInvalidSiteCountError';
   }
 }

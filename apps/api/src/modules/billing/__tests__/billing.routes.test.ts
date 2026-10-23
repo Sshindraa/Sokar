@@ -738,7 +738,7 @@ describe('billing.routes - checkout, portail et statut', () => {
     });
   });
 
-  it('facture un établissement Multi-site sans ligne supplémentaire ni prix addon', async () => {
+  it('facture un établissement Multi-restaurant sans ligne supplémentaire ni prix addon', async () => {
     process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
@@ -767,7 +767,7 @@ describe('billing.routes - checkout, portail et statut', () => {
     );
   });
 
-  it('facture la base et les établissements supplémentaires du Multi-site', async () => {
+  it('facture la base et les établissements supplémentaires du Multi-restaurant', async () => {
     process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
     process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY = 'price_multi_site_addon_monthly_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({

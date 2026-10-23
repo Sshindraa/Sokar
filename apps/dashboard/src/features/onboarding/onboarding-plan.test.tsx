@@ -47,7 +47,7 @@ it('propose les trois formules, Pro sélectionnée par défaut, facturation annu
   expect(await screen.findByRole('radiogroup', { name: 'Formule' })).toBeInTheDocument();
   expect(radio(/^Essential/)).toHaveAttribute('aria-checked', 'false');
   expect(radio(/^Pro/)).toHaveAttribute('aria-checked', 'true');
-  expect(radio(/^Multi-site/)).toHaveAttribute('aria-checked', 'false');
+  expect(radio(/^Multi-restaurant/)).toHaveAttribute('aria-checked', 'false');
   expect(screen.getByRole('button', { name: /Annuel/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -68,7 +68,7 @@ it('reprend le choix gardé par le navigateur quand l’adresse ne l’a plus', 
   renderPlan();
 
   await screen.findByRole('radiogroup', { name: 'Formule' });
-  expect(radio(/^Multi-site/)).toHaveAttribute('aria-checked', 'true');
+  expect(radio(/^Multi-restaurant/)).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByLabelText('Nombre d’établissements')).toHaveValue(4);
 });
 
@@ -91,11 +91,11 @@ it('démarre l’essai sur la formule choisie, sans passer par Stripe', async ()
   expect(window.localStorage.getItem('sokar:onboarding:plan-dismissed:restaurant-1')).toBe('1');
 });
 
-it('transmet le nombre d’établissements du Multi-site, borné entre 2 et 100', async () => {
+it('transmet le nombre d’établissements du Multi-restaurant, borné entre 2 et 100', async () => {
   mocks.post.mockResolvedValueOnce({ status: 'trialing' });
   renderPlan();
   await screen.findByRole('radiogroup', { name: 'Formule' });
-  fireEvent.click(radio(/^Multi-site/));
+  fireEvent.click(radio(/^Multi-restaurant/));
   const input = screen.getByLabelText('Nombre d’établissements');
   fireEvent.change(input, { target: { value: '1' } });
   expect(input).toHaveValue(2);

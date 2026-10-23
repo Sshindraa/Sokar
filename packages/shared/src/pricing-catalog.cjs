@@ -10,10 +10,14 @@ function annualPriceCents(monthlyCents) {
 const PRICING_CATALOG = {
   essential: { monthlyCents: 19900, label: 'Essential', stripeSuffix: 'ESSENTIAL' },
   pro: { monthlyCents: 29900, label: 'Pro', stripeSuffix: 'PRO' },
-  'multi-site': { monthlyCents: 29900, label: 'Multi-site (base)', stripeSuffix: 'MULTI_SITE' },
+  'multi-site': {
+    monthlyCents: 29900,
+    label: 'Multi-restaurant (base)',
+    stripeSuffix: 'MULTI_SITE',
+  },
   'multi-site-addon': {
     monthlyCents: 9900,
-    label: 'Multi-site (site sup.)',
+    label: 'Multi-restaurant (établissement sup.)',
     stripeSuffix: 'MULTI_SITE_ADDON',
   },
 };

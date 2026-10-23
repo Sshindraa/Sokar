@@ -26,7 +26,7 @@ describe('PricingSection', () => {
       'href',
       '/demo?plan=pro&billing=annual',
     );
-    expect(screen.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Découvrir Multi-restaurant' })).toHaveAttribute(
       'href',
       '/demo?plan=multi-site&billing=annual&sites=2',
     );
@@ -43,7 +43,7 @@ describe('PricingSection', () => {
     );
   });
 
-  it('affiche les montants avec une espace insécable et le prix par site du Multi-site', () => {
+  it('affiche les montants avec une espace insécable et le prix par site du Multi-restaurant', () => {
     const { container } = render(<PricingSection />);
     const text = container.textContent ?? '';
 
@@ -54,10 +54,13 @@ describe('PricingSection', () => {
 
   it('précise le paiement annuel et distingue le mensuel', () => {
     render(<PricingSection />);
-    expect(screen.getByText(/Équivalents mensuels arrondis/)).toBeInTheDocument();
-    expect(screen.getAllByText('Facturé à l’année, engagement 12 mois')).toHaveLength(3);
+    expect(screen.queryByText(/Équivalents mensuels arrondis/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('Engagement 12 mois')).toHaveLength(3);
+    expect(
+      screen.queryByText('Plus aucune réservation perdue, même en plein service.'),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('switch'));
-    expect(screen.queryByText(/engagement 12 mois/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/engagement 12 mois/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('Sans engagement')).toHaveLength(3);
   });
 
@@ -66,7 +69,7 @@ describe('PricingSection', () => {
     fireEvent.click(screen.getByRole('switch'));
     fireEvent.change(screen.getByLabelText('Nombre d’établissements'), { target: { value: '3' } });
     expect(screen.getByText(/Total pour 3 établissements : 497/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Découvrir Multi-site' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Découvrir Multi-restaurant' })).toHaveAttribute(
       'href',
       '/demo?plan=multi-site&billing=monthly&sites=3',
     );

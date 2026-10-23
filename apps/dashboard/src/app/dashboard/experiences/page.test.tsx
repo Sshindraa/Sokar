@@ -324,7 +324,7 @@ describe('ExperiencesPage', () => {
     render(<ExperiencesPage />);
 
     expect(
-      await screen.findByText('Accès réservé aux formules Pro et Multi-site'),
+      await screen.findByText('Accès réservé aux formules Pro et Multi-restaurant'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
   });

@@ -1,6 +1,6 @@
 /** Formules publiques, dans l'ordre d'affichage. */
-export type PlanLabel = 'Essential' | 'Pro' | 'Multi-site';
-export const PLAN_ORDER: readonly PlanLabel[] = ['Essential', 'Pro', 'Multi-site'];
+export type PlanLabel = 'Essential' | 'Pro' | 'Multi-restaurant';
+export const PLAN_ORDER: readonly PlanLabel[] = ['Essential', 'Pro', 'Multi-restaurant'];
 
 /**
  * « disponible » seulement si la fonctionnalité est livrée et activable pour les comptes de la formule.
@@ -129,35 +129,35 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     id: 'multi-navigation',
     label: 'Toutes vos adresses dans un seul espace',
     status: 'disponible',
-    introducedIn: 'Multi-site',
+    introducedIn: 'Multi-restaurant',
   },
   {
     id: 'per-site-planning',
     label: 'Planning et fichier client par restaurant',
     status: 'disponible',
-    introducedIn: 'Multi-site',
+    introducedIn: 'Multi-restaurant',
   },
   {
     id: 'per-site-hours',
     label: 'Horaires et règles par adresse',
     status: 'disponible',
-    introducedIn: 'Multi-site',
+    introducedIn: 'Multi-restaurant',
   },
   {
     id: 'per-site-number',
     label: 'Un numéro dédié par établissement',
     status: 'disponible',
-    introducedIn: 'Multi-site',
+    introducedIn: 'Multi-restaurant',
   },
   {
     id: 'group-invoice',
     label: 'Facturation groupée',
     status: 'disponible',
-    introducedIn: 'Multi-site',
+    introducedIn: 'Multi-restaurant',
   },
 ];
 
-const RANK: Record<PlanLabel, number> = { Essential: 0, Pro: 1, 'Multi-site': 2 };
+const RANK: Record<PlanLabel, number> = { Essential: 0, Pro: 1, 'Multi-restaurant': 2 };
 
 export function planIncludes(plan: PlanLabel, feature: CatalogFeature): boolean {
   return RANK[feature.introducedIn] <= RANK[plan];

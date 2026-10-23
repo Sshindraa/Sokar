@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ArrowRight, ChevronDown, MessageCircle } from 'lucide-react';
 import { FAQS } from '@/app/constants';
 
 export default function FaqSection() {
@@ -60,6 +60,29 @@ export default function FaqSection() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="relative z-10 mt-10 flex w-full max-w-4xl flex-col items-start gap-6 rounded-[2rem] border border-dashed border-white/15 bg-white/[0.03] p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <div className="flex items-center gap-5">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-black sm:h-16 sm:w-16">
+            <MessageCircle size={25} aria-hidden="true" strokeWidth={1.8} />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-white sm:text-base">
+              Vous avez encore une question ?
+            </h3>
+            <p className="mt-1 text-xs text-white/55 sm:text-sm">
+              Écrivez-nous, nous serons ravis d’échanger avec vous.
+            </p>
+          </div>
+        </div>
+        <a
+          href="mailto:hello@sokar.tech?subject=Question%20sur%20Sokar"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 sm:text-base hover:-translate-y-0.5 hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 sm:w-auto"
+        >
+          Poser une question
+          <ArrowRight size={18} aria-hidden="true" />
+        </a>
       </div>
     </section>
   );

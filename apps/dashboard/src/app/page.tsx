@@ -157,14 +157,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <div
-          id="services"
-          className="relative w-full scroll-mt-24 overflow-visible border-t border-white/5 bg-black/80"
-        >
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(200,214,232,0.16),transparent_24rem),radial-gradient(circle_at_80%_42%,rgba(160,182,212,0.12),transparent_24rem),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28rem)]" />
-          {/* backdrop-blur removed: was 4 instances here, replaced with bg-black/80 below */}
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[length:96px_96px] opacity-70" />
-
+        <div id="services" className="relative w-full scroll-mt-24 overflow-visible bg-black">
           <div className="relative mx-auto flex w-full flex-col items-center">
             {/* SCROLL STORYBOARD — Framer Motion cinematic transition inspired by the reference */}
             <ScrollStoryboardSection />
