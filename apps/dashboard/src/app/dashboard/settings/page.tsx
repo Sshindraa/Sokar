@@ -842,6 +842,12 @@ export default function SettingsPage() {
                 )}
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button asChild>
+                <a href="/dashboard/billing">
+                  Mon abonnement
+                  <ArrowUpRight size={14} className="ml-1" />
+                </a>
+              </Button>
               {canManageBilling && (
                 <Button
                   variant={billingStatus?.subscriptionStatus === 'trialing' ? 'default' : 'outline'}

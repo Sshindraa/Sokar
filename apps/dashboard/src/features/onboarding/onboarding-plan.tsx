@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, Lock } from 'lucide-react';
-import { TRIAL_DAYS } from '@sokar/shared';
+import { TRIAL_DAYS, ANNUAL_DISCOUNT_PERCENT } from '@sokar/shared';
 import { TrialStartTimeline } from '@/features/billing/trial';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
 import { Button } from '@/components/ui/button';
@@ -174,7 +174,7 @@ export function OnboardingPlan({
               billing === cadence ? 'bg-foreground text-background' : 'text-foreground/70',
             )}
           >
-            {cadence === 'monthly' ? 'Mensuel' : 'Annuel · -20 %'}
+            {cadence === 'monthly' ? 'Mensuel' : `Annuel · -${ANNUAL_DISCOUNT_PERCENT} %`}
           </button>
         ))}
       </div>

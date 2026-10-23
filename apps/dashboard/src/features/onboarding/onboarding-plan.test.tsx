@@ -48,7 +48,10 @@ it('propose les trois formules, Pro sélectionnée par défaut, facturation annu
   expect(radio(/^Essential/)).toHaveAttribute('aria-checked', 'false');
   expect(radio(/^Pro/)).toHaveAttribute('aria-checked', 'true');
   expect(radio(/^Multi-restaurant/)).toHaveAttribute('aria-checked', 'false');
-  expect(screen.getByRole('button', { name: /Annuel/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Annuel · -10 %' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 });
 
 it('reprend la formule choisie sur la page Tarifs, dans l’adresse', async () => {
