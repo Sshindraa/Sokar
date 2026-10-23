@@ -17,6 +17,7 @@ import { BookingWidget } from '@/components/booking-widget';
 import { trackEventAsync } from '@/lib/tracking';
 import { toHexColor, isValidSlug } from '@/lib/widget-colors';
 import { normalizeBookingSource } from '@/lib/booking-source';
+import { parseTestBookingToken } from '@/lib/test-booking';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ type SearchParams = {
   partySize?: string;
   from?: string;
   giftCardCode?: string;
+  testBooking?: string;
 };
 
 export default async function WidgetPage({
@@ -54,6 +56,9 @@ export default async function WidgetPage({
   }
 
   const isEmbedded = sp.embedded === '1';
+  // Parcours d'essai de l'onboarding : jeton signé, ni statistique ni attribution.
+  const testBookingToken = parseTestBookingToken(sp.testBooking);
+  const isTestBooking = testBookingToken !== undefined;
   const primary = toHexColor(sp.primary, '#0F172A');
   const accent = toHexColor(sp.accent, '#0284C7');
   const source = normalizeBookingSource(sp.source);
@@ -63,19 +68,21 @@ export default async function WidgetPage({
   const date = sp.date;
   const time = sp.time;
 
-  void trackEventAsync({
-    event: 'widget_page_view',
-    restaurantId: restaurant.id,
-    restaurantSlug: restaurant.slug,
-    source,
-  });
+  if (!isTestBooking) {
+    void trackEventAsync({
+      event: 'widget_page_view',
+      restaurantId: restaurant.id,
+      restaurantSlug: restaurant.slug,
+      source,
+    });
+  }
 
   return (
     <main id="main-content" className="mx-auto max-w-xl px-4 py-6 sm:px-6">
       {!isEmbedded && (
         <div className="mb-4">
           <Link
-            href={`/restaurant/${restaurant.slug}`}
+            href={`/restaurant/${restaurant.slug}${testBookingToken ? `?testBooking=${encodeURIComponent(testBookingToken)}` : ''}`}
             className="inline-flex items-center gap-1.5 text-sm font-medium text-blue transition-all duration-200 hover:gap-2.5"
           >
             <ArrowLeft size={16} />
@@ -90,13 +97,14 @@ export default async function WidgetPage({
         slug={restaurant.slug}
         initialSource={source}
         initialGiftCardCode={sp.giftCardCode?.slice(0, 100)}
-        marketingAttributionToken={sp.marketingAttributionToken}
+        marketingAttributionToken={isTestBooking ? undefined : sp.marketingAttributionToken}
         initialPartySize={partySize}
         initialDate={date}
         initialTime={time}
         embedded={isEmbedded}
         primaryColor={primary}
         accentColor={accent}
+        testBookingToken={testBookingToken}
       />
     </main>
   );

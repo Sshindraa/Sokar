@@ -486,6 +486,7 @@ export class TableAllocationService {
         SELECT 1 as exists
         FROM reservations
         WHERE table_id = ${check.tableId}
+          AND is_test = false
           AND state IN ('PENDING', 'CONFIRMED', 'SEATED')
           AND starts_at IS NOT NULL
           AND ends_at IS NOT NULL

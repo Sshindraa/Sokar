@@ -70,5 +70,10 @@ describe('registerJobSchedulers', () => {
       { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
       { name: 'voice-quality-gauges' },
     );
+    expect(mocks.genericQueue.upsertJobScheduler).toHaveBeenCalledWith(
+      'test-reservation-purge',
+      { pattern: '5 * * * *', tz: 'Europe/Paris' },
+      { name: 'test-reservation-purge', data: { kind: 'test-reservation-purge' } },
+    );
   });
 });

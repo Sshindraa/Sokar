@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   siteId: 'org_test',
   get: vi.fn(),
   patch: vi.fn(),
+  post: vi.fn(),
 }));
 
 vi.mock('@/lib/api', () => ({ useApi: () => mocks }));
@@ -104,5 +105,58 @@ describe('ConnectDashboardPage', () => {
     expect(column).toContainElement(screen.getByText('Sous-domaine gratuit'));
     expect(column).toContainElement(screen.getByText('Domaine personnalisé'));
     expect(column).not.toContainElement(screen.getByText('Aperçu en direct'));
+  });
+
+  it('lance une réservation test depuis la carte dédiée et montre l’erreur', async () => {
+    loadSucceeds(false);
+    const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+    window.open = vi.fn(() => tab) as unknown as typeof window.open;
+    let release: (value: unknown) => void = () => undefined;
+    mocks.post.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          release = () =>
+            reject(
+              toApiError(409, {
+                code: 'PAGE_NOT_PUBLISHED',
+                error: 'Publiez d’abord votre page pour la tester.',
+              }),
+            );
+          void resolve;
+        }),
+    );
+    render(<ConnectDashboardPage />);
+    await screen.findByText('Tester ma page comme un client');
+
+    fireEvent.click(screen.getByRole('button', { name: /lancer le test/i }));
+    expect(screen.getByRole('button', { name: /lancer le test/i })).toBeDisabled();
+    release(null);
+
+    expect(await screen.findByText('Publiez d’abord votre page pour la tester.')).toBeVisible();
+    expect(mocks.post).toHaveBeenCalledWith('restaurant/test-booking-link');
+    expect(tab.close).toHaveBeenCalled();
+  });
+
+  it('garde une description neutre et prévient quand le mode test est coupé', async () => {
+    loadSucceeds(false);
+    const tab = { opener: 'x' as unknown, location: { href: 'about:blank' }, close: vi.fn() };
+    window.open = vi.fn(() => tab) as unknown as typeof window.open;
+    mocks.post.mockRejectedValue(toApiError(404, { code: 'TEST_BOOKING_DISABLED' }));
+    render(<ConnectDashboardPage />);
+    await screen.findByText('Tester ma page comme un client');
+    expect(
+      screen.getByText('Faites le parcours d’un client, jusqu’à la confirmation.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rien n’apparaît/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /lancer le test/i }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(
+      'Le mode test n’est pas encore disponible : cette réservation sera réelle. Pensez à l’annuler ensuite.',
+    );
+    expect(notice).toHaveClass('text-muted-foreground');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(tab.close).not.toHaveBeenCalled();
   });
 });

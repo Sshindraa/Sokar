@@ -24,10 +24,12 @@ export function ConfirmationView({
   result,
   slug,
   embedded = false,
+  testBookingToken,
 }: {
   result: ConfirmDto;
   slug: string;
   embedded?: boolean;
+  testBookingToken?: string;
 }) {
   const [withdrawn, setWithdrawn] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -115,7 +117,7 @@ export function ConfirmationView({
       )}
       {!embedded && (
         <Link
-          href={`/restaurant/${slug}`}
+          href={`/restaurant/${slug}${testBookingToken ? `?testBooking=${encodeURIComponent(testBookingToken)}` : ''}`}
           className="mt-6 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted"
         >
           ← Retour à la fiche

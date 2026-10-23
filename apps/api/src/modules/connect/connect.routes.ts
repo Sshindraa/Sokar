@@ -87,6 +87,11 @@ import { emitConnectEvent } from './connect-analytics';
 import { ConnectKpiService } from './connect-kpis.service';
 import { recordBookingMarketingConsent } from '../marketing/marketing-consent.service';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
+import {
+  consumeTestBookingQuota,
+  isTestBookingEnabled,
+  verifyTestBookingToken,
+} from './test-booking';
 import { connectRequestDuration } from '../../shared/observability/metrics';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import {
@@ -121,6 +126,21 @@ function routeLabel(url: string): string {
   if (url === '/public/analytics/events') return 'analytics-events';
   if (url.startsWith('/public/restaurants')) return 'restaurants';
   return 'other';
+}
+
+const TEST_BOOKING_REFUSED_MESSAGE =
+  'Ce lien de test a expiré. Relancez-le depuis votre tableau de bord.';
+const TEST_BOOKING_QUOTA_MESSAGE =
+  'Vous avez atteint la limite de 5 réservations test sur 24 heures.';
+
+/**
+ * Réservation test : `undefined` sans jeton (circuit réel), `true` si le jeton
+ * est valide pour ce restaurant et le drapeau actif, `false` sinon (403).
+ * Le jeton n'est jamais journalisé.
+ */
+function testBookingMode(token: string | undefined, restaurantId: string): boolean | undefined {
+  if (token === undefined) return undefined;
+  return isTestBookingEnabled() && verifyTestBookingToken(token, restaurantId);
 }
 
 function statusClass(code: number): string {
@@ -537,6 +557,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
+      // Réservation test : jeton vérifié avant tout effet ; le hold suit le
+      // circuit réel, sans événement analytics.
+      const testMode = testBookingMode(bodyParse.data.testBookingToken, restaurant.id);
+      if (testMode === false) {
+        return reply.status(403).send({ error: TEST_BOOKING_REFUSED_MESSAGE });
+      }
+      const isTest = testMode === true;
+
       // Source normalization (cf. spec v1.1 §5.9)
       // - Si connectAgentic=false, on neutralise chatgpt/perplexity/bing → 'web'
       // - On préserve google (organic SEO), instagram, qr_code, etc.
@@ -588,16 +616,18 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         });
 
         // Émettre l'événement analytics reservation_hold_created (T9)
-        await emitConnectEvent(app.queues.connectAnalytics, {
-          event: 'reservation_hold_created',
-          restaurantId: restaurant.id,
-          restaurantSlug: restaurant.slug,
-          city: restaurant.address.city,
-          source,
-          date: bodyParse.data.date,
-          time: bodyParse.data.time,
-          partySize: bodyParse.data.partySize,
-        });
+        if (!isTest) {
+          await emitConnectEvent(app.queues.connectAnalytics, {
+            event: 'reservation_hold_created',
+            restaurantId: restaurant.id,
+            restaurantSlug: restaurant.slug,
+            city: restaurant.address.city,
+            source,
+            date: bodyParse.data.date,
+            time: bodyParse.data.time,
+            partySize: bodyParse.data.partySize,
+          });
+        }
 
         return reply.send({
           holdId: hold.id,
@@ -616,16 +646,18 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         logger.error({ err, slug: slugParse.data.slug }, 'connect hold creation failed');
-        await emitConnectEvent(app.queues.connectAnalytics, {
-          event: 'reservation_failed',
-          restaurantId: restaurant.id,
-          restaurantSlug: restaurant.slug,
-          city: restaurant.address.city,
-          source,
-          date: bodyParse.data.date,
-          time: bodyParse.data.time,
-          partySize: bodyParse.data.partySize,
-        });
+        if (!isTest) {
+          await emitConnectEvent(app.queues.connectAnalytics, {
+            event: 'reservation_failed',
+            restaurantId: restaurant.id,
+            restaurantSlug: restaurant.slug,
+            city: restaurant.address.city,
+            source,
+            date: bodyParse.data.date,
+            time: bodyParse.data.time,
+            partySize: bodyParse.data.partySize,
+          });
+        }
         return reply.status(500).send({ error: 'Internal error' });
       }
     },
@@ -673,13 +705,22 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
+      // Réservation test : jeton vérifié avant tout effet. La réservation suit le
+      // circuit réel (hold, table, confirmation), sans consentement CRM, anti-spam
+      // par téléphone, analytics, attribution marketing ni carte cadeau.
+      const testMode = testBookingMode(bodyParse.data.testBookingToken, restaurant.id);
+      if (testMode === false) {
+        return reply.status(403).send({ error: TEST_BOOKING_REFUSED_MESSAGE });
+      }
+      const isTest = testMode === true;
+
       // Lookup hold
       const hold = await db.agenticHold.findFirst({
         where: { holdToken: bodyParse.data.holdToken, restaurantId: restaurant.id },
       });
       if (!hold || hold.status !== 'ACTIVE' || hold.expiresAt < new Date()) {
         // Analytics : émettre reservation_hold_expired si le hold existait (spec §8.5)
-        if (hold) {
+        if (hold && !isTest) {
           await emitConnectEvent(app.queues.connectAnalytics, {
             event: 'reservation_hold_expired',
             restaurantId: restaurant.id,
@@ -728,6 +769,12 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(409).send({ error: 'Slot no longer available' });
       }
 
+      // Quota des réservations test : consommé une fois le hold et la table validés,
+      // juste avant la création.
+      if (isTest && !(await consumeTestBookingQuota(restaurant.id))) {
+        return reply.status(429).send({ error: TEST_BOOKING_QUOTA_MESSAGE });
+      }
+
       // Source normalization (même logique que /hold, cf. spec v1.1 §5.9)
       const source: Source = normalizeConnectSource(
         bodyParse.data.source,
@@ -751,38 +798,43 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         bodyParse.data.whatsappReminderConsent?.accepted === true,
         ipHash,
       );
-      await consents.recordConsent({
-        restaurantId: restaurant.id,
-        customerId: null,
-        reservationId: null,
-        subject: bodyParse.data.customer.phone,
-        channel: 'WEB',
-        context: 'web_booking_intent',
-        consents: {
-          reservationProcessing: true,
-          transactionalSms: true,
-          transactionalEmail: !!bodyParse.data.customer.email,
-          marketingOptIn: false,
-        },
-        consentIpHash: ipHash,
-      });
+      if (!isTest) {
+        await consents.recordConsent({
+          restaurantId: restaurant.id,
+          customerId: null,
+          reservationId: null,
+          subject: bodyParse.data.customer.phone,
+          channel: 'WEB',
+          context: 'web_booking_intent',
+          consents: {
+            reservationProcessing: true,
+            transactionalSms: true,
+            transactionalEmail: !!bodyParse.data.customer.email,
+            marketingOptIn: false,
+          },
+          consentIpHash: ipHash,
+        });
+      }
 
       // Idempotency: scope = web:{restaurantId}:{phoneHash}, key = holdId
       // (le hold est unique, donc 2 confirms du même hold = même réponse)
       const phoneHash = hashPhone(bodyParse.data.customer.phone);
 
       // Rate limit per-phone (spec §8.3: 5 confirmations/heure + anti-spam §8.6)
-      const allowed = await canConfirm(phoneHash);
+      // Les réservations test ont leur propre quota par restaurant.
+      const allowed = isTest || (await canConfirm(phoneHash));
       if (!allowed) {
         return reply.status(429).send({
           error: 'Trop de tentatives. Réessayez plus tard ou appelez le restaurant.',
         });
       }
 
+      // Scope distinct pour les tests : un rejeu test ne peut jamais renvoyer une
+      // réservation réelle du même téléphone, ni l'inverse.
       const idempotencyScope = computeIdempotencyScope({
         restaurantId: restaurant.id,
         channel: 'WEB',
-        clientId: phoneHash,
+        clientId: isTest ? `test:${phoneHash}` : phoneHash,
       });
       const idempotencyKey = bodyParse.data.idempotencyKey ?? hold.id;
       const payloadHash = hashPayload({
@@ -809,9 +861,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             holdToken: bodyParse.data.holdToken,
             specialRequests: bodyParse.data.specialRequests,
             tableId: table.id,
-            marketingAttributionToken: bodyParse.data.marketingAttributionToken,
-            giftCardCode: bodyParse.data.giftCardCode,
-            giftCardReservationAmount: Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
+            ...(isTest
+              ? { isTest: true }
+              : {
+                  marketingAttributionToken: bodyParse.data.marketingAttributionToken,
+                  giftCardCode: bodyParse.data.giftCardCode,
+                  giftCardReservationAmount:
+                    Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
+                }),
             consents: {
               ...whatsappConsent.consents,
               reservationProcessing: true,
@@ -846,8 +903,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // Consentement marketing : effet de bord facultatif, ne bloque jamais la réservation.
-        // Un rejeu idempotent (reused) ne ré-enregistre rien.
-        if (!result.reused && bodyParse.data.marketingConsent) {
+        // Un rejeu idempotent (reused) ne ré-enregistre rien, une réservation test non plus.
+        if (!isTest && !result.reused && bodyParse.data.marketingConsent) {
           try {
             const booked = await db.reservation.findUnique({
               where: { id: result.reservationId, restaurantId: restaurant.id },
@@ -874,17 +931,19 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
         // Émettre l'événement analytics reservation_confirmed (T9)
         // Best-effort : si la queue est down, on log un warning mais on ne fail pas.
-        await emitConnectEvent(app.queues.connectAnalytics, {
-          event: 'reservation_confirmed',
-          restaurantId: restaurant.id,
-          restaurantSlug: restaurant.slug,
-          city: restaurant.address.city,
-          source,
-          date: localDate,
-          time: localTime,
-          partySize: hold.partySize,
-          reservationId: result.reservationId,
-        });
+        if (!isTest) {
+          await emitConnectEvent(app.queues.connectAnalytics, {
+            event: 'reservation_confirmed',
+            restaurantId: restaurant.id,
+            restaurantSlug: restaurant.slug,
+            city: restaurant.address.city,
+            source,
+            date: localDate,
+            time: localTime,
+            partySize: hold.partySize,
+            reservationId: result.reservationId,
+          });
+        }
 
         const managed = isReservationManagementEnabled()
           ? await db.reservation.findUnique({
@@ -909,19 +968,21 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
-        // Anti-spam : enregistrer l'échec (spec §8.6)
-        await recordFailedConfirm(phoneHash);
-        // Analytics : émettre l'événement reservation_failed (spec §8.5)
-        await emitConnectEvent(app.queues.connectAnalytics, {
-          event: 'reservation_failed',
-          restaurantId: restaurant.id,
-          restaurantSlug: restaurant.slug,
-          city: restaurant.address.city,
-          source,
-          date: localDate,
-          time: localTime,
-          partySize: hold.partySize,
-        });
+        if (!isTest) {
+          // Anti-spam : enregistrer l'échec (spec §8.6)
+          await recordFailedConfirm(phoneHash);
+          // Analytics : émettre l'événement reservation_failed (spec §8.5)
+          await emitConnectEvent(app.queues.connectAnalytics, {
+            event: 'reservation_failed',
+            restaurantId: restaurant.id,
+            restaurantSlug: restaurant.slug,
+            city: restaurant.address.city,
+            source,
+            date: localDate,
+            time: localTime,
+            partySize: hold.partySize,
+          });
+        }
         // Créneau devenu trop proche entre le hold et la confirmation : un refus clair, pas un 500.
         if (err instanceof PolicyValidationError && err.code === INSUFFICIENT_LEAD_TIME) {
           return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));

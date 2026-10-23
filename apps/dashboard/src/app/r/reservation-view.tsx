@@ -39,6 +39,7 @@ type Reservation = {
   time: string;
   partySize: number;
   state: string;
+  test?: boolean;
   cancellation?: {
     available: boolean;
     deadline: string | null;
@@ -247,6 +248,9 @@ export default function ReservationView({ demo = false }: { demo?: boolean }) {
           </div>
           <h1 className="sr-only">Ma réservation</h1>
           {demo && <p className={styles.demo}>Aperçu de démonstration</p>}
+          {reservation?.test && (
+            <p className={styles.demo}>Réservation test · supprimée automatiquement sous 24 h</p>
+          )}
         </header>
         {loading ? (
           <div

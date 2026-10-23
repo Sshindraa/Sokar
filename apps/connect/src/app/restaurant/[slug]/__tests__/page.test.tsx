@@ -10,7 +10,10 @@ import type { PublicRestaurantDto } from '@/lib/api-client';
 const mocks = vi.hoisted(() => ({
   fetchPublicRestaurant: vi.fn(),
   fetchAvailability: vi.fn(),
+  PageViewTracker: vi.fn(() => null),
 }));
+
+vi.mock('@/components/page-view-tracker', () => ({ PageViewTracker: mocks.PageViewTracker }));
 
 vi.mock('@/lib/api-client', () => ({
   fetchPublicRestaurant: mocks.fetchPublicRestaurant,
@@ -27,6 +30,7 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
+import { trackEvent } from '@/lib/tracking';
 import RestaurantPage, { generateMetadata } from '../page';
 
 const restaurant: PublicRestaurantDto = {
@@ -118,5 +122,74 @@ describe('indexabilité des fiches', () => {
       searchParams: Promise.resolve({}),
     });
     expect(meta.robots).toMatchObject({ index, follow: true, googleBot: { index } });
+  });
+});
+
+describe('parcours de réservation test depuis l’onboarding', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  async function markup(searchParams: Record<string, string>, slots: unknown[] = []) {
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    mocks.fetchPublicRestaurant.mockResolvedValue(restaurant);
+    mocks.fetchAvailability.mockResolvedValue({ slots });
+    const page = await RestaurantPage({
+      params: Promise.resolve({ slug: 'chez-sokar-demo' }),
+      searchParams: Promise.resolve(searchParams),
+    });
+    return renderToStaticMarkup(page);
+  }
+
+  const bookHrefs = (html: string) =>
+    [...html.matchAll(/href="(\/book\/[^"]+)"/g)].map(([, href]) => href);
+
+  const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
+  const banner =
+    'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+
+  it('transmet le jeton à tous les liens de réservation et affiche le bandeau', async () => {
+    const html = await markup({ testBooking: token });
+    const hrefs = bookHrefs(html);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toContain(`testBooking=${encodeURIComponent(token)}`);
+    expect(html).toContain(banner);
+    expect(mocks.PageViewTracker).not.toHaveBeenCalled();
+  });
+
+  it('reste en mode test avec une valeur mal formée : bandeau et valeur transmise à l’API', async () => {
+    const html = await markup({ testBooking: '1' });
+    const hrefs = bookHrefs(html);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toContain('testBooking=1');
+    expect(html).toContain(banner);
+    expect(mocks.PageViewTracker).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['vide', ''],
+    ['de plus de 100 caractères', 'a'.repeat(101)],
+  ])('traite une valeur %s comme absente', async (_label, value) => {
+    const html = await markup({ testBooking: value });
+    expect(bookHrefs(html).length).toBeGreaterThan(0);
+    expect(html).not.toContain('testBooking');
+    expect(html).not.toContain('Réservation test');
+  });
+
+  it('ne compte pas l’aperçu des disponibilités en mode test', async () => {
+    await markup({ testBooking: token }, [{ time: '19:30', available: true }]);
+    expect(trackEvent).not.toHaveBeenCalled();
+  });
+
+  it('compte l’aperçu des disponibilités hors mode test', async () => {
+    await markup({}, [{ time: '19:30', available: true }]);
+    expect(trackEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'availability_preview_shown' }),
+    );
+  });
+
+  it('ne change rien sans le paramètre', async () => {
+    const html = await markup({});
+    expect(bookHrefs(html).length).toBeGreaterThan(0);
+    expect(html).not.toContain('testBooking');
+    expect(html).not.toContain('Réservation test');
   });
 });

@@ -322,6 +322,7 @@ export class ServiceCopilotService {
         assignedServer: true,
         reservations: {
           where: {
+            isTest: false,
             state: { in: ['CONFIRMED', 'SEATED'] },
             startsAt: { lte: windowEnd },
             endsAt: { gt: now },

@@ -139,6 +139,11 @@ export type CreateReservationInput = {
   giftCardReservationAmount?: number;
   /** Optionnel : token signé d'une campagne marketing */
   marketingAttributionToken?: string;
+  /**
+   * Réservation test du restaurateur : ni fiche client, ni chronologie CRM,
+   * ni attribution marketing, ni carte cadeau. La confirmation part quand même.
+   */
+  isTest?: boolean;
 };
 
 export type CreateReservationResult = {
@@ -248,15 +253,18 @@ export class ReservationService {
       tableId = tableId ?? hold.tableId ?? null;
     }
 
+    const isTest = input.isTest === true;
     let customerId: string | null = null;
     try {
-      customerId = (
-        await CustomerService.lookupOrCreate(
-          input.restaurantId,
-          input.customerPhone,
-          input.customerName,
-        )
-      ).id;
+      if (!isTest) {
+        customerId = (
+          await CustomerService.lookupOrCreate(
+            input.restaurantId,
+            input.customerPhone,
+            input.customerName,
+          )
+        ).id;
+      }
     } catch (error) {
       logger.warn(
         {
@@ -438,14 +446,15 @@ export class ReservationService {
           );
         }
 
-        const initialState: CreatableReservationState = input.policy.requireManualValidation
-          ? 'PENDING'
-          : 'CONFIRMED';
+        // Une réservation test est invisible pour le restaurant : personne ne pourrait la valider.
+        const initialState: CreatableReservationState =
+          input.policy.requireManualValidation && !input.isTest ? 'PENDING' : 'CONFIRMED';
 
         const reservation = await tx.reservation.create({
           data: {
             restaurantId: input.restaurantId,
             ...(customerId ? { customerId } : {}),
+            ...(isTest ? { isTest: true } : {}),
             customerName: input.customerName,
             customerPhone: input.customerPhone,
             partySize: input.partySize,
@@ -545,27 +554,29 @@ export class ReservationService {
 
     const final = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
 
-    try {
-      await CustomerService.recordReservationEvent({
-        restaurantId: input.restaurantId,
-        customerId,
-        phone: input.customerPhone,
-        name: input.customerName,
-        reservationId,
-        eventType: 'RESERVATION_CREATED',
-        occurredAt: new Date(),
-      });
-    } catch (error) {
-      logger.warn(
-        { err: error instanceof Error ? error.message : String(error), reservationId },
-        '[AgenticReservationService] Customer timeline projection unavailable',
-      );
+    if (!isTest) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId: input.restaurantId,
+          customerId,
+          phone: input.customerPhone,
+          name: input.customerName,
+          reservationId,
+          eventType: 'RESERVATION_CREATED',
+          occurredAt: new Date(),
+        });
+      } catch (error) {
+        logger.warn(
+          { err: error instanceof Error ? error.message : String(error), reservationId },
+          '[AgenticReservationService] Customer timeline projection unavailable',
+        );
+      }
     }
 
     // Campaign links are optional and best-effort: a malformed or expired
     // token must never block a valid agentic/web reservation. Resolve it to the
     // same tenant and customer before recording the created conversion.
-    if (input.marketingAttributionToken && customerId) {
+    if (!isTest && input.marketingAttributionToken && customerId) {
       try {
         const link = await recordMarketingAttributionClick({
           token: input.marketingAttributionToken,
@@ -594,7 +605,7 @@ export class ReservationService {
 
     let giftCardApplication: GiftCardApplicationResult | undefined;
     let giftCardSnapshotUpdated = false;
-    if (input.giftCardCode) {
+    if (!isTest && input.giftCardCode) {
       try {
         giftCardApplication = await new GiftCardService(this.prisma).associateToReservation({
           code: input.giftCardCode,

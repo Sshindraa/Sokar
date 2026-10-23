@@ -6,6 +6,8 @@ import { reservationManagementRoutes } from '../reservation-management.routes';
 import { reservationManagementUrl } from '../reservation-management';
 import { snapshotCancellationPolicy } from '../../../shared/reservations/cancellation-policy';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
+import { CustomerService } from '../../customers/customer.service';
+import { deactivateMarketingConversions } from '../../marketing/marketing-attribution.service';
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
@@ -101,6 +103,21 @@ async function harness(
   }
 }
 describe('autonomous cancellation contract through the canonical lifecycle', () => {
+  it.each([
+    [false, 1],
+    [true, 0],
+  ])('cancelling with isTest=%s records %i CRM/marketing write', async (isTest, calls) => {
+    current = { ...row, isTest } as typeof row;
+    await harness(async (post) => {
+      const view = await post({ action: 'view' });
+      const confirmationToken = view.json().cancellation.confirmationToken;
+      const cancelled = await post({ action: 'cancel', confirmed: true, confirmationToken });
+      expect(cancelled.statusCode).toBe(200);
+      expect(cancelled.json().state).toBe('CANCELLED');
+      expect(CustomerService.recordReservationEvent).toHaveBeenCalledTimes(calls);
+      expect(deactivateMarketingConversions).toHaveBeenCalledTimes(calls);
+    });
+  });
   it('only cancels after confirmation, writes state/status once and invalidates capacity', async () => {
     await harness(async (post) => {
       const view = await post({ action: 'view' });
