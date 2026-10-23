@@ -24,7 +24,7 @@ import { useSiteSelection } from '@/features/sites/site-context';
 import { useBillingStatus, TrialRecap, TrialTrack } from './trial';
 import type { BillingDetails, BillingInterval, BillingPlan, BillingStatus } from '@/types/api';
 
-const LABELS = { essential: 'Essential', pro: 'Pro', 'multi-site': 'Multi-site' };
+const LABELS = { essential: 'Essential', pro: 'Pro', 'multi-site': 'Multi-restaurant' };
 const SLUGS: BillingPlan[] = ['essential', 'pro', 'multi-site'];
 const STATUS: Record<string, string> = {
   active: 'Abonnement actif',
