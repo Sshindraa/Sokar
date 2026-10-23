@@ -1,9 +1,11 @@
 name: Deploy Staging
 
+# Déclenché directement par la fusion sur `main` : la CI complète n'est plus relancée sur `main`
+# (≈ 6 min). Le job `verify-ci` remplace cette relance par une preuve : le commit doit venir d'une
+# PR fusionnée dont l'arbre est identique à sa tête et dont toutes les vérifications sont vertes.
+# Sans preuve, rien n'est déployé. Prod suit toujours le succès de ce workflow (deploy-prod.yml).
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
   workflow_dispatch: # déclenchement manuel
     inputs:
@@ -22,12 +24,37 @@ env:
   TURBO_TELEMETRY_DISABLED: 1
 
 jobs:
+  # Prouve que ce commit a déjà passé la CI complète sur la PR. Ignoré pour un
+  # déclenchement manuel, qui reste un choix explicite de l'opérateur.
+  verify-ci:
+    name: Preuve de CI verte
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Vérifier l'arbre fusionné et les vérifications de la PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ops/verify-merged-tree-ci.mjs "${{ github.sha }}"
+
   deploy:
     name: Deploy to staging VPS
+    needs: verify-ci
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main')
+      !cancelled() && !failure() &&
+      (github.event_name == 'workflow_dispatch' || needs.verify-ci.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -111,7 +138,7 @@ jobs:
             # On transfère donc une archive publique du commit exact depuis
             # codeload.github.com, sans token ni clé GitHub sur le VPS, puis on
             # crée un snapshot Git local pour conserver les rollbacks/hash.
-            SOURCE_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+            SOURCE_SHA="${{ github.sha }}"
             [[ "$SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]]
             git reset --hard
             git clean -fd -e releases/
@@ -239,7 +266,7 @@ jobs:
           echo "✅ All smoke tests passed"
 
       - name: Test rollback staging
-        if: success() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        if: success() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STAGING_HOST }}
@@ -252,13 +279,13 @@ jobs:
         continue-on-error: true
 
       - name: Verify rollback health
-        if: always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         run: |
           sleep 5
           curl -fsS https://api-staging.sokar.tech/livez || exit 1
 
       - name: Restore current staging release
-        if: always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        if: always() && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STAGING_HOST }}

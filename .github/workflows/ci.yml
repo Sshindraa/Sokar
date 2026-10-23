@@ -1,9 +1,17 @@
 name: CI
 
+# Sur `main`, la CI complète ne tourne plus à chaque fusion : la PR a déjà testé le même arbre
+# (branche à jour exigée avant fusion) et Deploy Staging le vérifie avant de déployer
+# (scripts/ops/verify-merged-tree-ci.mjs). Sur `main`, la CI complète reste disponible à la
+# demande (workflow_dispatch) et chaque nuit, pour détecter les dérives (fournisseur, image
+# Docker, dépendance non figée). Seul le contrôle des secrets se rejoue à chaque poussée.
 on:
   push:
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '15 2 * * *'
+  workflow_dispatch:
 
 # Cancel in-progress runs on the same ref (save minutes on rapid pushes)
 concurrency:
@@ -45,6 +53,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   packages:
     name: Packages (shared / config / database)
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -105,6 +114,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   api:
     name: API
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: packages
     permissions:
@@ -174,6 +184,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   api-integration:
     name: API integration (Postgres)
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: packages
     permissions:
@@ -239,6 +250,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   dashboard:
     name: Dashboard
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: packages
     permissions:
@@ -353,6 +365,7 @@ jobs:
 
   connect:
     name: Sokar Connect
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: packages
     permissions:
@@ -401,6 +414,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   connect-e2e:
     name: Sokar Connect e2e
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: packages
     permissions:
