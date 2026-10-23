@@ -309,7 +309,7 @@ describe('présélection Connect', () => {
           slots: ['20:00', '20:30'],
         });
       }
-      if (init?.method === 'POST' && url.endsWith('/reservations')) {
+      if (init?.method === 'POST' && url.endsWith('/hold')) {
         return {
           ok: false,
           status: 409,
@@ -643,18 +643,18 @@ describe('widget embarqué — listener entrant', () => {
   });
 });
 
-describe('réservation test sur le widget public réellement servi par /book', () => {
-  async function submitTest(token: string, rejectHold = false) {
+describe('réservation publique sur le widget réellement servi par /book', () => {
+  async function submitTest(token: string | undefined, rejectHold = false, legacyId = false) {
     const date = new Date();
     date.setDate(date.getDate() + 2);
     const dateValue = dateParam(date);
-    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    navMocks.setParams({ restaurantId: legacyId ? 'r1' : 'chez-sokar' });
     navMocks.setSearch(
       new URLSearchParams({
         date: dateValue,
         time: '20:30',
         partySize: '2',
-        testBooking: token,
+        ...(token === undefined ? {} : { testBooking: token }),
         marketingAttributionToken: 'a'.repeat(24),
       }).toString(),
     );
@@ -680,6 +680,18 @@ describe('réservation test sur le widget public réellement servi par /book', (
           status: 'confirmed',
           managementUrl: '/r?test',
         });
+      if (legacyId)
+        return jsonResponse({
+          id: 'r1',
+          slug: 'chez-sokar',
+          name: 'Chez Sokar',
+          openingHours: Object.fromEntries(
+            ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map((day) => [
+              day,
+              { open: '12:00', close: '22:00' },
+            ]),
+          ),
+        });
       return bookingRestaurantResponse();
     });
     vi.stubGlobal('fetch', fetchSpy);
@@ -692,6 +704,43 @@ describe('réservation test sur le widget public réellement servi par /book', (
     fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
     return { widget, fetchSpy };
   }
+
+  it('confirme une réservation publique sans identifiant de service et conserve l’attribution', async () => {
+    const { widget, fetchSpy } = await submitTest(undefined);
+    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([url]) => url)).toEqual([
+      '/api/proxy/marketing/attribution/click',
+      '/api/proxy/public/r/chez-sokar/hold',
+      '/api/proxy/public/r/chez-sokar/confirm',
+    ]);
+    const hold = JSON.parse(posts[1][1]!.body as string);
+    const confirmation = JSON.parse(posts[2][1]!.body as string);
+    expect(hold).not.toHaveProperty('testBookingToken');
+    expect(confirmation).not.toHaveProperty('testBookingToken');
+    expect(confirmation.marketingAttributionToken).toBe('a'.repeat(24));
+    expect(confirmation.customer).toEqual({ firstName: 'Recette Sokar', phone: '+33600000000' });
+    expect(confirmation.holdToken).toBeTruthy();
+    expect(widget.queryByText(/supprimée automatiquement sous 24 h/)).toBeNull();
+  });
+
+  it('résout le slug public pour une ancienne URL de widget par identifiant', async () => {
+    const { widget, fetchSpy } = await submitTest(undefined, false, true);
+    expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([url]) => url)).toContain('/api/proxy/public/r/chez-sokar/confirm');
+    expect(posts.some(([url]) => url.includes('/public/r/r1/'))).toBe(false);
+  });
+
+  it('ne confirme pas et ne contourne pas un refus du hold public', async () => {
+    const { widget, fetchSpy } = await submitTest(undefined, true);
+    expect(await widget.findByText('Ce lien de test a expiré.')).toBeTruthy();
+    const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([url]) => url)).toEqual([
+      '/api/proxy/marketing/attribution/click',
+      '/api/proxy/public/r/chez-sokar/hold',
+    ]);
+  });
 
   it('transmet le jeton au hold puis à la confirmation, sans création réelle ni attribution', async () => {
     const token = crypto.randomUUID();

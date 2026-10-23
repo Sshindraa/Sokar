@@ -115,6 +115,7 @@ interface OpeningHours {
 }
 
 interface RestaurantPublic {
+  slug?: string;
   whatsappReminderOptInEnabled?: boolean;
   id: string;
   name: string;
@@ -713,57 +714,47 @@ export default function ReservationWidget({
       const phone = normalizedPhone.startsWith('+')
         ? normalizedPhone
         : `+33${normalizedPhone.replace(/^0/, '')}`;
-      let res: ConfirmedReservation;
-      if (testBooking) {
-        const path = `public/r/${encodeURIComponent(restaurantId)}`;
-        const hold = await publicApiFetch<{ holdToken: string }>('POST', `${path}/hold`, {
-          date: formatDateParam(selectedDate),
-          time: selectedTime,
-          partySize,
-          source: 'web',
-          testBookingToken,
-        });
-        const confirmation = await publicApiFetch<{
-          reservationId: string;
-          status: string;
-          managementUrl?: string;
-        }>('POST', `${path}/confirm`, {
-          holdToken: hold.holdToken,
-          customer: { firstName: customerName, phone, email: customerEmail || undefined },
-          source: 'web',
-          testBookingToken,
-        });
-        res = {
-          id: confirmation.reservationId,
-          restaurantId: restaurant.id,
-          reservedAt: reservedAt.toISOString(),
-          partySize,
-          customerName,
-          customerPhone: phone,
-          status: confirmation.status,
-          managementUrl: confirmation.managementUrl,
-        };
-      } else {
-        res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
-          restaurantId: restaurant.id,
-          reservedAt: reservedAt.toISOString(),
-          partySize,
-          customerName,
-          customerPhone: normalizedPhone.startsWith('+')
-            ? normalizedPhone
-            : `+33${normalizedPhone.replace(/^0/, '')}`,
-          customerEmail: customerEmail || undefined,
-          ...(restaurant.whatsappReminderOptInEnabled
-            ? {
-                whatsappReminderConsent: {
-                  accepted: whatsappOptIn,
-                  version: 'whatsapp-reminder-2026-10-17',
-                },
-              }
-            : {}),
-          ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
-        });
-      }
+      // Public bookings use a signed hold, never the internal service endpoint.
+      const path = `public/r/${encodeURIComponent(restaurant.slug || restaurantId)}`;
+      const testFields = testBooking ? { testBookingToken } : {};
+      const hold = await publicApiFetch<{ holdToken: string }>('POST', `${path}/hold`, {
+        date: formatDateParam(selectedDate),
+        time: selectedTime,
+        partySize,
+        source: 'web',
+        ...testFields,
+      });
+      const confirmation = await publicApiFetch<{
+        reservationId: string;
+        status: string;
+        managementUrl?: string;
+        whatsappWithdrawalToken?: string;
+      }>('POST', `${path}/confirm`, {
+        holdToken: hold.holdToken,
+        customer: { firstName: customerName, phone, email: customerEmail || undefined },
+        source: 'web',
+        ...testFields,
+        ...(!testBooking && restaurant.whatsappReminderOptInEnabled
+          ? {
+              whatsappReminderConsent: {
+                accepted: whatsappOptIn,
+                version: 'whatsapp-reminder-2026-10-17',
+              },
+            }
+          : {}),
+        ...(!testBooking && marketingAttributionToken ? { marketingAttributionToken } : {}),
+      });
+      const res: ConfirmedReservation = {
+        id: confirmation.reservationId,
+        restaurantId: restaurant.id,
+        reservedAt: reservedAt.toISOString(),
+        partySize,
+        customerName,
+        customerPhone: phone,
+        status: confirmation.status,
+        managementUrl: confirmation.managementUrl,
+        whatsappWithdrawalToken: confirmation.whatsappWithdrawalToken,
+      };
 
       setConfirmedReservation(res);
       setSuccess(true);
@@ -786,11 +777,14 @@ export default function ReservationWidget({
     setWhatsappWithdrawing(true);
     setWhatsappWithdrawError(false);
     try {
-      await publicApiFetch('POST', 'public/reservations/whatsapp-consent/withdraw', {
-        restaurantId: confirmedReservation.restaurantId,
-        reservationId: confirmedReservation.id,
-        token: confirmedReservation.whatsappWithdrawalToken,
-      });
+      await publicApiFetch(
+        'POST',
+        `public/r/${encodeURIComponent(restaurant?.slug || restaurantId)}/whatsapp-consent/withdraw`,
+        {
+          reservationId: confirmedReservation.id,
+          token: confirmedReservation.whatsappWithdrawalToken,
+        },
+      );
       setWhatsappWithdrawn(true);
     } catch {
       setWhatsappWithdrawError(true);
