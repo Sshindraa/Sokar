@@ -67,7 +67,7 @@ describe('alertes d’indisponibilité STT', () => {
     await alertTerminalSttUnavailable('terms', dependencies);
 
     expect(store.set).toHaveBeenCalledWith(
-      'sokar:voice:stt:terminal-alert-cooldown',
+      'sokar:voice:stt:terminal-alert-cooldown:deepgram_stt',
       '1',
       'EX',
       3_600,
@@ -75,34 +75,34 @@ describe('alertes d’indisponibilité STT', () => {
     );
     expect(dispatch).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith({
-      kind: 'elevenlabs_stt_auth',
+      kind: 'deepgram_stt_auth',
       severity: 'critical',
-      summary: 'ElevenLabs STT indisponible : auth',
-      detail: 'provider=elevenlabs_stt\nreason=auth',
+      summary: 'Deepgram STT indisponible : auth',
+      detail: 'provider=deepgram_stt\nreason=auth',
     });
     const message = JSON.stringify(dispatch.mock.calls[0]?.[0]);
     expect(message).not.toMatch(/cc-stt|cs-stt|\+33|callId|phone/i);
   });
 
-  it('isole les alertes Deepgram avec son label sans réutiliser la série ElevenLabs', async () => {
+  it('isole les alertes du secours Ink-2 avec son label, sans réutiliser la série Deepgram', async () => {
     const store = makeStore();
     const dispatch = vi.fn().mockResolvedValue([]);
     const dependencies = { store, dispatch, now: store.now };
 
-    await alertTerminalSttUnavailable('quota', dependencies, 'deepgram_stt');
+    await alertTerminalSttUnavailable('quota', dependencies, 'cartesia_stt');
 
     expect(store.set).toHaveBeenCalledWith(
-      'sokar:voice:stt:terminal-alert-cooldown:deepgram_stt',
+      'sokar:voice:stt:terminal-alert-cooldown:cartesia_stt',
       '1',
       'EX',
       3_600,
       'NX',
     );
     expect(dispatch).toHaveBeenCalledWith({
-      kind: 'deepgram_stt_quota',
+      kind: 'cartesia_stt_quota',
       severity: 'critical',
-      summary: 'Deepgram STT indisponible : quota',
-      detail: 'provider=deepgram_stt\nreason=quota',
+      summary: 'Cartesia STT indisponible : quota',
+      detail: 'provider=cartesia_stt\nreason=quota',
     });
   });
 
@@ -123,18 +123,21 @@ describe('alertes d’indisponibilité STT', () => {
 
     await recordSttConnectionUnavailable(dependencies);
 
-    expect(store.expire).toHaveBeenCalledWith('sokar:voice:stt:connection-unavailable:10m', 600);
+    expect(store.expire).toHaveBeenCalledWith(
+      'sokar:voice:stt:connection-unavailable:10m:deepgram_stt',
+      600,
+    );
     expect(store.zremrangebyscore).toHaveBeenLastCalledWith(
-      'sokar:voice:stt:connection-unavailable:10m',
+      'sokar:voice:stt:connection-unavailable:10m:deepgram_stt',
       '-inf',
       `(940000`,
     );
     expect(dispatch).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith({
-      kind: 'elevenlabs_stt_connection_burst',
+      kind: 'deepgram_stt_connection_burst',
       severity: 'warning',
-      summary: 'Plus de cinq appels ont subi une indisponibilité STT en 10 minutes',
-      detail: 'provider=elevenlabs_stt\naffectedCalls=6\nwindowSeconds=600',
+      summary: 'Plus de cinq appels ont subi une indisponibilité Deepgram STT en 10 minutes',
+      detail: 'provider=deepgram_stt\naffectedCalls=6\nwindowSeconds=600',
     });
     const message = JSON.stringify(dispatch.mock.calls[0]?.[0]);
     expect(message).not.toMatch(/cc-stt|cs-stt|\+33|callId|phone/i);

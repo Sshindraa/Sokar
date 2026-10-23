@@ -168,7 +168,7 @@ export function alawToPcm16(input: Buffer): Buffer {
 }
 
 /**
- * Audio entrant Telnyx → PCM16 little-endian, tel qu'attendu par Scribe.
+ * Audio entrant Telnyx → PCM16 little-endian, tel qu'attendu par le fournisseur STT.
  * PCMA : décodage A-law. PCMU : octets µ-law passés tels quels (`ulaw_8000`).
  * L16 : échange d'octets si Telnyx émet en big-endian.
  */

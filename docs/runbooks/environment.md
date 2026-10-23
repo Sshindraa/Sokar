@@ -575,7 +575,7 @@ deux échecs consécutifs), après le secours OpenRouter du tour structuré.
 ### Latence Deepgram et secours LLM
 
 Les seuils Deepgram ne sont utilisés que par les sockets Deepgram ; ils ne
-changent pas les paramètres de Scribe. `speech_final` déclenche le commit
+changent pas les paramètres d'Ink-2 (secours). `speech_final` déclenche le commit
 immédiat, et `UtteranceEnd` reste un filet de sécurité. Valeurs validées au
 démarrage par Zod :
 
@@ -616,8 +616,8 @@ d'attente actuels utilisent `VOICE_FILLER_DELAY_MS`.
 VOICE_LLM_FILLER_DELAY_MS="1200"      # 100–5000 ms
 ```
 
-Dialogue V2 active aussi la suppression d'écho par texte, valable pour Scribe
-et Deepgram. Le texte récent de l'agent est conservé uniquement en mémoire,
+Dialogue V2 active aussi la suppression d'écho par texte, valable pour Deepgram
+et Ink-2. Le texte récent de l'agent est conservé uniquement en mémoire,
 sans être ajouté aux logs ni à la télémétrie.
 
 **PM2 et `.env` :** l'API lit `.env` via `node --env-file`, qui ne remplace pas
@@ -816,32 +816,28 @@ suspens (« demain à », « au nom de », « je suis »), 600 ms pour une corre
 suite est fusionnée dans le même tour. Comparer avant/après avec
 `sokar_voice_end_of_speech_to_first_audio_ms` et `sokar_voice_false_end_of_turn_total`.
 
-`VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi à
-Scribe. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
+`VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi au
+fournisseur de reconnaissance. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
 son propre message. Une valeur multiple de 20 entre `40` et `200` accumule les trames
 décodées et n'envoie qu'un message quand la durée cible est atteinte. À 20 ms, le
-comportement historique reste inchangé : une trame par message et conversion PCMA vers
-`pcm_8000`. Le regroupement ne change pas le format audio.
+comportement historique reste inchangé : une trame par message. Le regroupement ne change pas
+le format audio.
 Le tampon est vidé avant tout commit manuel, une fin de tour, un barge-in, la fermeture ou la
 reconnexion de la session, et la fin d'appel ; un timer de sécurité (`valeur + 20 ms`) envoie
 un tampon partiel si le flux s'interrompt. Un couple de trames est donc retardé d'au plus la
 valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → commit). Toute autre
 valeur fait échouer le démarrage (validation Zod). Suivre
-`sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
+`sokar_voice_stt_provider_audio_messages_total{provider,chunk_ms}` et
+`sokar_voice_stt_provider_chunk_bytes{provider}`.
 
-`VOICE_STT_FILTER_BACKGROUND` est sans effet depuis le 22/10 : le filtre Scribe n'est plus
-envoyé (Scribe n'est plus utilisé en production ; Deepgram ou le secours Ink-2).
-
-`VOICE_STT_LANGUAGE_LOCK=true` verrouille l'appel en français après le premier tour commité
-que Scribe identifie comme français et qui contient au moins deux mots. La langue de dialogue
-ne suit ensuite plus les détections ultérieures. Un contenu non français récupérable par
-l'extracteur du champ demandé suit le parcours normal de réservation ; sinon l'agent relance
-en français. Depuis le 22/10, plus aucune
-session Scribe forcée en français n'est rouverte après le verrou (relock retiré). Défaut
-`false` : comportement actuel.
-Les compteurs `sokar_voice_language_locked_total`,
-`sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
-`sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
+Retirés avec le code Scribe (ElevenLabs Scribe Realtime, plus utilisé en production) :
+`VOICE_STT_FILTER_BACKGROUND`, `VOICE_STT_LANGUAGE_LOCK` (verrou français, sans effet réel avec Deepgram
+et Ink-2), `ELEVENLABS_STT_MODEL`, `ELEVENLABS_STT_HOST`, `ELEVENLABS_STT_LANGUAGES` et
+`ELEVENLABS_STT_ALL_LANGUAGES`. Une ancienne valeur laissée dans un `.env` est ignorée. Les compteurs
+`sokar_voice_language_locked_total`, `sokar_voice_non_fr_transcript_after_lock_total`,
+`sokar_voice_stt_audio_messages_total` et `sokar_voice_stt_chunk_bytes` n'existent plus. Le banc STT
+(`apps/api/scripts/voice-stt-bench`) garde sa propre URL Scribe (`scribe-url.cjs`) pour mesurer Scribe
+comme référence.
 
 L'écoute Dialogue V2 est active pour tous les restaurants, sans réglage. Elle applique le routage
 strict du dialogue : le chemin déterministe
@@ -853,7 +849,7 @@ puis relancées naturellement si aucune suite n'arrive.
 
 `VOICE_TELNYX_CODEC` (défaut `PCMA`, valeurs `PCMA` ou `L16`) sélectionne le codec
 entrant et sortant du Media Stream Telnyx. Avec `L16`, demander 16 kHz dans les deux
-sens, envoyer le PCM16 à Scribe en `pcm_16000`, et générer le TTS Cartesia en PCM16 16 kHz.
+sens, envoyer le PCM16 au fournisseur de reconnaissance (Deepgram `linear16`, 16 kHz), et générer le TTS Cartesia en PCM16 16 kHz.
 Le cache TTS est séparé par codec. `sokar_voice_wideband_detected_total{detected,codec}`
 indique la présence d'énergie au-dessus de 4 kHz au début de chaque appel L16. Avant
 activation, vérifier en staging par un appel réel que l'endianness du payload WebSocket
@@ -968,18 +964,14 @@ partagée prod, dev, staging et banc). Les autres clés de banc restent dédiée
 | **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
 
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
-requête de contrôle par fournisseur. Pour Scribe, le contrôle ouvre la socket Realtime et
+requête de contrôle par fournisseur. Pour le banc Scribe, le contrôle ouvre la socket Realtime et
 n'envoie aucun audio. Le banc STT détaillé et ses limites sont documentés dans
 apps/api/scripts/voice-stt-bench/README.md. N'exécutez jamais un banc avec une clé
 identique à celle de production.
 
-Scribe détecte la langue parmi `ELEVENLABS_STT_LANGUAGES` (défaut `fr,en`).
-`ELEVENLABS_STT_ALL_LANGUAGES` doit rester `false` : au téléphone (A-law 8 kHz),
-Scribe se trompe alors de langue et transcrit « six personnes » en « sechs
-Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
-33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %, MAI via
-Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
-réellement, et remesurer.
+Historique du banc Scribe du 24/09/2026 (7 phrases × 3 passages, A-law 8 kHz) : détection sur toutes les
+langues 33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %. Deepgram est configuré en
+français seulement ; ajouter une langue seulement si des appelants la parlent réellement, et remesurer.
 
 Réponses attendues (`stream/expected-answer.ts`) : quand l'agent pose une
 question fermée (nombre de personnes, jour, heure) et que l'analyse exacte ne
@@ -993,7 +985,7 @@ depuis le 22/10/2026, sans réglage.
 
 Confirmation guidée par la confiance (`stream/slot-confidence.ts`) : pour
 chaque valeur retenue par l'analyse exacte (nombre, jour, heure), la confiance
-Scribe des mots qui la portent et la stabilité des transcriptions partielles
+des mots qui la portent et la stabilité des transcriptions partielles
 décident de la suite. Valeur sûre et stable : relecture seule. Valeur douteuse
 ou instable avec un voisin confusable (six/dix/seize, deux/douze, trois/treize,
 cinq/sept, 20 h/21 h/22 h, 8 h/20 h, et quart/et demie) : « Pardon, six ou dix
@@ -1005,7 +997,7 @@ restaurants depuis le 22/10/2026, sans réglage.
 
 La confiance n'agit que sur le nombre de personnes ; pour le jour et l'heure, la
 décision est seulement observée : `slot_confidence` la publie préfixée `wouldBe…`,
-sans rien changer au dialogue. Le banc difficile montre que la confiance Scribe
+sans rien changer au dialogue. Le banc difficile (mesuré avec Scribe) montre que la confiance
 distingue les nombres de personnes justes des faux, pas les heures.
 
 Vraisemblance des heures (toujours active, indépendante
@@ -1021,12 +1013,11 @@ ou prend un message sans ligne gérant. Aucun flag : ce parcours est toujours ac
 L'événement `expected_answer` publie le type, le statut et les scores (meilleur, écart),
 jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.
 
-Chaque tour publie la confiance Scribe (`minWordConfidence`,
+Chaque tour publie la confiance des mots (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,
-sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
-confiance entre 0 et 1.
+sans le texte.
 
-En cas d'authentification, de quota ou de conditions ElevenLabs refusés, l'appel cesse
+En cas d'authentification, de quota ou de conditions du fournisseur de reconnaissance refusés, l'appel cesse
 immédiatement les reconnexions. Les échecs d'ouverture utilisent un backoff de 500 ms, 1 s
 puis 2 s ; chaque ouverture réussie remet le compteur consécutif à zéro. Le repli intervient
 après quatre échecs d'ouverture d'affilée, huit reconnexions par appel, ou une échéance

@@ -7,7 +7,7 @@
  *
  * Chaque phrase est synthétisée par Cartesia en PCM 8 kHz, dégradée comme un
  * appel (bruit au SNR demandé, paquets de 20 ms perdus, codec A-law), puis
- * envoyée à Scribe avec l'URL de production (`buildSttUrl`, codec PCMA).
+ * envoyée à Scribe avec l'ancienne URL de production (`buildSttUrl` de `scribe-url.cjs`, codec PCMA).
  * Les phrases sont synthétiques : aucun contenu d'appel réel n'est traité.
  * Sortie par phrase : transcription, mots avec `logprob`, transcriptions partielles.
  */
@@ -16,7 +16,7 @@ const path = require('node:path');
 const WebSocket = require('ws');
 
 const apiRoot = path.resolve(__dirname, '../..');
-const { buildSttUrl } = require(path.join(apiRoot, 'dist/modules/voice/stream/stt-bridge.js'));
+const { buildSttUrl } = require('./scribe-url.cjs');
 
 const CONCURRENCY = Number(process.env.BENCH_CONCURRENCY ?? 4);
 const FRAME = 160; // 20 ms à 8 kHz
