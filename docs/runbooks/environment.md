@@ -230,7 +230,6 @@ staging contrôlé. Elles ne doivent jamais être committées ni exposées au da
 | `MARKETING_OPTOUT_HASH_SECRET`   | Clé HMAC du registre d'opposition marketing (`marketing_opt_outs`), au moins 32 caractères, distincte des autres secrets ; absence ou clé trop courte = **aucun message marketing n'est envoyé** (`OPT_OUT_REGISTER_UNAVAILABLE`) et l'aperçu d'audience le signale. **À sauvegarder** : changer ou perdre la clé rend le registre inutilisable. Posée à la main dans `apps/api/.env` du VPS, comme les autres secrets marketing. |
 | `MARKETING_SENDS_ENABLED`        | `false` par défaut ; seul `true` autorise les routes et le worker à appeler un fournisseur.                                                                                                                                                                                                                                                                                                                                       |
 | `MARKETING_WHATSAPP_ENABLED`     | `false` par défaut ; doit rester `false` tant que le template et le compte WhatsApp ne sont pas qualifiés.                                                                                                                                                                                                                                                                                                                        |
-| `MARKETING_FEATURES_ENABLED`     | `false` par défaut ; ouvre segments et campagnes (lecture, brouillon, préparation) sans appeler de fournisseur. Production : `true`. Synchronisable par `sync-env.sh runtime-flags`.                                                                                                                                                                                                                                              |
 | `MARKETING_RECIPIENT_ALLOWLIST`  | Vide par défaut (aucune restriction). Adresses e-mail ou numéros séparés par des virgules : seuls ces contacts reçoivent un message marketing (tous restaurants), les autres sont annulés `NOT_IN_TEST_ALLOWLIST`. Ne touche pas les e-mails transactionnels, contrairement à `EMAIL_TEST_ALLOWLIST`. Voir `marketing-email-pilot.md`.                                                                                            |
 | `RESEND_WEBHOOK_SECRET`          | Secret de signature (Svix) du webhook Resend `POST /marketing/webhooks/resend` ; absent = `503`. À poser à la main dans l'`.env` du VPS (aucun workflow ne le propage).                                                                                                                                                                                                                                                           |
 | `WHATSAPP_ENABLED`               | `false` par defaut. Rappel WhatsApp J-1 uniquement pour WEB avec accord et fournisseur qualifie (`WHATSAPP_PROVIDER`). Aucun rappel SMS, y compris en secours.                                                                                                                                                                                                                                                                    |
@@ -337,8 +336,7 @@ appels enregistrés) :
 
 ```dotenv
 # Premier passage lancé sur une partielle Deepgram stable, repris seulement si
-# la requête finale est identique (rien n'est dit ni exécuté avant).
-VOICE_STRUCTURED_SPECULATION_ENABLED="false" # opt-in
+# la requête finale est identique (rien n'est dit ni exécuté avant). Toujours actif.
 VOICE_STRUCTURED_SPECULATION_MS="250"
 # Spéculation à la pause : la requête part dès que l'appelant a été silencieux ce délai (détecteur de
 # voix sur l'audio entrant), pas 250 ms après la dernière partielle, et pas pendant qu'il parle ;
@@ -402,11 +400,10 @@ VOICE_FAST_BARGE_IN_CONFIRM_MS="500"
 # 6a70dff9, « 4 » fantôme 1,3 s après « pour quatre »). "false" ou "0" rétablit l'ancien
 # comportement. Métrique : sokar_voice_no_caller_voice_transcript_total{stage=partial|committed}.
 VOICE_REQUIRE_CALLER_VOICE="true"
-# Fin de tour jugée par le modèle (nécessite VOICE_STRUCTURED_SPECULATION_ENABLED) : dès que
-# le premier passage spéculatif renvoie turnComplete=true sur une partielle inchangée, on
-# envoie Finalize sans attendre le minuteur de partielle figée. Aucune liste de phrases : le
-# modèle juge dans le contexte. turnComplete=false ne change rien (le minuteur reste le filet).
-VOICE_STRUCTURED_SEMANTIC_FINALIZE_ENABLED="false"
+# Fin de tour jugée par le modèle (toujours active) : dès que le premier passage spéculatif
+# renvoie turnComplete=true sur une partielle inchangée, on envoie Finalize sans attendre le
+# minuteur de partielle figée. Aucune liste de phrases : le modèle juge dans le contexte.
+# turnComplete=false ne change rien (le minuteur reste le filet).
 # Silence avant de répondre à un tour que le modèle juge inachevé (ms, 800 à 6000, défaut 2000),
 # mesuré depuis la transcription finale. Tant que des mots arrivent, la réponse est reportée (5 fois max).
 VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
@@ -475,8 +472,6 @@ VOICE_TURN_JUDGE_TIMEOUT_MS="800"
 VOICE_DEEPGRAM_ENDPOINTING_MS="200"
 # Mise en tampon du contexte Cartesia : 0 (nos entrées sont des phrases complètes).
 VOICE_TTS_CONTEXT_MAX_BUFFER_MS="0"
-# Contexte Cartesia (une connexion par réponse) : faux par défaut, le chemin HTTP reste la référence.
-VOICE_TTS_CONTEXT_V2_ENABLED="false"
 # Adaptateur ElevenLabs (Text to Dialogue, tour de parole) : actif pour tous les restaurants dès que
 # ELEVENLABS_API_KEY est présente, sans réglage (22/10). Prioritaire sur le contexte Cartesia.
 # Ton de voix ElevenLabs v4 (balise d'expression, au plus un par réponse, jamais sur une réponse pratique) : tous
@@ -576,7 +571,7 @@ deux échecs consécutifs), après le secours OpenRouter du tour structuré.
 ### Latence Deepgram et secours LLM
 
 Les seuils Deepgram ne sont utilisés que par les sockets Deepgram ; ils ne
-changent pas les paramètres de Scribe. `speech_final` déclenche le commit
+changent pas les paramètres d'Ink-2 (secours). `speech_final` déclenche le commit
 immédiat, et `UtteranceEnd` reste un filet de sécurité. Valeurs validées au
 démarrage par Zod :
 
@@ -617,8 +612,8 @@ d'attente actuels utilisent `VOICE_FILLER_DELAY_MS`.
 VOICE_LLM_FILLER_DELAY_MS="1200"      # 100–5000 ms
 ```
 
-Dialogue V2 active aussi la suppression d'écho par texte, valable pour Scribe
-et Deepgram. Le texte récent de l'agent est conservé uniquement en mémoire,
+Dialogue V2 active aussi la suppression d'écho par texte, valable pour Deepgram
+et Ink-2. Le texte récent de l'agent est conservé uniquement en mémoire,
 sans être ajouté aux logs ni à la télémétrie.
 
 **PM2 et `.env` :** l'API lit `.env` via `node --env-file`, qui ne remplace pas
@@ -638,11 +633,11 @@ Le shadow `TurnPlan` est contrôlé par un flag global, sans ciblage par restaur
 
 ### Span-01, signaux sémantiques shadow
 
-`VOICE_SEMANTIC_SIGNALS_ENABLED=false` par défaut. Activé, chaque tour échantillonné
+Toujours actif depuis le 23/10/2026 (le drapeau `VOICE_SEMANTIC_SIGNALS_ENABLED` est retiré). Chaque tour échantillonné
 (`VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE`, 0–1, défaut 1) envoie hors du chemin de
 réponse les derniers tours anonymisés à Respan. `RESPAN_API_KEY` est un secret
-optionnel chargé depuis l'environnement : si le flag est actif sans clé, l'API
-démarre avec un avertissement et le score est `disabled`. `RESPAN_BASE_URL`
+optionnel chargé depuis l'environnement : sans clé, le tour n'est pas envoyé et le
+compteur `missing_key` de la métrique de statut s'incrémente. `RESPAN_BASE_URL`
 vaut `https://api.respan.ai/api/v1` par défaut ; l'appel direct cible `/scores`.
 `VOICE_SEMANTIC_SIGNALS_MODEL` vaut `span-01-pro` (ou `span-01-free`).
 `span-01-pro` consomme des crédits Respan : sans crédit, l'API répond HTTP 402
@@ -724,8 +719,8 @@ jugements de modèle et ne constituent pas une vérité humaine.
 > supprimé. `VOICE_TURN_PLAN_SHADOW_ENABLED`, `VOICE_TURN_PLAN_AUTHORITY_ENABLED`,
 > `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` et `VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` n'ont
 > plus d'effet et les métriques `sokar_voice_turn_plan_*` ne sont plus alimentées par les appels.
-> Le flag n'est plus lu nulle part, et il n'est plus posé par le workflow staging ni par
-> `sync-env.sh runtime-flags`. Les paragraphes qui suivent décrivent l'ancien comportement et valent
+> Le flag n'est plus lu nulle part, et le groupe `sync-env.sh runtime-flags` n'existe plus
+> (retiré le 23/10/2026 avec `MARKETING_FEATURES_ENABLED`, son dernier réglage). Les paragraphes qui suivent décrivent l'ancien comportement et valent
 > pour l'historique des mesures. Les signaux sémantiques shadow (Span-01) sont inchangés. Même chose pour
 > `SPECULATIVE_LLM_ENABLED` / `SPECULATIVE_LLM_RESTAURANT_IDS` (pré-réflexion du chemin à outils).
 
@@ -744,8 +739,8 @@ En production, le flag a été explicitement activé le 2026-09-23 après
 vérification qu'aucune session vocale n'était active. Le workflow de production
 laisse les flags runtime absents inchangés ; cette activation persiste dans le
 fichier d'environnement jusqu'à sa désactivation explicite. Pour changer un
-flag vocal en production, synchroniser sa valeur avec
-`scripts/ops/sync-env.sh runtime-flags prod`, attendre zéro session active, puis
+flag vocal en production, éditer le fichier d'environnement de l'API,
+attendre zéro session active, puis
 recharger `sokar-api` avec `pm2 reload sokar-api --update-env`.
 Les compteurs globaux de validité, décision de policy et accord sont exposés à
 Prometheus et présentés dans le dashboard Grafana `Sokar — Voice & SLO`. Ils
@@ -762,8 +757,7 @@ taux global masque qu'une seule dimension diverge.
 `VOICE_TURN_PLAN_AUTHORITY_ENABLED=true` (défaut `false`, sans effet si le shadow est
 coupé) ne s'applique qu'aux restaurants listés dans
 `VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` (IDs séparés par des virgules, `*` pour tous ;
-vide = aucun). Cette liste n'est pas un booléen : elle ne passe pas par
-`sync-env.sh runtime-flags` et se pose directement dans le fichier d'environnement de l'API,
+vide = aucun). Cette liste se pose directement dans le fichier d'environnement de l'API,
 avant le reload. Pour ces restaurants, l'autorité donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
 après la réponse vocale : il complète date, heure, couverts et intention seulement quand
 ces champs étaient vides avant le tour et n'ont pas été posés par le déterministe ; il ne
@@ -817,32 +811,28 @@ suspens (« demain à », « au nom de », « je suis »), 600 ms pour une corre
 suite est fusionnée dans le même tour. Comparer avant/après avec
 `sokar_voice_end_of_speech_to_first_audio_ms` et `sokar_voice_false_end_of_turn_total`.
 
-`VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi à
-Scribe. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
+`VOICE_STT_CHUNK_MS` (défaut `20`) règle le regroupement des trames audio avant envoi au
+fournisseur de reconnaissance. `20` conserve le comportement historique : chaque trame Telnyx de 20 ms part dans
 son propre message. Une valeur multiple de 20 entre `40` et `200` accumule les trames
 décodées et n'envoie qu'un message quand la durée cible est atteinte. À 20 ms, le
-comportement historique reste inchangé : une trame par message et conversion PCMA vers
-`pcm_8000`. Le regroupement ne change pas le format audio.
+comportement historique reste inchangé : une trame par message. Le regroupement ne change pas
+le format audio.
 Le tampon est vidé avant tout commit manuel, une fin de tour, un barge-in, la fermeture ou la
 reconnexion de la session, et la fin d'appel ; un timer de sécurité (`valeur + 20 ms`) envoie
 un tampon partiel si le flux s'interrompt. Un couple de trames est donc retardé d'au plus la
 valeur configurée, uniquement à l'intérieur d'un tour (fin de parole → commit). Toute autre
 valeur fait échouer le démarrage (validation Zod). Suivre
-`sokar_voice_stt_audio_messages_total{chunk_ms}` et `sokar_voice_stt_chunk_bytes`.
+`sokar_voice_stt_provider_audio_messages_total{provider,chunk_ms}` et
+`sokar_voice_stt_provider_chunk_bytes{provider}`.
 
-`VOICE_STT_FILTER_BACKGROUND` est sans effet depuis le 22/10 : le filtre Scribe n'est plus
-envoyé (Scribe n'est plus utilisé en production ; Deepgram ou le secours Ink-2).
-
-`VOICE_STT_LANGUAGE_LOCK=true` verrouille l'appel en français après le premier tour commité
-que Scribe identifie comme français et qui contient au moins deux mots. La langue de dialogue
-ne suit ensuite plus les détections ultérieures. Un contenu non français récupérable par
-l'extracteur du champ demandé suit le parcours normal de réservation ; sinon l'agent relance
-en français. Depuis le 22/10, plus aucune
-session Scribe forcée en français n'est rouverte après le verrou (relock retiré). Défaut
-`false` : comportement actuel.
-Les compteurs `sokar_voice_language_locked_total`,
-`sokar_voice_non_fr_transcript_after_lock_total{outcome}` et
-`sokar_voice_stt_relock_total{result}` sont additifs et ne contiennent ni texte ni PII.
+Retirés avec le code Scribe (ElevenLabs Scribe Realtime, plus utilisé en production) :
+`VOICE_STT_FILTER_BACKGROUND`, `VOICE_STT_LANGUAGE_LOCK` (verrou français, sans effet réel avec Deepgram
+et Ink-2), `ELEVENLABS_STT_MODEL`, `ELEVENLABS_STT_HOST`, `ELEVENLABS_STT_LANGUAGES` et
+`ELEVENLABS_STT_ALL_LANGUAGES`. Une ancienne valeur laissée dans un `.env` est ignorée. Les compteurs
+`sokar_voice_language_locked_total`, `sokar_voice_non_fr_transcript_after_lock_total`,
+`sokar_voice_stt_audio_messages_total` et `sokar_voice_stt_chunk_bytes` n'existent plus. Le banc STT
+(`apps/api/scripts/voice-stt-bench`) garde sa propre URL Scribe (`scribe-url.cjs`) pour mesurer Scribe
+comme référence.
 
 L'écoute Dialogue V2 est active pour tous les restaurants, sans réglage. Elle applique le routage
 strict du dialogue : le chemin déterministe
@@ -854,7 +844,7 @@ puis relancées naturellement si aucune suite n'arrive.
 
 `VOICE_TELNYX_CODEC` (défaut `PCMA`, valeurs `PCMA` ou `L16`) sélectionne le codec
 entrant et sortant du Media Stream Telnyx. Avec `L16`, demander 16 kHz dans les deux
-sens, envoyer le PCM16 à Scribe en `pcm_16000`, et générer le TTS Cartesia en PCM16 16 kHz.
+sens, envoyer le PCM16 au fournisseur de reconnaissance (Deepgram `linear16`, 16 kHz), et générer le TTS Cartesia en PCM16 16 kHz.
 Le cache TTS est séparé par codec. `sokar_voice_wideband_detected_total{detected,codec}`
 indique la présence d'énergie au-dessus de 4 kHz au début de chaque appel L16. Avant
 activation, vérifier en staging par un appel réel que l'endianness du payload WebSocket
@@ -892,12 +882,12 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
 réseau de l'environnement et y poser la même valeur en variable d'environnement.
 
-`CALL_REPORT_ENABLED` (défaut `false`) construit après chaque appel d'un restaurant de
-`CALL_RECORDING_TEST_RESTAURANT_IDS` un rapport (JSON + Markdown) stocké à côté de l'enregistrement :
-transcriptions après coup Deepgram (Nova-3 et Whisper, environ 1 centime par appel), journaux de l'API
-lus dans `CALL_REPORT_LOG_DIR` (défaut `/var/log/sokar`, rotation 14 jours). Exige
-`CALL_RECORDING_ENABLED=true` et `DEEPGRAM_API_KEY` (le démarrage le vérifie) ; sans
-`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` le rapport est réduit. Aucun effet sur l'appel. Voir
+Le rapport d'appel (plus de drapeau `CALL_REPORT_ENABLED` depuis le 23/10/2026) est construit après chaque appel d'un restaurant de
+`CALL_RECORDING_TEST_RESTAURANT_IDS` : un rapport (JSON + Markdown) stocké à côté de l'enregistrement,
+avec des transcriptions après coup Deepgram (Nova-3 et Whisper, environ 1 centime par appel) et les journaux de l'API
+lus dans `CALL_REPORT_LOG_DIR` (défaut `/var/log/sokar`, rotation 14 jours). Il suit l'enregistrement
+(`CALL_RECORDING_ENABLED`) et exige `DEEPGRAM_API_KEY` ; sans `VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` le rapport est réduit.
+Aucun effet sur l'appel. Voir
 [`call-reports.md`](call-reports.md).
 
 Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
@@ -969,18 +959,14 @@ partagée prod, dev, staging et banc). Les autres clés de banc restent dédiée
 | **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
 
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
-requête de contrôle par fournisseur. Pour Scribe, le contrôle ouvre la socket Realtime et
+requête de contrôle par fournisseur. Pour le banc Scribe, le contrôle ouvre la socket Realtime et
 n'envoie aucun audio. Le banc STT détaillé et ses limites sont documentés dans
 apps/api/scripts/voice-stt-bench/README.md. N'exécutez jamais un banc avec une clé
 identique à celle de production.
 
-Scribe détecte la langue parmi `ELEVENLABS_STT_LANGUAGES` (défaut `fr,en`).
-`ELEVENLABS_STT_ALL_LANGUAGES` doit rester `false` : au téléphone (A-law 8 kHz),
-Scribe se trompe alors de langue et transcrit « six personnes » en « sechs
-Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
-33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %, MAI via
-Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
-réellement, et remesurer.
+Historique du banc Scribe du 24/09/2026 (7 phrases × 3 passages, A-law 8 kHz) : détection sur toutes les
+langues 33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %. Deepgram est configuré en
+français seulement ; ajouter une langue seulement si des appelants la parlent réellement, et remesurer.
 
 Réponses attendues (`stream/expected-answer.ts`) : quand l'agent pose une
 question fermée (nombre de personnes, jour, heure) et que l'analyse exacte ne
@@ -994,7 +980,7 @@ depuis le 22/10/2026, sans réglage.
 
 Confirmation guidée par la confiance (`stream/slot-confidence.ts`) : pour
 chaque valeur retenue par l'analyse exacte (nombre, jour, heure), la confiance
-Scribe des mots qui la portent et la stabilité des transcriptions partielles
+des mots qui la portent et la stabilité des transcriptions partielles
 décident de la suite. Valeur sûre et stable : relecture seule. Valeur douteuse
 ou instable avec un voisin confusable (six/dix/seize, deux/douze, trois/treize,
 cinq/sept, 20 h/21 h/22 h, 8 h/20 h, et quart/et demie) : « Pardon, six ou dix
@@ -1006,7 +992,7 @@ restaurants depuis le 22/10/2026, sans réglage.
 
 La confiance n'agit que sur le nombre de personnes ; pour le jour et l'heure, la
 décision est seulement observée : `slot_confidence` la publie préfixée `wouldBe…`,
-sans rien changer au dialogue. Le banc difficile montre que la confiance Scribe
+sans rien changer au dialogue. Le banc difficile (mesuré avec Scribe) montre que la confiance
 distingue les nombres de personnes justes des faux, pas les heures.
 
 Vraisemblance des heures (toujours active, indépendante
@@ -1022,12 +1008,11 @@ ou prend un message sans ligne gérant. Aucun flag : ce parcours est toujours ac
 L'événement `expected_answer` publie le type, le statut et les scores (meilleur, écart),
 jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.
 
-Chaque tour publie la confiance Scribe (`minWordConfidence`,
+Chaque tour publie la confiance des mots (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,
-sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
-confiance entre 0 et 1.
+sans le texte.
 
-En cas d'authentification, de quota ou de conditions ElevenLabs refusés, l'appel cesse
+En cas d'authentification, de quota ou de conditions du fournisseur de reconnaissance refusés, l'appel cesse
 immédiatement les reconnexions. Les échecs d'ouverture utilisent un backoff de 500 ms, 1 s
 puis 2 s ; chaque ouverture réussie remet le compteur consécutif à zéro. Le repli intervient
 après quatre échecs d'ouverture d'affilée, huit reconnexions par appel, ou une échéance

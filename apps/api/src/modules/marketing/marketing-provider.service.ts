@@ -211,6 +211,9 @@ function sanitizeProviderError(value: string | undefined): string | undefined {
   return sanitized || undefined;
 }
 
+/** Relectures d'un message dont la mise à jour conditionnelle a perdu une course entre callbacks. */
+const MAX_PROVIDER_EVENT_ATTEMPTS = 3;
+
 function statusRank(status: MarketingMessageStatus): number {
   switch (status) {
     case MarketingMessageStatus.PENDING:
@@ -359,73 +362,88 @@ export async function applyMarketingProviderEvent(
   const providerDb = asProviderDb(database);
 
   return providerDb.$transaction(async (tx) => {
-    const message = await tx.campaignMessage.findFirst({
-      where: { provider: input.provider, providerMessageId },
-      select: {
-        id: true,
-        campaignId: true,
-        customerId: true,
-        channel: true,
-        status: true,
-        acceptedAt: true,
-        sentAt: true,
-        deliveredAt: true,
-        campaign: { select: { restaurantId: true } },
-      },
-    });
-    if (!message) {
-      const reconciliationId = await recordUnknownProviderEvent(tx, input, transition, occurredAt);
-      return { matched: false, changed: false, reconciliationId };
-    }
-    if (!canTransition(message.status, transition.status)) {
-      await resolveProviderReconciliations(tx, {
-        provider: input.provider,
-        providerMessageId,
-        campaignMessageId: message.id,
-        restaurantId: message.campaign?.restaurantId,
-        resolvedAt: occurredAt,
-        resolutionCode: 'ALREADY_APPLIED',
+    // Resend envoie `email.sent` puis `email.delivered` à quelques millisecondes d'intervalle : deux
+    // callbacks peuvent lire le même statut et se disputer la ligne. Celui qui perd la mise à jour
+    // conditionnelle relit le message et réévalue sa transition au lieu de jeter l'événement ; sinon un
+    // rebond ou une plainte perdant la course ne créerait jamais la suppression.
+    const loadMessage = () =>
+      tx.campaignMessage.findFirst({
+        where: { provider: input.provider, providerMessageId },
+        select: {
+          id: true,
+          campaignId: true,
+          customerId: true,
+          channel: true,
+          status: true,
+          acceptedAt: true,
+          sentAt: true,
+          deliveredAt: true,
+          campaign: { select: { restaurantId: true } },
+        },
       });
-      return {
-        matched: true,
-        changed: false,
-        status: message.status,
-        campaignId: message.campaignId,
-        customerId: message.customerId,
-      };
-    }
+    let message: Awaited<ReturnType<typeof loadMessage>> = null;
+    for (let attempt = 1; ; attempt += 1) {
+      message = await loadMessage();
+      if (!message) {
+        const reconciliationId = await recordUnknownProviderEvent(
+          tx,
+          input,
+          transition,
+          occurredAt,
+        );
+        return { matched: false, changed: false, reconciliationId };
+      }
+      if (!canTransition(message.status, transition.status)) {
+        await resolveProviderReconciliations(tx, {
+          provider: input.provider,
+          providerMessageId,
+          campaignMessageId: message.id,
+          restaurantId: message.campaign?.restaurantId,
+          resolvedAt: occurredAt,
+          resolutionCode: 'ALREADY_APPLIED',
+        });
+        return {
+          matched: true,
+          changed: false,
+          status: message.status,
+          campaignId: message.campaignId,
+          customerId: message.customerId,
+        };
+      }
 
-    const data: Record<string, unknown> = { status: transition.status };
-    if (transition.errorCode) data.errorCode = transition.errorCode;
-    if (transition.status === MarketingMessageStatus.SENT && !message.sentAt) {
-      data.sentAt = occurredAt;
-    }
-    if (transition.status === MarketingMessageStatus.DELIVERED) {
-      data.deliveredAt = message.deliveredAt ?? occurredAt;
-      if (!message.sentAt) data.sentAt = occurredAt;
-      if (!message.acceptedAt) data.acceptedAt = occurredAt;
-    }
+      const data: Record<string, unknown> = { status: transition.status };
+      if (transition.errorCode) data.errorCode = transition.errorCode;
+      if (transition.status === MarketingMessageStatus.SENT && !message.sentAt) {
+        data.sentAt = occurredAt;
+      }
+      if (transition.status === MarketingMessageStatus.DELIVERED) {
+        data.deliveredAt = message.deliveredAt ?? occurredAt;
+        if (!message.sentAt) data.sentAt = occurredAt;
+        if (!message.acceptedAt) data.acceptedAt = occurredAt;
+      }
 
-    const updated = await tx.campaignMessage.updateMany({
-      where: { id: message.id, status: message.status },
-      data,
-    });
-    if (updated.count !== 1) {
-      await resolveProviderReconciliations(tx, {
-        provider: input.provider,
-        providerMessageId,
-        campaignMessageId: message.id,
-        restaurantId: message.campaign?.restaurantId,
-        resolvedAt: occurredAt,
-        resolutionCode: 'RACE_ALREADY_APPLIED',
+      const updated = await tx.campaignMessage.updateMany({
+        where: { id: message.id, status: message.status },
+        data,
       });
-      return {
-        matched: true,
-        changed: false,
-        status: message.status,
-        campaignId: message.campaignId,
-        customerId: message.customerId,
-      };
+      if (updated.count === 1) break;
+      if (attempt >= MAX_PROVIDER_EVENT_ATTEMPTS) {
+        await resolveProviderReconciliations(tx, {
+          provider: input.provider,
+          providerMessageId,
+          campaignMessageId: message.id,
+          restaurantId: message.campaign?.restaurantId,
+          resolvedAt: occurredAt,
+          resolutionCode: 'RACE_ALREADY_APPLIED',
+        });
+        return {
+          matched: true,
+          changed: false,
+          status: message.status,
+          campaignId: message.campaignId,
+          customerId: message.customerId,
+        };
+      }
     }
 
     await resolveProviderReconciliations(tx, {

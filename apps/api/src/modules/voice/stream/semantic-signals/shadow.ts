@@ -28,7 +28,6 @@ export const DEFAULT_SEMANTIC_MODELS: Record<SemanticProvider, string> = {
 };
 
 export interface SemanticShadowConfig {
-  enabled: boolean;
   sampleRate: number;
   provider: SemanticProvider;
   model: string;
@@ -49,7 +48,6 @@ function currentConfig(): SemanticShadowConfig {
   const provider = env.VOICE_SEMANTIC_SIGNALS_PROVIDER;
   const { apiKey, baseUrl } = providerSettings(provider);
   return {
-    enabled: env.VOICE_SEMANTIC_SIGNALS_ENABLED === 'true',
     sampleRate: env.VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE,
     provider,
     // Le défaut est propre au fournisseur ; `env.ts` résout la valeur finale.
@@ -78,7 +76,6 @@ export function observeSemanticSignalsShadow(
   options: { config?: SemanticShadowConfig; fetcher?: typeof fetch; random?: () => number } = {},
 ): void {
   const config = options.config ?? currentConfig();
-  if (!config.enabled) return;
   if (!config.apiKey?.trim()) {
     voiceSemanticStatusTotal.inc({ status: 'missing_key', provider: config.provider });
     return;

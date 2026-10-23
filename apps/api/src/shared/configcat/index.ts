@@ -146,15 +146,6 @@ export async function isVoicePipelineEnabled(restaurantId?: string): Promise<boo
 }
 
 /**
- * Canary TTS Cartesia : désactivé sans configuration ConfigCat explicite.
- * Le pipeline appelle aussi le switch env global, ce flag ne peut donc pas
- * activer Context V2 seul sur toute la flotte.
- */
-export async function isVoiceTtsContextV2Enabled(restaurantId: string): Promise<boolean> {
-  return isFlagEnabled(FLAGS.VOICE_TTS_CONTEXT_V2, restaurantId, false);
-}
-
-/**
  * Reads the `restaurant_plan` flag (string). If set, the flag value
  * overrides the `plan` column from the DB. Allowed values:
  * `ESSENTIAL | STARTER | PRO | PREMIUM`. Any other string is ignored and the DB plan

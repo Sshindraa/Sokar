@@ -6,23 +6,9 @@ import {
   buildCheckoutIdempotencyKey,
   billingIntervalFromStripeRecurringInterval,
   handleBillingWebhook,
-  isBillingCheckoutEnabled,
   reconcileBillingFromStripe,
   resolveBillingIntervalForStatus,
 } from '../billing.service';
-
-describe('billing.service - release flag', () => {
-  it('ferme le checkout en production par défaut', () => {
-    expect(isBillingCheckoutEnabled({ NODE_ENV: 'production' })).toBe(false);
-    expect(
-      isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'false' }),
-    ).toBe(false);
-    expect(
-      isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'true' }),
-    ).toBe(true);
-    expect(isBillingCheckoutEnabled({ NODE_ENV: 'test' })).toBe(true);
-  });
-});
 
 describe('billing.service - changement de catalogue', () => {
   it('ne réutilise pas la clé Checkout de l’ancienne grille', () => {

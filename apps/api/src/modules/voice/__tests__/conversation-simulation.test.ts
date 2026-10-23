@@ -25,7 +25,6 @@ vi.mock('../stream/tts-handler', () => ({
   cleanTextForTts: (text: string) => text,
 }));
 vi.mock('../stream/cartesia-context', () => ({
-  isCartesiaContextV2Enabled: () => false,
   createCartesiaContextTurn: vi.fn(() => ({
     push: vi.fn(),
     finish: vi.fn().mockResolvedValue(undefined),

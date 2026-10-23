@@ -5,7 +5,7 @@ import { MarketingCampaignStatus } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { requireOrg } from '../../plugins/clerk';
-import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import { CustomerSegmentDefinitionSchema } from '../customers/customer-segment.service';
 import {
   CAMPAIGN_CHANNELS,
@@ -161,27 +161,10 @@ const DeactivateConversionBodySchema = z.object({
   reservationId: z.string().trim().min(1).max(128),
 });
 
-const requireMarketingFeature = requireRuntimeFlag(
-  'MARKETING_FEATURES_ENABLED',
-  'Les campagnes et segments restent désactivés jusqu’à la qualification du pilote.',
-  'MARKETING_FEATURES_DISABLED',
-);
 const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced')];
-const requireMarketingCampaigns = [
-  requireOrg(),
-  requireCapability('marketing.campaigns'),
-  requireMarketingFeature,
-];
-const requireMarketingAutomations = [
-  requireOrg(),
-  requireCapability('marketing.automations'),
-  requireMarketingFeature,
-];
-const requireMarketingAttribution = [
-  requireOrg(),
-  requireCapability('marketing.attribution'),
-  requireMarketingFeature,
-];
+const requireMarketingCampaigns = [requireOrg(), requireCapability('marketing.campaigns')];
+const requireMarketingAutomations = [requireOrg(), requireCapability('marketing.automations')];
+const requireMarketingAttribution = [requireOrg(), requireCapability('marketing.attribution')];
 
 function statusForError(error: unknown): number {
   if (!(error instanceof Error)) return 500;

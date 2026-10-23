@@ -19,7 +19,7 @@ function makeSession(): CallSession {
     createdAt: Date.now() - 8_000,
     codec: 'PCMU',
     turnCount: 2,
-    sttModel: 'scribe_v2_realtime',
+    sttModel: 'nova-3',
   } as unknown as CallSession;
 }
 

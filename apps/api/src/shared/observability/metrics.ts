@@ -258,7 +258,7 @@ export const voiceTtsFirstAudioMs = new Histogram({
 /**
  * Erreurs par provider voice (Deepgram, Cartesia, Cerebras).
  * Permet de mesurer la fiabilité de chaque provider indépendamment.
- * Labels : provider (elevenlabs_stt | deepgram_stt | cartesia | cerebras | openrouter) × type borné.
+ * Labels : provider (deepgram_stt | cartesia_stt | cartesia | cerebras | openrouter) × type borné.
  */
 export const voiceLlmFallbackTotal = new Counter({
   name: 'sokar_voice_llm_fallback_total',
@@ -299,25 +299,6 @@ export const voiceProviderErrorsTotal = new Counter({
   registers: [getRegistry()],
 });
 
-/**
- * Regroupement audio avant Scribe (`VOICE_STT_CHUNK_MS`) : nombre de messages
- * envoyés et taille des chunks. Sert à vérifier qu'un flag à 100 ms transforme
- * bien 5 trames en un message, sans perte ni duplication. Aucun label métier.
- */
-export const voiceSttAudioMessagesTotal = new Counter({
-  name: 'sokar_voice_stt_audio_messages_total',
-  help: 'Messages audio envoyés à Scribe Realtime, par taille de chunk configurée',
-  labelNames: ['chunk_ms'] as const,
-  registers: [getRegistry()],
-});
-
-export const voiceSttChunkBytes = new Histogram({
-  name: 'sokar_voice_stt_chunk_bytes',
-  help: 'Taille des messages audio envoyés à Scribe Realtime (octets)',
-  buckets: [160, 320, 640, 1600, 3200, 6400, 16000],
-  registers: [getRegistry()],
-});
-
 /** Fins de tour forcées retardées faute de silence réel chez l'appelant. */
 export const voiceSilenceGuardTotal = new Counter({
   name: 'sokar_voice_silence_guard_total',
@@ -349,7 +330,7 @@ export const voiceFirstAudioHoldMs = new Histogram({
   registers: [getRegistry()],
 });
 
-/** STT messages by selected provider; existing Scribe metric remains unchanged. */
+/** STT audio messages by selected provider. */
 export const voiceSttProviderAudioMessagesTotal = new Counter({
   name: 'sokar_voice_stt_provider_audio_messages_total',
   help: 'Audio messages sent to the active STT provider by configured chunk size',
@@ -374,19 +355,6 @@ export const voiceWidebandDetectedTotal = new Counter({
   name: 'sokar_voice_wideband_detected_total',
   help: 'Appels évalués par la sonde de bande large, selon le verdict',
   labelNames: ['detected', 'codec'] as const,
-  registers: [getRegistry()],
-});
-
-export const voiceLanguageLockedTotal = new Counter({
-  name: 'sokar_voice_language_locked_total',
-  help: 'Appels verrouillés en français après une première phrase française fiable',
-  registers: [getRegistry()],
-});
-
-export const voiceNonFrTranscriptAfterLockTotal = new Counter({
-  name: 'sokar_voice_non_fr_transcript_after_lock_total',
-  help: 'Tours détectés non français après verrou, récupérés par slot ou relancés',
-  labelNames: ['outcome'] as const,
   registers: [getRegistry()],
 });
 
@@ -950,8 +918,6 @@ export function __resetMetrics(): void {
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
   voiceTtsContextFailureTotal.reset();
-  voiceSttAudioMessagesTotal.reset();
-  voiceSttChunkBytes.reset();
   voiceSttProviderAudioMessagesTotal.reset();
   voiceSttProviderChunkBytes.reset();
   elevenLabsCharacterCount.reset();

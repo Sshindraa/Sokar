@@ -229,24 +229,17 @@ describe('voice turn telemetry', () => {
       return {
         ...makeSession(),
         restaurantId: 'resto-1',
-        sttTurnConfig: {
-          applied: {
-            vadSilenceThresholdSecs: 0.5,
-            minSpeechDurationMs: 80,
-            minSilenceDurationMs: 220,
-          },
-        },
       } as CallSession;
     }
 
-    it('mesure fin de parole → premier audio par chemin, VAD incluse', async () => {
+    it('mesure fin de parole → premier audio par chemin, décalage de repli inclus', async () => {
       vi.useFakeTimers();
       try {
         const session = restaurantSession();
         startVoiceTurn(session);
         completeVoiceTurnInput(session, 'Pour deux personnes.');
         recordVoiceTurnEvent(session, 'llm_started');
-        vi.advanceTimersByTime(600);
+        vi.advanceTimersByTime(150);
         markVoiceTurnAudioSent(session);
         const metrics = await renderMetrics();
         expect(metrics).toContain(

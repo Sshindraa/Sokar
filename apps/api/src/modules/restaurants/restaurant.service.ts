@@ -24,7 +24,7 @@ const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
 
 interface SafeProviderConfig {
   readonly carrier: string;
-  readonly sttProvider: 'elevenlabs';
+  readonly sttProvider: 'deepgram';
   readonly sttModel: string;
   readonly llmProvider: VoiceLlmProvider;
   readonly llmModel: string;
@@ -98,8 +98,8 @@ function buildProviderConfig(restaurant: {
 }): SafeProviderConfig {
   return {
     carrier: restaurant.carrier,
-    sttProvider: 'elevenlabs',
-    sttModel: process.env.ELEVENLABS_STT_MODEL ?? 'scribe_v2_realtime',
+    sttProvider: 'deepgram',
+    sttModel: 'nova-3',
     llmProvider: getVoiceLlmProvider(),
     llmModel: voiceConfig.VOICE_LLM_MODEL,
     ttsProvider: 'cartesia',

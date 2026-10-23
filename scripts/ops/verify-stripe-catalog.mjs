@@ -165,7 +165,7 @@ async function main() {
 
   if (failures.length > 0) {
     process.stderr.write(
-      `\n${failures.length} prix non conformes. Ne pas activer BILLING_CHECKOUT_ENABLED avant correction.\n`,
+      `\n${failures.length} prix non conformes. Corriger les prix avant de les synchroniser.\n`,
     );
     return 1;
   }

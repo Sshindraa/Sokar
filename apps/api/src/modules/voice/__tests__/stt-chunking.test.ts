@@ -212,7 +212,11 @@ describe('vidage du tampon sur les transitions', () => {
     sendFrame(session, frame(1));
     expect(sentAudio(session.sttWs)).toHaveLength(0);
 
-    handleSttMessage(session, { message_type: 'partial_transcript', text: 'quatre personnes' });
+    handleSttMessage(session, {
+      type: 'Results',
+      is_final: false,
+      channel: { alternatives: [{ transcript: 'quatre personnes' }] },
+    });
 
     const sent = sentAudio(session.sttWs);
     expect(sent).toHaveLength(1);
@@ -225,8 +229,10 @@ describe('vidage du tampon sur les transitions', () => {
     sendFrame(session, frame(1));
 
     handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'quatre personnes',
+      type: 'Results',
+      is_final: true,
+      speech_final: true,
+      channel: { alternatives: [{ transcript: 'quatre personnes' }] },
     });
 
     expect(sentAudio(session.sttWs)).toEqual([frame(1)]);
