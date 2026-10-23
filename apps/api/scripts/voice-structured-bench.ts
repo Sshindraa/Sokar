@@ -9,6 +9,20 @@
  *
  * Usage (depuis apps/api) : CEREBRAS_API_KEY=… node --env-file=.env --import tsx scripts/voice-structured-bench.ts [répétitions]
  * Clé de dev uniquement ; aucune donnée ni appel de production.
+ *
+ * `VOICE_TTS_CONTEXT_V2_ENABLED` est forcé à `false` ci-dessous : sinon le moteur
+ * ouvrirait une vraie connexion TTS. `BENCH_ONLY` filtre les scénarios,
+ * `BENCH_PACE_MS` espace les appels, `BENCH_EXTRA_BODY` (JSON) est fusionné dans
+ * le corps de la requête, par exemple pour épingler un hébergeur OpenRouter :
+ * BENCH_EXTRA_BODY='{"provider":{"only":["cerebras"]}}'. Avec une clé `reasoning` dans
+ * BENCH_EXTRA_BODY, `reasoning_effort` n'est plus envoyé ; `BENCH_SAMPLING=false` retire
+ * `temperature` et `top_p` (réglages du relais GPT-6 Luna).
+ *
+ * Ordre du schéma (étude, le moteur n'en change pas) : `BENCH_SAY_FIRST=1` place `say` en
+ * tête ; `BENCH_AFTER_SAY=message,confidence` déplace ces champs après `say`. Le banc mesure
+ * alors en plus le moment où les champs que le moteur lit avant de parler (`turnComplete`,
+ * `understanding`, `interpretation`, `draft`, `awaiting`, `action`, `tone`) sont tous écrits,
+ * et le début de voix possible : le plus tard des deux, `say` ou ces champs.
  */
 import { WebSocket } from 'ws';
 import { runStructuredTurn } from '../src/modules/voice/stream/structured-turn/engine';
@@ -19,10 +33,49 @@ import type { CallSession, ChatMessage } from '../src/modules/voice/stream/types
 import type { CallSessionManager } from '../src/modules/voice/stream/manager';
 import type { StructuredTurnOutput } from '../src/modules/voice/stream/structured-turn/schema';
 
+// Lu à chaque tour par le moteur : le banc ne doit jamais ouvrir de connexion TTS.
+process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+
 const API_KEY = process.env.CEREBRAS_API_KEY;
 const MODEL = process.env.VOICE_LLM_MODEL ?? 'qwen-3.8-27b';
 const BASE_URL = process.env.CEREBRAS_BASE_URL ?? 'https://api.cerebras.ai/v1';
 const REPEATS = Number(process.argv[2] ?? '3');
+const SAY_FIRST = process.env.BENCH_SAY_FIRST === '1';
+const AFTER_SAY = (process.env.BENCH_AFTER_SAY ?? '').split(',').filter(Boolean);
+/** Champs lus par le moteur dans le flux avant de laisser partir la voix (engine.ts, `onDelta`). */
+const GATE_KEYS = [
+  'turnComplete',
+  'understanding',
+  'interpretation',
+  'draft',
+  'awaiting',
+  'action',
+  'tone',
+];
+
+/** Réordonne `properties` et `required` du schéma du tour selon BENCH_SAY_FIRST / BENCH_AFTER_SAY. */
+function reorderedFormat(responseFormat: unknown): unknown {
+  if (!SAY_FIRST && !AFTER_SAY.length) return responseFormat;
+  const format = structuredClone(responseFormat) as {
+    json_schema: { schema: { properties: Record<string, unknown>; required: string[] } };
+  };
+  const schema = format.json_schema.schema;
+  const keys = Object.keys(schema.properties).filter((key) => key !== 'say');
+  const before = keys.filter((key) => !AFTER_SAY.includes(key));
+  const after = keys.filter((key) => AFTER_SAY.includes(key));
+  const order = SAY_FIRST ? ['say', ...keys] : [...before, 'say', ...after];
+  schema.properties = Object.fromEntries(order.map((key) => [key, schema.properties[key]]));
+  schema.required = order.filter((key) => schema.required.includes(key));
+  return format;
+}
+
+/** Vrai quand la valeur de `key` est entièrement écrite dans le JSON en cours. */
+function valueWritten(text: string, key: string): boolean {
+  if (key === 'draft') return /"draft"\s*:\s*\{[^{}]*\}/.test(text);
+  return new RegExp(`"${key}"\\s*:\\s*("[^"]*"|true|false)`).test(text);
+}
+/** Appels dont les clés ne sortent pas dans l'ordre demandé par le schéma. */
+let orderMismatches = 0;
 
 type Expect = Partial<{
   interpretation: StructuredTurnOutput['interpretation'][];
@@ -249,7 +302,8 @@ function lastQuestion(text: string): string {
   return (
     text
       .split(/(?<=[.!?])\s+/)
-      .findLast((part) => part.trim().endsWith('?'))
+      .reverse()
+      .find((part) => part.trim().endsWith('?'))
       ?.trim() ?? ''
   );
 }
@@ -293,6 +347,12 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
       session.reservationCreatedAt = Date.now();
       return 'Réservation confirmée. Un SMS de confirmation va être envoyé.';
     },
+    getTableRanges: async () => [
+      { capacity: 2, minCapacity: 1 },
+      { capacity: 4, minCapacity: 2 },
+      { capacity: 7, minCapacity: 4 },
+    ],
+    handleBargeIn: () => undefined,
     handoffToManager: async () => 'Je vous passe le gérant.',
     recordCallerMessage: async () => 'Message enregistré pour le gérant.',
     streamStructuredCompletion: async (
@@ -305,6 +365,14 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
       const pace = Number(process.env.BENCH_PACE_MS ?? 0);
       if (pace > 0) await new Promise((resolve) => setTimeout(resolve, pace));
       const startedAt = Date.now();
+      const format = reorderedFormat(responseFormat) as {
+        json_schema: { schema: { properties: Record<string, unknown> } };
+      };
+      const schemaKeys = Object.keys(format.json_schema.schema.properties);
+      const gateKeys = GATE_KEYS.filter((key) => schemaKeys.includes(key));
+      const extra = JSON.parse(process.env.BENCH_EXTRA_BODY ?? '{}') as Record<string, unknown>;
+      const sampling =
+        process.env.BENCH_SAMPLING === 'false' ? {} : { temperature: 0.3, top_p: 0.8 };
       const response = await fetch(`${BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_KEY}` },
@@ -312,12 +380,13 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
           model: MODEL,
           messages,
           max_tokens: 400,
-          temperature: 0.3,
-          top_p: 0.8,
-          reasoning_effort: 'none',
-          response_format: responseFormat,
+          ...sampling,
+          ...('reasoning' in extra ? {} : { reasoning_effort: 'none' }),
+          response_format: format,
           stream: true,
           stream_options: { include_usage: true },
+          // BENCH_EXTRA_BODY : paramètres en plus (ex. épinglage d'un hébergeur OpenRouter).
+          ...extra,
         }),
         signal: options.signal,
       });
@@ -330,6 +399,7 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
       let text = '';
       let firstTokenMs: number | null = null;
       let sayStartMs: number | null = null;
+      let gateMs: number | null = null;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -353,12 +423,24 @@ function fakeManager(outputs: StructuredTurnOutput[], timings: number[][]): Call
           text += delta;
           if (sayStartMs === null && /"say"\s*:\s*"/.test(text))
             sayStartMs = Date.now() - startedAt;
+          if (gateMs === null && gateKeys.every((key) => valueWritten(text, key)))
+            gateMs = Date.now() - startedAt;
           options.onDelta(delta);
         }
       }
-      timings.push([firstTokenMs ?? -1, sayStartMs ?? -1, Date.now() - startedAt]);
+      const voiceMs = sayStartMs === null || gateMs === null ? -1 : Math.max(sayStartMs, gateMs);
+      const charsBeforeSay = text.indexOf('"say"');
+      timings.push([
+        firstTokenMs ?? -1,
+        sayStartMs ?? -1,
+        Date.now() - startedAt,
+        voiceMs,
+        charsBeforeSay,
+      ]);
       try {
-        outputs.push(JSON.parse(text) as StructuredTurnOutput);
+        const parsed = JSON.parse(text) as StructuredTurnOutput;
+        if (Object.keys(parsed).join() !== schemaKeys.join()) orderMismatches++;
+        outputs.push(parsed);
       } catch {
         // Sortie invalide : comptée par le moteur (phrase de secours).
       }
@@ -403,6 +485,7 @@ function benchSession(closeTomorrow = false): CallSession {
       openingHours: hours,
     }),
     state: 'LISTENING',
+    codec: 'PCMA',
     ended: false,
     responseGeneration: 0,
     ttsGeneration: 0,
@@ -461,8 +544,10 @@ async function main() {
         const said = String(session.history.at(-1)?.content ?? '');
         if (session.history.at(-1)?.role === 'assistant') {
           const previousSaid = String(
-            session.history.slice(0, -1).findLast((message) => message.role === 'assistant')
-              ?.content ?? '',
+            session.history
+              .slice(0, -1)
+              .reverse()
+              .find((message) => message.role === 'assistant')?.content ?? '',
           );
           recordStyle(said, previousSaid);
         }
@@ -534,6 +619,14 @@ async function main() {
   );
   process.stdout.write(
     `Début de « say » p50/p90 : ${percentile(sayStarts, 50)} / ${percentile(sayStarts, 90)} ms\n`,
+  );
+  const voiceStarts = timings.map(([, , , value]) => value);
+  const charsBefore = timings.map(([, , , , value]) => value);
+  process.stdout.write(
+    `Début de voix possible (say et champs lus avant de parler) p50/p90 : ${percentile(voiceStarts, 50)} / ${percentile(voiceStarts, 90)} ms\n`,
+  );
+  process.stdout.write(
+    `Caractères avant « say » p50/p90 : ${percentile(charsBefore, 50)} / ${percentile(charsBefore, 90)} ; ordre des clés non suivi : ${orderMismatches}\n`,
   );
   const pct = (count: number) => `${Math.round((100 * count) / Math.max(1, style.replies))} %`;
   process.stdout.write(

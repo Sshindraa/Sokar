@@ -12,6 +12,7 @@ vi.mock('../../../shared/logger/pino', () => ({
 
 import {
   alertLlmCircuitOpened,
+  alertLlmFallbackUnavailable,
   alertLlmPrimaryUnavailable,
   LLM_BOTH_DOWN_THRESHOLD,
   LLM_HEDGE_BURST_THRESHOLD,
@@ -78,23 +79,58 @@ describe('alertes du modèle vocal', () => {
   it('les deux fournisseurs en échec : alerte critique au seuil, puis silence de 30 minutes', async () => {
     const deps = makeDependencies();
     for (let i = 1; i < LLM_BOTH_DOWN_THRESHOLD; i++) {
-      expect(await recordLlmBothProvidersFailed(deps)).toBe(false);
+      expect(await recordLlmBothProvidersFailed('primary_failed', deps)).toBe(false);
     }
-    expect(await recordLlmBothProvidersFailed(deps)).toBe(true);
+    expect(await recordLlmBothProvidersFailed('primary_failed', deps)).toBe(true);
     expect(dispatchAlertMock.mock.calls[0][0]).toMatchObject({
       kind: 'voice_llm_all_providers_down',
       severity: 'critical',
     });
-    expect(await recordLlmBothProvidersFailed(deps)).toBe(false);
+    expect(await recordLlmBothProvidersFailed('primary_failed', deps)).toBe(false);
     deps.advance(31 * 60 * 1_000);
-    for (let i = 0; i < LLM_BOTH_DOWN_THRESHOLD - 1; i++) await recordLlmBothProvidersFailed(deps);
-    expect(await recordLlmBothProvidersFailed(deps)).toBe(true);
+    for (let i = 0; i < LLM_BOTH_DOWN_THRESHOLD - 1; i++)
+      await recordLlmBothProvidersFailed('primary_failed', deps);
+    expect(await recordLlmBothProvidersFailed('primary_failed', deps)).toBe(true);
+  });
+
+  it('un modèle principal seulement lent n’est pas annoncé comme une panne des deux fournisseurs (appel du 19/10)', async () => {
+    const deps = makeDependencies();
+    for (let i = 0; i < LLM_BOTH_DOWN_THRESHOLD; i++) {
+      await recordLlmBothProvidersFailed('primary_slow', deps);
+    }
+    const alert = dispatchAlertMock.mock.calls[0][0];
+    expect(alert.kind).toBe('voice_llm_all_providers_down');
+    expect(alert.summary).not.toMatch(/ni cerebras ni/i);
+    expect(alert.summary).toMatch(/phrase de repli/);
+    expect(alert.detail).toMatch(/aucun texte à temps/);
+  });
+
+  it('le secours qui refuse (402) prévient une fois par jour, en avertissement, même pour un doublon', async () => {
+    const deps = makeDependencies();
+    expect(await alertLlmFallbackUnavailable(402, deps)).toBe(true);
+    expect(await alertLlmFallbackUnavailable(402, deps)).toBe(false);
+    expect(dispatchAlertMock.mock.calls[0][0]).toMatchObject({
+      kind: 'voice_llm_fallback_unavailable',
+      severity: 'warning',
+    });
+    expect(dispatchAlertMock.mock.calls[0][0].summary).toMatch(/crédit/);
+    deps.advance(23 * 60 * 60 * 1_000);
+    expect(await alertLlmFallbackUnavailable(402, deps)).toBe(false);
+    deps.advance(2 * 60 * 60 * 1_000);
+    expect(await alertLlmFallbackUnavailable(402, deps)).toBe(true);
+  });
+
+  it('une clé de secours refusée (401) a sa propre alerte', async () => {
+    const deps = makeDependencies();
+    expect(await alertLlmFallbackUnavailable(402, deps)).toBe(true);
+    expect(await alertLlmFallbackUnavailable(401, deps)).toBe(true);
+    expect(dispatchAlertMock.mock.calls[1][0].summary).toMatch(/clé/);
   });
 
   it('des échecs espacés de plus de 10 minutes ne déclenchent rien', async () => {
     const deps = makeDependencies();
     for (let i = 0; i < LLM_BOTH_DOWN_THRESHOLD + 2; i++) {
-      expect(await recordLlmBothProvidersFailed(deps)).toBe(false);
+      expect(await recordLlmBothProvidersFailed('primary_failed', deps)).toBe(false);
       deps.advance(11 * 60 * 1_000);
     }
     expect(dispatchAlertMock).not.toHaveBeenCalled();
@@ -133,7 +169,7 @@ describe('alertes du modèle vocal', () => {
       dispatch: dispatchAlertMock,
     };
     expect(await alertLlmPrimaryUnavailable('quota', broken)).toBe(false);
-    expect(await recordLlmBothProvidersFailed(broken)).toBe(false);
+    expect(await recordLlmBothProvidersFailed('primary_failed', broken)).toBe(false);
     expect(dispatchAlertMock).not.toHaveBeenCalled();
   });
 });

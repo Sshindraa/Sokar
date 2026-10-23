@@ -1,5 +1,11 @@
 import { WebSocket } from 'ws';
-import { callerSilenceMs, noCallerVoiceSince, trackCallerVoice } from './caller-voice-activity';
+import {
+  callerSilenceMs,
+  callerSpokeClearlySince,
+  noCallerVoiceSince,
+  trackCallerVoice,
+  callerPauseFinalizeMs,
+} from './caller-voice-activity';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
 import { logVoiceDebugText } from './debug-dialogue';
@@ -17,9 +23,6 @@ import * as Sentry from '@sentry/node';
 import { describeTranscript } from './pii-redact';
 import {
   voiceProviderErrorsTotal,
-  voiceSttRelockTotal,
-  voiceSttAudioMessagesTotal,
-  voiceSttChunkBytes,
   voiceSilenceGuardTotal,
   voiceSttProviderAudioMessagesTotal,
   voiceSttProviderChunkBytes,
@@ -39,7 +42,8 @@ import {
   createScribeSttAdapter,
   type NormalizedSttProviderMessage,
   type SttProviderAdapter,
-  type SttProviderId,
+  buildCartesiaTurnsUrl,
+  createCartesiaTurnsSttAdapter,
 } from './stt-provider-adapter';
 import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { addSttAudioSamples } from '../../usage/voice-usage.service';
@@ -54,6 +58,13 @@ import {
 import { expectsSpelledLetters } from './structured-turn/fact-guards';
 import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recovery';
 import { resumeInterruptedGreeting } from './greeting-resume';
+import {
+  closeInkParallel,
+  openInkParallel,
+  partySizeDiffers,
+  resolveInkTranscript,
+  sendInkAudio,
+} from './stt-ink-parallel';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -97,12 +108,68 @@ function clearSttRecoveryTimers(session: CallSession): void {
   session.sttKeepAliveTimer = null;
 }
 
+/**
+ * Secours Ink-2, pour tous les restaurants : quand Deepgram est déclaré indisponible, l'appel bascule une fois sur
+ * Cartesia Ink-2 en mode tours au lieu d'être coupé. Sans `CARTESIA_API_KEY`, ou si le secours a déjà servi, le
+ * parcours d'indisponibilité habituel reprend.
+ */
+export function isSttInkFallbackEnabled(
+  restaurantId: string | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(restaurantId && (env.CARTESIA_API_KEY ?? '').trim());
+}
+
+function switchToInkFallback(
+  session: CallSession,
+  reason: Extract<SttEvent, { type: 'Unavailable' }>['reason'],
+  message: string,
+): boolean {
+  if (
+    session.sttInkFallbackUsed ||
+    session.sttAdapter?.id !== 'deepgram' ||
+    !isSttInkFallbackEnabled(session.restaurantId)
+  ) {
+    return false;
+  }
+  session.sttInkFallbackUsed = true;
+  if (session.sttProviderOpenedOnce) flushDeepgramFinalPartsForSafety(session);
+  clearSttRecoveryTimers(session);
+  clearDeepgramStallTimer(session);
+  const previous = session.sttWs;
+  session.sttWs = null;
+  session.sttReady = null;
+  if (previous) {
+    try {
+      session.sttAdapter.close(previous, 1000, 'switching to fallback STT');
+    } catch {
+      // La socket Deepgram est déjà perdue.
+    }
+  }
+  // L'Ink-2 parallèle éventuel ferait double emploi avec le secours.
+  closeInkParallel(session).catch(() => undefined);
+  session.sttAdapter = createCartesiaTurnsSttAdapter({ model: 'ink-2' });
+  session.sttConsecutiveFailures = 0;
+  session.sttReconnectAttempts = 0;
+  session.sttTerminalFailure = false;
+  logger.warn(
+    { callId: session.callControlId, reason, err: message.slice(0, 200) },
+    '[stt] Deepgram unavailable, switching to Ink-2 fallback',
+  );
+  voiceProviderErrorsTotal.inc({ provider: 'deepgram_stt', type: 'fallback_ink' });
+  connectStt(session).catch(() => {
+    // La tentative journalise son échec ; un second échec coupe l'appel comme avant.
+  });
+  return true;
+}
+
 function triggerSttUnavailable(
   session: CallSession,
   reason: Extract<SttEvent, { type: 'Unavailable' }>['reason'],
   message: string,
 ): void {
   if (session.ended || session.sttFallbackTriggered) return;
+  if (switchToInkFallback(session, reason, message)) return;
   if (session.sttProviderOpenedOnce) flushDeepgramFinalPartsForSafety(session);
   session.sttTerminalFailure = true;
   session.sttFallbackTriggered = true;
@@ -159,7 +226,6 @@ function handleSttConnectionFailure(
   error: Error,
   createSocket: SttWebSocketFactory,
 ): void {
-  if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) return;
   if (!session.ended && session.sttProviderOpenedOnce) {
     flushDeepgramFinalPartsForSafety(session);
   }
@@ -188,86 +254,6 @@ function handleSttConnectionFailure(
       // The connection attempt records its own failure and schedules the next retry.
     });
   }, delay);
-}
-
-/** A failed forced-French handshake restores the old auto-detect socket when possible. */
-function scheduleAutoDetectAfterRelockFailure(
-  session: CallSession,
-  createSocket: SttWebSocketFactory,
-): boolean {
-  if (!session.sttRelockAttempt) return false;
-  session.sttRelockAttempt = false;
-  session.sttFrenchOnly = false;
-  voiceSttRelockTotal.inc({ result: 'failed' });
-  const failedSocket = session.sttWs;
-  session.sttWs = null;
-  session.sttReady = null;
-  try {
-    if (failedSocket?.readyState === WebSocket.OPEN) {
-      failedSocket.close(1011, 'French language relock failed');
-    }
-  } catch {
-    // The automatic-language reconnect below remains best effort.
-  }
-  if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
-  if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
-  session.sttConnectTimeout = null;
-  session.sttConnectionDeadlineTimer = null;
-  if (session.sttRetryTimer) clearTimeout(session.sttRetryTimer);
-  const previousSocket = session.sttRelockPreviousWs;
-  session.sttRelockPreviousWs = null;
-  if (previousSocket?.readyState === WebSocket.OPEN) {
-    session.sttWs = previousSocket;
-    session.sttReady = null;
-    resumeSttAfterOpen(session);
-    return true;
-  }
-  session.sttRetryTimer = setTimeout(() => {
-    session.sttRetryTimer = null;
-    if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
-    connectStt(session, undefined, createSocket).catch(() => {
-      // The normal reconnect path owns retries and eventual provider fallback.
-    });
-  }, 500);
-  return true;
-}
-
-/** Called at the transition into TTS, never while the customer has the floor. */
-export function beginFrenchSttRelock(
-  session: CallSession,
-  createSocket: SttWebSocketFactory = (url, options) => new WebSocket(url, options),
-): void {
-  if (
-    sttAdapterForSession(session).id !== 'scribe' ||
-    !session.sttRelockPending ||
-    session.languageLocked !== 'fr' ||
-    session.state !== 'SPEAKING' ||
-    session.ended
-  )
-    return;
-
-  const oldSocket = session.sttWs;
-  if (oldSocket?.readyState !== WebSocket.OPEN) {
-    if (!session.sttReady && !session.sttRetryTimer) {
-      session.sttRelockPending = false;
-      voiceSttRelockTotal.inc({ result: 'skipped' });
-    }
-    return;
-  }
-
-  clearSttChunkTimer(session);
-  const pendingChunk = session.sttChunkBuffer;
-  session.sttChunkBuffer = null;
-  if (pendingChunk?.length) session.audioBuffer.push(pendingChunk);
-  session.sttRelockPending = false;
-  session.sttFrenchOnly = true;
-  session.sttRelockAttempt = true;
-  session.sttRelockPreviousWs = oldSocket;
-  session.sttWs = null;
-  session.sttReady = null;
-  connectStt(session, undefined, createSocket).catch(() => {
-    // scheduleAutoDetectAfterRelockFailure preserves the call if this fails.
-  });
 }
 
 /**
@@ -363,7 +349,6 @@ export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
 const MAX_TURN_PARTIALS = 30;
-const MAX_STT_PREVIOUS_TEXT_LENGTH = 50;
 /** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
 export const STT_TIMESTAMPED_COMMIT_GRACE_MS = 250;
 
@@ -389,15 +374,6 @@ export function getSttLanguageCodes(): string[] {
  * sont limités à 20 caractères et 50 valeurs ; les valeurs invalides sont
  * ignorées afin de ne jamais rendre la poignée de main provider invalide.
  */
-/** Contexte court envoyé à Scribe uniquement avec le premier paquet audio. */
-export function buildSttPreviousText(restaurantName?: string): string {
-  const name = restaurantName?.trim().replace(/\s+/gu, ' ');
-  const context = name
-    ? `Réservation / restaurant booking ${name}`
-    : 'Réservation / restaurant booking';
-  return Array.from(context).slice(0, MAX_STT_PREVIOUS_TEXT_LENGTH).join('');
-}
-
 function writeDebugLog(msg: string, err?: unknown): void {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
   const timestamp = new Date().toISOString();
@@ -418,39 +394,14 @@ function readConfiguredNumber(envName: string, fallback: number, min: number, ma
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-/** Silence Scribe par défaut quand la fin de tour hybride est active. */
-export const SMART_ENDPOINT_VAD_SILENCE_SECS = 0.5;
-
-/**
- * Fin de tour hybride : Scribe commite après un silence court et
- * l'application décide d'attendre ou non selon la phrase. Activée par
- * VOICE_SMART_ENDPOINT_ENABLED, limitée à VOICE_SMART_ENDPOINT_RESTAURANT_IDS
- * quand la liste est renseignée.
- */
-export function isSmartEndpointEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
-  if (process.env.VOICE_SMART_ENDPOINT_ENABLED !== 'true') return false;
-  const restaurantIds = (process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
-}
-
-function getBaseSttTurnConfig(smartEndpoint = false): SttTurnConfig {
+function getBaseSttTurnConfig(): SttTurnConfig {
   return {
-    vadSilenceThresholdSecs: smartEndpoint
-      ? readConfiguredNumber(
-          'VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS',
-          SMART_ENDPOINT_VAD_SILENCE_SECS,
-          0.2,
-          3,
-        )
-      : readConfiguredNumber(
-          'ELEVENLABS_STT_VAD_SILENCE_SECS',
-          DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
-          0.2,
-          3,
-        ),
+    vadSilenceThresholdSecs: readConfiguredNumber(
+      'ELEVENLABS_STT_VAD_SILENCE_SECS',
+      DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
+      0.2,
+      3,
+    ),
     minSpeechDurationMs: readConfiguredNumber(
       'ELEVENLABS_STT_MIN_SPEECH_MS',
       DEFAULT_STT_TURN_CONFIG.minSpeechDurationMs,
@@ -472,7 +423,7 @@ function cloneSttTurnConfig(config: SttTurnConfig): SttTurnConfig {
 
 function ensureSttTurnConfig(session: CallSession): NonNullable<CallSession['sttTurnConfig']> {
   if (!session.sttTurnConfig) {
-    const base = getBaseSttTurnConfig(isSmartEndpointEnabled(session));
+    const base = getBaseSttTurnConfig();
     session.sttTurnConfig = {
       base,
       desired: cloneSttTurnConfig(base),
@@ -599,22 +550,15 @@ export function buildDeepgramSttUrl(
   return `wss://${voiceConfig.DEEPGRAM_API_HOST}/v1/listen?${params.toString()}`;
 }
 
-function createSttAdapter(session: CallSession, provider: SttProviderId): SttProviderAdapter {
-  return provider === 'deepgram'
-    ? createDeepgramSttAdapter({ model: resolveVoiceFeatureSnapshot(session).deepgramModel })
-    : createScribeSttAdapter({ model: configuredModel(session) });
-}
-
-/** Fournisseur de reconnaissance de la session (« deepgram », « scribe »), pour les journaux. */
+/** Fournisseur de reconnaissance de la session (« deepgram », « cartesia » en secours), pour les journaux. */
 export function sttProviderId(session: CallSession): SttProviderAdapter['id'] {
   return sttAdapterForSession(session).id;
 }
 
 function sttAdapterForSession(session: CallSession): SttProviderAdapter {
-  return (session.sttAdapter ??= createSttAdapter(
-    session,
-    resolveVoiceFeatureSnapshot(session).sttProvider,
-  ));
+  return (session.sttAdapter ??= createDeepgramSttAdapter({
+    model: resolveVoiceFeatureSnapshot(session).deepgramModel,
+  }));
 }
 
 interface SttTurnTiming {
@@ -1036,24 +980,16 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
   if (!session.sttWs) return;
   const adapter = sttAdapterForSession(session);
   const audio = adapter.toProviderAudio(session.codec, telnyxAudio);
-  const isFirstChunk = !session.sttFirstAudioChunkSent;
-  adapter.sendAudio(
-    session.sttWs,
-    audio,
-    isFirstChunk && adapter.id === 'scribe'
-      ? buildSttPreviousText(session.restaurantName)
-      : undefined,
-  );
+  adapter.sendAudio(session.sttWs, audio);
+  if (adapter.id === 'deepgram') {
+    sendInkAudio(session, telnyxAudio);
+  }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
   addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
   session.sttFirstAudioChunkSent = true;
   const chunkMs = String(getSttChunkMs());
   voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });
   voiceSttProviderChunkBytes.observe({ provider: adapter.id }, audio.length);
-  if (adapter.id === 'scribe') {
-    voiceSttAudioMessagesTotal.inc({ chunk_ms: chunkMs });
-    voiceSttChunkBytes.observe(audio.length);
-  }
 }
 
 function clearSttChunkTimer(session: CallSession): void {
@@ -1453,19 +1389,14 @@ function emitPartialTranscript(
   if (!cleanTranscript) return;
   if (isTranscriptWithoutCallerVoice(session, 'partial')) return;
 
-  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
-    const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
-    if (echo.suppressed) return;
-    cleanTranscript = echo.transcript;
-    allowBargeIn = hasBargeInWordThreshold(echo);
-  }
+  const echo = filterAssistantEcho(session, cleanTranscript, 'partial');
+  if (echo.suppressed) return;
+  cleanTranscript = echo.transcript;
+  allowBargeIn = hasBargeInWordThreshold(echo);
   // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
 
-  if (
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
-    isVoiceDialogueIncompleteTranscript(cleanTranscript)
-  ) {
+  if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
         session,
@@ -1539,13 +1470,11 @@ function dispatchCommittedTranscript(
     return;
   }
 
-  if (resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled) {
-    const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
-    if (echo.suppressed) return;
-    cleanTranscript = echo.transcript;
-    allowBargeIn = hasBargeInWordThreshold(echo);
-    if (!allowBargeIn && session.state === 'SPEAKING') return;
-  }
+  const echo = filterAssistantEcho(session, cleanTranscript, 'committed');
+  if (echo.suppressed) return;
+  cleanTranscript = echo.transcript;
+  allowBargeIn = hasBargeInWordThreshold(echo);
+  if (!allowBargeIn && session.state === 'SPEAKING') return;
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) {
     logger.info(
       {
@@ -1559,10 +1488,7 @@ function dispatchCommittedTranscript(
     return;
   }
 
-  if (
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled &&
-    isVoiceDialogueIncompleteTranscript(cleanTranscript)
-  ) {
+  if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
         session,
@@ -1681,14 +1607,7 @@ function dispatchCommittedTranscript(
     dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
     return;
   }
-  if (
-    isSmartEndpointEnabled(session) ||
-    resolveVoiceFeatureSnapshot(session).dialogueListeningV2Enabled
-  ) {
-    dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
-    return;
-  }
-  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
+  dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode, timing);
 }
 
 function dispatchDeepgramFinalParts(
@@ -1700,6 +1619,7 @@ function dispatchDeepgramFinalParts(
   const parts = session.sttDeepgramFinalParts ?? [];
   session.sttDeepgramFinalParts = [];
   session.sttDeepgramFinalizeRequested = false;
+  releaseSilenceFlushHold(session);
   const transcript = parts.reduce(
     (merged, part) => mergeSttTranscripts(merged, part.transcript),
     '',
@@ -1727,13 +1647,62 @@ function dispatchDeepgramFinalParts(
     resultEndMs || undefined,
     lastWordEndMs || undefined,
   );
-  dispatchCommittedTranscript(
-    session,
-    transcript,
-    words.length ? words : undefined,
-    languageCode,
-    timing,
-  );
+  const send = (finalTranscript: string, source: 'deepgram' | 'ink'): void => {
+    session.sttFinalCount = (session.sttFinalCount ?? 0) + 1;
+    // Ink-2 et Deepgram ne s'accordent pas sur le nombre de personnes : à faire confirmer dans le
+    // récapitulatif de ce tour (remplace la confiance par mot de Deepgram, qui ne décrit plus ce texte).
+    if (source === 'ink' && partySizeDiffers(finalTranscript, transcript)) {
+      session.sttInkNote = {
+        heard: finalTranscript,
+        secondHeard: transcript,
+        at: Date.now(),
+        validThrough: session.sttFinalCount,
+      };
+    }
+    dispatchCommittedTranscript(
+      session,
+      finalTranscript,
+      words.length ? words : undefined,
+      languageCode,
+      timing,
+    );
+  };
+  if (!session.sttInk?.ready) {
+    send(transcript, 'deepgram');
+    return;
+  }
+  // Ink-2 en parallèle : attente plafonnée de son texte, phrases envoyées dans l'ordre. Le tampon de la
+  // phrase est vidé maintenant, pas après l'attente : ce qui arrive entre-temps appartient à la suivante.
+  session.turnTranscript = '';
+  session.sttInkDispatchChain = (session.sttInkDispatchChain ?? Promise.resolve())
+    .then(async () => {
+      let resolved: Awaited<ReturnType<typeof resolveInkTranscript>> = {
+        transcript,
+        source: 'deepgram',
+        waitedMs: 0,
+      };
+      try {
+        resolved = await resolveInkTranscript(session, transcript);
+      } catch {
+        // Deepgram seul.
+      }
+      logger.info(
+        { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
+        '[stt-ink] final transcript',
+      );
+      const nextPhrase = session.turnTranscript;
+      send(resolved.transcript, resolved.source);
+      if (nextPhrase && !session.turnTranscript) session.turnTranscript = nextPhrase;
+    })
+    .catch((error: unknown) => {
+      logger.error(
+        {
+          callId: session.callControlId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        '[stt-ink] dispatch failed',
+      );
+    });
 }
 
 export function flushDeepgramFinalPartsForSafety(session: CallSession): void {
@@ -1835,6 +1804,62 @@ export function deepgramSilenceGuardMaxDeferMs(env: NodeJS.ProcessEnv = process.
   return Number.isFinite(parsed) && parsed >= 300 && parsed <= 5_000 ? parsed : 1_500;
 }
 
+/**
+ * Relève au silence, pour tous les restaurants. Appel du 21/10
+ * sur Chez Sokar : « midi 30 » n'est arrivé en partielle que 2,1 s après le dernier mot, sans speech_final ;
+ * la partielle figée n'a pu partir que 500 ms plus tard (2,6 s de silence). Nova-3 retient souvent un
+ * énoncé court isolé ; un `Finalize` le rend en ~40 ms (sonde sur 94 tours courts enregistrés).
+ */
+/**
+ * Fin de phrase sur silence local, pour tous les restaurants : une partielle Deepgram attend, et l'appelant se tait depuis plus longtemps que ses propres pauses
+ * habituelles (`callerPauseFinalizeMs`, détection locale). Sans elle, une partielle figée attend 1,2 s après son dernier changement (12 % des tours en
+ * prod du 14 au 21/10/2026, fin de parole → transcription p90 1,56 s). Jamais pendant une épellation, dont les
+ * pauses sont plus longues (garde dédiée) ; une seule fois par partielle.
+ */
+/**
+ * Silence local exigé tant que les pauses de l'appelant ne sont pas connues (moins de 3 observées) : 300 à
+ * 1500 ms, 600 par défaut. Ensuite, le seuil suit ses propres pauses (`callerPauseFinalizeMs`).
+ */
+export function deepgramLocalSilenceFinalizeMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_DEEPGRAM_LOCAL_SILENCE_FINALIZE_MS ?? 600);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 1_500 ? parsed : 600;
+}
+
+export function maybeFinalizeDeepgramOnLocalSilence(
+  session: CallSession,
+  now = Date.now(),
+): boolean {
+  const partial = session.sttDeepgramPartials?.lastText?.trim();
+  if (
+    session.ended ||
+    session.state !== 'LISTENING' ||
+    session.sttAdapter?.id !== 'deepgram' ||
+    !session.sttDeepgramPendingInterim ||
+    session.sttDeepgramFinalizeRequested ||
+    !partial ||
+    session.sttDeepgramLocalSilenceFinalizedText === partial
+  ) {
+    return false;
+  }
+  // Silence infini = aucune voix entendue sur la ligne (partielle née d'un écho) : rien à clore.
+  const silentMs = callerSilenceMs(session, now);
+  const thresholdMs = callerPauseFinalizeMs(session, deepgramLocalSilenceFinalizeMs());
+  if (!Number.isFinite(silentMs) || silentMs < thresholdMs) return false;
+  // Épellation attendue par le dialogue, ou lettres isolées sans qu'il l'attende : pauses longues, garde dédiée.
+  if (isSpellingTurn(session, partial) || looksLikeSpelledLetters(partial)) return false;
+  session.sttDeepgramLocalSilenceFinalizedText = partial;
+  return requestDeepgramFinalize(session, { trigger: 'local_silence' });
+}
+
+/**
+ * Silence réel de l'appelant avant la relève. 700 ms : sur les enregistrements, à 500 ms la relève
+ * devance souvent un speech_final qui arrivait de lui-même ; à 700 ms elle ne sert plus qu'aux mots retenus.
+ */
+export function deepgramSilenceFlushMs(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.VOICE_DEEPGRAM_SILENCE_FLUSH_MS ?? 700);
+  return Number.isFinite(parsed) && parsed >= 300 && parsed <= 3_000 ? parsed : 700;
+}
+
 const silenceGuardTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const deepgramStallTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
 const speculationTimers = new WeakMap<CallSession, ReturnType<typeof setTimeout>>();
@@ -1888,7 +1913,80 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
     usePause ? Math.max(60, pauseMs - callerSilenceMs(session)) : structuredSpeculationDelayMs(),
   );
 }
-const deepgramFinalizeReasons = new WeakMap<CallSession, 'utterance_end' | 'stalled'>();
+const deepgramFinalizeReasons = new WeakMap<
+  CallSession,
+  'utterance_end' | 'stalled' | 'silence_flush' | 'local_silence'
+>();
+
+/**
+ * Relève au silence : l'appelant a parlé (voix claire sur l'audio entrant), se tait depuis
+ * `deepgramSilenceFlushMs`, et Deepgram n'a rien rendu depuis. `Finalize` lui fait rendre ce qu'il retient.
+ * Le texte rendu ne clôt pas le tour : il est traité comme une partielle (voir `holdSilenceFlushText`).
+ */
+export function maybeFlushDeepgramOnSilence(session: CallSession, now = Date.now()): boolean {
+  const ws = session.sttWs;
+  if (
+    session.ended ||
+    session.state !== 'LISTENING' ||
+    session.sttAdapter?.id !== 'deepgram' ||
+    session.sttDeepgramPendingInterim ||
+    session.sttDeepgramFinalizeRequested ||
+    ws?.readyState !== WebSocket.OPEN
+  ) {
+    return false;
+  }
+  const since = Math.max(
+    session.sttDeepgramLastTextAt ?? 0,
+    session.sttDeepgramSilenceFlushAt ?? 0,
+  );
+  if (!callerSpokeClearlySince(session, since + 1)) return false;
+  const silentMs = callerSilenceMs(session, now);
+  if (silentMs < deepgramSilenceFlushMs()) return false;
+  session.sttDeepgramSilenceFlushAt = now;
+  session.sttDeepgramFinalizeRequested = true;
+  deepgramFinalizeReasons.set(session, 'silence_flush');
+  logger.info(
+    { callId: session.callControlId, callerSilenceMs: Math.round(Math.min(silentMs, 99_999)) },
+    '[stt] Caller silent with no Deepgram text, Finalize sent',
+  );
+  session.sttAdapter.finalize(ws);
+  return true;
+}
+
+/**
+ * Réponse à la relève : le texte rendu reste dans les segments finaux et devient la partielle en cours.
+ * Les règles habituelles décident de la fin du tour (partielle figée, garde de silence, épellation, verdict
+ * du modèle) ; à leur échéance, `requestDeepgramFinalize` envoie le tour sans redemander `Finalize`.
+ */
+function holdSilenceFlushText(session: CallSession, wordCount: number): void {
+  const parts = session.sttDeepgramFinalParts ?? [];
+  const text = parts.reduce((merged, part) => mergeSttTranscripts(merged, part.transcript), '');
+  logger.info(
+    { callId: session.callControlId, wordCount, heldWordCount: text.split(/\s+/).length },
+    '[stt] Silence flush returned text, held as partial',
+  );
+  const now = Date.now();
+  session.sttDeepgramFlushHeld = true;
+  session.sttDeepgramPendingInterim = true;
+  session.sttDeepgramPartials = {
+    count: 1,
+    changes: 1,
+    lastAt: now,
+    lastChangeAt: now,
+    lastText: text,
+    lastWordCount: text.split(/\s+/).length,
+  };
+  armDeepgramStallTimer(session);
+  armSpeculationTimer(session, text);
+}
+
+function releaseSilenceFlushHold(session: CallSession): void {
+  if (!session.sttDeepgramFlushHeld) return;
+  session.sttDeepgramFlushHeld = false;
+  session.sttDeepgramPendingInterim = false;
+  session.sttDeepgramPartials = undefined;
+  clearDeepgramStallTimer(session);
+}
 
 function clearDeepgramStallTimer(session: CallSession): void {
   const held = silenceGuardTimers.get(session);
@@ -1925,7 +2023,7 @@ function armDeepgramStallTimer(session: CallSession): void {
 function requestDeepgramFinalize(
   session: CallSession,
   fields: {
-    trigger: 'stall' | 'semantic';
+    trigger: 'stall' | 'semantic' | 'local_silence';
     stallMs?: number;
     short?: boolean;
     /** Phrase sur laquelle le modèle a jugé le tour fini : si la partielle a changé, ce verdict ne vaut plus. */
@@ -1985,8 +2083,22 @@ function requestDeepgramFinalize(
       voiceSilenceGuardTotal.inc({ outcome: 'released_after_silence' });
     }
   }
+  if (session.sttDeepgramFlushHeld) {
+    // Texte déjà rendu par la relève : rien n'attend chez Deepgram, le tour part tel quel.
+    logVoiceDebugText(session, 'flush_held_released', {
+      trigger: fields.trigger,
+      partial: session.sttDeepgramPartials?.lastText,
+      callerSilenceMs: Math.round(Math.min(callerSilenceMs(session), 99_999)),
+    });
+    releaseSilenceFlushHold(session);
+    dispatchDeepgramFinalParts(session, 'silence_flush');
+    return true;
+  }
   session.sttDeepgramFinalizeRequested = true;
-  deepgramFinalizeReasons.set(session, 'stalled');
+  deepgramFinalizeReasons.set(
+    session,
+    fields.trigger === 'local_silence' ? 'local_silence' : 'stalled',
+  );
   logVoiceDebugText(session, 'finalize_sent', {
     trigger: fields.trigger,
     partial: session.sttDeepgramPartials?.lastText,
@@ -2003,7 +2115,9 @@ function requestDeepgramFinalize(
     },
     fields.trigger === 'semantic'
       ? '[stt] Model judged the turn complete, Finalize sent'
-      : '[stt] Deepgram partial stalled, Finalize sent',
+      : fields.trigger === 'local_silence'
+        ? '[stt] Caller silent after speech, Finalize sent'
+        : '[stt] Deepgram partial stalled, Finalize sent',
   );
   session.sttAdapter.finalize(ws);
   return true;
@@ -2052,6 +2166,10 @@ export function handleNormalizedSttMessage(
         session.sttTurnStartedAt ??= session.sttLastSpeechStartedAt ?? partialAt;
         session.sttFirstPartialAt ??= partialAt;
         if (session.sttAdapter?.id === 'deepgram') {
+          session.sttDeepgramLastTextAt = partialAt;
+          // L'appelant a repris après une relève : sa vraie partielle prend le relais, le `Finalize` qui la
+          // clôt rendra aussi le texte gardé.
+          session.sttDeepgramFlushHeld = false;
           session.sttDeepgramPendingInterim = true;
           const partials = (session.sttDeepgramPartials ??= {
             count: 0,
@@ -2135,8 +2253,22 @@ export function handleNormalizedSttMessage(
           providerLastWordEndMs: event.providerLastWordEndMs,
         });
         if (event.transcript.trim()) {
+          session.sttDeepgramLastTextAt = Date.now();
           session.sttDeepgramPartials = undefined;
           clearDeepgramStallTimer(session);
+        }
+        if (
+          event.fromFinalize &&
+          session.sttDeepgramFinalizeRequested &&
+          deepgramFinalizeReasons.get(session) === 'silence_flush'
+        ) {
+          // Réponse à la relève au silence, speech_final ou non : elle ne clôt pas le tour.
+          session.sttDeepgramFinalizeRequested = false;
+          deepgramFinalizeReasons.delete(session);
+          if (event.transcript.trim()) {
+            holdSilenceFlushText(session, event.transcript.trim().split(/\s+/).length);
+          }
+          return;
         }
       }
       if (event.speechFinal) dispatchDeepgramFinalParts(session, 'speech_final');
@@ -2147,7 +2279,9 @@ export function handleNormalizedSttMessage(
           session,
           deepgramFinalizeReasons.get(session) === 'stalled'
             ? 'stalled_finalize'
-            : 'utterance_end_finalize',
+            : deepgramFinalizeReasons.get(session) === 'local_silence'
+              ? 'silence_finalize'
+              : 'utterance_end_finalize',
         );
       }
       return;
@@ -2247,9 +2381,8 @@ export function connectStt(
 ): Promise<void> {
   if (onEvent) session.onSttEvent = onEvent;
   const adapter = sttAdapterForSession(session);
-  if (process.env.VOICE_STT_LANGUAGE_LOCK === 'true' && adapter.id === 'scribe') {
-    session.onAgentSpeaking = () => beginFrenchSttRelock(session, createSocket);
-  }
+  // Ink-2 en parallèle (restaurants listés) : ouverte une fois par appel, sans effet sur Deepgram.
+  if (adapter.id === 'deepgram') openInkParallel(session).catch(() => undefined);
   if (session.sttReady) return session.sttReady;
   if (session.sttRetryTimer || session.sttTerminalFailure || session.sttFallbackTriggered) {
     return Promise.resolve();
@@ -2262,47 +2395,40 @@ export function connectStt(
   const apiKey =
     adapter.id === 'deepgram'
       ? (process.env.DEEPGRAM_API_KEY ?? '')
-      : (process.env.ELEVENLABS_API_KEY ?? '');
+      : (process.env.CARTESIA_API_KEY ?? '');
   if (!apiKey) {
-    if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
-      return Promise.resolve();
-    }
     triggerSttUnavailable(
       session,
       'configuration',
       adapter.id === 'deepgram'
         ? 'DEEPGRAM_API_KEY is not configured'
-        : 'ELEVENLABS_API_KEY is not configured',
+        : 'CARTESIA_API_KEY is not configured',
     );
     return Promise.resolve();
   }
 
   session.sttModel = adapter.model;
-  const turnConfig = ensureSttTurnConfig(session);
+  ensureSttTurnConfig(session);
   ensureSttAvailabilityDeadline(session);
   let ws: WebSocket;
   try {
-    const deepgramFeatures =
-      adapter.id === 'deepgram' ? resolveVoiceFeatureSnapshot(session) : null;
-    const url = deepgramFeatures
-      ? buildDeepgramSttUrl(
-          session.codec,
-          deepgramFeatures.deepgramKeytermsEnabled
-            ? (session.deepgramKeyterms ?? [])
-            : buildSttKeyterms(session.restaurantName),
-          adapter.model as 'nova-3' | 'flux-general-multi',
-          {
-            numerals: deepgramFeatures.deepgramNumeralsEnabled,
-            punctuate: deepgramFeatures.deepgramPunctuateEnabled,
-          },
-        )
-      : buildSttUrl(adapter.model, session.codec, turnConfig.desired, {
-          restaurantName: session.restaurantName,
-          filterBackgroundAudio: process.env.VOICE_STT_FILTER_BACKGROUND === 'true',
-          forceFrench: session.sttFrenchOnly === true,
-        });
+    const deepgramFeatures = resolveVoiceFeatureSnapshot(session);
+    const url =
+      adapter.id === 'cartesia'
+        ? buildCartesiaTurnsUrl(session.codec, session.restaurantName)
+        : buildDeepgramSttUrl(
+            session.codec,
+            session.deepgramKeyterms ?? [],
+            adapter.model as 'nova-3' | 'flux-general-multi',
+            {
+              numerals: deepgramFeatures.deepgramNumeralsEnabled,
+              punctuate: deepgramFeatures.deepgramPunctuateEnabled,
+            },
+          );
     const headers: Record<string, string> =
-      adapter.id === 'deepgram' ? { Authorization: `Token ${apiKey}` } : { 'xi-api-key': apiKey };
+      adapter.id === 'deepgram'
+        ? { Authorization: `Token ${apiKey}` }
+        : { 'X-API-Key': apiKey, 'Cartesia-Version': '2026-03-01' };
     ws = adapter.open({ url, headers, createSocket });
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -2324,7 +2450,7 @@ export function connectStt(
       opened = true;
       session.sttProviderOpenedOnce = true;
       session.sttProviderUsed =
-        adapter.id === 'deepgram' ? `deepgram-${adapter.model}` : 'elevenlabs-scribe-v2-realtime';
+        adapter.id === 'deepgram' ? `deepgram-${adapter.model}` : 'cartesia-ink-2';
       if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
@@ -2341,27 +2467,13 @@ export function connectStt(
       session.sttDeepgramFinalParts = [];
       session.sttDeepgramPendingInterim = false;
       session.sttDeepgramFinalizeRequested = false;
+      session.sttDeepgramFlushHeld = false;
       session.sttDeepgramPartials = undefined;
       clearDeepgramStallTimer(session);
       if (session.sttKeepAliveTimer) clearInterval(session.sttKeepAliveTimer);
       session.sttKeepAliveTimer =
         adapter.id === 'deepgram' ? setInterval(() => adapter.keepAlive(ws), 5_000) : null;
       session.sttKeepAliveTimer?.unref?.();
-      if (session.sttRelockAttempt) {
-        session.sttRelockAttempt = false;
-        voiceSttRelockTotal.inc({ result: 'ok' });
-      }
-      const previousSocket = session.sttRelockPreviousWs;
-      session.sttRelockPreviousWs = null;
-      if (previousSocket && previousSocket !== ws) {
-        try {
-          if (previousSocket.readyState === WebSocket.OPEN) {
-            previousSocket.close(1000, 'French language relock complete');
-          }
-        } catch {
-          // The newly opened socket is already authoritative.
-        }
-      }
       writeDebugLog(
         `[stt] ${adapter.id} connected for call ` +
           session.callControlId +
@@ -2375,10 +2487,6 @@ export function connectStt(
       );
       session.sttFirstAudioChunkSent = false;
       resumeSttAfterOpen(session);
-      if (adapter.id === 'scribe') turnConfig.applied = { ...turnConfig.desired };
-      if (session.sttRelockPending && session.state === 'SPEAKING') {
-        beginFrenchSttRelock(session, createSocket);
-      }
       resolve();
     });
 
@@ -2434,10 +2542,6 @@ export function connectStt(
       if (statusCode === 401 || statusCode === 403) {
         voiceProviderErrorsTotal.inc({ provider: adapter.metricLabel, type: 'auth' });
         if (!opened) reject(error);
-        if (scheduleAutoDetectAfterRelockFailure(session, createSocket)) {
-          ws.terminate();
-          return;
-        }
         triggerSttUnavailable(session, 'auth', error.message);
         ws.terminate();
       } else {
@@ -2488,6 +2592,8 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
   if (session.sttTerminalFailure || session.sttFallbackTriggered) return;
   const input = Buffer.from(audioPayload, 'base64');
   checkFastBargeIn(session, trackCallerVoice(session, input), CallSessionManager.getInstance());
+  maybeFlushDeepgramOnSilence(session);
+  maybeFinalizeDeepgramOnLocalSilence(session);
 
   if (
     !session.sttWs &&
@@ -2516,14 +2622,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 export function closeStt(session: CallSession): void {
   // Fin d'appel : envoyer ce qui reste avant de couper la socket.
   flushSttChunkBuffer(session);
-  if (session.sttRelockPending || session.sttRelockAttempt) {
-    voiceSttRelockTotal.inc({ result: 'skipped' });
-    session.sttRelockPending = false;
-    session.sttRelockAttempt = false;
-  }
-  session.onAgentSpeaking = undefined;
-  const previousSocket = session.sttRelockPreviousWs;
-  session.sttRelockPreviousWs = null;
+  closeInkParallel(session).catch(() => undefined);
   clearPendingSttEndOfTurn(session);
   clearSemanticHold(session);
   clearPendingSttCommit(session);
@@ -2533,12 +2632,10 @@ export function closeStt(session: CallSession): void {
   session.sttWs = null;
   session.sttReady = null;
   const adapter = sttAdapterForSession(session);
-  for (const socket of new Set(
-    [ws, previousSocket].filter((socket): socket is WebSocket => !!socket),
-  )) {
+  if (ws) {
     try {
-      if (socket.readyState === WebSocket.OPEN) adapter.finalize(socket);
-      adapter.close(socket, 1000, 'call ended');
+      if (ws.readyState === WebSocket.OPEN) adapter.finalize(ws);
+      adapter.close(ws, 1000, 'call ended');
     } catch (_err) {
       logger.warn(
         { callId: session.callControlId, provider: adapter.id },
@@ -2548,7 +2645,7 @@ export function closeStt(session: CallSession): void {
   }
 }
 
-/** Attentes ajoutées après le commit Scribe, selon la forme de la phrase. */
+/** Attentes ajoutées après la fin de phrase (écoute Dialogue V2), selon la forme de la phrase. */
 export const SMART_ENDPOINT_HOLD_COMPLETE_MS = 0;
 export const SMART_ENDPOINT_HOLD_SUSPENDED_MS = 800;
 export const SMART_ENDPOINT_HOLD_CORRECTION_MS = 600;

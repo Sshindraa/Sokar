@@ -97,6 +97,99 @@ describe('marketing control plane routes', () => {
     });
   });
 
+  it('records an oral consent from the dashboard with its collection method as source', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: 'client@example.com',
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+      id: 'permission-1',
+      channel: 'EMAIL',
+      status: MarketingPermissionStatus.OPTED_IN,
+    } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/crm/customers/customer-1/marketing-permissions/EMAIL/consent',
+      headers: AUTH,
+      payload: { method: 'IN_PERSON' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const upsert = vi.mocked(db.marketingPermission.upsert).mock.calls[0]?.[0];
+    expect(upsert?.create).toMatchObject({
+      restaurantId: 'test-rest-1',
+      source: 'DASHBOARD_IN_PERSON',
+      status: MarketingPermissionStatus.OPTED_IN,
+    });
+    expect(upsert?.create.proofVersion).toMatch(/^marketing-consent-/);
+    expect(upsert?.create.proofHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('rejects an oral consent without a method, on an unknown channel or without an e-mail', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: 'customer-1',
+      emailNormalized: null,
+    } as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      plan: 'PRO',
+      name: 'Chez Sokar',
+    } as never);
+    const url = '/crm/customers/customer-1/marketing-permissions';
+
+    const noMethod = await app.inject({
+      method: 'POST',
+      url: `${url}/EMAIL/consent`,
+      headers: AUTH,
+      payload: {},
+    });
+    expect(noMethod.statusCode).toBe(400);
+    const whatsapp = await app.inject({
+      method: 'POST',
+      url: `${url}/WHATSAPP/consent`,
+      headers: AUTH,
+      payload: { method: 'PHONE' },
+    });
+    expect(whatsapp.statusCode).toBe(400);
+    const noEmail = await app.inject({
+      method: 'POST',
+      url: `${url}/EMAIL/consent`,
+      headers: AUTH,
+      payload: { method: 'PHONE' },
+    });
+    expect(noEmail.statusCode).toBe(409);
+    expect(noEmail.json()).toEqual({ error: 'CUSTOMER_EMAIL_REQUIRED' });
+    expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+  });
+
+  it('withdraws a consent from the dashboard under its own source', async () => {
+    const app = await getApp();
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+    vi.mocked(db.marketingPermission.upsert).mockResolvedValue({ id: 'permission-1' } as never);
+    vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/crm/customers/customer-1/marketing-permissions/SMS',
+      headers: AUTH,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(vi.mocked(db.marketingPermission.upsert).mock.calls[0]?.[0].create).toMatchObject({
+      status: MarketingPermissionStatus.OPTED_OUT,
+      source: 'DASHBOARD_WITHDRAWAL',
+    });
+  });
+
   it('previews and creates a draft campaign without sending to a provider', async () => {
     const app = await getApp();
     vi.mocked(db.customerSegment.findFirst).mockResolvedValue({
@@ -542,7 +635,7 @@ describe('marketing control plane routes', () => {
       'send-campaign',
       { campaignId: 'campaign-1', restaurantId: 'test-rest-1' },
       expect.objectContaining({
-        jobId: 'marketing-campaign:campaign-1',
+        jobId: 'marketing-campaign-campaign-1',
         delay: expect.any(Number),
       }),
     );
@@ -579,5 +672,133 @@ describe('marketing control plane routes', () => {
         }),
       }),
     );
+  });
+
+  describe('désinscription publique', () => {
+    async function unsubscribeToken(): Promise<string> {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      const { createMarketingUnsubscribeToken } = await import('../marketing-unsubscribe.service');
+      return createMarketingUnsubscribeToken({
+        restaurantId: 'test-rest-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+      });
+    }
+
+    function mockWithdrawal() {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+      vi.mocked(db.customer.findUnique).mockResolvedValue({ restaurantId: 'test-rest-1' } as never);
+      vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+        id: 'permission-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+        status: MarketingPermissionStatus.OPTED_OUT,
+      } as never);
+      vi.mocked(db.marketingPermissionEvent.create).mockResolvedValue({ id: 'event-1' } as never);
+    }
+
+    it('un GET affiche une confirmation sans désinscrire (anti-virus, aperçus de lien)', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      vi.mocked(db.marketingPermission.upsert).mockClear();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/unsubscribe?token=${token}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(response.body).toContain('Me désinscrire');
+      expect(response.body).toContain(`value="${token}"`);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('un GET avec un jeton falsifié affiche une page lisible, sans rien modifier', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/unsubscribe?token=${token}x`,
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Ce lien n’est plus valide');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('le formulaire du navigateur désinscrit et confirme en français', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.body).toContain('Vous êtes désinscrit');
+      expect(response.body).toContain('par e-mail');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            channel: 'EMAIL',
+            status: MarketingPermissionStatus.OPTED_OUT,
+            source: 'UNSUBSCRIBE_LINK',
+          }),
+        }),
+      );
+    });
+
+    it('le « un clic » de la messagerie (jeton dans l’URL, corps de formulaire) désinscrit', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/marketing/unsubscribe?token=${encodeURIComponent(token)}`,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        payload: 'List-Unsubscribe=One-Click',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ data: { unsubscribed: true, channel: 'EMAIL' } });
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('le corps JSON reste accepté et un jeton invalide est refusé', async () => {
+      const app = await getApp();
+      const token = await unsubscribeToken();
+      mockWithdrawal();
+
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(ok.json()).toEqual({ data: { unsubscribed: true, channel: 'EMAIL' } });
+
+      vi.mocked(db.marketingPermission.upsert).mockClear();
+      const bad = await app.inject({
+        method: 'POST',
+        url: '/marketing/unsubscribe',
+        payload: { token: `${token}x` },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(bad.json()).toEqual({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
+      const missing = await app.inject({ method: 'POST', url: '/marketing/unsubscribe' });
+      expect(missing.statusCode).toBe(400);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
   });
 });

@@ -21,11 +21,16 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { fetchWithTimeout } from '@sokar/shared';
+import { fetchWithTimeout, MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { PartySizePicker } from './booking/party-size-picker';
 import { SlotGrid } from './booking/slot-grid';
 import { CustomerForm } from './booking/customer-form';
 import { TEST_BOOKING_BANNER } from '@/lib/test-booking';
+import {
+  isConsentEmailUsable,
+  MarketingConsentFields,
+  type MarketingConsentChoice,
+} from './booking/marketing-consent-fields';
 import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 import { trackEvent } from '@/lib/tracking';
 import {
@@ -109,6 +114,11 @@ export function BookingWidget({
   const [giftCardCode, setGiftCardCode] = useState(initialGiftCardCode ?? '');
   const [email, setEmail] = useState<string>('');
   const [whatsappOptIn, setWhatsappOptIn] = useState(false);
+  // Jamais cochées d'avance : le client doit cocher lui-même, et la réservation n'en dépend pas.
+  const [marketingConsent, setMarketingConsent] = useState<MarketingConsentChoice>({
+    EMAIL: false,
+    SMS: false,
+  });
   const [specialRequests, setSpecialRequests] = useState<string>('');
   // Honeypot (anti-bot). Si rempli, on bloque la soumission.
   const [honeypot, setHoneypot] = useState<string>('');
@@ -290,6 +300,18 @@ export function BookingWidget({
       }
       const hold: HoldDto = await holdRes.json();
 
+      // Une case cochée dont la coordonnée a ensuite été effacée n'est pas envoyée.
+      const consentEmail = marketingConsent.EMAIL && isConsentEmailUsable(email);
+      const consentSms = marketingConsent.SMS && phone.trim() !== '';
+      const marketingConsentBlock =
+        consentEmail || consentSms
+          ? {
+              ...(consentEmail ? { email: true } : {}),
+              ...(consentSms ? { sms: true } : {}),
+              version: MARKETING_CONSENT_VERSION,
+            }
+          : null;
+
       // 2. Confirm — Idempotency-Key réutilisée (générée au step "confirm")
       const confirmRes = await fetchWithTimeout(`${API_URL}/public/r/${slug}/confirm`, {
         method: 'POST',
@@ -316,6 +338,9 @@ export function BookingWidget({
             : {}),
           ...(testBookingToken ? { testBookingToken } : {}),
           ...(!testBooking && marketingAttributionToken ? { marketingAttributionToken } : {}),
+          ...(!testBooking && marketingConsentBlock
+            ? { marketingConsent: marketingConsentBlock }
+            : {}),
         }),
       });
       if (!confirmRes.ok) {
@@ -760,6 +785,17 @@ export function BookingWidget({
                 </span>
               </label>
             )}
+
+            <MarketingConsentFields
+              restaurantName={restaurant?.name ?? ''}
+              email={email}
+              phone={phone}
+              choice={marketingConsent}
+              onChange={(channel, checked) =>
+                setMarketingConsent((current) => ({ ...current, [channel]: checked }))
+              }
+              disabled={loading}
+            />
 
             {error && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">

@@ -83,8 +83,11 @@ export async function testRoutes(app: FastifyInstance) {
           .send({ error: "Circuit breaker triggered — trop d'appels récents" });
       }
 
-      const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
-      const customerExtra = CustomerService.buildVipPromptExtra(customer);
+      const caller = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
+      const customer = await CustomerService.withVoiceProfile(ctx.id, caller);
+      const customerExtra = CustomerService.buildVipPromptExtra(customer, {
+        timezone: ctx.timezone,
+      });
       const systemPrompt = buildSystemPrompt({
         ...ctx,
         openingHours: ctx.openingHours as OpeningHours,

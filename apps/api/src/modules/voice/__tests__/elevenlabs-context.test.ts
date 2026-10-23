@@ -11,8 +11,6 @@ import {
 import type { CallSession } from '../stream/types';
 
 const ENV_KEYS = [
-  'VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED',
-  'VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS',
   'VOICE_TTS_CONTEXT_V2_ENABLED',
   'ELEVENLABS_API_KEY',
   'ELEVENLABS_TTS_VOICE_ID',
@@ -99,24 +97,9 @@ describe('ElevenLabs context TTS : format et voix', () => {
 });
 
 describe('ElevenLabs context TTS : fabrique', () => {
-  it('ne crée aucun tour de contexte quand aucun drapeau n’est actif', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    delete process.env.VOICE_TTS_CONTEXT_V2_ENABLED;
-    expect(createContextTtsTurn(makeSession().session)).toBeNull();
-  });
-
-  it('sans clé d’API, le drapeau ElevenLabs ne crée pas de tour', () => {
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED = 'true';
-    process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
+  it('ne crée aucun tour de contexte sans clé ElevenLabs ni contexte Cartesia', () => {
     delete process.env.ELEVENLABS_API_KEY;
-    expect(createContextTtsTurn(makeSession().session)).toBeNull();
-  });
-
-  it('la liste de restaurants ne crée pas de tour pour un restaurant absent', () => {
-    delete process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_ENABLED;
-    process.env.VOICE_TTS_ELEVENLABS_DIALOGUE_RESTAURANT_IDS = 'autre-restaurant';
     process.env.VOICE_TTS_CONTEXT_V2_ENABLED = 'false';
-    process.env.ELEVENLABS_API_KEY = ELEVENLABS_TEST_KEY;
     expect(createContextTtsTurn(makeSession().session)).toBeNull();
   });
 });
@@ -146,6 +129,33 @@ describe('ElevenLabs context TTS : protocole et relais audio', () => {
       },
     ]);
     expect(turn.interruptionSnapshot().text).toBe('Oh, quarante ans. Vous serez combien ?');
+  });
+
+  it('premiers mots : flush demandé sans ponctuation finale, texte relevé recollé avec la suite', async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const url = startServer((message) => {
+      received.push(message);
+    });
+    const { session } = makeSession('PCMA');
+    const turn = new ElevenLabsContextTurn(session, 1, 'cle-test', 'voix-test', url);
+
+    turn.push('Très bien,', { tone: 'warm', flush: true });
+    turn.push('pour combien de personnes ?', { flush: true });
+    await waitFor(() => received.length >= 3);
+
+    expect(received.slice(1, 3)).toEqual([
+      {
+        inputs: [{ text: '[warm] Très bien,', voice_id: 'voix-test', new_turn: false }],
+        flush: true,
+      },
+      {
+        inputs: [{ text: ' pour combien de personnes ?', voice_id: 'voix-test', new_turn: false }],
+        flush: true,
+      },
+    ]);
+    // Interruption après les premiers mots : la reprise lit la réponse entière, sans balise.
+    turn.cancel('barge_in');
+    expect(turn.interruptionSnapshot().text).toBe('Très bien, pour combien de personnes ?');
   });
 
   it('envoie la voix, puis les phrases avec flush selon leur fin, puis close_socket', async () => {

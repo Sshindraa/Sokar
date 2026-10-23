@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../shared/db/client';
 import {
   BillingWebhookInProgressError,
@@ -7,6 +7,7 @@ import {
   billingIntervalFromStripeRecurringInterval,
   handleBillingWebhook,
   isBillingCheckoutEnabled,
+  reconcileBillingFromStripe,
   resolveBillingIntervalForStatus,
 } from '../billing.service';
 
@@ -619,5 +620,286 @@ describe('billing.service - e-mails de fin d’essai et de coupure', () => {
     await handleBillingWebhook(subscriptionEvent('customer.subscription.updated'));
 
     expect(add).not.toHaveBeenCalled();
+  });
+});
+
+describe('billing.service - événements Stripe de la même seconde (recette du 21/10)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const second = 1_792_614_589;
+  const retrieve = () =>
+    (globalThis as Record<string, unknown>).__sokarStripeSubscriptionRetrieve as ReturnType<
+      typeof vi.fn
+    >;
+  const liveActive = {
+    id: 'sub_early',
+    customer: 'cus_test',
+    status: 'active',
+    cancel_at_period_end: false,
+    current_period_end: second + 30 * 24 * 60 * 60,
+    trial_start: second - 3 * 24 * 60 * 60,
+    trial_end: second,
+    metadata: { restaurantId: 'test-rest-1', plan: 'essential', billing: 'monthly' },
+    items: { data: [{ price: { id: 'price_unknown' } }] },
+  };
+
+  function subscriptionEvent(type: string, id: string, object: Record<string, unknown>) {
+    return { type, id, created: second, data: { object } } as never;
+  }
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.restaurantBilling.findUnique).mockReset();
+    vi.mocked(db.restaurantBilling.upsert).mockReset();
+    vi.mocked(db.restaurantBilling.update).mockReset();
+    vi.mocked(db.restaurantBilling.findMany).mockReset();
+    vi.mocked(db.restaurantAccountBilling.upsert).mockReset();
+    vi.mocked(db.restaurant.findUnique).mockReset();
+    retrieve().mockReset();
+  });
+
+  it("le rappel de fin d'essai ne réécrit jamais l'état de l'abonnement", async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      subscriptionStatus: 'active',
+      lastStripeEventCreated: second,
+      lastStripeEventId: 'evt_1UT68wHCZZuqZF0hDLiJAoDJ',
+    } as never);
+
+    const handled = await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.trial_will_end', 'evt_1UT68wHCZZuqZF0hKxDl5v5o', {
+        ...liveActive,
+        status: 'trialing',
+        trial_end: second + 3 * 24 * 60 * 60,
+      }),
+    );
+
+    expect(handled).toBe(true);
+    expect(db.restaurantBilling.upsert).not.toHaveBeenCalled();
+    expect(db.restaurantAccountBilling.upsert).not.toHaveBeenCalled();
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+    const { queues } = await import('../../../shared/queue/queues');
+    expect(queues.billingNotifications.add).toHaveBeenCalledWith(
+      'trial-ending',
+      expect.objectContaining({ kind: 'trial-ending', subscriptionId: 'sub_early' }),
+      expect.anything(),
+    );
+  });
+
+  it("à la même seconde, l'activation n'est plus écartée par l'ordre alphabétique des identifiants", async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    // Un instantané « essai » déjà appliqué porte un identifiant plus grand que l'activation.
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      subscriptionStatus: 'trialing',
+      lastStripeEventCreated: second,
+      lastStripeEventId: 'evt_1UT68wHCZZuqZF0hKxDl5v5o',
+    } as never);
+    retrieve().mockResolvedValue(liveActive);
+
+    await handleBillingWebhook(
+      subscriptionEvent(
+        'customer.subscription.updated',
+        'evt_1UT68wHCZZuqZF0hDLiJAoDJ',
+        liveActive,
+      ),
+    );
+
+    expect(retrieve()).toHaveBeenCalledWith('sub_early');
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'active' }),
+      }),
+    );
+  });
+
+  it("à la même seconde, un instantané d'événement ancien cède à l'état actuel chez Stripe", async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      subscriptionStatus: 'active',
+      lastStripeEventCreated: second,
+      lastStripeEventId: 'evt_A',
+    } as never);
+    retrieve().mockResolvedValue(liveActive);
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.updated', 'evt_Z', {
+        ...liveActive,
+        status: 'trialing',
+      }),
+    );
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'active' }),
+      }),
+    );
+  });
+
+  it("à la même seconde, une facture reprend le statut actuel de l'abonnement", async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      stripeSubscriptionId: 'sub_early',
+      subscriptionStatus: 'canceled',
+      lastStripeEventCreated: second,
+      lastStripeEventId: 'evt_Z',
+    } as never);
+    retrieve().mockResolvedValue({ ...liveActive, status: 'canceled' });
+
+    await handleBillingWebhook({
+      type: 'invoice.payment_failed',
+      id: 'evt_A',
+      created: second,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_early',
+          billing_reason: 'subscription_cycle',
+          amount_paid: 0,
+          metadata: {},
+          lines: { data: [] },
+        },
+      },
+    } as never);
+
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'canceled' }),
+      }),
+    );
+  });
+
+  it('à la même seconde, une lecture Stripe impossible fait échouer le webhook pour qu’il soit relivré', async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      lastStripeEventCreated: second,
+      lastStripeEventId: 'evt_A',
+    } as never);
+    retrieve().mockRejectedValue(new Error('stripe unavailable'));
+
+    await expect(
+      handleBillingWebhook(subscriptionEvent('customer.subscription.updated', 'evt_B', liveActive)),
+    ).rejects.toThrow('stripe unavailable');
+    expect(db.restaurantBilling.upsert).not.toHaveBeenCalled();
+    expect(db.stripeWebhookEvent.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    );
+  });
+
+  it("un événement plus récent s'applique sans relire Stripe", async () => {
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({
+      restaurantId: 'test-rest-1',
+      lastStripeEventCreated: second - 10,
+      lastStripeEventId: 'evt_Z',
+    } as never);
+
+    await handleBillingWebhook(
+      subscriptionEvent('customer.subscription.updated', 'evt_A', liveActive),
+    );
+
+    expect(retrieve()).not.toHaveBeenCalled();
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'active' }),
+      }),
+    );
+  });
+});
+
+describe('billing.service - réparation des dossiers décalés', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const retrieve = () =>
+    (globalThis as Record<string, unknown>).__sokarStripeSubscriptionRetrieve as ReturnType<
+      typeof vi.fn
+    >;
+  const stored = {
+    restaurantId: 'test-rest-1',
+    stripeSubscriptionId: 'sub_early',
+    subscriptionStatus: 'trialing',
+    lastStripeEventCreated: 1_792_614_589,
+    lastStripeEventId: 'evt_1UT68wHCZZuqZF0hKxDl5v5o',
+  };
+  const live = {
+    id: 'sub_early',
+    customer: 'cus_test',
+    status: 'active',
+    cancel_at_period_end: false,
+    current_period_end: 1_795_000_000,
+    metadata: { restaurantId: 'test-rest-1', plan: 'essential' },
+    items: { data: [{ price: { id: 'price_unknown' } }] },
+  };
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.restaurantBilling.findMany).mockReset();
+    vi.mocked(db.restaurantBilling.upsert).mockReset();
+    vi.mocked(db.restaurantAccountBilling.upsert).mockReset();
+    vi.mocked(db.restaurant.findUnique).mockReset();
+    retrieve().mockReset();
+  });
+
+  it("par défaut, liste l'écart sans rien écrire", async () => {
+    vi.mocked(db.restaurantBilling.findMany).mockResolvedValue([stored] as never);
+    retrieve().mockResolvedValue(live);
+
+    const result = await reconcileBillingFromStripe({ apply: false });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        restaurantId: 'test-rest-1',
+        storedStatus: 'trialing',
+        liveStatus: 'active',
+        changed: true,
+        applied: false,
+      }),
+    ]);
+    expect(db.restaurantBilling.upsert).not.toHaveBeenCalled();
+    expect(db.restaurantAccountBilling.upsert).not.toHaveBeenCalled();
+  });
+
+  it("avec apply, projette l'état Stripe sans avancer le checkpoint", async () => {
+    vi.mocked(db.restaurantBilling.findMany).mockResolvedValue([stored] as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: 'account_1' } as never);
+    retrieve().mockResolvedValue(live);
+
+    const result = await reconcileBillingFromStripe({ apply: true });
+
+    expect(result[0]).toEqual(expect.objectContaining({ changed: true, applied: true }));
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          subscriptionStatus: 'active',
+          lastStripeEventCreated: stored.lastStripeEventCreated,
+          lastStripeEventId: stored.lastStripeEventId,
+        }),
+      }),
+    );
+    expect(db.restaurantAccountBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ subscriptionStatus: 'active' }),
+      }),
+    );
+  });
+
+  it('ne touche pas un dossier déjà aligné', async () => {
+    vi.mocked(db.restaurantBilling.findMany).mockResolvedValue([
+      { ...stored, subscriptionStatus: 'active' },
+    ] as never);
+    retrieve().mockResolvedValue(live);
+
+    const result = await reconcileBillingFromStripe({ apply: true });
+
+    expect(result[0]).toEqual(expect.objectContaining({ changed: false, applied: false }));
+    expect(db.restaurantBilling.upsert).not.toHaveBeenCalled();
   });
 });

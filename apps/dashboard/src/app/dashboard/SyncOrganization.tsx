@@ -1,43 +1,82 @@
 'use client';
 
 import { useAuth, useOrganization } from '@clerk/nextjs';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 
-/**
- * SyncOrganization — appelle POST /api/auth/sync au montage
- * pour s'assurer que l'organisation Clerk existe dans PostgreSQL.
- * Idempotent : ne crée le restaurant qu'une seule fois.
- */
+/** Provisionne le compte connecté, avec reprise bornée des erreurs transitoires. */
 export function SyncOrganization() {
   const { isSignedIn } = useAuth();
   const { organization } = useOrganization();
-  const synced = useRef(false);
+  const organizationId = organization?.id;
+  const [retry, setRetry] = useState(0);
+  const [failure, setFailure] = useState<{ organizationId: string; retry: number } | null>(null);
 
   useEffect(() => {
-    if (!isSignedIn || !organization || synced.current) return;
+    if (!isSignedIn || !organizationId) return;
 
-    synced.current = true;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
 
-    (async () => {
+    async function sync(attempt: number) {
+      const request = new AbortController();
+      controller = request;
+      const timeout = setTimeout(() => request.abort(), 10_000);
+      let retryable = true;
       try {
         const res = await fetch('/api/auth/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: request.signal,
         });
-
+        if (cancelled) return;
         if (res.ok) {
-          // Réveille le provider multi-site : le premier chargement peut être
-          // arrivé avant la création du restaurant dans la base.
+          setFailure(null);
+          // Le provider multi-site peut avoir chargé avant la création du restaurant.
           window.dispatchEvent(new Event('sokar:organization-synced'));
-        } else {
-          const err = await res.json();
-          console.warn('[sync] Failed:', err);
+          return;
         }
-      } catch (err) {
-        console.warn('[sync] Error:', err);
+        retryable = res.status >= 500 || res.status === 429;
+      } catch {
+        // Une erreur réseau ou un délai dépassé ne valide jamais la synchronisation.
+      } finally {
+        clearTimeout(timeout);
       }
-    })();
-  }, [isSignedIn, organization]);
+      if (cancelled) return;
+      if (retryable && attempt < 2) {
+        retryTimer = setTimeout(() => void sync(attempt + 1), 1_000 * (attempt + 1));
+      } else {
+        setFailure({ organizationId: organizationId!, retry });
+      }
+    }
 
-  return null; // Ce composant ne rend rien
+    void sync(0);
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      controller?.abort();
+    };
+  }, [isSignedIn, organizationId, retry]);
+
+  if (
+    !isSignedIn ||
+    !failure ||
+    failure.organizationId !== organizationId ||
+    failure.retry !== retry
+  ) {
+    return null;
+  }
+
+  return (
+    <div role="alert" className="m-6 rounded-xl border border-border bg-card p-6 text-foreground">
+      <p>Impossible de préparer votre compte. Réessayez pour poursuivre votre inscription.</p>
+      <Button
+        className="mt-4 transition-all duration-200"
+        onClick={() => setRetry((value) => value + 1)}
+      >
+        Réessayer
+      </Button>
+    </div>
+  );
 }

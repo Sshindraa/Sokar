@@ -42,7 +42,6 @@ import {
 } from './onboarding-floor.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
 import { toRestaurantResponse } from './restaurant-response';
-import { isVoicePersonalityStyleEnabled } from '../voice/stream/feature-flags';
 import { resolveStyledGreeting } from '../voice/stream/styled-greeting';
 import { computeConnectScore } from '../connect/connect-score.service';
 import {
@@ -992,13 +991,11 @@ export async function restaurantRoutes(app: FastifyInstance) {
     await invalidateRestaurantContextCache(restaurant.phoneNumber);
 
     // Accueil composé pour ce style : prêt avant le prochain appel (jamais bloquant en cas d'échec).
-    if (isVoicePersonalityStyleEnabled(restaurant.id)) {
-      await resolveStyledGreeting(
-        restaurant.name,
-        { profileType: personality.profileType, fillerStyle: personality.fillerStyle },
-        { attempts: 2, timeoutMs: 4_000 },
-      ).catch(() => null);
-    }
+    await resolveStyledGreeting(
+      restaurant.name,
+      { profileType: personality.profileType, fillerStyle: personality.fillerStyle },
+      { attempts: 2, timeoutMs: 4_000 },
+    ).catch(() => null);
 
     return reply.send(personality);
   });

@@ -32,6 +32,33 @@ export function getVoiceLlmEndpoint(): {
 }
 
 /**
+ * GPT-6 Luna (OpenRouter, modèle et réglages du relais) est le modèle principal du tour structuré pour tous les
+ * restaurants dès que `OPENROUTER_API_KEY` est présente ; Cerebras devient le doublon et le repli. Sans clé,
+ * Cerebras reste seul.
+ */
+export function isOpenRouterPrimaryFor(restaurantId: string | null | undefined): boolean {
+  return Boolean(restaurantId && voiceConfig.OPENROUTER_API_KEY?.trim());
+}
+
+/**
+ * Le tour principal OpenRouter part en deux requêtes identiques simultanées : le premier texte gagne, l'autre est
+ * annulée. Coupe les pics de GPT-6 Luna (banc du 20/10), pour tous les restaurants.
+ */
+export function isOpenRouterParallelFor(restaurantId: string | null | undefined): boolean {
+  return isOpenRouterPrimaryFor(restaurantId);
+}
+
+/** Fournisseur et modèle principaux d'un restaurant, pour la télémétrie et le rapport d'appel. */
+export function voiceLlmRouteFor(restaurantId: string | null | undefined): {
+  provider: string;
+  model: string;
+} {
+  return isOpenRouterPrimaryFor(restaurantId)
+    ? { provider: 'openrouter', model: voiceConfig.VOICE_STRUCTURED_FALLBACK_MODEL }
+    : { provider: getVoiceLlmProvider(), model: getVoiceLlmModel() };
+}
+
+/**
  * Métadonnées opérationnelles : la clé OpenRouter peut exister pour un outil
  * externe sans que le chemin vocal ne l'utilise. `provider` et `model` restent
  * la preuve de l'appel effectivement routé.

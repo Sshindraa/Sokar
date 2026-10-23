@@ -12,11 +12,6 @@ import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from '../tts
 import { createContextTtsTurn } from '../context-tts';
 import { effectiveVoiceLanguage } from '../voice-language';
 import { finishCall } from '../call-ending';
-import {
-  isVoiceExpressionToneEnabled,
-  isVoiceTurnJudgeEnabled,
-  isVoiceUnderstandingCheckEnabled,
-} from '../feature-flags';
 import { isElevenLabsDialogueEnabledFor } from '../elevenlabs-dialogue-context';
 import {
   markVoiceTurnLlmFirstPhrase,
@@ -82,6 +77,10 @@ import {
   takeSpeculation,
 } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
+import { createTurnFiller, waitForVoiceFiller } from '../voice-filler';
+
+/** Le modèle a répondu, mais sans rien d'exploitable : ce n'est pas une panne du fournisseur. */
+class UnusableTurnOutputError extends Error {}
 
 function responseFormat(
   actions?: readonly StructuredTurnAction[],
@@ -185,6 +184,7 @@ interface PassResult {
  * ~2,2 s) ; réglable sans déploiement par VOICE_INCOMPLETE_TURN_SILENCE_MS.
  */
 import { askedAgainFact } from './asked-again';
+import { currentInkDisagreementNote } from '../stt-ink-parallel';
 
 export const INCOMPLETE_TURN_SILENCE_MS = 2_000;
 
@@ -385,20 +385,19 @@ function passRequest(
     actions?: readonly StructuredTurnAction[];
   } = {},
 ) {
-  const understanding = isVoiceUnderstandingCheckEnabled(session.restaurantId);
   // Le ton n'a d'effet que sur la voix ElevenLabs Dialogue : ailleurs, le modèle ne le choisit pas.
-  const tone =
-    isVoiceExpressionToneEnabled(session.restaurantId) &&
-    isElevenLabsDialogueEnabledFor(session.restaurantId);
+  const tone = isElevenLabsDialogueEnabledFor(session.restaurantId);
+  const secondOpinion = currentInkDisagreementNote(session, state.reservationCreated);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
     history,
     transcript,
     state,
+    ...(secondOpinion ? { secondOpinion } : {}),
     openingHours: session.openingHours,
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
-    ...(understanding ? { understanding } : {}),
+    understanding: true,
     ...(tone ? { tone } : {}),
     ...extra,
   });
@@ -408,7 +407,7 @@ function passRequest(
     extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined),
     {
       turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
-      ...(understanding ? { understanding } : {}),
+      understanding: true,
       ...(tone ? { tone } : {}),
     },
   );
@@ -435,7 +434,7 @@ export function speculateStructuredTurn(
   if (!transcript) return;
   const today = todayInTimezone(session.timezone || 'Europe/Paris');
   const { messages, format } = passRequest(session, state, transcript, [...session.history], today);
-  if (!onVerdict || !isVoiceTurnJudgeEnabled(session.restaurantId)) {
+  if (!onVerdict) {
     startSpeculation(session, mgr, messages, format, onVerdict);
     return;
   }
@@ -551,7 +550,19 @@ export async function runStructuredTurn(
       mgr.handleBargeIn(session);
     };
   }
+  // Petit mot d'attente pendant une vérification ou un enregistrement (voir voice-filler.ts) : `null` hors
+  // restaurants listés.
+  const filler = createTurnFiller(session, contextTts?.provider ?? null, {
+    transcript,
+    lastAwaiting: state.lastAwaiting,
+    turnId,
+    signal: abortController.signal,
+    ...(options.callerFinished ? { callerFinished: true } : {}),
+  });
   const spokenPhrases: string[] = [];
+  // Premiers mots de la réponse dits dès la première virgule (voir `PhraseSplitter`) : ElevenLabs seulement, qui
+  // génère alors ce début sans attendre la fin de phrase. Mesure du 21/10 : la voix part ~0,15 à 0,26 s plus tôt.
+  const earlyPhrase = contextTts?.provider === 'elevenlabs';
   // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
   // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
   let replyTone: string | null = null;
@@ -584,6 +595,7 @@ export async function runStructuredTurn(
           '[structured-turn] TTS context failed',
         );
         if (outcome === 'http_fallback') {
+          await waitForVoiceFiller(session);
           await speakTtsStreamed(session, spokenPhrases.join(' ')).catch(() => undefined);
         }
       }
@@ -592,6 +604,7 @@ export async function runStructuredTurn(
   };
   const startedAt = Date.now();
   let firstPhraseSpoken = false;
+  let earlyPhraseNext = false;
 
   session.turnCount++;
   session.history.push({ role: 'user', content: transcript });
@@ -612,7 +625,11 @@ export async function runStructuredTurn(
       markVoiceTurnLlmFirstPhrase(session, turnId);
       mgr.transition(session, 'SPEAKING');
     }
-    recordVoiceTurnEvent(session, 'llm_phrase_generated', { characterCount: phrase.length });
+    recordVoiceTurnEvent(session, 'llm_phrase_generated', {
+      characterCount: phrase.length,
+      ...(earlyPhraseNext ? { early: true } : {}),
+    });
+    earlyPhraseNext = false;
     // La voix surjoue les points d'exclamation sur une phrase courte (« Avec
     // plaisiiir ! », appel 0d49230d) : ton posé côté synthèse.
     phrase = phrase.replace(/\s*!/g, '.');
@@ -625,10 +642,11 @@ export async function runStructuredTurn(
         // Les phrases suivantes reviennent aussi par l'écho : la référence anti-écho les garde.
         rememberRecentAgentSpeech(session, phrase);
       } else contextDebugEntry = recordDebugAgentSpeech(session, phrase);
-      contextTts.push(
-        cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)),
-        toneForNextPhrase(),
-      );
+      filler?.replyQueued();
+      contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)), {
+        ...toneForNextPhrase(),
+        ...(earlyPhrase ? { flush: true } : {}),
+      });
       return;
     }
     ttsPromises.push(speakTtsStreamed(session, voiced(phrase)).catch(() => undefined));
@@ -681,7 +699,7 @@ export async function runStructuredTurn(
     });
     // Juge de fin de tour séparé (turn-end-judge.ts) : son verdict remplace `turnComplete` du modèle pour décider de
     // parler. Tant qu'il n'a pas répondu, la phrase est retenue ; sans verdict (délai, erreur), `turnComplete` du modèle.
-    const judging = useJudge && !finished && isVoiceTurnJudgeEnabled(session.restaurantId);
+    const judging = useJudge && !finished;
     let judged = (judging ? undefined : null) as boolean | null | undefined;
     let unsaid = '';
     const mayContinue = () => {
@@ -690,11 +708,21 @@ export async function runStructuredTurn(
         (judged === undefined ? false : judged === null ? turnComplete === true : judged);
       return complete && !slotConflict;
     };
+    // Premiers mots avant la fin de la première phrase : seulement quand la voix a déjà le droit de partir (action,
+    // fin de tour, créneau, tous lus avant `say`) et qu'aucun garde-fou ne juge la phrase entière (relecture du nom,
+    // « question seule »).
+    const earlyAllowed = () =>
+      earlyPhrase &&
+      !firstPhraseSpoken &&
+      readbackName === null &&
+      (Boolean(actionResult) || !timeGivenWithoutPartySize(extractor.raw, state.draft));
     const drainSaid = () => {
       if (!unsaid || action !== 'none' || !mayContinue() || !isLive()) return;
       const chunk = unsaid;
       unsaid = '';
-      splitter.push(chunk).forEach(emit);
+      const phrases = splitter.push(chunk, { early: earlyAllowed() });
+      earlyPhraseNext = splitter.early;
+      phrases.forEach(emit);
     };
     const judgeSettled: Promise<void> = judging
       ? startTurnEndJudge(session, mgr, transcript).then((verdict) => {
@@ -809,7 +837,7 @@ export async function runStructuredTurn(
       onDelta,
     });
     let output = parseStructuredTurnOutput(text);
-    if (!output) throw new Error('Invalid structured turn output');
+    if (!output) throw new UnusableTurnOutputError('Invalid structured turn output');
     // Le juge a une échéance propre : on l'attend ici (il tourne depuis le début du passage, souvent déjà rendu).
     await judgeSettled;
     drainSaid();
@@ -893,6 +921,7 @@ export async function runStructuredTurn(
   };
 
   const runAvailability = async (): Promise<string> => {
+    filler?.expectLongWait('check_availability');
     const { date, time, partySize } = state.draft;
     recordDebugTool(session, 'checkAvailability');
     recordVoiceTurnEvent(session, 'availability_started', {});
@@ -947,6 +976,7 @@ export async function runStructuredTurn(
   };
 
   const runCreateReservation = async (): Promise<string> => {
+    filler?.expectLongWait('create_reservation');
     const { date, time, partySize, customerName } = state.draft;
     const { conversation } = session;
     conversation.slots.date = date;
@@ -974,6 +1004,7 @@ export async function runStructuredTurn(
   const endCall = async (goodbye: string) => {
     await flushSpeech();
     session.history.push({ role: 'assistant', content: goodbye });
+    await waitForVoiceFiller(session);
     await finishCall(session, mgr, goodbye);
   };
 
@@ -1235,7 +1266,8 @@ export async function runStructuredTurn(
       speakPhrase(CALLER_FINISHED_FALLBACK);
     }
     const said = final.say.trim();
-    if (!said) throw new Error('Structured turn produced no speech');
+    if (!said) throw new UnusableTurnOutputError('Structured turn produced no speech');
+    session.conversation.llmFailureStreak = 0;
     state.lastAwaiting = final.awaiting;
     state.recapKey =
       final.awaiting === 'confirmation' && isBookingComplete(state.draft)
@@ -1276,12 +1308,18 @@ export async function runStructuredTurn(
       durationMs: Date.now() - startedAt,
     });
     await flushSpeech();
-    const fallback = buildLlmFailurePlan(session).reply;
+    // Compteur perdu avec le mode à outils (#395) : sans lui, l'escalade vers le gérant ou un message
+    // (deuxième échec d'affilée, voir buildLlmFailurePlan) ne se déclenchait plus.
+    session.conversation.llmFailureStreak = (session.conversation.llmFailureStreak ?? 0) + 1;
+    const cause = err instanceof UnusableTurnOutputError ? 'unusable' : 'technical';
+    const fallback = buildLlmFailurePlan(session, cause).reply;
     session.history.push({ role: 'assistant', content: fallback });
     mgr.transition(session, 'SPEAKING');
+    await waitForVoiceFiller(session);
     await speakTtsStreamed(session, fallback);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
   } finally {
+    filler?.dispose();
     // Tour sans phrase (fragment retenu, relance, interruption) : le contexte
     // ouvert d'avance est fermé sans audio.
     if (contextTts && !spokenPhrases.length) contextTts.cancel('unused');

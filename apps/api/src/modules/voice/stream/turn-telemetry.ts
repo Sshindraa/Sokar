@@ -20,7 +20,7 @@ import {
   voiceTurnPlanShadowByRestaurantTotal,
   recordVoiceQualityTurnEvent,
 } from '../../../shared/observability/metrics';
-import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import { voiceLlmRouteFor } from '../llm-provider';
 import { recordDebugCallerText } from './debug-dialogue';
 import { telephonyTtsProvider, ttsProviderWithModel } from './elevenlabs-tts';
 
@@ -59,6 +59,8 @@ export type VoiceTurnEvent =
   | 'filler_started'
   | 'filler_completed'
   | 'filler_interrupted'
+  | 'filler_skipped'
+  | 'reply_first_audio'
   | 'tts_synthesis_started'
   | 'tts_synthesis_first_byte'
   | 'tts_synthesis_completed'
@@ -183,6 +185,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'filler_started':
     case 'filler_completed':
     case 'filler_interrupted':
+    case 'filler_skipped':
     case 'tts_synthesis_started':
     case 'tts_synthesis_first_byte':
     case 'tts_synthesis_completed':
@@ -190,6 +193,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'goodbye_filler_hit':
       return 'synthesis';
     case 'tts_first_audio':
+    case 'reply_first_audio':
     case 'first_audio_hold':
       return 'audio';
     case 'tts_interrupted':
@@ -418,7 +422,28 @@ export function markVoiceTurnAudioSent(
   noteAgentAudioStarted(session);
   if (!isCurrentVoiceTurn(session, turnId)) return;
   const trace = session.latencyTrace;
-  if (!trace || trace.totalE2eMs !== undefined) return;
+  if (!trace) return;
+  if (trace.totalE2eMs !== undefined) {
+    // Un son d'attente est parti le premier : le premier son de la vraie réponse est mesuré à part, pour comparer
+    // les tours avec et sans son d'attente sur la même base.
+    if (
+      trace.firstAudioIsFiller &&
+      fields.isFiller !== true &&
+      trace.replyAudioSentAt === undefined
+    ) {
+      const replyAt = Date.now();
+      trace.replyAudioSentAt = replyAt;
+      if (trace.speechEndAt !== undefined) {
+        trace.endOfSpeechToReplyAudioMs = Math.max(0, replyAt - trace.speechEndAt);
+      }
+      recordVoiceTurnEvent(session, 'reply_first_audio', {
+        ...fields,
+        endOfSpeechToReplyAudioMs: trace.endOfSpeechToReplyAudioMs,
+        replyAfterFillerMs: replyAt - (trace.audioSentAt ?? replyAt),
+      });
+    }
+    return;
+  }
   const sentAt = Date.now();
   trace.audioSentAt = sentAt;
   trace.totalE2eMs = sentAt - trace.startTime;
@@ -472,8 +497,13 @@ export function recordVoiceTurnEvent(
       case 'llm_started':
         setVoiceTurnPath(session, 'llm');
         turn.llmProvider =
-          typeof fields.provider === 'string' ? fields.provider : getVoiceLlmProvider();
-        turn.llmModel = typeof fields.model === 'string' ? fields.model : getVoiceLlmModel();
+          typeof fields.provider === 'string'
+            ? fields.provider
+            : voiceLlmRouteFor(session.restaurantId).provider;
+        turn.llmModel =
+          typeof fields.model === 'string'
+            ? fields.model
+            : voiceLlmRouteFor(session.restaurantId).model;
         break;
       case 'availability_started':
         setVoiceTurnPath(session, 'availability');
@@ -594,7 +624,12 @@ export function recordVoiceTurnEvent(
     case 'stt_final':
       if (typeof fields.endOfSpeechToSttFinalMs === 'number') {
         voiceEndOfSpeechToSttFinalMs.observe(
-          { provider: turn.sttProvider ?? 'unknown' },
+          {
+            provider: turn.sttProvider ?? 'unknown',
+            // Ce qui a clos la phrase (speech_final, partielle figée, épellation…) : la queue lente se lit ici.
+            final_trigger:
+              typeof fields.finalTrigger === 'string' ? fields.finalTrigger : 'unknown',
+          },
           fields.endOfSpeechToSttFinalMs,
         );
       }
@@ -610,6 +645,7 @@ export function recordVoiceTurnEvent(
     case 'filler_started':
     case 'filler_completed':
     case 'filler_interrupted':
+    case 'filler_skipped':
       voiceFillerEventsTotal.inc({
         outcome: event.slice('filler_'.length),
         purpose: typeof fields.purpose === 'string' ? fields.purpose : 'unknown',

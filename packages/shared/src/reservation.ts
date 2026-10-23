@@ -7,12 +7,7 @@
  * Source of truth: `packages/database/prisma/schema.prisma`.
  */
 
-export const RESERVATION_STATUS_VALUES = [
-  'CONFIRMED',
-  'CANCELLED',
-  'NO_SHOW',
-  'SEATED',
-] as const;
+export const RESERVATION_STATUS_VALUES = ['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'SEATED'] as const;
 export type ReservationStatus = (typeof RESERVATION_STATUS_VALUES)[number];
 
 /**

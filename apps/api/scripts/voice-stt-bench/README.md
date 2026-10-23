@@ -2,7 +2,11 @@
 
 Mesure ce que la réservation vocale retient réellement d'une réponse d'appelant :
 synthèse Cartesia → dégradation téléphonique → transcription Scribe de production →
-dialogue réel (`recordUserTurn`), flag `VOICE_EXPECTED_ANSWER_ENABLED` coupé puis actif.
+dialogue réel (`recordUserTurn`).
+
+Depuis le 22/10/2026, réponses attendues et confirmation par la confiance sont actives pour tous les
+restaurants, sans réglage : les colonnes « coupé » et « actif » du rapport sont identiques. Les chiffres
+coupé/actif cités plus bas datent d'avant.
 
 ## Jeux de phrases
 
@@ -323,3 +327,9 @@ un run complet.
 Le run F complet envoie 186 sessions parlées et 6 contrôles bruit-seul B/F,
 soit **192 sessions Scribe**. `say` est local et gratuit côté TTS. L'estimation
 des secondes d'audio streamé, silence final inclus, est affichée avant le run.
+
+### Relève `Finalize` sur les réponses courtes (21/10)
+
+`finalize-probe.ts` rejoue les tours courts des enregistrements (`turns.json` d'`eot_pauses.py`) deux fois : sans
+commande, puis avec `Finalize` à fin de voix + `--finalize-after-ms`. Mesure le délai de la réponse et compare les
+textes (hors dépôt). Résultats : `docs/audits/2026-10-21-voice-short-answer-end-of-turn.md`.

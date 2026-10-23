@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CustomerService } from '../customer.service';
 import { db } from '../../../shared/db/client';
-import { redisCache } from '../../../shared/redis/client';
+import { getCachedContext, redisCache } from '../../../shared/redis/client';
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
@@ -31,25 +31,165 @@ describe('CustomerService', () => {
     vi.clearAllMocks();
   });
 
-  it('buildVipPromptExtra — client VIP avec nom et visites', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Jean Dupont',
-      visitCount: 3,
-      isVip: true,
-      specialOccasion: null,
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: null,
+  const baseCustomer = {
+    id: '1',
+    name: 'Jean Dupont',
+    visitCount: 0,
+    isVip: false,
+    specialOccasion: null,
+    notes: null,
+    lastCallAt: null,
+    partySizeTypical: null,
+  };
+  const emptyProfile = {
+    pastVisits: 0,
+    lastVisitAt: null,
+    upcomingReservation: null,
+    typicalPartySize: null,
+    preferences: [],
+    tags: [],
+    lastReservationName: null,
+  };
+
+  describe('buildVipPromptExtra', () => {
+    it('client inconnu (pas de nom) → chaîne vide', () => {
+      expect(CustomerService.buildVipPromptExtra({ ...baseCustomer, name: null })).toBe('');
     });
-    expect(result).toContain('Jean Dupont');
-    expect(result).toContain('VIP');
-    expect(result).toContain('4e visite');
+
+    it("compte les vraies visites, jamais l'ancien compteur de réservations téléphone", () => {
+      const result = CustomerService.buildVipPromptExtra(
+        {
+          ...baseCustomer,
+          visitCount: 9,
+          voiceProfile: {
+            ...emptyProfile,
+            pastVisits: 3,
+            lastVisitAt: '2026-09-12T18:30:00.000Z',
+            typicalPartySize: 4,
+          },
+        },
+        { timezone: 'Europe/Paris' },
+      );
+      expect(result).toContain('Déjà venu 3 fois ; dernière visite le 12 septembre 2026.');
+      expect(result).toContain('Taille de groupe habituelle : 4 pers.');
+      expect(result).not.toContain('9');
+      expect(result).not.toContain('visite.');
+    });
+
+    it('dit « aucune visite » quand le numéro a seulement réservé', () => {
+      const result = CustomerService.buildVipPromptExtra({
+        ...baseCustomer,
+        visitCount: 2,
+        voiceProfile: emptyProfile,
+      });
+      expect(result).toContain('Aucune visite passée connue.');
+    });
+
+    it('transmet réservation à venir, préférences confirmées et étiquettes', () => {
+      const result = CustomerService.buildVipPromptExtra(
+        {
+          ...baseCustomer,
+          voiceProfile: {
+            ...emptyProfile,
+            upcomingReservation: { startsAt: '2026-10-24T18:00:00.000Z', partySize: 4 },
+            preferences: [
+              { key: 'preferred_section', value: 'terrasse' },
+              { key: 'dietary_restrictions', value: 'sans gluten' },
+            ],
+            tags: ['Habitué'],
+          },
+        },
+        { timezone: 'Europe/Paris' },
+      );
+      expect(result).toContain('Réservation à venir : samedi 24 octobre à 20:00, 4 pers.');
+      expect(result).toContain('zone préférée : terrasse ; régime alimentaire : sans gluten');
+      expect(result).toContain("Étiquettes de l'équipe : Habitué.");
+      expect(result).toContain("ne s'étend pas aux autres convives");
+    });
+
+    it("VIP et occasion, jamais la note libre du gérant, sans accord imposé à l'agent", () => {
+      const result = CustomerService.buildVipPromptExtra({
+        ...baseCustomer,
+        isVip: true,
+        specialOccasion: 'anniversaire',
+        notes: 'Aime la table 12',
+      });
+      expect(result).toContain("Client VIP : soigne particulièrement l'échange.");
+      expect(result).toContain('Occasion spéciale : anniversaire.');
+      expect(result).not.toContain('Aime la table 12');
+      expect(result).not.toContain('Note');
+      expect(result).not.toContain('attentionné');
+    });
+
+    it('sans profil chargé, garde la taille de groupe historique', () => {
+      const result = CustomerService.buildVipPromptExtra({ ...baseCustomer, partySizeTypical: 4 });
+      expect(result).toContain('4 pers.');
+      expect(result).not.toContain('Déjà venu');
+    });
   });
 
-  it('buildVipPromptExtra — client inconnu → chaîne vide', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
+  describe('nom connu par la dernière réservation', () => {
+    it('reconnaît une fiche sans nom grâce au nom de sa dernière réservation', () => {
+      const customer = {
+        ...baseCustomer,
+        name: null,
+        voiceProfile: { ...emptyProfile, pastVisits: 9, lastReservationName: 'Hamza Akkif' },
+      };
+      expect(CustomerService.buildVipPromptExtra(customer)).toContain('- Nom : Hamza Akkif.');
+      expect(CustomerService.buildVipPromptExtra(customer)).toContain('Déjà venu 9 fois');
+      expect(CustomerService.returningCustomerFirstName(customer)).toBe('Hamza');
+    });
+
+    it('préfère le nom de la fiche à celui de la réservation', () => {
+      const customer = {
+        ...baseCustomer,
+        voiceProfile: { ...emptyProfile, pastVisits: 2, lastReservationName: 'Autre Nom' },
+      };
+      expect(CustomerService.returningCustomerFirstName(customer)).toBe('Jean');
+    });
+  });
+
+  describe('returningCustomerFirstName', () => {
+    it('client déjà venu → prénom seul', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          voiceProfile: { ...emptyProfile, pastVisits: 2 },
+        }),
+      ).toBe('Jean');
+    });
+
+    it("VIP marqué par l'équipe sans visite enregistrée → prénom", () => {
+      expect(CustomerService.returningCustomerFirstName({ ...baseCustomer, isVip: true })).toBe(
+        'Jean',
+      );
+    });
+
+    it('réservations téléphone sans visite passée → rien', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          visitCount: 5,
+          voiceProfile: emptyProfile,
+        }),
+      ).toBe('');
+    });
+
+    it('client sans nom → rien', () => {
+      expect(
+        CustomerService.returningCustomerFirstName({
+          ...baseCustomer,
+          name: null,
+          isVip: true,
+          voiceProfile: { ...emptyProfile, pastVisits: 5 },
+        }),
+      ).toBe('');
+    });
+  });
+
+  describe('lookupOrCreate et le cache', () => {
+    const cachedWithoutName = {
+      id: 'c1',
       name: null,
       visitCount: 0,
       isVip: false,
@@ -57,95 +197,33 @@ describe('CustomerService', () => {
       notes: null,
       lastCallAt: null,
       partySizeTypical: null,
-    });
-    expect(result).toBe('');
-  });
+    };
+    const row = { ...cachedWithoutName, name: 'Hamza', partySizeTypical: null };
 
-  it('buildVipPromptExtra — occasion spéciale incluse', () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Marie',
-      visitCount: 1,
-      isVip: false,
-      specialOccasion: 'anniversaire',
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: null,
-    });
-    expect(result).toContain('anniversaire');
-  });
-
-  it("buildVipPromptExtra — partySizeTypical affiché quand on l'a", () => {
-    const result = CustomerService.buildVipPromptExtra({
-      id: '1',
-      name: 'Jean',
-      visitCount: 5,
-      isVip: false,
-      specialOccasion: null,
-      notes: null,
-      lastCallAt: null,
-      partySizeTypical: 4,
-    });
-    expect(result).toContain('4 pers.');
-  });
-
-  describe('buildReturningGreeting', () => {
-    it('VIP nommé → "content de vous revoir M. <prénom>"', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Jean Dupont',
-        visitCount: 10,
-        isVip: true,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toContain('content de vous revoir');
-      expect(result).toContain('M. Jean');
+    beforeEach(() => {
+      vi.mocked(getCachedContext).mockResolvedValue(cachedWithoutName as never);
+      vi.mocked(db.customerIdentity.findUnique).mockResolvedValue(null as never);
+      vi.mocked(db.customer.upsert).mockResolvedValue(row as never);
     });
 
-    it('retour non-VIP avec visites → "ravi de vous revoir <prénom>"', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Marie Curie',
-        visitCount: 2,
-        isVip: false,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toContain('ravi de vous revoir');
-      expect(result).toContain('Marie');
+    it('sans nom, sert la fiche gardée en mémoire', async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000');
+      expect(result).toBe(cachedWithoutName);
+      expect(db.customer.upsert).not.toHaveBeenCalled();
     });
 
-    it('nouveau client (visitCount=0) → chaîne vide', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: 'Paul',
-        visitCount: 0,
-        isVip: false,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toBe('');
+    it('avec un nom, écrit toujours le nom en base même si la fiche est en mémoire', async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '  Hamza ');
+      expect(db.customer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ name: 'Hamza' }) }),
+      );
+      expect(result.name).toBe('Hamza');
     });
 
-    it('client inconnu (pas de nom) → chaîne vide', () => {
-      const result = CustomerService.buildReturningGreeting({
-        id: '1',
-        name: null,
-        visitCount: 5,
-        isVip: true,
-        specialOccasion: null,
-        notes: null,
-        lastCallAt: null,
-        partySizeTypical: null,
-      });
-      expect(result).toBe('');
+    it("un nom vide n'efface rien et sert la mémoire", async () => {
+      const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '   ');
+      expect(result).toBe(cachedWithoutName);
+      expect(db.customer.upsert).not.toHaveBeenCalled();
     });
   });
 

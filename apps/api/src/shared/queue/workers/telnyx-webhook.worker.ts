@@ -18,6 +18,10 @@ import {
   runCallReportJob,
 } from '../../../modules/voice/call-report/job-runtime';
 import { queues } from '../queues';
+import {
+  CRM_VOICE_SUGGESTIONS_JOB_NAME,
+  runCrmVoiceSuggestionsJob,
+} from '../../../modules/customers/customer-voice-suggestions';
 
 export interface TelnyxAnswerJobData {
   readonly callControlId: string;
@@ -70,6 +74,12 @@ export const telnyxWebhookWorker = new Worker(
       const recovery = job.data as RecoverRecordingJobData;
       await recoverPendingRecording(recovery);
       await enqueueCallReport(recovery.callLegId, queues.telnyxWebhooks);
+      return;
+    }
+
+    if (job.name === CRM_VOICE_SUGGESTIONS_JOB_NAME) {
+      // Ne lève jamais : une suggestion manquante n'a d'effet sur rien.
+      await runCrmVoiceSuggestionsJob((job.data as { callLegId: string }).callLegId);
       return;
     }
 

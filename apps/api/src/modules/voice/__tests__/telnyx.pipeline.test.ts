@@ -37,7 +37,10 @@ vi.mock('../../customers/customer.service', () => ({
   CustomerService: {
     lookupOrCreate: vi.fn(),
     buildVipPromptExtra: vi.fn(),
-    buildReturningGreeting: vi.fn(() => 'Bonjour'),
+    withVoiceProfile: vi.fn((_restaurantId: string, customer: unknown) =>
+      Promise.resolve(customer),
+    ),
+    returningCustomerFirstName: vi.fn(() => 'Jean'),
     recordCallActivity: vi.fn(() => Promise.resolve()),
     incrementVisit: vi.fn(),
   },
@@ -188,6 +191,36 @@ describe('POST /voice/telnyx — call.initiated', () => {
 
   afterAll(async () => {
     await closeApp();
+  });
+
+  const knownCaller = {
+    id: 'cust-1',
+    name: 'Jean',
+    visitCount: 3,
+    isVip: false,
+    specialOccasion: null,
+    notes: null,
+    lastCallAt: null,
+    partySizeTypical: null,
+  };
+
+  it('tout restaurant : profil CRM chargé et contexte client', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockLookupOrCreate.mockResolvedValue(knownCaller);
+    mockBuildVipPromptExtra.mockReturnValue('');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(CustomerService.withVoiceProfile).toHaveBeenCalledWith('rest-1', knownCaller);
+    expect(mockBuildVipPromptExtra).toHaveBeenCalled();
+    expect(CustomerService.returningCustomerFirstName).toHaveBeenCalled();
   });
 
   it('happy path: pre-creates the session and enqueues the answer job', async () => {

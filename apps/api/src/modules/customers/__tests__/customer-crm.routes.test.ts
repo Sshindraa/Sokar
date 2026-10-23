@@ -12,26 +12,23 @@ describe('customer CRM routes', () => {
     await closeApp();
   });
 
-  it('ferme le CRM avancé en production lorsque le flag n’est pas ouvert', async () => {
+  it('ouvre le CRM avancé en production à tout restaurant dont la formule l’inclut', async () => {
     const previousNodeEnv = process.env.NODE_ENV;
-    const previousFlag = process.env.CRM_ADVANCED_ENABLED;
     process.env.NODE_ENV = 'production';
-    delete process.env.CRM_ADVANCED_ENABLED;
     try {
       const app = await getApp();
+      vi.mocked(db.restaurant.findUnique)
+        .mockResolvedValueOnce({ plan: 'PRO' } as never)
+        .mockResolvedValueOnce({ crmSensitiveNoteRoles: null } as never);
       const response = await app.inject({
         method: 'GET',
         url: '/crm/privacy',
         headers: { authorization: 'Bearer test' },
       });
-
-      expect(response.statusCode).toBe(503);
-      expect(response.json()).toMatchObject({ error: 'CRM_ADVANCED_DISABLED' });
+      expect(response.statusCode).not.toBe(503);
     } finally {
       if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = previousNodeEnv;
-      if (previousFlag === undefined) delete process.env.CRM_ADVANCED_ENABLED;
-      else process.env.CRM_ADVANCED_ENABLED = previousFlag;
     }
   });
 
@@ -103,6 +100,7 @@ describe('customer CRM routes', () => {
       { id: 'customer-2', metricSnapshot: { honored365d: 4 } },
       { id: 'customer-3', metricSnapshot: { honored365d: 3 } },
     ] as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
 
     const response = await app.inject({
       method: 'GET',
@@ -113,8 +111,16 @@ describe('customer CRM routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       data: [
-        { id: 'customer-1', metricSnapshot: { honored365d: 5 } },
-        { id: 'customer-2', metricSnapshot: { honored365d: 4 } },
+        {
+          id: 'customer-1',
+          metricSnapshot: { honored365d: 5 },
+          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+        },
+        {
+          id: 'customer-2',
+          metricSnapshot: { honored365d: 4 },
+          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+        },
       ],
       nextCursor: 'customer-2',
     });

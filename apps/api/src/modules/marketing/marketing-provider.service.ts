@@ -21,6 +21,8 @@ export type MarketingProviderChannelReadiness = {
 export type MarketingProviderReadiness = {
   sendsEnabled: boolean;
   sendGate: { enabled: boolean; missing: string[] };
+  /** Vrai quand `MARKETING_RECIPIENT_ALLOWLIST` limite les envois à des contacts de test. */
+  recipientAllowlistActive: boolean;
   sms: MarketingProviderChannelReadiness;
   email: MarketingProviderChannelReadiness;
   whatsapp: MarketingProviderChannelReadiness;
@@ -82,6 +84,7 @@ export function getMarketingProviderReadiness(
       enabled: sendsEnabled,
       missing: sendsEnabled ? [] : ['MARKETING_SENDS_ENABLED'],
     },
+    recipientAllowlistActive: Boolean(environment.MARKETING_RECIPIENT_ALLOWLIST?.trim()),
     sms,
     email,
     whatsapp,
@@ -115,7 +118,10 @@ type ProviderTransition = {
 
 type ProviderDb = Pick<
   PrismaClient,
-  'campaignMessage' | 'marketingCampaign' | 'marketingProviderReconciliation'
+  | 'campaignMessage'
+  | 'marketingCampaign'
+  | 'marketingProviderReconciliation'
+  | 'marketingSuppression'
 > & {
   $transaction: <T>(callback: (tx: ProviderDb) => Promise<T>) => Promise<T>;
 };
@@ -195,6 +201,9 @@ function sanitizeProviderError(value: string | undefined): string | undefined {
     .slice(0, 80);
   return sanitized || undefined;
 }
+
+/** Relectures d'un message dont la mise à jour conditionnelle a perdu une course entre callbacks. */
+const MAX_PROVIDER_EVENT_ATTEMPTS = 3;
 
 function statusRank(status: MarketingMessageStatus): number {
   switch (status) {
@@ -344,72 +353,88 @@ export async function applyMarketingProviderEvent(
   const providerDb = asProviderDb(database);
 
   return providerDb.$transaction(async (tx) => {
-    const message = await tx.campaignMessage.findFirst({
-      where: { provider: input.provider, providerMessageId },
-      select: {
-        id: true,
-        campaignId: true,
-        customerId: true,
-        status: true,
-        acceptedAt: true,
-        sentAt: true,
-        deliveredAt: true,
-        campaign: { select: { restaurantId: true } },
-      },
-    });
-    if (!message) {
-      const reconciliationId = await recordUnknownProviderEvent(tx, input, transition, occurredAt);
-      return { matched: false, changed: false, reconciliationId };
-    }
-    if (!canTransition(message.status, transition.status)) {
-      await resolveProviderReconciliations(tx, {
-        provider: input.provider,
-        providerMessageId,
-        campaignMessageId: message.id,
-        restaurantId: message.campaign?.restaurantId,
-        resolvedAt: occurredAt,
-        resolutionCode: 'ALREADY_APPLIED',
+    // Resend envoie `email.sent` puis `email.delivered` à quelques millisecondes d'intervalle : deux
+    // callbacks peuvent lire le même statut et se disputer la ligne. Celui qui perd la mise à jour
+    // conditionnelle relit le message et réévalue sa transition au lieu de jeter l'événement ; sinon un
+    // rebond ou une plainte perdant la course ne créerait jamais la suppression.
+    const loadMessage = () =>
+      tx.campaignMessage.findFirst({
+        where: { provider: input.provider, providerMessageId },
+        select: {
+          id: true,
+          campaignId: true,
+          customerId: true,
+          channel: true,
+          status: true,
+          acceptedAt: true,
+          sentAt: true,
+          deliveredAt: true,
+          campaign: { select: { restaurantId: true } },
+        },
       });
-      return {
-        matched: true,
-        changed: false,
-        status: message.status,
-        campaignId: message.campaignId,
-        customerId: message.customerId,
-      };
-    }
+    let message: Awaited<ReturnType<typeof loadMessage>> = null;
+    for (let attempt = 1; ; attempt += 1) {
+      message = await loadMessage();
+      if (!message) {
+        const reconciliationId = await recordUnknownProviderEvent(
+          tx,
+          input,
+          transition,
+          occurredAt,
+        );
+        return { matched: false, changed: false, reconciliationId };
+      }
+      if (!canTransition(message.status, transition.status)) {
+        await resolveProviderReconciliations(tx, {
+          provider: input.provider,
+          providerMessageId,
+          campaignMessageId: message.id,
+          restaurantId: message.campaign?.restaurantId,
+          resolvedAt: occurredAt,
+          resolutionCode: 'ALREADY_APPLIED',
+        });
+        return {
+          matched: true,
+          changed: false,
+          status: message.status,
+          campaignId: message.campaignId,
+          customerId: message.customerId,
+        };
+      }
 
-    const data: Record<string, unknown> = { status: transition.status };
-    if (transition.errorCode) data.errorCode = transition.errorCode;
-    if (transition.status === MarketingMessageStatus.SENT && !message.sentAt) {
-      data.sentAt = occurredAt;
-    }
-    if (transition.status === MarketingMessageStatus.DELIVERED) {
-      data.deliveredAt = message.deliveredAt ?? occurredAt;
-      if (!message.sentAt) data.sentAt = occurredAt;
-      if (!message.acceptedAt) data.acceptedAt = occurredAt;
-    }
+      const data: Record<string, unknown> = { status: transition.status };
+      if (transition.errorCode) data.errorCode = transition.errorCode;
+      if (transition.status === MarketingMessageStatus.SENT && !message.sentAt) {
+        data.sentAt = occurredAt;
+      }
+      if (transition.status === MarketingMessageStatus.DELIVERED) {
+        data.deliveredAt = message.deliveredAt ?? occurredAt;
+        if (!message.sentAt) data.sentAt = occurredAt;
+        if (!message.acceptedAt) data.acceptedAt = occurredAt;
+      }
 
-    const updated = await tx.campaignMessage.updateMany({
-      where: { id: message.id, status: message.status },
-      data,
-    });
-    if (updated.count !== 1) {
-      await resolveProviderReconciliations(tx, {
-        provider: input.provider,
-        providerMessageId,
-        campaignMessageId: message.id,
-        restaurantId: message.campaign?.restaurantId,
-        resolvedAt: occurredAt,
-        resolutionCode: 'RACE_ALREADY_APPLIED',
+      const updated = await tx.campaignMessage.updateMany({
+        where: { id: message.id, status: message.status },
+        data,
       });
-      return {
-        matched: true,
-        changed: false,
-        status: message.status,
-        campaignId: message.campaignId,
-        customerId: message.customerId,
-      };
+      if (updated.count === 1) break;
+      if (attempt >= MAX_PROVIDER_EVENT_ATTEMPTS) {
+        await resolveProviderReconciliations(tx, {
+          provider: input.provider,
+          providerMessageId,
+          campaignMessageId: message.id,
+          restaurantId: message.campaign?.restaurantId,
+          resolvedAt: occurredAt,
+          resolutionCode: 'RACE_ALREADY_APPLIED',
+        });
+        return {
+          matched: true,
+          changed: false,
+          status: message.status,
+          campaignId: message.campaignId,
+          customerId: message.customerId,
+        };
+      }
     }
 
     await resolveProviderReconciliations(tx, {
@@ -440,6 +465,27 @@ export async function applyMarketingProviderEvent(
       });
     }
 
+    const suppressionReason = suppressionReasonFor(transition);
+    if (suppressionReason && message.channel && message.campaign?.restaurantId) {
+      await tx.marketingSuppression.upsert({
+        where: {
+          customerId_channel_reason: {
+            customerId: message.customerId,
+            channel: message.channel,
+            reason: suppressionReason,
+          },
+        },
+        create: {
+          restaurantId: message.campaign.restaurantId,
+          customerId: message.customerId,
+          channel: message.channel,
+          reason: suppressionReason,
+          source: `${input.provider.toUpperCase()}_WEBHOOK`,
+        },
+        update: {},
+      });
+    }
+
     return {
       matched: true,
       changed: true,
@@ -448,6 +494,22 @@ export async function applyMarketingProviderEvent(
       customerId: message.customerId,
     };
   });
+}
+
+/**
+ * A spam complaint or a permanent bounce must stop every later send to this
+ * contact: both hurt sender reputation and a complaint withdraws consent. A
+ * transient bounce (full mailbox) is retried by the provider and never blocks.
+ */
+function suppressionReasonFor(transition: ProviderTransition): string | null {
+  if (transition.status === MarketingMessageStatus.COMPLAINED) return 'COMPLAINED';
+  if (
+    transition.status === MarketingMessageStatus.BOUNCED &&
+    transition.errorCode !== 'TRANSIENT'
+  ) {
+    return 'HARD_BOUNCE';
+  }
+  return null;
 }
 
 export type MarketingProviderReconciliationView = {
@@ -516,6 +578,14 @@ export type MarketingProviderReconciliationSummary = {
   stillOpen: number;
 };
 
+/**
+ * The Resend webhook receives the events of every email sent by the account,
+ * transactional ones included, and those never match a campaign message. A
+ * genuine race (callback before the provider id is stored) resolves within
+ * seconds, so older unmatched rows are closed instead of crowding the oldest-first scan.
+ */
+export const RECONCILIATION_EXPIRY_MS = 2 * 60 * 60 * 1000;
+
 /** Attach open callbacks to messages that appeared after the callback. */
 export async function reconcileMarketingProviderEvents(args: {
   provider?: MarketingProvider;
@@ -525,6 +595,19 @@ export async function reconcileMarketingProviderEvents(args: {
   now?: Date;
 }): Promise<MarketingProviderReconciliationSummary> {
   const database = args.database ?? db;
+  const now = args.now ?? new Date();
+  await database.marketingProviderReconciliation.updateMany({
+    where: {
+      status: MarketingProviderReconciliationStatus.OPEN,
+      ...(args.provider ? { provider: args.provider } : {}),
+      firstSeenAt: { lt: new Date(now.getTime() - RECONCILIATION_EXPIRY_MS) },
+    },
+    data: {
+      status: MarketingProviderReconciliationStatus.IGNORED,
+      resolvedAt: now,
+      resolutionCode: 'AUTO_EXPIRED_NO_CAMPAIGN_MESSAGE',
+    },
+  });
   const rows = await listMarketingProviderReconciliations({
     status: MarketingProviderReconciliationStatus.OPEN,
     provider: args.provider,
@@ -568,7 +651,7 @@ export async function reconcileMarketingProviderEvents(args: {
         status: MarketingProviderReconciliationStatus.RESOLVED,
         restaurantId: message.campaign.restaurantId,
         campaignMessageId: message.id,
-        resolvedAt: args.now ?? new Date(),
+        resolvedAt: now,
         resolutionCode: result.changed ? 'RECONCILED_APPLIED' : 'RECONCILED_ALREADY_APPLIED',
       },
     });

@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CalendarDays,
+  Check,
   Download,
   Loader2,
   Mail,
@@ -25,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
 import { useApi } from '@/lib/api';
 import { ApiError } from '@/lib/api-error';
 import { getErrorMessage } from '@/types/api';
@@ -44,6 +46,8 @@ type CustomerPreference = {
   value: unknown;
   source: string;
   confidence: number | string | null;
+  confirmedAt?: string | null;
+  expiresAt?: string | null;
   updatedAt: string;
 };
 
@@ -168,6 +172,17 @@ const PREFERENCE_LABELS: Record<string, string> = {
 };
 const LIST_PREFERENCES = new Set(['dietary_restrictions', 'accessibility_needs']);
 
+/** Entendue par l'agent pendant un appel et pas encore confirmée : il ne s'en sert pas. */
+function isPendingVoiceSuggestion(preference: CustomerPreference): boolean {
+  return preference.source === 'VOICE_SUGGESTION' && !preference.confirmedAt;
+}
+
+/** Une suggestion vocale expirée sans confirmation ne s'affiche plus. */
+function isVisiblePreference(preference: CustomerPreference, now = Date.now()): boolean {
+  if (!isPendingVoiceSuggestion(preference) || !preference.expiresAt) return true;
+  return new Date(preference.expiresAt).getTime() > now;
+}
+
 function preferenceLabel(key: string): string {
   return PREFERENCE_LABELS[key] ?? 'Autre préférence';
 }
@@ -206,10 +221,17 @@ const TIMELINE_LABELS: Record<string, string> = {
   'reservation.honored': 'Visite honorée',
   'reservation.no_show': 'Client absent (no-show)',
   'call.received': 'Appel reçu',
+  'waitlist.joined': "Inscrit sur la liste d'attente",
+  'waitlist.promoted': "Place obtenue depuis la liste d'attente",
+  'waitlist.cancelled': "Retiré de la liste d'attente",
+  'waitlist.expired': "Liste d'attente expirée",
+  'gift_card.purchased': 'Carte cadeau achetée',
+  'gift_card.redeemed': 'Carte cadeau utilisée',
   'customer.tag_assigned': 'Tag ajouté',
   'customer.tag_removed': 'Tag retiré',
   'customer.preference_updated': 'Préférence enregistrée',
   'customer.preference_removed': 'Préférence supprimée',
+  'customer.preference_suggested': 'Préférence entendue au téléphone',
   'customer.merged': 'Profils fusionnés',
   'customer.metrics_repaired': 'Chiffres du client recalculés',
   'marketing.permission_updated': 'Consentement marketing mis à jour',
@@ -440,6 +462,41 @@ export default function CrmCustomerPage() {
     }
   }
 
+  async function confirmPreference(preference: CustomerPreference): Promise<void> {
+    if (!customerId) return;
+    setCrmMutationLoading(true);
+    setCrmMutationError('');
+    setCrmMutationNotice('');
+    try {
+      const response = await put<{ data: CustomerPreference }>(
+        `crm/customers/${customerId}/preferences/${preference.key}`,
+        {
+          value: preference.value,
+          source: preference.source,
+          confidence: 1,
+          confirmedAt: new Date().toISOString(),
+          expiresAt: null,
+        },
+      );
+      const saved = response.data;
+      setCustomer((current) =>
+        current
+          ? {
+              ...current,
+              preferences: current.preferences.map((item) =>
+                item.key === saved.key ? saved : item,
+              ),
+            }
+          : current,
+      );
+      setCrmMutationNotice('Préférence confirmée.');
+    } catch (err: unknown) {
+      setCrmMutationError(getErrorMessage(err, 'Impossible de confirmer la préférence.'));
+    } finally {
+      setCrmMutationLoading(false);
+    }
+  }
+
   async function removePreference(preference: CustomerPreference): Promise<void> {
     if (!customerId) return;
     setCrmMutationLoading(true);
@@ -578,6 +635,9 @@ export default function CrmCustomerPage() {
   }
 
   const metrics = customer.metrics ?? customer.metricSnapshot;
+  const visiblePreferences = customer.preferences.filter((preference) =>
+    isVisiblePreference(preference),
+  );
 
   return (
     <div className="space-y-6">
@@ -835,6 +895,8 @@ export default function CrmCustomerPage() {
         </Card>
       </div>
 
+      <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -916,43 +978,88 @@ export default function CrmCustomerPage() {
                   Ajouter
                 </Button>
               </div>
-              {customer.preferences.length === 0 ? (
+              {visiblePreferences.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Aucune préférence confirmée.</p>
               ) : (
                 <dl className="divide-y divide-border text-sm">
-                  {customer.preferences.map((preference) => (
-                    <div
-                      key={preference.id}
-                      className="flex items-center justify-between gap-3 py-2 first:pt-0"
-                    >
-                      <div className="min-w-0">
-                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
-                        <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                  {visiblePreferences.map((preference) =>
+                    isPendingVoiceSuggestion(preference) ? (
+                      <div
+                        key={preference.id}
+                        className="flex flex-wrap items-center justify-between gap-3 py-2 first:pt-0"
+                      >
+                        <div className="min-w-0">
+                          <dt className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                            {preferenceLabel(preference.key)}
+                            <Badge variant="outline" className="gap-1 font-normal">
+                              <Phone size={12} />
+                              Entendu au téléphone, à confirmer
+                            </Badge>
+                          </dt>
+                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="transition-all duration-200"
+                            onClick={() => void confirmPreference(preference)}
+                            disabled={crmMutationLoading}
+                          >
+                            <Check size={14} />
+                            Confirmer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="transition-all duration-200"
+                            aria-label={`Écarter la suggestion ${preferenceLabel(preference.key)}`}
+                            onClick={() => void removePreference(preference)}
+                            disabled={crmMutationLoading}
+                          >
+                            <X size={14} />
+                            Écarter
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => editPreference(preference)}
-                          disabled={crmMutationLoading}
-                        >
-                          Modifier
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
-                          onClick={() => void removePreference(preference)}
-                          disabled={crmMutationLoading}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                    ) : (
+                      <div
+                        key={preference.id}
+                        className="flex items-center justify-between gap-3 py-2 first:pt-0"
+                      >
+                        <div className="min-w-0">
+                          <dt className="text-muted-foreground">
+                            {preferenceLabel(preference.key)}
+                          </dt>
+                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => editPreference(preference)}
+                            disabled={crmMutationLoading}
+                          >
+                            Modifier
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
+                            onClick={() => void removePreference(preference)}
+                            disabled={crmMutationLoading}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </dl>
               )}
               {preferenceFormOpen ? (
@@ -1025,7 +1132,9 @@ export default function CrmCustomerPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Chronologie récente</CardTitle>
-            <CardDescription>Réservations, appels et modifications de la fiche.</CardDescription>
+            <CardDescription>
+              Réservations, appels, liste d’attente, cartes cadeaux et modifications de la fiche.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {customer.timeline.length === 0 ? (

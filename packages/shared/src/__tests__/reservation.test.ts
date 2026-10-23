@@ -10,12 +10,7 @@ import {
 
 describe('reservation', () => {
   it('exposes exactly the 4 Prisma statuses', () => {
-    expect(RESERVATION_STATUS_VALUES).toEqual([
-      'CONFIRMED',
-      'CANCELLED',
-      'NO_SHOW',
-      'SEATED',
-    ]);
+    expect(RESERVATION_STATUS_VALUES).toEqual(['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'SEATED']);
   });
 
   it('active statuses are a strict subset of all statuses', () => {

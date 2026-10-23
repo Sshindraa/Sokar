@@ -34,13 +34,15 @@ describe('entitlement contract', () => {
   });
 
   it('fails closed for an absent production runtime flag', () => {
-    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'production' })).toBe(false);
+    expect(isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', { NODE_ENV: 'production' })).toBe(
+      false,
+    );
     expect(
-      isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', {
+      isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', {
         NODE_ENV: 'production',
-        CRM_ADVANCED_ENABLED: 'true',
+        MARKETING_FEATURES_ENABLED: 'true',
       }),
     ).toBe(true);
-    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'test' })).toBe(true);
+    expect(isRuntimeFlagEnabled('MARKETING_FEATURES_ENABLED', { NODE_ENV: 'test' })).toBe(true);
   });
 });

@@ -133,6 +133,8 @@ describe('CrmCustomerPage', () => {
     expect(screen.queryByText('reservation.honored')).not.toBeInTheDocument();
     expect(screen.queryByText('Table calme')).not.toBeInTheDocument();
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1');
+    expect(await screen.findByText('Consentement marketing')).toBeInTheDocument();
+    expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
   });
 
   it('protège et télécharge l’export CRM après code SMS', async () => {
@@ -226,6 +228,112 @@ describe('CrmCustomerPage', () => {
     await waitFor(() =>
       expect(apiMocks.del).toHaveBeenCalledWith(
         'crm/customers/customer-1/preferences/preferred_language',
+      ),
+    );
+  });
+
+  it('confirme ou écarte une préférence entendue au téléphone', async () => {
+    const suggestion = {
+      id: 'preference-2',
+      key: 'dietary_restrictions',
+      value: 'sans gluten',
+      source: 'VOICE_SUGGESTION',
+      confidence: 0.6,
+      confirmedAt: null,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      updatedAt: '2026-10-21T12:00:00.000Z',
+    };
+    const expired = {
+      ...suggestion,
+      id: 'preference-3',
+      key: 'preferred_section',
+      value: 'terrasse',
+      expiresAt: '2020-01-01T00:00:00.000Z',
+    };
+    apiMocks.get.mockResolvedValueOnce({
+      data: {
+        id: 'customer-1',
+        name: 'Alice Martin',
+        phone: '+33612345678',
+        visitCount: 0,
+        isVip: false,
+        notes: null,
+        identities: [],
+        metricSnapshot: null,
+        preferences: [suggestion, expired],
+        tags: [],
+        tagAssignments: [],
+        timeline: [],
+      },
+    });
+    apiMocks.put.mockResolvedValueOnce({
+      data: {
+        ...suggestion,
+        confidence: 1,
+        confirmedAt: '2026-10-21T12:05:00.000Z',
+        expiresAt: null,
+      },
+    });
+    render(<CrmCustomerPage />);
+
+    await screen.findByRole('heading', { name: 'Alice Martin' });
+    expect(screen.getByText('Entendu au téléphone, à confirmer')).toBeInTheDocument();
+    expect(screen.queryByText('terrasse')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmer' }));
+    await waitFor(() =>
+      expect(apiMocks.put).toHaveBeenCalledWith(
+        'crm/customers/customer-1/preferences/dietary_restrictions',
+        expect.objectContaining({
+          value: 'sans gluten',
+          source: 'VOICE_SUGGESTION',
+          confidence: 1,
+          expiresAt: null,
+          confirmedAt: expect.any(String),
+        }),
+      ),
+    );
+    expect(await screen.findByText('Préférence confirmée.')).toBeInTheDocument();
+    expect(screen.queryByText('Entendu au téléphone, à confirmer')).not.toBeInTheDocument();
+  });
+
+  it('écarte une préférence entendue au téléphone', async () => {
+    apiMocks.get.mockResolvedValueOnce({
+      data: {
+        id: 'customer-1',
+        name: 'Alice Martin',
+        phone: '+33612345678',
+        visitCount: 0,
+        isVip: false,
+        notes: null,
+        identities: [],
+        metricSnapshot: null,
+        preferences: [
+          {
+            id: 'preference-2',
+            key: 'dietary_restrictions',
+            value: 'sans gluten',
+            source: 'VOICE_SUGGESTION',
+            confidence: 0.6,
+            confirmedAt: null,
+            expiresAt: null,
+            updatedAt: '2026-10-21T12:00:00.000Z',
+          },
+        ],
+        tags: [],
+        tagAssignments: [],
+        timeline: [],
+      },
+    });
+    render(<CrmCustomerPage />);
+
+    await screen.findByRole('heading', { name: 'Alice Martin' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Écarter la suggestion Régimes alimentaires' }),
+    );
+    await waitFor(() =>
+      expect(apiMocks.del).toHaveBeenCalledWith(
+        'crm/customers/customer-1/preferences/dietary_restrictions',
       ),
     );
   });

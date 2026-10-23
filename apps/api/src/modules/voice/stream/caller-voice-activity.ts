@@ -42,7 +42,22 @@ export interface CallerVoiceActivity {
   clearRunMs?: number;
   /** Dernier instant où l'appelant parlait clairement depuis au moins CLEAR_VOICE_MS. */
   lastClearVoiceAt?: number;
+  /** Pauses de l'appelant suivies d'une reprise de parole pendant l'écoute (ms, les plus récentes). */
+  pauses?: number[];
 }
+
+/**
+ * Pauses retenues pour connaître la façon de parler de l'appelant. Mesure du 22/10/2026 sur 41 appels
+ * enregistrés : le 80e centile des pauses au milieu d'une prise de parole va de 164 à 1 160 ms selon
+ * l'appelant (médiane 552 ms) ; un seuil unique couperait les uns ou ferait attendre les autres.
+ */
+const MIN_PAUSE_MS = 120;
+const MAX_PAUSE_MS = 1_500;
+const MAX_TRACKED_PAUSES = 20;
+const MIN_PAUSES_FOR_ADAPTIVE = 3;
+const PAUSE_MARGIN_MS = 150;
+const ADAPTIVE_FLOOR_MS = 350;
+const ADAPTIVE_CEILING_MS = 1_100;
 
 /** Niveau efficace d'un bloc PCM 16 bits petit-boutiste. */
 export function chunkRms(pcmLe: Buffer): number {
@@ -78,7 +93,22 @@ export function trackCallerVoice(
   );
   if (rms > threshold) {
     state.voiceRun++;
-    if (state.voiceRun >= VOICE_RUN_CHUNKS) state.lastVoiceAt = now;
+    if (state.voiceRun >= VOICE_RUN_CHUNKS) {
+      // Reprise de parole pendant l'écoute : la pause qui précède dit comment cet appelant parle.
+      if (
+        state.voiceRun === VOICE_RUN_CHUNKS &&
+        state.lastVoiceAt !== undefined &&
+        session.state === 'LISTENING'
+      ) {
+        const pauseMs = now - state.lastVoiceAt - chunkMs * (VOICE_RUN_CHUNKS - 1);
+        if (pauseMs >= MIN_PAUSE_MS && pauseMs <= MAX_PAUSE_MS) {
+          const pauses = (state.pauses ??= []);
+          pauses.push(Math.round(pauseMs));
+          if (pauses.length > MAX_TRACKED_PAUSES) pauses.shift();
+        }
+      }
+      state.lastVoiceAt = now;
+    }
     return { rms, chunkMs };
   }
   state.voiceRun = 0;
@@ -111,4 +141,16 @@ export function noCallerVoiceSince(session: CallSession, sinceMs: number): boole
   const state = session.callerVoice;
   if (!state || (state.trackedMs ?? 0) < MIN_JUDGED_AUDIO_MS) return false;
   return state.lastVoiceAt === undefined || state.lastVoiceAt < sinceMs;
+}
+
+/**
+ * Silence au-delà duquel cet appelant a fini sa phrase : 80e centile de ses propres pauses + 150 ms, borné
+ * entre 350 et 1 100 ms ; `fallbackMs` tant que moins de 3 pauses ont été observées.
+ */
+export function callerPauseFinalizeMs(session: CallSession, fallbackMs: number): number {
+  const pauses = session.callerVoice?.pauses ?? [];
+  if (pauses.length < MIN_PAUSES_FOR_ADAPTIVE) return fallbackMs;
+  const sorted = [...pauses].sort((a, b) => a - b);
+  const p80 = sorted[Math.floor(0.8 * (sorted.length - 1))];
+  return Math.min(ADAPTIVE_CEILING_MS, Math.max(ADAPTIVE_FLOOR_MS, p80 + PAUSE_MARGIN_MS));
 }

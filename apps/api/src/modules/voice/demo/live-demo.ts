@@ -30,9 +30,7 @@ export function liveDemoUnavailableReason(
   env: NodeJS.ProcessEnv = process.env,
 ): LiveDemoUnavailableReason | null {
   if (env.VOICE_DISABLED === 'true') return 'voice_disabled';
-  const sttKey =
-    env.VOICE_STT_PROVIDER === 'deepgram' ? env.DEEPGRAM_API_KEY : env.ELEVENLABS_API_KEY;
-  if (!sttKey?.trim()) return 'stt_unconfigured';
+  if (!env.DEEPGRAM_API_KEY?.trim()) return 'stt_unconfigured';
   if (!env.CARTESIA_API_KEY?.trim()) return 'tts_unconfigured';
   return null;
 }

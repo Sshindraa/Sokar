@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
-import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   appendCustomerTimelineEvent,
   assignCustomerTag,
@@ -31,6 +31,7 @@ import {
   hasSensitiveNoteRoleOverride,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
+import { withCustomerLifecycles } from './customer-lifecycle';
 
 const CustomerIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
@@ -97,16 +98,7 @@ const ProjectionRepairPreviewQuerySchema = z.object({
   now: z.coerce.date().optional(),
 });
 
-const requireCrmAdvancedFeature = requireRuntimeFlag(
-  'CRM_ADVANCED_ENABLED',
-  'Le CRM avancé reste désactivé jusqu’à la qualification du chantier.',
-  'CRM_ADVANCED_DISABLED',
-);
-const requireCrmAdvanced = [
-  requireOrg(),
-  requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
-];
+const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced')];
 
 const SensitiveNoteRoleSchema = z.enum(['OWNER', 'MANAGER', 'STAFF', 'READ_ONLY', 'ORG_MEMBER']);
 const SensitiveNoteRolesBodySchema = z
@@ -176,36 +168,27 @@ async function requireCrmPrivacyOwner(
 const requireCrmMergePreview = [
   requireOrg(),
   requireCapability('crm.merge'),
-  requireCrmAdvancedFeature,
   requireMergePreviewRole,
 ];
 const requireCrmMergeMutation = [
   requireOrg(),
   requireCapability('crm.merge'),
-  requireCrmAdvancedFeature,
   requireMergeOwnerRole,
 ];
-const requireCrmProjectionRepairPreview = [
-  requireOrg(),
-  requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
-];
+const requireCrmProjectionRepairPreview = [requireOrg(), requireCapability('customers.advanced')];
 const requireCrmProjectionRepairMutation = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireProjectionRepairOwnerRole,
 ];
 const requireCrmAdvancedWrite = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireCrmWriteRole,
 ];
 const requireCrmPrivacy = [
   requireOrg(),
   requireCapability('customers.advanced'),
-  requireCrmAdvancedFeature,
   requireCrmPrivacyOwner,
 ];
 
@@ -442,7 +425,8 @@ export async function customerCrmRoutes(app: FastifyInstance) {
     const hasNextPage = customers.length > query.limit;
     const page = hasNextPage ? customers.slice(0, query.limit) : customers;
     const nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
-    return reply.send({ data: page, nextCursor });
+    const data = await withCustomerLifecycles(request.restaurantId!, page);
+    return reply.send({ data, nextCursor });
   });
 
   app.get('/crm/customers/:id', { preHandler: requireCrmAdvanced }, async (request, reply) => {
@@ -484,9 +468,13 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       request.siteRole,
       customer.restaurant?.crmSensitiveNoteRoles,
     );
+    const [{ lifecycle }] = await withCustomerLifecycles(request.restaurantId!, [
+      { id: customer.id },
+    ]);
     return reply.send({
       data: {
         ...customer,
+        lifecycle,
         notes: canViewNotes ? customer.notes : null,
         metrics: customer.metricSnapshot,
         preferences: customer.preferences,

@@ -79,7 +79,8 @@ export interface SystemPromptContext {
   name: string;
   openingHours: OpeningHours;
   customerExtra?: string;
-  customerGreeting?: string;
+  /** Prénom d'un client que le restaurant connaît ; l'agent le reconnaît avec ses propres mots. */
+  returningCustomerFirstName?: string;
   timezone?: string;
   personality?: {
     fillerStyle?: string;
@@ -168,10 +169,10 @@ export function buildPersonalityStyleBlock(ctx: SystemPromptContext): string {
 }
 
 function buildCommonBody(ctx: SystemPromptContext, now: Date): string {
-  // Optional first-utterance VIP/returning greeting injected by the pipeline
-  // (empty string if we don't recognise the caller — see buildReturningGreeting).
-  const vipGreeting = ctx.customerGreeting
-    ? `\nCLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${ctx.customerGreeting}".`
+  // Returning-caller acknowledgement: a principle with the CRM voice profile
+  // (see CustomerService.returningCustomerFirstName).
+  const vipGreeting = ctx.returningCustomerFirstName
+    ? `\nCLIENT CONNU : l'appelant est un client que la maison connaît, prénom ${ctx.returningCustomerFirstName}. Lors de ta première réponse utile, montre-lui une seule fois, avec tes propres mots, que tu le reconnais, sans refaire l'accueil et sans deviner sa civilité (ni Monsieur ni Madame).`
     : '';
   const groupThreshold = (ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE) + 1;
   const timezone = ctx.timezone ?? 'Europe/Paris';

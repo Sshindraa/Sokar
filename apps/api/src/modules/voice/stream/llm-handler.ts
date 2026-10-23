@@ -90,7 +90,6 @@ export function applyVoiceLanguageLock(
     !session.languageLocked && isFrenchLanguageLockEvidence(transcript, languageCode);
   if (lockedNow) {
     session.languageLocked = 'fr';
-    session.sttRelockPending = true;
     voiceLanguageLockedTotal.inc();
     session.abortController?.abort();
     session.abortController = null;

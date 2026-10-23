@@ -17,6 +17,7 @@ const HEDGE_WINDOW_SECONDS = 15 * 60;
 const HEDGE_COOLDOWN_SECONDS = HOUR_SECONDS;
 export const LLM_HEDGE_BURST_THRESHOLD = 10;
 const BREAKER_COOLDOWN_SECONDS = 30 * 60;
+const FALLBACK_COOLDOWN_SECONDS = 24 * HOUR_SECONDS;
 
 const KEY = 'sokar:voice:llm';
 
@@ -107,8 +108,21 @@ export function alertLlmPrimaryUnavailable(
   );
 }
 
-/** Le principal ET le repli ont échoué pour un tour : l'appelant n'a rien entendu. */
+/** Pourquoi un tour est resté sans réponse : principal trop lent (file d'attente) ou en erreur. */
+export type LlmTurnFailureCause = 'primary_slow' | 'primary_failed';
+
+const FAILURE_CAUSE_DETAIL: Record<LlmTurnFailureCause, string> = {
+  primary_slow:
+    "Dernier échec : Cerebras n'a renvoyé aucun texte à temps (file d'attente) et aucun secours n'a répondu.",
+  primary_failed: 'Dernier échec : Cerebras a renvoyé une erreur et aucun secours n’a répondu.',
+};
+
+/**
+ * Un tour entendu par l'appelant est resté sans réponse du modèle : Léa a dit sa phrase de repli.
+ * Compté une fois par tour, là où il échoue ; le juge et l'anticipation n'en font pas partie.
+ */
 export async function recordLlmBothProvidersFailed(
+  cause: LlmTurnFailureCause,
   dependencies: LlmAlertDependencies = defaultDependencies,
 ): Promise<boolean> {
   const failures = await countInWindow(
@@ -123,11 +137,43 @@ export async function recordLlmBothProvidersFailed(
     {
       kind: 'voice_llm_all_providers_down',
       severity: 'critical',
-      summary: 'Ni Cerebras ni le repli OpenRouter ne répondent : les appels restent muets',
+      summary: `Le modèle vocal n'a pas répondu à ${failures} tours en 10 minutes : Léa a dit sa phrase de repli`,
       detail: [
         `failedTurns=${failures}`,
         `windowSeconds=${BOTH_DOWN_WINDOW_SECONDS}`,
-        'Action : vérifier les quotas et le crédit (Cerebras, OpenRouter) et les journaux [llm-fallback].',
+        FAILURE_CAUSE_DETAIL[cause],
+        'Action : vérifier la latence et le crédit Cerebras, l’état du secours OpenRouter et les journaux [llm-fallback].',
+      ].join('\n'),
+    },
+    dependencies,
+  );
+}
+
+/**
+ * Le secours OpenRouter refuse les requêtes (crédit épuisé ou clé refusée), doublons compris :
+ * quand Cerebras tarde, Léa n'a aucun relais. Avertissement, une fois par jour et par cause.
+ */
+export function alertLlmFallbackUnavailable(
+  status: number,
+  dependencies: LlmAlertDependencies = defaultDependencies,
+): Promise<boolean> {
+  const reason = status === 402 ? 'quota' : 'auth';
+  return dispatchClaimed(
+    `${KEY}:fallback:${reason}`,
+    FALLBACK_COOLDOWN_SECONDS,
+    {
+      kind: 'voice_llm_fallback_unavailable',
+      severity: 'warning',
+      summary:
+        reason === 'quota'
+          ? 'Le secours OpenRouter refuse les requêtes (402, crédit épuisé) : Cerebras n’a plus de relais'
+          : `Le secours OpenRouter refuse les requêtes (${status}, clé refusée) : Cerebras n’a plus de relais`,
+      detail: [
+        `status=${status}`,
+        'Les appels continuent sur Cerebras seul : lors de ses pics de file, Léa répond lentement (jusqu’au délai total de 8 s).',
+        reason === 'quota'
+          ? 'Action : recharger OpenRouter si le secours doit revenir.'
+          : 'Action : vérifier OPENROUTER_API_KEY si le secours doit revenir.',
       ].join('\n'),
     },
     dependencies,
@@ -150,7 +196,7 @@ export async function recordLlmHedgeFired(
       detail: [
         `hedgeRequests=${fired}`,
         `windowSeconds=${HEDGE_WINDOW_SECONDS}`,
-        'Chaque doublon coûte un appel au repli ; sous ce rythme, les appelants ne remarquent rien.',
+        'Chaque doublon coûte un appel au repli. Si le repli est indisponible, les appelants attendent Cerebras (réponses lentes).',
       ].join('\n'),
     },
     dependencies,

@@ -110,7 +110,11 @@ export type SttFinalTrigger =
   | 'utterance_end_finalize'
   /** Partielle Deepgram figée sans fin de phrase : `Finalize` a forcé le segment. */
   | 'stalled_finalize'
+  /** Partielle Deepgram en attente et appelant silencieux (détection locale) : `Finalize` a forcé le segment. */
+  | 'silence_finalize'
   | 'safety_flush'
+  /** Relève au silence : texte rendu par un `Finalize` envoyé au silence réel, tour clos par la règle habituelle. */
+  | 'silence_flush'
   | 'spelling_hold'
   | 'semantic_hold';
 
@@ -273,7 +277,31 @@ export interface VoiceUsageKindCounter {
   requests: number;
   interrupted: number;
   inputTokens: number;
+  /** Part de l'entrée servie par le cache de prompt du fournisseur (cached_tokens), 0 s'il ne le dit pas. */
+  cachedInputTokens: number;
   outputTokens: number;
+}
+
+/**
+ * Anticipation du tour structuré sur tout l'appel : des comptes et des tokens estimés, jamais de texte.
+ * Une anticipation lancée finit reprise (`hits`), jetée au tour par cause (`misses`), remplacée par une
+ * partielle plus récente (`replaced`) ou abandonnée sans tour (`cancelled`) ; le reste était en cours à la fin.
+ */
+export interface VoiceSpeculationCounters {
+  launches: number;
+  capped: number;
+  replaced: number;
+  cancelled: number;
+  hits: number;
+  /** Parmi `hits`, reprises malgré un écart sans conséquence de la phrase (harmlessTranscriptGap). */
+  tolerantHits?: number;
+  /** Tours sans anticipation à reprendre. */
+  none: number;
+  misses: Record<string, number>;
+  /** Entrée estimée des anticipations jetées (remplacées, ratées, abandonnées) : facturée sans servir. */
+  discardedInputTokens: number;
+  /** Même entrée par cause : `replaced`, `cancelled` ou l'issue `miss_*` du tour. */
+  discardedInputTokensByCause: Record<string, number>;
 }
 
 export interface VoiceUsageCounters {
@@ -282,6 +310,7 @@ export interface VoiceUsageCounters {
   elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
   llmByKind?: Partial<Record<LlmRequestKind, VoiceUsageKindCounter>>;
+  speculation?: VoiceSpeculationCounters;
   finalization?: Promise<void>;
 }
 
@@ -301,6 +330,9 @@ export interface VoiceTurnLatencyTrace {
   holdMs?: number;
   endOfSpeechToFirstAudioMs?: number;
   firstAudioIsFiller?: boolean;
+  /** Premier son de la vraie réponse quand un son d'attente est parti avant (voir voice-filler.ts). */
+  replyAudioSentAt?: number;
+  endOfSpeechToReplyAudioMs?: number;
   llmFirstTokenMs?: number;
   llmFirstPhraseMs?: number;
   llmCompletedMs?: number;
@@ -522,6 +554,18 @@ export interface CallSession {
   sttTurnStartedAt?: number;
   sttFirstPartialAt?: number;
   sttAfterBargeIn?: boolean;
+  /** Le secours Ink-2 a déjà remplacé Deepgram pendant cet appel (une seule fois). */
+  sttInkFallbackUsed?: boolean;
+  /** Cartesia Ink-2 en parallèle de Deepgram (voir stt-ink-parallel.ts). */
+  sttInk?: import('./stt-ink-parallel').InkParallelState;
+  /** L'ouverture d'Ink-2 a déjà été tentée pour cet appel. */
+  sttInkAttempted?: boolean;
+  /** Fins de phrase Deepgram envoyées dans l'ordre pendant l'attente d'Ink-2. */
+  sttInkDispatchChain?: Promise<void>;
+  /** Ink-2 et Deepgram en désaccord sur le nombre de personnes de cette phrase : à faire confirmer. */
+  sttInkNote?: import('./stt-ink-parallel').InkDisagreementNote;
+  /** Fins de phrase Deepgram envoyées au dialogue pendant l'appel : une note ne vaut que pour un tour. */
+  sttFinalCount?: number;
   sttDeepgramFinalParts?: Array<{
     transcript: string;
     words?: SttWord[];
@@ -534,11 +578,22 @@ export interface CallSession {
   sttDeepgramPendingInterim?: boolean;
   /** Deepgram : `Finalize` envoyé en cours d'appel, le prochain segment final clôt le tour. */
   sttDeepgramFinalizeRequested?: boolean;
+  /** Deepgram : dernier texte non vide reçu (partielle ou segment final), horloge serveur. */
+  sttDeepgramLastTextAt?: number;
+  /** Deepgram : dernière relève au silence envoyée (`Finalize` sur voix sans texte), horloge serveur. */
+  sttDeepgramSilenceFlushAt?: number;
+  /**
+   * Deepgram : texte rendu par une relève au silence, gardé dans les segments finaux et traité comme une
+   * partielle (partielle figée, fin jugée par le modèle) ; à l'échéance, le tour part sans nouveau `Finalize`.
+   */
+  sttDeepgramFlushHeld?: boolean;
   /**
    * Deepgram : rythme des transcriptions partielles depuis le dernier segment
    * final (jamais leur texte dans les logs). Sert à expliquer un segment final
    * tardif : partielles encore en mouvement, ou silence côté fournisseur.
    */
+  /** Partielle déjà close par la fin de phrase sur silence local : une seule fois par partielle. */
+  sttDeepgramLocalSilenceFinalizedText?: string;
   sttDeepgramPartials?: {
     count: number;
     changes: number;
@@ -562,16 +617,6 @@ export interface CallSession {
     code: VoiceLanguageCode;
     count: number;
   } | null;
-  /** Relock Scribe en français différé jusqu'au début du prochain TTS. */
-  sttRelockPending?: boolean;
-  /** Le socket courant utilise le profil français sans détection. */
-  sttFrenchOnly?: boolean;
-  /** Un handshake de relock est en cours ; son échec restaure l'auto-détection. */
-  sttRelockAttempt?: boolean;
-  /** Socket auto-détection conservé jusqu'à l'ouverture du nouveau socket français. */
-  sttRelockPreviousWs?: WebSocket | null;
-  /** Appelé par la machine d'état uniquement à l'entrée en SPEAKING. */
-  onAgentSpeaking?: () => void;
   /** Le tour non français verrouillé doit emprunter la relance française. */
   forceFrenchReprompt?: boolean;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */

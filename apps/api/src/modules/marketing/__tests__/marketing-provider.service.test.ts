@@ -3,6 +3,7 @@ import { MarketingMessageStatus } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import {
   applyMarketingProviderEvent,
+  RECONCILIATION_EXPIRY_MS,
   getMarketingProviderReadiness,
   normalizeMarketingProviderEvent,
   reconcileMarketingProviderEvents,
@@ -12,6 +13,7 @@ vi.mock('../../../shared/db/client', () => ({
   db: {
     campaignMessage: { findFirst: vi.fn(), updateMany: vi.fn() },
     marketingCampaign: { update: vi.fn() },
+    marketingSuppression: { upsert: vi.fn() },
     marketingProviderReconciliation: {
       upsert: vi.fn().mockResolvedValue({ id: 'reconciliation-1' }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -51,6 +53,7 @@ describe('marketing provider reconciliation', () => {
     expect(getMarketingProviderReadiness()).toEqual({
       sendsEnabled: false,
       sendGate: { enabled: false, missing: ['MARKETING_SENDS_ENABLED'] },
+      recipientAllowlistActive: false,
       sms: { configured: true, callbackConfigured: true, missing: [], callbackMissing: [] },
       email: { configured: true, callbackConfigured: true, missing: [], callbackMissing: [] },
       whatsapp: {
@@ -76,6 +79,7 @@ describe('marketing provider reconciliation', () => {
     ).toEqual({
       sendsEnabled: true,
       sendGate: { enabled: true, missing: [] },
+      recipientAllowlistActive: false,
       sms: {
         configured: true,
         callbackConfigured: false,
@@ -104,6 +108,14 @@ describe('marketing provider reconciliation', () => {
         }),
       ),
     ).not.toContain(testTelnyxKey);
+  });
+
+  it('signale la liste blanche de destinataires sans la révéler', () => {
+    const readiness = getMarketingProviderReadiness({
+      MARKETING_RECIPIENT_ALLOWLIST: 'testeur@example.com',
+    });
+    expect(readiness.recipientAllowlistActive).toBe(true);
+    expect(JSON.stringify(readiness)).not.toContain('testeur@example.com');
   });
 
   it('normalise les événements Telnyx et Resend vers les statuts internes', () => {
@@ -163,6 +175,85 @@ describe('marketing provider reconciliation', () => {
       where: { id: 'campaign-1' },
       data: { deliveredCount: { increment: 1 } },
     });
+  });
+
+  it("réévalue l'événement qui perd la course contre un autre callback du même message", async () => {
+    // `email.sent` et `email.delivered` arrivent à quelques millisecondes d'intervalle : le second lit
+    // ACCEPTED, le premier passe le message à SENT, puis la mise à jour conditionnelle du second échoue.
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    const result = await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.delivered',
+      occurredAt: new Date('2026-09-13T10:01:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      matched: true,
+      changed: true,
+      status: MarketingMessageStatus.DELIVERED,
+    });
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.ACCEPTED },
+      }),
+    );
+    expect(db.campaignMessage.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: 'message-1', status: MarketingMessageStatus.SENT },
+        data: expect.objectContaining({ status: MarketingMessageStatus.DELIVERED }),
+      }),
+    );
+    expect(db.marketingCampaign.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ne perd pas un rebond qui perd la course contre un callback précédent', async () => {
+    const message = {
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      channel: 'EMAIL',
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: null,
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+    };
+    vi.mocked(db.campaignMessage.findFirst)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.ACCEPTED } as never)
+      .mockResolvedValueOnce({ ...message, status: MarketingMessageStatus.SENT } as never);
+    vi.mocked(db.campaignMessage.updateMany)
+      .mockResolvedValueOnce({ count: 0 } as never)
+      .mockResolvedValueOnce({ count: 1 } as never);
+
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Permanent',
+    });
+
+    expect(db.marketingSuppression.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ customerId: 'customer-1', reason: 'HARD_BOUNCE' }),
+      }),
+    );
   });
 
   it('ignore un événement en retard après une livraison', async () => {
@@ -290,5 +381,98 @@ describe('marketing provider reconciliation', () => {
         }),
       }),
     );
+  });
+  const sentEmail = (overrides: Record<string, unknown> = {}) =>
+    ({
+      id: 'message-1',
+      campaignId: 'campaign-1',
+      customerId: 'customer-1',
+      channel: 'EMAIL',
+      status: MarketingMessageStatus.SENT,
+      acceptedAt: new Date('2026-09-13T10:00:00.000Z'),
+      sentAt: new Date('2026-09-13T10:00:00.000Z'),
+      deliveredAt: null,
+      campaign: { restaurantId: 'restaurant-1' },
+      ...overrides,
+    }) as never;
+
+  it('supprime le contact après une plainte pour spam, sans rejouer deux fois', async () => {
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+
+    await expect(
+      applyMarketingProviderEvent({
+        provider: 'resend',
+        providerMessageId: 'email-1',
+        eventType: 'email.complained',
+      }),
+    ).resolves.toMatchObject({ matched: true, changed: true, status: 'COMPLAINED' });
+    expect(db.marketingSuppression.upsert).toHaveBeenCalledWith({
+      where: {
+        customerId_channel_reason: {
+          customerId: 'customer-1',
+          channel: 'EMAIL',
+          reason: 'COMPLAINED',
+        },
+      },
+      create: {
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+        reason: 'COMPLAINED',
+        source: 'RESEND_WEBHOOK',
+      },
+      update: {},
+    });
+  });
+
+  it('supprime le contact après un rebond définitif mais pas après un rebond temporaire', async () => {
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Permanent',
+    });
+    expect(db.marketingSuppression.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ channel: 'EMAIL', reason: 'HARD_BOUNCE' }),
+      }),
+    );
+
+    vi.mocked(db.marketingSuppression.upsert).mockClear();
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.bounced',
+      errorCode: 'Transient',
+    });
+    expect(db.marketingSuppression.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ne supprime personne pour une simple livraison', async () => {
+    vi.mocked(db.campaignMessage.findFirst).mockResolvedValue(sentEmail());
+    await applyMarketingProviderEvent({
+      provider: 'resend',
+      providerMessageId: 'email-1',
+      eventType: 'email.delivered',
+    });
+    expect(db.marketingSuppression.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ferme les callbacks sans message de campagne après le délai de grâce', async () => {
+    const now = new Date('2026-09-14T11:05:00.000Z');
+    await reconcileMarketingProviderEvents({ now });
+    expect(db.marketingProviderReconciliation.updateMany).toHaveBeenCalledWith({
+      where: {
+        status: 'OPEN',
+        firstSeenAt: { lt: new Date(now.getTime() - RECONCILIATION_EXPIRY_MS) },
+      },
+      data: {
+        status: 'IGNORED',
+        resolvedAt: now,
+        resolutionCode: 'AUTO_EXPIRED_NO_CAMPAIGN_MESSAGE',
+      },
+    });
   });
 });

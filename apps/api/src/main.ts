@@ -11,6 +11,7 @@ import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logg
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
+import { initVoiceFillerCache } from './modules/voice/stream/voice-filler';
 import { reservationManagementRoutes } from './modules/reservations/reservation-management.routes';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { metaWhatsAppWebhookRoutes } from './modules/whatsapp/meta-webhook.routes';
@@ -342,6 +343,13 @@ async function start() {
     initGreetingCache()
       .then(() => logger.info('Greeting cache warmup complete'))
       .catch((err) => logger.warn({ err }, 'Greeting cache warmup failed (non-blocking)'));
+  });
+
+  // Petits mots d'attente (voir voice-filler.ts) : banque préchargée au démarrage.
+  setImmediate(() => {
+    initVoiceFillerCache().catch((err) =>
+      logger.warn({ err }, 'Voice filler cache warmup failed (non-blocking)'),
+    );
   });
 
   // Warm-up Telnyx : pré-chauffe la connexion TLS vers l'API Telnyx (EU)

@@ -39,7 +39,6 @@ describe('verrou français applicatif', () => {
     return {
       voiceLanguageCode: 'en',
       voiceLanguageCandidate: { code: 'en', count: 1 },
-      sttRelockPending: false,
       forceFrenchReprompt: false,
       abortController: null,
       speculativeLlm: null,
@@ -64,7 +63,6 @@ describe('verrou français applicatif', () => {
     expect(applyVoiceLanguageLock(session, 'Je souhaite réserver', 'fr').lockedNow).toBe(true);
     expect(session.languageLocked).toBe('fr');
     expect(session.voiceLanguageCode).toBe('fr');
-    expect(session.sttRelockPending).toBe(true);
   });
 
   it('ne modifie rien lorsque le flag est coupé', () => {
@@ -76,7 +74,6 @@ describe('verrou français applicatif', () => {
     });
     expect(session.languageLocked).toBeUndefined();
     expect(session.voiceLanguageCode).toBe('en');
-    expect(session.sttRelockPending).toBe(false);
   });
 
   it('garde le français pour LLM et Cartesia malgré une détection ultérieure en anglais', () => {
@@ -171,8 +168,6 @@ describe('reprise de final STT', () => {
       restaurantName: 'Test',
       sttProviderUsed: 'deepgram-nova-3',
       voiceFeatureSnapshot: {
-        sttProvider: 'deepgram',
-        dialogueListeningV2Enabled: true,
         deepgramModel: 'nova-3',
       },
       conversation: createConversationState(),
@@ -192,7 +187,6 @@ describe('reprise de final STT', () => {
         loopDetected: false,
         completed: false,
         eventSequence: 0,
-        sttProvider: 'deepgram-nova-3',
         latencyTrace,
       },
       latencyTrace,

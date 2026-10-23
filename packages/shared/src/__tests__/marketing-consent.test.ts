@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildMarketingConsentLabel,
+  buildMarketingConsentProof,
+  describeMarketingConsentSource,
+  MARKETING_CONSENT_CHANNELS,
+  MARKETING_CONSENT_COLLECTION_LABELS,
+  MARKETING_CONSENT_COLLECTION_METHODS,
+  MARKETING_CONSENT_VERSION,
+} from '../marketing-consent';
+
+describe('marketing consent wording', () => {
+  it('names the restaurant, the channel and the right to unsubscribe, in the first person', () => {
+    expect(buildMarketingConsentLabel('EMAIL', 'Chez Sokar')).toBe(
+      'Je souhaite recevoir par e-mail les offres et actualités de Chez Sokar. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.',
+    );
+    expect(buildMarketingConsentLabel('SMS', 'Chez Sokar')).toContain('par SMS');
+  });
+
+  it('falls back to a neutral name when the restaurant has none', () => {
+    expect(buildMarketingConsentLabel('EMAIL', '   ')).toContain('de ce restaurant.');
+  });
+
+  it('builds a proof bound to the version, the channel and the exact sentence', () => {
+    const proof = buildMarketingConsentProof('EMAIL', 'Chez Sokar');
+    expect(proof).toBe(
+      `${MARKETING_CONSENT_VERSION}|EMAIL|${buildMarketingConsentLabel('EMAIL', 'Chez Sokar')}`,
+    );
+    expect(buildMarketingConsentProof('SMS', 'Chez Sokar')).not.toBe(proof);
+    expect(buildMarketingConsentProof('EMAIL', 'Autre')).not.toBe(proof);
+  });
+
+  it('never uses informal « tu » wording', () => {
+    for (const channel of MARKETING_CONSENT_CHANNELS) {
+      expect(buildMarketingConsentLabel(channel, 'Chez Sokar')).not.toMatch(/\b(tu|ton|ta|tes)\b/i);
+    }
+    for (const method of MARKETING_CONSENT_COLLECTION_METHODS) {
+      expect(MARKETING_CONSENT_COLLECTION_LABELS[method]).not.toMatch(/\b(tu|ton|ta|tes)\b/i);
+    }
+  });
+
+  it('describes known sources and keeps unknown ones readable as they are', () => {
+    expect(describeMarketingConsentSource('CONNECT')).toBe('Page de réservation Sokar Connect');
+    expect(describeMarketingConsentSource('PILOT_INTERNAL')).toBe('PILOT_INTERNAL');
+  });
+});

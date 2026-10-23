@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CallSession } from '../stream/types';
 import {
+  callerPauseFinalizeMs,
   callerSilenceMs,
   callerSpokeClearlySince,
   chunkRms,
@@ -121,5 +122,52 @@ describe('absence de voix pour une transcription (noCallerVoiceSince)', () => {
     trackCallerVoice(s, frame(3_000), 1_020);
     for (let index = 0; index < 60; index++) trackCallerVoice(s, frame(0), 1_040 + index * 10);
     expect(noCallerVoiceSince(s, 5_000)).toBe(true);
+  });
+});
+
+describe('pauses de l’appelant et seuil de fin de phrase adapté', () => {
+  const listening = (): CallSession =>
+    ({ codec: 'L16', state: 'LISTENING' }) as unknown as CallSession;
+
+  it('relève la pause suivie d’une reprise de parole pendant l’écoute', () => {
+    const s = listening();
+    trackCallerVoice(s, frame(3_000), 1_000);
+    trackCallerVoice(s, frame(3_000), 1_020);
+    for (let t = 1_040; t < 1_440; t += 20) trackCallerVoice(s, frame(0), t);
+    trackCallerVoice(s, frame(3_000), 1_440);
+    trackCallerVoice(s, frame(3_000), 1_460);
+    // 1 460 − 1 020 − une trame de 10 ms (la reprise est confirmée à la 2e trame).
+    expect(s.callerVoice?.pauses).toEqual([430]);
+  });
+
+  it('ignore les silences trop courts, trop longs, et ceux hors écoute', () => {
+    const s = listening();
+    trackCallerVoice(s, frame(3_000), 1_000);
+    trackCallerVoice(s, frame(3_000), 1_020);
+    trackCallerVoice(s, frame(3_000), 1_100); // reprise immédiate : pas une pause (la course continue)
+    for (let t = 1_120; t < 3_800; t += 20) trackCallerVoice(s, frame(0), t);
+    trackCallerVoice(s, frame(3_000), 3_800);
+    trackCallerVoice(s, frame(3_000), 3_820); // 2,7 s : un changement de tour, pas une pause
+    expect(s.callerVoice?.pauses ?? []).toEqual([]);
+    const speaking = { codec: 'L16', state: 'SPEAKING' } as unknown as CallSession;
+    trackCallerVoice(speaking, frame(3_000), 1_000);
+    trackCallerVoice(speaking, frame(3_000), 1_020);
+    for (let t = 1_040; t < 1_440; t += 20) trackCallerVoice(speaking, frame(0), t);
+    trackCallerVoice(speaking, frame(3_000), 1_440);
+    trackCallerVoice(speaking, frame(3_000), 1_460);
+    expect(speaking.callerVoice?.pauses ?? []).toEqual([]);
+  });
+
+  it('seuil : valeur de départ, puis 80e centile des pauses + 150 ms, borné entre 350 et 1 100 ms', () => {
+    const s = listening();
+    expect(callerPauseFinalizeMs(s, 600)).toBe(600);
+    s.callerVoice = { noiseFloor: 0, voiceRun: 0, pauses: [300, 400] };
+    expect(callerPauseFinalizeMs(s, 600)).toBe(600);
+    s.callerVoice.pauses = [150, 180, 200, 220, 250];
+    expect(callerPauseFinalizeMs(s, 600)).toBe(370);
+    s.callerVoice.pauses = [100, 120, 130];
+    expect(callerPauseFinalizeMs(s, 600)).toBe(350);
+    s.callerVoice.pauses = [1_200, 1_300, 1_400, 1_500];
+    expect(callerPauseFinalizeMs(s, 600)).toBe(1_100);
   });
 });

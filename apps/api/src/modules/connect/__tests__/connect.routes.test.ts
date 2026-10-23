@@ -16,6 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi, type Mock } 
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 
 /**
  * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).
@@ -33,6 +34,11 @@ const EXPECTED_PUBLIC_PREDICATE = {
   agenticOptIn: true,
 };
 
+vi.mock('../../marketing/marketing-consent.service', () => ({
+  recordBookingMarketingConsent: vi
+    .fn()
+    .mockResolvedValue({ EMAIL: 'RECORDED', SMS: 'NOT_REQUESTED' }),
+}));
 vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
   const CapacityAwareAvailabilityService = vi.fn().mockImplementation(function (this: {
     getAvailability: ReturnType<typeof vi.fn>;
@@ -76,6 +82,7 @@ vi.mock('../../floor-plan/table-allocation.service', () => ({
 
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { recordBookingMarketingConsent } from '../../marketing/marketing-consent.service';
 import { redisCache } from '../../../shared/redis/client';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 import { PolicyValidationError } from '../../agentic-reservations/core/policies.service';
@@ -810,6 +817,112 @@ describe('Sokar Connect — Routes publiques', () => {
       },
     );
 
+    describe('consentement marketing facultatif', () => {
+      const consent = { email: true, sms: false, version: MARKETING_CONSENT_VERSION };
+
+      async function confirmWith(args: {
+        reused: boolean;
+        marketingConsent?: unknown;
+        customerId?: string | null;
+      }) {
+        const reservationId = randomUUID();
+        vi.mocked(db.reservation.findUnique).mockResolvedValue({
+          id: reservationId,
+          customerId: args.customerId === undefined ? 'customer-1' : args.customerId,
+        } as never);
+        vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+          id: RESTAURANT_ID,
+          slug: SLUG,
+          name: 'Chez Sokar',
+          agenticOptIn: true,
+          publishedAt: new Date('2026-06-24'),
+          city: 'Lyon',
+          country: 'FR',
+          postalCode: '69001',
+          description: null,
+          formattedAddress: '12 Rue',
+          phoneNumber: '+334****0000',
+          phoneE164: '+334****0000',
+          cuisineType: ['Française'],
+          priceRange: 2,
+          openingHours: { mon: { open: '12:00', close: '22:00' } },
+          ambiance: [],
+          dietary: [],
+          noiseLevel: null,
+          exposureSettings: { connectPublished: true, connectAgentic: true },
+          images: [],
+        } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+        vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+          mockExposureSettings as unknown as Awaited<
+            ReturnType<typeof db.restaurantExposureSettings.findUnique>
+          >,
+        );
+        vi.mocked(db.customerConsent.create).mockResolvedValue({
+          id: 'consent-confirm',
+        } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
+        vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+          id: 'hold-confirm',
+          holdToken: CONFIRM_HOLD_TOKEN,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 60_000),
+          restaurantId: RESTAURANT_ID,
+          partySize: 2,
+          slotStart: new Date('2026-06-29T20:00:00Z'),
+          slotEnd: new Date('2026-06-29T21:30:00Z'),
+          tableId: null,
+        } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
+        const createReservation = vi
+          .spyOn(ReservationService.prototype, 'createReservation')
+          .mockResolvedValue({ reservationId, state: 'CONFIRMED', reused: args.reused });
+        try {
+          return await app.inject({
+            method: 'POST',
+            url: `/public/r/${SLUG}/confirm`,
+            payload: {
+              holdToken: CONFIRM_HOLD_TOKEN,
+              idempotencyKey: randomUUID(),
+              ...(args.marketingConsent ? { marketingConsent: args.marketingConsent } : {}),
+              customer: { firstName: 'Alice', phone: '+33612345678', email: 'alice@example.com' },
+            },
+          });
+        } finally {
+          createReservation.mockRestore();
+        }
+      }
+
+      it('enregistre les cases cochées pour la fiche client de la réservation', async () => {
+        const res = await confirmWith({ reused: false, marketingConsent: consent });
+        expect(res.statusCode).toBe(200);
+        expect(db.reservation.findUnique).toHaveBeenCalledWith({
+          where: { id: expect.any(String), restaurantId: RESTAURANT_ID },
+          select: { customerId: true },
+        });
+        expect(recordBookingMarketingConsent).toHaveBeenCalledWith({
+          restaurantId: RESTAURANT_ID,
+          restaurantName: 'Chez Sokar',
+          customerId: 'customer-1',
+          source: 'CONNECT',
+          consent,
+          email: 'alice@example.com',
+        });
+      });
+
+      it('ne fait rien sans bloc de consentement (contrat existant) ni sur un rejeu', async () => {
+        expect((await confirmWith({ reused: false })).statusCode).toBe(200);
+        expect((await confirmWith({ reused: true, marketingConsent: consent })).statusCode).toBe(
+          200,
+        );
+        expect(recordBookingMarketingConsent).not.toHaveBeenCalled();
+      });
+
+      it('ne fait jamais échouer la réservation si le consentement ne peut pas être enregistré', async () => {
+        vi.mocked(recordBookingMarketingConsent).mockRejectedValueOnce(new Error('boom'));
+        const res = await confirmWith({ reused: false, marketingConsent: consent });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({ status: 'confirmed' });
+      });
+    });
+
     it('retourne 410 si hold expiré', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
@@ -1238,6 +1351,27 @@ describe('Sokar Connect — Routes publiques', () => {
       expect(canConfirm).not.toHaveBeenCalled();
       expect(recordFailedConfirm).not.toHaveBeenCalled();
       expect(app.queues.connectAnalytics.add).not.toHaveBeenCalled();
+    });
+
+    it("confirm : n'enregistre aucun consentement marketing pour une réservation test", async () => {
+      mockActiveHold();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/confirm`,
+        remoteAddress: nextIp(),
+        payload: {
+          holdToken: CONFIRM_HOLD_TOKEN,
+          idempotencyKey: randomUUID(),
+          customer: { firstName: 'Alice', phone: '+33612345678', email: 'alice@example.com' },
+          marketingConsent: { email: true, sms: false, version: MARKETING_CONSENT_VERSION },
+          testBookingToken: issueTestBookingToken(RESTAURANT_ID),
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(createReservation).toHaveBeenCalledTimes(1);
+      expect(recordBookingMarketingConsent).not.toHaveBeenCalled();
     });
 
     it('confirm : un échec de création test ne compte ni anti-spam ni analytics', async () => {

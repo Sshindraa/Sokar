@@ -29,7 +29,7 @@
 - [ ] Appel réel Chez Sokar : valider compréhension/épellation, mesurer le délai de relecture et tester « A, deux S, A, M ».
 - [ ] Après l’appel réel, vérifier `judge` (disponibilité/délai) et rejouer « je voudrais bien venir »; retrait via `VOICE_TURN_JUDGE_RESTAURANT_IDS`.
 - [ ] Banc voix : traiter la répétition mot pour mot (20–55 %, seuil 80 %) et utiliser le vrai prompt `prompts.ts`.
-- [ ] Secours UE : décider UE seule, UE→mondial ou aucun basculement; vérifier les régions Cerebras, Deepgram, Cartesia et Telnyx.
+- [ ] Relais LLM : GPT-6 Luna fast (OpenRouter `openai/fast`) actif en prod depuis le 20/10, doublon à 700 ms et repli de Cerebras; conservation des données acceptée pour l'instant (pas d'UE). Suivre `hedge_won`/`primary_won`; Luna en principal sur Chez Sokar prêt (#521), sur feu vert.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
 - [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
@@ -44,6 +44,7 @@
 
 ## Décisions récentes
 
+- 2026-10-22 — [Voix] Aucune fonction voix par restaurant ni coupée par défaut : tout est actif pour tous les restaurants (seuls le débogage et l'enregistrement restent limités).
 - 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.
 - 2026-10-06 — [Onboarding audio] Réponses de démonstration alignées sur les phrases du client; le cache inclut le texte pour invalider les anciens audios après une modification du script.
 - 2026-10-11 — [Onboarding/horaires] Dernières arrivées réglées une fois par service et propagées automatiquement aux jours ouverts; si une fermeture plus tôt rend l’heure invalide, retenir le dernier créneau valide avant cette limite.

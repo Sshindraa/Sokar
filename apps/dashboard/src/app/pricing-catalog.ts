@@ -53,6 +53,13 @@ export const CATALOG_FEATURES: readonly CatalogFeature[] = [
     introducedIn: 'Essential',
   },
   {
+    // Profil client de l'agent actif pour tous les restaurants depuis le 22/10/2026.
+    id: 'returning-callers',
+    label: 'Vos habitués reconnus dès qu’ils appellent',
+    status: 'disponible',
+    introducedIn: 'Essential',
+  },
+  {
     id: 'number',
     label: 'Numéro dédié inclus',
     status: 'disponible',

@@ -28,7 +28,7 @@ case "$ENVIRONMENT" in
     staging)
         ROOT="/opt/sokar-staging"
         VHOST="sokar-staging"
-        CERT_ROOT="/etc/letsencrypt/live/staging.sokar.tech"
+        CERT_ROOT="/etc/letsencrypt/live/sokar.tech"
         ;;
     *)
         usage

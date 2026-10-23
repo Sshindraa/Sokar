@@ -80,8 +80,6 @@ const PROD_HOST_ALLOWLIST = [
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 /** Délai maximal avant le premier fragment du modèle principal (tour structuré), puis repli. */
 const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
-/** Délai avant de lancer la requête de doublon chez le secours (tour structuré) ; 0 = désactivé. */
-const DEFAULT_VOICE_LLM_HEDGE_MS = 700;
 
 export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('false');
 
@@ -94,13 +92,8 @@ export const voiceSttBooleanFlagSchema = z.enum(['true', 'false']).default('fals
  * La clé du fournisseur de reconnaissance vocale choisi est définie (≥20 caractères). Seule la clé du fournisseur
  * en service est exigée : avec Deepgram, aucune clé ElevenLabs.
  */
-export function hasSttProviderKey(data: {
-  VOICE_STT_PROVIDER: 'scribe' | 'deepgram';
-  DEEPGRAM_API_KEY?: string;
-  ELEVENLABS_API_KEY?: string;
-}): boolean {
-  const key =
-    data.VOICE_STT_PROVIDER === 'deepgram' ? data.DEEPGRAM_API_KEY : data.ELEVENLABS_API_KEY;
+export function hasSttProviderKey(data: { DEEPGRAM_API_KEY?: string }): boolean {
+  const key = data.DEEPGRAM_API_KEY;
   return !!key && key.length >= 20;
 }
 
@@ -141,30 +134,6 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
 }, z.number().positive());
-
-const voiceLlmHedgeSchema = z.preprocess((value) => {
-  if (value === undefined || value === '') return DEFAULT_VOICE_LLM_HEDGE_MS;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 4000
-    ? parsed
-    : DEFAULT_VOICE_LLM_HEDGE_MS;
-}, z.number().min(0));
-
-/** Moteurs de suppression de bruit Telnyx ; toute autre valeur équivaut à « off ». */
-export const NOISE_SUPPRESSION_ENGINES = [
-  'Krisp',
-  'DeepFilterNet',
-  'AiCoustics',
-  'Denoiser',
-] as const;
-
-const voiceNoiseSuppressionEngineSchema = z.preprocess(
-  (value) => {
-    const engine = typeof value === 'string' ? value.trim() : '';
-    return (NOISE_SUPPRESSION_ENGINES as readonly string[]).includes(engine) ? engine : 'off';
-  },
-  z.enum(['off', ...NOISE_SUPPRESSION_ENGINES]),
-);
 
 const voiceLlmFirstChunkTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS;
@@ -228,13 +197,6 @@ export const VoiceDeepgramConfigSchema = z.object({
   VOICE_DEEPGRAM_ENDPOINTING_MS: z.coerce.number().int().min(100).max(1_000).default(200),
   VOICE_DEEPGRAM_UTTERANCE_END_MS: z.coerce.number().int().min(500).max(3_000).default(1_000),
   VOICE_DEEPGRAM_SPELLING_SILENCE_MS: z.coerce.number().int().min(400).max(2_000).default(800),
-  VOICE_DEEPGRAM_MODEL: z.enum(['nova-3', 'flux-general-multi']).default('nova-3'),
-  VOICE_DEEPGRAM_MODEL_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_NUMERALS: z.enum(['true', 'false']).default('true'),
-  VOICE_DEEPGRAM_NUMERALS_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_PUNCTUATE: z.enum(['true', 'false']).default('false'),
-  VOICE_DEEPGRAM_PUNCTUATE_RESTAURANT_IDS: z.string().optional(),
-  VOICE_DEEPGRAM_KEYTERMS_RESTAURANT_IDS: z.string().optional(),
   VOICE_DEEPGRAM_MIP_OPT_OUT: z.enum(['true', 'false']).default('true'),
 });
 
@@ -244,9 +206,6 @@ export const VoiceConfigSchema = z
     VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
     VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
     VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS: voiceLlmFirstChunkTimeoutSchema,
-    VOICE_LLM_HEDGE_MS: voiceLlmHedgeSchema,
-    VOICE_NOISE_SUPPRESSION_ENGINE: voiceNoiseSuppressionEngineSchema,
-    VOICE_NOISE_SUPPRESSION_RESTAURANT_IDS: z.string().optional(),
     VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('cerebras'),
     VOICE_SEMANTIC_SIGNALS_ENABLED: z.enum(['true', 'false']).default('false'),
     VOICE_SEMANTIC_SIGNALS_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
@@ -275,6 +234,21 @@ export const VoiceConfigSchema = z
     VOICE_STRUCTURED_FALLBACK_MODEL: z.string().default('deepseek/deepseek-v4-flash-0731'),
     // Hébergeurs OpenRouter du repli, dans l'ordre (vide = tri par latence historique, instable).
     VOICE_STRUCTURED_FALLBACK_PROVIDER_ORDER: z.string().default('Cohere,Wafer,Baidu'),
+    // Hébergeurs OpenRouter jamais utilisés par le repli, même en secours (ex. données hors des pays admis).
+    VOICE_STRUCTURED_FALLBACK_PROVIDER_IGNORE: z.string().default(''),
+    // Repli réservé aux hébergeurs sans conservation des données (`zdr`) ; false = performance d'abord.
+    VOICE_STRUCTURED_FALLBACK_ZERO_RETENTION: z.enum(['true', 'false']).default('true'),
+    // Raisonnement du modèle de repli : `disabled` (défaut) ou `none` (effort nul, exigé par GPT-6 Luna).
+    VOICE_STRUCTURED_FALLBACK_REASONING: z.enum(['disabled', 'none']).default('disabled'),
+    // false : ni temperature ni top_p, refusés par les modèles à raisonnement d'OpenAI.
+    VOICE_STRUCTURED_FALLBACK_SAMPLING: z.enum(['true', 'false']).default('true'),
+    // Délai avant le doublon Cerebras quand GPT-6 Luna (OpenRouter) est en principal. GPT-6 Luna met ~0,8 s (pire mesuré 1,4 s) :
+    // au délai normal (700 ms), Cerebras gagnerait la moitié des tours. 0 = Cerebras seulement en repli.
+    VOICE_LLM_OPENROUTER_PRIMARY_HEDGE_MS: z.preprocess((value) => {
+      if (value === undefined || value === '') return 1500;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed >= 0 && parsed <= 8000 ? parsed : 1500;
+    }, z.number().min(0)),
   })
   .merge(VoiceDeepgramConfigSchema);
 
@@ -409,13 +383,6 @@ const EnvSchema = z
     // Les deux restent strictement inactifs par défaut.
     VOICE_STT_FILTER_BACKGROUND: voiceSttBooleanFlagSchema,
     VOICE_STT_LANGUAGE_LOCK: voiceSttBooleanFlagSchema,
-    // Routage conversationnel strict : seul un slot direct et non ambigu reste déterministe.
-    VOICE_DIALOGUE_LISTENING_V2: voiceSttBooleanFlagSchema,
-    // Activation ciblée du routage strict ; s'ajoute au flag global.
-    VOICE_DIALOGUE_LISTENING_V2_RESTAURANT_IDS: z.string().optional(),
-    // Provider choisi avant ouverture de session ; Deepgram requiert aussi une allowlist.
-    VOICE_STT_PROVIDER: z.enum(['scribe', 'deepgram']).default('scribe'),
-    VOICE_STT_PROVIDER_RESTAURANT_IDS: z.string().optional(),
     // Codec Telnyx Media Stream. `PCMA` (défaut) = G.711 A-law 8 kHz, chemin
     // de production historique. `L16` = PCM 16 bits 16 kHz (bande large).
     VOICE_TELNYX_CODEC: telnyxCodecSchema,
@@ -478,12 +445,12 @@ const EnvSchema = z
     // Le checkout d'abonnement reste désactivé en production tant que les
     // prix Stripe et le pilote Essential ne sont pas clôturés.
     BILLING_CHECKOUT_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Les fonctions CRM avancées et le control plane marketing restent
-    // désactivés en production tant que les preuves P2/P3 ne sont pas closes.
-    CRM_ADVANCED_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Le control plane marketing reste désactivé en production tant que les
+    // preuves P2/P3 ne sont pas closes. Le CRM avancé suit la formule seule.
     MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
+    MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
     // POS connectors remain disabled until a provider sandbox and pilot are
     // qualified. The adapter and import endpoints are still available locally
     // when explicitly enabled in a non-production environment.
@@ -603,14 +570,13 @@ const EnvSchema = z
       if (data.NODE_ENV !== 'production') return true;
       const voiceDisabled = process.env.VOICE_DISABLED === 'true';
       if (voiceDisabled) return true;
-      // La clé exigée est celle du fournisseur de reconnaissance réellement choisi : plus de clé ElevenLabs en
-      // production avec Deepgram (il n'y a plus de secours Scribe).
+      // Deepgram est le seul fournisseur de reconnaissance : seule sa clé est exigée.
       return hasSttProviderKey(data);
     },
     {
       message:
-        'En production, la clé du fournisseur de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY avec VOICE_STT_PROVIDER=deepgram, ELEVENLABS_API_KEY avec VOICE_STT_PROVIDER=scribe. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
-      path: ['VOICE_STT_PROVIDER'],
+        'En production, la clé de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['DEEPGRAM_API_KEY'],
     },
   )
   .refine(

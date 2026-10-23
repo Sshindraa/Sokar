@@ -46,6 +46,87 @@ describe('customer.routes', () => {
       expect(body.data).toHaveLength(2);
     });
 
+    it('ajoute le statut de cycle de vie calculé sur les vraies visites, en une seule requête', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 40 },
+        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 0 },
+      ] as never);
+      vi.mocked(db.customer.count).mockResolvedValue(2);
+      const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        {
+          customerId: 'c2',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: recent(3),
+          reservedAt: recent(3),
+        },
+        {
+          customerId: 'c2',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: recent(20),
+          reservedAt: recent(20),
+        },
+        {
+          customerId: 'c2',
+          state: 'SEATED',
+          status: 'SEATED',
+          startsAt: recent(40),
+          reservedAt: recent(40),
+        },
+      ] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.reservation.findMany).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(db.reservation.findMany).mock.calls[0][0]?.where).toMatchObject({
+        restaurantId: 'test-rest-1',
+        customerId: { in: ['c1', 'c2'] },
+      });
+      const [alice, bob] = res.json().data;
+      expect(alice.lifecycle.status).toBe('new');
+      expect(bob.lifecycle).toEqual({ status: 'regular', reason: '3 visites en 90 jours' });
+      expect(alice.visitCount).toBe(40);
+    });
+
+    describe('GET /customers/service-cards', () => {
+      it('rejette une liste vide', async () => {
+        const app = await getApp();
+        const res = await app.inject({
+          method: 'GET',
+          url: '/customers/service-cards?reservationIds=',
+          headers: { authorization: 'Bearer test' },
+        });
+        expect(res.statusCode).toBe(400);
+      });
+
+      it('renvoie les cartes de toute la liste, limitées au restaurant', async () => {
+        const app = await getApp();
+        vi.mocked(db.reservation.findMany).mockResolvedValueOnce([] as never);
+        vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+          timezone: 'Europe/Paris',
+        } as never);
+        const res = await app.inject({
+          method: 'GET',
+          url: '/customers/service-cards?reservationIds=r1,r2',
+          headers: { authorization: 'Bearer test' },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ data: [] });
+        expect(vi.mocked(db.reservation.findMany).mock.calls[0][0]?.where).toEqual({
+          restaurantId: 'test-rest-1',
+          id: { in: ['r1', 'r2'] },
+        });
+      });
+    });
+
     it('filtre par phone si fourni (recherche)', async () => {
       const app = await getApp();
       vi.mocked(db.customer.findMany).mockResolvedValue([]);
@@ -149,6 +230,7 @@ describe('customer.routes', () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         crmSensitiveNoteRoles: 'OWNER,MANAGER',
       } as never);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
 
       const res = await app.inject({
         method: 'GET',
@@ -158,7 +240,13 @@ describe('customer.routes', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().data).toEqual([
-        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', notes: null },
+        {
+          id: 'c1',
+          restaurantId: 'test-rest-1',
+          name: 'Alice',
+          notes: null,
+          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+        },
       ]);
     });
 

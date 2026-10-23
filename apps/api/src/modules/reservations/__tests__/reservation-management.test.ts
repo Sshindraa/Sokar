@@ -72,7 +72,13 @@ describe('personal reservation management', () => {
     expect(verifyReservationManagementToken(bearer, { ...row, restaurantId: randomUUID() })).toBe(
       false,
     );
-    expect(verifyReservationManagementToken(bearer.slice(0, -2) + 'AA', row)).toBe(false);
+    // Altère le premier caractère de la signature : il porte six vrais bits, et le
+    // remplaçant diffère toujours de l'original (un « AA » final pouvait déjà y être).
+    const mac = bearer.indexOf('.') + 1;
+    const tampered =
+      bearer.slice(0, mac) + (bearer[mac] === 'A' ? 'B' : 'A') + bearer.slice(mac + 1);
+    expect(tampered).not.toBe(bearer);
+    expect(verifyReservationManagementToken(tampered, row)).toBe(false);
     vi.stubEnv('RESERVATION_MANAGEMENT_SECRET', randomBytes(32).toString('hex'));
     expect(verifyReservationManagementToken(bearer, row)).toBe(false);
   });

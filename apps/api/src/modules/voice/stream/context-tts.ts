@@ -23,15 +23,18 @@ export interface ContextTtsTurn {
     totalMs: number | null;
     alignment?: SpokenAlignment;
   };
-  /** `tone` : balise d'expression à placer avant ce texte (ElevenLabs seulement ; ignorée ailleurs). */
-  push(transcript: string, options?: { tone?: string }): void;
+  /**
+   * `tone` : balise d'expression à placer avant ce texte (ElevenLabs seulement ; ignorée ailleurs). `flush` : générer
+   * ce texte tout de suite même sans ponctuation finale (premiers mots d'une phrase ; ElevenLabs seulement).
+   */
+  push(transcript: string, options?: { tone?: string; flush?: boolean }): void;
   finish(): Promise<void>;
   cancel(reason?: 'barge_in' | 'unused'): void;
 }
 
 /**
- * Choisit le fournisseur du tour. Le chemin ElevenLabs ne s'applique qu'aux restaurants listés (voir
- * `isElevenLabsDialogueEnabledFor`) et passe devant Cartesia ; s'il est actif sans clé d'API, on retombe sur Cartesia.
+ * Choisit le fournisseur du tour. Le chemin ElevenLabs s'applique à tous les restaurants dès que la clé est
+ * présente (voir `isElevenLabsDialogueEnabledFor`) et passe devant Cartesia.
  * Sans aucun drapeau, le résultat est `null` : le chemin HTTP habituel reste en place.
  */
 export function createContextTtsTurn(session: CallSession): ContextTtsTurn | null {

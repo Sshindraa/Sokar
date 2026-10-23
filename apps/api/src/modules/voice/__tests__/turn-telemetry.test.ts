@@ -308,7 +308,7 @@ describe('voice turn telemetry', () => {
         );
         const metrics = await renderMetrics();
         expect(metrics).toContain(
-          'sokar_voice_end_of_speech_to_stt_final_ms_bucket{le="100",provider="unknown"} 1',
+          'sokar_voice_end_of_speech_to_stt_final_ms_bucket{le="100",provider="unknown",final_trigger="speech_final"} 1',
         );
         expect(metrics).toContain(
           'sokar_voice_end_of_speech_to_first_audio_ms_bucket{le="500",path="unknown",restaurant_id="resto-1"} 1',

@@ -9,6 +9,7 @@ describe('event session expiry worker', () => {
   it('closes bounded sessions and returns the count', async () => {
     vi.mocked(db.eventSession.findMany).mockResolvedValue([{ id: 'session-1' }] as never);
     vi.mocked(db.eventSession.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.eventWaitlistEntry.findMany).mockResolvedValue([] as never);
     vi.mocked(db.eventWaitlistEntry.updateMany).mockResolvedValue({ count: 2 } as never);
     const result = await processEventSessionExpiryJob({
       id: 'job-1',

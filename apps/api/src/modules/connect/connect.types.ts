@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { CONNECT_DEMO_SLUGS } from '@sokar/shared';
+import { BookingMarketingConsentSchema } from '../marketing/marketing-consent.schema';
 
 // ─── Slug (param URL) ─────────────────────────────────────────
 
@@ -182,6 +183,8 @@ export const ConfirmInputSchema = z.object({
     .optional(),
   // Réservation test : même contrat que pour le hold.
   testBookingToken: z.string().max(100).optional(),
+  // Cases de consentement marketing (jamais cochées par défaut, jamais obligatoires).
+  marketingConsent: BookingMarketingConsentSchema.optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),
 });

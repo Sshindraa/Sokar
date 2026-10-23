@@ -412,19 +412,22 @@ describe('buildSystemPrompt', () => {
     expect(secondLastLine).toBe(customerExtra);
   });
 
-  it('devrait injecter le customerGreeting VIP dans les instructions de continuité', () => {
-    const customerGreeting = ', content de vous revoir M. Jean';
+  it('reconnaît un client connu par principe, sans formule ni civilité imposées', () => {
     const prompt = buildSystemPrompt({
       ...baseCtx,
-      customerGreeting,
+      returningCustomerFirstName: 'Jean',
     });
 
-    expect(prompt).toContain('CLIENT RECONNU');
-    expect(prompt).toContain(customerGreeting);
-    const ruleIdx = prompt.indexOf('CLIENT RECONNU');
-    const greetIdx = prompt.indexOf(customerGreeting);
-    expect(greetIdx).toBeGreaterThan(ruleIdx);
-    expect(greetIdx).toBeLessThan(ruleIdx + 200);
+    expect(prompt).toContain('CLIENT CONNU');
+    expect(prompt).toContain('prénom Jean');
+    expect(prompt).toContain('avec tes propres mots');
+    expect(prompt).toContain('ni Monsieur ni Madame');
+    expect(prompt).not.toContain('content de vous revoir');
+  });
+
+  it("n'ajoute aucune reconnaissance pour un appelant inconnu", () => {
+    const prompt = buildSystemPrompt({ ...baseCtx, returningCustomerFirstName: '' });
+    expect(prompt).not.toContain('CLIENT CONNU');
   });
 });
 describe('phrases à dire : des principes, pas des formules', () => {
