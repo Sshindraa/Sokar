@@ -336,6 +336,7 @@ function sttAdapterForSession(session: CallSession): SttProviderAdapter {
 }
 
 interface SttTurnTiming {
+  transcriptProvider?: string;
   speechEndAt?: number;
   sttFinalAt?: number;
   finalTrigger?: SttFinalTrigger;
@@ -413,6 +414,11 @@ function mergeSttTiming(previous?: SttTurnTiming, next?: SttTurnTiming): SttTurn
   return {
     ...(previous ?? {}),
     ...(next ?? {}),
+    ...(previous?.transcriptProvider &&
+    next?.transcriptProvider &&
+    previous.transcriptProvider !== next.transcriptProvider
+      ? { transcriptProvider: 'mixed-stt' }
+      : {}),
   };
 }
 
@@ -593,6 +599,9 @@ function dispatchUtteranceEnd(
   flushSttChunkBuffer(session);
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
+  // Un tour fusionné avec Ink ne possède pas de mots/confiances alignés sur tout son texte.
+  if (timing?.transcriptProvider === 'cartesia-ink-2' || timing?.transcriptProvider === 'mixed-stt')
+    words = undefined;
   if (languageCode) session.sttLanguageCode = languageCode;
   const sttFinalAt = timing?.sttFinalAt ?? Date.now();
   const speechEndAt =
@@ -619,6 +628,7 @@ function dispatchUtteranceEnd(
   session.onSttEvent?.({
     type: 'UtteranceEnd',
     transcript: cleanTranscript,
+    transcriptProvider: timing?.transcriptProvider ?? session.sttProviderUsed ?? session.sttModel,
     ...(words ? { words } : {}),
     ...(languageCode ? { languageCode } : {}),
     ...(speechEndAt !== undefined ? { speechEndAt } : {}),
@@ -759,7 +769,7 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
     sendInkAudio(session, telnyxAudio);
   }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
-  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
+  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length), adapter.id);
   session.sttFirstAudioChunkSent = true;
   const chunkMs = String(getSttChunkMs());
   voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });
@@ -1314,9 +1324,13 @@ function dispatchDeepgramFinalParts(
     dispatchCommittedTranscript(
       session,
       finalTranscript,
-      words.length ? words : undefined,
+      source === 'deepgram' && words.length ? words : undefined,
       languageCode,
-      timing,
+      {
+        ...timing,
+        transcriptProvider:
+          source === 'ink' ? 'cartesia-ink-2' : (session.sttProviderUsed ?? session.sttModel),
+      },
     );
   };
   if (!session.sttInk?.ready) {
@@ -1339,9 +1353,20 @@ function dispatchDeepgramFinalParts(
         // Deepgram seul.
       }
       logger.info(
-        { callId: session.callControlId, source: resolved.source, waitedMs: resolved.waitedMs },
+        {
+          callId: session.callControlId,
+          source: resolved.source,
+          waitedMs: resolved.waitedMs,
+          deepgram: describeTranscript(transcript),
+          ink: resolved.inkTranscript ? describeTranscript(resolved.inkTranscript) : undefined,
+        },
         '[stt-ink] final transcript',
       );
+      logVoiceDebugText(session, 'stt_comparison', {
+        deepgramTranscript: transcript,
+        inkTranscript: resolved.inkTranscript,
+        selectedSource: resolved.source,
+      });
       const nextPhrase = session.turnTranscript;
       send(resolved.transcript, resolved.source);
       if (nextPhrase && !session.turnTranscript) session.turnTranscript = nextPhrase;

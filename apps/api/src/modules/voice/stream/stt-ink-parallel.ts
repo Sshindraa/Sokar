@@ -1,20 +1,22 @@
 /**
- * Cartesia Ink-2 en parallèle de Deepgram. Deepgram garde la décision de fin de phrase, les mots (timings,
- * confiance, bruit, interruption) et les mots isolés ; Ink-2 reçoit le même flux sur `/stt/websocket`
+ * Cartesia Ink-2 en parallèle de Deepgram. Deepgram garde la décision de fin de phrase et les mots isolés ; ses mots et confiances
+ * ne sont associés au texte final que si ce texte vient de Deepgram. Ink-2 reçoit le même flux sur `/stt/websocket`
  * (mode manuel) et, à chaque fin de phrase Deepgram, un `finalize` : son texte remplace celui de Deepgram
- * s'il arrive dans le délai imparti.
+ * s'il arrive dans le délai imparti et que le remplacement est explicitement autorisé.
  *
  * Banc du 22/10/2026 (40 phrases d'appels test, référence Gemini) : mots erronés Deepgram 31,0 %, Ink-2
  * manuel 23,8 % (phrases longues 24,2 % contre 31,7 %) ; `finalize` → transcription finale en 87 ms
  * (médiane), 128 ms (p90). Ink-2 rend vide un mot isolé (« F », « vingt ») : Deepgram le couvre.
  *
- * Pour tous les restaurants dès que `CARTESIA_API_KEY` est présente. 3 crédits Cartesia par seconde envoyée,
+ * Comparaison limitée à `VOICE_STT_INK_RESTAURANT_IDS` (vide par défaut).
+ * Deepgram reste la source, sauf opt-in supplémentaire `VOICE_STT_INK_REPLACE_RESTAURANT_IDS`. 3 crédits Cartesia par seconde envoyée,
  * au plus 10 min par appel ; les secondes du jour sont comptées dans Redis (`stt-ink:seconds:<jour>`) pour suivre
- * la dépense. Toute panne retombe sur Deepgram seul. Jamais de texte d'appel dans les journaux.
+ * la dépense. Toute panne retombe sur Deepgram seul. Les textes ne sont journalisés que dans le périmètre debug test.
  */
 import WebSocket from 'ws';
 import { logger } from '../../../shared/logger/pino';
 import { redisCache } from '../../../shared/redis/client';
+import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { callerSilenceMs } from './caller-voice-activity';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import type { CallSession } from './types';
@@ -91,6 +93,22 @@ export interface InkDeps {
   now?: () => number;
 }
 
+function restaurantEnabled(env: NodeJS.ProcessEnv, key: string, restaurantId: string): boolean {
+  return (env[key] ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(restaurantId);
+}
+
+export interface InkTranscriptResult {
+  transcript: string;
+  source: 'deepgram' | 'ink';
+  waitedMs: number;
+  /** Hypothèse de comparaison, jamais journalisée hors du périmètre debug test. */
+  inkTranscript?: string;
+}
+
 function waitMs(env: NodeJS.ProcessEnv): number {
   const parsed = Number(env.VOICE_STT_INK_WAIT_MS);
   return Number.isFinite(parsed) && parsed >= 50 && parsed <= 1000 ? parsed : DEFAULT_WAIT_MS;
@@ -119,14 +137,18 @@ export function comparableWordCount(text: string): number {
 }
 
 /**
- * Ouvre la socket Ink-2 de l'appel (tous les restaurants, clé Cartesia requise).
+ * Ouvre la socket Ink-2 pour les seuls restaurants explicitement autorisés, clé Cartesia requise.
  * Asynchrone et sans effet sur Deepgram : tant qu'elle n'est pas prête, Deepgram est seul.
  */
 export async function openInkParallel(session: CallSession, deps: InkDeps = {}): Promise<void> {
   const env = deps.env ?? process.env;
   if (session.sttInk || session.sttInkAttempted) return;
   session.sttInkAttempted = true;
-  if (!session.restaurantId) return;
+  if (
+    !session.restaurantId ||
+    !restaurantEnabled(env, 'VOICE_STT_INK_RESTAURANT_IDS', session.restaurantId)
+  )
+    return;
   const apiKey = (env.CARTESIA_API_KEY ?? '').trim();
   if (!apiKey) return;
   const { encoding, sampleRate } = inkAudioFormat(session.codec);
@@ -221,6 +243,11 @@ export function sendInkAudio(session: CallSession, telnyxAudio: Buffer, now = Da
   try {
     state.socket.send(audio);
     state.bytesSent += audio.length;
+    addSttAudioSamples(
+      session,
+      session.codec === 'L16' ? audio.length / 2 : audio.length,
+      'cartesia',
+    );
     if (callerSilenceMs(session, now) < EARLY_FINALIZE_SILENCE_MS) {
       state.speechSinceFinalize = true;
     } else if (state.speechSinceFinalize && !state.pendingFinalize) {
@@ -252,7 +279,7 @@ export async function resolveInkTranscript(
   session: CallSession,
   deepgramTranscript: string,
   deps: InkDeps = {},
-): Promise<{ transcript: string; source: 'deepgram' | 'ink'; waitedMs: number }> {
+): Promise<InkTranscriptResult> {
   const state = session.sttInk;
   const env = deps.env ?? process.env;
   const deepgram = (waitedMs = 0) => ({
@@ -261,6 +288,16 @@ export async function resolveInkTranscript(
     waitedMs,
   });
   if (!state?.ready || state.closed) return deepgram();
+  const select = (inkTranscript: string, waitedMs: number): InkTranscriptResult => ({
+    transcript: restaurantEnabled(env, 'VOICE_STT_INK_REPLACE_RESTAURANT_IDS', session.restaurantId)
+      ? inkTranscript
+      : deepgramTranscript,
+    source: restaurantEnabled(env, 'VOICE_STT_INK_REPLACE_RESTAURANT_IDS', session.restaurantId)
+      ? 'ink'
+      : 'deepgram',
+    waitedMs,
+    inkTranscript,
+  });
   const startedAt = Date.now();
   if (state.speechSinceFinalize || (!state.pendingFinalize && !state.finals.length)) {
     try {
@@ -276,7 +313,7 @@ export async function resolveInkTranscript(
   }
   if (!state.pendingFinalize) {
     const ready = takeFinals(state);
-    return ready ? { transcript: ready, source: 'ink', waitedMs: 0 } : deepgram();
+    return ready ? select(ready, 0) : deepgram();
   }
   const result = new Promise<string>((resolve) => {
     state.waiter = resolve;
@@ -292,7 +329,7 @@ export async function resolveInkTranscript(
     discardPendingReply(state);
     return deepgram(waitedMs);
   }
-  return { transcript: inkText, source: 'ink', waitedMs };
+  return select(inkText, waitedMs);
 }
 
 const PARTY_NUMBER_WORDS: Record<string, string> = {

@@ -8,6 +8,7 @@ import type {
   VoiceUsageCounters,
   VoiceUsageKindCounter,
 } from '../voice/stream/types';
+import type { SttProviderId } from '../voice/stream/stt-provider-adapter';
 import { telnyxCodecProfile } from '../voice/stream/telnyx-codec';
 import { ELEVENLABS_DIALOGUE_MODEL } from '../voice/stream/elevenlabs-dialogue-context';
 
@@ -30,6 +31,7 @@ export function ensureVoiceUsage(session: CallSession): VoiceUsageCounters {
   if (!session.voiceUsage) {
     session.voiceUsage = {
       sttAudioSamples: 0,
+      sttAudioSamplesByProvider: {},
       cartesiaTtsCharacters: 0,
       elevenLabsTtsCharacters: 0,
       llmByProvider: {},
@@ -39,9 +41,18 @@ export function ensureVoiceUsage(session: CallSession): VoiceUsageCounters {
 }
 
 /** Count only audio actually handed to the STT provider, after any codec conversion. */
-export function addSttAudioSamples(session: CallSession, samples: number): void {
+export function addSttAudioSamples(
+  session: CallSession,
+  samples: number,
+  provider: SttProviderId = session.sttAdapter?.id ??
+    (session.sttProviderUsed?.startsWith('cartesia') ? 'cartesia' : 'deepgram'),
+): void {
   if (!Number.isFinite(samples) || samples <= 0) return;
-  ensureVoiceUsage(session).sttAudioSamples += samples;
+  const counters = ensureVoiceUsage(session);
+  counters.sttAudioSamples += samples;
+  counters.sttAudioSamplesByProvider ??= {};
+  counters.sttAudioSamplesByProvider[provider] =
+    (counters.sttAudioSamplesByProvider[provider] ?? 0) + samples;
 }
 
 export function sttSamplesForBuffer(session: CallSession, audioBytes: number): number {
@@ -211,19 +222,30 @@ export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
       );
     }
 
-    const sttSeconds = counters.sttAudioSamples / telnyxCodecProfile(session.codec).sampleRate;
-    if (sttSeconds > 0) {
+    const samplesByProvider = counters.sttAudioSamplesByProvider ?? {};
+    const sttUsage = Object.entries(samplesByProvider).filter(
+      (entry): entry is [SttProviderId, number] => Number.isFinite(entry[1]) && entry[1] > 0,
+    );
+    // Compatibility for sessions initialized before per-provider counters existed.
+    if (!sttUsage.length && counters.sttAudioSamples > 0) {
+      const provider: SttProviderId = session.sttProviderUsed?.startsWith('cartesia')
+        ? 'cartesia'
+        : 'deepgram';
+      sttUsage.push([provider, counters.sttAudioSamples]);
+    }
+    for (const [provider, samples] of sttUsage) {
+      const sttSeconds = samples / telnyxCodecProfile(session.codec).sampleRate;
       tasks.push(
         enqueueVoiceUsage(
           buildPayload(
             session,
             'STT_SECONDS',
-            'elevenlabs',
+            provider,
             sttSeconds,
             'seconds',
-            `elevenlabs:stt:${session.callLegId}:final`,
+            `${provider}:stt:${session.callLegId}:final`,
             {
-              model: session.sttModel ?? 'unknown',
+              model: provider === 'cartesia' ? 'ink-2' : (session.sttModel ?? 'nova-3'),
               countMethod: 'audio_samples',
             },
           ),

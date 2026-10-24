@@ -1,8 +1,9 @@
 # Banc STT vocal
 
 Mesure ce que la réservation vocale retient réellement d'une réponse d'appelant :
-synthèse Cartesia → dégradation téléphonique → transcription Scribe de production →
-dialogue réel (`recordUserTurn`).
+synthèse Cartesia → dégradation téléphonique → transcription STT → dialogue réel
+(`recordUserTurn`). Scribe est conservé comme référence historique hors runtime ; le
+parcours actuel utilise Deepgram Nova-3 avec Cartesia Ink-2 en parallèle ou en secours.
 
 Depuis le 22/10/2026, réponses attendues et confirmation par la confiance sont actives pour tous les
 restaurants, sans réglage : les colonnes « coupé » et « actif » du rapport sont identiques. Les chiffres
@@ -53,12 +54,13 @@ résumé chiffré est commité (journal, description de PR).
 
 ## Garde-fous fournisseur
 
-Les scripts de banc utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du
-14/10/2026 : une seule clé partagée prod, dev, staging et banc) et une clé Cartesia dédiée
-`CARTESIA_BENCH_API_KEY`, qui refuse une clé de production. Ils exigent un plafond
-`BENCH_MAX_CREDITS` avant toute requête. Les étapes de synthèse et transcription consomment
-les fournisseurs ; `evaluate.ts` reste hors ligne. Aucun banc ne doit être lancé sans
-validation explicite du budget.
+Les bancs Deepgram/Cartesia exigent des clés dédiées (`DEEPGRAM_BENCH_API_KEY`,
+`CARTESIA_BENCH_API_KEY`) et refusent une clé identique au secret runtime. Cartesia exige
+`BENCH_MAX_CREDITS`; les bancs Deepgram plafonnent l'audio via `BENCH_DG_MAX_AUDIO_SECONDS`.
+Au-delà de huit sessions, `BENCH_CONFIRM=1` est aussi requis. Les scripts historiques Scribe
+utilisent encore la clé ElevenLabs partagée prod/dev/staging : ne pas les lancer pour une
+qualification fournisseur. La synthèse et la transcription consomment des crédits ;
+`evaluate.ts` reste hors ligne. Toute dépense doit rester dans le budget choisi avant le run.
 
 ## Deuxième transcription (expérience, hors production)
 

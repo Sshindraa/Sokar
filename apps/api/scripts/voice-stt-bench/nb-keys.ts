@@ -3,13 +3,13 @@
  * production. Le 24/09, un run de banc sur le compte ElevenLabs partagé
  * prod/staging a épuisé le quota et coupé la transcription des appels réels.
  *
- * Règle : le banc Cartesia lit `CARTESIA_BENCH_API_KEY` et refuse une clé identique à
- * celle de prod. Le banc ElevenLabs lit la clé unique `ELEVENLABS_API_KEY` (décision du
+ * Règle : les bancs Deepgram et Cartesia lisent chacun une clé dédiée et refusent une clé identique à
+ * celle du runtime. Le banc ElevenLabs lit la clé unique `ELEVENLABS_API_KEY` (décision du
  * 14/10/2026 : une seule clé partagée prod, dev, staging et banc).
  * Les valeurs ne sont jamais journalisées, seulement comparées.
  */
 
-export type BenchProviderKey = 'CARTESIA_BENCH_API_KEY';
+export type BenchProviderKey = 'CARTESIA_BENCH_API_KEY' | 'DEEPGRAM_BENCH_API_KEY';
 
 /** La durée de silence final ajoutée après chaque clip dans `nb-run.ts`. */
 export const BENCH_TRAILING_SILENCE_S = 1.6;
@@ -36,6 +36,23 @@ export function requireBenchKey(envName: BenchProviderKey, productionEnvName: st
     );
   }
   return value;
+}
+
+/** Refuse les appels Cartesia sans plafond de crédits explicite et suffisant. */
+export function requireBenchCreditBudget(estimatedCredits: number): number {
+  const maxCredits = Number(process.env.BENCH_MAX_CREDITS);
+  if (!Number.isFinite(maxCredits) || maxCredits <= 0) {
+    throw new Error('BENCH_MAX_CREDITS doit définir un plafond positif avant un banc Cartesia.');
+  }
+  if (!Number.isFinite(estimatedCredits) || estimatedCredits < 0) {
+    throw new Error('Estimation de crédits Cartesia invalide.');
+  }
+  if (estimatedCredits > maxCredits) {
+    throw new Error(
+      `Budget Cartesia dépassé : ${estimatedCredits.toFixed(1)} crédits estimés, plafond ${maxCredits}.`,
+    );
+  }
+  return maxCredits;
 }
 
 /** Clé ElevenLabs unique, partagée prod, dev, staging et banc (décision du 14/10/2026). */

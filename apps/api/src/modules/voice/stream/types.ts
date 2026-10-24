@@ -290,6 +290,8 @@ export interface VoiceSpeculationCounters {
 
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
+  /** Audio réellement envoyé à chaque STT, utile quand Deepgram et Cartesia tournent en parallèle. */
+  sttAudioSamplesByProvider?: Partial<Record<'deepgram' | 'cartesia', number>>;
   cartesiaTtsCharacters: number;
   elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
@@ -383,6 +385,8 @@ export type SttEvent =
   | {
       type: 'UtteranceEnd';
       transcript: string;
+      /** Fournisseur du texte sélectionné, distinct de celui des horodatages. */
+      transcriptProvider?: string;
       words?: SttWord[];
       /** Code ISO détecté par le provider STT sur le segment final, si disponible. */
       languageCode?: string;
@@ -635,7 +639,7 @@ export interface CallSession {
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
-    timing?: { speechEndAt?: number; sttFinalAt?: number };
+    timing?: { speechEndAt?: number; sttFinalAt?: number; transcriptProvider?: string };
     holdMs: number;
     timer: ReturnType<typeof setTimeout> | null;
   } | null;
@@ -644,7 +648,7 @@ export interface CallSession {
     transcript: string;
     words?: SttWord[];
     languageCode?: string;
-    timing?: { speechEndAt?: number; sttFinalAt?: number };
+    timing?: { speechEndAt?: number; sttFinalAt?: number; transcriptProvider?: string };
     /** Instant où ce segment a été retenu (épellation) : sert à borner l'attente. */
     createdAt?: number;
   } | null;

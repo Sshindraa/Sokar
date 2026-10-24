@@ -1,6 +1,25 @@
 # Délivrabilité des e-mails et des SMS
 
-Audit du 17 octobre 2026 (production).
+Audit du 17 octobre 2026 (production). Les constats SMS de cette date sont historiques ; voir la mise à jour du 24 octobre ci-dessous.
+
+## SMS en production — 24 octobre 2026
+
+- Relevé en lecture seule : API et workers en ligne, `/health` et `/livez` verts ;
+  `TELNYX_SMS_FROM=SOKAR` et profil de messagerie configurés.
+- `smsConfirmEnabled=false` sur les trois restaurants après désactivation de deux
+  fiches dormantes sans slug public ni réservation ; Chez Sokar démo était déjà
+  off. `WHATSAPP_ENABLED=false` et `MARKETING_WHATSAPP_ENABLED=false`.
+- Un seul SMS technique a été envoyé via l’API Telnyx (1 segment), sans
+  créer de réservation. Telnyx l’a accepté puis son reçu final a indiqué
+  `delivery_failed`, code `40008`. Telnyx définit ce code comme **Undeliverable**,
+  rejeté par l’opérateur destinataire ; le reçu ne donne pas la cause précise
+  ([codes d’erreur Telnyx](https://support.telnyx.com/en/articles/6505121-telnyx-messaging-error-codes)).
+- Identifiant fournisseur : `4031a16d-f4fc-4ff0-9883-f72664271eb9`. Aucun rejeu.
+
+Garder les notifications de réservation et WhatsApp désactivées. Demander à
+Telnyx la cause précise du `40008` et les conditions d’autorisation de
+l’expéditeur avant tout nouvel essai ; après correction, refaire un seul test
+contrôlé et exiger le statut `delivered` ainsi que la réception sur le téléphone.
 
 ## E-mails
 
@@ -31,7 +50,7 @@ Audit du 17 octobre 2026 (production).
    Lire les rapports deux à quatre semaines, puis passer à `p=quarantine` quand Resend, Clerk et
    Google sortent tous alignés.
 
-## SMS
+### État historique du 17 octobre
 
 | Élément                     | État                                                                                                                             |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
