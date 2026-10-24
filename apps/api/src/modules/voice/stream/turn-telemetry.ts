@@ -246,6 +246,7 @@ export function completeVoiceTurnInput(
   words: SttWord[] = [],
   timing?: Pick<
     Extract<SttEvent, { type: 'UtteranceEnd' }>,
+    | 'transcriptProvider'
     | 'speechEndAt'
     | 'sttFinalAt'
     | 'turnDispatchedAt'
@@ -262,6 +263,7 @@ export function completeVoiceTurnInput(
   const turn = session.currentTurn;
   if (!turn) return;
 
+  if (timing?.transcriptProvider) turn.sttProvider = timing.transcriptProvider;
   const completedAt = timing?.sttFinalAt ?? Date.now();
   const dispatchedAt = timing?.turnDispatchedAt ?? Date.now();
   recordDebugCallerText(session, transcript);
@@ -291,6 +293,7 @@ export function completeVoiceTurnInput(
     }
   }
   recordVoiceTurnEvent(session, 'stt_final', {
+    transcriptProvider: turn.sttProvider,
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
     endOfSpeechToSttFinalMs: session.latencyTrace?.endOfSpeechToSttFinalMs,
     holdMs: session.latencyTrace?.holdMs,

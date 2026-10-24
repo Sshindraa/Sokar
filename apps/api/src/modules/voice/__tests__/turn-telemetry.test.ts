@@ -75,6 +75,24 @@ describe('voice turn telemetry', () => {
     expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(2);
   });
 
+  it('persiste le fournisseur du texte sélectionné au lieu du fournisseur primaire', () => {
+    const session = makeSession();
+    session.sttProviderUsed = 'deepgram-nova-3';
+    completeVoiceTurnInput(session, 'une table demain', undefined, {
+      transcriptProvider: 'cartesia-ink-2',
+    });
+    expect(session.currentTurn?.sttProvider).toBe('cartesia-ink-2');
+    const final = vi
+      .mocked(logger.info)
+      .mock.calls.find(([payload]) => (payload as LoggedPayload).voiceTurn?.event === 'stt_final');
+    expect((final?.[0] as { voiceTurn: Record<string, unknown> }).voiceTurn).toMatchObject({
+      transcriptProvider: 'cartesia-ink-2',
+    });
+    expect((final?.[0] as { voiceTurn: Record<string, unknown> }).voiceTurn).not.toHaveProperty(
+      'meanWordConfidence',
+    );
+  });
+
   it('redémarre la mesure de latence à chaque tour', () => {
     const session = makeSession();
     session.latencyTrace = { startTime: 1, llmFirstTokenMs: 999 };

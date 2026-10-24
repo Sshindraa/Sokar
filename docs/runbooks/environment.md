@@ -435,17 +435,21 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # Visites réelles lues dans les réservations (honorées, placées, ou confirmées passées ; annulées et absences
 # exclues), dernière visite, prochaine réservation, taille de groupe médiane, préférences saisies ou confirmées
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée.
-# Cartesia Ink-2 en parallèle de Deepgram, pour tous les restaurants dès que `CARTESIA_API_KEY` est présente.
-# Deepgram garde la fin de phrase, les mots (timings, confiance, bruit, interruption) et les mots isolés ;
-# Ink-2 (`/stt/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, L16 en PCM16 16 kHz) reçoit seulement
-# la voix de l'appelant (détection locale `trackCallerVoice`, 0,5 s gardées avant, 1 s après la dernière voix).
-# À chaque fin de phrase Deepgram de 2 mots ou plus : `finalize`, puis le texte Ink-2 remplace celui de Deepgram
-# s'il arrive dans `VOICE_STT_INK_WAIT_MS` (défaut 250, 50 à 1000 ; banc : 87 ms médiane, 128 ms p90), sinon
-# Deepgram. `finalize` part dès 150 ms de silence local : le texte est en général prêt quand Deepgram clôt la phrase.
-# Si les deux ne s'accordent pas sur le nombre de personnes, Léa le fait confirmer dans son récapitulatif (aucune
-# question en plus). 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel, sans plafond quotidien ;
-# les secondes du jour sont comptées dans Redis (`stt-ink:seconds:<jour>`) pour suivre la dépense. Toute panne
-# retombe sur Deepgram seul.
+# Cartesia Ink-2 parallèle : désactivé par défaut. Clé seule insuffisante.
+# VOICE_STT_INK_RESTAURANT_IDS autorise la comparaison sur les restaurants de test choisis.
+# Deepgram reste la source du dialogue. Pour autoriser aussi le remplacement, ajouter le même restaurant
+# à VOICE_STT_INK_REPLACE_RESTAURANT_IDS ; cette liste seule n'ouvre aucune connexion Ink.
+# Aucun remplacement général fondé sur la seule présence d'une clé. Ce retrait de priorité ne démontre
+# pas que Deepgram reconnaît mieux : qualifier les deux hypothèses avec un audio de référence.
+# Ink reçoit seulement la voix (0,5 s avant, 1 s après), au même codec que Deepgram ; attente bornée
+# VOICE_STT_INK_WAIT_MS (250 ms par défaut, 50 à 1000) sur les seuls appels de comparaison.
+# Logs généraux : source sélectionnée, longueurs et empreintes des hypothèses, jamais le texte.
+# Les deux textes sont accessibles uniquement via VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS (14 jours,
+# redactPii). Les confiances/mots Deepgram ne sont pas attribués à un texte Ink ; le fournisseur du
+# texte sélectionné est enregistré par tour. Les horodatages de fin de parole restent ceux de Deepgram.
+# Coût : 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel ; compteur Redis quotidien.
+VOICE_STT_INK_RESTAURANT_IDS=""
+VOICE_STT_INK_REPLACE_RESTAURANT_IDS=""
 # Secours Ink-2 quand Deepgram tombe, pour tous les restaurants (`CARTESIA_API_KEY`) : au lieu de
 # déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
 # (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du

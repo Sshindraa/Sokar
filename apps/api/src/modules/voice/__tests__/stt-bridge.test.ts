@@ -644,6 +644,7 @@ describe('Deepgram final dispatch', () => {
   }
 
   it("Ink-2 prêt : son texte part à la place de Deepgram, le désaccord sur le nombre de personnes est noté pour ce tour, et la phrase suivante commencée pendant l'attente est gardée", async () => {
+    vi.stubEnv('VOICE_STT_INK_REPLACE_RESTAURANT_IDS', 'rest-1');
     const { session, onEvent } = deepgramSession();
     const sent: Array<Buffer | string> = [];
     session.sttInk = {
@@ -667,6 +668,7 @@ describe('Deepgram final dispatch', () => {
     handleNormalizedSttMessage(session, {
       type: 'final_segment',
       transcript: 'je voudrais une table pour dix personnes.',
+      words: [{ word: 'dix', confidence: 0.99 }],
       speechFinal: true,
       speechEndOffsetMs: 1_000,
     });
@@ -688,7 +690,34 @@ describe('Deepgram final dispatch', () => {
         validThrough: session.sttFinalCount,
       }),
     );
+    expect(
+      onEvent.mock.calls.find(([event]) => event.type === 'UtteranceEnd')?.[0],
+    ).not.toHaveProperty('words');
+    expect(
+      onEvent.mock.calls.find(([event]) => event.type === 'UtteranceEnd')?.[0].transcriptProvider,
+    ).toBe('cartesia-ink-2');
+    vi.unstubAllEnvs();
     expect(session.turnTranscript).toBe('et aussi');
+  });
+
+  it('un tour fusionné Ink puis Deepgram ne garde pas les confiances du dernier segment', () => {
+    const { session, onEvent } = deepgramSession();
+    session.sttProviderUsed = 'deepgram-nova-3';
+    session.sttSemanticHold = {
+      transcript: 'je voudrais',
+      timing: { transcriptProvider: 'cartesia-ink-2' },
+      holdMs: 900,
+      timer: null,
+    };
+    handleNormalizedSttMessage(session, {
+      type: 'final_segment',
+      transcript: 'réserver demain pour deux personnes.',
+      words: [{ word: 'réserver', confidence: 0.99 }],
+      speechFinal: true,
+    });
+    const final = onEvent.mock.calls.find(([event]) => event.type === 'UtteranceEnd')?.[0];
+    expect(final).toMatchObject({ transcriptProvider: 'mixed-stt' });
+    expect(final).not.toHaveProperty('words');
   });
 
   it('dispatches speech_final immediately without the hybrid hold, but retains an incomplete fragment', () => {

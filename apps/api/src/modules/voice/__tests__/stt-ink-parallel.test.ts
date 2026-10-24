@@ -40,7 +40,11 @@ class FakeSocket implements InkSocket {
   }
 }
 
-const env = { CARTESIA_API_KEY: 'k' };
+const env = {
+  CARTESIA_API_KEY: 'k',
+  VOICE_STT_INK_RESTAURANT_IDS: 'r1',
+  VOICE_STT_INK_REPLACE_RESTAURANT_IDS: 'r1',
+};
 
 function store(used = 0) {
   return {
@@ -79,6 +83,16 @@ describe('format', () => {
 });
 
 describe('ouverture', () => {
+  it('ne contacte pas Ink avec une clé seule, un autre restaurant ou une liste vide', async () => {
+    for (const ids of [undefined, '', 'r2']) {
+      const createSocket = vi.fn();
+      await openSession(
+        {},
+        { env: { CARTESIA_API_KEY: 'k', VOICE_STT_INK_RESTAURANT_IDS: ids }, createSocket },
+      );
+      expect(createSocket).not.toHaveBeenCalled();
+    }
+  });
   it('ouvre /stt/websocket en ink-2, français, A-law 8 kHz', async () => {
     const { session, socket } = await openSession();
     const url = new URL(socket!.url);
@@ -166,6 +180,27 @@ describe("seule la voix de l'appelant part chez Cartesia", () => {
 });
 
 describe('fin de phrase', () => {
+  it('garde Deepgram et rend les deux hypothèses en comparaison sans opt-in de remplacement', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, 'je voudrais réserver demain', {
+      env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' },
+    });
+    socket!.final('je suis en vacances');
+    await expect(pending).resolves.toMatchObject({
+      transcript: 'je voudrais réserver demain',
+      source: 'deepgram',
+      inkTranscript: 'je suis en vacances',
+    });
+  });
+
+  it('ne permet pas à un autre restaurant de remplacer le texte', async () => {
+    const { session, socket } = await openSession();
+    const pending = resolveInkTranscript(session, 'je voudrais réserver demain', {
+      env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: 'r2' },
+    });
+    socket!.final('je suis en vacances');
+    expect((await pending).source).toBe('deepgram');
+  });
   it("remplace le texte Deepgram par celui d'Ink-2 arrivé après finalize", async () => {
     const { session, socket } = await openSession();
     const pending = resolveInkTranscript(session, 'je vous permets de toute façon', { env });
