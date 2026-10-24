@@ -419,6 +419,7 @@ export default function ReservationWidget({
           );
         }
         if (data.bookingEnabled === false) {
+          setRestaurant(null);
           setError(
             'La réservation en ligne n’est pas disponible pour ce restaurant. Veuillez le contacter.',
           );

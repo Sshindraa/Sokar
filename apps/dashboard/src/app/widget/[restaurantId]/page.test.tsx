@@ -772,6 +772,23 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     expect(widget.queryByRole('button', { name: /Continuer/ })).toBeNull();
   });
 
+  it('retire aussi un ancien formulaire ouvert quand le restaurant suivant est indisponible', async () => {
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    const fetchSpy = vi.fn(async (url: string) =>
+      url.includes('/availability') ? availabilityResponse() : bookingRestaurantResponse(),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const widget = render(<ReservationWidget />);
+    await widget.findByText(/Nombre de personnes/i);
+    fetchSpy.mockImplementation(async () =>
+      jsonResponse({ id: 'other', name: 'Autre', bookingEnabled: false, openingHours: {} }),
+    );
+    navMocks.setParams({ restaurantId: 'unpublished' });
+    widget.rerender(<ReservationWidget />);
+    expect(await widget.findByText(/La réservation en ligne n’est pas disponible/)).toBeTruthy();
+    expect(widget.queryByRole('button', { name: /Continuer/ })).toBeNull();
+  });
+
   it('ne confirme pas et ne contourne pas un refus du hold public', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, true);
     expect(await widget.findByText('Ce lien de test a expiré.')).toBeTruthy();
