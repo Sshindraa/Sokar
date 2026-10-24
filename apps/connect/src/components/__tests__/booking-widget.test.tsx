@@ -388,7 +388,7 @@ describe('BookingWidget waiting list flow', () => {
   describe('réservation test (jeton signé)', () => {
     const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
     const banner =
-      'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+      'Réservation test : vous voyez ce que voient vos clients. Les notifications dépendent des options du restaurant ; cette réservation n’apparaîtra pas dans votre planning.';
     const restaurantDto = {
       id: 'rest-1',
       giftCardEnabled: true,

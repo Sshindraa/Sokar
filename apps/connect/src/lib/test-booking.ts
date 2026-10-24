@@ -9,7 +9,7 @@
 const TEST_BOOKING_TOKEN_MAX_LENGTH = 100;
 
 export const TEST_BOOKING_BANNER =
-  'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+  'Réservation test : vous voyez ce que voient vos clients. Les notifications dépendent des options du restaurant ; cette réservation n’apparaîtra pas dans votre planning.';
 
 /** Une valeur présente reste en mode test ; les valeurs hors contrat sont refusées par l'API. */
 export function parseTestBookingToken(value: string | undefined): string | undefined {
