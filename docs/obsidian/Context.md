@@ -16,7 +16,7 @@
 - [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging Sending access/sokar.tech posee ; prod/allowlist intactes. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
 - [ ] SMS : staging livré. Prod : 40008 rejeté ; pas de rejeu ; SMS résa/WhatsApp off partout ; cause Telnyx à établir.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
-- [ ] Voix : VOICE-01 avant clients. Blocage Telnyx staging : aucun numéro dédié, numéro configuré rattaché à l'app prod; ne pas appeler. Fournir/affecter un numéro staging et activer ses voies. Bench réel après clés Deepgram/Cartesia dédiées + budget; clients off.
+- [ ] Voix : VOICE-01 avant clients. Smoke STT Deepgram Nova-3 et Cartesia Ink-2 réussi (2/2 chacun, budgets OK). Appel Telnyx entrant en staging : 24 s, 2 tours Deepgram/OpenRouter/ElevenLabs sans interruption ni boucle ; aucune intention ni réservation. Ligne prod restaurée. Scribe et TTS Cartesia non testés. Reste : appel réservation E2E, numéro staging dédié ; clients off.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
@@ -24,7 +24,7 @@
 - [ ] FAQ pratique : renseigner Chez Sokar, l'ajouter à `VOICE_PRACTICAL_INFO_RESTAURANT_IDS`, tester par appel (terrasse, parking, animaux, inconnu → gérant) puis étendre à Connect, widget et MCP.
 - [ ] Span-01 : annoter 300 à 500 tours difficiles, puis décider de la phase 2 (advisory).
 - [ ] Banc voix : décider phase 1b et annoter humainement `bf3893ae` (`truthStatus: unverified`); ablation/substitution ne discriminent pas.
-- [ ] Appel en direct onboarding : l'essayer avec les vrais fournisseurs (écho, latence, réservation simulée), puis déployer `microphone=(self)` (nginx prod) avant la mise en ligne.
+- [ ] Appel en direct onboarding : compléter un appel de bout en bout avec réservation simulée (écho, latence, disponibilité, confirmation), puis déployer `microphone=(self)` (nginx prod) avant la mise en ligne.
 - [ ] Appel réel Chez Sokar : valider compréhension/épellation, mesurer le délai de relecture et tester « A, deux S, A, M ».
 - [ ] Après l’appel réel, vérifier `judge` (disponibilité/délai) et rejouer « je voudrais bien venir »; retrait via `VOICE_TURN_JUDGE_RESTAURANT_IDS`.
 - [ ] Banc voix : traiter la répétition mot pour mot (20–55 %, seuil 80 %) et utiliser le vrai prompt `prompts.ts`.
