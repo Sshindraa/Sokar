@@ -144,7 +144,7 @@ describe('parcours de réservation test depuis l’onboarding', () => {
 
   const token = `${'a'.repeat(27)}.${'b'.repeat(43)}`;
   const banner =
-    'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
+    'Réservation test : vous voyez ce que voient vos clients. Les notifications dépendent des options du restaurant ; cette réservation n’apparaîtra pas dans votre planning.';
 
   it('transmet le jeton à tous les liens de réservation et affiche le bandeau', async () => {
     const html = await markup({ testBooking: token });

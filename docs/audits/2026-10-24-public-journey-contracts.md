@@ -3,21 +3,23 @@
 Base : production `ab1ca2f57` après correction de la confirmation normale (#575).
 Périmètre : réservations Dashboard/Connect/ChatGPT, routage Nginx, cartes cadeaux et cagnottes, promesses de notification. Audit ciblé ; pas de garantie d'exhaustivité sur le monorepo.
 
-Méthode : lecture croisée des composants réellement servis et des routes API, requêtes HTTP GET/HEAD en production et staging, lecture des seuls paramètres publics nécessaires et des comptes agrégés, inspection navigateur staging. Aucun achat, paiement, SMS, nouvelle réservation ni changement de configuration pendant cet audit. Aucun identifiant client ou code cadeau réel dans les preuves.
+Méthode de l'audit initial : lecture croisée des composants réellement servis et des routes API, requêtes HTTP GET/HEAD en production et staging, lecture des seuls paramètres publics nécessaires et des comptes agrégés, inspection navigateur staging. Aucun achat, paiement, SMS, réservation ni changement de configuration pendant cette phase. La recette staging ultérieure est documentée à la fin. Aucun identifiant client ou code cadeau réel dans les preuves versionnées.
 
 ## Résultat
 
-Six défauts établis, plus un défaut conditionnel sans restaurant actuellement concerné dans les deux environnements contrôlés. P1 = parcours bloqué ; P2 = lien, information ou association perdue.
+L'audit initial a établi six défauts et un défaut conditionnel sans restaurant actuellement concerné dans les deux environnements contrôlés. La qualification a ensuite révélé deux écarts secondaires. P1 = parcours bloqué ; P2 = lien, information ou association perdue.
 
-| ID  | Priorité        | Défaut                                                                                                | État                                                                                   |
-| --- | --------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| A   | P1              | Le client API Connect vise le domaine vitrine, où les routes publiques ne sont pas routées vers l'API | HTTP confirmé en production et staging                                                 |
-| B   | P1              | La page bénéficiaire `/gift-card/:code` n'est pas routée vers Connect                                 | HTTP confirmé ; lien présent dans la confirmation                                      |
-| C   | P1              | Le lien partagé de cagnotte n'ouvre pas le formulaire de contribution                                 | Code et navigateur staging                                                             |
-| D   | P2              | Le code cadeau du lien bénéficiaire est perdu par le widget réellement servi                          | Contrat de navigation et payload vérifiés dans le code                                 |
-| E   | P2              | Le bouton cadeau d'un widget ouvert par UUID construit une URL invalide                               | HTTP 404 reproduit en staging                                                          |
-| F   | P2              | Le formulaire promet un SMS même quand l'envoi du restaurant est désactivé                            | Code et configuration de la démo production                                            |
-| G   | P2 conditionnel | Un widget non publié sur Connect peut s'afficher, mais ses routes de réservation le refusent          | Code confirmé ; aucun cas actuel parmi les restaurants avec slug en production/staging |
+| ID  | Priorité        | Défaut                                                                                                | État actuel                                                                   |
+| --- | --------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| A   | P1              | Le client API Connect vise le domaine vitrine, où les routes publiques ne sont pas routées vers l'API | Corrigé et déployé staging/production ; smoke public 200                      |
+| B   | P1              | La page bénéficiaire `/gift-card/:code` n'est pas routée vers Connect                                 | Corrigé et déployé ; page chargée en recette staging                          |
+| C   | P1              | Le lien partagé de cagnotte n'ouvre pas le formulaire de contribution                                 | Corrigé et déployé ; formulaire et objectif affichés en recette staging       |
+| D   | P2              | Le code cadeau du lien bénéficiaire est perdu par le widget réellement servi                          | Corrigé et déployé ; association confirmée sans débit                         |
+| E   | P2              | Le bouton cadeau d'un widget ouvert par UUID construit une URL invalide                               | CTA cadeau corrigé par slug et testé sur le widget staging                    |
+| F   | P2              | Le formulaire promet un SMS même quand l'envoi du restaurant est désactivé                            | Corrigé ; formulaire et succès affichent un texte neutre                      |
+| G   | P2 conditionnel | Un widget non publié sur Connect peut s'afficher, mais ses routes de réservation le refusent          | Corrigé en amont par `bookingEnabled` ; aucun restaurant affecté actuellement |
+| H   | P2              | Le lien « Retour » d'un ancien widget UUID conservait l'UUID dans l'URL                               | Corrigé et couvert par test ; livraison en attente via le PR de suivi         |
+| I   | P2              | Le bandeau de réservation test affirmait que les messages sont envoyés sans vérifier les options      | Corrigé et couvert par tests ; livraison en attente via le PR de suivi        |
 
 ## A — Origine API du client Connect et routage Nginx
 
@@ -32,7 +34,7 @@ Preuve GET sans donnée privée :
 
 Les blocs `/public/` de `infra/nginx/sokar.conf` et `sokar-staging.conf` concernent le vhost API ; le vhost principal retombe sur le dashboard. Le client transforme le refus de chargement des packs en tableau vide (`listGiftCardPacks`, ligne 116), ce qui affiche « Aucun pack disponible » au lieu d'une erreur réseau. Les autres opérations cadeaux utilisent la même base ; le paiement n'a pas été essayé. Le client Connect de réservation et les expériences partagent aussi cette origine : leur impact est à qualifier sur les surfaces Connect effectivement servies, contrairement au widget Dashboard qui utilise `/api/proxy` et a été qualifié après #575.
 
-Correction : choisir un contrat d'origine cohérent (proxy public explicite ou origine API publique), puis vérifier la CSP et les routes publiques autorisées. Un simple remplacement par l'origine API exige de revoir la CSP cadeau actuellement limitée à `self` et Stripe pour `connect-src` ; ne pas ouvrir un proxy général sans contrôle. Ne pas masquer un échec API comme une liste vide.
+Correction #576 : routes Nginx limitées aux familles publiques utiles sur le domaine principal, origine navigateur inchangée, puis erreur de chargement distinguée d'une liste vide. La CSP reste sur `self` et Stripe ; aucun proxy API général n'a été ouvert.
 
 ## B — Page bénéficiaire absente du routage public
 
@@ -40,7 +42,7 @@ Correction : choisir un contrat d'origine cohérent (proxy public explicite ou o
 
 Preuve avec le marqueur synthétique `audit-route-20261024`, sans code cadeau réel : domaine principal production `/gift-card/audit-route-20261024` = 404 ; serveur Connect staging direct sur le même chemin = 200 et rend sa page bénéficiaire. Le 200 prouve la présence de la page, pas l'existence d'une carte valide. Le routage de la page est donc incorrect indépendamment de la validité du code ; le chargement de son API est en outre affecté par A.
 
-Correction : router `/gift-card/:code` vers Connect, avec les protections de cache et d'indexation adaptées, puis qualifier un code de test existant autorisé.
+Correction #576 : `/gift-card/:code` est routée vers Connect avec les protections de cache et d'indexation attendues. La route répond 200 en staging et production ; une carte de recette a affiché son solde staging.
 
 ## C — Lien de cagnotte sans consommateur
 
@@ -48,7 +50,7 @@ Correction : router `/gift-card/:code` vers Connect, avec les protections de cac
 
 Autre erreur du même générateur : si l'URL contient déjà `?embedded=1`, le lien ajoute un deuxième `?` au lieu de modifier les paramètres via `URL.searchParams`.
 
-Correction : exposer et monter la page de contribution, traiter explicitement le code, construire le lien avec `URL`, puis qualifier création/partage/contribution en Stripe test.
+Correction #576 : la page de contribution est montée quand le lien contient `crowdfund`; le lien conserve les paramètres avec `URL`. Le formulaire et son objectif ont été vérifiés en staging. Aucun paiement Stripe n'a été soumis.
 
 ## D — Code cadeau perdu entre bénéficiaire et réservation
 
@@ -56,7 +58,7 @@ Correction : exposer et monter la page de contribution, traiter explicitement le
 
 Impact : réservation possible, mais sans association de la carte promise dans la page bénéficiaire. Ce constat ne signifie pas que le solde est débité ou perdu : aucune transaction cadeau n'a été tentée.
 
-Correction : porter ce contrat sur le widget réellement servi et vérifier l'association retournée par l'API, sans débit automatique.
+Correction #576 : le lien bénéficiaire transmet le code au widget réellement servi ; la confirmation l'associe sans calcul client du débit. En staging, l'association a été confirmée, le solde est resté à 50 €, sans consommation ni appel Stripe.
 
 ## E — Cadeau cassé sur les anciennes URLs de widget par identifiant
 
@@ -64,13 +66,13 @@ Le widget sait résoudre `/widget/<uuid>` grâce au repli `/restaurants/<id>/pub
 
 Preuve staging sur le restaurant démo : résolution historique par identifiant = 200 ; `/widget/<même identifiant>/gift-card` sur Connect = 404. Aucun identifiant réel n'est publié ici.
 
-Correction : utiliser `restaurant.slug` pour le lien cadeau et son mémorisation, comme pour la confirmation publique corrigée dans #575 ; couvrir ce clic sur l'ancienne URL.
+Correction #576 : le CTA cadeau utilise le slug résolu. Le widget legacy ouvert par UUID charge le formulaire cadeau par son slug en staging. Le lien « Retour » restant sur la même page est corrigé séparément par le PR de suivi.
 
 ## F — Promesse SMS non conditionnelle
 
 `reservation-widget.tsx:2034` affiche « Vous recevrez une confirmation par SMS après validation. » sans consulter la capacité SMS. L'option `smsConfirmEnabled` est désactivée sur la démo de production. L'écran de succès, lui, indique correctement que les notifications dépendent des options du restaurant.
 
-Correction : texte conditionnel fondé sur une capacité publique explicite, ou texte neutre cohérent avant et après confirmation. Ne pas activer les SMS globalement pour rendre la phrase vraie.
+Correction #576 : le formulaire et l'écran de succès utilisent un texte neutre indiquant que les notifications dépendent des options du restaurant. Le bandeau distinct du mode test a reçu le même ajustement dans le PR de suivi.
 
 ## G — Widget autonome dépendant de la publication Connect
 
@@ -78,31 +80,21 @@ La route `/public/widget/:slug` est volontairement accessible sans publication C
 
 Un établissement avec widget actif et Connect non publié peut donc charger le formulaire, puis être refusé au hold. Aucun restaurant avec slug dans les bases actuellement contrôlées n'est dans cet état : défaut conditionnel, pas une panne observée chez un client. La différence de contrat existait dans Connect ; #575 l'étend à la confirmation normale du Dashboard en réutilisant ces routes publiques.
 
-Correction : décider explicitement si le widget autonome exige la publication Connect. Si non, lui fournir un contrat public dédié sans lever les protections des routes internes ; sinon, bloquer son activation et son formulaire en amont avec un message adapté. La route de génération du lien test gère déjà le refus PAGE_NOT_PUBLISHED explicitement.
+Correction #576 : l'API expose `bookingEnabled` et le formulaire bloque en amont si la publication requise manque. Les routes internes et leur politique d'éligibilité restent inchangées.
 
-## Autres écarts à qualifier
+## Autres écarts examinés
 
-- Le widget ChatGPT (`apps/widget/src/components/reservation-widget.tsx`) ignore `managementUrl` dans son DTO et son écran de confirmation. Le lien ne serait pas proposé même quand l'API l'autorise. Impact client production actuellement masqué par le drapeau de gestion désactivé ; pas classé comme panne active.
-- L'implémentation Connect du mode test affiche encore l'entrée cadeau et son lien d'achat sans conserver le jeton test (`booking-widget.tsx:831`). Le widget Dashboard servi sur `/book` masque correctement ce lien. Risque sur une surface Connect directe ou un sous-domaine, à qualifier sans paiement ; pas confondu avec une panne du parcours principal déjà testé.
-- `/public/gift-cards/apply` est protégé par l'organisation malgré son nom, mais aucun appel anonyme correspondant n'a été trouvé dans les trois frontends : pas classé comme bug utilisateur sur la seule base du nom.
-- La CSP cadeau n'est pas la cause actuelle du refus API : l'origine configurée est bien `self`. Le défaut actuel est le routage 404 ; la CSP devient un point de contrôle si l'origine change.
+- Le widget ChatGPT ignorait `managementUrl`. #576 l'affiche désormais quand l'API fournit le lien.
+- Connect exposait l'achat cadeau et le consentement WhatsApp en mode test. #576 masque ces actions et ne transmet pas de code cadeau dans ce mode.
+- `/public/gift-cards/apply` est protégé par l'organisation, mais aucun appel anonyme correspondant n'existe dans les trois frontends examinés : pas de défaut utilisateur établi.
+- La CSP cadeau n'était pas la cause des 404 : l'origine est restée `self`. Aucun élargissement CSP n'a été nécessaire.
 
-## Ordre proposé
+L'audit initial était en lecture seule. Après demande de correction, #576 a livré les défauts A à G. La recette staging a ensuite révélé deux défauts résiduels : le lien « Retour » d'un widget legacy ouvert par UUID conservait cet UUID, et le bandeau mode test affirmait que les messages étaient envoyés même si les notifications étaient désactivées. Ces deux points sont corrigés dans le suivi en cours et couverts par tests ciblés.
 
-1. Corriger et qualifier le routage API cadeau, la page bénéficiaire et le lien de cagnotte.
-2. Corriger l'association du code cadeau, les anciennes URLs UUID et le texte SMS.
-3. Trancher le contrat widget autonome / Connect, puis qualifier les variantes Connect et ChatGPT.
-4. Ajouter des tests qui traversent le reverse proxy et le composant réellement déployé : des mocks qui répondent à une URL attendue ne détectent pas une destination Nginx manquante.
+## Livraison et qualification staging — 24 octobre 2026
 
-L’audit initial était sans modification. Sur demande de Hamza, les corrections ci-dessous ont ensuite été implémentées.
+Le PR #576 (`3619eb00`, fusionné dans `b8c09d85`) a passé CI, puis les déploiements staging (`40044092703`) et production (`40044514453`). Le contrôle de parcours staging (`40077442591`) est vert. Les trois routes publiques du domaine principal renvoient HTTP 200 sur staging et production : métadonnées widget, packs cadeau et page bénéficiaire. Les règles restent limitées aux routes publiques autorisées ; une route privée non listée répond 404 dans la vérification Nginx isolée.
 
-## Corrections implémentées — en qualification
+Recette navigateur staging : la page bénéficiaire a affiché une carte de contrôle à 50 € ; le lien partagé a ouvert le formulaire de cagnotte avec objectif de 100 € ; le widget legacy par UUID a chargé le formulaire cadeau à partir du slug. Une réservation normale de contrôle a été confirmée le 27 octobre à 12 h pour deux personnes. La base confirme l'association du code cadeau, un solde inchangé de 50 €, zéro consommation et zéro appel Stripe. Le drapeau SMS de la démo était désactivé ; aucun SMS n'a été envoyé par cette réservation. La réservation et les deux cartes de recette ont ensuite été annulées.
 
-- A/B : règles Nginx limitées aux familles publiques `gift-cards`, `r`, `widget`, aux événements analytiques et au clic signé, plus `/gift-card/` vers Connect. Même origine, CSP et authentification API conservées ; limites spécifiques hold/confirm préservées. Contrôles de déploiement ajoutés sur le domaine principal.
-- C : paramètre `crowdfund` consommé par la page cadeau, composant de contribution monté ; lien construit avec `URL.searchParams`, conservation des paramètres et retrait du mode iframe.
-- D/E : code cadeau transmis à la confirmation normale sans montant de débit, ignoré en test ; lien cadeau utilisant le slug résolu de l’établissement.
-- F : texte neutre avant confirmation ; échec de packs distingué d’une vraie liste vide.
-- G : capacité publique additive `bookingEnabled` ; formulaire bloqué avant les coordonnées si la publication actuelle ne permet pas de réserver. Aucune publication automatique ni modification de l’éligibilité serveur.
-- Variantes : lien de gestion sur le widget ChatGPT ; absence d’achat cadeau et de consentement WhatsApp dans le parcours test Connect.
-
-Vérifications locales : TypeScript des quatre applications vert ; suites ciblées API/Dashboard/Connect/ChatGPT vertes ; suite Connect complète verte. Vérification réelle Nginx sur un port temporaire isolé : packs/widget/page bénéficiaire 200, famille publique non autorisée 404. Le processus temporaire a été arrêté. Qualification staging/production encore à compléter ; aucune transaction Stripe ou notification fournisseur n’a été déclenchée par ces vérifications.
+Vérifications du suivi : 34 tests du widget Dashboard et 33 tests Connect ciblés passent, y compris les deux régressions nouvellement couvertes. Le paiement Stripe complet n'a pas été exécuté afin de ne pas créer d'achat ; l'association sans débit a bien été qualifiée.

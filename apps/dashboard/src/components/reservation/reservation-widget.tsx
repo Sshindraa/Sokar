@@ -1049,7 +1049,7 @@ export default function ReservationWidget({
         >
           {!isEmbedded && (
             <Link
-              href={`/restaurant/${restaurantId}${testBooking ? `?${new URLSearchParams({ testBooking: testBookingToken })}` : ''}`}
+              href={`/restaurant/${restaurant?.slug ?? restaurantId}${testBooking ? `?${new URLSearchParams({ testBooking: testBookingToken })}` : ''}`}
               className="absolute left-4 top-4 z-[3] inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/25 px-3 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/35 hover:gap-2.5"
             >
               <ArrowLeft size={16} />
@@ -1168,8 +1168,8 @@ export default function ReservationWidget({
                 role="status"
                 className="rounded-2xl border border-border bg-background p-3 text-sm text-foreground"
               >
-                Réservation test · supprimée automatiquement sous 24 h. Les messages sont envoyés,
-                mais rien n’apparaît dans votre restaurant.
+                Réservation test · supprimée automatiquement sous 24 h. Les notifications dépendent
+                les options du restaurant ; cette réservation n’apparaîtra pas dans votre planning.
               </p>
             )}
 
