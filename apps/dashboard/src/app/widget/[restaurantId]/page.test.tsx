@@ -733,6 +733,9 @@ describe('réservation publique sur le widget réellement servi par /book', () =
   it('résout le slug public pour une ancienne URL de widget par identifiant', async () => {
     const { widget, fetchSpy } = await submitTest(undefined, false, true);
     expect(await widget.findByText('Table réservée !')).toBeTruthy();
+    expect(widget.getByRole('link', { name: 'Retour' }).getAttribute('href')).toBe(
+      '/restaurant/chez-sokar',
+    );
     const posts = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(posts.map(([url]) => url)).toContain('/api/proxy/public/r/chez-sokar/confirm');
     expect(posts.some(([url]) => url.includes('/public/r/r1/'))).toBe(false);
