@@ -391,6 +391,8 @@ describe('BookingWidget waiting list flow', () => {
       'Réservation test : vous voyez ce que voient vos clients. Les messages sont envoyés, mais rien n’apparaît dans votre restaurant.';
     const restaurantDto = {
       id: 'rest-1',
+      giftCardEnabled: true,
+      whatsappReminderOptInEnabled: true,
       slug,
       name: 'Chez Sokar',
       connectAgentic: false,
@@ -414,6 +416,7 @@ describe('BookingWidget waiting list flow', () => {
         />,
       );
       expect(screen.getByText(banner)).toBeInTheDocument();
+      expect(screen.queryByText('Offrir une carte cadeau')).not.toBeInTheDocument();
       await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
       fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
       await waitFor(() =>
@@ -452,6 +455,8 @@ describe('BookingWidget waiting list flow', () => {
       expect(hold?.body.testBookingToken).toBe(token);
       expect(confirm?.body.testBookingToken).toBe(token);
       expect(confirm?.body.marketingAttributionToken).toBeUndefined();
+      expect(confirm?.body.whatsappReminderConsent).toBeUndefined();
+      expect(confirm?.body.giftCardCode).toBeUndefined();
       expect(calls.some((c) => c.url.includes('/marketing/attribution/click'))).toBe(false);
     });
 

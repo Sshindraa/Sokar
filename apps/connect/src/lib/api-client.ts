@@ -65,6 +65,7 @@ export type PublicRestaurantDto = {
 };
 
 export type WidgetRestaurantDto = {
+  bookingEnabled?: boolean;
   id: string;
   slug: string;
   name: string;

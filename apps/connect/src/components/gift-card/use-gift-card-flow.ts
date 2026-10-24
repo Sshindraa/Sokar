@@ -39,6 +39,7 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
   const [step, setStep] = useState<GiftCardStep>('type');
   const [packs, setPacks] = useState<GiftCardPack[]>([]);
   const [packsLoading, setPacksLoading] = useState(true);
+  const [packsError, setPacksError] = useState(false);
 
   // Form state
   const [mode, setMode] = useState<GiftCardMode>('free');
@@ -79,7 +80,10 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
   useEffect(() => {
     listGiftCardPacks(slug)
       .then(setPacks)
-      .catch(() => setPacks([]))
+      .catch(() => {
+        setPacks([]);
+        setPacksError(true);
+      })
       .finally(() => setPacksLoading(false));
   }, [slug]);
 
@@ -348,6 +352,7 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
     setStep,
     packs,
     packsLoading,
+    packsError,
     mode,
     setMode,
     amount,

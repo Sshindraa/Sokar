@@ -60,6 +60,7 @@ type HoldResponse = {
 };
 
 type ConfirmResponse = {
+  managementUrl?: string;
   reservationId: string;
   status: 'confirmed';
   restaurantName: string;
@@ -427,6 +428,15 @@ export function ReservationWidget() {
           N° de réservation :{' '}
           <strong className="text-foreground">{confirmation.reservationId}</strong>
         </p>
+        {confirmation.managementUrl && (
+          <a
+            href={confirmation.managementUrl}
+            referrerPolicy="no-referrer"
+            className="mt-4 inline-flex min-h-11 items-center underline transition-all duration-200"
+          >
+            Gérer ma réservation
+          </a>
+        )}
       </div>
     );
   }

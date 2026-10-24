@@ -11,6 +11,7 @@ import type { Metadata } from 'next';
 import { type CSSProperties } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchWidgetRestaurant } from '@/lib/api-client';
+import { GiftCardCrowdfundingPage } from '@/components/gift-card-crowdfunding-page';
 import { GiftCardPurchase } from '@/components/gift-card-purchase';
 import { trackEventAsync } from '@/lib/tracking';
 import { toHexColor } from '@/lib/widget-colors';
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
 };
 
 type SearchParams = {
+  crowdfund?: string;
   embedded?: string;
   primary?: string;
   accent?: string;
@@ -103,14 +105,23 @@ export default async function GiftCardWidgetPage({
           </div>
         )}
 
-        <GiftCardPurchase
-          slug={restaurant.slug}
-          restaurantId={restaurant.id}
-          restaurantName={restaurant.name}
-          primaryColor={primary}
-          accentColor={accent}
-          source={source}
-        />
+        {sp.crowdfund !== undefined ? (
+          <GiftCardCrowdfundingPage
+            code={sp.crowdfund.slice(0, 100)}
+            primaryColor={primary}
+            accentColor={accent}
+            source={source}
+          />
+        ) : (
+          <GiftCardPurchase
+            slug={restaurant.slug}
+            restaurantId={restaurant.id}
+            restaurantName={restaurant.name}
+            primaryColor={primary}
+            accentColor={accent}
+            source={source}
+          />
+        )}
       </main>
     </div>
   );

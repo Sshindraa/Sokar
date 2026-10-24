@@ -367,7 +367,18 @@ describe('ReservationWidget — étape customer', () => {
   it('soumet POST /hold puis POST /confirm et affiche la confirmation', async () => {
     mockFetch.mockResolvedValueOnce(availabilityResponse());
     mockFetch.mockResolvedValueOnce(holdResponse());
-    mockFetch.mockResolvedValueOnce(confirmResponse());
+    mockFetch.mockResolvedValueOnce({
+      ...confirmResponse(),
+      json: async () => ({
+        reservationId: 'res-123',
+        status: 'confirmed',
+        restaurantName: 'Chez Sokar',
+        date: '2030-01-15',
+        time: '19:00',
+        partySize: 2,
+        managementUrl: 'https://sokar.tech/r#test',
+      }),
+    });
 
     render(<ReservationWidget />);
     await screen.findByRole('form', { name: 'Détails de la réservation' });
@@ -397,6 +408,10 @@ describe('ReservationWidget — étape customer', () => {
 
     // Écran confirmation avec reservationId
     expect(await screen.findByText(/res-123/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gérer ma réservation' })).toHaveAttribute(
+      'href',
+      'https://sokar.tech/r#test',
+    );
   });
 });
 

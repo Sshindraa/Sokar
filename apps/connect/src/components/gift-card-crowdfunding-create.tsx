@@ -1,4 +1,5 @@
 'use client';
+import { crowdfundingContributionUrl } from './gift-card/shared';
 
 /**
  * Sokar Connect — GiftCardCrowdfundingCreate.
@@ -128,8 +129,7 @@ export function GiftCardCrowdfundingCreate({
     'font-display text-[1.5rem] font-black leading-tight tracking-[-0.03em] text-[hsl(var(--reservation-ink))]';
 
   if (result) {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
-    const contributionUrl = `${shareUrl}?crowdfund=${result.code}`;
+    const contributionUrl = crowdfundingContributionUrl(window.location.href, result.code);
     return (
       <div style={reservationTheme} className="space-y-4">
         <div className={`${panelClass} text-center`}>

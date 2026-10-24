@@ -116,6 +116,8 @@ interface OpeningHours {
 
 interface RestaurantPublic {
   slug?: string;
+  bookingEnabled?: boolean;
+  giftCardEnabled?: boolean;
   whatsappReminderOptInEnabled?: boolean;
   id: string;
   name: string;
@@ -253,6 +255,7 @@ export default function ReservationWidget({
   // The API rejects it; never fall back to creating a real reservation.
   const testBookingToken = searchParams.get('testBooking');
   const testBooking = testBookingToken !== null;
+  const giftCardCode = searchParams.get('giftCardCode')?.trim().slice(0, 100);
   // Origine explicite du parent, passée par le snippet embed Sokar.
   // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
   const explicitParentOrigin = searchParams.get('parentOrigin');
@@ -337,8 +340,8 @@ export default function ReservationWidget({
   );
   const giftCardUrl = useMemo(() => {
     if (!giftCardOrigin || !restaurantId) return '';
-    return `${giftCardOrigin}/widget/${encodeURIComponent(restaurantId)}/gift-card?embedded=1`;
-  }, [giftCardOrigin, restaurantId]);
+    return `${giftCardOrigin}/widget/${encodeURIComponent(restaurant?.slug || restaurantId)}/gift-card?embedded=1`;
+  }, [giftCardOrigin, restaurantId, restaurant?.slug]);
 
   // Auto-resize iframe when embedded (même mécanisme que le widget Connect).
   // On cible l'origine du parent (dérivée du referrer) plutôt que '*' afin
@@ -414,6 +417,13 @@ export default function ReservationWidget({
             'GET',
             `restaurants/${restaurantId}/public`,
           );
+        }
+        if (data.bookingEnabled === false) {
+          setRestaurant(null);
+          setError(
+            'La réservation en ligne n’est pas disponible pour ce restaurant. Veuillez le contacter.',
+          );
+          return;
         }
         setRestaurant(data);
         setSelectedDate(parseRequestedDate(requestedDateParam, new Date()) ?? new Date());
@@ -734,6 +744,7 @@ export default function ReservationWidget({
         customer: { firstName: customerName, phone, email: customerEmail || undefined },
         source: 'web',
         ...testFields,
+        ...(!testBooking && giftCardCode ? { giftCardCode } : {}),
         ...(!testBooking && restaurant.whatsappReminderOptInEnabled
           ? {
               whatsappReminderConsent: {
@@ -2031,7 +2042,7 @@ export default function ReservationWidget({
                                   : 'Sélectionnez un horaire pour continuer.'
                           : modification
                             ? 'Aucun changement avant votre confirmation.'
-                            : 'Vous recevrez une confirmation par SMS après validation.'}
+                            : 'Les notifications dépendent des options du restaurant.'}
                       </p>
                     )}
                   </div>
@@ -2050,7 +2061,7 @@ export default function ReservationWidget({
 
             {/* Bouton « Offrir une carte cadeau » — footer du bottom sheet.
                 Ouvre un overlay qui embed la page Connect /widget/[slug]/gift-card. */}
-            {!modification && !testBooking && (
+            {!modification && !testBooking && restaurant?.giftCardEnabled !== false && (
               <button
                 type="button"
                 onClick={() => setShowGiftCard(true)}
