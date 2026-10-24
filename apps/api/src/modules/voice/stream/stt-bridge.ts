@@ -759,7 +759,7 @@ function sendSessionAudioChunk(session: CallSession, telnyxAudio: Buffer): void 
     sendInkAudio(session, telnyxAudio);
   }
   session.sttConnectionAudioBytesSent = (session.sttConnectionAudioBytesSent ?? 0) + audio.length;
-  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length));
+  addSttAudioSamples(session, adapter.samplesForAudio(session.codec, audio.length), adapter.id);
   session.sttFirstAudioChunkSent = true;
   const chunkMs = String(getSttChunkMs());
   voiceSttProviderAudioMessagesTotal.inc({ provider: adapter.id, chunk_ms: chunkMs });

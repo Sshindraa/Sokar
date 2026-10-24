@@ -949,16 +949,20 @@ envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAl
 Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
 dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
 
-Les bancs utilisent la clé ElevenLabs unique `ELEVENLABS_API_KEY` (décision du 14/10/2026,
-partagée prod, dev, staging et banc). Les autres clés de banc restent dédiées :
+Les bancs Scribe historiques utilisent encore la clé ElevenLabs unique `ELEVENLABS_API_KEY`
+(décision du 14/10/2026, partagée prod, dev et staging) ; ils ne qualifient plus le STT runtime
+et ne doivent pas servir aux essais fournisseur. Les bancs actuels Deepgram/Cartesia requièrent
+des clés séparées des clés runtime :
 
-| Variable                     | Usage                                                                                        |
-| ---------------------------- | -------------------------------------------------------------------------------------------- |
-| **ELEVENLABS_API_KEY**       | Clé unique : prod, dev, staging et bancs STT/TTS (décision du 14/10/2026)                    |
-| **CARTESIA_BENCH_API_KEY**   | Clé dédiée à la synthèse Cartesia du banc, différente de CARTESIA_API_KEY                    |
-| **OPENROUTER_BENCH_API_KEY** | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                             |
-| **CEREBRAS_BENCH_API_KEY**   | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                        |
-| **BENCH_MAX_CREDITS**        | Plafond positif obligatoire ; les unités estimées sont affichées avant tout contrôle d'accès |
+| Variable                       | Usage                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| **DEEPGRAM_BENCH_API_KEY**     | Clé dédiée aux bancs Deepgram, différente de DEEPGRAM_API_KEY                        |
+| **CARTESIA_BENCH_API_KEY**     | Clé dédiée au banc STT Cartesia, différente de CARTESIA_API_KEY                      |
+| **ELEVENLABS_API_KEY**         | Clé unique : prod, dev, staging et anciens bancs Scribe/TTS (décision du 14/10/2026) |
+| **OPENROUTER_BENCH_API_KEY**   | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                     |
+| **CEREBRAS_BENCH_API_KEY**     | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                |
+| **BENCH_DG_MAX_AUDIO_SECONDS** | Plafond audio des essais Deepgram, 660 s par défaut pour les bancs rapides           |
+| **BENCH_MAX_CREDITS**          | Plafond Cartesia positif obligatoire ; l'estimation précède tout envoi STT           |
 
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
 requête de contrôle par fournisseur. Pour le banc Scribe, le contrôle ouvre la socket Realtime et
@@ -1110,6 +1114,13 @@ Hors `.env` (à vérifier avec l'équipe) : `ELEVENLABS_API_KEY` (transcription)
 Côté Telnyx : l'application d'appel de staging a pour webhook `https://api-staging.sokar.tech/voice/telnyx`.
 Le numéro de test est rattaché à cette application (provisioning, `assign-phone`). Ce numéro n'est jamais un
 numéro de production, ni le numéro public affiché sur le site.
+
+**État vérifié le 24/10/2026 :** le compte n'a qu'un numéro, rattaché à l'application de production
+`Sokar Voice` avec webhook `https://api.sokar.tech/voice/telnyx`. L'application `Sokar VOICE-01 staging`
+existe avec le webhook staging, mais ses voies entrante et sortante sont désactivées et aucun numéro ne lui
+est affecté. La configuration de staging réutilise actuellement le numéro de production. Ne pas appeler ni
+activer un pilote staging avant d'avoir un numéro dédié, son rattachement à l'application staging, les voies
+nécessaires activées et la configuration vérifiée de bout en bout.
 
 ### Bloc 3 : appel de test sortant (provisioning)
 

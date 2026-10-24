@@ -203,27 +203,27 @@ groups:
     rules:
       # Un seul échec d'authentification, de quota ou de conditions suffit à
       # rendre les nouvelles transcriptions indisponibles.
-      - alert: ElevenLabsSttTerminalError
-        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type=~"quota|auth|terms"}[5m]) > 0
+      - alert: SttTerminalProviderError
+        expr: increase(sokar_voice_provider_errors_total{provider=~"deepgram_stt|cartesia_stt",type=~"quota|auth|terms"}[5m]) > 0
         for: 0s
         labels:
           severity: critical
           team: sokar
         annotations:
-          summary: 'ElevenLabs STT refuse la transcription ({{ $labels.type }})'
-          description: 'Au moins une erreur terminale ElevenLabs STT a été observée en 5 minutes. Vérifier le compte, les conditions acceptées et la clé sans l’afficher dans les logs.'
+          summary: '{{ $labels.provider }} refuse la transcription ({{ $labels.type }})'
+          description: 'Au moins une erreur terminale STT a été observée en 5 minutes. Vérifier le compte fournisseur, les conditions acceptées et la clé sans l’afficher dans les logs.'
 
       # Plus de cinq appels distincts touchés sur 10 minutes déclenche l'alerte
       # dispatchée par stream/stt-alerts.ts (fenêtre Redis de 10 minutes).
-      - alert: ElevenLabsSttAffectedCalls
-        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type="connection_unavailable"}[10m]) > 5
+      - alert: SttAffectedCalls
+        expr: increase(sokar_voice_provider_errors_total{provider=~"deepgram_stt|cartesia_stt",type="connection_unavailable"}[10m]) > 5
         for: 0s
         labels:
           severity: warning
           team: sokar
         annotations:
           summary: 'Plus de cinq appels touchés par une indisponibilité STT'
-          description: 'Plus de cinq appels distincts ont épuisé leurs tentatives de connexion Scribe en 10 minutes. Vérifier la connectivité, le statut du fournisseur et les logs API.'
+          description: 'Plus de cinq appels distincts ont épuisé leurs tentatives de connexion STT en 10 minutes. Vérifier la connectivité, le statut des fournisseurs et les logs API.'
 
       - alert: ElevenLabsCharacterUsage80Percent
         expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.80

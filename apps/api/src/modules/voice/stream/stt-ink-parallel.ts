@@ -15,6 +15,7 @@
 import WebSocket from 'ws';
 import { logger } from '../../../shared/logger/pino';
 import { redisCache } from '../../../shared/redis/client';
+import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { callerSilenceMs } from './caller-voice-activity';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import type { CallSession } from './types';
@@ -221,6 +222,11 @@ export function sendInkAudio(session: CallSession, telnyxAudio: Buffer, now = Da
   try {
     state.socket.send(audio);
     state.bytesSent += audio.length;
+    addSttAudioSamples(
+      session,
+      session.codec === 'L16' ? audio.length / 2 : audio.length,
+      'cartesia',
+    );
     if (callerSilenceMs(session, now) < EARLY_FINALIZE_SILENCE_MS) {
       state.speechSinceFinalize = true;
     } else if (state.speechSinceFinalize && !state.pendingFinalize) {

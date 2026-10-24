@@ -116,6 +116,10 @@ describe('audio', () => {
     const { session, socket } = await openSession();
     sendInkAudio(session, Buffer.alloc(160, 0xd5));
     expect(socket!.sent[0]).toEqual(Buffer.alloc(160, 0xd5));
+    expect(session.voiceUsage).toMatchObject({
+      sttAudioSamples: 160,
+      sttAudioSamplesByProvider: { cartesia: 160 },
+    });
   });
 
   it("n'envoie rien avant l'ouverture", async () => {

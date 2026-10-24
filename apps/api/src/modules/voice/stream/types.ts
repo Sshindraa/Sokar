@@ -290,6 +290,8 @@ export interface VoiceSpeculationCounters {
 
 export interface VoiceUsageCounters {
   sttAudioSamples: number;
+  /** Audio réellement envoyé à chaque STT, utile quand Deepgram et Cartesia tournent en parallèle. */
+  sttAudioSamplesByProvider?: Partial<Record<'deepgram' | 'cartesia', number>>;
   cartesiaTtsCharacters: number;
   elevenLabsTtsCharacters: number;
   llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;

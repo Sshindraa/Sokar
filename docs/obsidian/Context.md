@@ -13,10 +13,10 @@
 - [ ] SEO : accueil/privacy livrés (#438–#442); GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Confidentialité locale Dashboard/Connect/API : notice commune par catégories, annexe nominative clients en projet (`privacy-client-annex.md`), preuves techniques internes; Workspace constaté Business Starter actif, stockage « Aucune préférence » : ne pas promettre une résidence UE. ATDC Google accepté sur autorisation spécifique. Notifications démo minimisées en local (référence + lien admin). Resend Free constaté et DPA signé fournisseur archivé en privé; conservation effective et autres contrats restent à valider. Dashboard `/privacy` noindex et en vérification. Mentions légales : nom/prénom de l'EI non autorisés à publier; adresse seule autorisée. La page reste incomplète sans identité d'éditeur; réseaux facultatifs.
 - [ ] Démo : demande/réception/traitement qualifiés en production. DEMO-SIM vérifié localement : animation isolée, fictive (§10.22). Aucun délai annoncé.
 - [ ] Vitrine : suivi démo manuel à 12 mois sans purge auto (§10.39–10.42). Avant clôture : identité /legal, TVA, garanties Resend/Google et exécution de la conservation; valider la promesse « Support prioritaire 7j/7 ».
-- [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging dediee Sending access/sokar.tech configuree, cle prod/allowlist preservees. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
-- [ ] SMS : staging validé (1 segment, lien iPhone, accusé livré). Réception prod à qualifier ; aucun rejeu.
+- [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging Sending access/sokar.tech posee ; prod/allowlist intactes. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
+- [ ] SMS : staging livré. Prod : 40008 rejeté ; pas de rejeu ; SMS résa/WhatsApp off partout ; cause Telnyx à établir.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
-- [ ] Voix : staging configuré/activé, #437 déployée. VOICE-01 interne à qualifier avant activation client; appels NO_ACTION sans réservation. Pipelines staging/prod différents (growth §10.21).
+- [ ] Voix : VOICE-01 avant clients. Blocage Telnyx staging : aucun numéro dédié, numéro configuré rattaché à l'app prod; ne pas appeler. Fournir/affecter un numéro staging et activer ses voies. Bench réel après clés Deepgram/Cartesia dédiées + budget; clients off.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
@@ -31,12 +31,10 @@
 - [ ] Relais LLM : GPT-6 Luna fast (OpenRouter `openai/fast`) actif en prod depuis le 20/10, doublon à 700 ms et repli de Cerebras; conservation des données acceptée pour l'instant (pas d'UE). Suivre `hedge_won`/`primary_won`; Luna en principal sur Chez Sokar prêt (#521), sur feu vert.
 - [ ] Essai staging L16 : confirmer l’endianness avec la sonde.
 - [ ] Activer `VOICE_STT_CHUNK_MS=100` après vérification staging.
-- [ ] Phase 4a : évaluer le verrouillage FR côté Scribe.
 - [ ] Étudier le débruitage et le parser par étape.
 - [ ] Après phase 6, refaire l’appel pilote Deepgram + Dialogue V2 et analyser latence/fallback.
 - [ ] Flux non retenu (20/10, courts/épellations perdus); allowlist vide. Mesurer les tours « inachevés ».
 - [ ] Phase A3 : décider du canary keyterms métier/L16 après revue des résultats et validation staging.
-- [ ] MCP : déployer le reset audité, nettoyer/rejouer le run staging et rejouer les écritures; tests Chez Sokar uniquement, sans `initialize`/`tools/list` bruts.
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.

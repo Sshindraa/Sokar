@@ -15,6 +15,7 @@ import {
 } from './nb-dsp';
 import { synthesize16k } from './nb-tts';
 import { buildSttKeyterms } from '../../src/modules/voice/stream/stt-keyterms';
+import { requireBenchKey } from './nb-keys';
 
 const AUDIO_DIR = join(__dirname, '.data', 'audio16');
 const CHUNK_MS = 80;
@@ -382,8 +383,7 @@ async function main(): Promise<void> {
     throw new Error('BENCH_CONFIRM=1 obligatoire pour plus de 8 sessions');
   }
 
-  const apiKey = process.env.DEEPGRAM_BENCH_API_KEY?.trim();
-  if (!apiKey) throw new Error('DEEPGRAM_BENCH_API_KEY manquant; aucun appel lancé');
+  const apiKey = requireBenchKey('DEEPGRAM_BENCH_API_KEY', 'DEEPGRAM_API_KEY');
 
   const results: BenchResult[] = new Array(tasks.length);
   let next = 0;
