@@ -13,17 +13,16 @@ export const CreateCustomerSchema = z.object({
   isVip: z.boolean().default(false),
 });
 
-export const UpdateCustomerSchema = CreateCustomerSchema.partial().omit({
-  restaurantId: true,
-  phone: true,
-});
+export const UpdateCustomerSchema = CreateCustomerSchema.partial()
+  .omit({ restaurantId: true, phone: true })
+  .extend({ isVip: z.boolean().optional() });
 
 export const ToggleVipSchema = z.object({
   isVip: z.boolean(),
 });
 
 export const CustomerParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
 });
 
 export const CustomerQuerySchema = z.object({

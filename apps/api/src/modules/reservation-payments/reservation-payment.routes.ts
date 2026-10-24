@@ -30,7 +30,7 @@ const PolicyBodySchema = z.object({
   amount: z.union([z.string().trim(), z.number().finite()]),
   minPartySize: z.number().int().min(1).max(100).nullable().optional(),
   cancellationHours: z.number().int().min(0).max(720).optional(),
-  rules: z.record(z.unknown()).optional(),
+  rules: z.record(z.string(), z.unknown()).optional(),
   activeFrom: z.coerce.date().optional(),
   activeUntil: z.coerce.date().nullable().optional(),
   version: z.number().int().min(1).max(10_000).optional(),

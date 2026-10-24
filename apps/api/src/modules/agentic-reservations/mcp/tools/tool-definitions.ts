@@ -7,8 +7,7 @@
  * définies ici, à côté du schéma correspondant.
  */
 
-import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   SearchRestaurantsInputSchema,
   GetRestaurantDetailsInputSchema,
@@ -183,16 +182,14 @@ export function getToolOutputSchema(toolName: string): z.ZodTypeAny | undefined 
   return TOOL_DEFINITION_BY_NAME.get(toolName)?.output;
 }
 
-// zod-to-json-schema a des types récursifs lourds qui peuvent faire exploser
-// TypeScript (`TS2589`) avec nos schémas. Le runtime est simple, donc on garde
-// un wrapper typé minimal pour ne pas exposer cette complexité au build.
-const toJsonSchema = zodToJsonSchema as unknown as (
+// Utiliser le convertisseur natif de Zod 4 : zod-to-json-schema ne sérialise
+// pas correctement les schémas Zod 4 et produit des objets vides.
+const toJsonSchema = z.toJSONSchema as unknown as (
   schema: z.ZodTypeAny,
-  options: Record<string, unknown>,
+  options: { target: 'openapi-3.0'; io: 'input' },
 ) => Record<string, unknown>;
 
-// zodToJsonSchema ajoute $schema et définitions $ref qu'on ne veut pas
-// dans la réponse MCP. On strip ces clés pour garder un schema propre.
+// Les définitions ne font pas partie de la réponse MCP que nous exposons.
 function cleanJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema: _$schema, definitions: _definitions, ...rest } = schema;
   return rest;
@@ -202,8 +199,8 @@ export const TOOL_LIST = TOOL_DEFINITIONS.map((def) => ({
   name: def.name,
   title: def.title,
   description: def.description,
-  inputSchema: cleanJsonSchema(toJsonSchema(def.schema, { target: 'openApi3' })),
-  outputSchema: cleanJsonSchema(toJsonSchema(def.output, { target: 'openApi3' })),
+  inputSchema: cleanJsonSchema(toJsonSchema(def.schema, { target: 'openapi-3.0', io: 'input' })),
+  outputSchema: cleanJsonSchema(toJsonSchema(def.output, { target: 'openapi-3.0', io: 'input' })),
   securitySchemes: [{ type: 'oauth2' as const, scopes: [def.requiredScope] }],
   annotations: def.annotations,
 }));

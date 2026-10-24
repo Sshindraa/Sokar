@@ -180,7 +180,7 @@ export async function buildApp() {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Validation Error',
-        details: error.errors.map((e) => ({
+        details: error.issues.map((e) => ({
           path: e.path.join('.'),
           message: e.message,
         })),

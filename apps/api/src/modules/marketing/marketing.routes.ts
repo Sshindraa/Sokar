@@ -138,7 +138,7 @@ const AutomationTypeParamsSchema = z.object({
 const AutomationUpsertSchema = z.object({
   enabled: z.boolean(),
   channel: z.enum(CAMPAIGN_CHANNELS),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
 });
 const CampaignScheduleBodySchema = z.object({
   scheduledAt: z.coerce.date(),
