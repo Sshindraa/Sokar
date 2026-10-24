@@ -44,6 +44,22 @@ describe('trackCallerVoice / callerSilenceMs', () => {
     expect(callerSilenceMs(s, 1_400)).toBe(380);
   });
 
+  it.each([10, 20, 40])(
+    'confirme une voix faible après 160 ms, avec des trames de %i ms',
+    (chunkMs) => {
+      const s = session();
+      const audio = Buffer.concat(Array.from({ length: chunkMs / 10 }, () => frame(500)));
+      for (let elapsed = chunkMs; elapsed < 160; elapsed += chunkMs) {
+        trackCallerVoice(s, audio, 1000 + elapsed);
+        expect(s.callerVoice?.lastSustainedVoiceAt).toBeUndefined();
+      }
+      trackCallerVoice(s, audio, 1160);
+      expect(s.callerVoice?.lastSustainedVoiceAt).toBe(1160);
+      trackCallerVoice(s, frame(0), 1170);
+      expect(s.callerVoice?.voiceRunMs).toBe(0);
+    },
+  );
+
   it('ignore une trame isolée (clic, souffle)', () => {
     const s = session();
     trackCallerVoice(s, frame(3_000), 1_000);

@@ -378,8 +378,9 @@ VOICE_STT_SILENCE_GUARD_MAX_DEFER_MS="1500"
 VOICE_STT_SPELLING_SILENCE_GUARD_MS="1200"
 # Attente avant le premier son d'une réponse : elle est déjà calculée (texte et voix) mais ne part
 # que si l'appelant est silencieux depuis ce délai ; s'il reprend la parole pendant l'attente,
-# elle est jetée sans qu'il ait entendu un mot (comme un barge-in, sans attendre la transcription).
-# Contexte Cartesia seulement (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
+# l’annulation exige 160 ms de signal continu au seuil adaptatif du détecteur (voix faible incluse).
+# Un bruit bref retarde la lecture jusqu’au silence ou au plafond, sans jeter la réponse.
+# Contextes Cartesia et ElevenLabs (voix de secours HTTP non concernée). 0 désactive. Le plafond évite
 # qu'un bruit continu bloque une réponse. Métriques : sokar_voice_first_audio_hold_total{outcome},
 # sokar_voice_first_audio_hold_ms ; télémétrie de tour : événement first_audio_hold.
 VOICE_FIRST_AUDIO_SILENCE_MS="600"
