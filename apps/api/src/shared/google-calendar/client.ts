@@ -235,6 +235,8 @@ export class GoogleCalendarClient {
           end: {
             dateTime: details.end.toISOString(),
           },
+          // Sans cela, freeBusy compte nos propres réservations comme « occupé » et bloque le créneau.
+          transparency: 'transparent',
         }),
       },
     );
@@ -284,6 +286,8 @@ export class GoogleCalendarClient {
           end: {
             dateTime: details.end.toISOString(),
           },
+          // Sans cela, freeBusy compte nos propres réservations comme « occupé » et bloque le créneau.
+          transparency: 'transparent',
         }),
       },
     );
