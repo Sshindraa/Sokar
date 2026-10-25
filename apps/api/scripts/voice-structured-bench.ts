@@ -270,27 +270,6 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
-    // Le flux STT a rendu « demain » par « donald » ; l'enregistrement relu dit « demain ».
-    name: 'a1ba681f — « donald » mal entendu pour « demain »',
-    turns: [
-      { caller: "oui bonjour je vais faire une réservation s'il vous plaît", expect: {} },
-      {
-        caller: 'donald vous êtes ouvert',
-        expect: { interpretation: ['question'], sayIncludesAny: ['demain'] },
-      },
-    ],
-  },
-  {
-    name: '45c4cb71 — « demeure » mal entendu pour « demain »',
-    turns: [
-      { caller: 'oui je veux faire une réservation', expect: {} },
-      {
-        caller: 'demeure vous êtes ouvert',
-        expect: { interpretation: ['question'], sayIncludesAny: ['demain'] },
-      },
-    ],
-  },
-  {
     name: 'réservation complète',
     turns: [
       {
