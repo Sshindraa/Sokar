@@ -1334,6 +1334,61 @@ describe('tour structuré (canary)', () => {
     expect(voice).not.toContain('HOUET');
   });
 
+  it('reprend après terrasse et refus de transfert, puis réserve sans relecture forcée (3d6e51c6)', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 3, customerName: 'Test' };
+    session.structuredTurn = {
+      ...createStructuredTurnState(),
+      draft,
+      lastAwaiting: 'confirmation',
+      recapKey: bookingKey(draft),
+      availability: { date: draft.date, partySize: 3, slots: ['20:00'] },
+    };
+    session.history.push({
+      role: 'assistant',
+      content: 'Demain à 20 heures, trois personnes, au nom de Test. Je réserve ?',
+    });
+    outputs.push(
+      turn({
+        draft,
+        interpretation: 'question',
+        awaiting: 'humanFallback',
+        say: 'Je peux vous passer le gérant pour la terrasse. Vous le souhaitez ?',
+      }),
+    );
+    await processTranscriptStreaming(session, 'Vous avez une terrasse ?', mgr);
+    outputs.push(
+      turn({
+        draft,
+        interpretation: 'decline',
+        awaiting: 'confirmationResume',
+        say: 'D’accord. Je confirme la réservation ?',
+      }),
+    );
+    await processTranscriptStreaming(session, 'Non, pas besoin de transfert.', mgr);
+    expect(session.structuredTurn?.resumableRecapKey).toBe(bookingKey(draft));
+    expect(session.conversation.pendingQuestion).toBe('confirmation');
+    const requests = vi.mocked(mgr.streamStructuredCompletion).mock.calls;
+    expect(JSON.stringify(requests.at(-1)?.[1])).toContain('canResumeConfirmation');
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    outputs.push(
+      turn({ draft, interpretation: 'affirmation', action: 'create_reservation' }),
+      turn({ draft, say: 'Votre table est réservée.' }),
+    );
+    await processTranscriptStreaming(session, 'Oui.', mgr);
+    expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    // Une passe par réponse, puis la confirmation du résultat réel : pas de passe de refus/recap_not_read.
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(4);
+    expect(spoken().join(' ')).toBe(
+      [
+        'Je peux vous passer le gérant pour la terrasse. Vous le souhaitez ?',
+        'D’accord. Je confirme la réservation ?',
+        'Votre table est réservée.',
+      ].join(' '),
+    );
+    expect(session.structuredTurn?.reservationCreated).toBe(true);
+  });
+
   it('crée la réservation après un oui au récapitulatif', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };

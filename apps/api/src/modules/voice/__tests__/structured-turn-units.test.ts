@@ -9,6 +9,8 @@ import { buildStructuredTurnMessages } from '../stream/structured-turn/prompt';
 import {
   applyProposedDraft,
   authorizeStructuredAction,
+  canResumeConfirmation,
+  updateConfirmationState,
   bookingKey,
   createStructuredTurnState,
   parseStreamedDraft,
@@ -770,5 +772,106 @@ describe('aucune table pour ce nombre, distinct de « complet ce jour-là » (ap
       '5-6': 'aucun',
       '7-8': 'aucune table',
     });
+  });
+});
+
+describe('reprise de confirmation après une parenthèse', () => {
+  const draft = { date: '2026-10-27', time: '20:00', partySize: 3, customerName: 'Test' };
+  function state(): ReturnType<typeof createStructuredTurnState> {
+    return {
+      ...createStructuredTurnState(),
+      draft: { ...draft },
+      availability: { date: draft.date, partySize: draft.partySize, slots: ['20:00', '20:30'] },
+      lastAwaiting: 'confirmation' as const,
+      recapKey: bookingKey(draft),
+    };
+  }
+  function creation(s: ReturnType<typeof createStructuredTurnState>) {
+    return authorizeStructuredAction(
+      s,
+      output({ action: 'create_reservation', interpretation: 'affirmation' }),
+      s.draft,
+      { maxPartySize: 12 },
+    );
+  }
+
+  it('conserve le récapitulatif entendu pendant la proposition de transfert, sans autoriser le oui au transfert', () => {
+    const s = state();
+    updateConfirmationState(
+      s,
+      output({ interpretation: 'question', awaiting: 'humanFallback' }),
+      true,
+    );
+    expect(canResumeConfirmation(s)).toBe(true);
+    expect(creation(s)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+    updateConfirmationState(
+      s,
+      output({ interpretation: 'decline', awaiting: 'confirmationResume' }),
+      true,
+    );
+    expect(creation(s)).toEqual({ allowed: true });
+  });
+
+  it('ne mémorise pas un récapitulatif coupé avant la fin de son contenu', () => {
+    const s = state();
+    updateConfirmationState(
+      s,
+      output({ interpretation: 'question', awaiting: 'humanFallback' }),
+      false,
+    );
+    updateConfirmationState(
+      s,
+      output({ interpretation: 'decline', awaiting: 'confirmationResume' }),
+      true,
+    );
+    expect(canResumeConfirmation(s)).toBe(false);
+    expect(creation(s)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+  });
+
+  it.each(['date', 'time', 'partySize', 'customerName'] as const)(
+    'invalide la reprise si %s change',
+    (field) => {
+      const s = state();
+      updateConfirmationState(s, output({ interpretation: 'question', awaiting: 'open' }), true);
+      const changed = { date: '2026-10-28', time: '20:30', partySize: 4, customerName: 'Autre' };
+      s.draft = { ...s.draft, [field]: changed[field] };
+      s.availability = {
+        date: s.draft.date,
+        partySize: s.draft.partySize,
+        slots: ['20:00', '20:30'],
+      };
+      updateConfirmationState(
+        s,
+        output({ interpretation: 'correction', awaiting: 'confirmationResume' }),
+        true,
+      );
+      expect(creation(s)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+    },
+  );
+
+  it('un refus de réserver invalide la reprise, contrairement au refus de transfert', () => {
+    const s = state();
+    updateConfirmationState(s, output({ interpretation: 'decline', awaiting: 'open' }), true);
+    updateConfirmationState(s, output({ awaiting: 'confirmationResume' }), true);
+    expect(creation(s)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+  });
+
+  it('ne transforme pas un oui à une autre question en accord de réservation', () => {
+    const s = state();
+    updateConfirmationState(s, output({ interpretation: 'question', awaiting: 'open' }), true);
+    expect(canResumeConfirmation(s)).toBe(true);
+    expect(creation(s)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+  });
+
+  it('ne permet pas de reprise sans récapitulatif antérieur ni sans disponibilité vérifiée', () => {
+    const empty = createStructuredTurnState();
+    empty.draft = { ...draft };
+    empty.lastAwaiting = 'confirmationResume';
+    empty.availability = { date: draft.date, partySize: draft.partySize, slots: ['20:00'] };
+    expect(creation(empty)).toMatchObject({ allowed: false, reason: 'recap_not_read' });
+    const s = state();
+    updateConfirmationState(s, output({ awaiting: 'confirmationResume' }), true);
+    s.availability = null;
+    expect(creation(s)).toMatchObject({ allowed: false, reason: 'slot_not_verified' });
   });
 });
