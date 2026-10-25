@@ -8,7 +8,13 @@ import { getGiftCardOrigin } from '@/lib/gift-card-origin';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
 import { getParentOrigin } from '@/app/widget/[restaurantId]/post-message-security';
-import { bookingSlotsOf, normalizeOpeningHours } from '@sokar/shared';
+import {
+  bookingSlotsOf,
+  buildMarketingConsentLabel,
+  MARKETING_CONSENT_VERSION,
+  normalizeOpeningHours,
+  type MarketingConsentChannel,
+} from '@sokar/shared';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -180,8 +186,26 @@ function parseRequestedTime(value: string | null): string | null {
   return value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
 }
 
+/** Erreur d'une route publique : garde le statut et le corps (ex. 409 `waitingListEnabled`). */
+class PublicApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function toInternationalPhone(input: string): string {
+  const normalized = input.replace(/\s/g, '');
+  return normalized.startsWith('+') ? normalized : `+33${normalized.replace(/^0/, '')}`;
+}
+
 async function publicApiFetch<T = unknown>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
@@ -205,7 +229,11 @@ async function publicApiFetch<T = unknown>(
 
   if (!res.ok) {
     const errorMsg = data.error || data.message || `Erreur ${res.status}`;
-    throw new Error(typeof errorMsg === 'string' ? errorMsg : `Erreur ${res.status}`);
+    throw new PublicApiError(
+      typeof errorMsg === 'string' ? errorMsg : `Erreur ${res.status}`,
+      res.status,
+      data,
+    );
   }
 
   return data as T;
@@ -319,6 +347,21 @@ export default function ReservationWidget({
   const [whatsappWithdrawn, setWhatsappWithdrawn] = useState(false);
   const [whatsappWithdrawing, setWhatsappWithdrawing] = useState(false);
   const [whatsappWithdrawError, setWhatsappWithdrawError] = useState(false);
+  // Jamais pré-cochées ; une case n'apparaît qu'avec la coordonnée correspondante.
+  const [marketingConsent, setMarketingConsent] = useState<
+    Record<MarketingConsentChannel, boolean>
+  >({ EMAIL: false, SMS: false });
+
+  // Liste d'attente : proposée quand le créneau choisi vient d'être pris (409 sur le hold).
+  // Créneau refusé (date|heure|couverts) : l'offre disparaît dès que le choix change.
+  const [waitingListOfferKey, setWaitingListOfferKey] = useState<string | null>(null);
+  const [waitingListResult, setWaitingListResult] = useState<{
+    entryId: string;
+    position: number;
+    actionToken: string;
+  } | null>(null);
+  const [waitingListCancelled, setWaitingListCancelled] = useState(false);
+  const [waitingListBusy, setWaitingListBusy] = useState(false);
 
   // Submission state
   const [submitting, setSubmitting] = useState(false);
@@ -676,6 +719,74 @@ export default function ReservationWidget({
     }
   }, [selectedDate, selectedTime, restaurant, partySize, customerName, customerPhone]);
 
+  const selectionKey = `${selectedDate ? formatDateParam(selectedDate) : ''}|${selectedTime}|${partySize}`;
+  const waitingListOffer = waitingListOfferKey === selectionKey;
+
+  const consentChannels: MarketingConsentChannel[] = [
+    ...(EMAIL_PATTERN.test(customerEmail.trim()) ? (['EMAIL'] as const) : []),
+    ...(customerPhone.trim() ? (['SMS'] as const) : []),
+  ];
+
+  async function handleJoinWaitingList() {
+    if (!restaurant || !selectedDate || !selectedTime || waitingListBusy) return;
+    setWaitingListBusy(true);
+    setError('');
+    try {
+      const result = await publicApiFetch<{
+        entryId: string;
+        position: number;
+        actionToken: string;
+      }>('POST', `public/r/${encodeURIComponent(restaurant.slug || restaurantId)}/waiting-list`, {
+        date: formatDateParam(selectedDate),
+        time: selectedTime,
+        partySize,
+        customer: {
+          firstName: customerName.trim(),
+          phone: toInternationalPhone(customerPhone),
+          ...(customerEmail.trim() ? { email: customerEmail.trim() } : {}),
+        },
+        source: 'web',
+      });
+      setWaitingListResult(result);
+      setWaitingListOfferKey(null);
+    } catch (err) {
+      const code = err instanceof PublicApiError ? err.data.error : undefined;
+      if (code === 'slot_now_available') {
+        setWaitingListOfferKey(null);
+        setError('Une table vient de se libérer : vous pouvez confirmer la réservation.');
+      } else if (code === 'waiting_list_full') {
+        setError("La liste d'attente est complète pour ce créneau.");
+      } else {
+        setError(getErrorMessage(err, "Impossible de rejoindre la liste d'attente."));
+      }
+    } finally {
+      setWaitingListBusy(false);
+    }
+  }
+
+  async function handleCancelWaitingList() {
+    if (!restaurant || !waitingListResult || waitingListBusy) return;
+    setWaitingListBusy(true);
+    setError('');
+    try {
+      const token = encodeURIComponent(waitingListResult.actionToken);
+      await publicApiFetch(
+        'DELETE',
+        `public/r/${encodeURIComponent(restaurant.slug || restaurantId)}/waiting-list/${encodeURIComponent(waitingListResult.entryId)}?token=${token}`,
+      );
+      setWaitingListCancelled(true);
+    } catch (err) {
+      const code = err instanceof PublicApiError ? err.data.error : undefined;
+      setError(
+        code === 'already_promoted'
+          ? 'Votre inscription a déjà été transformée en réservation.'
+          : getErrorMessage(err, "Impossible d'annuler l'inscription."),
+      );
+    } finally {
+      setWaitingListBusy(false);
+    }
+  }
+
   // Submit Reservation
   async function handleSubmit() {
     if (!restaurant) {
@@ -720,10 +831,10 @@ export default function ReservationWidget({
     reservedAt.setHours(hours, minutes, 0, 0);
 
     try {
-      const normalizedPhone = customerPhone.replace(/\s/g, '');
-      const phone = normalizedPhone.startsWith('+')
-        ? normalizedPhone
-        : `+33${normalizedPhone.replace(/^0/, '')}`;
+      const phone = toInternationalPhone(customerPhone);
+      // Une case cochée dont la coordonnée a ensuite été effacée n'est pas envoyée.
+      const consentEmail = marketingConsent.EMAIL && consentChannels.includes('EMAIL');
+      const consentSms = marketingConsent.SMS && consentChannels.includes('SMS');
       // Public bookings use a signed hold, never the internal service endpoint.
       const path = `public/r/${encodeURIComponent(restaurant.slug || restaurantId)}`;
       const testFields = testBooking ? { testBookingToken } : {};
@@ -754,6 +865,15 @@ export default function ReservationWidget({
             }
           : {}),
         ...(!testBooking && marketingAttributionToken ? { marketingAttributionToken } : {}),
+        ...(!testBooking && (consentEmail || consentSms)
+          ? {
+              marketingConsent: {
+                ...(consentEmail ? { email: true } : {}),
+                ...(consentSms ? { sms: true } : {}),
+                version: MARKETING_CONSENT_VERSION,
+              },
+            }
+          : {}),
       });
       const res: ConfirmedReservation = {
         id: confirmation.reservationId,
@@ -771,7 +891,17 @@ export default function ReservationWidget({
       setSuccess(true);
     } catch (err: unknown) {
       const message = getErrorMessage(err, '');
-      if (message === 'SLOT_NOT_AVAILABLE') {
+      if (err instanceof PublicApiError && err.status === 409 && message === 'no_table_available') {
+        setWaitingListOfferKey(
+          err.data.waitingListEnabled === true && !testBooking ? selectionKey : null,
+        );
+        setError(
+          "Ce créneau vient d'être réservé. Choisissez une autre heure" +
+            (err.data.waitingListEnabled === true && !testBooking
+              ? " ou inscrivez-vous sur la liste d'attente."
+              : '.'),
+        );
+      } else if (message === 'SLOT_NOT_AVAILABLE') {
         setError(
           "Ce créneau horaire vient de se faire réserver ou n'est plus disponible. Veuillez choisir une autre heure.",
         );
@@ -1480,6 +1610,52 @@ export default function ReservationWidget({
                     </div>
                   )}
 
+                  {(waitingListOffer || waitingListResult) && !modification && (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="space-y-3 rounded-2xl border border-white/70 bg-white/45 p-4 text-sm text-[hsl(var(--reservation-ink))] shadow-sm backdrop-blur-2xl"
+                    >
+                      <p className="font-black">Liste d&apos;attente</p>
+                      {waitingListResult ? (
+                        waitingListCancelled ? (
+                          <p>Votre inscription a été annulée.</p>
+                        ) : (
+                          <>
+                            <p>
+                              Vous êtes inscrit (position indicative :{' '}
+                              <strong>{waitingListResult.position}</strong>). Vous serez prévenu par
+                              e-mail ou SMS si une table se libère.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void handleCancelWaitingList()}
+                              disabled={waitingListBusy}
+                              className="rounded-full border border-[hsl(var(--reservation-muted))] px-4 py-2 font-semibold transition-all duration-200 hover:bg-black/5 disabled:opacity-50"
+                            >
+                              {waitingListBusy ? 'Annulation…' : 'Annuler mon inscription'}
+                            </button>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <p>
+                            {partySize} {partySize > 1 ? 'personnes' : 'personne'} ·{' '}
+                            {selectedDateLong} · {selectedTime.replace(':', 'h')}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void handleJoinWaitingList()}
+                            disabled={waitingListBusy}
+                            className="rounded-full bg-[hsl(var(--reservation-ink))] px-4 py-2 font-semibold text-[hsl(var(--reservation-panel))] transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+                          >
+                            {waitingListBusy ? 'Inscription…' : "Rejoindre la liste d'attente"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {step === 1 ? (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-4 sm:space-y-5 lg:space-y-2">
                       <div
@@ -1943,6 +2119,42 @@ export default function ReservationWidget({
                         </span>
                       </label>
                     )}
+
+                  {step === 2 && !modification && !testBooking && consentChannels.length > 0 && (
+                    <fieldset className="space-y-3 text-sm text-[hsl(var(--reservation-ink))]">
+                      <legend className="font-semibold">Offres et actualités (facultatif)</legend>
+                      {consentChannels.map((channel) => (
+                        <label key={channel} className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            name={`marketing-consent-${channel.toLowerCase()}`}
+                            checked={marketingConsent[channel]}
+                            onChange={(event) =>
+                              setMarketingConsent((current) => ({
+                                ...current,
+                                [channel]: event.target.checked,
+                              }))
+                            }
+                            disabled={submitting}
+                            className="mt-1 h-4 w-4 shrink-0 transition-all duration-200"
+                          />
+                          <span>{buildMarketingConsentLabel(channel, restaurant?.name ?? '')}</span>
+                        </label>
+                      ))}
+                      <p className="text-xs text-[hsl(var(--reservation-soft))]">
+                        Ce choix est indépendant de votre réservation : vous pouvez réserver sans
+                        cocher ces cases.{' '}
+                        <a
+                          href="/privacy"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline transition-all duration-200 hover:text-[hsl(var(--reservation-ink))]"
+                        >
+                          Informations sur le traitement de vos données
+                        </a>
+                      </p>
+                    </fieldset>
+                  )}
 
                   {step === 2 && !modification && selectedDate && selectedTime && (
                     <div className="rounded-2xl border border-white/70 bg-white/45 p-3 text-sm font-semibold text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">

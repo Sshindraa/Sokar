@@ -839,3 +839,90 @@ describe('réservation publique sur le widget réellement servi par /book', () =
     },
   );
 });
+
+describe('consentement marketing et liste d’attente', () => {
+  function bookingFetch(holdResponse?: Response) {
+    const date = new Date();
+    date.setDate(date.getDate() + 2);
+    const dateValue = dateParam(date);
+    navMocks.setParams({ restaurantId: 'chez-sokar' });
+    navMocks.setSearch(`date=${dateValue}&time=20%3A30&partySize=2`);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/availability')) {
+        return jsonResponse({
+          restaurantId: 'r1',
+          date: dateValue,
+          partySize: 2,
+          slots: ['20:30'],
+        });
+      }
+      if (init?.method === 'POST' && url.endsWith('/hold')) {
+        return holdResponse ?? jsonResponse({ holdToken: 'hold-1' });
+      }
+      if (init?.method === 'POST' && url.endsWith('/confirm')) {
+        return jsonResponse({ reservationId: 'res-1', status: 'CONFIRMED' });
+      }
+      if (init?.method === 'POST' && url.endsWith('/waiting-list')) {
+        return jsonResponse({ entryId: 'wl-1', position: 2, actionToken: 'tok', expiresAt: '' });
+      }
+      return bookingRestaurantResponse();
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    return { fetchSpy, dateValue };
+  }
+
+  async function fillContact(widget: ReturnType<typeof render>, email = '') {
+    fireEvent.click(await widget.findByRole('button', { name: /Continuer · 20h30/ }));
+    fireEvent.change(await widget.findByLabelText('Nom complet *'), {
+      target: { value: 'Alice Martin' },
+    });
+    fireEvent.change(widget.getByLabelText('Téléphone *'), { target: { value: '0600000000' } });
+    if (email)
+      fireEvent.change(widget.getByLabelText(/Adresse Email/), { target: { value: email } });
+  }
+
+  function bodyOf(fetchSpy: ReturnType<typeof vi.fn>, suffix: string) {
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith(suffix));
+    return JSON.parse(String((call?.[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  it('n’envoie que les accords cochés, jamais pré-cochés', async () => {
+    const { fetchSpy } = bookingFetch();
+    const widget = render(<ReservationWidget />);
+    await fillContact(widget, 'alice@example.com');
+
+    const email = widget.getByRole('checkbox', { name: /e-mail/i }) as HTMLInputElement;
+    const sms = widget.getByRole('checkbox', { name: /SMS/i }) as HTMLInputElement;
+    expect(email.checked).toBe(false);
+    expect(sms.checked).toBe(false);
+    fireEvent.click(email);
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+
+    await waitFor(() => expect(bodyOf(fetchSpy, '/confirm').marketingConsent).toBeDefined());
+    expect(bodyOf(fetchSpy, '/confirm').marketingConsent).toEqual({
+      email: true,
+      version: expect.any(String),
+    });
+  });
+
+  it('propose la liste d’attente quand le créneau vient d’être pris', async () => {
+    const { fetchSpy, dateValue } = bookingFetch({
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ error: 'no_table_available', waitingListEnabled: true }),
+    } as unknown as Response);
+    const widget = render(<ReservationWidget />);
+    await fillContact(widget);
+    fireEvent.click(widget.getByRole('button', { name: 'Valider la réservation' }));
+
+    fireEvent.click(await widget.findByRole('button', { name: "Rejoindre la liste d'attente" }));
+    expect(await widget.findByText(/position indicative/)).toBeTruthy();
+    expect(bodyOf(fetchSpy, '/waiting-list')).toMatchObject({
+      date: dateValue,
+      time: '20:30',
+      partySize: 2,
+      customer: { firstName: 'Alice Martin', phone: '+33600000000' },
+    });
+    expect(widget.queryByText(/no_table_available/)).toBeNull();
+  });
+});
