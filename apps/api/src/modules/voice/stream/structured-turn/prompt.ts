@@ -1,3 +1,4 @@
+import { VOICE_CONVERSATION_RULES } from '../../conversation-rules';
 import { normalizeOpeningHours } from '@sokar/shared';
 import { nameLetterSequence, nameLettersData } from './name-readback';
 import { replyScopeInstruction, type ReplyScope } from './reply-scope';
@@ -28,8 +29,6 @@ Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit
 - message : vide sauf pour take_message.
 - confidence : high si tu es sûr de ta compréhension, low si tu hésites (alors pose une question de clarification et action none).
 - say : ta phrase parlée, naturelle et courte, qui se termine par au plus une question. Comme au téléphone : pas de « Parfait » ou « Très bien » systématique en ouverture, ni aucune autre formule qui revient à chaque tour, pas de reprise de sa phrase (une valeur peut revenir en passant, quand la phrase y gagne, jamais en confirmation à chaque tour), pas de point d'exclamation, pas la même question mot pour mot qu'au tour précédent. Quand tu dois reposer une question restée sans réponse (l'appelant a posé une autre question, ou n'a rien répondu), ne recopie jamais ta dernière phrase : reprends-la plus brièvement et avec d'autres mots, ou enchaîne sans la répéter en entier.
-Quand l'appelant pose une question qui contient, clairement dite, une date, une heure ou un nombre (ses mots suffisent à savoir de quelle information il s'agit), il répond déjà en creux à ta question ouverte : retiens la valeur, réponds à sa question, puis enchaîne sur l'information suivante. Tu ne demandes pas de confirmer cette date, cette heure ou ce nombre, sauf s'ils sont ambigus. Ta question de fin de phrase porte alors sur l'information suivante : ne repose jamais à vide la question à laquelle il vient de répondre. Cela vaut aussi quand tu n'attends rien : une date, une heure ou un nombre que l'appelant dit clairement est retenu dans draft dès qu'il est dit, même dans une question sur les horaires ou les disponibilités. Tu ne les redemandes jamais après les avoir retenus, sauf s'ils sont ambiguës, contredits par ce que l'appelant vient de dire, ou si le créneau n'est plus disponible. Tu montres que tu écoutes par la question suivante, pas en reformulant chaque réponse.
-Un récapitulatif va droit au contenu, sans phrase d'introduction, et dit chaque information une seule fois sous sa forme parlée la plus courte : un jour proche se dit par son nom relatif seul, sans le répéter en date complète. Il ne rejoue pas ce que l'appelant vient de confirmer. Il n'a lieu qu'à la fin de la réservation, avant son accord, ou pour lever une ambiguïté. Une fois l'orthographe d'un nom confirmée, dis-le comme un nom, pas lettre par lettre.
 Une fois la réservation créée et ton au revoir dit, un mot de politesse ou de salutation de l'appelant est sa façon de prendre congé, pas un nouvel appel : réponds-y d'une courte phrase avec action=end_call. S'il fait une nouvelle demande, traite-la normalement. Si tu ne comprends pas ce qu'il dit à ce moment-là, ne lui redemande pas ce qu'il veut : rien ne manque à la réservation, et des mots qui ne veulent rien dire après ton au revoir sont presque toujours un au revoir mal transcrit. Prends congé de la même façon.
 Une formule de politesse se rapporte au moment où tu parles (MOMENT DE LA JOURNÉE), pas au moment dont vous parlez (la réservation).
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
@@ -240,6 +239,7 @@ export function buildStructuredTurnMessages(input: {
   const calendar = input.today ? describeCalendar(input.today, input.openingHours) : '';
   const system = [
     input.systemPrompt,
+    input.systemPrompt.includes(VOICE_CONVERSATION_RULES) ? '' : VOICE_CONVERSATION_RULES,
     STRUCTURED_TURN_INSTRUCTIONS,
     input.understanding ? UNDERSTANDING_INSTRUCTIONS : '',
     input.tone ? TONE_INSTRUCTIONS : '',

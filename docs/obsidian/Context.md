@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Voix, prosodie : consignes unifiées et 14 paires A/B Lucie prêtes sur `codex/voice-prosody` ; garder le découpage actuel tant que préférence audio et recette #594 ne sont pas qualifiées. Voir `voice-prosody-comparison.md`.
+
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
 - [ ] WhatsApp : local, flags off. Telephone = confirmation SMS sans rappel; WEB avec accord = rappel WhatsApp sans secours SMS. Callbacks Meta signes implementes (recus 7 j, rapprochement par ID; timeout sans ID manuel). Template fr/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta et qualification staging; SMS staging validé. Voir `whatsapp-reservation-activation.md`.
 - [ ] SEO : accueil/privacy livrés (#438–#442); GSC arrêté au 13/10, comparer après couverture du 16–22/10 (§10.36). Staging noindex maintenu. Confidentialité locale Dashboard/Connect/API : notice commune par catégories, annexe nominative clients en projet (`privacy-client-annex.md`), preuves techniques internes; Workspace constaté Business Starter actif, stockage « Aucune préférence » : ne pas promettre une résidence UE. ATDC Google accepté sur autorisation spécifique. Notifications démo minimisées en local (référence + lien admin). Resend Free constaté et DPA signé fournisseur archivé en privé; conservation effective et autres contrats restent à valider. Dashboard `/privacy` noindex et en vérification. Mentions légales : nom/prénom de l'EI non autorisés à publier; adresse seule autorisée. La page reste incomplète sans identité d'éditeur; réseaux facultatifs.
