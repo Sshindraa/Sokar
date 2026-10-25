@@ -34,7 +34,10 @@ retenue et corrigée par un second passage ; ce second passage est également co
 clarification n'est imposé au modèle.
 
 Un récapitulatif déjà entendu reste repris par `confirmationResume` (#587), pas récité à nouveau.
-Les disponibilités et le consentement final restent nécessaires à la création.
+Les disponibilités et le consentement final restent nécessaires à la création. Une invitation à reprendre
+l’échange seul porte `awaiting=open` ; `confirmationResume` demande explicitement l’accord
+pour réserver. Deux derniers tirages avec le champ de ton ElevenLabs et l’historique complet
+formulent cette demande sans relire les faits.
 
 ## Acquiescement pendant l'explication
 
