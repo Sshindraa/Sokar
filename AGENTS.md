@@ -47,6 +47,14 @@ sokar/
 8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault. Do not wait to be asked. Append a dated entry to `docs/obsidian/Journal.md` (the full log). Touch `docs/obsidian/Context.md` only for a TODO or a current-state change, and only with a decision — **never** an activity entry, which belongs in `Journal.md`. Keep `Context.md` under ~8 Ko; `scripts/quality/check-vault-size.sh` warns at pre-push.
 9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch and creates or reuses its PR. It does not enable auto-merge; merging stays a human decision. Never push directly to `main`.
 
+## Token budget
+
+These rules cut cost without cutting quality: if a rule would hide information you need, quality wins.
+
+1. **One task per session, ~2 h max.** Past ~2 h, or when the task changes, append a handoff to `docs/obsidian/Journal.md` (done / next / key files / open questions) and start a fresh session. Don't cut mid-debug; don't resume a finished session for new work.
+2. **Cap shell output, then target.** For output that can exceed ~50 lines, use `| tail -n 50` (errors, tests, builds) or `| head -n 50` (listings), `grep -n`, `git diff --stat`. Read files by range (`sed -n 'A,Bp'`), not whole. If the capped output is not enough, re-read exactly the useful part (`grep -n -C 5`, another range): never conclude from incomplete output.
+3. **Targeted tests while iterating, full check before done.** While iterating, test only the changed file or package (`pnpm --filter <pkg> test -- <path> 2>&1 | tail -n 40`). Before saying done or pushing, run the full verification from "How to work".
+
 ## Commands
 
 ```zsh
