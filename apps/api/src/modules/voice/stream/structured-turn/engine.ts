@@ -43,6 +43,8 @@ import {
 import {
   applyProposedDraft,
   authorizeStructuredAction,
+  canResumeConfirmation,
+  updateConfirmationState,
   bookingKey,
   createStructuredTurnState,
   isBookingComplete,
@@ -132,6 +134,7 @@ const PENDING_BY_AWAITING: Partial<
   // Relecture de l'orthographe : l'appelant peut ré-épeler, le profil STT d'épellation reste actif.
   customerNameConfirmation: 'customerName',
   confirmation: 'confirmation',
+  confirmationResume: 'confirmation',
   humanFallback: 'humanFallback',
 };
 
@@ -383,6 +386,10 @@ function passRequest(
     history,
     transcript,
     state,
+    canResumeConfirmation: canResumeConfirmation(
+      state,
+      !session.interruptedReply || !replyContentNotFullyHeard(session.interruptedReply),
+    ),
     ...(secondOpinion ? { secondOpinion } : {}),
     openingHours: session.openingHours,
     today,
@@ -1229,11 +1236,7 @@ export async function runStructuredTurn(
     const said = final.say.trim();
     if (!said) throw new UnusableTurnOutputError('Structured turn produced no speech');
     session.conversation.llmFailureStreak = 0;
-    state.lastAwaiting = final.awaiting;
-    state.recapKey =
-      final.awaiting === 'confirmation' && isBookingComplete(state.draft)
-        ? bookingKey(state.draft)
-        : null;
+    updateConfirmationState(state, final, !cutReply || !replyContentNotFullyHeard(cutReply));
     mirrorConversation(session, state);
     // Lecture fraîche du jour pour le tour suivant, sans attendre.
     if (state.draft.date) {

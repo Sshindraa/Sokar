@@ -12,12 +12,13 @@ const STRUCTURED_TURN_INSTRUCTIONS = `MODE DE RÉPONSE STRUCTURÉ :
 Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit ta compréhension et ta réponse.
 - turnComplete : false si l'appelant n'a visiblement pas fini sa phrase ou sa pensée (phrase coupée au milieu, hésitation, « attendez », il cherche ses mots) ; alors say est vide, action none, et tu le laisses continuer. true sinon, y compris pour une réponse courte mais complète (« oui », « trois », « non »). Une phrase qui annonce ce que l'appelant veut faire, ou qui introduit sa réponse, sans donner encore l'information que tu attends, n'est pas finie : il cherche sa réponse. Attends, et ne le relance que s'il se tait vraiment. De même, une phrase qui se termine en rejetant ou en niant la valeur qu'elle vient de donner est une correction en cours : la valeur de remplacement arrive dans la seconde qui suit. N'agis pas sur la valeur rejetée, ne réponds pas, attends la suite.
 - interpretation : ce que fait l'appelant dans ce tour. answer = il répond à ta question ; question = il pose une question ; correction = il remplace une valeur déjà donnée ; affirmation = il accepte ce que tu viens de proposer ou de relire ; decline = il refuse ta proposition mais continue l'appel ; new_request = il change de demande ; end_call = il termine l'appel ou renonce à sa démarche ; unclear = tu n'as pas compris.
+- Une question pratique ou un refus de transfert ne remet pas la réservation à zéro. Après la parenthèse, si canResumeConfirmation=true, reprends avec une courte demande d'accord (awaiting=confirmationResume), sans répéter tout le récapitulatif. Sinon, relis le récapitulatif complet avant de demander l'accord (awaiting=confirmation). Un oui/non porte sur la dernière proposition : un accord au transfert n'est jamais un accord à réserver. Toute question parlée doit avoir l'awaiting correspondant, jamais none.
 - draft : l'état complet du brouillon de réservation APRÈS ce tour. date au format AAAA-MM-JJ, time au format HH:MM, partySize entier, customerName avec l'orthographe retenue. Chaîne vide ou 0 si inconnu. Garde les valeurs déjà connues tant que l'appelant ne les change pas.
-- awaiting : ce que ta phrase « say » attend de l'appelant. customerName quand tu demandes le nom ou de l'épeler ; customerNameConfirmation quand tu relis seulement l'orthographe du nom ; confirmation UNIQUEMENT quand ta phrase relit le récapitulatif complet (date, heure, nombre ET nom) et demande l'accord pour réserver ; humanFallback quand tu proposes le gérant ou un message ; open pour une question ouverte ; none si tu n'attends rien.
+- awaiting : ce que ta phrase « say » attend de l'appelant. customerName quand tu demandes le nom ou de l'épeler ; customerNameConfirmation quand tu relis seulement l'orthographe du nom ; confirmation UNIQUEMENT quand ta phrase relit le récapitulatif complet (date, heure, nombre ET nom) et demande l'accord pour réserver ; confirmationResume quand tu reprends brièvement la demande d'accord pour réserver après une parenthèse, UNIQUEMENT si canResumeConfirmation=true dans l'ÉTAT VÉRIFIÉ ; humanFallback quand tu proposes le gérant ou un message ; open pour une question ouverte ; none si tu n'attends rien.
 - action :
   - check_availability dès que la date, l'heure et le nombre sont connus et que l'ÉTAT VÉRIFIÉ ne contient ni « availability » pour ces valeurs, ni « dayAvailability » couvrant cette date et ce nombre. Laisse « say » vide : le résultat te sera donné, puis tu formuleras la réponse.
   - Si « dayAvailability » couvre la date et le nombre avec au moins un créneau, ces créneaux sont réels : réponds directement (action none), sans check_availability. Une plage « 19:00→21:30 » contient chaque demi-heure de 19:00 à 21:30 incluses. Ne propose que ces horaires. Si le nombre n'y a aucun créneau (« aucun »), utilise check_availability.
-  - create_reservation uniquement si l'appelant vient d'accepter le récapitulatif complet (date, heure, nombre, nom) que tu as relu au tour précédent avec awaiting=confirmation. Une orthographe confirmée ne suffit pas : relis alors le récapitulatif complet. Laisse « say » vide.
+  - create_reservation uniquement si l'appelant vient d'accepter le récapitulatif complet (date, heure, nombre, nom) que tu as relu avec awaiting=confirmation, ou s'il répond oui à ta reprise courte awaiting=confirmationResume avec canResumeConfirmation=true. Une orthographe confirmée ne suffit pas : relis alors le récapitulatif complet. Laisse « say » vide.
   - take_message quand l'appelant veut laisser un message ou choisit le message : « message » résume sa demande pour le gérant. Laisse « say » vide.
   - transfer quand l'appelant demande le gérant ou choisit le transfert. Laisse « say » vide.
   - end_call quand l'appelant termine ou renonce : « say » est un au revoir court, sans question.
@@ -202,6 +203,8 @@ export function buildStructuredTurnMessages(input: {
   callerFinished?: boolean;
   /** Relance sans énoncé : l'appelant n'a pas été entendu ou ne dit rien. */
   recovery?: StructuredRecoveryKind;
+  /** Récapitulatif complet entendu et toujours identique au brouillon. */
+  canResumeConfirmation?: boolean;
   /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
   understanding?: boolean;
   /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
@@ -221,6 +224,7 @@ export function buildStructuredTurnMessages(input: {
     availability: input.state.availability,
     reservationCreated: input.state.reservationCreated,
     lastAwaiting: input.state.lastAwaiting,
+    canResumeConfirmation: input.canResumeConfirmation === true,
     ...(nameLetters.length ? { nameLetters } : {}),
     ...(spelledLetters.length ? { spelledName, spelledLetters } : {}),
     ...(input.state.draft.date

@@ -28,6 +28,7 @@ export const STRUCTURED_TURN_AWAITING = [
   'customerName',
   'customerNameConfirmation',
   'confirmation',
+  'confirmationResume',
   'humanFallback',
   'open',
 ] as const;
