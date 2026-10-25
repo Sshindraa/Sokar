@@ -25,8 +25,6 @@ const restaurant = {
   id: 'rest-1',
   name: 'Chez Test',
   timezone: 'Europe/Paris',
-  googleRefreshToken: null,
-  googleCalendarId: null,
   openingHours: {
     thu: { open: '12:00', close: '22:30' },
     fri: { open: '12:00', close: '22:30' },

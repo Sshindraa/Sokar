@@ -241,7 +241,6 @@ function makeFakes() {
           status: data.status as string,
           estimatedRevenue: null,
           confirmedRevenue: null,
-          googleEventId: null,
           createdAt: new Date(),
           channel: data.channel as string,
           state: data.state as string,

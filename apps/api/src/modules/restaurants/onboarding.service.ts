@@ -248,8 +248,6 @@ export type RestaurantLike = {
   floorStats?: FloorStats | null;
   openingHours?: unknown;
   personality?: unknown;
-  googleRefreshToken?: string | null;
-  googleCalendarId?: string | null;
   phoneNumber?: string | null;
   firstCallAt?: Date | null;
   provisioningStatus?: string | null;

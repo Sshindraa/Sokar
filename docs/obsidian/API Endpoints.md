@@ -526,24 +526,6 @@ Page privacy policy publique (RGPD Article 13).
 
 ---
 
-## Integrations (Google Calendar)
-
-Module : `apps/api/src/modules/integrations/google.routes.ts`
-
-### GET /integrations/google-calendar/auth
-
-Initie OAuth Google.
-
-### GET /integrations/google-calendar/callback
-
-Callback OAuth.
-
-### POST /integrations/google-calendar/disconnect
-
-Déconnecte le calendrier Google du restaurant.
-
----
-
 ## Entitlements
 
 Module : `apps/api/src/modules/entitlements/entitlement.routes.ts`

@@ -36,7 +36,6 @@ function makeReservation(overrides: Partial<Reservation> = {}): Reservation {
     idempotencyPayloadHash: null,
     consumedHoldId: null,
     tableId: null,
-    googleEventId: null,
     estimatedRevenue: null,
     giftCardRedemptionSnap: null,
     giftCardComplementAmount: null,

@@ -3,7 +3,7 @@
  *
  * Pattern: Fastify `inject()` against `getApp()` (shared helper that
  * mounts the full app with requireOrg mocked to require an Authorization
- * header). The helper mocks db, queues, google calendar, and Clerk so
+ * header). The helper mocks db, queues, and Clerk so
  * we exercise the real Fastify+Zod+route pipeline end-to-end without
  * external services.
  *
