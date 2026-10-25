@@ -71,6 +71,7 @@ export type VoiceTurnEvent =
   | 'tts_completed'
   | 'tts_interrupted'
   | 'barge_in'
+  | 'caller_backchannel'
   | 'goodbye_filler_hit';
 
 export type VoiceTurnEventFields = Record<string, boolean | number | string | null | undefined>;
@@ -200,6 +201,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
       return 'audio';
     case 'tts_interrupted':
     case 'barge_in':
+    case 'caller_backchannel':
     case 'fast_barge_in':
       return 'interruption';
   }

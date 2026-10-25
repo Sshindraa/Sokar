@@ -1942,6 +1942,91 @@ describe('texte validé en double d’un tour déjà traité', () => {
   });
 });
 
+describe('acquiescements pendant la réponse en cours', () => {
+  beforeEach(() => {
+    vi.stubEnv('VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS', 'rest-1');
+    vi.useFakeTimers();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function explaining() {
+    const session = makeSession();
+    session.state = 'SPEAKING';
+    session.agentAudioActive = true;
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    session.sttLastSpeechStartedAt = Date.now() - 500;
+    session.callerVoice = {
+      noiseFloor: 0,
+      voiceRun: 0,
+      trackedMs: 3_000,
+      lastVoiceAt: Date.now() - 300,
+    };
+    const controller = new AbortController();
+    session.abortController = controller;
+    const cancel = vi.fn();
+    const resume = vi.fn();
+    session.ttsContext = {
+      cancel,
+      resume,
+      pause: vi.fn(),
+      interruptionSnapshot: () => ({
+        text: 'Nous accueillons les groupes dans la grande salle du restaurant. Vous souhaitez venir quel jour ?',
+        playedMs: 3_200,
+        totalMs: 8_000,
+      }),
+    };
+    session.fastBargeIn = { paused: true, voicedMs: 0 };
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    return { session, controller, cancel, resume, onEvent };
+  }
+
+  it('une partielle puis un final oui tardif préservent la lecture et ne créent aucun tour', () => {
+    const { session, controller, cancel, resume, onEvent } = explaining();
+    handleSttMessage(session, dgPartial('oui'));
+    expect(controller.signal.aborted).toBe(false);
+    expect(resume).toHaveBeenCalledOnce();
+    session.state = 'LISTENING';
+    session.agentAudioActive = false;
+    handleSttMessage(
+      session,
+      dgFinal('oui', { words: [{ word: 'oui', confidence: 0.98, start: 0, end: 0.2 }] }),
+    );
+    expect(cancel).not.toHaveBeenCalled();
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(session.turnTranscript).toBe('');
+    expect(session.turnPartials).toEqual([]);
+  });
+
+  it('oui peut se prolonger en correction et déclencher alors la vraie coupure', () => {
+    const { session, controller, cancel } = explaining();
+    handleSttMessage(session, dgPartial('oui'));
+    handleSttMessage(session, dgPartial('oui mais plutôt vingt heures'));
+    expect(controller.signal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(session.state).toBe('LISTENING');
+  });
+
+  it('le oui d’une nouvelle prise de parole après la question reste un vrai tour', () => {
+    const { session, onEvent } = explaining();
+    handleSttMessage(session, dgPartial('oui'));
+    session.state = 'LISTENING';
+    session.agentAudioActive = false;
+    handleNormalizedSttMessage(session, { type: 'speech_started' });
+    handleSttMessage(
+      session,
+      dgFinal('oui', { words: [{ word: 'oui', confidence: 0.98, start: 0, end: 0.2 }] }),
+    );
+    expect(onEvent.mock.calls.filter(([event]) => event.type === 'UtteranceEnd')).toHaveLength(1);
+  });
+});
+
 describe('collecte d’un nom : la pause d’épellation suit la voix de l’appelant', () => {
   beforeEach(() => {
     vi.useFakeTimers();
