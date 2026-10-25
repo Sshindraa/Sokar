@@ -696,6 +696,7 @@ export async function runStructuredTurn(
     const judging = useJudge && !finished;
     let judged = (judging ? undefined : null) as boolean | null | undefined;
     let unsaid = '';
+    let firstSayText = true;
     const mayContinue = () => {
       const complete =
         finished ||
@@ -730,7 +731,14 @@ export async function runStructuredTurn(
         firstToken = false;
         markVoiceTurnLlmFirstToken(session, turnId);
       }
-      unsaid += extractor.push(delta);
+      const sayText = extractor.push(delta);
+      if (firstSayText && sayText.trim()) {
+        firstSayText = false;
+        recordVoiceTurnEventIfCurrent(session, turnId, 'llm_say_started', {
+          pass: actionResult ? 2 : 1,
+        });
+      }
+      unsaid += sayText;
       // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
       // connus quand la phrase commence.
       if (turnComplete === null) {

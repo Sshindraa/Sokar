@@ -20,6 +20,7 @@ import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { callerSilenceMs } from './caller-voice-activity';
 import { decodeTelnyxToPcm16, telnyxBytesPerMs } from './telnyx-codec';
 import type { CallSession } from './types';
+import { describeTranscript } from './pii-redact';
 
 const DEFAULT_WAIT_MS = 250;
 /** Un mot isolé reste à Deepgram : Ink-2 les rend vides (banc du 22/10/2026). */
@@ -97,6 +98,8 @@ export interface InkDeps {
     expire(key: string, seconds: number): Promise<unknown>;
   };
   now?: () => number;
+  /** Anticipation sans parole ni action, uniquement après une réponse Ink complète. */
+  onCompleteTranscript?: (transcript: string) => void;
 }
 
 function restaurantEnabled(env: NodeJS.ProcessEnv, key: string, restaurantId: string): boolean {
@@ -122,6 +125,20 @@ function waitMs(env: NodeJS.ProcessEnv): number {
 
 function spendKey(now: number): string {
   return `stt-ink:seconds:${new Date(now).toISOString().slice(0, 10)}`;
+}
+
+/** Un texte complet prêt à remplacer Deepgram : ne pas relancer une anticipation sur son ancienne partielle. */
+export function peekReadyInkTranscript(session: CallSession, env = process.env): string | null {
+  const state = session.sttInk;
+  if (
+    !state?.ready ||
+    state.closed ||
+    state.pendingFinalize ||
+    state.speechSinceFinalize ||
+    !restaurantEnabled(env, 'VOICE_STT_INK_REPLACE_RESTAURANT_IDS', session.restaurantId)
+  )
+    return null;
+  return state.finals.join('').trim() || null;
 }
 
 /** Format Cartesia du flux Telnyx : A-law et µ-law à 8 kHz tels quels, L16 en PCM16 16 kHz. */
@@ -224,7 +241,22 @@ export async function openInkParallel(session: CallSession, deps: InkDeps = {}):
     }
     const resolve = state.waiter;
     state.waiter = undefined;
-    resolve?.(takeFinals(state));
+    if (resolve) {
+      resolve(takeFinals(state));
+    } else {
+      const completeText = peekReadyInkTranscript(session, env);
+      if (!deps.onCompleteTranscript || !completeText) return;
+      try {
+        deps.onCompleteTranscript(completeText);
+        logger.info(
+          { callId: session.callControlId, ...describeTranscript(completeText) },
+          '[stt-ink] complete transcript ready for speculation',
+        );
+      } catch {
+        // L'anticipation ne doit jamais modifier la transcription ou empêcher sa livraison.
+        logger.warn({ callId: session.callControlId }, '[stt-ink] speculation skipped');
+      }
+    }
   });
   const stop = () => stopInk(state, false);
   socket.on('close', stop);

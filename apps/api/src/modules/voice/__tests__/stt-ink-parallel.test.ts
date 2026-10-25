@@ -6,6 +6,7 @@ vi.unmock('../stream/stt-ink-parallel');
 import {
   closeInkParallel,
   inkAudioFormat,
+  peekReadyInkTranscript,
   openInkParallel,
   resolveInkTranscript,
   sendInkAudio,
@@ -388,6 +389,67 @@ describe('fin de phrase', () => {
     await expect(
       resolveInkTranscript(session, 'pour six personnes demain', { env }),
     ).resolves.toEqual(expect.objectContaining({ source: 'deepgram' }));
+  });
+});
+
+describe('anticipation sur le texte Ink complet', () => {
+  it('ne prépare rien sur un delta et fournit la phrase complète sans consommer son tampon', async () => {
+    const onCompleteTranscript = vi.fn();
+    const { session, socket } = await openSession({}, { onCompleteTranscript });
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.final(' 1');
+    expect(onCompleteTranscript).not.toHaveBeenCalled();
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+    socket!.final('6h30.');
+    socket!.flush();
+    expect(onCompleteTranscript).toHaveBeenCalledExactlyOnceWith('16h30.');
+    expect(peekReadyInkTranscript(session, env)).toBe('16h30.');
+    await expect(resolveInkTranscript(session, '16 heures 30', { env })).resolves.toMatchObject({
+      transcript: '16h30.',
+    });
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+  });
+
+  it('ne prépare rien si Ink est seulement en comparaison, ni pendant une reprise de parole', async () => {
+    const onCompleteTranscript = vi.fn();
+    const { session, socket } = await openSession(
+      {},
+      { onCompleteTranscript, env: { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' } },
+    );
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.complete(' demain soir');
+    expect(onCompleteTranscript).not.toHaveBeenCalled();
+    expect(
+      peekReadyInkTranscript(session, { ...env, VOICE_STT_INK_REPLACE_RESTAURANT_IDS: '' }),
+    ).toBeNull();
+    session.sttInk!.speechSinceFinalize = true;
+    expect(peekReadyInkTranscript(session, env)).toBeNull();
+  });
+
+  it('un échec de préparation ne perd pas la transcription prête', async () => {
+    const { session, socket } = await openSession(
+      {},
+      {
+        onCompleteTranscript: () => {
+          throw new Error('unavailable');
+        },
+      },
+    );
+    const t0 = Date.now();
+    session.callerVoice!.lastVoiceAt = t0;
+    sendInkAudio(session, Buffer.alloc(160), t0);
+    sendInkAudio(session, Buffer.alloc(160), t0 + 160);
+    socket!.complete(' demain soir');
+    await expect(resolveInkTranscript(session, 'demain soir', { env })).resolves.toMatchObject({
+      transcript: 'demain soir',
+      source: 'ink',
+    });
   });
 });
 

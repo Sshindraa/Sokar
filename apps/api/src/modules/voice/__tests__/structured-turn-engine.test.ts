@@ -1334,6 +1334,22 @@ describe('tour structuré (canary)', () => {
     expect(voice).not.toContain('HOUET');
   });
 
+  it('reprend le texte Ink anticipé après une partielle Deepgram différente, sans parler avant le final', async () => {
+    const { session, mgr, outputs } = fixture();
+    outputs.push(
+      turn({ say: 'Ancienne réponse à écarter.' }),
+      turn({ say: 'Pour quel jour souhaitez-vous réserver ?', awaiting: 'date' }),
+    );
+    speculateStructuredTurn(session, mgr, 'je peux arriver');
+    speculateStructuredTurn(session, mgr, 'Je voudrais réserver.');
+    expect(spoken()).toEqual([]);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    await processTranscriptStreaming(session, 'Je voudrais réserver.', mgr);
+    expect(mgr.streamStructuredCompletion).toHaveBeenCalledTimes(2);
+    expect(spoken()).toEqual(['Pour quel jour souhaitez-vous réserver ?']);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
   it('reprend après terrasse et refus de transfert, puis réserve sans relecture forcée (3d6e51c6)', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 3, customerName: 'Test' };
