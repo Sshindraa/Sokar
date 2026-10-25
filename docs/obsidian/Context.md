@@ -16,7 +16,8 @@
 - [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging Sending access/sokar.tech posee ; prod/allowlist intactes. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
 - [ ] SMS : staging livré. Prod : 40008 rejeté ; pas de rejeu ; SMS résa/WhatsApp off partout ; cause Telnyx à établir.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
-- [ ] Voix : hybride #586 / confirmation #587 livrés (`a0dd98b5`). Latence en branche : anticipation sur Ink complet, budget d’épellation écoulé déduit (800 ms, grâce min. 200), repère premier texte parlé ; seuil général DG inchangé. 1566 tests voix verts, gain réel à mesurer. Refus ambigu distinct ; clients off.
+- [ ] Voix : #586–#588 livrés (`22546523`), staging/prod et 4566 tests API verts. Ink complet anticipé, silence épellation déduit ; seuil DG inchangé. Gain téléphonique à mesurer ; clients off.
+- [ ] Naturel : phase 1 en branche, 1601 tests voix verts. Qualification Chez Sokar seul ; recette audio avant extension. Voir `voice-conversation-continuity.md`.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.

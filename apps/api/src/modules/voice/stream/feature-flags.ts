@@ -9,6 +9,17 @@ export function parseRestaurantIdList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** Phase de qualification : aucune extension client implicite. Liste vide par défaut. */
+export function conversationContinuityEnabledFor(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(
+    restaurantId &&
+    parseRestaurantIdList(env.VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS).includes(restaurantId),
+  );
+}
+
 export interface VoiceFeatureSnapshot {
   deepgramModel: VoiceDeepgramModel;
   deepgramNumeralsEnabled: boolean;

@@ -12,7 +12,7 @@
 #   reservation     (sync-reservation-token)   obligatoire
 #   provider        (sync-staging-provider-config) optionnel, staging seulement
 #   stripe-prices   (sync-stripe-prices)       obligatoire, contrôle du catalogue Stripe
-#   voice-stt                                  optionnel, restaurants où Ink-2 fournit le texte
+#   voice-stt                                  optionnel, qualification STT et continuité voix
 #
 # Groupes optionnels : une variable vide est ignorée (configuration existante
 # conservée). Groupes obligatoires : une variable vide ou invalide arrête le
@@ -81,7 +81,7 @@ case "$GROUP" in
   voice-stt)
     MODE=optional
     FILES="api"
-    KEYS="VOICE_STT_INK_RESTAURANT_IDS VOICE_STT_INK_REPLACE_RESTAURANT_IDS"
+    KEYS="VOICE_STT_INK_RESTAURANT_IDS VOICE_STT_INK_REPLACE_RESTAURANT_IDS VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS"
     ;;
   stripe-prices)
     MODE=required
@@ -127,7 +127,7 @@ is_valid() {
       [[ "$value" =~ ^\+[0-9]{7,15}(,[[:space:]]*\+[0-9]{7,15})*$ ]] ;;
     DEMO_REQUEST_NOTIFY_TO)
       [[ "$value" =~ ^[^[:space:],@]+@[^[:space:],@]+(,[^[:space:],@]+@[^[:space:],@]+)*$ ]] ;;
-    VOICE_STT_INK_RESTAURANT_IDS|VOICE_STT_INK_REPLACE_RESTAURANT_IDS)
+    VOICE_STT_INK_RESTAURANT_IDS|VOICE_STT_INK_REPLACE_RESTAURANT_IDS|VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS)
       [[ "$value" =~ ^[0-9a-f-]{36}(,[0-9a-f-]{36})*$ ]] ;;
     SOKAR_OPERATOR_USER_IDS)
       [[ "$value" =~ ^user_[A-Za-z0-9_-]+(,user_[A-Za-z0-9_-]+)*$ ]] ;;

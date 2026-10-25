@@ -73,6 +73,8 @@ import { replyContentNotFullyHeard } from '../interrupted-reply';
 import { buildStructuredTurnMessages, type StructuredRecoveryKind } from './prompt';
 import { cancelSpeculation, startSpeculation, takeSpeculation } from './speculation';
 import { PhraseSplitter, SayStreamExtractor } from './say-stream';
+import { replyScopeOf } from './reply-scope';
+import { conversationContinuityEnabledFor } from '../feature-flags';
 import { createTurnFiller, waitForVoiceFiller } from '../voice-filler';
 
 /** Le modèle a répondu, mais sans rien d'exploitable : ce n'est pas une panne du fournisseur. */
@@ -380,6 +382,14 @@ function passRequest(
 ) {
   // Le ton n'a d'effet que sur la voix ElevenLabs Dialogue : ailleurs, le modèle ne le choisit pas.
   const tone = isElevenLabsDialogueEnabledFor(session.restaurantId);
+  const replyScope = conversationContinuityEnabledFor(session.restaurantId)
+    ? replyScopeOf(
+        state.lastAwaiting,
+        transcript,
+        history.filter((message) => message.role === 'assistant').at(-1)?.content ?? '',
+        state.reservationCreated,
+      )
+    : undefined;
   const secondOpinion = currentInkDisagreementNote(session, state.reservationCreated);
   const messages = buildStructuredTurnMessages({
     systemPrompt: session.systemPrompt,
@@ -395,13 +405,16 @@ function passRequest(
     today,
     dayPart: dayPartInTimezone(session.timezone || 'Europe/Paris'),
     understanding: true,
+    ...(replyScope ? { replyScope } : {}),
     ...(tone ? { tone } : {}),
     ...extra,
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
   // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
   const format = responseFormat(
-    extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined),
+    replyScope
+      ? ['none']
+      : (extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined)),
     {
       turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
       understanding: true,
@@ -527,6 +540,14 @@ export async function runStructuredTurn(
     state.dayAvailability = null;
   }
   const historyBefore = [...session.history];
+  const replyScope = conversationContinuityEnabledFor(session.restaurantId)
+    ? replyScopeOf(
+        state.lastAwaiting,
+        transcript,
+        historyBefore.filter((message) => message.role === 'assistant').at(-1)?.content ?? '',
+        state.reservationCreated,
+      )
+    : undefined;
   const ttsPromises: Promise<void>[] = [];
   // Toutes les phrases d'une réponse partent dans un même contexte TTS (Cartesia ou ElevenLabs) :
   // intonation continue et plus de blanc entre deux phrases (appels 0d49230d,
@@ -609,11 +630,13 @@ export async function runStructuredTurn(
 
   // Nom que le modèle propose à ce tour (lu dans le flux avant `say`) : la voix doit aussi le recevoir en casse de nom propre.
   let proposedName = '';
+  let replyAwaiting: StructuredTurnOutput['awaiting'] | undefined;
   const voiced = (phrase: string) =>
     nameForSpeech(nameForSpeech(phrase, state.draft.customerName), proposedName);
 
   const speakPhrase = (phrase: string) => {
     if (!isLive()) return;
+    session.agentReplyAwaiting = replyAwaiting;
     if (!firstPhraseSpoken) {
       // La relance a parlé : son début de phrase a reçu sa réponse.
       if (options.callerFinished) state.unansweredFragment = null;
@@ -701,7 +724,9 @@ export async function runStructuredTurn(
       const complete =
         finished ||
         (judged === undefined ? false : judged === null ? turnComplete === true : judged);
-      return complete && !slotConflict;
+      // Ces courtes clarifications attendent la sortie complète pour contrôler aussi
+      // que le brouillon n'a pas changé. Aucun congé ni fait réécrit ne part en streaming.
+      return complete && !slotConflict && !replyScope;
     };
     // Premiers mots avant la fin de la première phrase : seulement quand la voix a déjà le droit de partir (action,
     // fin de tour, créneau, tous lus avant `say`) et qu'aucun garde-fou ne juge la phrase entière (relecture du nom,
@@ -746,6 +771,11 @@ export async function runStructuredTurn(
         if (match) turnComplete = match[1] === 'true';
       }
       action ??= /"action"\s*:\s*"([a-z_]+)"/.exec(extractor.raw)?.[1] ?? null;
+      // `awaiting` précède `say` : protéger le oui d'une confirmation avant même
+      // la mise à jour définitive de lastAwaiting.
+      replyAwaiting = /"awaiting"\s*:\s*"([A-Za-z]+)"/.exec(extractor.raw)?.[1] as
+        | StructuredTurnOutput['awaiting']
+        | undefined;
       replyTone ??= /"tone"\s*:\s*"([a-z]+)"/.exec(extractor.raw)?.[1] ?? null;
       // Créneau exclu par les disponibilités lues : le brouillon arrive avant `say`, on se tait avant
       // toute promesse et le passage suivant reçoit les faits réels (voir plus bas).
@@ -863,8 +893,19 @@ export async function runStructuredTurn(
     }
     let finalOutput = output;
     const wouldSpeak =
-      output.action === 'none' && (output.turnComplete || finished) && !slotConflict;
+      output.action === 'none' &&
+      (output.turnComplete || finished) &&
+      !slotConflict &&
+      (!replyScope ||
+        authorizeStructuredAction(state, output, state.draft, {
+          maxPartySize: voiceMaxPartySize(session),
+          replyScope,
+        }).allowed);
     if (wouldSpeak) {
+      if (replyScope && unsaid) {
+        splitter.push(unsaid).forEach(emit);
+        unsaid = '';
+      }
       const rest = splitter.flush();
       if (rest) emit(rest);
       questionOnly.finish().forEach(route);
@@ -1037,7 +1078,11 @@ export async function runStructuredTurn(
       armIncompleteTurnTimer(session, mgr, transcript, startedAt);
       return;
     }
-    const applied = applyProposedDraft(state.draft, first.output, { today });
+    const applied = applyProposedDraft(
+      state.draft,
+      replyScope ? { ...first.output, draft: state.draft } : first.output,
+      { today },
+    );
     state.draft = reconcileSpelledName(
       applied.draft,
       transcript,
@@ -1067,6 +1112,7 @@ export async function runStructuredTurn(
       maxPartySize: voiceMaxPartySize(session),
       recapHeard: !recapCut,
       transcriptWords: wordCount(transcript),
+      ...(replyScope ? { replyScope } : {}),
     });
     recordVoiceTurnEvent(session, 'structured_turn', {
       pass: 1,
@@ -1121,7 +1167,11 @@ export async function runStructuredTurn(
       state.recapCutBlockedKey = bookingId;
       actionResult = `La réservation n'est PAS encore faite : l'appelant a répondu avant d'avoir entendu tout le récapitulatif (il n'a pas entendu : « ${cutReply.unheard} »). Donne-lui brièvement la partie manquante, sans recopier ce qu'il a déjà entendu, et redemande son accord (awaiting=confirmation).`;
     } else if (!decision.allowed) {
-      if (first.output.action === 'end_call') {
+      if (decision.reason === 'reply_scope_required') {
+        noHangUp = true;
+        actionResult =
+          'Aucune action exécutée : la réponse brève concerne la proposition précédente, sans autoriser cette action. Suis PORTÉE DE LA RÉPONSE et pose la question utile pour poursuivre ou clarifier, sans reprendre tout le récapitulatif.';
+      } else if (first.output.action === 'end_call') {
         // Congé refusé (énoncé long que le modèle n'a pas compris) : le second passage ne peut plus raccrocher.
         noHangUp = true;
         actionResult = `Action end_call non exécutée (${decision.reason}). Ce n'est pas un au revoir : ne prends pas congé, dis à l'appelant avec tes mots que tu n'as pas bien compris et demande-lui de répéter.`;
@@ -1192,7 +1242,20 @@ export async function runStructuredTurn(
       if (!isLive()) return;
       const second = await runPass(actionResult, noHangUp ? ['none'] : undefined);
       if (!isLive()) return;
-      const reapplied = applyProposedDraft(state.draft, second.output, { today });
+      if (
+        replyScope &&
+        !authorizeStructuredAction(state, second.output, state.draft, {
+          maxPartySize: voiceMaxPartySize(session),
+          replyScope,
+        }).allowed
+      ) {
+        throw new UnusableTurnOutputError('Reply scope clarification missing');
+      }
+      const reapplied = applyProposedDraft(
+        state.draft,
+        replyScope ? { ...second.output, draft: state.draft } : second.output,
+        { today },
+      );
       state.draft = reconcileSpelledName(
         reapplied.draft,
         transcript,

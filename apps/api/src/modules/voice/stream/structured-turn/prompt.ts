@@ -1,5 +1,6 @@
 import { normalizeOpeningHours } from '@sokar/shared';
 import { nameLetterSequence, nameLettersData } from './name-readback';
+import { replyScopeInstruction, type ReplyScope } from './reply-scope';
 import type { ChatMessage } from '../types';
 import { spelledLettersOf, type DayAvailability, type StructuredTurnState } from './fact-guards';
 
@@ -205,6 +206,8 @@ export function buildStructuredTurnMessages(input: {
   recovery?: StructuredRecoveryKind;
   /** Récapitulatif complet entendu et toujours identique au brouillon. */
   canResumeConfirmation?: boolean;
+  /** Portée d'une réponse brève à la proposition précédente ; aucune action avant clarification. */
+  replyScope?: ReplyScope;
   /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
   understanding?: boolean;
   /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
@@ -244,6 +247,9 @@ export function buildStructuredTurnMessages(input: {
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
       : '',
     `ÉTAT VÉRIFIÉ : ${JSON.stringify(verified)}`,
+    input.replyScope
+      ? `PORTÉE DE LA RÉPONSE : ${replyScopeInstruction(input.replyScope)} Aucun fait nouveau n'est donné : draft reste exactement celui de l'ÉTAT VÉRIFIÉ jusqu'à une correction explicite.`
+      : '',
     input.actionResult
       ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
       : '',
