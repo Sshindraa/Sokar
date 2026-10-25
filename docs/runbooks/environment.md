@@ -441,6 +441,11 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # à VOICE_STT_INK_REPLACE_RESTAURANT_IDS ; cette liste seule n'ouvre aucune connexion Ink.
 # Aucun remplacement général fondé sur la seule présence d'une clé. Ce retrait de priorité ne démontre
 # pas que Deepgram reconnaît mieux : qualifier les deux hypothèses avec un audio de référence.
+# Les deltas Ink sont concaténés à l'identique, et seul `flush_done` rend la transcription disponible.
+# Un seul `finalize` est en vol ; une reprise déjà présente à la fin Deepgram est finalisée ensuite.
+# Réponse complète vide : Deepgram pour ce tour. Timeout : Deepgram pour le reste de l'appel,
+# socket Ink fermée pour éviter qu'une réponse tardive ne contamine le prochain tour.
+# Mots isolés : réponse Ink ignorée jusqu'à flush_done ; si le tour suivant arrive avant, fermeture Ink.
 # Ink reçoit seulement la voix (0,5 s avant, 1 s après), au même codec que Deepgram ; attente bornée
 # VOICE_STT_INK_WAIT_MS (250 ms par défaut, 50 à 1000) sur les seuls appels de comparaison.
 # Logs généraux : source sélectionnée, longueurs et empreintes des hypothèses, jamais le texte.
