@@ -455,6 +455,10 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # Coût : 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel ; compteur Redis quotidien.
 VOICE_STT_INK_RESTAURANT_IDS=""
 VOICE_STT_INK_REPLACE_RESTAURANT_IDS=""
+# Phase 1 naturel : refus/accords liés à la proposition précédente et acquiescements pendant une
+# explication. Liste UUID vide par défaut ; qualification sur restaurant de test uniquement.
+# Même groupe `scripts/ops/sync-env.sh voice-stt`, aucune clé fournisseur ni réglage TTS modifié.
+VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=""
 # Secours Ink-2 quand Deepgram tombe, pour tous les restaurants (`CARTESIA_API_KEY`) : au lieu de
 # déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
 # (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du

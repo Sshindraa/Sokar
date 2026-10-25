@@ -1405,6 +1405,127 @@ describe('tour structuré (canary)', () => {
     expect(session.structuredTurn?.reservationCreated).toBe(true);
   });
 
+  it('un refus bref du transfert garde le brouillon et bloque un raccrochage proposé à tort', async () => {
+    vi.stubEnv('VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS', RESTAURANT_ID);
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 3, customerName: 'Test' };
+    session.structuredTurn = {
+      ...createStructuredTurnState(),
+      draft,
+      lastAwaiting: 'humanFallback',
+      resumableRecapKey: bookingKey(draft),
+      availability: { date: draft.date, partySize: 3, slots: ['20:00'] },
+    };
+    session.history.push({
+      role: 'assistant',
+      content: 'Je vous passe le gérant pour la terrasse ?',
+    });
+    outputs.push(
+      turn({
+        draft: { ...draft, partySize: 8 },
+        action: 'end_call',
+        interpretation: 'end_call',
+        say: 'Au revoir.',
+      }),
+      turn({
+        draft,
+        interpretation: 'decline',
+        awaiting: 'confirmationResume',
+        say: 'On confirme votre table ?',
+      }),
+    );
+    await processTranscriptStreaming(session, 'Non, pas besoin.', mgr);
+    expect(spoken().join(' ')).toBe('On confirme votre table ?');
+    expect(session.ended).toBe(false);
+    expect(session.structuredTurn?.draft).toEqual(draft);
+    expect(session.structuredTurn?.resumableRecapKey).toBe(bookingKey(draft));
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    for (const [, messages, format] of vi.mocked(mgr.streamStructuredCompletion).mock.calls) {
+      expect(JSON.stringify(messages)).toContain('PORTÉE DE LA RÉPONSE');
+      expect(
+        (format as { json_schema: { schema: { properties: { action: { enum: string[] } } } } })
+          .json_schema.schema.properties.action.enum,
+      ).toEqual(['none']);
+    }
+    outputs.push(
+      turn({ draft, interpretation: 'affirmation', action: 'create_reservation' }),
+      turn({ draft, say: 'Votre table est réservée.' }),
+    );
+    await processTranscriptStreaming(session, 'Oui.', mgr);
+    expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('un non au récapitulatif demande ce qui change sans réserver ni terminer', async () => {
+    vi.stubEnv('VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS', RESTAURANT_ID);
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 3, customerName: 'Test' };
+    session.structuredTurn = {
+      ...createStructuredTurnState(),
+      draft,
+      lastAwaiting: 'confirmation',
+      recapKey: bookingKey(draft),
+    };
+    session.history.push({
+      role: 'assistant',
+      content: 'Demain à vingt heures pour trois, au nom de Test. Je réserve ?',
+    });
+    outputs.push(
+      turn({
+        draft,
+        interpretation: 'decline',
+        awaiting: 'open',
+        say: 'Que souhaitez-vous modifier ?',
+      }),
+    );
+    await processTranscriptStreaming(session, 'Non.', mgr);
+    expect(spoken()).toEqual(['Que souhaitez-vous modifier ?']);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    expect(session.ended).toBe(false);
+    expect(session.structuredTurn?.resumableRecapKey).toBeNull();
+  });
+
+  it('un abandon explicite après proposition de transfert reste respecté', async () => {
+    vi.stubEnv('VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS', RESTAURANT_ID);
+    vi.useFakeTimers();
+    const { session, mgr, outputs } = fixture();
+    session.structuredTurn = { ...createStructuredTurnState(), lastAwaiting: 'humanFallback' };
+    session.history.push({ role: 'assistant', content: 'Je vous passe le gérant ?' });
+    outputs.push(turn({ interpretation: 'end_call', action: 'end_call', say: 'Au revoir.' }));
+    const pending = processTranscriptStreaming(
+      session,
+      'Non, laissez tomber la réservation, au revoir.',
+      mgr,
+    );
+    await vi.advanceTimersByTimeAsync(16_000);
+    await pending;
+    vi.useRealTimers();
+    expect(
+      JSON.stringify(vi.mocked(mgr.streamStructuredCompletion).mock.calls[0][1]),
+    ).not.toContain('PORTÉE DE LA RÉPONSE');
+    expect(spoken().join(' ')).toContain('Au revoir.');
+    expect(mgr.cleanup).toHaveBeenCalledWith(session);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('un oui entre transfert et message ne déclenche aucune des deux actions', async () => {
+    vi.stubEnv('VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS', RESTAURANT_ID);
+    const { session, mgr, outputs } = fixture();
+    session.structuredTurn = { ...createStructuredTurnState(), lastAwaiting: 'humanFallback' };
+    session.history.push({
+      role: 'assistant',
+      content: 'Je vous passe le gérant ou je prends un message ?',
+    });
+    outputs.push(
+      turn({ interpretation: 'affirmation', action: 'transfer' }),
+      turn({ awaiting: 'humanFallback', say: 'Vous préférez le transfert ou le message ?' }),
+    );
+    await processTranscriptStreaming(session, 'Oui.', mgr);
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.recordCallerMessage).not.toHaveBeenCalled();
+    expect(spoken()).toEqual(['Vous préférez le transfert ou le message ?']);
+  });
+
   it('crée la réservation après un oui au récapitulatif', async () => {
     const { session, mgr, outputs } = fixture();
     const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'Akkif' };

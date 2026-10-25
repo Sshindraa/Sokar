@@ -8,6 +8,7 @@ import {
 } from './caller-voice-activity';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
+import { clearBackchannelCandidate, handleCallerBackchannel } from './caller-backchannel';
 import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1082,6 +1083,7 @@ function emitPartialTranscript(
   allowBargeIn = hasBargeInWordThreshold(echo);
   // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
+  if (handleCallerBackchannel(session, cleanTranscript, 'partial', words)) return;
 
   if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
@@ -1171,6 +1173,13 @@ function dispatchCommittedTranscript(
       },
       '[stt] Ignoring a repeat of the turn just processed',
     );
+    resetSttTurnDiagnostics(session);
+    return;
+  }
+
+  if (handleCallerBackchannel(session, cleanTranscript, 'committed', words)) {
+    if (timing?.speechEndAt !== undefined) session.sttConsumedSpeechEndAt = timing.speechEndAt;
+    session.turnPartials = [];
     resetSttTurnDiagnostics(session);
     return;
   }
@@ -1999,6 +2008,7 @@ export function handleNormalizedSttMessage(
       }
       return;
     case 'speech_started':
+      clearBackchannelCandidate(session);
       cancelNoInputRecovery(session);
       session.sttLastSpeechStartedAt =
         event.speechStartOffsetMs !== undefined &&

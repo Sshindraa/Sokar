@@ -7,6 +7,7 @@
 import { normalizeOpeningHours } from '@sokar/shared';
 import { readbackInstruction } from './name-readback';
 import type { StructuredTurnDraft, StructuredTurnOutput } from './schema';
+import type { ReplyScope } from './reply-scope';
 
 export type DraftField = keyof StructuredTurnDraft;
 
@@ -726,8 +727,21 @@ export function authorizeStructuredAction(
   state: StructuredTurnState,
   output: StructuredTurnOutput,
   draft: StructuredTurnDraft,
-  context: { maxPartySize: number; recapHeard?: boolean; transcriptWords?: number },
+  context: {
+    maxPartySize: number;
+    recapHeard?: boolean;
+    transcriptWords?: number;
+    replyScope?: ReplyScope;
+  },
 ): ActionDecision {
+  if (
+    context.replyScope &&
+    (output.action !== 'none' ||
+      output.awaiting === 'none' ||
+      bookingKey(output.draft) !== bookingKey(state.draft))
+  ) {
+    return { allowed: false, reason: 'reply_scope_required' };
+  }
   // Une fois la réservation créée, rien n'est en jeu : un énoncé COURT que le modèle ne comprend pas est un au
   // revoir mal transcrit (appel 6a70dff9 : « Bisous » transcrit « dix-nous »). Un long reste un doute.
   // Et seulement si la phrase précédente de l'agent n'attendait rien : après une question (« Autre chose ? »),
