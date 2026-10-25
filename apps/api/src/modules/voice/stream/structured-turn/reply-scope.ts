@@ -40,13 +40,17 @@ export function replyScopeOf(
   }
   if (awaiting === 'humanFallback' && /^(?:oui|ouais|d accord|ok|okay|yes|yeah|sure)$/.test(text)) {
     // Un oui ne choisit pas entre deux options. Une seule option clairement proposée reste acceptée.
-    const proposal = normalize(lastAssistantText);
+    // Seule la proposition actuelle compte : « Je ne peux pas prendre de message.
+    // Je vous passe le gérant ? » ne propose pas deux options.
+    const proposal = normalize(
+      lastAssistantText.match(/[^.!?…]+[.!?…]?/gu)?.at(-1) ?? lastAssistantText,
+    );
     const transfer =
       /\b(?:transfer\w*|passe\w*|put you through)\b|\b(?:gerant|restaurant|manager) ou\b|\bou (?:le )?(?:gerant|manager)\b/u.test(
         proposal,
       );
     const message = /\b(?:message|rappel|callback)\b/u.test(proposal);
-    if (transfer && message) return 'choose_human_fallback';
+    if (transfer && message && /\b(?:ou|or)\b/u.test(proposal)) return 'choose_human_fallback';
   }
   return undefined;
 }

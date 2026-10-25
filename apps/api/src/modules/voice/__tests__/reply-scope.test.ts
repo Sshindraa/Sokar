@@ -46,6 +46,20 @@ describe('portée des réponses à une proposition', () => {
     expect(
       replyScopeOf('humanFallback', 'Oui.', 'Je prends un message pour le gérant ?'),
     ).toBeUndefined();
+    expect(
+      replyScopeOf(
+        'humanFallback',
+        'Oui.',
+        'Je ne peux pas prendre de message. Je vous passe le gérant ?',
+      ),
+    ).toBeUndefined();
+    expect(
+      replyScopeOf(
+        'humanFallback',
+        'Oui.',
+        'Je vous passe le gérant pour lui transmettre votre message ?',
+      ),
+    ).toBeUndefined();
     expect(replyScopeOf('confirmation', 'Oui.')).toBeUndefined();
   });
 
