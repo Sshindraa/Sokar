@@ -86,13 +86,22 @@ const DEFAULT_VOICE_LLM_FIRST_CHUNK_TIMEOUT_MS = 2500;
  * Production mode is deliberately the only environment where they are
  * accepted; staging runs with NODE_ENV=production but uses sk_test_* keys.
  */
-/**
- * La clé du fournisseur de reconnaissance vocale choisi est définie (≥20 caractères). Seule la clé du fournisseur
- * en service est exigée : avec Deepgram, aucune clé ElevenLabs.
- */
-export function hasSttProviderKey(data: { DEEPGRAM_API_KEY?: string }): boolean {
-  const key = data.DEEPGRAM_API_KEY;
-  return !!key && key.length >= 20;
+/** Choix global du STT téléphonique ; Deepgram reste un retour arrière explicite. */
+export const voiceSttProviderSchema = z.enum(['cartesia', 'deepgram']).default('cartesia');
+
+export function resolveVoiceSttProvider(env: { VOICE_STT_PROVIDER?: string } = process.env) {
+  return voiceSttProviderSchema.parse(env.VOICE_STT_PROVIDER);
+}
+
+/** Seule la clé du fournisseur STT sélectionné est exigée. */
+export function hasSttProviderKey(data: {
+  VOICE_STT_PROVIDER?: string;
+  DEEPGRAM_API_KEY?: string;
+  CARTESIA_API_KEY?: string;
+}): boolean {
+  const key =
+    resolveVoiceSttProvider(data) === 'cartesia' ? data.CARTESIA_API_KEY : data.DEEPGRAM_API_KEY;
+  return !!key && key.trim().length >= 20;
 }
 
 /**
@@ -334,6 +343,7 @@ const EnvSchema = z
       .max(200_000_000)
       .default(50_000_000),
     ELEVENLABS_API_KEY: z.string().optional(),
+    VOICE_STT_PROVIDER: voiceSttProviderSchema,
     DEEPGRAM_API_KEY: z.string().optional(),
     CARTESIA_API_KEY: z.string().optional(),
     // Dictionnaire Cartesia global de secours ; une personnalité peut en
@@ -524,13 +534,13 @@ const EnvSchema = z
       if (data.NODE_ENV !== 'production') return true;
       const voiceDisabled = process.env.VOICE_DISABLED === 'true';
       if (voiceDisabled) return true;
-      // Deepgram est le seul fournisseur de reconnaissance : seule sa clé est exigée.
+      // Valider uniquement la clé du fournisseur STT sélectionné.
       return hasSttProviderKey(data);
     },
     {
       message:
-        'En production, la clé de reconnaissance vocale doit être définie (≥20 chars) : DEEPGRAM_API_KEY. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
-      path: ['DEEPGRAM_API_KEY'],
+        'En production, la clé du fournisseur VOICE_STT_PROVIDER doit être définie (≥20 chars) : CARTESIA_API_KEY ou DEEPGRAM_API_KEY. Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['VOICE_STT_PROVIDER'],
     },
   )
   .refine(

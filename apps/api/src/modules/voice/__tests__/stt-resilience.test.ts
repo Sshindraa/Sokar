@@ -104,6 +104,74 @@ describe('résilience STT', () => {
     vi.clearAllMocks();
   });
 
+  it('Ink principal : une seule socket Cartesia, aucun besoin de Deepgram et heure complète au turn.end', async () => {
+    vi.stubEnv('VOICE_STT_PROVIDER', undefined);
+    vi.stubEnv('DEEPGRAM_API_KEY', '');
+    vi.stubEnv('CARTESIA_API_KEY', ['test', 'cartesia', 'provider', 'token'].join('-'));
+    vi.stubEnv('VOICE_STT_CHUNK_MS', '20');
+    // Même si les anciens flags parallèles restent configurés, aucune seconde socket.
+    vi.stubEnv('VOICE_STT_INK_RESTAURANT_IDS', 'restaurant-stt-resilience');
+    const session = makeSession();
+    session.codec = 'PCMA';
+    const onEvent = vi.fn();
+    const { socket, handlers } = makeConnectingSocket();
+    const createSocket = vi.fn(
+      (_url: string, _options: { headers: Record<string, string> }) => socket,
+    );
+    const attempt = connectStt(session, onEvent, createSocket);
+    Object.defineProperty(socket, 'readyState', { value: WebSocket.OPEN });
+    handlers.get('open')?.();
+    await attempt;
+    const url = new URL(createSocket.mock.calls[0]![0]);
+    expect(url.host).toBe('api.cartesia.ai');
+    expect(url.pathname).toBe('/stt/turns/websocket');
+    expect(url.searchParams.get('encoding')).toBe('pcm_alaw');
+    expect(session.sttInk).toBeUndefined();
+    expect(session.sttProviderUsed).toBe('cartesia-ink-2');
+    sendAudioToStt(session, Buffer.from([0xd5]).toString('base64'));
+    expect(socket.send).toHaveBeenCalledWith(Buffer.from([0xd5]), { binary: true });
+    const receive = (message: object) =>
+      (handlers.get('message') as (data: Buffer) => void)(Buffer.from(JSON.stringify(message)));
+    receive({ type: 'turn.start' });
+    receive({ type: 'turn.update', transcript: '1' });
+    receive({ type: 'turn.eager_end', transcript: '16h30.' });
+    receive({ type: 'turn.resume' });
+    expect(onEvent.mock.calls.filter(([e]) => e.type === 'UtteranceEnd')).toHaveLength(0);
+    receive({ type: 'turn.end', transcript: '16h30.' });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'UtteranceEnd',
+        transcript: '16h30.',
+        transcriptProvider: 'cartesia-ink-2',
+      }),
+    );
+    expect(createSocket).toHaveBeenCalledTimes(1);
+    closeStt(session);
+  });
+
+  it('Ink principal : un refus de clé suit le transfert existant sans ouvrir Deepgram', async () => {
+    vi.stubEnv('VOICE_STT_PROVIDER', 'cartesia');
+    vi.stubEnv('CARTESIA_API_KEY', ['test', 'cartesia', 'provider', 'token'].join('-'));
+    const session = makeSession();
+    const onEvent = vi.fn();
+    const { socket, handlers } = makeConnectingSocket();
+    const createSocket = vi.fn(
+      (_url: string, _options: { headers: Record<string, string> }) => socket,
+    );
+    const attempt = connectStt(session, onEvent, createSocket);
+    handlers.get('unexpected-response')?.(
+      {} as never,
+      { statusCode: 401, resume: vi.fn() } as never,
+    );
+    await expect(attempt).rejects.toThrow('HTTP 401');
+    expect(createSocket).toHaveBeenCalledTimes(1);
+    expect(session.sttAdapter?.id).toBe('cartesia');
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'Unavailable', reason: 'auth' }),
+    );
+    closeStt(session);
+  });
+
   it('sur 401 simulé, ne tente qu’une connexion, parle une fois puis transfère au gérant', async () => {
     const session = makeSession('+33100000002');
     session.state = 'LISTENING';
@@ -223,7 +291,9 @@ describe('résilience STT', () => {
     vi.stubEnv('DEEPGRAM_API_KEY', 'test-only-provider-token');
     const session = makeSession();
     const { socket, handlers } = makeConnectingSocket();
-    const createSocket = vi.fn(() => socket);
+    const createSocket = vi.fn(
+      (_url: string, _options: { headers: Record<string, string> }) => socket,
+    );
     connectStt(session, vi.fn(), createSocket).catch(() => undefined);
 
     Object.defineProperty(socket, 'readyState', { value: WebSocket.OPEN });

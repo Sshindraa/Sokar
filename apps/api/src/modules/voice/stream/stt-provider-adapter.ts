@@ -252,7 +252,7 @@ export function createDeepgramSttAdapter(options: SttProviderAdapterOptions): St
 }
 
 /**
- * Cartesia Ink-2 en mode tours (`/stt/turns/websocket`), STT de secours quand Deepgram tombe : Ink-2 décide
+ * Cartesia Ink-2 en mode tours (`/stt/turns/websocket`), STT principal par défaut : Ink-2 décide
  * lui-même de la fin de phrase (`turn.end`), rendue comme une phrase validée (`turn_commit`). Plus lent que
  * Deepgram pour clore une phrase (banc du 22/10/2026 : médiane 0,5 s, p90 1,6 s avec
  * `turn_end_timeout_ms=1500`), mais un appel continue au lieu d'être coupé.
@@ -330,7 +330,7 @@ export function createCartesiaTurnsSttAdapter(
   };
 }
 
-/** Délai maximal avant qu'Ink-2 clôe un tour en secours : 1,5 s (5,6 s par défaut chez Cartesia). */
+/** Délai maximal avant qu'Ink-2 clôture un tour : 1,5 s (5,6 s par défaut chez Cartesia). */
 export const CARTESIA_FALLBACK_TURN_END_TIMEOUT_MS = 1_500;
 
 export function buildCartesiaTurnsUrl(

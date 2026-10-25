@@ -47,7 +47,7 @@ import {
 import { resolveVoiceFeatureSnapshot } from './feature-flags';
 import { addSttAudioSamples } from '../../usage/voice-usage.service';
 import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
-import { voiceConfig } from '../../../env';
+import { resolveVoiceSttProvider, voiceConfig } from '../../../env';
 import { filterAssistantEcho, hasBargeInWordThreshold } from './assistant-echo';
 import {
   describeInterruptionEvidence,
@@ -324,15 +324,18 @@ export function buildDeepgramSttUrl(
   return `wss://${voiceConfig.DEEPGRAM_API_HOST}/v1/listen?${params.toString()}`;
 }
 
-/** Fournisseur de reconnaissance de la session (« deepgram », « cartesia » en secours), pour les journaux. */
+/** Fournisseur STT figé pour la session, pour les journaux et le transport audio. */
 export function sttProviderId(session: CallSession): SttProviderAdapter['id'] {
   return sttAdapterForSession(session).id;
 }
 
 function sttAdapterForSession(session: CallSession): SttProviderAdapter {
-  return (session.sttAdapter ??= createDeepgramSttAdapter({
-    model: resolveVoiceFeatureSnapshot(session).deepgramModel,
-  }));
+  return (session.sttAdapter ??=
+    resolveVoiceSttProvider() === 'cartesia'
+      ? createCartesiaTurnsSttAdapter({ model: 'ink-2' })
+      : createDeepgramSttAdapter({
+          model: resolveVoiceFeatureSnapshot(session).deepgramModel,
+        }));
 }
 
 interface SttTurnTiming {

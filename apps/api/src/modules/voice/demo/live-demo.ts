@@ -1,3 +1,4 @@
+import { resolveVoiceSttProvider } from '../../../env';
 import { randomBytes } from 'node:crypto';
 import type { Redis } from 'ioredis';
 
@@ -30,7 +31,9 @@ export function liveDemoUnavailableReason(
   env: NodeJS.ProcessEnv = process.env,
 ): LiveDemoUnavailableReason | null {
   if (env.VOICE_DISABLED === 'true') return 'voice_disabled';
-  if (!env.DEEPGRAM_API_KEY?.trim()) return 'stt_unconfigured';
+  const sttKey =
+    resolveVoiceSttProvider(env) === 'cartesia' ? env.CARTESIA_API_KEY : env.DEEPGRAM_API_KEY;
+  if (!sttKey?.trim()) return 'stt_unconfigured';
   if (!env.CARTESIA_API_KEY?.trim()) return 'tts_unconfigured';
   return null;
 }

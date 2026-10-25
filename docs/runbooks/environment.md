@@ -435,6 +435,7 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # Visites réelles lues dans les réservations (honorées, placées, ou confirmées passées ; annulées et absences
 # exclues), dernière visite, prochaine réservation, taille de groupe médiane, préférences saisies ou confirmées
 # par l'équipe, étiquettes ; client connu reconnu par principe, sans civilité devinée.
+# Chemin historique, actif uniquement si VOICE_STT_PROVIDER=deepgram.
 # Cartesia Ink-2 parallèle : désactivé par défaut. Clé seule insuffisante.
 # VOICE_STT_INK_RESTAURANT_IDS autorise la comparaison sur les restaurants de test choisis.
 # Deepgram reste la source du dialogue. Pour autoriser aussi le remplacement, ajouter le même restaurant
@@ -911,16 +912,32 @@ de réservation et la disponibilité. La provenance est stockée dans
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
-## Voice STT (Deepgram)
+## Voice STT (Cartesia Ink-2)
 
-Deepgram Nova-3 est le seul fournisseur de reconnaissance, pour tous les restaurants et sans réglage
-(ni `VOICE_STT_PROVIDER`, ni liste par restaurant). Les réglages Deepgram sont figés au début du Media
-Stream et restent identiques pendant l'appel. **Il n'y a plus de secours vers ElevenLabs Scribe** : si
-Deepgram ne s'ouvre pas (clé refusée, clé absente, réseau), l'appel suit le chemin « reconnaissance
-indisponible » existant (reconnexions à 500 ms, 1 s puis 2 s, échéance de 15 s, puis le message vocal et le
-transfert ; un refus d'authentification est terminal tout de suite). La clé `DEEPGRAM_API_KEY` est
-obligatoire en production ; `ELEVENLABS_API_KEY` ne sert plus qu'à la synthèse vocale.
-Ne l'utilisez jamais dans les scripts du banc : ceux-ci exigent une clé bench dédiée.
+`VOICE_STT_PROVIDER=cartesia` est le défaut pour les nouveaux appels : Ink-2
+transcrit et clôt les tours sur `/stt/turns/websocket`, sans socket Deepgram ni
+Ink manuel parallèle, même si les anciennes listes Ink sont encore renseignées.
+La clé `CARTESIA_API_KEY` est requise ; `DEEPGRAM_API_KEY` n'est plus requise pour
+les appels ni pour ouvrir la démonstration en direct.
+
+Le mode automatique utilise `turn.update` pour les partielles et attend
+`turn.end` avec le texte complet avant de valider le tour. `turn.eager_end`
+ne déclenche pas de réponse anticipée. Délai maximal configuré : 1 500 ms.
+Les mécanismes existants de grâce sur les épellations, d'interruption et de
+récupération des tours incomplets restent en place.
+
+Une panne Cartesia suit les reconnexions bornées et le parcours vocal de
+transfert/indisponibilité existants ; aucun secours automatique Deepgram.
+Retour arrière explicite : `VOICE_STT_PROVIDER=deepgram`, clé Deepgram requise,
+puis rechargement de l'API après les appels actifs. Le fournisseur reste figé
+pour toute session déjà créée.
+
+Les rapports audio après appel utilisent encore Deepgram Nova/Whisper comme
+oreilles indépendantes ; ils sont distincts du STT en direct. Leur worker
+continue d'exiger `DEEPGRAM_API_KEY`. Ne pas supprimer cette clé sans décider
+séparément du devenir des rapports. Voir `voice-ink-primary.md` pour la recette
+et l'activation ; une ancienne valeur `VOICE_STT_PROVIDER=deepgram` prend le
+pas sur le nouveau défaut et doit être remplacée explicitement.
 
 Le codec Telnyx reste PCMA par défaut. `VOICE_TELNYX_CODEC=L16` conserve le
 comportement PCMA pour tout appel sans allowlist explicite. L16 exige que
