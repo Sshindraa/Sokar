@@ -283,7 +283,7 @@ async function main() {
           `<h2>Paire ${id}</h2><p>A <audio controls preload="none" src="${id}-A.wav"></audio> B <audio controls preload="none" src="${id}-B.wav"></audio></p>`,
         );
         writeFileSync(`${out}/listen.html`, listen.join('\n') + '</html>');
-        scores.push(`${id},,,,,,,`);
+        scores.push(`${id},,,,,,`);
         writeFileSync(`${out}/scores.csv`, scores.join('\n') + '\n');
         // eslint-disable-next-line no-console
         console.log(`Paire ${id} générée`);
