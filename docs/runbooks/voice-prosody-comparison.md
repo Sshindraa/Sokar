@@ -15,7 +15,7 @@ de récapitulatif entendu et de consentement restent dans le moteur existant.
 `apps/api/scripts/voice-tts-bench/early-phrase.ts` compare le découpage actuel (`early`) à
 une première phrase complète (`whole`), via le vrai `PhraseSplitter` et les messages WebSocket
 partagés avec le runtime. Les deux variantes reçoivent le même texte au même rythme.
-Le découpage actif en production n'est pas modifié par cette comparaison.
+Le banc conserve les deux variantes pour comparaison ; le moteur de cette branche retient désormais les phrases complètes à la suite du choix utilisateur ci-dessous.
 
 Depuis `apps/api`, avec les secrets chargés dans l'environnement :
 
@@ -56,7 +56,7 @@ Artefacts locaux : `/Users/hamza/.codex/voice-prosody-2026-10-26/`.
 Ces médianes portent sur sept textes différents par cellule, sans répétition ; ce ne sont
 pas des estimations de latence téléphonique ni une preuve de préférence. Un trou dans la
 livraison audio est distinct d'une pause que la voix synthétise à l'intérieur des chunks.
-Aucune écoute humaine notée n'a encore départagé les variantes : **garder le découpage actuel**.
+À l'issue de cette génération, aucune écoute humaine notée n'avait encore départagé les variantes.
 Le banc simule deux débits réguliers ; il ne reproduit pas les à-coups du LLM, les fillers,
 le tampon et l'acheminement Telnyx, ni les interruptions réelles.
 
@@ -64,8 +64,24 @@ le tampon et l'acheminement Telnyx, ni les interruptions réelles.
 
 Qualifier d'abord #594 sur Chez Sokar : refus de transfert, reprise de réservation et
 consentement explicite ; oui d'écoute, correction d'heure, confirmation et épellation.
-Puis comparer les paires sans dévoiler les variantes (rythme, intonation, préférence).
-Une variante prosodique ne sera retenue qu'après préférence à l'écoute et recette téléphonique.
+La préférence audio est recueillie ci-dessous ; qualifier maintenant la variante retenue au téléphone.
 La cohérence des formulations doit aussi être vérifiée sur des échanges complets : question
 pratique au milieu d'une réservation, valeur fournie dans une question, jour proche ou éloigné,
 nom confirmé puis récapitulatif. Les tests de prompt vérifient le contrat, pas le naturel.
+
+## Choix utilisateur du 26 octobre
+
+Notes reçues : P1 B, P2 A, P3 B, P4 B, P5 A, P6 égalité, P7 A, P8 B, P9 A.
+Décodage : **phrase complète 6, virgule 2, égalité 1**. P10–P14 non notées ;
+l'utilisateur a choisi de poursuivre sans compléter ces paires. P8 et P9 reprennent les
+textes P1 et P2 à un débit différent : neuf choix ne sont pas neuf textes indépendants.
+
+Décision explicite : appliquer la phrase complète. Le moteur n'active plus la sortie anticipée
+à la virgule ; chaque phrase complète ElevenLabs conserve son flush immédiat et la première
+reçoit le ton, dans le même contexte TTS. Les contrôles de fin de tour, de consentement,
+d'action et d'épellation restent inchangés. Aucun délai supplémentaire fixe n'est ajouté.
+Le splitter conserve son option anticipée pour le banc de comparaison.
+
+Ce choix est une préférence exploratoire de l'utilisateur, pas une preuve de généralisation.
+L'attente du premier son peut augmenter (voir mesures ci-dessus). La recette téléphonique
+reste à faire avant extension ; aucune mise en production dans cette passe.

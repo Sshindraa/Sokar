@@ -1994,7 +1994,7 @@ describe('tour structuré (canary)', () => {
       });
     });
 
-    describe('premiers mots avant la fin de la première phrase', () => {
+    describe('phrases complètes ElevenLabs', () => {
       beforeEach(() => {
         contextTurn.provider = 'elevenlabs';
       });
@@ -2011,7 +2011,7 @@ describe('tour structuré (canary)', () => {
         });
       }
 
-      it('envoie les premiers mots dès la virgule, générés tout de suite, puis la suite', async () => {
+      it('garde le début à la virgule avec la phrase entière, puis envoie les suivantes', async () => {
         const { session, mgr, outputs } = fixture();
         judgeFirst(mgr);
         outputs.push(
@@ -2020,8 +2020,7 @@ describe('tour structuré (canary)', () => {
         await processTranscriptStreaming(session, 'je voudrais réserver demain', mgr);
 
         expect(contextTurn.push.mock.calls).toEqual([
-          ['Très bien,', { flush: true }],
-          ['pour combien de personnes ?', { flush: true }],
+          ['Très bien, pour combien de personnes ?', { flush: true }],
           ['Merci.', { flush: true }],
         ]);
         // L'historique garde la phrase du modèle, entière.
@@ -2030,7 +2029,7 @@ describe('tour structuré (canary)', () => {
         );
       });
 
-      it('le ton part avec les premiers mots, une seule fois', async () => {
+      it('le ton part avec la première phrase complète, une seule fois', async () => {
         vi.stubEnv('ELEVENLABS_API_KEY', 'test-only-elevenlabs-key');
         const { session, mgr, outputs } = fixture();
         judgeFirst(mgr);
@@ -2042,8 +2041,7 @@ describe('tour structuré (canary)', () => {
         await processTranscriptStreaming(session, "c'est pour les quarante ans de ma femme", mgr);
 
         expect(contextTurn.push.mock.calls).toEqual([
-          ['Oh, quarante ans,', { tone: 'cheerful', flush: true }],
-          ['quelle belle occasion.', { flush: true }],
+          ['Oh, quarante ans, quelle belle occasion.', { tone: 'cheerful', flush: true }],
           ['Vous serez combien ?', { flush: true }],
         ]);
       });
@@ -2090,7 +2088,7 @@ describe('tour structuré (canary)', () => {
         await processTranscriptStreaming(session, 'demain 20 heures pour deux', mgr);
 
         expect(pushed()).not.toContain('Un instant,');
-        expect(pushed()[0]).toBe('C’est possible,');
+        expect(pushed()[0]).toBe('C’est possible, à quel nom ?');
       });
 
       it('la relecture du nom n’est jamais coupée : elle reste retenue jusqu’à la vérification', async () => {

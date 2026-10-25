@@ -577,9 +577,6 @@ export async function runStructuredTurn(
     ...(options.callerFinished ? { callerFinished: true } : {}),
   });
   const spokenPhrases: string[] = [];
-  // Premiers mots de la réponse dits dès la première virgule (voir `PhraseSplitter`) : ElevenLabs seulement, qui
-  // génère alors ce début sans attendre la fin de phrase. Mesure du 21/10 : la voix part ~0,15 à 0,26 s plus tôt.
-  const earlyPhrase = contextTts?.provider === 'elevenlabs';
   // Ton choisi par le modèle (lu dans le flux, avant `say`) : il part avec la première phrase seulement,
   // la voix le garde pour la suite de la réponse. Jamais plus d'un par réponse.
   let replyTone: string | null = null;
@@ -621,7 +618,6 @@ export async function runStructuredTurn(
   };
   const startedAt = Date.now();
   let firstPhraseSpoken = false;
-  let earlyPhraseNext = false;
 
   session.turnCount++;
   session.history.push({ role: 'user', content: transcript });
@@ -646,9 +642,7 @@ export async function runStructuredTurn(
     }
     recordVoiceTurnEvent(session, 'llm_phrase_generated', {
       characterCount: phrase.length,
-      ...(earlyPhraseNext ? { early: true } : {}),
     });
-    earlyPhraseNext = false;
     // La voix surjoue les points d'exclamation sur une phrase courte (« Avec
     // plaisiiir ! », appel 0d49230d) : ton posé côté synthèse.
     phrase = phrase.replace(/\s*!/g, '.');
@@ -664,7 +658,7 @@ export async function runStructuredTurn(
       filler?.replyQueued();
       contextTts.push(cleanTextForTts(voiced(phrase), effectiveVoiceLanguage(session)), {
         ...toneForNextPhrase(),
-        ...(earlyPhrase ? { flush: true } : {}),
+        ...(contextTts.provider === 'elevenlabs' ? { flush: true } : {}),
       });
       return;
     }
@@ -728,20 +722,11 @@ export async function runStructuredTurn(
       // que le brouillon n'a pas changé. Aucun congé ni fait réécrit ne part en streaming.
       return complete && !slotConflict && !replyScope;
     };
-    // Premiers mots avant la fin de la première phrase : seulement quand la voix a déjà le droit de partir (action,
-    // fin de tour, créneau, tous lus avant `say`) et qu'aucun garde-fou ne juge la phrase entière (relecture du nom,
-    // « question seule »).
-    const earlyAllowed = () =>
-      earlyPhrase &&
-      !firstPhraseSpoken &&
-      readbackName === null &&
-      (Boolean(actionResult) || !timeGivenWithoutPartySize(extractor.raw, state.draft));
     const drainSaid = () => {
       if (!unsaid || action !== 'none' || !mayContinue() || !isLive()) return;
       const chunk = unsaid;
       unsaid = '';
-      const phrases = splitter.push(chunk, { early: earlyAllowed() });
-      earlyPhraseNext = splitter.early;
+      const phrases = splitter.push(chunk);
       phrases.forEach(emit);
     };
     const judgeSettled: Promise<void> = judging
