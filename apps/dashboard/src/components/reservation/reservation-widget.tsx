@@ -199,6 +199,11 @@ class PublicApiError extends Error {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Le message apparaît en haut du panneau, souvent défilé plus bas : le ramener sous les yeux du client.
+function revealOnMount(element: HTMLElement | null) {
+  element?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+}
+
 function toInternationalPhone(input: string): string {
   const normalized = input.replace(/\s/g, '');
   return normalized.startsWith('+') ? normalized : `+33${normalized.replace(/^0/, '')}`;
@@ -1602,6 +1607,7 @@ export default function ReservationWidget({
                 >
                   {error && (
                     <div
+                      ref={revealOnMount}
                       role="alert"
                       className="flex items-center gap-2 rounded-2xl border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
                     >
@@ -1612,6 +1618,7 @@ export default function ReservationWidget({
 
                   {(waitingListOffer || waitingListResult) && !modification && (
                     <div
+                      ref={error ? undefined : revealOnMount}
                       role="status"
                       aria-live="polite"
                       className="space-y-3 rounded-2xl border border-white/70 bg-white/45 p-4 text-sm text-[hsl(var(--reservation-ink))] shadow-sm backdrop-blur-2xl"
