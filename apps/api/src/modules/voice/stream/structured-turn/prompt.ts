@@ -204,8 +204,6 @@ export function buildStructuredTurnMessages(input: {
   recovery?: StructuredRecoveryKind;
   /** Vérification de compréhension (reading + understanding) ; absent : comportement historique. */
   understanding?: boolean;
-  /** Le fait de actionResult est une consigne de suite (rien n'a été exécuté), pas un résultat d'action. */
-  formulation?: boolean;
   /** Ton de voix (tone) demandé au modèle ; absent : comportement historique. */
   tone?: boolean;
   /** Deepgram et Ink-2 ont entendu un nombre de personnes différent dans la phrase de ce tour. */
@@ -242,11 +240,9 @@ export function buildStructuredTurnMessages(input: {
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`
       : '',
     `ÉTAT VÉRIFIÉ : ${JSON.stringify(verified)}`,
-    input.actionResult && input.formulation
-      ? `CONSIGNE DE SUITE (rien n'a été exécuté, ne la récite pas) : ${input.actionResult}\nFormule ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici. Enchaîne directement sur ce qui manque, ou sur la suite de l'appel si rien ne manque, sans reprendre ce qui est déjà retenu : ta question suffit à montrer que tu as compris.`
-      : input.actionResult
-        ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
-        : '',
+    input.actionResult
+      ? `RÉSULTAT D'ACTION (déjà exécutée, ne la redemande pas) : ${input.actionResult}\nFormule maintenant ta réponse dans « say » avec action=none, sauf end_call si l'appelant termine. « say » ne doit JAMAIS être vide ici : la consigne « laisse say vide » ne vaut que pour demander une action. Annonce le résultat, sans dire que tu vas vérifier.`
+      : '',
     input.secondOpinion ? buildSecondOpinionBlock(input.secondOpinion) : '',
     input.recovery ? `${RECOVERY_INSTRUCTIONS[input.recovery]}\n${RECOVERY_CONSTRAINTS}` : '',
     input.callerFinished

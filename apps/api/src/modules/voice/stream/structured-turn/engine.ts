@@ -60,7 +60,6 @@ import {
   timeGivenWithoutPartySize,
   QuestionOnlyGuard,
   wordCount,
-  isSlotVerified,
 } from './fact-guards';
 import { lettersOnly, nameForSpeech, readbackFact, sayReadsLetters } from './name-readback';
 import {
@@ -178,7 +177,6 @@ interface PassResult {
  * Sur 14 reprises réelles après un tour inachevé, l'appelant reprend en 1,0 à 4,4 s (médiane
  * ~2,2 s) ; réglable sans déploiement par VOICE_INCOMPLETE_TURN_SILENCE_MS.
  */
-import { askedAgainFact } from './asked-again';
 import { currentInkDisagreementNote } from '../stt-ink-parallel';
 
 export const INCOMPLETE_TURN_SILENCE_MS = 2_000;
@@ -371,8 +369,6 @@ function passRequest(
   today: string,
   extra: {
     actionResult?: string;
-    /** Le fait est une consigne de suite (rien n'a été exécuté), pas un résultat d'action. */
-    formulation?: boolean;
     callerFinished?: boolean;
     recovery?: StructuredRecoveryKind;
     /** Actions que le schéma autorise : le moteur peut en retirer (un congé refusé ne se rejoue pas). */
@@ -653,7 +649,6 @@ export async function runStructuredTurn(
     onlyActions?: readonly StructuredTurnAction[],
     forceFinished = false,
     useJudge = false,
-    formulation = false,
   ): Promise<PassResult> => {
     // Appelant jugé arrivé au bout de sa phrase (silence ou verdict du juge) : on répond, on ne retient plus.
     const finished = options.callerFinished === true || forceFinished;
@@ -688,7 +683,6 @@ export async function runStructuredTurn(
       ...(actionResult ? { actionResult } : {}),
       ...(finished ? { callerFinished: true } : {}),
       ...(onlyActions ? { actions: onlyActions } : {}),
-      ...(formulation ? { formulation } : {}),
     });
     // Juge de fin de tour séparé (turn-end-judge.ts) : son verdict remplace `turnComplete` du modèle pour décider de
     // parler. Tant qu'il n'a pas répondu, la phrase est retenue ; sans verdict (délai, erreur), `turnComplete` du modèle.
@@ -1028,7 +1022,6 @@ export async function runStructuredTurn(
       armIncompleteTurnTimer(session, mgr, transcript, startedAt);
       return;
     }
-    const draftBeforeTurn = { ...state.draft };
     const applied = applyProposedDraft(state.draft, first.output, { today });
     state.draft = reconcileSpelledName(
       applied.draft,
@@ -1180,34 +1173,9 @@ export async function runStructuredTurn(
       actionResult = null;
     }
 
-    // Question redondante : une information déjà donnée est redemandée, ou la même question revient alors que l'appelant
-    // vient de donner autre chose. Le second passage reçoit un fait ; le modèle formule la suite (aucune formule imposée).
-    // Une réponse douteuse ou une confiance basse justifie de reposer la question : le garde-fou ne s'en mêle pas.
-    const unsure =
-      first.output.understanding === 'doubtful' ||
-      first.output.interpretation === 'unclear' ||
-      first.output.confidence === 'low';
-    let fromGuard = false;
-    if (!actionResult && !fixedReply && !unsure) {
-      actionResult = askedAgainFact({
-        lastAwaiting: state.lastAwaiting,
-        outputAwaiting: first.output.awaiting,
-        changed: applied.changed,
-        before: draftBeforeTurn as unknown as Record<string, unknown>,
-        after: state.draft as unknown as Record<string, unknown>,
-        timeSlotStillValid: isSlotVerified(state, state.draft),
-      });
-      fromGuard = actionResult !== null;
-    }
     if (actionResult) {
       if (!isLive()) return;
-      const second = await runPass(
-        actionResult,
-        noHangUp ? ['none'] : undefined,
-        false,
-        false,
-        fromGuard,
-      );
+      const second = await runPass(actionResult, noHangUp ? ['none'] : undefined);
       if (!isLive()) return;
       const reapplied = applyProposedDraft(state.draft, second.output, { today });
       state.draft = reconcileSpelledName(

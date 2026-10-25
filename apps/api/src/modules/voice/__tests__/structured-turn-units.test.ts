@@ -235,33 +235,6 @@ describe('ton de voix (balise d’expression ElevenLabs)', () => {
   });
 });
 
-describe('consigne de suite du second passage', () => {
-  const systemOf = (actionResult: string, formulation = false) =>
-    String(
-      buildStructuredTurnMessages({
-        systemPrompt: 'Système.',
-        history: [],
-        transcript: 'vers vingt heures',
-        state: createStructuredTurnState(),
-        actionResult,
-        formulation,
-      })[0]?.content,
-    );
-
-  it("une consigne de suite n'est pas un résultat d'action à annoncer", () => {
-    const system = systemOf("Tu redemandes ce qui est déjà retenu : l'heure (20:00).", true);
-    expect(system).toContain('CONSIGNE DE SUITE');
-    expect(system).not.toContain("RÉSULTAT D'ACTION (déjà exécutée");
-    expect(system).not.toContain('Annonce le résultat');
-  });
-
-  it('un résultat d’action garde son gabarit', () => {
-    const system = systemOf('Réservation créée.');
-    expect(system).toContain("RÉSULTAT D'ACTION");
-    expect(system).toContain('Annonce le résultat');
-  });
-});
-
 describe('applyProposedDraft', () => {
   const today = '2026-09-26';
 
