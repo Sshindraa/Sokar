@@ -4,6 +4,7 @@ import type { CallSession, SttEvent } from '../stream/types';
 import { CallSessionManager } from '../stream/manager';
 import {
   buildDeepgramSttUrl,
+  connectStt,
   flushDeepgramFinalPartsForSafety,
   buildSttKeyterms,
   sendAudioToStt,
@@ -11,6 +12,7 @@ import {
   handleSttMessage,
   handleNormalizedSttMessage,
   STT_SPELLING_EOT_GRACE_MS,
+  spellingEndOfTurnDelayMs,
   getSmartEndpointDelay,
   DIALOGUE_V2_INCOMPLETE_HOLD_MS,
   SMART_ENDPOINT_HOLD_CORRECTION_MS,
@@ -32,6 +34,7 @@ import {
   createDeepgramSttAdapter,
 } from '../stream/stt-provider-adapter';
 import { speculateStructuredTurn } from '../stream/structured-turn/engine';
+import { openInkParallel } from '../stream/stt-ink-parallel';
 import { createStructuredTurnState } from '../stream/structured-turn/fact-guards';
 import { structuredSpeculationPauseMs } from '../stream/stt-bridge';
 import { clearFastBargeIn } from '../stream/fast-barge-in';
@@ -2298,5 +2301,136 @@ describe('mot seul peu sûr : ni interruption, ni tour (appel f2200632)', () => 
       speechEndOffsetMs: 400,
     });
     expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+  });
+});
+
+describe('budget total de silence après épellation', () => {
+  it('déduit le silence déjà écoulé, sans réduire le budget de 800 ms', () => {
+    const session = makeSession();
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const now = 10000;
+    session.callerVoice = { noiseFloor: 0, voiceRun: 0, trackedMs: 2000, lastVoiceAt: now - 530 };
+    expect(spellingEndOfTurnDelayMs(session, now)).toBe(270);
+    session.callerVoice.lastVoiceAt = now - 100;
+    expect(spellingEndOfTurnDelayMs(session, now)).toBe(700);
+    session.callerVoice.lastVoiceAt = now - 900;
+    expect(spellingEndOfTurnDelayMs(session, now)).toBe(200);
+  });
+
+  it('conserve le délai historique si la mesure audio manque ou est trop courte', () => {
+    const session = makeSession();
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    expect(spellingEndOfTurnDelayMs(session)).toBe(600);
+    session.callerVoice = {
+      noiseFloor: 0,
+      voiceRun: 0,
+      trackedMs: 100,
+      lastVoiceAt: Date.now() - 600,
+    };
+    expect(spellingEndOfTurnDelayMs(session)).toBe(600);
+  });
+
+  it('allonge le budget pour un appelant aux pauses lentes déjà observées', () => {
+    const session = makeSession();
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    session.callerVoice = {
+      noiseFloor: 0,
+      voiceRun: 0,
+      trackedMs: 5000,
+      lastVoiceAt: 9400,
+      pauses: [800, 900, 950, 1000],
+    };
+    expect(spellingEndOfTurnDelayMs(session, 10000)).toBe(500);
+  });
+
+  it('attend encore si la voix reprend pendant la grâce raccourcie', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+      session.conversation.nameCollection.state = 'collecting';
+      session.callerVoice = {
+        noiseFloor: 0,
+        voiceRun: 0,
+        trackedMs: 2000,
+        lastVoiceAt: Date.now() - 530,
+      };
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      handleSttMessage(session, dgFinal('H O U'));
+      vi.advanceTimersByTime(200);
+      session.callerVoice.lastVoiceAt = Date.now();
+      vi.advanceTimersByTime(100);
+      expect(onEvent).not.toHaveBeenCalled();
+      session.callerVoice.lastVoiceAt = Date.now();
+      handleSttMessage(session, dgFinal('E T'));
+      vi.advanceTimersByTime(799);
+      expect(onEvent).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'UtteranceEnd', transcript: 'H O U E T' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('anticipation Ink raccordée au bridge', () => {
+  it('le minuteur tardif choisit Ink complet plutôt que de remplacer l’anticipation par Deepgram', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      session.state = 'LISTENING';
+      session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+      vi.stubEnv('VOICE_STT_INK_REPLACE_RESTAURANT_IDS', session.restaurantId);
+      vi.mocked(speculateStructuredTurn).mockClear();
+      session.sttInk = {
+        socket: { readyState: 1, send: vi.fn(), close: vi.fn(), on: vi.fn() },
+        ready: true,
+        closed: false,
+        finals: ['On est trois.'],
+        fragments: [],
+        discardingReply: false,
+        finalizeAfterPending: false,
+        bytesSent: 0,
+        bytesPerSecond: 8000,
+        preRoll: [],
+        preRollBytes: 0,
+        speechSinceFinalize: false,
+        pendingFinalize: false,
+      };
+      handleSttMessage(session, dgPartial('on est pour moi'));
+      vi.advanceTimersByTime(300);
+      expect(speculateStructuredTurn).toHaveBeenCalledExactlyOnceWith(
+        session,
+        expect.anything(),
+        'On est trois.',
+      );
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('prépare sur le texte complet fourni par Ink, sans valider le tour Deepgram', async () => {
+    const session = makeSession();
+    session.state = 'LISTENING';
+    session.sttAdapter = createDeepgramSttAdapter({ model: 'nova-3' });
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    vi.mocked(openInkParallel).mockClear();
+    vi.mocked(speculateStructuredTurn).mockClear();
+    await connectStt(session);
+    const options = vi.mocked(openInkParallel).mock.calls[0]?.[1];
+    expect(options?.onCompleteTranscript).toBeTypeOf('function');
+    options?.onCompleteTranscript?.('16h30.');
+    expect(speculateStructuredTurn).toHaveBeenCalledExactlyOnceWith(
+      session,
+      expect.anything(),
+      '16h30.',
+    );
+    expect(onEvent).not.toHaveBeenCalled();
   });
 });
