@@ -658,6 +658,9 @@ describe('Deepgram final dispatch', () => {
       closed: false,
       // finalize déjà parti au premier silence, réponse déjà reçue.
       finals: ['je voudrais une table pour six personnes'],
+      fragments: [],
+      discardingReply: false,
+      finalizeAfterPending: false,
       bytesSent: 0,
       bytesPerSecond: 8000,
       preRoll: [],

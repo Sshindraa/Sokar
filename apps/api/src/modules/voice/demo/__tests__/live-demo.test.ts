@@ -60,8 +60,10 @@ describe('liveDemoUnavailableReason', () => {
     );
   });
 
-  it('utilise Ink sans clé Deepgram, sauf retour arrière explicite', () => {
-    expect(liveDemoUnavailableReason({ CARTESIA_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBeNull();
+  it('exige la clé Deepgram', () => {
+    expect(liveDemoUnavailableReason({ CARTESIA_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBe(
+      'stt_unconfigured',
+    );
     expect(
       liveDemoUnavailableReason({
         DEEPGRAM_API_KEY: 'k',
@@ -70,16 +72,10 @@ describe('liveDemoUnavailableReason', () => {
     ).toBeNull();
   });
 
-  it('exige Deepgram pour le retour arrière et Cartesia pour la synthèse de la démo', () => {
-    expect(
-      liveDemoUnavailableReason({ VOICE_STT_PROVIDER: 'deepgram', CARTESIA_API_KEY: 'k' }),
-    ).toBe('stt_unconfigured');
-    expect(
-      liveDemoUnavailableReason({
-        VOICE_STT_PROVIDER: 'deepgram',
-        DEEPGRAM_API_KEY: 'k',
-      } as NodeJS.ProcessEnv),
-    ).toBe('tts_unconfigured');
+  it('exige la clé Cartesia', () => {
+    expect(liveDemoUnavailableReason({ DEEPGRAM_API_KEY: 'k' } as NodeJS.ProcessEnv)).toBe(
+      'tts_unconfigured',
+    );
   });
 });
 

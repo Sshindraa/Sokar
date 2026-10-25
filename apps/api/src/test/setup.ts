@@ -842,8 +842,6 @@ process.env.RESERVATION_SERVICE_TOKEN = ['test', 'reservation', 'service', 'toke
   '-',
 );
 process.env.CEREBRAS_API_KEY = ['test', 'cerebras', 'api', 'key'].join('-');
-// Les scénarios historiques Deepgram choisissent explicitement le chemin de retour arrière.
-process.env.VOICE_STT_PROVIDER = 'deepgram';
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
 process.env.STRIPE_SECRET_KEY = 'sk_test';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';

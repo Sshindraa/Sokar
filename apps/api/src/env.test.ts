@@ -5,7 +5,6 @@ import {
   isLiveStripeSecretKey,
   openRouterFallbackBaseUrlSchema,
   resolveSemanticModel,
-  resolveVoiceSttProvider,
 } from './env';
 
 describe('Stripe environment guard', () => {
@@ -60,20 +59,10 @@ describe('Span-01 model resolution', () => {
 describe('clé de reconnaissance vocale en production', () => {
   const key = 'k'.repeat(24);
 
-  it('choisit Ink par défaut, sans exiger de clé Deepgram', () => {
-    expect(resolveVoiceSttProvider({})).toBe('cartesia');
-    expect(hasSttProviderKey({ CARTESIA_API_KEY: key })).toBe(true);
-    expect(hasSttProviderKey({ DEEPGRAM_API_KEY: key })).toBe(false);
-    expect(hasSttProviderKey({ CARTESIA_API_KEY: 'court' })).toBe(false);
+  it('exige la clé Deepgram, seul fournisseur de reconnaissance : aucune clé ElevenLabs', () => {
+    expect(hasSttProviderKey({ DEEPGRAM_API_KEY: key })).toBe(true);
+    expect(hasSttProviderKey({ DEEPGRAM_API_KEY: 'court' })).toBe(false);
     expect(hasSttProviderKey({})).toBe(false);
-  });
-
-  it('valide la clé Deepgram uniquement pour le retour arrière explicite', () => {
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', DEEPGRAM_API_KEY: key })).toBe(true);
-    expect(hasSttProviderKey({ VOICE_STT_PROVIDER: 'deepgram', CARTESIA_API_KEY: key })).toBe(
-      false,
-    );
-    expect(() => resolveVoiceSttProvider({ VOICE_STT_PROVIDER: 'unknown' })).toThrow();
   });
 });
 
