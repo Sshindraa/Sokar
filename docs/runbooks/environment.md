@@ -884,9 +884,12 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 `GET /api/internal/voice/calls?restaurantId=…&limit=20` (derniers appels),
 `GET /api/internal/voice/calls/latest?restaurantId=…` et `GET /api/internal/voice/calls/:callId`
 (mesures par tour, plus le dialogue pour les seuls restaurants de
-`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`). Jamais le numéro de l'appelant, le transcript brut ni
-les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
-réseau de l'environnement et y poser la même valeur en variable d'environnement.
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`), et `GET /api/internal/voice/calls/:callId/report`
+(rapport d'appel JSON stocké, début de l'id accepté, mêmes restaurants que le dialogue). Jamais le
+numéro de l'appelant, le transcript brut, l'audio ni les champs d'enregistrement. Pour une session
+Claude : autoriser `api.sokar.tech` dans l'accès réseau de l'environnement et y poser la même
+valeur en variable d'environnement `SOKAR_VOICE_READ_TOKEN`. Une session cloud ne peut pas ouvrir
+de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
 
 Le rapport d'appel (plus de drapeau `CALL_REPORT_ENABLED` depuis le 23/10/2026) est construit après chaque appel d'un restaurant de
 `CALL_RECORDING_TEST_RESTAURANT_IDS` : un rapport (JSON + Markdown) stocké à côté de l'enregistrement,
