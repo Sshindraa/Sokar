@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] Voix, prosodie (#595) : choix utilisateur phrase complète (6 préférences, 2 virgule, 1 égalité) appliqué en branche ; consignes unifiées et flush ElevenLabs conservé. Recette téléphonique #594/prosodie à qualifier avant extension. Voir `voice-prosody-comparison.md`.
+- [ ] Voix, prosodie (#595) : choix utilisateur phrase complète (6 préférences, 2 virgule, 1 égalité) appliqué en branche ; consignes unifiées et flush ElevenLabs conservé. Relance inachevée : silence audio déduit et reprise réévaluée, seuils conservés. Recette téléphonique #594/prosodie/attentes à qualifier avant extension. Voir `voice-prosody-comparison.md`.
 
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
 - [ ] WhatsApp : local, flags off. Telephone = confirmation SMS sans rappel; WEB avec accord = rappel WhatsApp sans secours SMS. Callbacks Meta signes implementes (recus 7 j, rapprochement par ID; timeout sans ID manuel). Template fr/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta et qualification staging; SMS staging validé. Voir `whatsapp-reservation-activation.md`.

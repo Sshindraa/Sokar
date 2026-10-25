@@ -5,6 +5,7 @@
  * modèle pour la formulation. Aucune règle lexicale n'interprète l'appelant.
  */
 import { logVoiceDebugText } from '../debug-dialogue';
+import { callerSilenceMs } from '../caller-voice-activity';
 import type { CallSession, DebugSpeechEntry } from '../types';
 import { observeSemanticSignalsShadow } from '../turn-plan-shadow';
 import type { CallSessionManager } from '../manager';
@@ -177,8 +178,8 @@ interface PassResult {
  * Silence après un tour jugé inachevé avant de répondre quand même : l'appelant
  * cherchait peut-être ses mots mais attend maintenant une réponse.
  *
- * Mesuré depuis le début du tour (transcription finale reçue), pas depuis la fin de la réponse
- * du modèle : appel 1b3f85e9, le délai commençait ~1 s trop tard (3,3 à 3,8 s de silence perçu).
+ * Mesuré depuis la dernière voix suivie, sinon depuis la réception de la transcription finale.
+ * Le silence déjà écoulé chez le STT et pendant le calcul ne crée pas un second budget.
  * Sur 14 reprises réelles après un tour inachevé, l'appelant reprend en 1,0 à 4,4 s (médiane
  * ~2,2 s) ; réglable sans déploiement par VOICE_INCOMPLETE_TURN_SILENCE_MS.
  */
@@ -235,19 +236,39 @@ function armIncompleteTurnTimer(
 ): void {
   clearIncompleteTurnTimer(session);
   let deferrals = 0;
+  const silenceBudgetMs = incompleteTurnSilenceMs();
+  const hasAudioClock = () =>
+    (session.callerVoice?.trackedMs ?? 0) >= 500 && session.callerVoice?.lastVoiceAt !== undefined;
+  const remainingSilenceMs = () =>
+    silenceBudgetMs - (hasAudioClock() ? callerSilenceMs(session) : Date.now() - turnStartedAt);
   const fire = () => {
     incompleteTurnTimers.delete(session);
     if (session.ended || session.ending) return;
     if (session.structuredTurn?.pendingFragment !== fragment) return;
-    // L'appelant a repris la parole (des mots arrivent, la transcription finale pas encore) : la
-    // réponse à un fragment ne doit pas partir par-dessus lui (appel 1b3f85e9, tour 9). Report borné.
-    if (session.sttDeepgramPendingInterim === true && deferrals < INCOMPLETE_TURN_MAX_DEFERRALS) {
+    // Une reprise audio peut précéder les mots : réévaluer le silence, avec le report borné existant.
+    const remainingMs = remainingSilenceMs();
+    if (
+      (session.sttDeepgramPendingInterim === true || remainingMs > 0) &&
+      deferrals < INCOMPLETE_TURN_MAX_DEFERRALS
+    ) {
       deferrals++;
-      const timer = setTimeout(fire, INCOMPLETE_TURN_RECHECK_MS);
+      const delayMs = session.sttDeepgramPendingInterim
+        ? INCOMPLETE_TURN_RECHECK_MS
+        : Math.min(INCOMPLETE_TURN_RECHECK_MS, Math.max(20, remainingMs));
+      const timer = setTimeout(fire, delayMs);
       timer.unref?.();
       incompleteTurnTimers.set(session, timer);
       return;
     }
+    recordVoiceTurnEvent(session, 'dialogue_guard', {
+      guard: 'incomplete_turn_silence',
+      outcome:
+        session.sttDeepgramPendingInterim === true || remainingMs > 0
+          ? 'released_at_cap'
+          : 'released_after_silence',
+      deferrals,
+      remainingMs: Math.max(0, remainingMs),
+    });
     const generation = ++session.responseGeneration;
     runStructuredTurn(
       session,
@@ -262,7 +283,17 @@ function armIncompleteTurnTimer(
       );
     });
   };
-  const remaining = Math.max(300, incompleteTurnSilenceMs() - (Date.now() - turnStartedAt));
+  const remainingMs = remainingSilenceMs();
+  // Grâce existante pour recevoir une suite tardive, même si le budget de silence est déjà écoulé.
+  const remaining = Math.max(300, remainingMs);
+  recordVoiceTurnEvent(session, 'dialogue_guard', {
+    guard: 'incomplete_turn_silence',
+    outcome: 'scheduled',
+    clock: hasAudioClock() ? 'caller_audio' : 'turn_received',
+    silenceBudgetMs,
+    elapsedSilenceMs: Math.max(0, silenceBudgetMs - remainingMs),
+    remainingMs: remaining,
+  });
   const timer = setTimeout(fire, remaining);
   timer.unref?.();
   incompleteTurnTimers.set(session, timer);

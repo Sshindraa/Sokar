@@ -1791,6 +1791,83 @@ describe('tour structuré (canary)', () => {
       expect(spoken()).toEqual(['Je vous écoute.']);
     });
 
+    it('déduit le silence audio déjà écoulé avant la réception du texte', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      session.callerVoice = {
+        noiseFloor: 20,
+        voiceRun: 0,
+        trackedMs: 2_000,
+        lastVoiceAt: Date.now() - 1_200,
+      };
+      await processTranscriptStreaming(session, 'trois non non', mgr);
+      await vi.advanceTimersByTimeAsync(799);
+      expect(spoken()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(2);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it('garde une grâce de 300 ms si le budget audio est déjà écoulé', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      session.callerVoice = {
+        noiseFloor: 20,
+        voiceRun: 0,
+        trackedMs: 4_000,
+        lastVoiceAt: Date.now() - 3_000,
+      };
+      await processTranscriptStreaming(session, 'je voudrais', mgr);
+      await vi.advanceTimersByTimeAsync(299);
+      expect(spoken()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(2);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it('réévalue une reprise audio même sans transcription partielle', async () => {
+      vi.useFakeTimers();
+      const { session, mgr, outputs } = fixture();
+      scripted(outputs);
+      session.callerVoice = {
+        noiseFloor: 20,
+        voiceRun: 0,
+        trackedMs: 2_000,
+        lastVoiceAt: Date.now() - 1_200,
+      };
+      await processTranscriptStreaming(session, 'au nom de', mgr);
+      await vi.advanceTimersByTimeAsync(500);
+      session.callerVoice.lastVoiceAt = Date.now();
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(spoken()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(701);
+      vi.useRealTimers();
+      expect(spoken()).toEqual(['Je vous écoute.']);
+    });
+
+    it.each([undefined, 499, 2_000])(
+      'garde le délai historique sans audio fiable (%s ms)',
+      async (trackedMs) => {
+        vi.useFakeTimers();
+        const { session, mgr, outputs } = fixture();
+        scripted(outputs);
+        session.callerVoice = {
+          noiseFloor: 20,
+          voiceRun: 0,
+          trackedMs,
+          lastVoiceAt: trackedMs === 2_000 ? undefined : Date.now() - 3_000,
+        };
+        await processTranscriptStreaming(session, 'je voudrais', mgr);
+        await vi.advanceTimersByTimeAsync(1_999);
+        expect(spoken()).toEqual([]);
+        await vi.advanceTimersByTimeAsync(2);
+        vi.useRealTimers();
+        expect(spoken()).toEqual(['Je vous écoute.']);
+      },
+    );
+
     it('ne répond pas par-dessus l’appelant tant que des mots arrivent, puis répond', async () => {
       vi.useFakeTimers();
       const { session, mgr, outputs } = fixture();
