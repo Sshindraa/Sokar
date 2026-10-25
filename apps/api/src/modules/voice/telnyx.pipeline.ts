@@ -312,6 +312,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           address: ctx.formattedAddress,
           city: ctx.city,
           cuisineTypes: ctx.cuisineType,
+          openingHours: ctx.openingHours,
         });
         CallSessionManager.getInstance().create({
           callControlId: payload.call_control_id,
