@@ -206,7 +206,12 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
   );
 
   // --- Ce qui a été envoyé à la synthèse, rattaché aux mots de la piste agent ---
-  const agentWords = agentVoiced.kept;
+  // Une réponse aux tours conservés ne peut pas précéder la première parole de l'appelant.
+  // Sinon, un premier mot manquant peut s'aligner par substitution sur l'accueil.
+  const firstCallerStart = callerSpans.find((span) => span !== null)?.start;
+  const agentWords = agentVoiced.kept.filter(
+    (word) => firstCallerStart === undefined || word.end >= firstCallerStart,
+  );
   const sentClean = rows.map((row) => (row.agentText ?? '').replace(CUT_MARK, '').trim());
   const sentCut = rows.map(
     (row) => CUT_MARK.test(row.agentText ?? '') && ((CUT_MARK.lastIndex = 0), true),
@@ -311,20 +316,24 @@ export function analyzeCall(input: AnalyzeInput): CallReport {
   );
 
   // --- La bouche : texte envoyé à la synthèse contre piste agent, tour par tour ---
-  const agentZones = zoneTexts(agentSpans, agentWords);
+  // L'accueil n'est pas persisté dans les tours. Retirer uniquement les mots qui précèdent
+  // le segment de voix de la première réponse, sans masquer ses premiers mots divergents.
+  const firstResponseStart = agentSpanStarts.find((start) => start !== null);
+  const responseWords =
+    firstResponseStart === undefined
+      ? agentWords
+      : agentWords.filter((word) => word.end >= firstResponseStart);
+  const agentZones = zoneTexts(agentSpans, responseWords);
   const mouth: MouthDivergence[] = rows.flatMap((row, index) =>
     compareEars({
       live: agentSentTokens[index].join(' '),
       engines: { nova: agentZones[index] },
-    })
-      // Le début de la piste agent porte l'accueil, absent du texte des tours : ce n'est pas un écart.
-      .filter((item) => !(index === 0 && item.kind === 'word' && item.liveStart === 0))
-      .map((item) => ({
-        ...item,
-        turnId: row.turnId,
-        atSec: agentSpans[index] ? round2(agentSpans[index]!.start) : null,
-        cutByInterruption: sentCut[index],
-      })),
+    }).map((item) => ({
+      ...item,
+      turnId: row.turnId,
+      atSec: agentSpans[index] ? round2(agentSpans[index]!.start) : null,
+      cutByInterruption: sentCut[index],
+    })),
   );
 
   // --- Silences, avec leur cause ---
