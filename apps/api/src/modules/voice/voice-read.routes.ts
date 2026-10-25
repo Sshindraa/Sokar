@@ -3,7 +3,8 @@
  *
  * Protégée par le jeton SOKAR_VOICE_READ_TOKEN (en-tête Authorization: Bearer).
  * Ne modifie rien. Renvoie les mesures de chaque tour et, pour les seuls
- * restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS, le dialogue du tour.
+ * restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS, le dialogue du tour
+ * et le rapport d'appel stocké.
  * Jamais le numéro de l'appelant, le transcript brut ni les champs
  * d'enregistrement.
  */
@@ -11,6 +12,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
+import { readStoredReport } from './call-report/report-store';
 import { isVoiceDebugDialogueEnabled } from './stream/debug-dialogue';
 
 const RestaurantQuerySchema = z.object({
@@ -156,6 +158,29 @@ export async function voiceReadRoutes(app: FastifyInstance) {
       const call = await db.call.findUnique({ where: { id: callId }, select: CALL_SELECT });
       if (!call) return reply.status(404).send({ error: 'VOICE_CALL_NOT_FOUND' });
       return buildCallDetail(call);
+    },
+  );
+
+  // Rapport d'appel stocké (JSON), début de l'id accepté. Il contient le dialogue : mêmes
+  // restaurants que le dialogue des tours, et seuls ceux qui ont un enregistrement en ont un.
+  app.get(
+    '/api/internal/voice/calls/:callId/report',
+    { preHandler: requireVoiceReadToken },
+    async (request, reply) => {
+      const { callId } = CallParamsSchema.parse(request.params);
+      // tenant-scoping: global — lecture interne par jeton ; restaurant contrôlé contre la liste de debug.
+      const call = await db.call.findFirst({
+        where: { id: { startsWith: callId } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, restaurantId: true },
+      });
+      if (!call) return reply.status(404).send({ error: 'VOICE_CALL_NOT_FOUND' });
+      if (!isVoiceDebugDialogueEnabled(call.restaurantId)) {
+        return reply.status(404).send({ error: 'VOICE_CALL_REPORT_NOT_FOUND' });
+      }
+      const report = await readStoredReport(call.id, 'json');
+      if (!report) return reply.status(404).send({ error: 'VOICE_CALL_REPORT_NOT_FOUND' });
+      return reply.type('application/json').send(report);
     },
   );
 }
