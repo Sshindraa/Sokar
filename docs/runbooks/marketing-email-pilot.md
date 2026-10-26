@@ -173,9 +173,9 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
 - **Adresse enregistrée seulement avec l'accord** : aujourd'hui l'adresse saisie sur la page de réservation
   n'est conservée nulle part. Elle n'est rattachée à la fiche client que si le client coche la case e-mail,
   et jamais en remplacement d'une adresse déjà connue (dans ce cas, l'accord n'est pas enregistré).
-- **Où les cases apparaissent** : sur les deux formulaires de réservation en ligne : celui du dashboard,
-  servi sur `sokar.tech` (`/widget/<slug>`, `/book/<slug>`, `embed.js`), et celui de Connect, servi sur les
-  domaines personnalisés. Uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le
+- **Où les cases apparaissent** : sur le formulaire de réservation en ligne du dashboard, servi sur
+  `sokar.tech`, les sous-domaines et les domaines personnalisés (`/widget/<slug>`, `/book/<slug>`,
+  `embed.js`). Uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le
   téléphone (case SMS) saisis. Le consentement n'est jamais une condition pour réserver. Le texte
   « Ce choix est indépendant de votre réservation » est affiché sous les cases.
 - **Retrait** : par le client avec le lien de désinscription de chaque message ; par le restaurant depuis la

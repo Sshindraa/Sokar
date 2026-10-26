@@ -124,22 +124,6 @@ describe('proxy framing policy', () => {
   });
 });
 
-describe('proxy booking route alias', () => {
-  it('rewrites /book/[slug] to the public widget and preserves query parameters', () => {
-    const response = proxy(
-      makeRequest('/book/chez-sokar-demo', {
-        search: { source: 'restaurant', partySize: '2' },
-      }),
-    );
-
-    expect(response.headers.get('x-middleware-rewrite')).toBe(
-      'https://sokar.tech/widget/chez-sokar-demo?source=restaurant&partySize=2',
-    );
-    expect(response.headers.get('X-Frame-Options')).toBeNull();
-    expect(getCspFrameAncestors(response)).toBe('*');
-  });
-});
-
 describe('proxy subdomain routing (*.sokar.tech)', () => {
   // Le custom domain flow nécessite API_URL pour déclencher le rewrite.
   let originalApiUrl: string | undefined;

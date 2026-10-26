@@ -64,7 +64,7 @@ packages/
 ## Points d'entrée publics
 
 - **Dashboard** : `https://sokar.tech` (Next.js App Router, Clerk).
-- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>`.
+- **Connect** : `https://sokar.tech/restaurant/<slug>`, `/restaurants/<city>`, `/widget/<slug>/gift-card`. Le formulaire `/widget/<slug>` et `/book/<slug>` vient du dashboard.
 - **Widget** : `apps/widget/src/app/restaurant-reservation/`.
 - **API** : `https://api.sokar.tech`.
 - **Versioning API public** : `main.ts` réécrit `/public/v1/*` vers `/public/*` (transition progressive). Les routes publiques sont dans `connect.routes.ts`.
@@ -212,7 +212,7 @@ rollback reste possible.
 ### Connect / widget
 
 - Page publique → `connect.service.ts` (agrégateur) ; disponibilités via `CapacityAwareAvailabilityService` (floor-plan).
-- Widget : `apps/connect/src/components/booking-widget.tsx` et `apps/widget/src/app/restaurant-reservation/`.
+- Widget de réservation : `apps/dashboard/src/components/reservation/reservation-widget.tsx`, servi par le dashboard sur `/widget/<slug>` et `/book/<slug>` (sokar.tech, sous-domaines et domaines personnalisés). Écran ChatGPT : `apps/widget/src/app/restaurant-reservation/` (non publié).
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 
 ### CRM / marketing
