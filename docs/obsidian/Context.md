@@ -39,6 +39,7 @@
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
+- [ ] Voix #580 : correctif anti-bruit livré en production ; effectuer et analyser un appel entrant réel sur Chez Sokar.
 - [ ] ChatGPT/OpenAI Reserve : Cloudflare Pages publié ; l’URL `.html` redirige (308) vers `/restaurant-reservation` (200), CORS prod vérifié. Accord « ChatGPT merchants » non confirmé ; attendre l’accord avant activation.
 
 ## Décisions récentes
