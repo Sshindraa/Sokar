@@ -128,12 +128,23 @@ function fixture() {
       async (
         _session: CallSession,
         _messages: unknown,
-        _format: unknown,
+        format: {
+          json_schema?: { name?: string; schema?: { properties?: Record<string, unknown> } };
+        },
         options: { onDelta: (delta: string) => void },
       ) => {
         const next = outputs.shift();
         if (!next) throw new Error('no scripted model output');
-        const json = JSON.stringify(next);
+        const generated =
+          format.json_schema?.name === 'voice_action_reply'
+            ? Object.fromEntries(
+                Object.keys(format.json_schema.schema?.properties ?? {}).map((key) => [
+                  key,
+                  next[key as keyof StructuredTurnOutput],
+                ]),
+              )
+            : next;
+        const json = JSON.stringify(generated);
         for (let index = 0; index < json.length; index += 7) {
           options.onDelta(json.slice(index, index + 7));
         }
@@ -231,6 +242,100 @@ describe('tour structuré (canary)', () => {
     expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 4);
     expect(session.structuredTurn?.availability?.slots).toContain('20:00');
     expect(spoken()).toEqual(['20 h est libre.', 'À quel nom ?']);
+  });
+
+  it('réduit seulement la réponse après disponibilité et conserve le brouillon vérifié', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(
+      turn({ draft, action: 'check_availability' }),
+      turn({
+        draft: { ...draft, time: '23:00', partySize: 9 },
+        awaiting: 'customerName',
+        say: 'À quel nom ?',
+      }),
+    );
+    await processTranscriptStreaming(session, 'demain à vingt heures pour quatre', mgr);
+    const requests = vi.mocked(mgr.streamStructuredCompletion).mock.calls;
+    expect(requests[0][2]).toMatchObject({ json_schema: { name: 'voice_turn' } });
+    expect(requests[1][2]).toMatchObject({ json_schema: { name: 'voice_action_reply' } });
+    const format = requests[1][2] as {
+      json_schema: { schema: { properties: Record<string, unknown> } };
+    };
+    expect(Object.keys(format.json_schema.schema.properties)).toEqual([
+      'awaiting',
+      'action',
+      'confidence',
+      'say',
+    ]);
+    expect(session.structuredTurn?.draft).toEqual(draft);
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, TOMORROW, 4);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('rejette une seconde action sans la rejouer ni annoncer sa fausse réussite', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(
+      turn({ draft, action: 'check_availability' }),
+      turn({ draft, action: 'create_reservation', say: 'Votre réservation est confirmée.' }),
+    );
+    await processTranscriptStreaming(session, 'demain vingt heures pour quatre', mgr);
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(1);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    expect(spoken().join(' ')).not.toContain('Votre réservation est confirmée');
+  });
+
+  it('ne prononce rien du résultat compact si son préfixe contient un brouillon injecté', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(turn({ draft, action: 'check_availability' }));
+    const stream = vi.mocked(mgr.streamStructuredCompletion);
+    const scripted = stream.getMockImplementation()!;
+    stream.mockImplementationOnce(scripted).mockImplementationOnce(async (_s, _m, _f, options) => {
+      const raw = JSON.stringify({
+        awaiting: 'none',
+        action: 'none',
+        confidence: 'high',
+        draft: { ...draft, time: '23:00' },
+        say: 'Réservation confirmée à vingt-trois heures. Suite.',
+      });
+      options.onDelta(raw);
+      return raw;
+    });
+    await processTranscriptStreaming(session, 'demain vingt heures pour quatre', mgr);
+    expect(spoken().join(' ')).not.toContain('vingt-trois');
+    expect(session.structuredTurn?.draft).toEqual(draft);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('conserve le contrôle des lettres sur une relecture après disponibilité', async () => {
+    const { session, mgr, outputs } = fixture();
+    session.structuredTurn = { ...createStructuredTurnState(), lastAwaiting: 'customerName' };
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: 'ASSAM' };
+    outputs.push(
+      turn({ draft, action: 'check_availability' }),
+      turn({ draft, awaiting: 'customerNameConfirmation', say: 'Assam, est-ce bien cela ?' }),
+    );
+    await processTranscriptStreaming(session, 'A S S A M', mgr);
+    expect(vi.mocked(mgr.streamStructuredCompletion).mock.calls[1][2]).toMatchObject({
+      json_schema: { name: 'voice_action_reply' },
+    });
+    expect(spoken().join(' ')).not.toContain('Assam,');
+    expect(spoken().join(' ')).toContain('A, S, S, A, M');
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('ne raccroche pas sur un congé incertain après une opération', async () => {
+    const { session, mgr, outputs } = fixture();
+    const draft = { date: TOMORROW, time: '20:00', partySize: 4, customerName: '' };
+    outputs.push(
+      turn({ draft, action: 'check_availability' }),
+      turn({ draft, action: 'end_call', confidence: 'low', say: 'Souhaitez-vous continuer ?' }),
+    );
+    await processTranscriptStreaming(session, 'demain vingt heures pour quatre', mgr);
+    expect(mgr.cleanup).not.toHaveBeenCalled();
+    expect(spoken()).toContain('Souhaitez-vous continuer ?');
   });
 
   it('en démonstration, le transfert devient un fait : le modèle parle, aucune réplique codée', async () => {
@@ -1544,6 +1649,9 @@ describe('tour structuré (canary)', () => {
     await processTranscriptStreaming(session, 'oui c’est parfait', mgr);
 
     expect(mgr.createReservationFromConversation).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mgr.streamStructuredCompletion).mock.calls.at(-1)?.[2]).toMatchObject({
+      json_schema: { name: 'voice_action_reply' },
+    });
     expect(session.structuredTurn?.reservationCreated).toBe(true);
     expect(session.conversation.confirmedReservationKey).not.toBeNull();
   });

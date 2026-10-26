@@ -36,6 +36,10 @@ import { logger } from '../../../../shared/logger/pino';
 import { voiceTtsContextFailureTotal } from '../../../../shared/observability/metrics';
 import {
   STRUCTURED_TURN_SCHEMA_NAME,
+  AFTER_ACTION_SCHEMA_NAME,
+  AFTER_ACTION_ACTIONS,
+  buildAfterActionJsonSchema,
+  parseAfterActionOutput,
   buildStructuredTurnJsonSchema,
   parseStructuredTurnOutput,
   type StructuredTurnAction,
@@ -94,9 +98,6 @@ function responseFormat(
     },
   };
 }
-
-/** Après une action exécutée, le modèle ne peut plus que parler ou terminer l'appel. */
-const AFTER_ACTION_ACTIONS: readonly StructuredTurnAction[] = ['none', 'end_call'];
 
 /** Au-delà, seuls les créneaux les plus proches de l'heure demandée sont donnés au modèle. */
 const MAX_SLOTS_IN_RESULT = 12;
@@ -405,6 +406,7 @@ function passRequest(
   today: string,
   extra: {
     actionResult?: string;
+    afterAction?: boolean;
     callerFinished?: boolean;
     recovery?: StructuredRecoveryKind;
     /** Actions que le schéma autorise : le moteur peut en retirer (un congé refusé ne se rejoue pas). */
@@ -442,16 +444,25 @@ function passRequest(
   });
   // Relance après un silence (appel cdc95509) : le modèle répondait encore
   // turnComplete=false et une phrase vide ; le schéma impose maintenant true.
-  const format = responseFormat(
-    replyScope
-      ? ['none']
-      : (extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined)),
-    {
-      turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
-      understanding: true,
-      ...(tone ? { tone } : {}),
-    },
-  );
+  const format = extra.afterAction
+    ? {
+        type: 'json_schema' as const,
+        json_schema: {
+          name: AFTER_ACTION_SCHEMA_NAME,
+          strict: true as const,
+          schema: buildAfterActionJsonSchema({ tone }),
+        },
+      }
+    : responseFormat(
+        replyScope
+          ? ['none']
+          : (extra.actions ?? (extra.actionResult ? AFTER_ACTION_ACTIONS : undefined)),
+        {
+          turnCompleteOnly: extra.callerFinished === true || extra.recovery !== undefined,
+          understanding: true,
+          ...(tone ? { tone } : {}),
+        },
+      );
   return { messages, format };
 }
 
@@ -698,6 +709,8 @@ export async function runStructuredTurn(
 
   /** Fait sur le nom donné à la seconde passe : celle-ci relit alors le nom retenu. */
   let pendingNameFact: string | null = null;
+  let afterExecutedAction = false;
+  let actionReplyInterpretation: StructuredTurnOutput['interpretation'] = 'answer';
 
   const runPass = async (
     actionResult?: string,
@@ -705,12 +718,15 @@ export async function runStructuredTurn(
     forceFinished = false,
     useJudge = false,
   ): Promise<PassResult> => {
+    const afterAction = actionResult !== undefined && afterExecutedAction;
     // Appelant jugé arrivé au bout de sa phrase (silence ou verdict du juge) : on répond, on ne retient plus.
     const finished = options.callerFinished === true || forceFinished;
     const extractor = new SayStreamExtractor();
     const splitter = new PhraseSplitter();
     let action: string | null = null;
-    let turnComplete: boolean | null = null;
+    let turnComplete: boolean | null = afterAction ? true : null;
+    const replyDraft = { ...state.draft };
+    let replyPrefixValid = !afterAction;
     let slotConflict = false;
     let hoursFact: string | undefined;
     let nameFact: string | undefined;
@@ -736,6 +752,7 @@ export async function runStructuredTurn(
     };
     const { messages, format } = passRequest(session, state, transcript, historyBefore, today, {
       ...(actionResult ? { actionResult } : {}),
+      ...(afterAction ? { afterAction: true } : {}),
       ...(finished ? { callerFinished: true } : {}),
       ...(onlyActions ? { actions: onlyActions } : {}),
     });
@@ -777,9 +794,20 @@ export async function runStructuredTurn(
         firstSayText = false;
         recordVoiceTurnEventIfCurrent(session, turnId, 'llm_say_started', {
           pass: actionResult ? 2 : 1,
+          contract: afterAction ? 'action_reply' : 'full_turn',
         });
       }
       unsaid += sayText;
+      if (!replyPrefixValid) {
+        // Les champs compacts sont tous avant say : les valider avant le premier son.
+        const sayKey = /"say"\s*:/.exec(extractor.raw);
+        if (
+          !sayKey ||
+          !parseAfterActionOutput(extractor.raw.slice(0, sayKey.index) + '"say":""}', replyDraft)
+        )
+          return;
+        replyPrefixValid = true;
+      }
       // `turnComplete` et `action` précèdent `say` dans le schéma : ils sont
       // connus quand la phrase commence.
       if (turnComplete === null) {
@@ -852,7 +880,9 @@ export async function runStructuredTurn(
         if (awaitingNow === 'customerNameConfirmation' || readbackPass) {
           // Brouillon sans nom (seconde passe qui ne le répète pas, appel 8f254faa) : la relecture se vérifie
           // quand même, contre le nom déjà retenu. Sinon « H, O, E, T » passait pour « HOUET ».
-          const streamed = parseStreamedCustomerName(extractor.raw);
+          const streamed = afterAction
+            ? replyDraft.customerName
+            : parseStreamedCustomerName(extractor.raw);
           const proposed = streamed?.trim() ? streamed : state.draft.customerName;
           if (proposed?.trim()) {
             const expected = reconcileSpelledName(
@@ -884,8 +914,11 @@ export async function runStructuredTurn(
       kind: actionResult ? 'turn_after_action' : 'turn',
       onDelta,
     });
-    let output = parseStructuredTurnOutput(text);
-    if (!output) throw new UnusableTurnOutputError('Invalid structured turn output');
+    let output = afterAction
+      ? parseAfterActionOutput(text, replyDraft, actionReplyInterpretation)
+      : parseStructuredTurnOutput(text);
+    if (!output || !replyPrefixValid)
+      throw new UnusableTurnOutputError('Invalid structured turn output');
     // Le juge a une échéance propre : on l'attend ici (il tourne depuis le début du passage, souvent déjà rendu).
     await judgeSettled;
     drainSaid();
@@ -980,6 +1013,7 @@ export async function runStructuredTurn(
   };
 
   const runAvailability = async (): Promise<string> => {
+    afterExecutedAction = true;
     filler?.expectLongWait('check_availability');
     const { date, time, partySize } = state.draft;
     recordDebugTool(session, 'checkAvailability');
@@ -1053,6 +1087,7 @@ export async function runStructuredTurn(
     conversation.confirmedReservationKey = getReservationConfirmationKey(session);
     const createdBefore = session.reservationCreatedAt;
     const result = await mgr.createReservationFromConversation(session);
+    afterExecutedAction = true;
     if (session.reservationCreatedAt !== createdBefore) state.reservationCreated = true;
     return (
       result ??
@@ -1069,6 +1104,7 @@ export async function runStructuredTurn(
 
   try {
     const first = await runPass(undefined, undefined, false, true);
+    actionReplyInterpretation = first.output.interpretation;
     // Une spéculation non reprise (requête différente, relance) ne sert plus.
     cancelSpeculation(session);
     if (!isLive()) return;
@@ -1217,9 +1253,12 @@ export async function runStructuredTurn(
           actionResult = await runCreateReservation();
           break;
         case 'take_message':
-          actionResult = first.output.message.trim()
-            ? await mgr.recordCallerMessage(session, first.output.message.trim())
-            : "Message vide, non enregistré : demande ce qu'il faut transmettre.";
+          if (first.output.message.trim()) {
+            actionResult = await mgr.recordCallerMessage(session, first.output.message.trim());
+            afterExecutedAction = true;
+          } else {
+            actionResult = "Message vide, non enregistré : demande ce qu'il faut transmettre.";
+          }
           break;
         case 'transfer': {
           const reply = await mgr.handoffToManager(session, {
@@ -1230,6 +1269,7 @@ export async function runStructuredTurn(
           if (session.demo) {
             // Démonstration : aucun transfert n'a eu lieu ; le résultat est un fait, le second passage parle.
             actionResult = reply;
+            afterExecutedAction = true;
             break;
           }
           session.history.push({ role: 'assistant', content: reply });
@@ -1280,6 +1320,7 @@ export async function runStructuredTurn(
       );
       recordVoiceTurnEvent(session, 'structured_turn', {
         pass: 2,
+        contract: afterExecutedAction ? 'action_reply' : 'full_turn',
         interpretation: second.output.interpretation,
         action: second.output.action,
         awaiting: second.output.awaiting,

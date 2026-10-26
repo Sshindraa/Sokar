@@ -138,3 +138,66 @@ Les tests couvrent les deux horloges, le budget épuisé, la reprise audio sans
 partielle et les reports historiques bornés. La recette réelle reste nécessaire
 sur hésitation, correction et épellation lente ; aucun changement du secours Ink
 ou de ses temporisations sémantiques n'est inclus dans cette correction.
+
+## Formulation après opération — 26 octobre 2026, branche #595
+
+Le second passage ne reconstruit plus un tour complet quand une opération vient
+réellement d'être exécutée : vérification de disponibilité (succès ou échec),
+création de réservation, enregistrement d'un message ou transfert simulé.
+Les refus des garde-fous et les corrections de brouillon gardent le contrat
+complet, sauf si une vérification réelle est ensuite exécutée. Le premier
+passage et son autorisation d'action restent inchangés.
+
+Le contrat interne `voice_action_reply` génère `awaiting`, `action` (none ou
+end_call), `confidence`, `tone` si actif, puis `say`. Le modèle ne génère ni
+compréhension, ni interprétation, ni brouillon ni message métier. L'adaptateur
+reconstitue les champs attendus par le moteur avec une copie du brouillon
+vérifié et l'interprétation du premier passage (hors congé explicite) ; il n'accepte aucun nouveau brouillon ni nouvelle action. Les champs
+avant `say` sont validés avant streaming, la sortie entière est ensuite validée.
+Le contrôle des lettres avant relecture et la confiance avant congé sont
+conservés. Les erreurs suivent le secours existant ; aucune opération n'est
+réexécutée par la formulation.
+
+Le prompt de ce passage décrit seulement la formulation d'un résultat connu,
+avec les règles d'accord, de récapitulatif complet, d'épellation et de question
+suivante. Il conserve les faits vérifiés et les règles communes du restaurant.
+Les événements `llm_say_started` et `structured_turn` portent un champ additif
+`contract=action_reply|full_turn`, sans texte d'appel supplémentaire.
+
+### Mesure exploratoire avec le vrai modèle
+
+Rejeu existant `voice-behavior-replay.mjs`, modèle `openai/gpt-6-luna` relu dans
+la configuration production, clé staging restant sur le serveur. Raisonnement
+`effort=none`, pas de température, concurrence 1, bras alternés. Quatre cas
+fictifs : disponibilité sans nom, disponibilité avec nom, réservation créée,
+échec de disponibilité. Deux tirages par cas et par bras : 16 requêtes par
+comparaison, plus une sonde préalable ; aucune action métier ni synthèse vocale.
+
+Le premier prototype a montré un awaiting incorrect sur une question : les
+règles de question/récapitulatif/lettres ont été rétablies avant un nouveau
+rejeu des deux bras. Mesure de la version retenue :
+
+| Mesure sur 8 réponses par bras | Tour complet | Formulation seule |
+| ------------------------------ | ------------ | ----------------- |
+| Tokens d'entrée fournisseur    | 40 402       | 22 226            |
+| Tokens de sortie fournisseur   | 874          | 433               |
+| Médiane réponse JSON entière   | 1 804,5 ms   | 1 859 ms          |
+
+Soit **45 % de tokens d'entrée et 50 % de sortie en moins**. La baisse de
+latence n'est **pas démontrée** : le premier prototype était plus rapide mais
+le rejeu final ne l'est pas. Ce banc non streaming mesure la réponse entière,
+pas le premier contenu utile ni le délai audio au téléphone. Les huit réponses
+finales compactes ont été relues : résultat et question attendue cohérents,
+aucune action supplémentaire ni réussite annoncée sur l'échec. Cela reste un
+petit corpus exploratoire, pas une garantie sur toutes les conversations.
+
+Les artefacts locaux restent hors dépôt dans
+`/Users/hamza/.codex/voice-action-reply-2026-10-26/` (`reference.json`,
+`candidate.json`, `results-staging-v2.json`). La sonde locale initiale a refusé
+la clé (401) avant tout cas ; deux comparaisons ont ensuite été exécutées avec
+la clé staging. Aucun secret n'a été exporté ni écrit dans ces artefacts.
+
+Décision : garder la réduction du contrat pour le volume mesuré, sans annoncer
+un gain de vitesse. Avant extension, qualifier au téléphone disponibilité,
+réservation, échec, message, correction et épellation ; comparer les jalons du
+premier contenu utile par contrat. Aucun déploiement dans cette passe.

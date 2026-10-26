@@ -44,6 +44,25 @@ describe('buildSystemPrompt', () => {
     }
   });
 
+  it('après opération demande uniquement la formulation, sans nouveau brouillon', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: buildSystemPrompt(baseCtx),
+      history: [],
+      transcript: 'demain pour quatre',
+      state: createStructuredTurnState(),
+      afterAction: true,
+      understanding: true,
+      actionResult: 'La vérification a échoué. Aucun horaire vérifié.',
+    });
+    expect(system.content).toContain('RÉPONSE APRÈS UNE OPÉRATION TERMINÉE');
+    expect(system.content).not.toContain('MODE DE RÉPONSE STRUCTURÉ');
+    expect(system.content).not.toContain('COMPRÉHENSION VÉRIFIÉE');
+    expect(system.content).toContain(
+      'Ne promets jamais une réussite si le résultat indique un échec',
+    );
+    expect(system.content).toContain('La vérification a échoué');
+  });
+
   it.each([
     [undefined, 8],
     [7, 8],

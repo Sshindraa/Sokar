@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { PhraseSplitter, SayStreamExtractor } from '../stream/structured-turn/say-stream';
 import {
   buildStructuredTurnJsonSchema,
+  buildAfterActionJsonSchema,
+  parseAfterActionOutput,
   parseStructuredTurnOutput,
   type StructuredTurnOutput,
 } from '../stream/structured-turn/schema';
@@ -873,5 +875,69 @@ describe('reprise de confirmation après une parenthèse', () => {
     updateConfirmationState(s, output({ awaiting: 'confirmationResume' }), true);
     s.availability = null;
     expect(creation(s)).toMatchObject({ allowed: false, reason: 'slot_not_verified' });
+  });
+});
+
+describe('formulation après une opération terminée', () => {
+  const draft = { date: '2026-10-27', time: '20:00', partySize: 4, customerName: 'Martin' };
+  const reply = { awaiting: 'none', action: 'none', confidence: 'high', say: 'C’est réservé.' };
+
+  it('ne génère ni brouillon ni compréhension et garde say en dernier', () => {
+    const schema = buildAfterActionJsonSchema({ tone: true });
+    expect(Object.keys(schema.properties)).toEqual([
+      'awaiting',
+      'action',
+      'confidence',
+      'tone',
+      'say',
+    ]);
+    expect(schema.properties.action.enum).toEqual(['none', 'end_call']);
+    expect(schema.required).toEqual(Object.keys(schema.properties));
+    expect(buildAfterActionJsonSchema().properties).not.toHaveProperty('tone');
+  });
+
+  it('adapte la réponse sans permettre de modifier les faits', () => {
+    const parsed = parseAfterActionOutput(JSON.stringify(reply), draft)!;
+    expect(parsed.draft).toEqual(draft);
+    expect(parsed.draft).not.toBe(draft);
+    expect(parsed.turnComplete).toBe(true);
+    expect(parsed.say).toBe(reply.say);
+    expect(parsed.understanding).toBe('clear');
+    expect(parseAfterActionOutput(JSON.stringify(reply), draft, 'decline')?.interpretation).toBe(
+      'decline',
+    );
+    expect(
+      parseAfterActionOutput(JSON.stringify(reply), draft, 'new_request')?.interpretation,
+    ).toBe('new_request');
+    expect(
+      parseAfterActionOutput(
+        JSON.stringify({ ...reply, action: 'end_call', confidence: 'low' }),
+        draft,
+      ),
+    ).toMatchObject({ action: 'end_call', confidence: 'low', interpretation: 'end_call' });
+  });
+
+  it.each([
+    null,
+    [],
+    { ...reply, action: 'create_reservation' },
+    { ...reply, action: 'transfer' },
+    { ...reply, draft },
+    { ...reply, turnComplete: false },
+    { ...reply, message: 'autre' },
+    { ...reply, awaiting: 'inconnu' },
+    { ...reply, confidence: 'certain' },
+    { ...reply, tone: 'angry' },
+    { ...reply, say: null },
+    { ...reply, awaiting: undefined },
+  ])('rejette une sortie invalide ou une tentative de nouvelle action : %j', (value) => {
+    expect(parseAfterActionOutput(JSON.stringify(value), draft)).toBeNull();
+  });
+
+  it('rejette un JSON tronqué et conserve un ton autorisé', () => {
+    expect(parseAfterActionOutput('{', draft)).toBeNull();
+    expect(
+      parseAfterActionOutput(JSON.stringify({ ...reply, tone: 'reassuring' }), draft)?.tone,
+    ).toBe('reassuring');
   });
 });
