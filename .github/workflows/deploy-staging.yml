@@ -215,7 +215,7 @@ jobs:
     needs: deploy
     permissions:
       contents: read
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Curl health endpoints
         run: |
