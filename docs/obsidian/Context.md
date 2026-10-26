@@ -39,7 +39,7 @@
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
-- [ ] ChatGPT (OpenAI Reserve) : l'écran `apps/widget` n'est pas en ligne (`widget.sokar.tech/restaurant-reservation.html` → 404) alors que l'API le référence. Gardé (décision 25/10) : le publier avant d'activer l'intégration.
+- [ ] ChatGPT (OpenAI Reserve) : l'écran `apps/widget` n'est pas en ligne (`widget.sokar.tech/restaurant-reservation.html` → 404) alors que l'API le référence. Gardé (décision 25/10) : le publier avant d'activer l'intégration. Hébergement : Cloudflare Pages, workflow manuel `deploy-widget.yml` prêt (voir Journal 26/10).
 
 ## Décisions récentes
 
