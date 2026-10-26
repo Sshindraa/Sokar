@@ -14,6 +14,55 @@ const data = {
   whatsappReminder: { visible: true, enabled: true },
 };
 describe('Ma reservation', () => {
+  it('shows the booking confirmation without a management link or an API request', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <ReservationView
+        confirmation={{
+          reservation: { ...data, whatsappReminder: { visible: false, enabled: false } },
+        }}
+      />,
+    );
+    expect(await screen.findByText('Confirmée')).toBeInTheDocument();
+    expect(screen.getByText('Restaurant Exemple')).toBeInTheDocument();
+    expect(screen.getByText('19:00')).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('loads management actions directly in the confirmation without navigating', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ ...data, state: 'CANCELLED' }));
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <ReservationView
+        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+      />,
+    );
+    expect(await screen.findByText('Annulée')).toBeInTheDocument();
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ token, action: 'view' });
+  });
+  it('keeps the confirmed booking visible when loading management fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Connexion interrompue')));
+    render(
+      <ReservationView
+        confirmation={{ reservation: data, managementUrl: `https://sokar.tech/r#${token}` }}
+      />,
+    );
+    expect(await screen.findByText('Connexion interrompue')).toBeInTheDocument();
+    expect(screen.getByText('Confirmée')).toBeInTheDocument();
+  });
+  it('withdraws WhatsApp consent from the confirmation when management is disabled', async () => {
+    const fetch = vi.fn();
+    const withdrawWhatsapp = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('fetch', fetch);
+    render(<ReservationView confirmation={{ reservation: data, withdrawWhatsapp }} />);
+    await screen.findByText('Confirmée');
+    fireEvent.click(document.querySelector('details > summary')!);
+    fireEvent.click(screen.getByText('Préférences de rappel'));
+    fireEvent.click(screen.getByRole('switch'));
+    expect(await screen.findByText(/Votre accord a été retiré/)).toBeInTheDocument();
+    expect(withdrawWhatsapp).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it('previews the same UI without network calls or a dialable phone', async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
