@@ -33,6 +33,7 @@ set -Eeuo pipefail
 #   restore_artifacts(source)
 #   cleanup_releases(keep)
 #   list_releases()
+#   clean_stale_next_types(app)
 #   clean_next_artifacts(app)
 #   recover_services()
 #   detect_changed_apps(last_hash, new_hash)
@@ -225,6 +226,18 @@ list_releases() {
             fi
             printf "   %s  %s  %s\n" "$ts" "${hash:-????????}" "${branch:-?}"
         done
+}
+
+# Supprime les types générés par le build précédent. `tsconfig.json` inclut
+# `.next/types/**` et `.next/dev/types/**` : une page supprimée depuis laisse un fichier de
+# types qui l'importe, et le type-check du build suivant échoue sur ce fichier fantôme
+# (staging 26/10/2026, après la suppression de /widget/[slug] dans Connect). Next les
+# régénère à chaque build ; le serveur en production ne les lit jamais.
+clean_stale_next_types() {
+    local app="$1"
+    local app_dir="$SOKAR_ROOT/apps/$app"
+    rm -rf "$app_dir/.next/types" "$app_dir/.next/dev/types" \
+        || log warn "   Types générés de $app non supprimés (droits ?) : le type-check peut échouer."
 }
 
 clean_next_artifacts() {
@@ -645,10 +658,12 @@ build_dashboard_connect() {
         if [ "$need_dash" = true ]; then
             NEXT_DIST_DIR_DASHBOARD=".next-deploy-${build_stamp}-dashboard"
             rm -rf "$SOKAR_ROOT/apps/dashboard/$NEXT_DIST_DIR_DASHBOARD"
+            clean_stale_next_types dashboard
         fi
         if [ "$need_connect" = true ]; then
             NEXT_DIST_DIR_CONNECT=".next-deploy-${build_stamp}-connect"
             rm -rf "$SOKAR_ROOT/apps/connect/$NEXT_DIST_DIR_CONNECT"
+            clean_stale_next_types connect
         fi
     fi
 
