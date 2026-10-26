@@ -16,7 +16,6 @@ const baseEmpty = {
   managerEmail: 'restaurant@sokar.tech',
   openingHours: {},
   personality: null,
-  googleRefreshToken: null,
   phoneNumber: '+0000000000',
   onboardingTasks: null,
 };
@@ -43,7 +42,6 @@ const fullRestaurant = {
   onboardingTasks: { channels: { status: 'completed' } },
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   personality: { id: 'p1' },
-  googleRefreshToken: 'rt-123',
   phoneNumber: '+33612345678',
 };
 

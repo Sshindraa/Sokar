@@ -1,0 +1,50 @@
+name: Deploy Widget (Cloudflare Pages)
+
+# Publie l'écran ChatGPT (apps/widget, export statique) sur widget.sokar.tech.
+# Manuel uniquement : l'écran doit être en ligne avant d'activer OpenAI Reserve,
+# mais rien ne le republie automatiquement. Le projet Cloudflare Pages `sokar-widget`
+# et le domaine widget.sokar.tech sont créés côté Cloudflare (voir apps/widget/README.md).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-widget
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build et publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @sokar/widget...
+      - run: pnpm --filter @sokar/shared build
+      - name: Build (export statique)
+        env:
+          NEXT_PUBLIC_API_URL: https://api.sokar.tech
+        run: pnpm --filter @sokar/widget build
+      - name: Vérifier la page attendue par l'API
+        run: test -f apps/widget/out/restaurant-reservation.html
+      - name: Publier sur Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.152.0 pages deploy apps/widget/out --project-name=sokar-widget --branch=main
+      - name: Smoke test public
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -sSL -o /dev/null -w '%{http_code}' https://widget.sokar.tech/restaurant-reservation.html || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "widget.sokar.tech/restaurant-reservation.html → $code" >&2
+          exit 1

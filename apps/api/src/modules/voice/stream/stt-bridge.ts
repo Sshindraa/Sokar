@@ -8,6 +8,7 @@ import {
 } from './caller-voice-activity';
 import { isRepeatOfLastProcessedTurn } from './transcript-dedupe';
 import { checkFastBargeIn } from './fast-barge-in';
+import { clearBackchannelCandidate, handleCallerBackchannel } from './caller-backchannel';
 import { logVoiceDebugText } from './debug-dialogue';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -59,6 +60,7 @@ import { cancelNoInputRecovery, scheduleUnheardRecovery } from './no-input-recov
 import { resumeInterruptedGreeting } from './greeting-resume';
 import {
   closeInkParallel,
+  peekReadyInkTranscript,
   openInkParallel,
   partySizeDiffers,
   resolveInkTranscript,
@@ -677,7 +679,12 @@ function spellingContinuationExpected(
 ): boolean {
   const createdAt = pending.createdAt ?? now;
   if (now - createdAt >= SPELLING_MAX_HOLD_MS) return false;
-  if (callerSilenceMs(session, now) < SPELLING_VOICE_QUIET_MS) return true;
+  const silence = callerSilenceMs(session, now);
+  const quietMs =
+    Number.isFinite(silence) && (session.callerVoice?.trackedMs ?? 0) >= 500
+      ? Math.max(SPELLING_VOICE_QUIET_MS, spellingSilenceBudgetMs(session))
+      : SPELLING_VOICE_QUIET_MS;
+  if (silence < quietMs) return true;
   const partialAt = session.sttLastNonEmptyPartialAt;
   return (
     partialAt !== undefined && partialAt > createdAt && now - partialAt < SPELLING_PARTIAL_RECENT_MS
@@ -716,6 +723,25 @@ function continuesHeldSpelling(session: CallSession, transcript: string): boolea
 /** Le texte se recolle à l'épellation en cours : profil d'épellation actif, ou suite de lettres d'un segment retenu. */
 function spellingContinues(session: CallSession, transcript: string): boolean {
   return isSpellingTurn(session, transcript) || continuesHeldSpelling(session, transcript);
+}
+
+function spellingSilenceBudgetMs(session: CallSession): number {
+  return Math.max(
+    voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS,
+    callerPauseFinalizeMs(session, voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS),
+  );
+}
+
+/** Budget de silence déjà écoulé déduit, avec une grâce minimale pour les fragments STT tardifs. */
+export function spellingEndOfTurnDelayMs(session: CallSession, now = Date.now()): number {
+  if (session.sttAdapter?.id !== 'deepgram') return STT_SPELLING_EOT_GRACE_MS;
+  const legacy = Math.max(
+    0,
+    voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS - voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
+  );
+  const silence = callerSilenceMs(session, now);
+  if (!Number.isFinite(silence) || (session.callerVoice?.trackedMs ?? 0) < 500) return legacy;
+  return Math.max(Math.min(200, legacy), spellingSilenceBudgetMs(session) - silence);
 }
 
 function schedulePendingSttEndOfTurn(
@@ -1057,6 +1083,7 @@ function emitPartialTranscript(
   allowBargeIn = hasBargeInWordThreshold(echo);
   // Le texte du tour que l'agent est en train de traiter ou de dire : ni interruption, ni nouveau tour.
   if (isRepeatOfLastProcessedTurn(session, cleanTranscript)) return;
+  if (handleCallerBackchannel(session, cleanTranscript, 'partial', words)) return;
 
   if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
@@ -1150,6 +1177,13 @@ function dispatchCommittedTranscript(
     return;
   }
 
+  if (handleCallerBackchannel(session, cleanTranscript, 'committed', words)) {
+    if (timing?.speechEndAt !== undefined) session.sttConsumedSpeechEndAt = timing.speechEndAt;
+    session.turnPartials = [];
+    resetSttTurnDiagnostics(session);
+    return;
+  }
+
   if (isVoiceDialogueIncompleteTranscript(cleanTranscript)) {
     if (allowBargeIn)
       handleBargeInFromTranscript(
@@ -1239,14 +1273,7 @@ function dispatchCommittedTranscript(
       ...(mergedTiming ? { timing: mergedTiming } : {}),
       createdAt: Date.now(),
     };
-    const spellingDelay =
-      session.sttAdapter?.id === 'deepgram'
-        ? Math.max(
-            0,
-            voiceConfig.VOICE_DEEPGRAM_SPELLING_SILENCE_MS -
-              voiceConfig.VOICE_DEEPGRAM_ENDPOINTING_MS,
-          )
-        : STT_SPELLING_EOT_GRACE_MS;
+    const spellingDelay = spellingEndOfTurnDelayMs(session);
     schedulePendingSttEndOfTurn(session, spellingDelay);
     return;
   }
@@ -1581,6 +1608,11 @@ function armSpeculationTimer(session: CallSession, transcript: string): void {
         schedule(Math.max(40, pauseMs - silentMs + 10));
         return;
       }
+    }
+    const readyInk = peekReadyInkTranscript(session);
+    if (readyInk) {
+      speculateStructuredTurn(session, CallSessionManager.getInstance(), readyInk);
+      return;
     }
     speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript, (complete) =>
       finalizeOnSemanticEndOfTurn(session, transcript, complete),
@@ -1976,6 +2008,7 @@ export function handleNormalizedSttMessage(
       }
       return;
     case 'speech_started':
+      clearBackchannelCandidate(session);
       cancelNoInputRecovery(session);
       session.sttLastSpeechStartedAt =
         event.speechStartOffsetMs !== undefined &&
@@ -2035,7 +2068,12 @@ export function connectStt(
   if (onEvent) session.onSttEvent = onEvent;
   const adapter = sttAdapterForSession(session);
   // Ink-2 en parallèle (restaurants listés) : ouverte une fois par appel, sans effet sur Deepgram.
-  if (adapter.id === 'deepgram') openInkParallel(session).catch(() => undefined);
+  if (adapter.id === 'deepgram') {
+    openInkParallel(session, {
+      onCompleteTranscript: (transcript) =>
+        speculateStructuredTurn(session, CallSessionManager.getInstance(), transcript),
+    }).catch(() => undefined);
+  }
   if (session.sttReady) return session.sttReady;
   if (session.sttRetryTimer || session.sttTerminalFailure || session.sttFallbackTriggered) {
     return Promise.resolve();

@@ -366,7 +366,6 @@ function makeReservation(
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
-    googleEventId: overrides.googleEventId ?? null,
     createdAt: overrides.createdAt ?? new Date(),
     channel: overrides.channel ?? 'PHONE',
     state: overrides.state ?? 'CONFIRMED',

@@ -670,6 +670,8 @@ export interface CallSession {
   recentAgentSpeechText?: string;
   recentAgentSpeechTurnId?: string;
   agentAudioActive?: boolean;
+  /** Attente de la réplique actuellement synthétisée, connue avant la fin de sa génération. */
+  agentReplyAwaiting?: StructuredTurnState['lastAwaiting'];
   agentAudioEndedAt?: number;
   /** Intervalles récents où l'audio de l'agent est parti vers l'appelant (fenêtre anti-écho). */
   agentAudioSpans?: { startedAt: number; endedAt?: number }[];

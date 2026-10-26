@@ -61,6 +61,16 @@ d="$(fixture)"; before="$(cat "$d/api.env")"
 check "exit 1" 1 "$(run "$d" operator staging SOKAR_OPERATOR_USER_IDS=oui)"
 check "contenu inchangé" "$before" "$(cat "$d/api.env")"
 
+echo "voice-stt : liste d'UUID acceptée, autre format refusé"
+d="$(fixture)"
+uuid=710309f4-d699-472d-a1db-f22d527fc4d0
+check "exit 0" 0 "$(run "$d" voice-stt prod VOICE_STT_INK_RESTAURANT_IDS=$uuid VOICE_STT_INK_REPLACE_RESTAURANT_IDS=$uuid)"
+check "valeur écrite" "VOICE_STT_INK_REPLACE_RESTAURANT_IDS=$uuid" "$(grep '^VOICE_STT_INK_REPLACE' "$d/api.env")"
+check "exit 1" 1 "$(run "$d" voice-stt prod VOICE_STT_INK_RESTAURANT_IDS='*')"
+check "continuité : UUID accepté" 0 "$(run "$d" voice-stt prod VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=$uuid)"
+check "continuité : valeur écrite" "VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=$uuid" "$(grep '^VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=' "$d/api.env")"
+check "continuité : joker refusé" 1 "$(run "$d" voice-stt prod VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS='*')"
+
 echo "Valeur valide : remplacement de la ligne existante ou ajout en fin de fichier"
 d="$(fixture)"
 printf 'SOKAR_OPERATOR_USER_IDS=user_ancien\n' >> "$d/api.env"

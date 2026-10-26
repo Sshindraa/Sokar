@@ -220,8 +220,6 @@ const PREVIEW_STATE: OnboardingState = {
     phoneNumber: '+33100000000',
     phoneAssigned: true,
     openingHours: {},
-    googleCalendarId: null,
-    googleConnected: false,
     personality: null,
   },
 };

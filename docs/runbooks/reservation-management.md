@@ -185,8 +185,7 @@ reste intacte. L’audit `reservation_fields_changed` conserve un digest de la
 proposition pour reconnaitre un replay ; jamais le lien, le token ou l’identite.
 
 L’identifiant et le lien initial restent valables. Le statut et les conditions
-figees sont conserves ; le cache de disponibilite est invalide. La synchronisation
-Google Calendar du writer existant est conservee. Le carton est actualise apres
+figees sont conserves ; le cache de disponibilite est invalide. Le carton est actualise apres
 reponse serveur ; une reponse perdue declenche une relecture, jamais un second
 envoi aveugle. Un evenement deja importe manuellement dans un calendrier
 personnel n’est pas modifie a distance.

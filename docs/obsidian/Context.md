@@ -16,7 +16,8 @@
 - [ ] Notifications ops : #463 livree staging puis production (`e5eb3520`), CI/smoke verts, API/workers online et sante db/Redis/files OK. Regulation commune active; test artefact staging : deux alertes groupees dans un e-mail accepte, repetition supprimee; admission prod verifiee sans appel fournisseur. Cle staging Sending access/sokar.tech posee ; prod/allowlist intactes. Suivre les volumes et traiter les causes des jobs historiques; quota Free distinct du debit, pas de changement de plan. Voir `resend-alert-regulation.md`.
 - [ ] SMS : staging livré. Prod : 40008 rejeté ; pas de rejeu ; SMS résa/WhatsApp off partout ; cause Telnyx à établir.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
-- [ ] Voix : #579 déployée staging/prod (`9ea0316f`), CI/smokes verts. Staging prêt audio 7 j + comparaison Ink sur seul test, remplacement off ; numéro resté prod. Appel prod `9c291ac3` enregistré : demande comprise, réponse annulée par `first_audio_hold` sur bruit bref. Garde 160 ms locale, rejeu vert ; qualifier staging avant nouvel essai (`voice-stt-qualification.md`) ; clients off.
+- [ ] Voix : #586–#588 livrés (`22546523`), staging/prod et 4566 tests API verts. Ink complet anticipé, silence épellation déduit ; seuil DG inchangé. #580 garde 160 ms en branche, rejeux verts ; qualification sur appel staging à finir (`voice-stt-qualification.md`) ; clients off.
+- [ ] Naturel : phase 1 en branche, 1601 tests voix verts. Qualification Chez Sokar seul ; recette audio avant extension. Voir `voice-conversation-continuity.md`.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
 - [ ] Places : valider CGU, attribution, stockage et compatibilité OSM avant activation.
@@ -38,9 +39,11 @@
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
+- [ ] ChatGPT (OpenAI Reserve) : l'écran `apps/widget` n'est pas en ligne (`widget.sokar.tech/restaurant-reservation.html` → 404) alors que l'API le référence. Gardé (décision 25/10) : le publier avant d'activer l'intégration. Hébergement : Cloudflare Pages, workflow manuel `deploy-widget.yml` prêt (voir Journal 26/10).
 
 ## Décisions récentes
 
+- 2026-10-25 — [Intégrations] Google Agenda retiré complètement (code, UI, offre, colonnes DB) : peu utile aux restaurateurs et synchro partielle (téléphone seulement).
 - 2026-10-22 — [Voix] Aucune fonction voix par restaurant ni coupée par défaut : tout est actif pour tous les restaurants (seuls le débogage et l'enregistrement restent limités).
 - 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.
 - 2026-10-06 — [Onboarding audio] Réponses de démonstration alignées sur les phrases du client; le cache inclut le texte pour invalider les anciens audios après une modification du script.

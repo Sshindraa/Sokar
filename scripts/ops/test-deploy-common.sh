@@ -112,4 +112,16 @@ for app in dashboard connect; do
 done
 SOKAR_ROOT="$SOKAR_ROOT_BEFORE_PRUNE"
 
+# Types générés par un build précédent : supprimés avant le build suivant, sans toucher au reste du
+# build servi (ici `.next` est un lien vers le dernier build activé, comme sur le VPS).
+mkdir -p "$TMP_ROOT/apps/connect/.next/types/app/widget/[slug]" "$TMP_ROOT/apps/connect/.next/dev/types"
+printf 'import "../../../../../src/app/widget/[slug]/page.js"\n' > "$TMP_ROOT/apps/connect/.next/types/app/widget/[slug]/page.ts"
+printf 'export {}\n' > "$TMP_ROOT/apps/connect/.next/dev/types/validator.ts"
+clean_stale_next_types connect
+test ! -e "$TMP_ROOT/apps/connect/.next/types"
+test ! -e "$TMP_ROOT/apps/connect/.next/dev/types"
+test -f "$TMP_ROOT/apps/connect/.next/standalone/apps/connect/server.js"
+clean_stale_next_types connect # idempotent : rien à supprimer, pas d'erreur
+clean_stale_next_types dashboard
+
 echo 'deploy-common release activation/rollback: OK'

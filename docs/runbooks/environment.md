@@ -442,6 +442,11 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # à VOICE_STT_INK_REPLACE_RESTAURANT_IDS ; cette liste seule n'ouvre aucune connexion Ink.
 # Aucun remplacement général fondé sur la seule présence d'une clé. Ce retrait de priorité ne démontre
 # pas que Deepgram reconnaît mieux : qualifier les deux hypothèses avec un audio de référence.
+# Les deltas Ink sont concaténés à l'identique, et seul `flush_done` rend la transcription disponible.
+# Un seul `finalize` est en vol ; une reprise déjà présente à la fin Deepgram est finalisée ensuite.
+# Réponse complète vide : Deepgram pour ce tour. Timeout : Deepgram pour le reste de l'appel,
+# socket Ink fermée pour éviter qu'une réponse tardive ne contamine le prochain tour.
+# Mots isolés : réponse Ink ignorée jusqu'à flush_done ; si le tour suivant arrive avant, fermeture Ink.
 # Ink reçoit seulement la voix (0,5 s avant, 1 s après), au même codec que Deepgram ; attente bornée
 # VOICE_STT_INK_WAIT_MS (250 ms par défaut, 50 à 1000) sur les seuls appels de comparaison.
 # Logs généraux : source sélectionnée, longueurs et empreintes des hypothèses, jamais le texte.
@@ -451,6 +456,10 @@ VOICE_INCOMPLETE_TURN_SILENCE_MS="2000"
 # Coût : 3 crédits Cartesia par seconde envoyée, au plus 10 min par appel ; compteur Redis quotidien.
 VOICE_STT_INK_RESTAURANT_IDS=""
 VOICE_STT_INK_REPLACE_RESTAURANT_IDS=""
+# Phase 1 naturel : refus/accords liés à la proposition précédente et acquiescements pendant une
+# explication. Liste UUID vide par défaut ; qualification sur restaurant de test uniquement.
+# Même groupe `scripts/ops/sync-env.sh voice-stt`, aucune clé fournisseur ni réglage TTS modifié.
+VOICE_CONVERSATION_CONTINUITY_RESTAURANT_IDS=""
 # Secours Ink-2 quand Deepgram tombe, pour tous les restaurants (`CARTESIA_API_KEY`) : au lieu de
 # déclarer la transcription indisponible, l'appel bascule une fois sur Cartesia Ink-2 en mode tours
 # (`/stt/turns/websocket`, ink-2, français, A-law/µ-law 8 kHz tels quels, `turn_end_timeout_ms=1500`, nom du
@@ -885,9 +894,12 @@ propriétaire le 30/09/2026, car les nombres de mots ne suffisaient pas à compr
 `GET /api/internal/voice/calls?restaurantId=…&limit=20` (derniers appels),
 `GET /api/internal/voice/calls/latest?restaurantId=…` et `GET /api/internal/voice/calls/:callId`
 (mesures par tour, plus le dialogue pour les seuls restaurants de
-`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`). Jamais le numéro de l'appelant, le transcript brut ni
-les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
-réseau de l'environnement et y poser la même valeur en variable d'environnement.
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`), et `GET /api/internal/voice/calls/:callId/report`
+(rapport d'appel JSON stocké, début de l'id accepté, mêmes restaurants que le dialogue). Jamais le
+numéro de l'appelant, le transcript brut, l'audio ni les champs d'enregistrement. Pour une session
+Claude : autoriser `api.sokar.tech` dans l'accès réseau de l'environnement et y poser la même
+valeur en variable d'environnement `SOKAR_VOICE_READ_TOKEN`. Une session cloud ne peut pas ouvrir
+de SSH (port 22 sortant fermé) : cette lecture HTTPS est la voie prévue.
 
 Le rapport d'appel (plus de drapeau `CALL_REPORT_ENABLED` depuis le 23/10/2026) est construit après chaque appel d'un restaurant de
 `CALL_RECORDING_TEST_RESTAURANT_IDS` : un rapport (JSON + Markdown) stocké à côté de l'enregistrement,

@@ -3,7 +3,6 @@ import { clerkClient } from '@clerk/fastify';
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { requireOrg } from '../../plugins/clerk';
-import { toRestaurantResponse } from '../restaurants/restaurant-response';
 
 export async function authSyncRoutes(app: FastifyInstance) {
   /**
@@ -36,7 +35,7 @@ export async function authSyncRoutes(app: FastifyInstance) {
           });
         }
       }
-      return reply.send({ synced: true, restaurant: toRestaurantResponse(existing) });
+      return reply.send({ synced: true, restaurant: existing });
     }
 
     // Récupérer les infos de l'organisation Clerk
@@ -114,6 +113,6 @@ export async function authSyncRoutes(app: FastifyInstance) {
     }
 
     req.log.info({ orgId, orgName }, 'Restaurant created from Clerk organization');
-    return reply.status(201).send({ synced: true, restaurant: toRestaurantResponse(restaurant) });
+    return reply.status(201).send({ synced: true, restaurant: restaurant });
   });
 }

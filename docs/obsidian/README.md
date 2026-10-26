@@ -44,7 +44,6 @@ L'API Fastify expose **~30 routes** réparties dans :
 | RGPD                 | `modules/rgpd/`                 | Identity verification, erase, export                          |
 | Admin                | `modules/admin/`                | Flags, configcat, feature toggles                             |
 | Sokar Connect (T2)   | `modules/connect/` (à créer)    | Pages publiques, JSON-LD, hold/confirm web                    |
-| Integrations         | `modules/integrations/`         | Google Calendar                                               |
 | Pilot                | `modules/pilot/`                | KPIs internes pilote                                          |
 
 Voir [[API Endpoints]] pour la doc exhaustive (générée depuis le code).
