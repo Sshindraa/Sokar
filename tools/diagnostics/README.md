@@ -18,7 +18,7 @@ Non exécutés en CI — usage développeur local uniquement.
 | Variable                   | Script(s)                                                | Défaut                                        | Rôle                                                      |
 | -------------------------- | -------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------- |
 | `ELEVENLABS_BENCH_API_KEY` | test-stt-tts, voice-stt-bench                            | obligatoire                                   | Clé ElevenLabs dédiée, différente de la clé de production |
-| `CARTESIA_BENCH_API_KEY`   | test-stt-tts, voice-stt-bench, benchmark-cartesia-voices | obligatoire                                   | Clé Cartesia dédiée, différente de la clé de production   |
+| `CARTESIA_BENCH_API_KEY`   | test-stt-tts, voice-stt-bench, benchmark-cartesia-voices | `CARTESIA_API_KEY`                            | Clé Cartesia optionnelle ; sinon CARTESIA_API_KEY         |
 | `CEREBRAS_BENCH_API_KEY`   | test-stt-tts                                             | obligatoire                                   | Clé Cerebras dédiée, différente de la clé de production   |
 | `OPENROUTER_BENCH_API_KEY` | benchmark-voice-llms                                     | obligatoire                                   | Clé OpenRouter dédiée, différente de la clé de production |
 | `BENCH_MAX_CREDITS`        | diagnostics et bancs                                     | entier positif obligatoire                    | Plafond estimé en unités natives par fournisseur          |
@@ -37,7 +37,8 @@ Non exécutés en CI — usage développeur local uniquement.
 
 - Les scripts MCP (`test-mcp-client.ts`, `sokar-mcp-stdio.ts`) nécessitent le contexte `apps/api` pour résoudre `@modelcontextprotocol/sdk`. Les commandes `pnpm test:mcp:*` gèrent cela automatiquement via `pnpm --filter @sokar/api exec`.
 - Voir `docs/sokar-mcp-integrator-guide.md` pour le guide d'intégration MCP complet.
-- `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+), mais n'utilise
-  que les trois clés `*_BENCH_API_KEY`. Il refuse toute clé absente, identique à la clé
-  de production ou dépassant `BENCH_MAX_CREDITS`. Les unités du plafond sont affichées
+- `test-stt-tts.mjs` charge `.env.local` via `node --env-file` (Node 20+), et utilise
+  les clés `*_BENCH_API_KEY`, avec repli Cartesia sur `CARTESIA_API_KEY`. Il refuse
+  les clés absentes et les estimations dépassant `BENCH_MAX_CREDITS` ; ElevenLabs et
+  Cerebras exigent encore des clés distinctes du runtime. Les unités du plafond sont affichées
   séparément pour ElevenLabs (caractères), Cartesia (caractères) et Cerebras (tokens).

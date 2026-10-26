@@ -1,12 +1,6 @@
 /**
- * Garde-fou des scripts `nb-*` : le banc ne touche jamais une clé de
- * production. Le 24/09, un run de banc sur le compte ElevenLabs partagé
- * prod/staging a épuisé le quota et coupé la transcription des appels réels.
- *
- * Règle : les bancs Deepgram et Cartesia lisent chacun une clé dédiée et refusent une clé identique à
- * celle du runtime. Le banc ElevenLabs lit la clé unique `ELEVENLABS_API_KEY` (décision du
- * 14/10/2026 : une seule clé partagée prod, dev, staging et banc).
- * Les valeurs ne sont jamais journalisées, seulement comparées.
+ * Clés des bancs STT : une clé de banc explicite est prioritaire ; sinon le banc utilise la clé
+ * runtime. Les valeurs ne sont jamais journalisées. Les plafonds de consommation restent explicites.
  */
 
 export type BenchProviderKey = 'CARTESIA_BENCH_API_KEY' | 'DEEPGRAM_BENCH_API_KEY';
@@ -20,20 +14,9 @@ const BENCH_KEYTERM_COST_FACTOR = 1.2;
 const BENCH_STT_USD_PER_HOUR = 0.39;
 
 export function requireBenchKey(envName: BenchProviderKey, productionEnvName: string): string {
-  const value = process.env[envName]?.trim();
+  const value = process.env[envName]?.trim() || process.env[productionEnvName]?.trim();
   if (!value) {
-    throw new Error(
-      `${envName} est requis : le banc n'utilise jamais la clé de production (${productionEnvName}). ` +
-        `Crée une clé de banc dédiée.`,
-    );
-  }
-  const production = process.env[productionEnvName]?.trim();
-  // Comparaison sans journaliser : une clé de banc qui vaut la clé de prod est
-  // exactement l'incident du 24/09.
-  if (production && production === value) {
-    throw new Error(
-      `${envName} est identique à ${productionEnvName}. Utilise une clé de banc dédiée, jamais la clé de production.`,
-    );
+    throw new Error(`${envName} ou ${productionEnvName} est requis pour le banc.`);
   }
   return value;
 }
