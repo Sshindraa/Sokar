@@ -69,8 +69,13 @@ test('WhatsApp choice and withdrawal are explicit and do not send provider traff
   );
   await page.screenshot({ path: testInfo.outputPath('whatsapp-choice.png'), fullPage: true });
   await page.getByRole('button', { name: 'Valider la réservation' }).click();
-  await expect(page.getByText('Rappel WhatsApp accepté pour cette réservation.')).toBeVisible();
-  await page.getByRole('button', { name: 'Retirer mon accord WhatsApp' }).click();
-  await expect(page.getByText('Votre accord WhatsApp a été retiré.')).toBeVisible();
+  await expect(page.getByText('Confirmée')).toBeVisible();
+  await page.locator('summary').filter({ hasText: 'Modifier ou annuler' }).click();
+  await page.getByText('Préférences de rappel').click();
+  await expect(page.getByText('Rappel autorisé.')).toBeVisible();
+  await page.getByRole('switch', { name: 'Rappel WhatsApp' }).click();
+  await expect(
+    page.getByText('Votre accord a été retiré. Un rappel déjà en cours peut encore arriver.'),
+  ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('whatsapp-withdrawn.png'), fullPage: true });
 });
