@@ -47,7 +47,7 @@ import {
 | LLM vocal (Cerebras)        | complétion vocale                             | 8 s (`VOICE_LLM_TIMEOUT_MS`) | aucun                  | oui, 3 échecs / 30 s (implémentation dédiée) | secours OpenRouter (tour structuré), puis excuse parlée    |
 | Stripe                      | PaymentIntent, webhooks                       | 10 s (SDK)                   | `maxNetworkRetries: 2` | non                                          | paiement refusé proprement, job en dead-letter             |
 | Resend                      | email transactionnel                          | 10 s                         | BullMQ                 | non                                          | email non envoyé, trace en base                            |
-| Google Calendar / Places    | freeBusy, recherche                           | 10 s                         | aucun                  | non                                          | disponibilité réduite, log d'avertissement                 |
+| Google Places               | recherche                                     | 10 s                         | aucun                  | non                                          | disponibilité réduite, log d'avertissement                 |
 
 Le circuit breaker LLM vit dans `modules/voice/stream/manager.ts`. Il n'a pas été migré vers le
 module partagé pour ne pas toucher le chemin vocal ; l'unification est un suivi assumé, pas un

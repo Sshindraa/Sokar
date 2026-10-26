@@ -28,8 +28,6 @@ beforeEach(() => {
     managerPhone: '',
     phoneNumber: '',
     phoneAssigned: false,
-    googleCalendarId: null,
-    googleConnected: false,
     openingHours: { mon: { open: '12:00', close: '14:30' } },
     formattedAddress: '1 rue des Tables',
     postalCode: '69002',

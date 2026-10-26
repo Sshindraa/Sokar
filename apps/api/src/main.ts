@@ -30,7 +30,6 @@ import { voiceReadRoutes } from './modules/voice/voice-read.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
 import { reactivationRoutes } from './modules/dashboard/reactivation.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
-import { googleRoutes } from './modules/integrations/google.routes';
 import { testRoutes } from './modules/test/test.routes';
 import { agenticAdminRoutes } from './modules/agentic-reservations/admin/admin.routes';
 import { mcpRoutes } from './modules/agentic-reservations/mcp/server';
@@ -240,7 +239,6 @@ export async function buildApp() {
   await app.register(dashboardRoutes);
   await app.register(reactivationRoutes);
   await app.register(authSyncRoutes);
-  await app.register(googleRoutes);
   await app.register(agenticAdminRoutes);
   await app.register(mcpRoutes);
   await app.register(genericAgentRoutes);

@@ -330,7 +330,8 @@ export class CapacityAwareAvailabilityService {
 
     if (!privatePreview)
       try {
-        version = await this.getVersion(args.restaurantId);
+        // Version lue AVANT le calcul : une mutation survenue entre-temps l'a déjà dépassée, donc ce
+        // résultat peut-être périmé n'est jamais relu.
         const entry: CachedAvailability = { timeZone, dto };
         await redisCache.set(
           this.cacheKey(args, version),

@@ -33,24 +33,21 @@ import { parseTestBookingToken, TEST_BOOKING_BANNER } from '@/lib/test-booking';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
-export const revalidate = 60;
 export const dynamicParams = true;
-// Force-dynamic reste nécessaire pour le serveur standalone Next.js 15 (staging).
-// En prod, l'ISR est gérée par le cache Nginx/Cloudflare en amont (revalidate=60
-// est respecté par le CDN). Cf. AGENTS.md "Notes post-setup" pour le contexte.
+// Rendue à chaque visite : la page lit `?preview`, `?testBooking` et `?source`, et affiche les
+// créneaux du jour. Next répond `no-store` et ni nginx ni Cloudflare ne la cachent ; seules les
+// lectures API sont gardées en cache (60 s, 30 s pour les créneaux).
+// shortcut: un rendu complet par visite, à revoir si le trafic SEO monte (paramètres côté client,
+// aperçu sur une route à part, puis cache de page).
 export const dynamic = 'force-dynamic';
 
-// Pre-render les pages restaurant publiées au build time.
-// Les nouvelles publications sont rendues à la demande (dynamicParams=true)
-// puis mises en cache ISR (revalidate=60).
-//
 // Au build, l'API peut ne pas être disponible (build local, CI sans API).
 // On retourne alors [] pour éviter les erreurs ECONNREFUSED bruyantes ;
-// les pages sont générées à la demande au runtime via ISR (revalidate=60).
+// les pages sont alors rendues à la demande au runtime.
 export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
   if (process.env.NEXT_PHASE === 'phase-production-build') {
     // Vérifier si l'API est joignable avant de tenter le fetch.
-    // Si elle ne l'est pas, on skip et on laisse ISR gérer au runtime.
+    // Si elle ne l'est pas, on skip : rendu à la demande au runtime.
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2000);

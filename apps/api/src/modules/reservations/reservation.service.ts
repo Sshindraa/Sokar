@@ -10,7 +10,6 @@ import {
 } from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
-import { GoogleCalendarClient } from '../../shared/google-calendar/client';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
@@ -49,7 +48,7 @@ export interface CreateReservationInput {
 interface AvailabilitySlot {
   time: string;
   available: boolean;
-  reason?: 'closed' | 'past' | 'local_conflict' | 'calendar_conflict';
+  reason?: 'closed' | 'past' | 'local_conflict';
 }
 
 export interface AvailabilityResult {
@@ -385,34 +384,6 @@ export class ReservationService {
       }
     });
 
-    // 3. Create Google Calendar event and store event ID
-    if (restaurant.googleRefreshToken && restaurant.googleCalendarId) {
-      try {
-        const eventId = await GoogleCalendarClient.createEvent(
-          restaurant.googleRefreshToken,
-          restaurant.googleCalendarId,
-          {
-            start: startTime,
-            end: endTime,
-            summary: `Réservation Sokar - ${input.customerName}`,
-            description: `Couverts: ${input.partySize}\nTéléphone: ${input.customerPhone || 'non fourni'}\nCréée automatiquement par l'assistant vocal Sokar.`,
-          },
-        );
-
-        await db.reservation.update({
-          where: { id: reservation.id, restaurantId: input.restaurantId },
-          data: { googleEventId: eventId },
-        });
-
-        reservation.googleEventId = eventId;
-      } catch (err: unknown) {
-        logger.error(
-          { err: err instanceof Error ? err.message : String(err), reservationId: reservation.id },
-          '[ReservationService] Failed to sync to Google Calendar',
-        );
-      }
-    }
-
     if (reservation.customerPhone) {
       try {
         await CustomerService.recordReservationEvent({
@@ -671,50 +642,6 @@ export class ReservationService {
       }
     }
 
-    // Sync updates to Google Calendar
-    if (
-      reservation.restaurant.googleRefreshToken &&
-      reservation.restaurant.googleCalendarId &&
-      updated.googleEventId
-    ) {
-      try {
-        if (updated.status === 'CANCELLED') {
-          await GoogleCalendarClient.deleteEvent(
-            reservation.restaurant.googleRefreshToken,
-            reservation.restaurant.googleCalendarId,
-            updated.googleEventId,
-          );
-
-          await db.reservation.update({
-            where: { id, restaurantId },
-            data: { googleEventId: null },
-          });
-
-          updated.googleEventId = null;
-        } else {
-          const startTime = updated.reservedAt;
-          const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-
-          await GoogleCalendarClient.updateEvent(
-            reservation.restaurant.googleRefreshToken,
-            reservation.restaurant.googleCalendarId,
-            updated.googleEventId,
-            {
-              start: startTime,
-              end: endTime,
-              summary: `Réservation Sokar - ${updated.customerName} (${updated.status})`,
-              description: `Couverts: ${updated.partySize}\nTéléphone: ${updated.customerPhone || 'non fourni'}\nStatut mis à jour sur le dashboard.`,
-            },
-          );
-        }
-      } catch (err: unknown) {
-        logger.error(
-          { err: err instanceof Error ? err.message : String(err), reservationId: id },
-          '[ReservationService] Failed to update Google Calendar event',
-        );
-      }
-    }
-
     if (!projectedState) {
       await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
       observeReservationMutation({
@@ -748,7 +675,6 @@ export class ReservationService {
   static async delete(id: string, restaurantId: string) {
     const reservation = await db.reservation.findUniqueOrThrow({
       where: { id, restaurantId },
-      include: { restaurant: true },
     });
 
     // Le contrat HTTP DELETE est conservé pour les callers historiques, mais
@@ -812,36 +738,6 @@ export class ReservationService {
       }
     }
 
-    let calendarCleared = false;
-
-    // Delete Google Calendar event if it exists. La réservation reste clôturée
-    // même si le provider calendrier est indisponible ; le retry suivant pourra
-    // reprendre avec le même googleEventId.
-    if (
-      reservation.restaurant.googleRefreshToken &&
-      reservation.restaurant.googleCalendarId &&
-      reservation.googleEventId
-    ) {
-      try {
-        await GoogleCalendarClient.deleteEvent(
-          reservation.restaurant.googleRefreshToken,
-          reservation.restaurant.googleCalendarId,
-          reservation.googleEventId,
-        );
-
-        await db.reservation.update({
-          where: { id, restaurantId },
-          data: { googleEventId: null },
-        });
-        calendarCleared = true;
-      } catch (err: unknown) {
-        logger.error(
-          { err: err instanceof Error ? err.message : String(err), reservationId: id },
-          '[ReservationService] Failed to delete Google Calendar event',
-        );
-      }
-    }
-
     if (!needsTerminalTransition) {
       observeReservationMutation({
         source: 'legacy_service',
@@ -852,7 +748,7 @@ export class ReservationService {
         audit: 'not_applicable',
         notification: 'not_applicable',
         capacity: 'unchanged',
-        mutated: calendarCleared,
+        mutated: false,
       });
     }
   }
@@ -987,7 +883,7 @@ export class ReservationService {
   }
 
   private static async checkSlotAvailability(
-    restaurant: Restaurant & { exposureSettings?: { capacitySpecials: unknown } | null },
+    restaurant: Pick<Restaurant, 'id'>,
     startTime: Date,
     partySize: number,
   ): Promise<{ available: boolean; reason?: AvailabilitySlot['reason'] }> {
@@ -1014,24 +910,6 @@ export class ReservationService {
     }
     if (!slot.available) {
       return { available: false, reason: 'local_conflict' };
-    }
-
-    const serviceDurationMinutes = resolveServiceDurationMinutes(
-      restaurant.exposureSettings?.capacitySpecials,
-    );
-    const endTime = new Date(startTime.getTime() + serviceDurationMinutes * 60 * 1000);
-
-    if (restaurant.googleRefreshToken && restaurant.googleCalendarId) {
-      const isAvailable = await GoogleCalendarClient.checkAvailability(
-        restaurant.googleRefreshToken,
-        restaurant.googleCalendarId,
-        startTime,
-        endTime,
-      );
-
-      if (!isAvailable) {
-        return { available: false, reason: 'calendar_conflict' };
-      }
     }
 
     return { available: true };

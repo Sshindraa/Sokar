@@ -33,11 +33,9 @@ const restaurantFromDb = {
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   carrier: 'telnyx',
   smsConfirmEnabled: true,
-  googleCalendarId: 'calendar-safe-id',
   exposureSettings: {
     connectPublished: true,
   },
-  googleRefreshToken: 'secret-refresh-token-never-cache',
   personality: {
     id: 'personality-1',
     restaurantId: 'rest-1',
@@ -138,14 +136,13 @@ describe('RestaurantService context cache', () => {
 
     expect(db.restaurant.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { phoneNumber: 'pn-cache' },
-      select: expect.not.objectContaining({ googleRefreshToken: true }),
+      select: expect.any(Object),
     });
     expect(setCachedContext).toHaveBeenCalledWith('phone:pn-cache', result, REDIS_CTX_TTL_SECONDS);
     expect(result.onlineReservationsActive).toBe(true);
 
     const cachedPayload = JSON.stringify(vi.mocked(setCachedContext).mock.calls[0][1]);
     expect(cachedPayload).toContain('Suggère les plats du jour.');
-    expect(cachedPayload).toContain('calendar-safe-id');
     expect(cachedPayload).toContain('voice-from-personality');
     // Le modèle effectivement configuré, pas la constante par défaut : le .env
     // local peut le surcharger, et c'est ce modèle-là qui part en cache.

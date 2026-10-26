@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 import { isValidPhoneInput } from '@/features/onboarding/phone-format';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -28,7 +27,6 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowUpRight,
-  Calendar,
   Gift,
   Languages,
   ListOrdered,
@@ -117,14 +115,6 @@ export default function SettingsPage() {
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [savedPersonality, setSavedPersonality] = useState(false);
 
-  // Google Calendar Integration
-  const [googleCalendarId, setGoogleCalendarId] = useState('primary');
-  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
-  const [savingCalendar, setSavingCalendar] = useState(false);
-  const [savedCalendar, setSavedCalendar] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
-
   // File d'attente
   const [capacitySpecials, setCapacitySpecials] = useState<CapacitySpecials>({});
   const [waitingListEnabled, setWaitingListEnabled] = useState(false);
@@ -152,16 +142,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('google_sync') === 'success') {
-        window.history.replaceState({}, '', window.location.pathname);
-      } else if (params.get('google_sync') === 'error') {
-        // Texte fixe : le paramètre `message` de l'URL n'est jamais affiché (n'importe quel lien pourrait
-        // y mettre ce qu'il veut sous les yeux du restaurateur).
-        setError(
-          "La connexion à Google Agenda n'a pas abouti. Réessayez en acceptant bien l'accès demandé par Google.",
-        );
-        window.history.replaceState({}, '', window.location.pathname);
-      } else if (params.get('billing') === 'success') {
+      if (params.get('billing') === 'success') {
         setBillingNotice(
           'Souscription confirmée. Votre formule s’affichera ici dans quelques instants.',
         );
@@ -228,8 +209,6 @@ export default function SettingsPage() {
         setName(data.name || '');
         setManagerPhone(data.managerPhone || '');
         setManagerEmail(data.managerEmail || '');
-        setGoogleCalendarId(data.googleCalendarId || 'primary');
-        setGoogleCalendarConnected(Boolean(data.googleCalendarConnected));
         if (pers && pers.id) {
           setPersonality(pers);
           setProfileType(pers.profileType || 'BISTROT_BRASSERIE');
@@ -384,68 +363,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleConnectCalendar() {
-    setError('');
-    try {
-      const data = await get<{ url?: string }>('integrations/google-calendar/auth');
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("URL d'authentification invalide");
-      }
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Impossible d'initier la connexion Google Calendar"));
-    }
-  }
-
-  async function handleDisconnectCalendar() {
-    setDisconnectConfirmOpen(true);
-  }
-
-  async function confirmDisconnectCalendar() {
-    setDisconnectConfirmOpen(false);
-    setDisconnecting(true);
-    setError('');
-    try {
-      await post('integrations/google-calendar/disconnect');
-      setGoogleCalendarConnected(false);
-      setGoogleCalendarId('primary');
-      if (restaurant) {
-        setRestaurant({
-          ...restaurant,
-          googleCalendarConnected: false,
-          googleCalendarId: null,
-        });
-      }
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Erreur lors de la déconnexion'));
-    } finally {
-      setDisconnecting(false);
-    }
-  }
-
-  async function handleSaveCalendarSettings(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingCalendar(true);
-    setSavedCalendar(false);
-    setError('');
-
-    try {
-      await patch(`restaurants/${orgId}`, { googleCalendarId });
-      setSavedCalendar(true);
-      if (restaurant) {
-        setRestaurant({
-          ...restaurant,
-          googleCalendarId,
-        });
-      }
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Erreur lors de la sauvegarde des paramètres de l'agenda"));
-    } finally {
-      setSavingCalendar(false);
-    }
-  }
-
   async function handleWaitingListSave(e: React.FormEvent) {
     e.preventDefault();
     setSavingWaitingList(true);
@@ -556,7 +473,6 @@ export default function SettingsPage() {
     ['settings-crm', 'CRM', canManageCrmPrivacy],
     ['settings-display', 'Affichage', true],
     ['settings-plan', 'Abonnement', true],
-    ['settings-integrations', 'Intégrations', true],
     ['settings-waiting-list', 'File d’attente', true],
     ['settings-gift-cards', 'Cartes cadeaux', true],
     ['settings-agent', 'Assistant', true],
@@ -877,114 +793,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Intégrations */}
-      <Card
-        id="settings-integrations"
-        className="sokar-card scroll-mt-24 animate-fade-in transition-all duration-200"
-      >
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-foreground">
-            <Calendar size={18} className="text-primary" />
-            Intégrations
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent">
-            <div className="flex items-start gap-4">
-              <div className="rounded-xl bg-secondary p-3 text-primary">
-                <Calendar size={24} />
-              </div>
-              <div>
-                <p className="font-semibold text-base">Google Calendar</p>
-                <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                  Synchronisez automatiquement vos réservations avec votre agenda Google et vérifiez
-                  la disponibilité en temps réel avant de confirmer.
-                </p>
-                {googleCalendarConnected ? (
-                  <div className="mt-3 flex items-center gap-2 transition-all duration-200">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-success animate-pulse" />
-                    <span className="text-xs font-medium text-success">
-                      Connecté à Google Calendar
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-3 flex items-center gap-2 transition-all duration-200">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-warning animate-pulse" />
-                    <span className="text-xs font-medium text-warning">Non connecté</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              {googleCalendarConnected ? (
-                <Button
-                  variant="outline"
-                  onClick={handleDisconnectCalendar}
-                  disabled={disconnecting}
-                  className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
-                >
-                  {disconnecting ? 'Déconnexion...' : 'Déconnecter'}
-                </Button>
-              ) : (
-                <Button onClick={handleConnectCalendar} className="transition-all duration-200">
-                  Connecter
-                  <ArrowUpRight size={16} className="ml-1" />
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {googleCalendarConnected && (
-            <form
-              onSubmit={handleSaveCalendarSettings}
-              className="max-w-full sm:max-w-lg space-y-4 pt-6 border-t border-border animate-fade-in"
-            >
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-1.5 text-foreground">
-                  ID de l&apos;agenda Google
-                </label>
-                <Input
-                  value={googleCalendarId}
-                  onChange={(e) => {
-                    setGoogleCalendarId(e.target.value);
-                    setSavedCalendar(false);
-                  }}
-                  placeholder="primary"
-                  required
-                  className="transition-all duration-200 focus-visible:ring-primary"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Utilisez{' '}
-                  <code className="font-mono text-primary bg-secondary px-1 py-0.5 rounded">
-                    primary
-                  </code>{' '}
-                  pour votre agenda principal, ou spécifiez un ID d&apos;agenda spécifique (ex:
-                  adresse email ou ID d&apos;agenda Google partagé).
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  type="submit"
-                  disabled={savingCalendar}
-                  className="transition-all duration-200"
-                >
-                  <Save size={16} className="mr-1" />
-                  {savingCalendar ? 'Enregistrement...' : 'Enregistrer les paramètres'}
-                </Button>
-                {savedCalendar && (
-                  <span className="flex items-center gap-1 text-sm text-primary animate-fade-in">
-                    <CheckCircle2 size={16} />
-                    Paramètres enregistrés
-                  </span>
-                )}
-              </div>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-
       {/* File d&apos;attente */}
       <Card
         id="settings-waiting-list"
@@ -1179,16 +987,6 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
-
-      <ConfirmDialog
-        open={disconnectConfirmOpen}
-        onConfirm={confirmDisconnectCalendar}
-        onCancel={() => setDisconnectConfirmOpen(false)}
-        title="Déconnecter l'agenda Google"
-        description="Êtes-vous sûr de vouloir déconnecter votre agenda Google ? Vos réservations ne seront plus synchronisées."
-        confirmLabel="Déconnecter"
-        variant="destructive"
-      />
     </div>
   );
 }

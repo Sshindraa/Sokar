@@ -2,8 +2,7 @@
  * Tests for the central RestaurantService.
  *
  * Couvre :
- *  - loadContext : cache hit/miss, projection des champs sensibles
- *    (champs non sélectionnés comme googleRefreshToken ne fuientent pas),
+ *  - loadContext : cache hit/miss, projection des champs,
  *    application du plan override (ConfigCat), TTL Redis.
  *  - invalidateRestaurantContextCache : no-op si phoneNumber vide.
  *  - checkMarginHealth : incrément mensuel + horaire, Sentry sur seuil.
@@ -60,7 +59,6 @@ const FULL_RESTAURANT = {
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   carrier: 'telnyx',
   smsConfirmEnabled: true,
-  googleCalendarId: 'cal-id',
   giftCardMinimumAmount: 50,
   personality: {
     id: 'p-1',
