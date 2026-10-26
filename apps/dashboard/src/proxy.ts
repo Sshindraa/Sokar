@@ -1,5 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 
 const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/admin(.*)', '/onboarding(.*)']);
 const isOperatorRoute = createRouteMatcher([
@@ -8,6 +8,12 @@ const isOperatorRoute = createRouteMatcher([
   '/dashboard/usage',
 ]);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+// Widget public, aussi servi sur les sous-domaines des restaurants : jamais de session Clerk.
+// Sans cela, un restaurateur connecté (cookie Clerk partagé avec *.sokar.tech) serait redirigé
+// vers la poignée de main Clerk, refusée hors de sokar.tech.
+// Même liste que le bloc des sous-domaines dans infra/nginx/sokar.conf.
+const PUBLIC_WIDGET_ROUTE =
+  /^\/(?:(?:widget|book)\/[^/]+|api\/proxy\/(?:public\/.+|marketing\/attribution\/click|restaurants\/[^/]+\/(?:public|availability)))$/;
 
 const legacyOperatorDestinations: Record<string, string> = {
   '/dashboard/usage': '/admin/margin',
@@ -51,7 +57,7 @@ function rewriteBookToWidget(req: NextRequest): NextResponse | null {
   return NextResponse.rewrite(url);
 }
 
-const proxy = hasClerkKey
+const clerkProxy = hasClerkKey
   ? clerkMiddleware(async (auth, req) => {
       const rewrite = rewriteBookToWidget(req);
       if (rewrite) return rewrite;
@@ -69,17 +75,26 @@ const proxy = hasClerkKey
         }
       }
     })
-  : function localPreviewMiddleware(req: NextRequest) {
-      const rewrite = rewriteBookToWidget(req);
-      if (rewrite) return rewrite;
+  : null;
 
-      const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
-      if (legacyDestination) {
-        return NextResponse.redirect(new URL(legacyDestination, req.url));
-      }
+function localPreviewMiddleware(req: NextRequest) {
+  const rewrite = rewriteBookToWidget(req);
+  if (rewrite) return rewrite;
 
-      return NextResponse.next();
-    };
+  const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
+  if (legacyDestination) {
+    return NextResponse.redirect(new URL(legacyDestination, req.url));
+  }
+
+  return NextResponse.next();
+}
+
+function proxy(req: NextRequest, event: NextFetchEvent) {
+  if (!clerkProxy || PUBLIC_WIDGET_ROUTE.test(req.nextUrl.pathname)) {
+    return localPreviewMiddleware(req);
+  }
+  return clerkProxy(req, event);
+}
 
 export default proxy;
 
