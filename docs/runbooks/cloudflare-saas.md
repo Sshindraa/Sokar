@@ -228,6 +228,10 @@ curl -s https://chez-sokar-demo.sokar.tech/api/proxy/public/widget/chez-sokar-de
 Limite connue : la carte cadeau (`/widget/<slug>/gift-card`) reste chez Connect, qui la
 renvoie vers la fiche sur un sous-domaine. C'était déjà le cas avant ce routage.
 
+Retour arrière : le formulaire de Connect n'existe plus (supprimé le 26/10/2026). Pour revenir
+à l'ancien routage, il faudrait restaurer ce code depuis l'historique git ; le simple retrait du
+bloc nginx ci-dessus renverrait `/book/<slug>` vers une page introuvable.
+
 ### Flux restaurateur (zero clic)
 
 1. Le restaurateur active Sokar Connect dans le dashboard
