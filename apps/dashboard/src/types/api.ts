@@ -83,9 +83,6 @@ export interface Restaurant {
   managerPhone: string;
   managerEmail: string;
   phoneNumber: string;
-  googleCalendarId: string | null;
-  /** Google Agenda relié. Le jeton lui-même ne quitte jamais le serveur. */
-  googleCalendarConnected: boolean;
   giftCardMinimumAmount: number | null;
   giftCardCommissionRate: number;
   giftCardEnabled: boolean;

@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
 import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from '../reservation.service';
-import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 
 vi.mock('../../../shared/db/client', () => {
   const mockDb = {
@@ -50,15 +49,6 @@ vi.mock('../../../shared/db/client', () => {
   return { db: mockDb };
 });
 
-vi.mock('../../../shared/google-calendar/client', () => ({
-  GoogleCalendarClient: {
-    checkAvailability: vi.fn(),
-    createEvent: vi.fn(),
-    updateEvent: vi.fn(),
-    deleteEvent: vi.fn(),
-  },
-}));
-
 vi.mock('../../../shared/queue/queues', () => ({
   queues: {
     smsClient: {
@@ -71,8 +61,6 @@ const mockRestaurant = {
   id: 'rest-123',
   name: 'Chez Test',
   smsConfirmEnabled: true,
-  googleRefreshToken: null,
-  googleCalendarId: null,
   timezone: 'Europe/Paris',
   openingHours: {
     mon: { open: '12:00', close: '23:00' },
@@ -129,7 +117,6 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
       customerName: 'Alice',
       customerPhone: '+33612345678',
       status: 'CONFIRMED',
-      googleEventId: 'event-old',
     };
 
     vi.mocked(db.reservation.findUnique).mockResolvedValue(
@@ -175,7 +162,6 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
       partySize: 4,
       customerName: 'Alice',
       customerPhone: '+33612345678',
-      googleEventId: null,
     };
 
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
@@ -223,7 +209,6 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
-        googleEventId: null,
       } as unknown as Awaited<ReturnType<typeof db.reservation.create>>);
 
       const result = await ReservationService.create(
@@ -245,7 +230,6 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
       partySize: 4,
       customerName: 'Alice',
       customerPhone: '+33612345678',
-      googleEventId: null,
     };
 
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
@@ -303,7 +287,6 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
       customerName: 'Alice',
       customerPhone: '+33612345678',
       status: 'CONFIRMED',
-      googleEventId: null,
     };
 
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(

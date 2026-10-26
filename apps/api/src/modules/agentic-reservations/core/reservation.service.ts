@@ -58,7 +58,6 @@ import {
 } from '../../../shared/constants/timeouts.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 import { CustomerService } from '../../customers/customer.service';
-import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 import {
   deactivateMarketingConversions,
   recordMarketingAttributionClick,
@@ -891,34 +890,6 @@ export class ReservationService {
           { reservationId: args.reservationId, errorName: (err as Error)?.name },
           'MCP reservation availability cache invalidation failed',
         );
-      }
-    }
-    if (result.changed && result.reservation.googleEventId) {
-      const restaurant = await this.prisma.restaurant.findUnique({
-        where: { id: args.restaurantId },
-        select: { googleRefreshToken: true, googleCalendarId: true },
-      });
-      if (restaurant?.googleRefreshToken && restaurant.googleCalendarId) {
-        try {
-          await GoogleCalendarClient.updateEvent(
-            restaurant.googleRefreshToken,
-            restaurant.googleCalendarId,
-            result.reservation.googleEventId,
-            {
-              start: result.reservation.startsAt ?? result.reservation.reservedAt,
-              end:
-                result.reservation.endsAt ??
-                new Date(result.reservation.reservedAt.getTime() + 7_200_000),
-              summary: `Réservation Sokar - ${result.reservation.customerName}`,
-              description: `Couverts: ${result.reservation.partySize}\nRéservation modifiée via Sokar.`,
-            },
-          );
-        } catch (err) {
-          logger.error(
-            { reservationId: args.reservationId, errorName: (err as Error)?.name },
-            'MCP reservation calendar sync failed',
-          );
-        }
       }
     }
     if (result.changed) {

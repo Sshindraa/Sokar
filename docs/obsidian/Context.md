@@ -41,9 +41,11 @@
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
+- [ ] ChatGPT (OpenAI Reserve) : l'écran `apps/widget` n'est pas en ligne (`widget.sokar.tech/restaurant-reservation.html` → 404) alors que l'API le référence. Gardé (décision 25/10) : le publier avant d'activer l'intégration.
 
 ## Décisions récentes
 
+- 2026-10-25 — [Intégrations] Google Agenda retiré complètement (code, UI, offre, colonnes DB) : peu utile aux restaurateurs et synchro partielle (téléphone seulement).
 - 2026-10-22 — [Voix] Aucune fonction voix par restaurant ni coupée par défaut : tout est actif pour tous les restaurants (seuls le débogage et l'enregistrement restent limités).
 - 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.
 - 2026-10-06 — [Onboarding audio] Réponses de démonstration alignées sur les phrases du client; le cache inclut le texte pour invalider les anciens audios après une modification du script.

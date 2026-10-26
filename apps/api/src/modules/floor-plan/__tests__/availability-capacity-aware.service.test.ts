@@ -70,8 +70,6 @@ function makeRestaurant(
     carrier: overrides.carrier ?? 'vapi',
     smsConfirmEnabled: overrides.smsConfirmEnabled ?? true,
     theforkSavings: (overrides.theforkSavings ?? 0) as unknown as Prisma.Decimal,
-    googleCalendarId: overrides.googleCalendarId ?? null,
-    googleRefreshToken: overrides.googleRefreshToken ?? null,
     onboardingTasks: overrides.onboardingTasks ?? {},
     onboardingDone: overrides.onboardingDone ?? false,
     onboardingCompletedAt: overrides.onboardingCompletedAt ?? null,
@@ -197,7 +195,6 @@ function makeReservation(
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
-    googleEventId: overrides.googleEventId ?? null,
     createdAt: overrides.createdAt ?? new Date(),
     channel: overrides.channel ?? 'PHONE',
     state: overrides.state ?? 'CONFIRMED',
@@ -778,6 +775,33 @@ describe('CapacityAwareAvailabilityService', () => {
 
     expect(second).toEqual(first);
     expect(redisCache.incr).toHaveBeenCalledWith(expect.stringContaining('availability:v:r-1'));
+    expect(redisCache.set).toHaveBeenCalledTimes(2);
+  });
+
+  it('ne range pas sous la nouvelle version un calcul commencé avant une mutation', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+    // Une réservation est validée pendant que le premier calcul lit la base.
+    const restaurantDb = prisma.restaurant as unknown as {
+      findUnique: (args: unknown) => Promise<unknown>;
+    };
+    const readRestaurant = restaurantDb.findUnique;
+    let mutated = false;
+    restaurantDb.findUnique = async (args) => {
+      if (!mutated) {
+        mutated = true;
+        await CapacityAwareAvailabilityService.invalidateAvailability(RESTAURANT_ID);
+      }
+      return readRestaurant(args);
+    };
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+    await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    // Le second appel recalcule : le premier résultat, périmé, n'a pas été servi depuis le cache.
     expect(redisCache.set).toHaveBeenCalledTimes(2);
   });
 

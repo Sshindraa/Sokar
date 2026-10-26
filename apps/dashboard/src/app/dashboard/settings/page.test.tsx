@@ -28,8 +28,6 @@ const RESTAURANT = {
   managerPhone: '',
   managerEmail: 'chef@bistrot.fr',
   phoneNumber: '+33400000000',
-  googleCalendarId: null,
-  googleCalendarConnected: false,
   giftCardEnabled: false,
   slug: 'le-bistrot',
   exposureSettings: { capacitySpecials: { waitingListEnabled: true } },

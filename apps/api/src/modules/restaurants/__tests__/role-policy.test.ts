@@ -61,7 +61,6 @@ describe('équipe de service (STAFF)', () => {
     ['POST', '/team/invitations'],
     ['POST', '/restaurants/sites'],
     ['POST', '/restaurants/sites/:id/members'],
-    ['POST', '/integrations/google-calendar/disconnect'],
     ['POST', '/api/agentic/opt-in'],
     ['GET', '/api/agentic/exposure-settings'],
     // Données clients et activité

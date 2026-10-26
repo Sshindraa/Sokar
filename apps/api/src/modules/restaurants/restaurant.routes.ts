@@ -41,7 +41,6 @@ import {
   QuickFloorSetupSchema,
 } from './onboarding-floor.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
-import { toRestaurantResponse } from './restaurant-response';
 import { resolveStyledGreeting } from '../voice/stream/styled-greeting';
 import { computeConnectScore } from '../connect/connect-score.service';
 import {
@@ -98,7 +97,6 @@ const RestaurantProfileSchema = z.object({
   managerEmail: z.string().email(),
   phoneNumber: z.string().min(5),
   openingHours: OpeningHoursSchema,
-  googleCalendarId: z.string().nullable().optional(),
   giftCardMinimumAmount: z.number().int().min(0).optional(),
   giftCardEnabled: z.boolean().optional(),
 });
@@ -253,8 +251,6 @@ function onboardingPayload(
       phoneNumber: restaurant.phoneNumber,
       phoneAssigned: hasUsablePhone(restaurant.phoneNumber),
       openingHours: restaurant.openingHours,
-      googleCalendarId: restaurant.googleCalendarId,
-      googleConnected: Boolean(restaurant.googleRefreshToken),
       personality: restaurant.personality,
       practicalInfo: normalizePracticalInfo(restaurant.practicalInfo),
       // Sokar Connect
@@ -493,7 +489,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
         { name: 'nightly', data: { restaurantId: restaurant.id } },
       );
-      return reply.status(201).send(toRestaurantResponse(restaurant));
+      return reply.status(201).send(restaurant);
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === 'P2002') {
         return reply.status(409).send({ error: 'Phone number already registered' });
@@ -830,12 +826,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     return reply.send(
-      toRestaurantResponse(
-        await app.db.restaurant.findUniqueOrThrow({
-          where: { id },
-          include: { personality: true, exposureSettings: true },
-        }),
-      ),
+      await app.db.restaurant.findUniqueOrThrow({
+        where: { id },
+        include: { personality: true, exposureSettings: true },
+      }),
     );
   });
 
@@ -979,7 +973,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (updated.slug) {
       await app.redisCache.del(`connect:restaurant:${updated.slug}`).catch(() => {});
     }
-    return reply.send(toRestaurantResponse(updated));
+    return reply.send(updated);
   });
 
   // ─── Personnalité de l'agent vocal ─────────────────────────────
@@ -1454,7 +1448,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     return reply.send({
-      restaurant: toRestaurantResponse(updatedRestaurant),
+      restaurant: updatedRestaurant,
       exposureSettings: updatedSettings,
     });
   };
