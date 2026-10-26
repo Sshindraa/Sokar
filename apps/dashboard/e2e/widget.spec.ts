@@ -270,7 +270,7 @@ test.describe('Widget réservation public', () => {
     await expect(customerName).toHaveValue('Alice Martin');
     await expect(customerPhone).toHaveValue('0600000000');
     await page.getByRole('button', { name: 'Valider la réservation' }).click();
-    await expect(page.getByRole('heading', { name: 'Table réservée !' })).toBeVisible();
+    await expect(page.getByText('Confirmée', { exact: true })).toBeVisible();
     expect(holdPayload).toMatchObject({
       date: secondDateParam,
       time: scenario.secondTime,

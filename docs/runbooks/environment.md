@@ -969,12 +969,12 @@ dispose d'un latch Redis par période de facturation, réarmé si la consommatio
 Les bancs Scribe historiques utilisent encore la clé ElevenLabs unique `ELEVENLABS_API_KEY`
 (décision du 14/10/2026, partagée prod, dev et staging) ; ils ne qualifient plus le STT runtime
 et ne doivent pas servir aux essais fournisseur. Les bancs actuels Deepgram/Cartesia requièrent
-des clés séparées des clés runtime :
+une clé fournisseur : les clés de banc sont prioritaires, avec repli sur les clés runtime :
 
 | Variable                       | Usage                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------ |
-| **DEEPGRAM_BENCH_API_KEY**     | Clé dédiée aux bancs Deepgram, différente de DEEPGRAM_API_KEY                        |
-| **CARTESIA_BENCH_API_KEY**     | Clé dédiée au banc STT Cartesia, différente de CARTESIA_API_KEY                      |
+| **DEEPGRAM_BENCH_API_KEY**     | Clé optionnelle des bancs Deepgram ; sinon DEEPGRAM_API_KEY                          |
+| **CARTESIA_BENCH_API_KEY**     | Clé optionnelle du banc STT Cartesia ; sinon CARTESIA_API_KEY                        |
 | **ELEVENLABS_API_KEY**         | Clé unique : prod, dev, staging et anciens bancs Scribe/TTS (décision du 14/10/2026) |
 | **OPENROUTER_BENCH_API_KEY**   | Clé dédiée du banc LLM archivé, différente de OPENROUTER_API_KEY                     |
 | **CEREBRAS_BENCH_API_KEY**     | Clé dédiée du diagnostic vocal manuel, différente de CEREBRAS_API_KEY                |
@@ -984,8 +984,7 @@ des clés séparées des clés runtime :
 Les scripts vérifient l'accès à chaque endpoint utilisé avant le corpus, avec une seule
 requête de contrôle par fournisseur. Pour le banc Scribe, le contrôle ouvre la socket Realtime et
 n'envoie aucun audio. Le banc STT détaillé et ses limites sont documentés dans
-apps/api/scripts/voice-stt-bench/README.md. N'exécutez jamais un banc avec une clé
-identique à celle de production.
+apps/api/scripts/voice-stt-bench/README.md. Les bancs Deepgram/Cartesia acceptent aussi les clés de production.
 
 Historique du banc Scribe du 24/09/2026 (7 phrases × 3 passages, A-law 8 kHz) : détection sur toutes les
 langues 33 % d'informations critiques justes, `fr,en` 76 %, `fr` imposé 52 %. Deepgram est configuré en

@@ -10,7 +10,7 @@
  *                           fin de tour détectée par Flux (ForceEndTurn en secours).
  *
  * BENCH_DG_FORMAT=smart|numerals|none compare le formatage sur les mêmes clips.
- * Clé : `DEEPGRAM_BENCH_API_KEY` (jamais affichée). Sortie : JSON `BenchRecord`.
+ * Clé : `DEEPGRAM_BENCH_API_KEY` ou `DEEPGRAM_API_KEY` (jamais affichée). Sortie : JSON `BenchRecord`.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';

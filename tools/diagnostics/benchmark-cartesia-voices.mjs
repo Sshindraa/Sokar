@@ -7,8 +7,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const apiKey = process.env.CARTESIA_BENCH_API_KEY;
-const productionApiKey = process.env.CARTESIA_API_KEY?.replace(/"/g, '');
+const apiKey = process.env.CARTESIA_BENCH_API_KEY?.trim() || process.env.CARTESIA_API_KEY?.trim();
 const model = process.env.CARTESIA_MODEL || 'sonic-3.6';
 const outputRoot =
   process.env.CARTESIA_BENCHMARK_DIR || '/private/tmp/sokar-cartesia-voice-benchmark';
@@ -39,11 +38,9 @@ function safeFilePart(value) {
 }
 
 if (!apiKey || apiKey === '...' || apiKey.length < 20) {
-  console.error('CARTESIA_BENCH_API_KEY est absente ou ressemble encore au placeholder.');
-  process.exit(2);
-}
-if (productionApiKey && apiKey === productionApiKey) {
-  console.error('CARTESIA_BENCH_API_KEY doit être différente de CARTESIA_API_KEY.');
+  console.error(
+    'CARTESIA_BENCH_API_KEY ou CARTESIA_API_KEY est absente ou ressemble encore au placeholder.',
+  );
   process.exit(2);
 }
 
