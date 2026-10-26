@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
+import ReservationView, { type Reservation } from '@/app/r/reservation-view';
 import { ReservationDatePicker } from './reservation-date-picker';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getGiftCardOrigin } from '@/lib/gift-card-origin';
@@ -30,10 +31,7 @@ import {
   User,
   Mail,
   Utensils,
-  Heart,
   Loader2,
-  CalendarCheck,
-  Download,
   Gift,
   X,
 } from 'lucide-react';
@@ -101,14 +99,6 @@ function formatShortFrenchDate(date: Date) {
   return `${date.getDate()} ${FRENCH_MONTHS_SHORT[date.getMonth()]}`;
 }
 
-function escapeICS(value: string) {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\n/g, '\\n');
-}
-
 function triggerHaptic() {
   if (typeof window === 'undefined') return;
   navigator.vibrate?.(8);
@@ -135,6 +125,8 @@ interface RestaurantPublic {
   cuisine?: string;
   city?: string;
   address?: string;
+  formattedAddress?: string;
+  phoneNumber?: string;
   tags?: string[];
 }
 
@@ -349,9 +341,6 @@ export default function ReservationWidget({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [whatsappOptIn, setWhatsappOptIn] = useState(false);
-  const [whatsappWithdrawn, setWhatsappWithdrawn] = useState(false);
-  const [whatsappWithdrawing, setWhatsappWithdrawing] = useState(false);
-  const [whatsappWithdrawError, setWhatsappWithdrawError] = useState(false);
   // Jamais pré-cochées ; une case n'apparaît qu'avec la coordonnée correspondante.
   const [marketingConsent, setMarketingConsent] = useState<
     Record<MarketingConsentChannel, boolean>
@@ -374,7 +363,6 @@ export default function ReservationWidget({
   const [confirmedReservation, setConfirmedReservation] = useState<ConfirmedReservation | null>(
     null,
   );
-  const [showCalendarMenu, setShowCalendarMenu] = useState(false);
 
   // Gift card modal — embed la page Connect /widget/[slug]/gift-card en iframe
   // imbriquée. L'overlay reste dans l'iframe du widget résa, donc l'utilisateur
@@ -679,51 +667,6 @@ export default function ReservationWidget({
   const glassCardClass =
     'rounded-[1.6rem] border border-white/[0.62] bg-white/[0.58] shadow-sm backdrop-blur-2xl sm:bg-white/[0.34]';
 
-  // Generate Google and ICS Calendar exports
-  const calendarUrls = useMemo(() => {
-    if (!selectedDate || !selectedTime || !restaurant) return { google: '', ics: '' };
-    try {
-      const [hours, minutes] = selectedTime.split(':').map(Number);
-      const start = new Date(selectedDate);
-      start.setHours(hours, minutes, 0, 0);
-
-      // End is 2 hours later
-      const end = new Date(start);
-      end.setHours(end.getHours() + 2);
-
-      const formatUTC = (date: Date) => {
-        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      };
-
-      const dtStart = formatUTC(start);
-      const dtEnd = formatUTC(end);
-      const title = `Table chez ${restaurant.name}`;
-      const details = `Réservation pour ${partySize} personnes.\nNom : ${customerName}\nTéléphone : ${customerPhone}`;
-      const location = restaurant.address || restaurant.name;
-
-      const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dtStart}/${dtEnd}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
-
-      const icsContent = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'BEGIN:VEVENT',
-        `SUMMARY:${escapeICS(title)}`,
-        `DTSTART:${dtStart}`,
-        `DTEND:${dtEnd}`,
-        `DESCRIPTION:${escapeICS(details)}`,
-        `LOCATION:${escapeICS(location)}`,
-        'END:VEVENT',
-        'END:VCALENDAR',
-      ].join('\r\n');
-
-      const icsUrl = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
-
-      return { google: googleUrl, ics: icsUrl };
-    } catch (e) {
-      return { google: '', ics: '' };
-    }
-  }, [selectedDate, selectedTime, restaurant, partySize, customerName, customerPhone]);
-
   const selectionKey = `${selectedDate ? formatDateParam(selectedDate) : ''}|${selectedTime}|${partySize}`;
   const waitingListOffer = waitingListOfferKey === selectionKey;
 
@@ -918,26 +861,39 @@ export default function ReservationWidget({
     }
   }
 
-  async function withdrawWhatsapp() {
-    if (!confirmedReservation?.whatsappWithdrawalToken || whatsappWithdrawing) return;
-    setWhatsappWithdrawing(true);
-    setWhatsappWithdrawError(false);
-    try {
-      await publicApiFetch(
-        'POST',
-        `public/r/${encodeURIComponent(restaurant?.slug || restaurantId)}/whatsapp-consent/withdraw`,
-        {
-          reservationId: confirmedReservation.id,
-          token: confirmedReservation.whatsappWithdrawalToken,
+  const bookingConfirmation = useMemo(() => {
+    if (!confirmedReservation || !restaurant || !selectedDate) return null;
+    return {
+      reservation: {
+        restaurantName: restaurant.name,
+        restaurantPhone: restaurant.phoneNumber ?? null,
+        restaurantAddress: restaurant.formattedAddress ?? restaurant.address,
+        startsAt: confirmedReservation.reservedAt,
+        date: formatDateParam(selectedDate),
+        time: selectedTime,
+        partySize: confirmedReservation.partySize,
+        state: confirmedReservation.status.toUpperCase(),
+        test: testBooking,
+        whatsappReminder: {
+          visible: Boolean(confirmedReservation.whatsappWithdrawalToken),
+          enabled: Boolean(confirmedReservation.whatsappWithdrawalToken),
         },
-      );
-      setWhatsappWithdrawn(true);
-    } catch {
-      setWhatsappWithdrawError(true);
-    } finally {
-      setWhatsappWithdrawing(false);
-    }
-  }
+      } satisfies Reservation,
+      managementUrl: confirmedReservation.managementUrl,
+      withdrawWhatsapp: confirmedReservation.whatsappWithdrawalToken
+        ? async () => {
+            await publicApiFetch(
+              'POST',
+              `public/r/${encodeURIComponent(restaurant.slug || restaurantId)}/whatsapp-consent/withdraw`,
+              {
+                reservationId: confirmedReservation.id,
+                token: confirmedReservation.whatsappWithdrawalToken,
+              },
+            );
+          }
+        : undefined,
+    };
+  }, [confirmedReservation, restaurant, selectedDate, selectedTime, testBooking, restaurantId]);
 
   if (loading) {
     return (
@@ -1163,6 +1119,105 @@ export default function ReservationWidget({
     }
   }
 
+  const giftCardOverlay = (
+    <div style={reservationTheme}>
+      {showGiftCard && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+          onClick={() => setShowGiftCard(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Offrir une carte cadeau"
+        >
+          <div
+            className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[hsl(var(--reservation-line))] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Gift size={18} className="text-[hsl(var(--reservation-glow))]" />
+                <span className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
+                  Carte cadeau
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGiftCard(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-[hsl(var(--reservation-soft))] transition-colors hover:bg-black/5"
+                aria-label="Fermer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {giftCardUrl && (
+                <iframe
+                  ref={giftCardIframeRef}
+                  src={giftCardUrl}
+                  title="Offrir une carte cadeau"
+                  className="block w-full border-0"
+                  style={{ height: giftCardHeight ? `${giftCardHeight}px` : '70dvh' }}
+                  loading="lazy"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (success && confirmedReservation && restaurant && selectedDate) {
+    return (
+      <ReservationView
+        confirmation={bookingConfirmation ?? undefined}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                requestedSlotRef.current = null;
+                setSelectionNotice('');
+                setSuccess(false);
+                setStep(1);
+                setSelectedTime('');
+                setCustomerName('');
+                setCustomerPhone('');
+                setCustomerEmail('');
+                setPartySize(2);
+                setError('');
+                setConfirmedReservation(null);
+                setWhatsappOptIn(false);
+                setSelectedDate(new Date());
+              }}
+              className="min-h-11 text-xs text-muted-foreground underline underline-offset-4 transition-all duration-200 hover:text-foreground"
+            >
+              Faire une autre réservation
+            </button>
+            {!isEmbedded && (
+              <Link
+                href={`/restaurant/${restaurant.slug ?? restaurantId}${testBooking ? `?${new URLSearchParams({ testBooking: testBookingToken })}` : ''}`}
+                className="min-h-11 content-center text-xs text-muted-foreground underline underline-offset-4 transition-all duration-200 hover:text-foreground"
+              >
+                Retour
+              </Link>
+            )}
+            {!testBooking && restaurant.giftCardEnabled !== false && (
+              <button
+                type="button"
+                onClick={() => setShowGiftCard(true)}
+                className="min-h-11 text-xs text-muted-foreground underline underline-offset-4 transition-all duration-200 hover:text-foreground"
+              >
+                Offrir une carte cadeau
+              </button>
+            )}
+            {giftCardOverlay}
+          </>
+        }
+      />
+    );
+  }
+
   return (
     <div className={backgroundClass} style={backgroundStyle}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/30 to-transparent" />
@@ -1308,158 +1363,7 @@ export default function ReservationWidget({
               </p>
             )}
 
-            {success ? (
-              <div className="animate-in fade-in zoom-in-95 duration-500 space-y-5 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/46 text-[hsl(var(--reservation-success))] shadow-lg shadow-black/5 backdrop-blur-2xl">
-                  <CheckCircle2 size={34} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold tracking-normal text-[hsl(var(--reservation-ink))]">
-                    Table réservée !
-                  </h2>
-                  <p className="mx-auto mt-1 max-w-xs text-xs text-[hsl(var(--reservation-muted))]">
-                    Votre réservation est enregistrée. Les notifications dépendent des options du
-                    restaurant.
-                  </p>
-                  {confirmedReservation?.id && (
-                    <p className="mt-2 text-[10px] font-mono text-[hsl(var(--reservation-soft))]">
-                      N° de réservation : {confirmedReservation.id.slice(0, 12)}...
-                    </p>
-                  )}
-                  {confirmedReservation?.managementUrl && (
-                    <a
-                      href={confirmedReservation.managementUrl}
-                      referrerPolicy="no-referrer"
-                      className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 transition-all duration-200"
-                    >
-                      Gérer ma réservation
-                    </a>
-                  )}
-                  {!confirmedReservation?.managementUrl &&
-                    confirmedReservation?.whatsappWithdrawalToken && (
-                      <div className="mt-3 text-sm text-[hsl(var(--reservation-ink))]">
-                        <p>
-                          {whatsappWithdrawn
-                            ? 'Votre accord WhatsApp a été retiré.'
-                            : 'Rappel WhatsApp accepté pour cette réservation.'}
-                        </p>
-                        {!whatsappWithdrawn && (
-                          <button
-                            type="button"
-                            onClick={withdrawWhatsapp}
-                            disabled={whatsappWithdrawing}
-                            className="mt-2 underline underline-offset-4 transition-all duration-200 disabled:opacity-50"
-                          >
-                            {whatsappWithdrawing
-                              ? 'Retrait en cours…'
-                              : 'Retirer mon accord WhatsApp'}
-                          </button>
-                        )}
-                        {whatsappWithdrawError && (
-                          <p role="alert">
-                            Le retrait n’a pas pu être confirmé. Veuillez réessayer ou contacter le
-                            restaurant.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                </div>
-
-                <div className={cn(glassCardClass, 'flex overflow-hidden text-left')}>
-                  <div className="flex w-[7rem] flex-col items-center justify-center border-r border-white/50 bg-white/26 p-4">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]">
-                      {selectedDate && FRENCH_DAYS[selectedDate.getDay()].substring(0, 3)}
-                    </span>
-                    <span className="my-1 text-4xl font-black tracking-normal text-[hsl(var(--reservation-ink))]">
-                      {selectedDate?.getDate()}
-                    </span>
-                    <span className="text-xs font-semibold text-[hsl(var(--reservation-soft))]">
-                      {selectedTime.replace(':', 'h')}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1 p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-accent))]">
-                      Réservation
-                    </p>
-                    <h4 className="mt-1 truncate text-sm font-extrabold text-[hsl(var(--reservation-ink))]">
-                      {restaurant?.name}
-                    </h4>
-                    <p className="mt-1 text-xs font-semibold text-[hsl(var(--reservation-soft))]">
-                      {partySize} personne(s)
-                    </p>
-                    <p className="truncate text-xs font-semibold text-[hsl(var(--reservation-soft))]">
-                      Nom : {customerName}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Agenda Export Button & Dropdown */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowCalendarMenu(!showCalendarMenu)}
-                    className="flex w-full items-center justify-center gap-2 rounded-full border border-white/70 bg-white/44 py-3.5 text-sm font-semibold text-[hsl(var(--reservation-ink))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/60 active:scale-[0.98]"
-                  >
-                    <CalendarCheck size={16} />
-                    Ajouter à mon agenda
-                  </button>
-
-                  {showCalendarMenu && (
-                    <div className="animate-in fade-in slide-in-from-top-2 duration-200 absolute left-0 right-0 z-20 mt-2 rounded-2xl border border-white/60 bg-white/90 p-2 shadow-xl backdrop-blur-2xl flex flex-col gap-1">
-                      <a
-                        href={calendarUrls.google}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setShowCalendarMenu(false)}
-                        className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm font-medium text-[hsl(var(--reservation-ink))] hover:bg-black/5 transition-colors"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-[hsl(var(--reservation-ink))]" />
-                        Google Calendar
-                      </a>
-                      <a
-                        href={calendarUrls.ics}
-                        download={`reservation-${restaurant?.name.replace(/\s+/g, '-').toLowerCase()}.ics`}
-                        onClick={() => setShowCalendarMenu(false)}
-                        className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm font-medium text-[hsl(var(--reservation-ink))] hover:bg-black/5 transition-colors"
-                      >
-                        <Download size={14} className="text-[hsl(var(--reservation-soft))]" />
-                        Apple Calendar / Outlook (.ics)
-                      </a>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-center gap-2 text-[hsl(var(--reservation-ink))]">
-                  <Heart size={14} fill="currentColor" />
-                  <span className="text-xs font-semibold text-[hsl(var(--reservation-soft))]">
-                    {restaurant?.name}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    requestedSlotRef.current = null;
-                    setSelectionNotice('');
-                    setSuccess(false);
-                    setStep(1);
-                    setSelectedTime('');
-                    setCustomerName('');
-                    setCustomerPhone('');
-                    setCustomerEmail('');
-                    setPartySize(2);
-                    setError('');
-                    setConfirmedReservation(null);
-                    setShowCalendarMenu(false);
-                    const today = new Date();
-                    setSelectedDate(today);
-                  }}
-                  className="w-full rounded-full bg-[hsl(var(--reservation-ink))] py-4 text-sm font-semibold text-white shadow-lg shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97]"
-                >
-                  Faire une autre réservation
-                </button>
-              </div>
-            ) : (
+            {
               <div
                 className={cn(
                   'space-y-2 lg:grid lg:grid-cols-[minmax(18rem,0.74fr)_minmax(0,1.76fr)] lg:gap-5 lg:space-y-0',
@@ -2267,7 +2171,7 @@ export default function ReservationWidget({
                   </div>
                 </div>
               </div>
-            )}
+            }
 
             <div className="hidden sm:flex items-center justify-center gap-1.5 pt-2 lg:pt-1">
               <span className="text-[10px] tracking-wide text-[hsl(var(--reservation-muted)/0.72)]">
@@ -2296,49 +2200,7 @@ export default function ReservationWidget({
         {/* Overlay carte cadeau — modal desktop / sheet mobile.
             L'iframe imbriquée charge la page Connect qui gère son propre
             auto-resize via postMessage. */}
-        {showGiftCard && (
-          <div
-            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
-            onClick={() => setShowGiftCard(false)}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Offrir une carte cadeau"
-          >
-            <div
-              className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-3xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-[hsl(var(--reservation-line))] px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Gift size={18} className="text-[hsl(var(--reservation-glow))]" />
-                  <span className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
-                    Carte cadeau
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowGiftCard(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-[hsl(var(--reservation-soft))] transition-colors hover:bg-black/5"
-                  aria-label="Fermer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {giftCardUrl && (
-                  <iframe
-                    ref={giftCardIframeRef}
-                    src={giftCardUrl}
-                    title="Offrir une carte cadeau"
-                    className="block w-full border-0"
-                    style={{ height: giftCardHeight ? `${giftCardHeight}px` : '70dvh' }}
-                    loading="lazy"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        {giftCardOverlay}
       </main>
     </div>
   );
