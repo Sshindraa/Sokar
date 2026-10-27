@@ -6,6 +6,9 @@ import sokarBase, { prettier } from '@sokar/config/eslint.config.mjs';
 export default [
   ...sokarBase,
 
+  // Local bench outputs (gitignored): never in CI, so they must not fail the pre-push lint.
+  { ignores: ['scripts/voice-stt-bench/.data/'] },
+
   // Type-aware rules for the API src/ tree
   {
     files: ['src/**/*.ts'],
