@@ -6,7 +6,7 @@
  * see it (docs/runbooks/marketing-email-pilot.md, section "Texte de consentement"). Any change of
  * wording must come with a new version: an older proof must keep matching the text it was given for.
  */
-export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-27';
+export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-28';
 
 export const MARKETING_CONSENT_CHANNELS = ['EMAIL', 'SMS'] as const;
 export type MarketingConsentChannel = (typeof MARKETING_CONSENT_CHANNELS)[number];
@@ -16,8 +16,10 @@ const CHANNEL_WORDING: Record<MarketingConsentChannel, string> = {
   SMS: 'par SMS',
 };
 
+/** « du restaurant {nom} » ; « de ce restaurant » sans nom. Évite « de Le Bistrot ». */
 function restaurantLabel(restaurantName: string): string {
-  return restaurantName.trim() || 'ce restaurant';
+  const name = restaurantName.trim();
+  return name ? `du restaurant ${name}` : 'de ce restaurant';
 }
 
 /** The label shown next to an unchecked box. Never pre-checked, never required to book. */
@@ -25,8 +27,7 @@ export function buildMarketingConsentLabel(
   channel: MarketingConsentChannel,
   restaurantName: string,
 ): string {
-  const name = restaurantLabel(restaurantName);
-  return `Recevoir les offres et actualités de ${name} ${CHANNEL_WORDING[channel]}`;
+  return `Recevoir les offres et actualités ${restaurantLabel(restaurantName)} ${CHANNEL_WORDING[channel]}`;
 }
 
 /**

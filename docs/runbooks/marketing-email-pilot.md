@@ -115,7 +115,7 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 2. **Texte de consentement** : validé le 27/10/2026, puis raccourci le même jour à la demande de Hamza (version `marketing-consent-2026-10-27`). Relecture juridique à faire avant les vrais clients.
 3. **Conservation** : fichier de prospection 3 ans après le dernier contact venant du client (une réservation
    en est un) ; preuve du consentement tant que la permission est active, puis 5 ans après le retrait
-   (prescription civile) ; registre d'opposition 3 ans (décision du 23/10). Le code ne l'applique pas encore.
+   (prescription civile) ; registre d'opposition 3 ans (décision du 23/10). Le code applique les deux premières durées depuis le 28/10 (purge marketing du worker de réconciliation).
 4. **Expéditeur** : sous-domaine dédié `news.sokar.tech`, nom affiché = restaurant, `Reply-To` = adresse
    du restaurant. Les e-mails transactionnels gardent leur domaine.
 5. **Resend** : plan Free pour l'instant (pas encore de volume) ; passage au plan supérieur dès les premiers
@@ -129,17 +129,17 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 9. **Vocal** : Léa ne recueille rien ; le consentement passe par un lien dans la confirmation de réservation.
 10. **Tarifs** : « Envoi de campagnes » reste dans l'offre Pro (fonction en cours de livraison).
 
-### Texte de consentement (version 2026-10-27)
+### Texte de consentement (version 2026-10-28)
 
-Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jour. Il n'a pas de relecture juridique externe. Il vit à un seul endroit,
+Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jour. Le 28/10/2026, « de {nom} » est devenu « du restaurant {nom} » (évite « de Le Bistrot ») : nouvelle version. Il n'a pas de relecture juridique externe. Il vit à un seul endroit,
 `packages/shared/src/marketing-consent.ts`, utilisé à la fois par les écrans et par l'API.
 
-| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                |
-| ------ | ----------------------------------------------------------------------- |
-| E-mail | « Recevoir les offres et actualités de {nom du restaurant} par e-mail » |
-| SMS    | « Recevoir les offres et actualités de {nom du restaurant} par SMS »    |
+| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                           |
+| ------ | ---------------------------------------------------------------------------------- |
+| E-mail | « Recevoir les offres et actualités du restaurant {nom du restaurant} par e-mail » |
+| SMS    | « Recevoir les offres et actualités du restaurant {nom du restaurant} par SMS »    |
 
-- **Version** : `marketing-consent-2026-10-27` (`MARKETING_CONSENT_VERSION`). Les preuves enregistrées avec `marketing-consent-2026-10-22` gardent l'ancien texte. Toute modification du texte
+- **Version** : `marketing-consent-2026-10-28` (`MARKETING_CONSENT_VERSION`). Les preuves enregistrées avec `marketing-consent-2026-10-27` ou `marketing-consent-2026-10-22` gardent l'ancien texte. Toute modification du texte
   exige une nouvelle version : une preuve ancienne doit rester rattachée au texte que le client a lu. Une
   page qui envoie une version inconnue n'enregistre rien (la réservation, elle, aboutit).
 - **Finalité** : envoi d'offres et d'actualités du restaurant, par le canal coché, rien d'autre.
@@ -150,7 +150,7 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   aussi conservée dans le journal (`proof_text`) : une preuve reste lisible si le texte change. Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
-- **Durées de conservation : trois obligations distinctes.** Le registre d'opposition est conservé **3 ans** (décision de Hamza du 23/10/2026, appliquée par une purge sur le worker de réconciliation). Le fichier de prospection et la preuve n'ont pas encore de durée appliquée par le code.
+- **Durées de conservation : trois obligations distinctes.** Le registre d'opposition est conservé **3 ans** (décision de Hamza du 23/10/2026, appliquée par une purge sur le worker de réconciliation). Le fichier de prospection et la preuve ont une durée appliquée depuis le 28/10 (purge marketing du worker de réconciliation, chaque nuit à 3 h 20).
   La politique de confidentialité (`PRIVACY_RETENTION_RULES`) n'a pas de ligne marketing. Les durées
   ci-dessous sont des **recommandations de la CNIL à contextualiser, pas une durée universelle ni une
   décision validée** :
@@ -215,7 +215,7 @@ Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jo
   ce cas, l'accord n'est pas enregistré).
 - **E-mail de confirmation** : après une réservation web confirmée avec une adresse, un e-mail transactionnel
   part depuis `EMAIL_FROM` (outbox `reservation-confirmation-email`, une fois par réservation). Il ne contient
-  aucune offre. La ligne « Recevoir les offres et actualités de {restaurant} » y figure seulement si
+  aucune offre. La ligne « Recevoir les offres et actualités du restaurant {restaurant} » y figure seulement si
   `marketingEmailConsentStatus` l'autorise (adresse de la confirmation, pas d'accord ni de retrait, pas
   d'opposition). Sans `MARKETING_OPTOUT_HASH_SECRET` ou `MARKETING_UNSUBSCRIBE_SECRET`, la confirmation part
   sans la ligne.

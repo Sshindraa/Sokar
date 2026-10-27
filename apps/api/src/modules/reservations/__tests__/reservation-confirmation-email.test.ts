@@ -252,7 +252,7 @@ describe('confirmation e-mail content', () => {
       consentUrl: 'https://api.test/marketing/consent?token=t',
     });
 
-    expect(html).toContain('Recevoir les offres et actualités de Chez &lt;Sokar&gt;');
+    expect(html).toContain('Recevoir les offres et actualités du restaurant Chez &lt;Sokar&gt;');
     expect(html).toContain('href="https://api.test/marketing/consent?token=t"');
   });
 

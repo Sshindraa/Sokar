@@ -12,10 +12,10 @@ import {
 describe('marketing consent wording', () => {
   it('names the restaurant and the channel in a short label', () => {
     expect(buildMarketingConsentLabel('EMAIL', 'Chez Sokar')).toBe(
-      'Recevoir les offres et actualités de Chez Sokar par e-mail',
+      'Recevoir les offres et actualités du restaurant Chez Sokar par e-mail',
     );
     expect(buildMarketingConsentLabel('SMS', 'Chez Sokar')).toBe(
-      'Recevoir les offres et actualités de Chez Sokar par SMS',
+      'Recevoir les offres et actualités du restaurant Chez Sokar par SMS',
     );
   });
 

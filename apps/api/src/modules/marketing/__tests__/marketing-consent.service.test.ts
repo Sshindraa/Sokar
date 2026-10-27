@@ -276,7 +276,7 @@ describe('recordStaffMarketingConsent', () => {
 describe('marketing consent wording', () => {
   it('names the restaurant and the channel', () => {
     expect(buildMarketingConsentLabel('EMAIL', 'Chez Sokar')).toBe(
-      'Recevoir les offres et actualités de Chez Sokar par e-mail',
+      'Recevoir les offres et actualités du restaurant Chez Sokar par e-mail',
     );
     expect(buildMarketingConsentLabel('SMS', '  ')).toContain('ce restaurant');
   });

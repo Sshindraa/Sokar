@@ -60,7 +60,7 @@ export function buildReservationConfirmationEmail(data: ReservationConfirmationE
     ? `<p>Pour modifier ou annuler, <a href="${escapeHtml(data.managementUrl)}">ouvrez votre réservation</a>, ou appelez le restaurant.</p>`
     : '<p>Pour modifier ou annuler, appelez le restaurant.</p>';
   const consent = data.consentUrl
-    ? `<p style="margin-top: 32px; font-size: 12px; color: #64748b;"><a href="${escapeHtml(data.consentUrl)}" style="color: #64748b;">Recevoir les offres et actualités de ${name}</a></p>`
+    ? `<p style="margin-top: 32px; font-size: 12px; color: #64748b;"><a href="${escapeHtml(data.consentUrl)}" style="color: #64748b;">Recevoir les offres et actualités du restaurant ${name}</a></p>`
     : '';
   return {
     // Un objet sur une seule ligne : pas de retour à la ligne venu du nom du restaurant.

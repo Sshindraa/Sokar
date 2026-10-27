@@ -914,7 +914,7 @@ describe('marketing control plane routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toContain(CHECKBOX);
-      expect(response.body).toContain('les offres et actualités de Chez Sokar');
+      expect(response.body).toContain('les offres et actualités du restaurant Chez Sokar');
       expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
     });
 
