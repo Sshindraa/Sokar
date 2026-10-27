@@ -149,6 +149,54 @@ describe('CrmCustomerPage', () => {
     );
   });
 
+  it('Essential : fiche simple avec historique et préférences, sans valeur, tags ni doublons', async () => {
+    apiMocks.get.mockResolvedValue({
+      data: {
+        id: 'customer-1',
+        name: 'Alice Martin',
+        phone: '+33612345678',
+        emailNormalized: null,
+        isVip: false,
+        notes: null,
+        identities: [],
+        crmAccess: 'basic',
+        visitSummary: {
+          visits: 5,
+          visits365d: 3,
+          noShows365d: 2,
+          lastVisitAt: '2026-09-10T19:30:00.000Z',
+        },
+        preferences: [
+          {
+            id: 'preference-1',
+            key: 'dietary_restrictions',
+            value: ['noix'],
+            source: 'MANUAL',
+            confidence: 1,
+            updatedAt: '2026-09-10T19:30:00.000Z',
+          },
+        ],
+        timeline: [],
+      },
+    });
+
+    render(<CrmCustomerPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Alice Martin' })).toBeInTheDocument();
+    expect(screen.getByText('Historique')).toBeInTheDocument();
+    expect(screen.getByText('Préférences de service')).toBeInTheDocument();
+    expect(screen.getByText('noix')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ajouter/ })).toBeInTheDocument();
+    expect(screen.queryByText('Dépense encaissée')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Nom du tag')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Gérer les doublons' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Voir les formules' })).toHaveAttribute(
+      'href',
+      '/pricing',
+    );
+    expect(apiMocks.get).not.toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
+  });
+
   it('protège et télécharge l’export CRM après code SMS', async () => {
     const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:crm-export');
     const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);

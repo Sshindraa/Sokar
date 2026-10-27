@@ -105,6 +105,8 @@ export type CreateReservationInput = {
   endsAt: Date;
   customerName: string;
   customerPhone: string;
+  /** Optionnel : e-mail de confirmation (canal WEB), conservé comme le téléphone. */
+  customerEmail?: string | null;
   channel: ReservationChannel;
   policy: PolicySnapshot;
   actor: string;
@@ -456,6 +458,7 @@ export class ReservationService {
             ...(isTest ? { isTest: true } : {}),
             customerName: input.customerName,
             customerPhone: input.customerPhone,
+            customerEmail: input.customerEmail ?? null,
             partySize: input.partySize,
             reservedAt: input.startsAt,
             channel: input.channel,

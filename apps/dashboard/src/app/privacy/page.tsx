@@ -47,6 +47,13 @@ const DATA_CATEGORIES = [
     retention: PRIVACY_RETENTION.reservations,
   },
   {
+    category: 'Adresse e-mail de la réservation',
+    examples: 'Adresse e-mail saisie pour une réservation en ligne.',
+    purpose: 'Gestion de la réservation, notamment l’envoi de sa confirmation.',
+    legalBasis: PRIVACY_DOCUMENT.reservationProcessing,
+    retention: PRIVACY_RETENTION.reservationEmail,
+  },
+  {
     category: 'Demandes de démonstration',
     examples: 'Établissement, e-mail, téléphone et besoin facultatifs, dates et statut du suivi.',
     purpose: 'Répondre à votre demande, préparer la démonstration et assurer son suivi.',

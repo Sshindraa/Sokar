@@ -158,6 +158,22 @@ export const optionalUrlSchema = z.preprocess((value) => {
   return trimmed === '' ? undefined : trimmed;
 }, z.string().url().optional());
 
+/**
+ * Adresse e-mail seule (« bonjour@… », sans nom affiché) : le nom affiché vient du restaurant. Une
+ * valeur vide se lit « non configurée ».
+ */
+export const optionalEmailAddressSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().email().optional());
+
+/** Budget quotidien des e-mails marketing : entier ≥ 0, 40 par défaut, 0 coupe les envois. */
+export const marketingEmailDailyBudgetSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.coerce.number().int().min(0).default(40),
+);
+
 /** Hôtes Deepgram autorisés : la clé API leur est envoyée, jamais à une valeur libre. */
 export const DEEPGRAM_API_HOSTS = ['api.deepgram.com', 'api.eu.deepgram.com'] as const;
 
@@ -409,6 +425,9 @@ const EnvSchema = z
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_RECIPIENT_ALLOWLIST: z.string().optional(),
+    // Expéditeur dédié aux e-mails marketing (jamais EMAIL_FROM) et budget quotidien global.
+    MARKETING_EMAIL_FROM: optionalEmailAddressSchema,
+    MARKETING_EMAIL_DAILY_BUDGET: marketingEmailDailyBudgetSchema,
     // POS connectors remain disabled until a provider sandbox and pilot are
     // qualified. The adapter and import endpoints are still available locally
     // when explicitly enabled in a non-production environment.

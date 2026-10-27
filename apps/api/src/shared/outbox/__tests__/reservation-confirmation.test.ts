@@ -59,3 +59,39 @@ describe('transactional reservation confirmation intent', () => {
     );
   });
 });
+
+describe('confirmation e-mail intent', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const tx = {} as Prisma.TransactionClient;
+  const web = {
+    channel: 'WEB',
+    id: 'res-1',
+    restaurantId: 'rest-1',
+    state: 'CONFIRMED',
+    customerPhone: null,
+    customerEmail: 'client@example.com',
+  };
+
+  it('queues an ID-only e-mail intent for a web booking with an address, whatever the SMS setting', async () => {
+    await enqueueReservationConfirmation(tx, web);
+    expect(enqueue).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        topic: 'reservation-confirmation-email',
+        idempotencyKey: 'reservation-confirmation-email:res-1',
+        payload: { reservationId: 'res-1' },
+      }),
+    );
+    expect(JSON.stringify(vi.mocked(enqueue).mock.calls)).not.toContain('client@example.com');
+  });
+
+  it.each([
+    ['a test booking', { isTest: true }],
+    ['a booking without address', { customerEmail: null }],
+    ['a booking not yet confirmed', { state: 'PENDING' }],
+    ['a booking made by voice', { channel: 'PHONE' }],
+  ])('queues no e-mail intent for %s', async (_label, overrides) => {
+    await enqueueReservationConfirmation(tx, { ...web, ...overrides });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});

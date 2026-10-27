@@ -22,6 +22,7 @@ import {
   redactSensitiveCustomerFields,
 } from './customer-privacy';
 import { findCustomerForPhone } from './customer.service';
+import { buildCustomersCsv } from './customer-export';
 import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import {
@@ -76,6 +77,7 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
 }
 
 const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
+const EXPORT_LIMIT = 10_000;
 
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
@@ -153,6 +155,45 @@ export async function customerRoutes(app: FastifyInstance) {
         total,
         limit: query.limit,
         offset: query.offset,
+      });
+    },
+  );
+
+  /** Whole customer file as CSV, for the owner only: backup and portability, on every plan. */
+  app.get(
+    '/customers/export',
+    {
+      preHandler: [
+        requireOrg(),
+        requireCapability('customers.basic'),
+        async (req, reply) => {
+          if (req.siteRole === 'OWNER') return;
+          return reply.status(403).send({
+            error: 'CUSTOMER_EXPORT_OWNER_REQUIRED',
+            message: 'Seul le propriétaire du site peut exporter le fichier clients.',
+          });
+        },
+      ],
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const restaurantId = req.restaurantId!;
+      // shortcut: 10 000 clients maximum par export, à relever (ou paginer) si un site les dépasse.
+      const customers = await db.customer.findMany({
+        where: { restaurantId, archivedAt: null, mergedIntoId: null },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: EXPORT_LIMIT + 1,
+      });
+      // Un CSV partiel ferait croire à une sauvegarde complète : on refuse plutôt que de tronquer.
+      if (customers.length > EXPORT_LIMIT) {
+        return reply.status(422).send({
+          error: 'CUSTOMER_EXPORT_TOO_LARGE',
+          message: `Le fichier dépasse ${EXPORT_LIMIT} clients : l'export complet n'est pas disponible.`,
+        });
+      }
+      const withVisits = await withCustomerLifecycles(restaurantId, customers);
+      return reply.send({
+        data: { csv: buildCustomersCsv(withVisits), count: withVisits.length },
       });
     },
   );

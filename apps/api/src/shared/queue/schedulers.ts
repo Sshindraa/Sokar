@@ -97,6 +97,14 @@ export async function registerJobSchedulers(): Promise<void> {
       { name: 'test-reservation-purge', data: { kind: 'test-reservation-purge' } },
     ),
   );
+  // Conservation marketing (runbook §4) : fichier de prospection et preuves, une fois par nuit.
+  await register('reconciliation/marketing-retention-purge', () =>
+    queues.reconciliation.upsertJobScheduler(
+      'marketing-retention-purge',
+      { pattern: '20 3 * * *', tz: 'Europe/Paris' },
+      { name: 'marketing-retention-purge', data: { kind: 'marketing-retention-purge' } },
+    ),
+  );
 
   // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
   await register('confirmation-sms/scan', () =>

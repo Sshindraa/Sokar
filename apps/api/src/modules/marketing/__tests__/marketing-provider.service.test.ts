@@ -53,7 +53,7 @@ describe('marketing provider reconciliation', () => {
     vi.stubEnv('TELNYX_FROM_NUMBER', '+33123456789');
     vi.stubEnv('TELNYX_PUBLIC_KEY', 'telnyx-public-key');
     vi.stubEnv('RESEND_API_KEY', 'resend-key');
-    vi.stubEnv('EMAIL_FROM', 'noreply@example.test');
+    vi.stubEnv('MARKETING_EMAIL_FROM', 'bonjour@news.example.test');
     vi.stubEnv('RESEND_WEBHOOK_SECRET', 'resend-secret');
     vi.stubEnv('MARKETING_WHATSAPP_ENABLED', 'false');
 
@@ -82,7 +82,7 @@ describe('marketing provider reconciliation', () => {
         TELNYX_API_KEY: 'key',
         TELNYX_FROM_NUMBER: '+33123456789',
         RESEND_API_KEY: 'key',
-        EMAIL_FROM: 'noreply@example.test',
+        MARKETING_EMAIL_FROM: 'bonjour@news.example.test',
       }),
     ).toEqual({
       sendsEnabled: true,
@@ -117,6 +117,15 @@ describe('marketing provider reconciliation', () => {
         }),
       ),
     ).not.toContain(testTelnyxKey);
+  });
+
+  it('signale un expéditeur marketing manquant, même si EMAIL_FROM est renseigné', () => {
+    expect(
+      getMarketingProviderReadiness({
+        RESEND_API_KEY: 'key',
+        EMAIL_FROM: 'noreply@example.test',
+      }).email.missing,
+    ).toEqual(['MARKETING_EMAIL_FROM']);
   });
 
   it('signale la liste blanche de destinataires sans la révéler', () => {

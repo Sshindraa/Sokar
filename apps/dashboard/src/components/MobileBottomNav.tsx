@@ -33,6 +33,7 @@ import {
   Users,
   X,
   Zap,
+  ClipboardList,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
@@ -44,6 +45,7 @@ import { isServiceStaff } from '@/features/team/roles';
 const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
   { href: '/dashboard/reservations', key: 'reservations' as const, icon: CalendarCheck },
+  { href: '/dashboard/briefing', key: 'briefing' as const, icon: ClipboardList },
   { href: '/dashboard/customers', key: 'customers' as const, icon: Users },
 ];
 

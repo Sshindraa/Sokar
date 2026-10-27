@@ -143,6 +143,7 @@ export class ErasureService {
         data: {
           customerName: 'ANON',
           customerPhone: null,
+          customerEmail: null,
           customerId: null,
           specialRequests: null,
         },

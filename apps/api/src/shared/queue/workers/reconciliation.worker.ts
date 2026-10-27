@@ -33,9 +33,15 @@ import {
   type CallFinalizationDependencies,
 } from '../../../modules/voice/call-finalization.service';
 import { purgeTestReservations } from '../../../modules/reservations/test-reservation-purge';
+import { purgeMarketingRetention } from '../../../modules/marketing/marketing-retention-purge';
 
 interface DailyReconciliationJobData {
-  readonly kind: 'calls' | 'sms' | 'voice-finalization' | 'test-reservation-purge';
+  readonly kind:
+    | 'calls'
+    | 'sms'
+    | 'voice-finalization'
+    | 'test-reservation-purge'
+    | 'marketing-retention-purge';
   readonly dayKey?: string;
 }
 
@@ -447,6 +453,12 @@ export async function processReconciliationJob(
   if (data.kind === 'test-reservation-purge') {
     const deleted = await purgeTestReservations(deps.db);
     log.info({ deleted }, 'test reservation purge completed');
+    return;
+  }
+
+  if (data.kind === 'marketing-retention-purge') {
+    const result = await purgeMarketingRetention(deps.db);
+    log.info({ ...result }, 'marketing retention purge completed');
     return;
   }
 

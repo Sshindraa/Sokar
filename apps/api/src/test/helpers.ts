@@ -840,12 +840,17 @@ vi.mock('../shared/db/client', () => {
     },
     marketingPermission: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       upsert: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    marketingOptOut: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     marketingPermissionEvent: {
       create: vi.fn(),

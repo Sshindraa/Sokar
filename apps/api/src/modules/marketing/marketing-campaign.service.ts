@@ -6,6 +6,7 @@ import {
   Prisma,
   type MarketingCampaign,
 } from '@prisma/client';
+import { env } from '../../env';
 import { db } from '../../shared/db/client';
 import {
   compileCustomerSegmentWhere,
@@ -784,6 +785,62 @@ export async function updateMarketingCampaign(args: {
   });
 }
 
+/** Jour UTC, comme les plafonds par destinataire. */
+export function dayWindow(now: Date): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
+}
+
+/**
+ * Reste du budget e-mail du jour d'envoi `sendAt` (UTC), lu sous verrou de transaction. Il retire les
+ * e-mails acceptés ce jour-là, les envois en cours ou suspendus, les campagnes programmées pour ce jour
+ * et les automatisations prêtes (elles partent à la même passe). `excludeCampaignId` retire la campagne
+ * qui se contrôle elle-même. Une campagne READY manuelle ne réserve rien.
+ */
+export async function remainingDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<number> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
+  const { start, end } = dayWindow(sendAt);
+  const [acceptedOnDay, awaitingSend] = await Promise.all([
+    tx.campaignMessage.count({
+      where: { channel: MarketingChannel.EMAIL, acceptedAt: { gte: start, lt: end } },
+    }),
+    tx.campaignMessage.count({
+      where: {
+        channel: MarketingChannel.EMAIL,
+        campaignId: excludeCampaignId ? { not: excludeCampaignId } : undefined,
+        status: { in: [MarketingMessageStatus.PENDING, MarketingMessageStatus.SENDING] },
+        campaign: {
+          OR: [
+            { status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.PAUSED] } },
+            { status: MarketingCampaignStatus.SCHEDULED, scheduledAt: { gte: start, lt: end } },
+            { status: MarketingCampaignStatus.READY, automationDispatches: { some: {} } },
+          ],
+        },
+      },
+    }),
+  ]);
+  return Math.max(env.MARKETING_EMAIL_DAILY_BUDGET - acceptedOnDay - awaitingSend, 0);
+}
+
+/** Refuse un lancement dont l'audience dépasse le reste du budget du jour d'envoi. */
+export async function assertDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  audienceCount: number,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<void> {
+  if (audienceCount > (await remainingDailyEmailBudget(tx, sendAt, excludeCampaignId))) {
+    throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
+  }
+}
+
 export async function prepareMarketingCampaign(args: {
   restaurantId: string;
   campaignId: string;
@@ -816,9 +873,14 @@ export async function scheduleMarketingCampaign(args: {
   if (campaign.status !== MarketingCampaignStatus.READY) {
     throw new Error('CAMPAIGN_NOT_READY');
   }
-  return db.marketingCampaign.update({
-    where: { id: campaign.id },
-    data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+  return db.$transaction(async (tx) => {
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, scheduledAt);
+    }
+    return tx.marketingCampaign.update({
+      where: { id: campaign.id },
+      data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+    });
   });
 }
 
@@ -846,20 +908,26 @@ export async function startMarketingCampaign(args: {
       throw new Error('CAMPAIGN_NOT_DUE');
     }
   }
-  const claimed = await db.marketingCampaign.updateMany({
-    where: {
-      id: campaign.id,
-      restaurantId: args.restaurantId,
-      status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
-    },
-    data: {
-      status: MarketingCampaignStatus.SENDING,
-      startedAt: now,
-      completedAt: null,
-      lastErrorCode: null,
-    },
+  // Le lancement repasse le contrôle pour le jour réel d'envoi, sans compter ses propres messages.
+  await db.$transaction(async (tx) => {
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, now, campaign.id);
+    }
+    const claimed = await tx.marketingCampaign.updateMany({
+      where: {
+        id: campaign.id,
+        restaurantId: args.restaurantId,
+        status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
+      },
+      data: {
+        status: MarketingCampaignStatus.SENDING,
+        startedAt: now,
+        completedAt: null,
+        lastErrorCode: null,
+      },
+    });
+    if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   });
-  if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   const updated = await getMarketingCampaign(args);
   if (!updated) throw new Error('CAMPAIGN_NOT_FOUND');
   return updated;

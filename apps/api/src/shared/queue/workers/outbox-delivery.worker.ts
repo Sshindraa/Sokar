@@ -10,6 +10,7 @@ import {
   recordPricedUsageEvent,
   type RecordPricedUsageInput,
 } from '../../../modules/usage/usage-tariff.service';
+import { processReservationConfirmationEmail } from '../../../modules/reservations/reservation-confirmation-email';
 
 export interface OutboxDeliveryJobData {
   readonly outboxEventId: string;
@@ -84,6 +85,23 @@ export async function processOutboxDeliveryJob(job: Job<OutboxDeliveryJobData>):
         jobId: buildReservationNotificationJobId('confirmation', payload.reservationId),
       },
     );
+    return;
+  }
+
+  if (event.topic === 'reservation-confirmation-email') {
+    const payload = event.payload as { reservationId?: unknown };
+    if (
+      typeof payload.reservationId !== 'string' ||
+      !payload.reservationId ||
+      !event.restaurantId ||
+      payload.reservationId !== event.aggregateId
+    ) {
+      throw new Error('INVALID_RESERVATION_CONFIRMATION_EMAIL_PAYLOAD');
+    }
+    await processReservationConfirmationEmail({
+      reservationId: payload.reservationId,
+      restaurantId: event.restaurantId,
+    });
     return;
   }
 

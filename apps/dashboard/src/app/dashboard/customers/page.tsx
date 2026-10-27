@@ -6,6 +6,7 @@ import { useApi } from '../../../lib/api';
 import { ApiError } from '@/lib/api-error';
 import { getErrorMessage, type Customer, type CustomerLifecycleStatus } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
+import { useSiteSelection } from '@/features/sites/site-context';
 import {
   Table,
   TableHeader,
@@ -17,7 +18,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, Star, Phone, Copy, Lock, StickyNote, X } from 'lucide-react';
+import { Users, Search, Star, Phone, Copy, Lock, StickyNote, X, Download } from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
 import { CustomerLifecycleBadge, LIFECYCLE_LABELS } from '@/components/CustomerLifecycleBadge';
 
@@ -33,7 +34,7 @@ type Filters = {
 };
 const NO_FILTERS: Filters = { search: '', isVip: 'all', lifecycle: 'all', minVisits: '' };
 
-/** La fiche détaillée est une fonction de CRM Pro : sans la formule, le nom reste un simple texte. */
+/** La fiche s'ouvre dès Essential (fiche simple) ; fermée ou en panne, le nom reste un simple texte. */
 function ProfileLink({
   id,
   linked,
@@ -179,6 +180,9 @@ function CustomerMobileCard({
 
 export default function CustomersPage() {
   const { get, post, orgId } = useApi();
+  const { activeSite } = useSiteSelection();
+  // Export réservé au propriétaire ; sans rôle connu, c'est le serveur qui tranche.
+  const canExport = !activeSite?.role || activeSite.role === 'OWNER';
   const isMobile = useIsMobile();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -271,6 +275,25 @@ export default function CustomersPage() {
 
   const hasFilters = JSON.stringify(applied) !== JSON.stringify(NO_FILTERS);
 
+  const [exporting, setExporting] = useState(false);
+  async function exportCsv() {
+    setExporting(true);
+    setError('');
+    try {
+      const res = await get<{ data: { csv: string } }>('customers/export');
+      const url = URL.createObjectURL(new Blob([res.data.csv], { type: 'text/csv;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `clients-sokar-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'exporter le fichier clients"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function toggleVip(id: string, current: boolean) {
     try {
       await post(`customers/${id}/vip`, { isVip: !current });
@@ -311,6 +334,19 @@ export default function CustomersPage() {
           <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
             {total} client{total > 1 ? 's' : ''}
           </span>
+          {canExport ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="px-2.5 transition-all duration-200 sm:px-3"
+              onClick={() => void exportCsv()}
+              disabled={exporting}
+            >
+              <Download size={14} />
+              {exporting ? 'Export…' : 'Exporter'}
+            </Button>
+          ) : null}
           {crmState === 'open' ? (
             <Button asChild variant="outline" size="sm" className="px-2.5 sm:px-3">
               <Link href="/dashboard/customers/crm/duplicates">
@@ -423,7 +459,7 @@ export default function CustomersPage() {
       {crmState === 'locked' ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Filtres par statut et par visites, fiches détaillées et doublons : inclus dans CRM Pro.
+          Filtres par statut et par visites, valeur client et doublons : inclus dans CRM Pro.
           <Link
             href="/pricing"
             className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
@@ -480,7 +516,7 @@ export default function CustomersPage() {
               key={customer.id}
               customer={customer}
               onToggleVip={toggleVip}
-              profileLinked={crmState === 'open'}
+              profileLinked={crmState !== 'hidden'}
             />
           ))}
         </div>
@@ -505,7 +541,7 @@ export default function CustomersPage() {
                 {customers.map((c) => (
                   <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">
-                      <ProfileLink id={c.id} linked={crmState === 'open'}>
+                      <ProfileLink id={c.id} linked={crmState !== 'hidden'}>
                         {c.name || <span className="opacity-50">Client sans nom</span>}
                       </ProfileLink>
                     </TableCell>

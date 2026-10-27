@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
 import { requireCapability } from '../entitlements/entitlement.guard';
+import { evaluateCapability } from '../entitlements/entitlement.service';
 import {
   appendCustomerTimelineEvent,
   assignCustomerTag,
@@ -109,6 +110,8 @@ const ProjectionRepairPreviewQuerySchema = z.object({
 });
 
 const requireCrmAdvanced = [requireOrg(), requireCapability('customers.advanced')];
+// CRM de base (Essential) : fiche en lecture simple et préférences de service (allergies comprises).
+const requireCrmBasic = [requireOrg(), requireCapability('customers.basic')];
 
 const SensitiveNoteRoleSchema = z.enum(['OWNER', 'MANAGER', 'STAFF', 'READ_ONLY', 'ORG_MEMBER']);
 const SensitiveNoteRolesBodySchema = z
@@ -194,6 +197,11 @@ const requireCrmProjectionRepairMutation = [
 const requireCrmAdvancedWrite = [
   requireOrg(),
   requireCapability('customers.advanced'),
+  requireCrmWriteRole,
+];
+const requireCrmBasicWrite = [
+  requireOrg(),
+  requireCapability('customers.basic'),
   requireCrmWriteRole,
 ];
 const requireCrmPrivacy = [
@@ -462,7 +470,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
     return reply.send({ data, nextCursor });
   });
 
-  app.get('/crm/customers/:id', { preHandler: requireCrmAdvanced }, async (request, reply) => {
+  app.get('/crm/customers/:id', { preHandler: requireCrmBasic }, async (request, reply) => {
     const { id } = CustomerIdParamsSchema.parse(request.params);
     const customer = await db.customer.findFirst({
       where: { id, restaurantId: request.restaurantId, archivedAt: null },
@@ -505,18 +513,39 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       { id: customer.id },
     ]);
     const { restaurant: _restaurant, ...profile } = customer;
+    const timeline = customer.timelineEvents.map((event) =>
+      canViewNotes ? event : { ...event, metadata: {} },
+    );
+    const { allowed: isPro } = await evaluateCapability(request.restaurantId, 'customers.advanced');
+    if (!isPro) {
+      // Fiche simple : historique, préférences et notes ; valeur, statut et tags restent CRM Pro.
+      const {
+        metricSnapshot: _metricSnapshot,
+        tagAssignments: _tagAssignments,
+        timelineEvents: _timelineEvents,
+        ...basicProfile
+      } = canViewNotes ? profile : redactSensitiveCustomerFields(profile);
+      return reply.send({
+        data: {
+          ...basicProfile,
+          crmAccess: 'basic',
+          visitSummary,
+          preferences: customer.preferences,
+          timeline,
+        },
+      });
+    }
     return reply.send({
       data: {
         ...(canViewNotes ? profile : redactSensitiveCustomerFields(profile)),
+        crmAccess: 'pro',
         lifecycle,
         visitSummary,
         metrics: customer.metricSnapshot,
         preferences: customer.preferences,
         tags: customer.tagAssignments.map((assignment) => assignment.tag),
         tagAssignments: customer.tagAssignments,
-        timeline: customer.timelineEvents.map((event) =>
-          canViewNotes ? event : { ...event, metadata: {} },
-        ),
+        timeline,
       },
     });
   });
@@ -650,7 +679,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
 
   app.put(
     '/crm/customers/:id/preferences/:key',
-    { preHandler: requireCrmAdvancedWrite },
+    { preHandler: requireCrmBasicWrite },
     async (request, reply) => {
       const { id, key } = PreferenceParamsSchema.parse(request.params);
       const body = PreferenceBodySchema.parse(request.body);
@@ -694,7 +723,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
 
   app.delete(
     '/crm/customers/:id/preferences/:key',
-    { preHandler: requireCrmAdvancedWrite },
+    { preHandler: requireCrmBasicWrite },
     async (request, reply) => {
       const { id, key } = PreferenceParamsSchema.parse(request.params);
       const restaurantId = request.restaurantId!;

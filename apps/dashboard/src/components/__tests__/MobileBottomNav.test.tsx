@@ -41,6 +41,7 @@ vi.mock('next-intl', () => ({
       edition: 'Édition',
       calls: 'Appels',
       reservations: 'Réservations',
+      briefing: 'Briefing',
       customers: 'Clients',
       more: 'Plus',
       close: 'Fermer',
@@ -97,6 +98,15 @@ describe('MobileBottomNav', () => {
     expect(screen.getByRole('link', { name: /Pilotage/i })).toHaveClass('is-active');
   });
 
+  it('ouvre le briefing du service depuis la barre du bas', () => {
+    render(<MobileBottomNav />);
+
+    expect(screen.getByRole('link', { name: /Briefing/i })).toHaveAttribute(
+      'href',
+      '/dashboard/briefing',
+    );
+  });
+
   it('activates overview on /dashboard and triggers haptic feedback', () => {
     render(<MobileBottomNav />);
 
@@ -113,7 +123,7 @@ describe('MobileBottomNav', () => {
     const items = Array.from(container.querySelectorAll('.dashboard-mobile-nav__item'));
 
     expect(nav).toBeInTheDocument();
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     if (!nav) throw new Error('Mobile navigation container is missing');
     expect(screen.getByRole('link', { name: /Clients/i })).toHaveAttribute('draggable', 'false');
     expect(screen.getByRole('button', { name: /Plus/i })).toHaveAttribute('draggable', 'false');
@@ -154,16 +164,17 @@ describe('MobileBottomNav', () => {
       clientY: 20,
     });
     expect(liquid?.getAttribute('style')).not.toMatch(/rotate|skew/);
+    // Clients est la 4e entrée, après Briefing : son centre est à x = 245.
     fireEvent.pointerMove(nav, {
       pointerId: 1,
       pointerType: 'touch',
-      clientX: 175,
+      clientX: 245,
       clientY: 20,
     });
     fireEvent.pointerUp(nav, {
       pointerId: 1,
       pointerType: 'touch',
-      clientX: 175,
+      clientX: 245,
       clientY: 20,
     });
 

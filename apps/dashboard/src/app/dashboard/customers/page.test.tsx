@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   orgId: 'org_test',
   isMobile: false,
+  activeSite: { role: 'OWNER' } as { role: string } | null,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -18,10 +19,15 @@ vi.mock('@/lib/useMediaQuery', () => ({
   useIsMobile: () => mocks.isMobile,
 }));
 
+vi.mock('@/features/sites/site-context', () => ({
+  useSiteSelection: () => ({ activeSite: mocks.activeSite }),
+}));
+
 describe('CustomersPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isMobile = false;
+    mocks.activeSite = { role: 'OWNER' };
     // Par défaut le CRM avancé est fermé : la sonde du bouton « CRM Pro » ne doit pas perturber les tests.
     mocks.get.mockImplementation((path: string) =>
       path.startsWith('crm/')
@@ -258,6 +264,34 @@ describe('CustomersPage', () => {
       );
     });
 
+    it('masque l’export aux responsables qui ne sont pas propriétaires', async () => {
+      mocks.activeSite = { role: 'MANAGER' };
+      mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
+      render(<CustomersPage />);
+      expect(await screen.findByText(/inclus dans CRM Pro/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Exporter/ })).not.toBeInTheDocument();
+    });
+
+    it('exporte le fichier clients en CSV, sur toutes les formules', async () => {
+      mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
+      mocks.get.mockImplementation((path: string) =>
+        path === 'customers/export'
+          ? Promise.resolve({ data: { csv: 'Nom;Téléphone\r\n', count: 1 } })
+          : path.startsWith('crm/')
+            ? Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }))
+            : Promise.resolve(one),
+      );
+      const createObjectURL = vi.fn(() => 'blob:csv');
+      Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      render(<CustomersPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /Exporter/ }));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+      expect(mocks.get).toHaveBeenCalledWith('customers/export');
+      expect(click).toHaveBeenCalled();
+      click.mockRestore();
+    });
+
     it('hors formule : CRM de base, avec les filtres avancés présentés comme inclus dans CRM Pro', async () => {
       mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
       render(<CustomersPage />);
@@ -268,9 +302,11 @@ describe('CustomersPage', () => {
       );
       expect(screen.queryByLabelText('Filtre statut')).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: /Doublons/ })).not.toBeInTheDocument();
-      // La fiche détaillée est une fonction de CRM Pro : pas de lien vers un écran verrouillé.
-      expect(screen.queryByRole('link', { name: 'Alice Demo' })).not.toBeInTheDocument();
-      expect(screen.getByText('Alice Demo')).toBeInTheDocument();
+      // La fiche simple (historique, allergies, préférences) s'ouvre dès Essential.
+      expect(screen.getByRole('link', { name: 'Alice Demo' })).toHaveAttribute(
+        'href',
+        '/dashboard/customers/crm/customer-1',
+      );
       expect(screen.getByLabelText('Filtre VIP')).toBeInTheDocument();
     });
 

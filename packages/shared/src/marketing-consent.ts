@@ -6,7 +6,7 @@
  * see it (docs/runbooks/marketing-email-pilot.md, section "Texte de consentement"). Any change of
  * wording must come with a new version: an older proof must keep matching the text it was given for.
  */
-export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-22';
+export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-28';
 
 export const MARKETING_CONSENT_CHANNELS = ['EMAIL', 'SMS'] as const;
 export type MarketingConsentChannel = (typeof MARKETING_CONSENT_CHANNELS)[number];
@@ -16,18 +16,18 @@ const CHANNEL_WORDING: Record<MarketingConsentChannel, string> = {
   SMS: 'par SMS',
 };
 
+/** « du restaurant {nom} » ; « de ce restaurant » sans nom. Évite « de Le Bistrot ». */
 function restaurantLabel(restaurantName: string): string {
-  return restaurantName.trim() || 'ce restaurant';
+  const name = restaurantName.trim();
+  return name ? `du restaurant ${name}` : 'de ce restaurant';
 }
 
-/** The sentence shown next to an unchecked box. Never pre-checked, never required to book. */
+/** The label shown next to an unchecked box. Never pre-checked, never required to book. */
 export function buildMarketingConsentLabel(
   channel: MarketingConsentChannel,
   restaurantName: string,
 ): string {
-  return `Je souhaite recevoir ${CHANNEL_WORDING[channel]} les offres et actualités de ${restaurantLabel(
-    restaurantName,
-  )}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.`;
+  return `Recevoir les offres et actualités ${restaurantLabel(restaurantName)} ${CHANNEL_WORDING[channel]}`;
 }
 
 /**
@@ -58,6 +58,7 @@ export const MARKETING_CONSENT_SOURCE_LABELS: Record<string, string> = {
   CONNECT: 'Page de réservation Sokar Connect',
   BOOK_PAGE: 'Page de réservation du restaurant',
   WIDGET: 'Widget de réservation',
+  CONFIRMATION_EMAIL: 'Lien de la confirmation de réservation',
   DASHBOARD_IN_PERSON: 'Saisi par le restaurant (à l’oral, sur place)',
   DASHBOARD_PHONE: 'Saisi par le restaurant (par téléphone)',
   DASHBOARD_PAPER: 'Saisi par le restaurant (sur papier signé)',

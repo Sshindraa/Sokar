@@ -9,6 +9,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   BarChart3,
   CalendarCheck,
+  ClipboardList,
   PhoneCall,
   Settings,
   Users,
@@ -57,6 +58,7 @@ type NavKey =
   | 'overview'
   | 'calls'
   | 'reservations'
+  | 'briefing'
   | 'floorPlan'
   | 'customers'
   | 'marketing'
@@ -91,6 +93,7 @@ const navGroups: NavGroup[] = [
     icon: PhoneCall,
     items: [
       { href: '/dashboard/reservations', key: 'reservations', icon: CalendarCheck },
+      { href: '/dashboard/briefing', key: 'briefing', icon: ClipboardList },
       { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
       { href: '/dashboard/floor-plan?view=service-live', key: 'floorPlan', icon: Radio },
       { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },

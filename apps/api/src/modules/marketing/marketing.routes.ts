@@ -39,12 +39,19 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
-import { recordStaffMarketingConsent } from './marketing-consent.service';
+import {
+  recordConfirmationEmailConsent,
+  recordStaffMarketingConsent,
+  restaurantNameForConsent,
+} from './marketing-consent.service';
 import {
   consumeMarketingUnsubscribeToken,
+  verifyMarketingConsentToken,
   verifyMarketingUnsubscribeToken,
 } from './marketing-unsubscribe.service';
 import {
+  renderConsentDonePage,
+  renderConsentPage,
   renderUnsubscribeConfirmPage,
   renderUnsubscribeDonePage,
   renderUnsubscribeInvalidPage,
@@ -202,12 +209,24 @@ const CAMPAIGN_CONFLICT_MESSAGES: Record<string, string> = {
   CAMPAIGN_NOT_READY: 'Cette campagne n’est pas encore prête à partir.',
   CAMPAIGN_ALREADY_RUNNING: 'Cette campagne est déjà en cours d’envoi.',
   CAMPAIGN_NOT_DUE: 'Cette campagne n’est pas encore à l’heure de son envoi.',
+  MARKETING_DAILY_BUDGET_EXCEEDED:
+    'Audience trop grande pour aujourd’hui : le budget d’e-mails marketing du jour ne couvre pas cette campagne. Réessayez demain ou choisissez un segment plus petit.',
+};
+
+/** Même refus, formulé pour une programmation : le budget visé est celui du jour prévu. */
+const SCHEDULE_CONFLICT_MESSAGES: Record<string, string> = {
+  ...CAMPAIGN_CONFLICT_MESSAGES,
+  MARKETING_DAILY_BUDGET_EXCEEDED:
+    'Audience trop grande pour ce jour-là : le budget d’e-mails marketing de ce jour ne couvre pas cette campagne. Choisissez un autre jour ou un segment plus petit.',
 };
 
 /** Réponse 409 lisible pour un refus d'état connu ; `null` pour toute autre erreur. */
-function campaignConflict(error: unknown): { error: string; message: string } | null {
+function campaignConflict(
+  error: unknown,
+  messages: Record<string, string> = CAMPAIGN_CONFLICT_MESSAGES,
+): { error: string; message: string } | null {
   if (!(error instanceof Error)) return null;
-  const message = CAMPAIGN_CONFLICT_MESSAGES[error.message];
+  const message = messages[error.message];
   return message ? { error: error.message, message } : null;
 }
 
@@ -652,6 +671,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error, SCHEDULE_CONFLICT_MESSAGES);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -693,6 +714,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -819,6 +842,58 @@ export async function marketingRoutes(app: FastifyInstance) {
       throw error;
     }
     return sendUnsubscribePage(reply, 200, renderUnsubscribeConfirmPage(candidate.data));
+  });
+
+  // Consentement par lien, sur le modèle de la désinscription : le GET n'enregistre rien.
+  // Seul un POST avec la case cochée enregistre l'accord.
+  const sendConsentForm = async (reply: FastifyReply, token: string, notice?: string) => {
+    const { restaurantId } = verifyMarketingConsentToken(token);
+    const restaurantName = await restaurantNameForConsent(restaurantId);
+    if (!restaurantName) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
+    return sendUnsubscribePage(reply, 200, renderConsentPage({ token, restaurantName, notice }));
+  };
+
+  app.get('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const query = (request.query ?? {}) as { token?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(query.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      return await sendConsentForm(reply, candidate.data);
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
+  });
+
+  app.post('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const body = (request.body ?? {}) as { token?: unknown; consent?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(body.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      if (body.consent !== 'on') {
+        return await sendConsentForm(
+          reply,
+          candidate.data,
+          'Aucune case cochée : rien n’a été enregistré.',
+        );
+      }
+      const { restaurantId, customerId, reservationId } = verifyMarketingConsentToken(
+        candidate.data,
+      );
+      const outcome = await recordConfirmationEmailConsent({
+        restaurantId,
+        customerId,
+        reservationId,
+      });
+      return sendUnsubscribePage(reply, 200, renderConsentDonePage(outcome));
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
   });
 
   app.post(
