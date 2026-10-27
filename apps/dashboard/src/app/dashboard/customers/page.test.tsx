@@ -258,6 +258,26 @@ describe('CustomersPage', () => {
       );
     });
 
+    it('exporte le fichier clients en CSV, sur toutes les formules', async () => {
+      mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
+      mocks.get.mockImplementation((path: string) =>
+        path === 'customers/export'
+          ? Promise.resolve({ data: { csv: 'Nom;Téléphone\r\n', count: 1 } })
+          : path.startsWith('crm/')
+            ? Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }))
+            : Promise.resolve(one),
+      );
+      const createObjectURL = vi.fn(() => 'blob:csv');
+      Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      render(<CustomersPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /Exporter/ }));
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+      expect(mocks.get).toHaveBeenCalledWith('customers/export');
+      expect(click).toHaveBeenCalled();
+      click.mockRestore();
+    });
+
     it('hors formule : CRM de base, avec les filtres avancés présentés comme inclus dans CRM Pro', async () => {
       mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
       render(<CustomersPage />);

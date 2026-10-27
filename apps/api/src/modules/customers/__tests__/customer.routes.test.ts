@@ -682,4 +682,36 @@ describe('customer.routes', () => {
       expect(res.statusCode).toBe(400);
     });
   });
+  describe('GET /customers/export', () => {
+    it('réserve le CSV au propriétaire et le filtre sur le site', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      vi.mocked(db.customer.findMany).mockResolvedValue([
+        { id: 'c1', name: 'Alice', phone: '+33612345678', emailNormalized: null, isVip: false },
+      ] as never);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
+
+      const manager = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'MANAGER' },
+      });
+      expect(manager.statusCode).toBe(403);
+      expect(manager.json().error).toBe('CUSTOMER_EXPORT_OWNER_REQUIRED');
+
+      const owner = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+      });
+      expect(owner.statusCode).toBe(200);
+      expect(owner.json().data.count).toBe(1);
+      expect(owner.json().data.csv).toContain('Alice;+33612345678');
+      expect(db.customer.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
+        }),
+      );
+    });
+  });
 });
