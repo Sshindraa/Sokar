@@ -233,4 +233,18 @@ describe('MarketingPage', () => {
     expect(screen.getByText(/Envoi non démarré, vous pouvez réessayer/)).toBeInTheDocument();
     expect(screen.queryByText(/MARKETING_QUEUE_ENQUEUE_UNKNOWN/)).toBeNull();
   });
+
+  it('traduit le refus de budget quotidien d’une campagne prête', async () => {
+    apiMocks.get.mockImplementation((path: string) => {
+      if (path.startsWith('marketing/automations')) return Promise.resolve({ data: [automation] });
+      if (path.startsWith('marketing/providers/readiness')) return Promise.resolve({ data: null });
+      return Promise.resolve({
+        data: [{ ...campaign, status: 'READY', lastErrorCode: 'MARKETING_DAILY_BUDGET_EXCEEDED' }],
+      });
+    });
+    render(<MarketingPage />);
+
+    expect(await screen.findByText(/Budget d’e-mails du jour atteint/)).toBeInTheDocument();
+    expect(screen.queryByText(/MARKETING_DAILY_BUDGET_EXCEEDED/)).toBeNull();
+  });
 });

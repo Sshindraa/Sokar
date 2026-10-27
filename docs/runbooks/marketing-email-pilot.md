@@ -144,7 +144,8 @@ Ce texte a été **validé par Hamza le 27/10/2026** (sans relecture juridique e
   page qui envoie une version inconnue n'enregistre rien (la réservation, elle, aboutit).
 - **Finalité** : envoi d'offres et d'actualités du restaurant, par le canal coché, rien d'autre.
 - **Ce qui est conservé** (par canal et par client) : état (donné / retiré), date, source (`CONNECT`,
-  `DASHBOARD_IN_PERSON`, `DASHBOARD_PHONE`, `DASHBOARD_PAPER`, `UNSUBSCRIBE_LINK`, `DASHBOARD_WITHDRAWAL`),
+  `DASHBOARD_IN_PERSON`, `DASHBOARD_PHONE`, `DASHBOARD_PAPER`, `UNSUBSCRIBE_LINK`, `DASHBOARD_WITHDRAWAL`,
+  `CONFIRMATION_EMAIL`),
   version du texte et **empreinte SHA-256** de la preuve `version|canal|phrase exacte`. Le texte brut n'est
   pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au

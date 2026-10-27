@@ -229,6 +229,7 @@ function campaignErrorLabel(code: string): string {
     AUTOMATION_ALREADY_DISPATCHED: 'Campagne déjà envoyée pour cette règle',
     NO_CONTACT_OR_UNAVAILABLE: 'Aucun destinataire consentant joignable',
     LEGACY_REACTIVATION_AUDIENCE_EMPTY: 'Aucun destinataire consentant joignable',
+    MARKETING_DAILY_BUDGET_EXCEEDED: 'Budget d’e-mails du jour atteint : reprogrammez l’envoi',
   };
   return labels[code] ?? 'Un incident est survenu';
 }

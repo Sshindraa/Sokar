@@ -58,6 +58,7 @@ export const MARKETING_CONSENT_SOURCE_LABELS: Record<string, string> = {
   CONNECT: 'Page de réservation Sokar Connect',
   BOOK_PAGE: 'Page de réservation du restaurant',
   WIDGET: 'Widget de réservation',
+  CONFIRMATION_EMAIL: 'Lien de la confirmation de réservation',
   DASHBOARD_IN_PERSON: 'Saisi par le restaurant (à l’oral, sur place)',
   DASHBOARD_PHONE: 'Saisi par le restaurant (par téléphone)',
   DASHBOARD_PAPER: 'Saisi par le restaurant (sur papier signé)',

@@ -8,10 +8,14 @@ import {
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
 import { normalizeCustomerEmail, upsertCustomerIdentity } from '../customers/customer-crm.service';
+import {
+  isMarketingOptedOut,
+  isMarketingOptOutRegisterConfigured,
+} from './marketing-opt-out.service';
 import { upsertMarketingPermission } from './marketing-permission.service';
 
 /** Where a consent tick came from. Stored as `MarketingPermission.source`. */
-export type BookingConsentSource = 'CONNECT' | 'BOOK_PAGE' | 'WIDGET';
+export type BookingConsentSource = 'CONNECT' | 'BOOK_PAGE' | 'WIDGET' | 'CONFIRMATION_EMAIL';
 
 /** Optional block added to the public booking requests. Unticked or absent means "not asked". */
 export type BookingMarketingConsent = {
@@ -220,5 +224,71 @@ export async function recordStaffMarketingConsent(args: {
     proof: `${buildMarketingConsentProof(args.channel, restaurant.name)}|${args.method}`,
     actorUserId: args.actorUserId,
     occurredAt: args.occurredAt,
+  });
+}
+
+/** Nom du restaurant, repris dans la preuve ; `null` si le restaurant n'existe plus. */
+export async function restaurantNameForConsent(restaurantId: string): Promise<string | null> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { name: true },
+  });
+  return restaurant?.name ?? null;
+}
+
+export type MarketingEmailConsentStatus = 'OFFERABLE' | 'ALREADY_OPTED_IN' | 'UNAVAILABLE';
+
+/**
+ * Dit si la ligne « recevoir les offres » peut être proposée. Non sans adresse, si un accord ou un
+ * retrait existe, ou si l'adresse figure au registre d'opposition. Sans registre configuré, rien
+ * n'est proposé : l'opposition ne peut pas être vérifiée.
+ */
+export async function marketingEmailConsentStatus(args: {
+  restaurantId: string;
+  customerId: string;
+}): Promise<MarketingEmailConsentStatus> {
+  const customer = await db.customer.findFirst({
+    where: { id: args.customerId, restaurantId: args.restaurantId, archivedAt: null },
+    select: { emailNormalized: true },
+  });
+  if (!customer?.emailNormalized) return 'UNAVAILABLE';
+
+  const permission = await db.marketingPermission.findFirst({
+    where: { restaurantId: args.restaurantId, customerId: args.customerId, channel: 'EMAIL' },
+    select: { status: true },
+  });
+  if (permission?.status === MarketingPermissionStatus.OPTED_IN) return 'ALREADY_OPTED_IN';
+  if (permission?.status === MarketingPermissionStatus.OPTED_OUT) return 'UNAVAILABLE';
+  if (!isMarketingOptOutRegisterConfigured()) return 'UNAVAILABLE';
+
+  const optedOut = await isMarketingOptedOut({
+    restaurantId: args.restaurantId,
+    channel: 'EMAIL',
+    address: customer.emailNormalized,
+  });
+  return optedOut ? 'UNAVAILABLE' : 'OFFERABLE';
+}
+
+/**
+ * Enregistre l'accord coché depuis le lien de l'e-mail de confirmation. Un accord déjà donné ne
+ * réécrit rien : ni nouvelle preuve, ni nouvel événement, même si le formulaire part deux fois.
+ */
+export async function recordConfirmationEmailConsent(args: {
+  restaurantId: string;
+  customerId: string;
+  occurredAt?: Date;
+}): Promise<'RECORDED' | 'ALREADY_GRANTED' | 'NOT_RECORDED'> {
+  const restaurantName = await restaurantNameForConsent(args.restaurantId);
+  if (!restaurantName) return 'NOT_RECORDED';
+  const status = await marketingEmailConsentStatus(args);
+  if (status === 'UNAVAILABLE') return 'NOT_RECORDED';
+  if (status === 'ALREADY_OPTED_IN') return 'ALREADY_GRANTED';
+  return grantChannel({
+    restaurantId: args.restaurantId,
+    customerId: args.customerId,
+    restaurantName,
+    channel: 'EMAIL',
+    source: 'CONFIRMATION_EMAIL',
+    occurredAt: args.occurredAt ?? new Date(),
   });
 }

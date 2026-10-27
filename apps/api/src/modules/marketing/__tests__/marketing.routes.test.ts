@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingCampaignStatus, MarketingPermissionStatus } from '@prisma/client';
+import { MARKETING_CONSENT_VERSION } from '@sokar/shared';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
@@ -851,6 +852,115 @@ describe('marketing control plane routes', () => {
       expect(bad.json()).toEqual({ error: 'INVALID_UNSUBSCRIBE_TOKEN' });
       const missing = await app.inject({ method: 'POST', url: '/marketing/unsubscribe' });
       expect(missing.statusCode).toBe(400);
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('consentement depuis la confirmation', () => {
+    const CONSENT_FORM = 'application/x-www-form-urlencoded';
+    const CHECKBOX = '<input type="checkbox" name="consent" value="on">';
+
+    beforeEach(() => {
+      process.env.MARKETING_UNSUBSCRIBE_SECRET = 'u'.repeat(48);
+      process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Chez Sokar',
+        plan: 'PRO',
+      } as never);
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        id: 'customer-1',
+        emailNormalized: 'client@example.com',
+      } as never);
+      vi.mocked(db.marketingPermission.findFirst).mockResolvedValue(null);
+      vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([]);
+      vi.mocked(db.marketingPermission.upsert).mockResolvedValue({
+        id: 'permission-1',
+        customerId: 'customer-1',
+        channel: 'EMAIL',
+        status: MarketingPermissionStatus.OPTED_IN,
+      } as never);
+    });
+
+    async function consentToken(): Promise<string> {
+      const { createMarketingConsentToken } = await import('../marketing-unsubscribe.service');
+      return createMarketingConsentToken({ restaurantId: 'test-rest-1', customerId: 'customer-1' });
+    }
+
+    function consentPost(token: string, consent: boolean) {
+      return {
+        method: 'POST' as const,
+        url: '/marketing/consent',
+        headers: { 'content-type': CONSENT_FORM, accept: 'text/html' },
+        payload: `token=${encodeURIComponent(token)}${consent ? '&consent=on' : ''}`,
+      };
+    }
+
+    it('le GET montre la case non cochée sans rien enregistrer', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/marketing/consent?token=${token}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain(CHECKBOX);
+      expect(response.body).toContain('les offres et actualités de Chez Sokar');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('un POST sans case cochée n’enregistre rien', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const response = await app.inject(consentPost(token, false));
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('Aucune case cochée');
+      expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
+    });
+
+    it('une case cochée enregistre l’accord une seule fois', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      const first = await app.inject(consentPost(token, true));
+      expect(first.statusCode).toBe(200);
+      expect(first.body).toContain('Merci');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+      expect(db.marketingPermission.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: MarketingPermissionStatus.OPTED_IN,
+            source: 'CONFIRMATION_EMAIL',
+            proofVersion: MARKETING_CONSENT_VERSION,
+          }),
+        }),
+      );
+
+      // Second envoi (double clic, rechargement) : l'accord existe, rien n'est réécrit.
+      vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
+        status: MarketingPermissionStatus.OPTED_IN,
+      } as never);
+      const second = await app.inject(consentPost(token, true));
+      expect(second.statusCode).toBe(200);
+      expect(second.body).toContain('déjà inscrit');
+      expect(db.marketingPermission.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuse un jeton expiré ou falsifié, sans rien enregistrer', async () => {
+      const app = await getApp();
+      const token = await consentToken();
+
+      vi.setSystemTime(new Date(NOW.getTime() + 31 * 86_400_000));
+      const expired = await app.inject(consentPost(token, true));
+      expect(expired.statusCode).toBe(400);
+      expect(expired.body).toContain('Ce lien n’est plus valide');
+
+      vi.setSystemTime(NOW);
+      const forged = await app.inject(consentPost(`${token}x`, true));
+      expect(forged.statusCode).toBe(400);
       expect(db.marketingPermission.upsert).not.toHaveBeenCalled();
     });
   });

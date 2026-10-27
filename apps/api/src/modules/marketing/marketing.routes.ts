@@ -39,12 +39,19 @@ import {
   upsertMarketingPermission,
   withdrawMarketingPermission,
 } from './marketing-permission.service';
-import { recordStaffMarketingConsent } from './marketing-consent.service';
+import {
+  recordConfirmationEmailConsent,
+  recordStaffMarketingConsent,
+  restaurantNameForConsent,
+} from './marketing-consent.service';
 import {
   consumeMarketingUnsubscribeToken,
+  verifyMarketingConsentToken,
   verifyMarketingUnsubscribeToken,
 } from './marketing-unsubscribe.service';
 import {
+  renderConsentDonePage,
+  renderConsentPage,
   renderUnsubscribeConfirmPage,
   renderUnsubscribeDonePage,
   renderUnsubscribeInvalidPage,
@@ -835,6 +842,52 @@ export async function marketingRoutes(app: FastifyInstance) {
       throw error;
     }
     return sendUnsubscribePage(reply, 200, renderUnsubscribeConfirmPage(candidate.data));
+  });
+
+  // Consentement par lien, sur le modèle de la désinscription : le GET n'enregistre rien.
+  // Seul un POST avec la case cochée enregistre l'accord.
+  const sendConsentForm = async (reply: FastifyReply, token: string, notice?: string) => {
+    const { restaurantId } = verifyMarketingConsentToken(token);
+    const restaurantName = await restaurantNameForConsent(restaurantId);
+    if (!restaurantName) return sendUnsubscribePage(reply, 404, renderUnsubscribeInvalidPage());
+    return sendUnsubscribePage(reply, 200, renderConsentPage({ token, restaurantName, notice }));
+  };
+
+  app.get('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const query = (request.query ?? {}) as { token?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(query.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      return await sendConsentForm(reply, candidate.data);
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
+  });
+
+  app.post('/marketing/consent', publicTokenRouteOptions, async (request, reply) => {
+    const body = (request.body ?? {}) as { token?: unknown; consent?: unknown };
+    const candidate = UnsubscribeTokenSchema.safeParse(body.token);
+    if (!candidate.success) return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+    try {
+      if (body.consent !== 'on') {
+        return await sendConsentForm(
+          reply,
+          candidate.data,
+          'Aucune case cochée : rien n’a été enregistré.',
+        );
+      }
+      const { restaurantId, customerId } = verifyMarketingConsentToken(candidate.data);
+      const outcome = await recordConfirmationEmailConsent({ restaurantId, customerId });
+      return sendUnsubscribePage(reply, 200, renderConsentDonePage(outcome));
+    } catch (error) {
+      if (isUnsubscribeTokenError(error)) {
+        return sendUnsubscribePage(reply, 400, renderUnsubscribeInvalidPage());
+      }
+      throw error;
+    }
   });
 
   app.post(
