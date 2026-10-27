@@ -28,8 +28,9 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
 import { useApi } from '@/lib/api';
-import { ApiError } from '@/lib/api-error';
-import { getErrorMessage } from '@/types/api';
+import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
+import { getErrorMessage, type CustomerVisitSummary } from '@/types/api';
+import { FeatureLockCard } from '@/components/FeatureLockCard';
 
 type CustomerIdentity = {
   id: string;
@@ -82,9 +83,9 @@ type CrmCustomerDetail = {
   name: string | null;
   phone: string;
   emailNormalized: string | null;
-  visitCount: number;
   isVip: boolean;
   notes: string | null;
+  visitSummary?: CustomerVisitSummary | null;
   identities: CustomerIdentity[];
   metricSnapshot: CustomerMetricSnapshot | null;
   metrics: CustomerMetricSnapshot | null;
@@ -256,6 +257,8 @@ export default function CrmCustomerPage() {
   const [error, setError] = useState('');
   // La fiche n'existe plus (fusion, effacement) : inutile de proposer « Réessayer ».
   const [notFound, setNotFound] = useState(false);
+  // Fiche ouverte depuis l'écran Clients sans CRM Pro : on montre l'offre, pas une erreur.
+  const [lock, setLock] = useState<FeatureLock | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportCode, setExportCode] = useState('');
   const [exportStep, setExportStep] = useState<'idle' | 'requesting' | 'confirming' | 'done'>(
@@ -286,11 +289,13 @@ export default function CrmCustomerPage() {
     setLoading(true);
     setError('');
     setNotFound(false);
+    setLock(null);
     try {
       const response = await get<{ data: CrmCustomerDetail }>(`crm/customers/${customerId}`);
       setCustomer(response.data ?? null);
     } catch (err: unknown) {
       setNotFound(err instanceof ApiError && err.kind === 'not-found');
+      setLock(featureLockFromError(err));
       setError(getErrorMessage(err, 'Impossible de charger la fiche CRM.'));
       setCustomer(null);
     } finally {
@@ -601,13 +606,27 @@ export default function CrmCustomerPage() {
     );
   }
 
+  if (lock) {
+    return (
+      <div className="space-y-4">
+        <Button asChild variant="ghost" size="sm" className="transition-all duration-200">
+          <Link href="/dashboard/customers">
+            <ArrowLeft size={16} />
+            Retour aux clients
+          </Link>
+        </Button>
+        <FeatureLockCard lock={lock} feature="CRM Pro" />
+      </div>
+    );
+  }
+
   if (error || !customer) {
     return (
       <div className="space-y-4">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/dashboard/customers/crm">
+          <Link href="/dashboard/customers">
             <ArrowLeft size={16} />
-            Retour au CRM
+            Retour aux clients
           </Link>
         </Button>
         <Card className="border-destructive/40">
@@ -644,9 +663,9 @@ export default function CrmCustomerPage() {
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="space-y-3">
           <Button asChild variant="ghost" size="sm" className="-ml-3">
-            <Link href="/dashboard/customers/crm">
+            <Link href="/dashboard/customers">
               <ArrowLeft size={16} />
-              Retour au CRM
+              Retour aux clients
             </Link>
           </Button>
           <div className="flex items-center gap-2">
@@ -657,7 +676,7 @@ export default function CrmCustomerPage() {
             {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
           </div>
           <p className="text-sm text-muted-foreground">
-            Fiche client · {customer.visitCount} visite(s)
+            Fiche client · {customer.visitSummary?.visits ?? '—'} visite(s) honorée(s)
           </p>
         </div>
         <Button asChild variant="outline">
@@ -827,7 +846,7 @@ export default function CrmCustomerPage() {
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Honorées (365 j)</span>
-              <strong>{metrics?.honored365d ?? 0}</strong>
+              <strong>{customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}</strong>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Couverts (365 j)</span>
@@ -835,7 +854,7 @@ export default function CrmCustomerPage() {
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">No-show (365 j)</span>
-              <strong>{metrics?.noShow365d ?? 0}</strong>
+              <strong>{customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}</strong>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Dépense encaissée</span>
@@ -847,7 +866,8 @@ export default function CrmCustomerPage() {
             </div>
             <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
               <CalendarDays size={14} />
-              Dernière visite : {formatDate(metrics?.lastHonoredAt)}
+              Dernière visite :{' '}
+              {formatDate(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
             </div>
             <div className="border-t border-border pt-3">
               <div className="flex flex-wrap items-center justify-between gap-2">

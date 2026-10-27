@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toApiError } from '@/lib/api-error';
 import CustomersPage from './page';
 
@@ -53,6 +53,45 @@ describe('CustomersPage', () => {
     expect(customerCalls()).toHaveLength(2);
   });
 
+  it('affiche les visites honorées et la dernière vraie visite, jamais le compteur hérité', async () => {
+    // CRM Pro ouvert : le nom mène à la fiche détaillée.
+    mocks.get.mockImplementation(() => Promise.resolve({ data: [] }));
+    mocks.get.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'customer-1',
+          phone: '+33600000000',
+          name: 'Alice Demo',
+          emailNormalized: 'alice@example.com',
+          isVip: false,
+          notes: null,
+          lastSeenAt: '2026-10-26T12:00:00.000Z',
+          lifecycle: { status: 'active', reason: '2 visites' },
+          visitSummary: {
+            visits: 4,
+            visits365d: 2,
+            noShows365d: 0,
+            lastVisitAt: '2026-08-14T19:00:00.000Z',
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    render(<CustomersPage />);
+
+    const link = await screen.findByRole('link', { name: 'Alice Demo' });
+    expect(link).toHaveAttribute('href', '/dashboard/customers/crm/customer-1');
+    const row = link.closest('tr')!;
+    expect(row).toHaveTextContent('alice@example.com');
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[2]).toHaveTextContent(/^4$/); // visites honorées
+    expect(cells[3]).toHaveTextContent(/^2$/); // sur 365 jours
+    expect(row).not.toHaveTextContent('9');
+    expect(row).toHaveTextContent('14/08/2026');
+    expect(row).not.toHaveTextContent('26/10/2026');
+  });
+
   it('affiche les clients renvoyés dans l’enveloppe API data', async () => {
     mocks.get.mockResolvedValueOnce({
       data: [
@@ -61,8 +100,6 @@ describe('CustomersPage', () => {
           restaurantId: 'org_test',
           phone: '+33600000000',
           name: 'Alice Demo',
-          visitCount: 3,
-          loyaltyScore: '8.5',
           isVip: false,
         },
       ],
@@ -86,8 +123,6 @@ describe('CustomersPage', () => {
           restaurantId: 'org_test',
           phone: '+33600000000',
           name: 'Alice Demo',
-          visitCount: 3,
-          loyaltyScore: '8.5',
           isVip: false,
         },
       ],
@@ -112,8 +147,6 @@ describe('CustomersPage', () => {
           restaurantId: 'org_test',
           phone: '+33600000000',
           name: 'Alice Demo',
-          visitCount: 3,
-          loyaltyScore: '8.5',
           isVip: false,
           lastSeenAt: null,
           notes: null,
@@ -159,8 +192,6 @@ describe('CustomersPage', () => {
       restaurantId: 'org_test',
       phone: `+3360000${id}`,
       name: `Client ${id}`,
-      visitCount: 1,
-      loyaltyScore: '1.0',
       isVip: false,
       lastSeenAt: null,
       notes: null,
@@ -190,7 +221,7 @@ describe('CustomersPage', () => {
     expect(screen.queryByRole('button', { name: /afficher plus/i })).not.toBeInTheDocument();
   });
 
-  describe('bouton CRM Pro', () => {
+  describe('CRM Pro dans l\u2019écran Clients', () => {
     const one = {
       data: [
         {
@@ -198,8 +229,6 @@ describe('CustomersPage', () => {
           restaurantId: 'org_test',
           phone: '+33600000000',
           name: 'Alice Demo',
-          visitCount: 1,
-          loyaltyScore: '1.0',
           isVip: false,
           lastSeenAt: null,
           notes: null,
@@ -214,27 +243,75 @@ describe('CustomersPage', () => {
       );
     }
 
-    it('apparaît quand le CRM avancé est ouvert', async () => {
+    it('ouvre les doublons, les filtres avancés et les fiches quand le CRM Pro est ouvert', async () => {
       mockCrm(() => Promise.resolve({ data: [] }));
       render(<CustomersPage />);
-      expect(await screen.findByRole('link', { name: /CRM Pro/ })).toHaveAttribute(
+      expect(await screen.findByRole('link', { name: /Doublons/ })).toHaveAttribute(
         'href',
-        '/dashboard/customers/crm',
+        '/dashboard/customers/crm/duplicates',
+      );
+      expect(screen.getByLabelText('Filtre statut')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Visites min. (365 j)')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Alice Demo' })).toHaveAttribute(
+        'href',
+        '/dashboard/customers/crm/customer-1',
       );
     });
 
-    it('apparaît hors formule, pour que la page CRM explique la formule', async () => {
+    it('hors formule : CRM de base, avec les filtres avancés présentés comme inclus dans CRM Pro', async () => {
       mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
       render(<CustomersPage />);
-      expect(await screen.findByRole('link', { name: /CRM Pro/ })).toBeInTheDocument();
+      expect(await screen.findByText(/inclus dans CRM Pro/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Voir les formules' })).toHaveAttribute(
+        'href',
+        '/pricing',
+      );
+      expect(screen.queryByLabelText('Filtre statut')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Doublons/ })).not.toBeInTheDocument();
+      // La fiche détaillée est une fonction de CRM Pro : pas de lien vers un écran verrouillé.
+      expect(screen.queryByRole('link', { name: 'Alice Demo' })).not.toBeInTheDocument();
+      expect(screen.getByText('Alice Demo')).toBeInTheDocument();
+      expect(screen.getByLabelText('Filtre VIP')).toBeInTheDocument();
     });
 
-    it('reste caché quand le CRM avancé est fermé', async () => {
+    it('cache tout le CRM Pro quand il est fermé', async () => {
       mockCrm(() => Promise.reject(toApiError(503, { error: 'CRM_ADVANCED_DISABLED' })));
       render(<CustomersPage />);
       await screen.findByText('Alice Demo');
       await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('crm/customers?limit=1'));
-      expect(screen.queryByRole('link', { name: /CRM Pro/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Doublons/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(/inclus dans CRM Pro/)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Filtre statut')).not.toBeInTheDocument();
+    });
+
+    it('filtre par statut et par visites côté serveur, et efface les filtres', async () => {
+      mockCrm(() => Promise.resolve({ data: [] }));
+      render(<CustomersPage />);
+      const status = await screen.findByLabelText('Filtre statut');
+
+      fireEvent.change(status, { target: { value: 'dormant' } });
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenCalledWith('customers?limit=50&offset=0&lifecycle=dormant'),
+      );
+
+      fireEvent.change(screen.getByPlaceholderText('Visites min. (365 j)'), {
+        target: { value: '3' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Rechercher' }));
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenCalledWith(
+          'customers?limit=50&offset=0&lifecycle=dormant&minHonored365d=3',
+        ),
+      );
+    });
+
+    it('filtre sur le VIP quelle que soit la formule', async () => {
+      mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
+      render(<CustomersPage />);
+      fireEvent.change(await screen.findByLabelText('Filtre VIP'), { target: { value: 'true' } });
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenCalledWith('customers?limit=50&offset=0&isVip=true'),
+      );
     });
   });
 });

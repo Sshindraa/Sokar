@@ -82,6 +82,23 @@ describe('GET /dashboard/reactivation', () => {
         isVip: false,
       } as never,
     ]);
+    // Alice a 12 réservations téléphone au compteur hérité, mais une seule visite honorée.
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        customerId: 'cust-1',
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: new Date('2026-03-10T19:00:00Z'),
+        reservedAt: new Date('2026-03-10T19:00:00Z'),
+      },
+      {
+        customerId: 'cust-1',
+        state: 'NO_SHOW',
+        status: 'NO_SHOW',
+        startsAt: new Date('2026-04-20T19:00:00Z'),
+        reservedAt: new Date('2026-04-20T19:00:00Z'),
+      },
+    ] as never);
 
     const res = await app.inject({
       method: 'GET',
@@ -97,8 +114,15 @@ describe('GET /dashboard/reactivation', () => {
       status: 'PENDING',
       customerCount: 2,
     });
-    const customers = body[0].customers as Array<{ name: string }>;
+    const customers = body[0].customers as Array<{
+      name: string;
+      visitCount: number;
+      lastSeenAt: string | null;
+    }>;
     expect(customers[0].name).toBe('Alice');
+    expect(customers[0].visitCount).toBe(1);
+    expect(customers[0].lastSeenAt).toBe('2026-03-10T19:00:00.000Z');
+    expect(customers[1]).toMatchObject({ visitCount: 0, lastSeenAt: null });
     // Customer sans nom → fallback "Client inconnu"
     expect(customers[1].name).toBe('Client inconnu');
   });

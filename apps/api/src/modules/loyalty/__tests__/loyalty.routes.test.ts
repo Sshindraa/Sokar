@@ -130,7 +130,6 @@ describe('loyalty routes', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: 'customer-1',
       isVip: true,
-      visitCount: 12,
       birthMonth: null,
       metricSnapshot: null,
     } as never);

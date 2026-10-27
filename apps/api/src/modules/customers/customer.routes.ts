@@ -16,8 +16,14 @@ import {
   normalizeCustomerPhone,
   upsertCustomerIdentity,
 } from './customer-crm.service';
-import { canViewSensitiveNotes } from './customer-privacy';
-import { withCustomerLifecycles } from './customer-lifecycle';
+import {
+  canViewSensitiveNotes,
+  canWriteSensitiveNotes,
+  redactSensitiveCustomerFields,
+} from './customer-privacy';
+import { findCustomerForPhone } from './customer.service';
+import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   loadReservationServiceCards,
   SERVICE_CARD_MAX_RESERVATIONS,
@@ -37,18 +43,27 @@ const ServiceCardQuerySchema = z.object({
     .pipe(z.array(z.string().min(1).max(128)).min(1).max(SERVICE_CARD_MAX_RESERVATIONS)),
 });
 
-function canWriteCustomerNotes(siteRole: string | undefined): boolean {
-  return siteRole === 'OWNER' || siteRole === 'MANAGER';
+async function canWriteCustomerNotes(
+  restaurantId: string | undefined,
+  siteRole: string | undefined,
+): Promise<boolean> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { crmSensitiveNoteRoles: true },
+  });
+  return canWriteSensitiveNotes(siteRole, restaurant?.crmSensitiveNoteRoles);
 }
 
 /**
- * Filtre de recherche : le nom (sans tenir compte de la casse) ou le numéro. Les numéros sont stockés en
+ * Filtre de recherche, commun aux écrans Clients et CRM Pro : le nom (sans tenir compte de la
+ * casse), l'email ou le numéro. Les numéros sont stockés en
  * E.164 (« +33612345678 ») alors qu'on tape « 06 12 34 56 78 » : on compare les chiffres, avec et sans le
  * 0 de tête, pour qu'une saisie française entière ou partielle retrouve le client.
  */
 export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereInput[] {
   const filters: Prisma.CustomerWhereInput[] = [
     { name: { contains: search, mode: 'insensitive' } },
+    { emailNormalized: { contains: search.toLowerCase() } },
   ];
   const digits = search.replace(/\D/g, '');
   if (digits.length >= 2) {
@@ -59,6 +74,8 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
   }
   return filters;
 }
+
+const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
 
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
@@ -78,25 +95,60 @@ export async function customerRoutes(app: FastifyInstance) {
       if (query.phone) where.phone = query.phone;
       if (query.search) where.OR = buildCustomerSearchFilter(query.search);
 
-      const [customers, total, restaurant] = await Promise.all([
-        db.customer.findMany({
-          where,
-          orderBy: { visitCount: 'desc' },
-          take: query.limit,
-          skip: query.offset,
-        }),
-        db.customer.count({ where }),
-        db.restaurant.findUnique({
-          where: { id: restaurantId },
-          select: { crmSensitiveNoteRoles: true },
-        }),
-      ]);
+      if (query.isVip !== undefined) where.isVip = query.isVip;
+      // Derniers contacts d'abord ; `id` départage pour une pagination stable.
+      const orderBy: Prisma.CustomerOrderByWithRelationInput[] = [
+        { lastSeenAt: { sort: 'desc', nulls: 'last' } },
+        { id: 'desc' },
+      ];
+
+      let customers;
+      let total: number;
+      if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
+        // Statut et visites viennent des réservations : fonction de CRM Pro (offre Essential = CRM de base).
+        await requireCapability('customers.advanced')(req, reply);
+        if (reply.sent) return reply;
+        // shortcut: le filtrage calculé porte sur les 5 000 premiers clients, à relever si un site les dépasse.
+        const candidates = await db.customer.findMany({
+          where: { ...where, restaurantId },
+          orderBy,
+          select: { id: true },
+          take: COMPUTED_FILTER_SCAN_LIMIT,
+        });
+        const matching = await filterCustomerIdsByVisits(
+          restaurantId!,
+          candidates.map((candidate) => candidate.id),
+          query,
+          new Date(),
+        );
+        total = matching.length;
+        const pageIds = matching.slice(query.offset, query.offset + query.limit);
+        const rows = await db.customer.findMany({
+          where: { restaurantId, id: { in: pageIds } },
+        });
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        customers = pageIds.flatMap((id) => byId.get(id) ?? []);
+      } else {
+        [customers, total] = await Promise.all([
+          db.customer.findMany({
+            where: { ...where, restaurantId },
+            orderBy,
+            take: query.limit,
+            skip: query.offset,
+          }),
+          db.customer.count({ where }),
+        ]);
+      }
+      const restaurant = await db.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { crmSensitiveNoteRoles: true },
+      });
 
       const canViewNotes = canViewSensitiveNotes(req.siteRole, restaurant?.crmSensitiveNoteRoles);
       const withLifecycle = await withCustomerLifecycles(restaurantId, customers);
       return reply.send({
         data: withLifecycle.map((customer) =>
-          canViewNotes ? customer : { ...customer, notes: null },
+          canViewNotes ? customer : redactSensitiveCustomerFields(customer),
         ),
         total,
         limit: query.limit,
@@ -128,45 +180,38 @@ export async function customerRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = CreateCustomerSchema.parse(req.body);
       const restaurantId = req.restaurantId!;
-      if (body.notes !== undefined && !canWriteCustomerNotes(req.siteRole)) {
+      if (
+        (body.notes !== undefined || body.specialOccasion !== undefined) &&
+        !(await canWriteCustomerNotes(req.restaurantId, req.siteRole))
+      ) {
         return reply.status(403).send({
           error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-          message: 'La modification des notes client est réservée aux responsables.',
+          message:
+            'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
         });
       }
       const emailNormalized = body.email ? normalizeCustomerEmail(body.email) : null;
+      const normalizedPhone = normalizeCustomerPhone(body.phone);
+      // Only the fields sent are written: an upsert of a known guest never resets VIP or blanks
+      // a field the request did not mention.
+      const fields = {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(emailNormalized ? { emailNormalized } : {}),
+        ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
+        ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
+        ...(body.preferredLocale !== undefined ? { preferredLocale: body.preferredLocale } : {}),
+        ...(body.notes !== undefined ? { notes: body.notes } : {}),
+        ...(body.specialOccasion !== undefined ? { specialOccasion: body.specialOccasion } : {}),
+        ...(body.isVip !== undefined ? { isVip: body.isVip } : {}),
+      };
       try {
-        const customer = await db.customer.upsert({
-          where: { restaurantId_phone: { restaurantId, phone: body.phone } },
-          create: {
-            restaurantId,
-            phone: body.phone,
-            ...(emailNormalized ? { emailNormalized } : {}),
-            ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
-            ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
-            ...(body.preferredLocale !== undefined
-              ? { preferredLocale: body.preferredLocale }
-              : {}),
-            name: body.name,
-            notes: body.notes,
-            specialOccasion: body.specialOccasion,
-            isVip: body.isVip,
-          },
-          update: {
-            name: body.name,
-            ...(emailNormalized ? { emailNormalized } : {}),
-            ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
-            ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
-            ...(body.preferredLocale !== undefined
-              ? { preferredLocale: body.preferredLocale }
-              : {}),
-            notes: body.notes,
-            specialOccasion: body.specialOccasion,
-            isVip: body.isVip,
-          },
-        });
+        const existing = await findCustomerForPhone(restaurantId, body.phone, normalizedPhone);
+        const customer = existing
+          ? await db.customer.update({ where: { id: existing.id, restaurantId }, data: fields })
+          : await db.customer.create({
+              data: { restaurantId, phone: normalizedPhone ?? body.phone, ...fields },
+            });
         try {
-          const normalizedPhone = normalizeCustomerPhone(body.phone);
           if (normalizedPhone) {
             await upsertCustomerIdentity({
               restaurantId,
@@ -189,6 +234,7 @@ export async function customerRoutes(app: FastifyInstance) {
           // A collision remains visible to the duplicate-review workflow; it
           // must not roll back an otherwise valid legacy customer upsert.
         }
+        await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? body.phone}`);
         return reply.status(201).send(customer);
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
@@ -205,10 +251,14 @@ export async function customerRoutes(app: FastifyInstance) {
       const { id } = CustomerParamsSchema.parse(req.params);
       const restaurantId = req.restaurantId;
       const body = UpdateCustomerSchema.parse(req.body);
-      if (body.notes !== undefined && !canWriteCustomerNotes(req.siteRole)) {
+      if (
+        (body.notes !== undefined || body.specialOccasion !== undefined) &&
+        !(await canWriteCustomerNotes(req.restaurantId, req.siteRole))
+      ) {
         return reply.status(403).send({
           error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-          message: 'La modification des notes client est réservée aux responsables.',
+          message:
+            'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
         });
       }
       const { email, ...rest } = body;
@@ -218,7 +268,25 @@ export async function customerRoutes(app: FastifyInstance) {
           ? { emailNormalized: email ? normalizeCustomerEmail(email) : null }
           : {}),
       };
+      const previous =
+        email !== undefined
+          ? await db.customer.findFirst({
+              where: { id, restaurantId },
+              select: { emailNormalized: true },
+            })
+          : null;
       const updated = await db.customer.update({ where: { id, restaurantId }, data });
+      // A replaced or cleared email must stop matching this guest in duplicate detection.
+      if (previous?.emailNormalized && previous.emailNormalized !== updated.emailNormalized) {
+        await db.customerIdentity.deleteMany({
+          where: {
+            restaurantId,
+            customerId: id,
+            type: 'EMAIL',
+            normalizedValue: previous.emailNormalized,
+          },
+        });
+      }
       if (email) {
         try {
           await upsertCustomerIdentity({
@@ -233,21 +301,15 @@ export async function customerRoutes(app: FastifyInstance) {
           // merge candidate and is handled by CRM duplicate review.
         }
       }
-      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      await redisCache.del(
+        `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
+      );
       return reply.send(updated);
     },
   );
 
-  app.delete(
-    '/customers/:id',
-    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
-    async (req, reply) => {
-      const { id } = CustomerParamsSchema.parse(req.params);
-      const restaurantId = req.restaurantId;
-      await db.customer.delete({ where: { id, restaurantId } });
-      return reply.status(204).send();
-    },
-  );
+  // No hard delete: it cascaded the marketing opt-outs and consent proofs, so a customer who
+  // called back became reachable again. Erasure goes through the RGPD anonymisation.
 
   app.post(
     '/customers/:id/vip',
@@ -257,7 +319,9 @@ export async function customerRoutes(app: FastifyInstance) {
       const restaurantId = req.restaurantId;
       const { isVip } = ToggleVipSchema.parse(req.body);
       const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
-      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      await redisCache.del(
+        `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
+      );
       return reply.send(updated);
     },
   );
