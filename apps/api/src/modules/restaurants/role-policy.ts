@@ -34,6 +34,8 @@ export const STAFF_RULES: readonly Rule[] = [
   { methods: ['GET', 'HEAD'], path: '/restaurants/:id/floor-plan', below: true },
   { methods: ['GET', 'HEAD'], path: '/restaurants/:id/floor-plans', below: true },
   { methods: ['GET', 'HEAD'], path: '/restaurants/:id/availability' },
+  // Badges client à côté de chaque réservation (jamais les notes ni une suggestion vocale non confirmée).
+  { methods: ['GET', 'HEAD'], path: '/customers/service-cards' },
   // L'en-tête du dashboard lit le nom du restaurant et la liste des établissements.
   { methods: ['GET', 'HEAD'], path: '/restaurants/:id' },
   { methods: ['GET', 'HEAD'], path: '/restaurants/sites' },

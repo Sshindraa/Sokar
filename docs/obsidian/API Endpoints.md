@@ -182,10 +182,12 @@ Liste et upsert tenant-scoped. La liste masque `notes` pour les rôles absents d
 effective du site. L'upsert conserve les champs opérationnels pour l'équipe, mais la modification
 de `notes` est réservée à Owner/Manager (`CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
 
-### PATCH /customers/:id / DELETE /customers/:id
+### PATCH /customers/:id
 
-Mise à jour / suppression. Comme pour l'upsert, une modification de `notes` exige Owner/Manager ;
-les autres champs restent soumis à l'authentification du site.
+Mise à jour. Comme pour l'upsert, une modification de `notes` exige Owner/Manager ;
+les autres champs restent soumis à l'authentification du site. Aucune suppression définitive
+(`DELETE /customers/:id` retiré le 27/10/2026) : elle effaçait en cascade les refus marketing et
+les preuves de consentement. L'effacement passe par l'anonymisation RGPD.
 
 ### POST /customers/:id/vip
 

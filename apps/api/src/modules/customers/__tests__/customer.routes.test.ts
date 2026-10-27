@@ -454,11 +454,8 @@ describe('customer.routes', () => {
   });
 
   describe('DELETE /customers/:id', () => {
-    it('supprime scoped au restaurant et retourne 204', async () => {
+    it("n'existe plus : une suppression effacerait les refus marketing", async () => {
       const app = await getApp();
-      vi.mocked(db.customer.delete).mockResolvedValue(
-        {} as unknown as Awaited<ReturnType<typeof db.customer.delete>>,
-      );
 
       const res = await app.inject({
         method: 'DELETE',
@@ -466,10 +463,8 @@ describe('customer.routes', () => {
         headers: { authorization: 'Bearer test' },
       });
 
-      expect(res.statusCode).toBe(204);
-      expect(db.customer.delete).toHaveBeenCalledWith({
-        where: { id: '00000000-0000-0000-0000-000000000001', restaurantId: 'test-rest-1' },
-      });
+      expect(res.statusCode).toBe(404);
+      expect(db.customer.delete).not.toHaveBeenCalled();
     });
   });
 

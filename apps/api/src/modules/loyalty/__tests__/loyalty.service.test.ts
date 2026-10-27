@@ -200,6 +200,65 @@ describe('loyalty benefits foundation', () => {
     expect(db.loyaltyGrant.create).not.toHaveBeenCalled();
   });
 
+  it('counts honoured visits from reservations for MIN_VISITS, never the legacy visitCount', async () => {
+    vi.mocked(db.loyaltyGrant.findUnique).mockResolvedValue(null);
+    vi.mocked(db.loyaltyBenefit.findFirst).mockResolvedValue(
+      benefitRow({ rule: LoyaltyBenefitRule.MIN_VISITS, ruleValue: 2 }) as never,
+    );
+    // The legacy counter says 9 phone bookings; only one was really honoured.
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: CUSTOMER_ID,
+      isVip: false,
+      visitCount: 9,
+      birthMonth: null,
+      metricSnapshot: null,
+    } as never);
+    const past = new Date('2026-08-01T19:00:00.000Z');
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      { state: 'HONORED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
+      { state: 'NO_SHOW', status: 'NO_SHOW', startsAt: past, reservedAt: past },
+      { state: 'CONFIRMED', status: 'CANCELLED', startsAt: past, reservedAt: past },
+    ] as never);
+
+    await expect(
+      issueLoyaltyGrant({
+        restaurantId: RESTAURANT_ID,
+        benefitId: BENEFIT_ID,
+        customerId: CUSTOMER_ID,
+        actor: 'user-1',
+        now: NOW,
+      }),
+    ).rejects.toMatchObject({ reason: 'MIN_VISITS_NOT_REACHED' });
+    expect(db.reservation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { restaurantId: RESTAURANT_ID, customerId: CUSTOMER_ID } }),
+    );
+
+    // A regular who books online, with no phone booking at all, qualifies.
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      id: CUSTOMER_ID,
+      isVip: false,
+      visitCount: 0,
+      birthMonth: null,
+      metricSnapshot: null,
+    } as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      { state: 'HONORED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
+      { state: 'SEATED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
+    ] as never);
+    vi.mocked(db.loyaltyGrant.count).mockResolvedValue(0);
+    vi.mocked(db.loyaltyGrant.create).mockResolvedValue(grantRow() as never);
+
+    await expect(
+      issueLoyaltyGrant({
+        restaurantId: RESTAURANT_ID,
+        benefitId: BENEFIT_ID,
+        customerId: CUSTOMER_ID,
+        actor: 'user-1',
+        now: NOW,
+      }),
+    ).resolves.toMatchObject({ id: GRANT_ID });
+  });
+
   it('serializes issuance by customer and benefit before enforcing max uses', async () => {
     vi.mocked(db.loyaltyBenefit.findFirst).mockResolvedValue(
       benefitRow({ rule: LoyaltyBenefitRule.ANY }) as never,

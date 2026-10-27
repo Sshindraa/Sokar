@@ -238,16 +238,8 @@ export async function customerRoutes(app: FastifyInstance) {
     },
   );
 
-  app.delete(
-    '/customers/:id',
-    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
-    async (req, reply) => {
-      const { id } = CustomerParamsSchema.parse(req.params);
-      const restaurantId = req.restaurantId;
-      await db.customer.delete({ where: { id, restaurantId } });
-      return reply.status(204).send();
-    },
-  );
+  // No hard delete: it cascaded the marketing opt-outs and consent proofs, so a customer who
+  // called back became reachable again. Erasure goes through the RGPD anonymisation.
 
   app.post(
     '/customers/:id/vip',
