@@ -18,6 +18,7 @@ import {
   dayWindow,
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
+  remainingDailyEmailBudget,
   renderMarketingTemplate,
   toMarketingHtml,
 } from './marketing-campaign.service';
@@ -47,6 +48,7 @@ type CampaignWorkerDb = Pick<
   | 'marketingFrequencyWindow'
   | 'customerConsent'
   | 'customer'
+  | '$transaction'
 > & {
   campaignAudienceMember: PrismaClient['campaignAudienceMember'];
 };
@@ -498,15 +500,43 @@ export async function processMarketingCampaignJob(
   }
 
   if (campaign.status !== MarketingCampaignStatus.SENDING) {
-    const claimed = await dependencies.db.marketingCampaign.updateMany({
+    const claim = {
       where: {
         id: campaign.id,
         restaurantId: job.data.restaurantId,
         status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
       },
       data: { status: MarketingCampaignStatus.SENDING, startedAt: now, lastErrorCode: null },
-    });
-    if (claimed.count !== 1) return { processed: 0, accepted: 0, failed: 0 };
+    };
+    if (campaign.status === MarketingCampaignStatus.SCHEDULED && campaign.channel === 'EMAIL') {
+      // Une programmation repasse le contrôle pour le jour réel d'envoi : elle peut partir avant ou
+      // après sa date. Refusée, elle redevient prête, sans destinataire consommé.
+      const verdict = await dependencies.db.$transaction(async (tx) => {
+        if (campaign.audienceCount > (await remainingDailyEmailBudget(tx, now, campaign.id))) {
+          return 'BUDGET_EXCEEDED';
+        }
+        const claimed = await tx.marketingCampaign.updateMany(claim);
+        return claimed.count === 1 ? 'CLAIMED' : 'LOST';
+      });
+      if (verdict === 'BUDGET_EXCEEDED') {
+        await dependencies.db.marketingCampaign.updateMany({
+          where: {
+            id: campaign.id,
+            restaurantId: job.data.restaurantId,
+            status: MarketingCampaignStatus.SCHEDULED,
+          },
+          data: {
+            status: MarketingCampaignStatus.READY,
+            lastErrorCode: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+          },
+        });
+        throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
+      }
+      if (verdict === 'LOST') return { processed: 0, accepted: 0, failed: 0 };
+    } else {
+      const claimed = await dependencies.db.marketingCampaign.updateMany(claim);
+      if (claimed.count !== 1) return { processed: 0, accepted: 0, failed: 0 };
+    }
   }
 
   await ensureCampaignMessages(campaign.id, campaign.channel, dependencies.db);

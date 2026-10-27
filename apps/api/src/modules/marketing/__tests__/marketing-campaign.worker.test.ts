@@ -70,6 +70,8 @@ function makeDependencies() {
     },
     customerConsent: { findFirst: vi.fn().mockResolvedValue(null) },
     customer: { findFirst: vi.fn().mockResolvedValue({ id: 'customer-1' }) },
+    $executeRaw: vi.fn().mockResolvedValue(0),
+    $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
   } as unknown as PrismaClient;
   const sendSms = vi.fn().mockResolvedValue({
     outcome: 'success',
@@ -98,7 +100,15 @@ const ACCEPTED_EMAIL = {
 };
 
 /** Une campagne e-mail prête, dont un seul destinataire a donné son accord. */
-function mockEmailCampaign(db: PrismaClient, managerEmail: string) {
+function mockEmailCampaign(
+  db: PrismaClient,
+  managerEmail: string,
+  campaign: {
+    status?: MarketingCampaignStatus;
+    scheduledAt?: Date | null;
+    audienceCount?: number;
+  } = {},
+) {
   vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
   vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
     id: 'campaign-1',
@@ -108,6 +118,7 @@ function mockEmailCampaign(db: PrismaClient, managerEmail: string) {
     subject: 'Une table vous attend',
     bodyTemplate: 'Bonjour {{customer.firstName}} {{unsubscribeUrl}}',
     restaurant: { name: 'Chez Sokar, Paris', slug: 'chez-sokar', managerEmail },
+    ...campaign,
   } as never);
   vi.mocked(db.campaignMessage.findMany)
     .mockReset()
@@ -375,6 +386,71 @@ describe('marketing campaign worker', () => {
 
     await processMarketingCampaignJob(makeJob(), deps);
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ replyTo: null }));
+  });
+
+  it('une programmation partie avant sa date repasse le contrôle pour le jour réel d’envoi', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test', {
+      status: MarketingCampaignStatus.SCHEDULED,
+      scheduledAt: new Date('2030-01-15T09:00:00.000Z'),
+      audienceCount: 30,
+    });
+    // Le 10, 20 e-mails sont déjà acceptés : il ne reste que 20 sur 30 demandés.
+    vi.mocked(db.campaignMessage.count).mockImplementation((async ({
+      where,
+    }: {
+      where: { acceptedAt?: unknown };
+    }) => (where.acceptedAt ? 20 : 0)) as never);
+    const sendEmail = vi.fn();
+    deps.sendEmail = sendEmail as never;
+    deps.now = () => new Date('2030-01-10T10:00:00.000Z');
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).rejects.toThrow(
+      'MARKETING_DAILY_BUDGET_EXCEEDED',
+    );
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(db.campaignMessage.updateMany).not.toHaveBeenCalled();
+    expect(db.marketingCampaign.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          status: MarketingCampaignStatus.READY,
+          lastErrorCode: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+        },
+      }),
+    );
+  });
+
+  it('une programmation le jour J n’est pas bloquée par ses propres messages', async () => {
+    const { db, deps } = makeDependencies();
+    mockEmailCampaign(db, 'manager@chez-sokar.test', {
+      status: MarketingCampaignStatus.SCHEDULED,
+      scheduledAt: new Date('2030-01-10T09:00:00.000Z'),
+      audienceCount: 30,
+    });
+    // Ses 30 messages attendent le jour J : sans exclusion de soi-même, 30 + 30 dépasseraient 40.
+    vi.mocked(db.campaignMessage.count).mockImplementation((async ({
+      where,
+    }: {
+      where: { acceptedAt?: unknown; campaignId?: unknown };
+    }) => (where.acceptedAt || where.campaignId ? 0 : 30)) as never);
+    const sendEmail = vi.fn().mockResolvedValue({
+      outcome: 'success',
+      provider: 'resend',
+      channel: 'email',
+      providerMessageId: 'resend-1',
+    });
+    deps.sendEmail = sendEmail as never;
+    deps.now = () => new Date('2030-01-10T10:00:00.000Z');
+
+    await expect(processMarketingCampaignJob(makeJob(), deps)).resolves.toMatchObject({
+      accepted: 1,
+    });
+    expect(db.campaignMessage.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ campaignId: { not: 'campaign-1' } }),
+      }),
+    );
+    expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
   it('refuse l’envoi e-mail sans MARKETING_EMAIL_FROM, sans jamais se rabattre sur EMAIL_FROM', async () => {

@@ -11,10 +11,10 @@ import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
 import {
-  assertDailyEmailBudget,
   CAMPAIGN_CHANNELS,
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
+  remainingDailyEmailBudget,
   validateMarketingTemplate,
 } from './marketing-campaign.service';
 import { loadOptedOutCustomerIds } from './marketing-opt-out.service';
@@ -92,16 +92,6 @@ function assertTimeZone(value: string): string {
 
 function actorHash(value: string): string {
   return createHash('sha256').update(value).digest('hex');
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') ||
-    (typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      (error as { code?: string }).code === 'P2002')
-  );
 }
 
 /** Validate and normalize one of the three deliberately bounded configs. */
@@ -210,8 +200,35 @@ function ensureCandidateLimit<T>(rows: T[]): T[] {
   return rows;
 }
 
-/** Load trigger candidates without performing any provider or campaign write. */
+/** Clé d'une occasion : un client n'est servi qu'une fois par automatisation et par occasion. */
+function occasionKey(customerId: string, triggerKey: string): string {
+  return `${customerId}|${triggerKey}`;
+}
+
+/**
+ * Candidats d'une automatisation, sans les occasions déjà servies : un anniversaire ou un premier
+ * passage n'est jamais renvoyé. Aucune écriture fournisseur ni campagne.
+ */
 export async function findMarketingAutomationCandidates(args: {
+  automation: MarketingAutomation;
+  now?: Date;
+}): Promise<MarketingAutomationCandidate[]> {
+  const candidates = await collectAutomationCandidates(args);
+  if (candidates.length === 0) return candidates;
+  const served = await db.marketingAutomationDispatch.findMany({
+    where: {
+      automationId: args.automation.id,
+      customerId: { in: candidates.map((candidate) => candidate.customerId) },
+    },
+    select: { customerId: true, triggerKey: true },
+  });
+  const servedKeys = new Set(served.map((row) => occasionKey(row.customerId, row.triggerKey)));
+  return candidates.filter(
+    (candidate) => !servedKeys.has(occasionKey(candidate.customerId, candidate.triggerKey)),
+  );
+}
+
+async function collectAutomationCandidates(args: {
   automation: MarketingAutomation;
   now?: Date;
 }): Promise<MarketingAutomationCandidate[]> {
@@ -459,21 +476,38 @@ async function filterEligibleCandidates(args: {
   });
 }
 
-/** Create one snapshot campaign and atomically claim each trigger key. */
+/** Ordre d'une occasion dans un lot : la plus proche d'abord, puis un ordre stable. */
+function byDeadline(a: MarketingAutomationCandidate, b: MarketingAutomationCandidate): number {
+  return (
+    a.occurredAt.getTime() - b.occurredAt.getTime() || a.customerId.localeCompare(b.customerId)
+  );
+}
+
+/**
+ * Crée la campagne d'un lot, découpée sur le reste du budget e-mail du jour : ce qui ne tient pas n'est
+ * pris par personne et reste candidat à la passe suivante. Une occasion déjà servie est ignorée par
+ * `skipDuplicates`, sans interrompre la transaction.
+ */
 export async function createMarketingAutomationCampaign(args: {
   automation: MarketingAutomation;
   candidates: MarketingAutomationCandidate[];
   now?: Date;
-}): Promise<{ campaign: MarketingCampaign; dispatchCount: number } | null> {
-  if (args.candidates.length === 0) return null;
+}): Promise<{ campaign: MarketingCampaign | null; dispatchCount: number; deferred: number }> {
+  if (args.candidates.length === 0) return { campaign: null, dispatchCount: 0, deferred: 0 };
   const now = validDate(args.now, 'now');
   const type = args.automation.type as MarketingAutomationTypeCode;
+  const isEmail = String(args.automation.channel) === 'EMAIL';
   const config = parseMarketingAutomationConfig(
     type,
     String(args.automation.channel),
     args.automation.config,
   );
   return db.$transaction(async (tx) => {
+    const ordered = [...args.candidates].sort(byDeadline);
+    const room = isEmail ? await remainingDailyEmailBudget(tx, now) : ordered.length;
+    const selected = ordered.slice(0, room);
+    const deferred = ordered.length - selected.length;
+    if (selected.length === 0) return { campaign: null, dispatchCount: 0, deferred };
     const campaign = await tx.marketingCampaign.create({
       data: {
         restaurantId: args.automation.restaurantId,
@@ -491,31 +525,23 @@ export async function createMarketingAutomationCampaign(args: {
         createdByHash: actorHash(`marketing-automation:${args.automation.id}`),
       },
     });
-    const dispatches: Array<{
-      id: string;
-      customerId: string;
-      triggerKey: string;
-      occurredAt: Date;
-    }> = [];
-    for (const candidate of args.candidates) {
-      try {
-        const dispatch = await tx.marketingAutomationDispatch.create({
-          data: {
-            automationId: args.automation.id,
-            restaurantId: args.automation.restaurantId,
-            customerId: candidate.customerId,
-            triggerKey: candidate.triggerKey,
-            campaignId: campaign.id,
-            status: MarketingAutomationDispatchStatus.QUEUED,
-            occurredAt: candidate.occurredAt,
-          },
-          select: { id: true, customerId: true, triggerKey: true, occurredAt: true },
-        });
-        dispatches.push(dispatch);
-      } catch (error) {
-        if (!isUniqueViolation(error)) throw error;
-      }
-    }
+    await tx.marketingAutomationDispatch.createMany({
+      data: selected.map((candidate) => ({
+        automationId: args.automation.id,
+        restaurantId: args.automation.restaurantId,
+        customerId: candidate.customerId,
+        triggerKey: candidate.triggerKey,
+        campaignId: campaign.id,
+        status: MarketingAutomationDispatchStatus.QUEUED,
+        occurredAt: candidate.occurredAt,
+      })),
+      // Filet : une occasion servie entre-temps est ignorée sans interrompre la transaction.
+      skipDuplicates: true,
+    });
+    const dispatches = await tx.marketingAutomationDispatch.findMany({
+      where: { campaignId: campaign.id },
+      select: { customerId: true, triggerKey: true, occurredAt: true },
+    });
     if (dispatches.length === 0) {
       await tx.marketingCampaign.update({
         where: { id: campaign.id },
@@ -525,15 +551,11 @@ export async function createMarketingAutomationCampaign(args: {
           lastErrorCode: 'AUTOMATION_ALREADY_DISPATCHED',
         },
       });
-      return null;
-    }
-    if (String(args.automation.channel) === 'EMAIL') {
-      // Rollback de la transaction si le budget quotidien ne couvre pas l'audience.
-      await assertDailyEmailBudget(tx, dispatches.length, now);
+      return { campaign: null, dispatchCount: 0, deferred };
     }
     await tx.campaignAudienceMember.createMany({
       data: dispatches.map((dispatch) => {
-        const candidate = args.candidates.find(
+        const candidate = selected.find(
           (item) =>
             item.customerId === dispatch.customerId && item.triggerKey === dispatch.triggerKey,
         );
@@ -561,14 +583,19 @@ export async function createMarketingAutomationCampaign(args: {
       where: { id: campaign.id },
       data: { audienceCount: dispatches.length },
     });
-    return { campaign: updated, dispatchCount: dispatches.length };
+    return { campaign: updated, dispatchCount: dispatches.length, deferred };
   });
 }
 
 export async function evaluateMarketingAutomation(args: {
   automation: MarketingAutomation;
   now?: Date;
-}): Promise<{ candidateCount: number; eligibleCount: number; campaignId: string | null }> {
+}): Promise<{
+  candidateCount: number;
+  eligibleCount: number;
+  campaignId: string | null;
+  deferred: number;
+}> {
   const now = validDate(args.now, 'now');
   const candidates = await findMarketingAutomationCandidates({ automation: args.automation, now });
   const eligible = await filterEligibleCandidates({
@@ -589,38 +616,54 @@ export async function evaluateMarketingAutomation(args: {
   return {
     candidateCount: candidates.length,
     eligibleCount: eligible.length,
-    campaignId: created?.campaign.id ?? null,
+    campaignId: created.campaign?.id ?? null,
+    deferred: created.deferred,
   };
+}
+
+/** Ordre dans une passe : les fenêtres bornées (anniversaire) passent avant les autres, partout. */
+export function automationPriority(automation: Pick<MarketingAutomation, 'type'>): number {
+  return automation.type === 'BIRTHDAY' ? 0 : 1;
+}
+
+const budgetWarnedOn = new Map<string, string>();
+
+/** Un seul avertissement par automatisation et par jour quand le budget e-mail est atteint. */
+export function warnBudgetDeferralOnce(
+  automation: Pick<MarketingAutomation, 'id' | 'type'>,
+  deferred: number,
+  now: Date,
+): void {
+  const day = now.toISOString().slice(0, 10);
+  if (budgetWarnedOn.get(automation.id) === day) return;
+  budgetWarnedOn.set(automation.id, day);
+  logger.warn(
+    { automationId: automation.id, type: automation.type, deferred },
+    'marketing automation deferred: daily email budget reached',
+  );
 }
 
 export async function evaluateMarketingAutomations(args: {
   restaurantId?: string;
   now?: Date;
 }): Promise<{ automations: number; campaigns: number; eligible: number }> {
-  const automations = await db.marketingAutomation.findMany({
-    where: {
-      enabled: true,
-      ...(args.restaurantId ? { restaurantId: args.restaurantId } : {}),
-    },
-    orderBy: [{ restaurantId: 'asc' }, { type: 'asc' }],
-  });
+  const now = args.now ?? new Date();
+  const automations = (
+    await db.marketingAutomation.findMany({
+      where: {
+        enabled: true,
+        ...(args.restaurantId ? { restaurantId: args.restaurantId } : {}),
+      },
+      orderBy: [{ restaurantId: 'asc' }, { type: 'asc' }],
+    })
+  ).sort((a, b) => automationPriority(a) - automationPriority(b));
   let campaigns = 0;
   let eligible = 0;
   for (const automation of automations) {
-    try {
-      const result = await evaluateMarketingAutomation({ automation, now: args.now });
-      if (result.campaignId) campaigns += 1;
-      eligible += result.eligibleCount;
-    } catch (error) {
-      // Budget e-mail du jour atteint : cette automatisation sera réévaluée, les autres continuent.
-      const budgetExceeded =
-        error instanceof Error && error.message === 'MARKETING_DAILY_BUDGET_EXCEEDED';
-      if (!budgetExceeded) throw error;
-      logger.warn(
-        { automationId: automation.id, type: automation.type },
-        'marketing automation deferred: daily email budget reached',
-      );
-    }
+    const result = await evaluateMarketingAutomation({ automation, now });
+    if (result.campaignId) campaigns += 1;
+    eligible += result.eligibleCount;
+    if (result.deferred > 0) warnBudgetDeferralOnce(automation, result.deferred, now);
   }
   return { automations: automations.length, campaigns, eligible };
 }

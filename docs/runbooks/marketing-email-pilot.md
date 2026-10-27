@@ -61,14 +61,20 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 - **Quota Resend et budget marketing.** Le plan constaté est Free : 100 e-mails par jour et 3 000 par mois,
   partagés avec les e-mails transactionnels. Le marketing ne doit jamais consommer ce quota : il est plafonné à
   `MARKETING_EMAIL_DAILY_BUDGET` e-mails par jour pour **toute la plateforme** (40 par défaut, entier ≥ 0 validé
-  au démarrage, jour UTC). Le contrôle a lieu **au lancement** : envoi immédiat, ou programmation pour le jour de
-  l'envoi. Une campagne dont l'audience dépasse le reste du jour est refusée (409, « Audience trop grande pour
-  aujourd’hui ») : elle n'est ni tronquée, ni étalée en silence. Le reste compte les e-mails acceptés ce jour-là,
-  les envois en cours ou suspendus, et les campagnes programmées pour ce jour. Une campagne **prête (READY) ne
-  réserve rien** : une campagne oubliée ne bloque pas les autres. Les automatisations e-mail contrôlent leur
-  audience à leur création, puisqu'elles partent aussitôt. Un pilote de quelques adresses tient largement.
-  Relevez ou retirez ce plafond au passage à un plan Resend supérieur (`shortcut:` dans
-  `marketing-campaign.service.ts`).
+  au démarrage, jour UTC). Le contrôle a lieu **au lancement** : envoi immédiat, ou programmation. Une programmation
+  est recontrôlée au jour réel de son envoi, qu'elle parte avant ou après la date prévue. Une campagne dont
+  l'audience dépasse le reste du jour est refusée (409 : « Audience trop grande pour aujourd’hui », ou « pour ce
+  jour-là » en programmation) : elle n'est ni tronquée, ni étalée en silence. Une programmation refusée au moment
+  de partir redevient prête, avec `MARKETING_DAILY_BUDGET_EXCEEDED`. Le reste compte les e-mails acceptés ce
+  jour-là, les envois en cours ou suspendus, les programmations de ce jour et les automatisations prêtes. Une
+  campagne **prête (READY) ne réserve rien** : une campagne oubliée ne bloque pas les autres. Relevez ou retirez
+  ce plafond au passage à un plan Resend supérieur (`shortcut:` dans `marketing-campaign.service.ts`).
+- **Automatisations e-mail.** Elles contrôlent leur audience à leur création, puisqu'elles partent à la même
+  passe. Un lot n'est jamais refusé en entier : il est découpé sur le reste du jour, et ce qui ne tient pas reste
+  candidat au scan suivant (toutes les heures, à :15). Une occasion déjà servie (même anniversaire, même premier
+  passage) n'est jamais renvoyée. Les anniversaires, dont la fenêtre est bornée, passent avant les autres à
+  l'échelle de la plateforme ; dans un lot, les échéances les plus proches passent d'abord. Un seul avertissement
+  par automatisation et par jour quand le budget est atteint (par processus worker).
 - **Jeton dans les journaux d'accès.** L'URL de désinscription contient le jeton ; il n'embarque que des
   identifiants opaques (aucune adresse), mais ne le copiez pas dans un ticket.
 - **Le consentement historique n'autorise plus l'e-mail.** Un `CustomerConsent.marketingOptIn` est un

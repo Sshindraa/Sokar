@@ -390,7 +390,7 @@ describe('marketing control plane routes', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual({
       error: 'MARKETING_DAILY_BUDGET_EXCEEDED',
-      message: expect.stringContaining('Audience trop grande pour aujourd’hui'),
+      message: expect.stringContaining('Audience trop grande pour ce jour-là'),
     });
     expect(db.marketingCampaign.update).not.toHaveBeenCalled();
     expect(queues.marketingCampaign.add).not.toHaveBeenCalled();

@@ -47,7 +47,12 @@ const DEFINITION = {
 
 type Filter = string | { in: string[] };
 type Range = { gte?: Date; lt?: Date };
-type CampaignWhere = { OR?: CampaignWhere[]; status?: Filter; scheduledAt?: Range };
+type CampaignWhere = {
+  OR?: CampaignWhere[];
+  status?: Filter;
+  scheduledAt?: Range;
+  automationDispatches?: { some: object };
+};
 type MessageWhere = {
   channel?: Filter;
   status?: Filter;
@@ -58,7 +63,7 @@ type MessageRow = {
   channel: string;
   status: string;
   acceptedAt: Date | null;
-  campaign: { status: string; scheduledAt: Date | null };
+  campaign: { status: string; scheduledAt: Date | null; isAutomation?: boolean };
 };
 
 const BUDGET_NOW = new Date('2030-01-10T12:00:00.000Z');
@@ -81,7 +86,8 @@ function matchesCampaign(campaign: MessageRow['campaign'], where: CampaignWhere)
   if (where.OR) return where.OR.some((clause) => matchesCampaign(campaign, clause));
   return (
     matchesFilter(campaign.status, where.status) &&
-    matchesRange(campaign.scheduledAt, where.scheduledAt)
+    matchesRange(campaign.scheduledAt, where.scheduledAt) &&
+    (where.automationDispatches === undefined || campaign.isAutomation === true)
   );
 }
 
@@ -302,6 +308,27 @@ describe('marketing campaign control plane', () => {
         data: expect.objectContaining({ status: MarketingCampaignStatus.SENDING }),
       }),
     );
+  });
+
+  it('une automatisation prête réserve son audience : elle part à la même passe', async () => {
+    mockCampaigns([{ id: 'campaign-b', status: MarketingCampaignStatus.READY, audienceCount: 30 }]);
+    mockMessages(
+      emailRows(30, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'READY', scheduledAt: null, isAutomation: true },
+      }),
+    );
+    vi.mocked(db.marketingCampaign.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    await expect(
+      startMarketingCampaign({
+        restaurantId: 'restaurant-1',
+        campaignId: 'campaign-b',
+        now: BUDGET_NOW,
+      }),
+    ).rejects.toThrow('MARKETING_DAILY_BUDGET_EXCEEDED');
+    expect(db.marketingCampaign.updateMany).not.toHaveBeenCalled();
   });
 
   it('refuse un envoi immédiat qui dépasse le reste du jour, sans rien lancer', async () => {

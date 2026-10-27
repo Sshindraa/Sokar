@@ -795,15 +795,16 @@ export function dayWindow(now: Date): { start: Date; end: Date } {
 }
 
 /**
- * Refuse un lancement qui dépasse le reste du budget du jour d'envoi (UTC). Le reste compte les
- * e-mails acceptés ce jour-là, les envois en cours ou suspendus, et les campagnes programmées pour
- * ce jour. Une campagne READY ne réserve rien. Le verrou de transaction sérialise les vérifications.
+ * Reste du budget e-mail du jour d'envoi `sendAt` (UTC), lu sous verrou de transaction. Il retire les
+ * e-mails acceptés ce jour-là, les envois en cours ou suspendus, les campagnes programmées pour ce jour
+ * et les automatisations prêtes (elles partent à la même passe). `excludeCampaignId` retire la campagne
+ * qui se contrôle elle-même. Une campagne READY manuelle ne réserve rien.
  */
-export async function assertDailyEmailBudget(
+export async function remainingDailyEmailBudget(
   tx: Prisma.TransactionClient,
-  audienceCount: number,
   sendAt: Date,
-): Promise<void> {
+  excludeCampaignId?: string,
+): Promise<number> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
   const { start, end } = dayWindow(sendAt);
   const [acceptedOnDay, awaitingSend] = await Promise.all([
@@ -813,17 +814,29 @@ export async function assertDailyEmailBudget(
     tx.campaignMessage.count({
       where: {
         channel: MarketingChannel.EMAIL,
+        campaignId: excludeCampaignId ? { not: excludeCampaignId } : undefined,
         status: { in: [MarketingMessageStatus.PENDING, MarketingMessageStatus.SENDING] },
         campaign: {
           OR: [
             { status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.PAUSED] } },
             { status: MarketingCampaignStatus.SCHEDULED, scheduledAt: { gte: start, lt: end } },
+            { status: MarketingCampaignStatus.READY, automationDispatches: { some: {} } },
           ],
         },
       },
     }),
   ]);
-  if (acceptedOnDay + awaitingSend + audienceCount > env.MARKETING_EMAIL_DAILY_BUDGET) {
+  return Math.max(env.MARKETING_EMAIL_DAILY_BUDGET - acceptedOnDay - awaitingSend, 0);
+}
+
+/** Refuse un lancement dont l'audience dépasse le reste du budget du jour d'envoi. */
+export async function assertDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  audienceCount: number,
+  sendAt: Date,
+  excludeCampaignId?: string,
+): Promise<void> {
+  if (audienceCount > (await remainingDailyEmailBudget(tx, sendAt, excludeCampaignId))) {
     throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
   }
 }
@@ -895,13 +908,10 @@ export async function startMarketingCampaign(args: {
       throw new Error('CAMPAIGN_NOT_DUE');
     }
   }
-  // Un envoi immédiat (READY) passe le contrôle du budget ; une programmation l'a déjà passé.
+  // Le lancement repasse le contrôle pour le jour réel d'envoi, sans compter ses propres messages.
   await db.$transaction(async (tx) => {
-    if (
-      campaign.status === MarketingCampaignStatus.READY &&
-      campaign.channel === MarketingChannel.EMAIL
-    ) {
-      await assertDailyEmailBudget(tx, campaign.audienceCount, now);
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, now, campaign.id);
     }
     const claimed = await tx.marketingCampaign.updateMany({
       where: {
