@@ -110,7 +110,7 @@ export async function customerRoutes(app: FastifyInstance) {
         if (reply.sent) return reply;
         // shortcut: le filtrage calculé porte sur les 5 000 premiers clients, à relever si un site les dépasse.
         const candidates = await db.customer.findMany({
-          where,
+          where: { ...where, restaurantId },
           orderBy,
           select: { id: true },
           take: COMPUTED_FILTER_SCAN_LIMIT,
@@ -130,7 +130,12 @@ export async function customerRoutes(app: FastifyInstance) {
         customers = pageIds.flatMap((id) => byId.get(id) ?? []);
       } else {
         [customers, total] = await Promise.all([
-          db.customer.findMany({ where, orderBy, take: query.limit, skip: query.offset }),
+          db.customer.findMany({
+            where: { ...where, restaurantId },
+            orderBy,
+            take: query.limit,
+            skip: query.offset,
+          }),
           db.customer.count({ where }),
         ]);
       }
