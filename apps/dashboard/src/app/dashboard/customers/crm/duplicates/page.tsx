@@ -26,6 +26,8 @@ type DuplicateCustomer = {
   phone: string;
   emailNormalized: string | null;
   visitCount: number;
+  /** Honoured visits from the reservations (the legacy `visitCount` is never shown). */
+  visits?: number;
   isVip: boolean;
 };
 
@@ -375,7 +377,7 @@ export default function CustomerDuplicatesPage() {
                           </p>
                         ) : null}
                         <p className="mt-2 text-xs text-muted-foreground">
-                          {customer.visitCount} visite(s)
+                          {customer.visits ?? '—'} visite(s)
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button

@@ -137,6 +137,19 @@ describe('CrmCustomerPage', () => {
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
   });
 
+  it('montre l’offre CRM Pro, pas une erreur, quand la formule ne l’inclut pas', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
+
+    render(<CrmCustomerPage />);
+
+    expect(await screen.findByRole('region', { name: 'CRM Pro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Réessayer/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Retour aux clients/ })).toHaveAttribute(
+      'href',
+      '/dashboard/customers',
+    );
+  });
+
   it('protège et télécharge l’export CRM après code SMS', async () => {
     const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:crm-export');
     const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);

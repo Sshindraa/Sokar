@@ -93,34 +93,28 @@ describe('customer CRM routes', () => {
     });
   });
 
-  it('filtre les profils CRM par recherche, VIP et métriques sans quitter le tenant', async () => {
+  it('filtre par recherche et VIP sans quitter le tenant, avec un tri stable', async () => {
     const app = await getApp();
     vi.mocked(db.customer.findMany).mockResolvedValue([
-      { id: 'customer-1', metricSnapshot: { honored365d: 5 } },
-      { id: 'customer-2', metricSnapshot: { honored365d: 4 } },
-      { id: 'customer-3', metricSnapshot: { honored365d: 3 } },
+      { id: 'customer-1' },
+      { id: 'customer-2' },
+      { id: 'customer-3' },
     ] as never);
     vi.mocked(db.reservation.findMany).mockResolvedValue([] as never);
 
     const response = await app.inject({
       method: 'GET',
-      url: '/crm/customers?search=alice&isVip=true&minHonored365d=2&limit=2',
+      url: '/crm/customers?search=06%2012&isVip=true&limit=2',
       headers: { authorization: 'Bearer test' },
     });
 
     expect(response.statusCode).toBe(200);
+    const empty = { visits: 0, visits365d: 0, noShows365d: 0, lastVisitAt: null };
+    const lifecycle = { status: 'new', reason: 'Aucune visite pour l’instant' };
     expect(response.json()).toEqual({
       data: [
-        {
-          id: 'customer-1',
-          metricSnapshot: { honored365d: 5 },
-          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
-        },
-        {
-          id: 'customer-2',
-          metricSnapshot: { honored365d: 4 },
-          lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
-        },
+        { id: 'customer-1', lifecycle, visitSummary: empty },
+        { id: 'customer-2', lifecycle, visitSummary: empty },
       ],
       nextCursor: 'customer-2',
     });
@@ -129,12 +123,61 @@ describe('customer CRM routes', () => {
         where: expect.objectContaining({
           restaurantId: 'test-rest-1',
           archivedAt: null,
+          mergedIntoId: null,
           isVip: true,
-          metricSnapshot: { honored365d: { gte: 2 } },
+          // Même recherche que l'écran Clients : « 06 12 » retrouve un numéro stocké en +33.
+          OR: expect.arrayContaining([{ phone: { contains: '612' } }]),
         }),
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 3,
       }),
     );
+  });
+
+  it('filtre par statut et visites honorées, calculés sur les réservations', async () => {
+    const app = await getApp();
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    vi.mocked(db.customer.findMany)
+      .mockResolvedValueOnce([{ id: 'regular' }, { id: 'once' }, { id: 'never' }] as never)
+      .mockResolvedValueOnce([{ id: 'regular', name: 'Alice' }] as never);
+    vi.mocked(db.reservation.findMany).mockResolvedValue(
+      [10, 30, 60]
+        .map((days) => ({
+          customerId: 'regular',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: daysAgo(days),
+          reservedAt: daysAgo(days),
+        }))
+        .concat([
+          {
+            customerId: 'once',
+            state: 'HONORED',
+            status: 'CONFIRMED',
+            startsAt: daysAgo(20),
+            reservedAt: daysAgo(20),
+          },
+        ]) as never,
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/crm/customers?lifecycle=regular&minHonored365d=2',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.nextCursor).toBeNull();
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]).toMatchObject({
+      id: 'regular',
+      lifecycle: { status: 'regular' },
+      visitSummary: { visits: 3, visits365d: 3 },
+    });
+    expect(vi.mocked(db.customer.findMany).mock.calls[1][0]).toMatchObject({
+      where: { restaurantId: 'test-rest-1', id: { in: ['regular'] } },
+    });
   });
 
   it('returns a tenant-scoped profile with identities, metrics and timeline', async () => {

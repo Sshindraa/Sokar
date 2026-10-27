@@ -17,6 +17,7 @@ import {
   upsertCustomerIdentity,
 } from './customer-crm.service';
 import { canViewSensitiveNotes } from './customer-privacy';
+import { findCustomerForPhone } from './customer.service';
 import { withCustomerLifecycles } from './customer-lifecycle';
 import {
   loadReservationServiceCards,
@@ -42,13 +43,15 @@ function canWriteCustomerNotes(siteRole: string | undefined): boolean {
 }
 
 /**
- * Filtre de recherche : le nom (sans tenir compte de la casse) ou le numéro. Les numéros sont stockés en
+ * Filtre de recherche, commun aux écrans Clients et CRM Pro : le nom (sans tenir compte de la
+ * casse), l'email ou le numéro. Les numéros sont stockés en
  * E.164 (« +33612345678 ») alors qu'on tape « 06 12 34 56 78 » : on compare les chiffres, avec et sans le
  * 0 de tête, pour qu'une saisie française entière ou partielle retrouve le client.
  */
 export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereInput[] {
   const filters: Prisma.CustomerWhereInput[] = [
     { name: { contains: search, mode: 'insensitive' } },
+    { emailNormalized: { contains: search.toLowerCase() } },
   ];
   const digits = search.replace(/\D/g, '');
   if (digits.length >= 2) {
@@ -81,7 +84,9 @@ export async function customerRoutes(app: FastifyInstance) {
       const [customers, total, restaurant] = await Promise.all([
         db.customer.findMany({
           where,
-          orderBy: { visitCount: 'desc' },
+          // Derniers contacts d'abord ; l'ancien `visitCount` ne comptait que les réservations
+          // par téléphone. `id` départage pour une pagination stable.
+          orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
           take: query.limit,
           skip: query.offset,
         }),
@@ -135,38 +140,27 @@ export async function customerRoutes(app: FastifyInstance) {
         });
       }
       const emailNormalized = body.email ? normalizeCustomerEmail(body.email) : null;
+      const normalizedPhone = normalizeCustomerPhone(body.phone);
+      // Only the fields sent are written: an upsert of a known guest never resets VIP or blanks
+      // a field the request did not mention.
+      const fields = {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(emailNormalized ? { emailNormalized } : {}),
+        ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
+        ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
+        ...(body.preferredLocale !== undefined ? { preferredLocale: body.preferredLocale } : {}),
+        ...(body.notes !== undefined ? { notes: body.notes } : {}),
+        ...(body.specialOccasion !== undefined ? { specialOccasion: body.specialOccasion } : {}),
+        ...(body.isVip !== undefined ? { isVip: body.isVip } : {}),
+      };
       try {
-        const customer = await db.customer.upsert({
-          where: { restaurantId_phone: { restaurantId, phone: body.phone } },
-          create: {
-            restaurantId,
-            phone: body.phone,
-            ...(emailNormalized ? { emailNormalized } : {}),
-            ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
-            ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
-            ...(body.preferredLocale !== undefined
-              ? { preferredLocale: body.preferredLocale }
-              : {}),
-            name: body.name,
-            notes: body.notes,
-            specialOccasion: body.specialOccasion,
-            isVip: body.isVip,
-          },
-          update: {
-            name: body.name,
-            ...(emailNormalized ? { emailNormalized } : {}),
-            ...(body.birthMonth !== undefined ? { birthMonth: body.birthMonth } : {}),
-            ...(body.birthDay !== undefined ? { birthDay: body.birthDay } : {}),
-            ...(body.preferredLocale !== undefined
-              ? { preferredLocale: body.preferredLocale }
-              : {}),
-            notes: body.notes,
-            specialOccasion: body.specialOccasion,
-            isVip: body.isVip,
-          },
-        });
+        const existing = await findCustomerForPhone(restaurantId, body.phone, normalizedPhone);
+        const customer = existing
+          ? await db.customer.update({ where: { id: existing.id, restaurantId }, data: fields })
+          : await db.customer.create({
+              data: { restaurantId, phone: normalizedPhone ?? body.phone, ...fields },
+            });
         try {
-          const normalizedPhone = normalizeCustomerPhone(body.phone);
           if (normalizedPhone) {
             await upsertCustomerIdentity({
               restaurantId,
@@ -189,6 +183,7 @@ export async function customerRoutes(app: FastifyInstance) {
           // A collision remains visible to the duplicate-review workflow; it
           // must not roll back an otherwise valid legacy customer upsert.
         }
+        await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? body.phone}`);
         return reply.status(201).send(customer);
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
@@ -218,7 +213,25 @@ export async function customerRoutes(app: FastifyInstance) {
           ? { emailNormalized: email ? normalizeCustomerEmail(email) : null }
           : {}),
       };
+      const previous =
+        email !== undefined
+          ? await db.customer.findFirst({
+              where: { id, restaurantId },
+              select: { emailNormalized: true },
+            })
+          : null;
       const updated = await db.customer.update({ where: { id, restaurantId }, data });
+      // A replaced or cleared email must stop matching this guest in duplicate detection.
+      if (previous?.emailNormalized && previous.emailNormalized !== updated.emailNormalized) {
+        await db.customerIdentity.deleteMany({
+          where: {
+            restaurantId,
+            customerId: id,
+            type: 'EMAIL',
+            normalizedValue: previous.emailNormalized,
+          },
+        });
+      }
       if (email) {
         try {
           await upsertCustomerIdentity({
@@ -233,7 +246,9 @@ export async function customerRoutes(app: FastifyInstance) {
           // merge candidate and is handled by CRM duplicate review.
         }
       }
-      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      await redisCache.del(
+        `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
+      );
       return reply.send(updated);
     },
   );
@@ -249,7 +264,9 @@ export async function customerRoutes(app: FastifyInstance) {
       const restaurantId = req.restaurantId;
       const { isVip } = ToggleVipSchema.parse(req.body);
       const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
-      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      await redisCache.del(
+        `customer:${updated.restaurantId}:${normalizeCustomerPhone(updated.phone) ?? updated.phone}`,
+      );
       return reply.send(updated);
     },
   );

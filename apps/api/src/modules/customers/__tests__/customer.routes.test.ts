@@ -14,7 +14,7 @@ describe('customer.routes', () => {
   });
 
   describe('GET /customers', () => {
-    it('liste les clients du restaurant, triés par visitCount desc', async () => {
+    it('liste les clients du restaurant, triés par dernier contact (plus par visitCount)', async () => {
       const app = await getApp();
       const customers = [
         { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 10 },
@@ -34,7 +34,7 @@ describe('customer.routes', () => {
       expect(res.statusCode).toBe(200);
       expect(db.customer.findMany).toHaveBeenCalledWith({
         where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
-        orderBy: { visitCount: 'desc' },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         take: 10,
         skip: 0,
       });
@@ -146,7 +146,7 @@ describe('customer.routes', () => {
           mergedIntoId: null,
           phone: '+33612345678',
         },
-        orderBy: { visitCount: 'desc' },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         take: 50,
         skip: 0,
       });
@@ -188,6 +188,7 @@ describe('customer.routes', () => {
             restaurantId: 'test-rest-1',
             OR: [
               { name: { contains: '06 12 34 56 78', mode: 'insensitive' } },
+              { emailNormalized: { contains: '06 12 34 56 78' } },
               { phone: { contains: '0612345678' } },
               { phone: { contains: '612345678' } },
             ],
@@ -210,7 +211,10 @@ describe('customer.routes', () => {
       expect(db.customer.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            OR: [{ name: { contains: 'Martin', mode: 'insensitive' } }],
+            OR: [
+              { name: { contains: 'Martin', mode: 'insensitive' } },
+              { emailNormalized: { contains: 'martin' } },
+            ],
           }),
         }),
       );
@@ -246,6 +250,7 @@ describe('customer.routes', () => {
           name: 'Alice',
           notes: null,
           lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+          visitSummary: { visits: 0, visits365d: 0, noShows365d: 0, lastVisitAt: null },
         },
       ]);
     });
@@ -318,7 +323,7 @@ describe('customer.routes', () => {
       expect(db.customer.update).not.toHaveBeenCalled();
     });
 
-    it("crée un client (201) avec le restaurantId issu de l'auth, pas du payload", async () => {
+    it("crée un client (201) en E.164 avec le restaurantId issu de l'auth, pas du payload", async () => {
       const app = await getApp();
       const created = {
         id: 'c1',
@@ -326,9 +331,8 @@ describe('customer.routes', () => {
         phone: '+33612345678',
         name: 'Alice',
       };
-      vi.mocked(db.customer.upsert).mockResolvedValue(
-        created as unknown as Awaited<ReturnType<typeof db.customer.upsert>>,
-      );
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockResolvedValue(created as never);
 
       const res = await app.inject({
         method: 'POST',
@@ -336,31 +340,46 @@ describe('customer.routes', () => {
         headers: { authorization: 'Bearer test' },
         payload: {
           restaurantId: 'other-rest-should-be-ignored',
-          phone: '+33612345678',
+          phone: '0612345678',
           name: 'Alice',
         },
       });
 
       expect(res.statusCode).toBe(201);
       expect(res.json()).toEqual(created);
-      const upsertArgs = vi.mocked(db.customer.upsert).mock.calls[0][0]!;
-      expect(upsertArgs.where.restaurantId_phone!.restaurantId).toBe('test-rest-1');
-      expect(upsertArgs.where.restaurantId_phone!.restaurantId).not.toBe(
-        'other-rest-should-be-ignored',
-      );
-      expect(upsertArgs.create.restaurantId).toBe('test-rest-1');
-      expect(upsertArgs.create.name).toBe('Alice');
-      expect(upsertArgs.update.name).toBe('Alice');
+      expect(db.customer.create).toHaveBeenCalledWith({
+        data: { restaurantId: 'test-rest-1', phone: '+33612345678', name: 'Alice' },
+      });
     });
 
-    it('retourne 409 (Conflict) si Prisma soulève P2002', async () => {
-      // Le code wrap P2002 en 409 — vérifions le mapping.
+    it("met à jour un client existant sans retirer son VIP ni vider ce qui n'est pas envoyé", async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'c1' } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({ id: 'c1', isVip: true } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/customers',
+        headers: { authorization: 'Bearer test' },
+        payload: { restaurantId: 'test-rest-1', phone: '+33612345678', name: 'Alice' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(db.customer.create).not.toHaveBeenCalled();
+      expect(db.customer.update).toHaveBeenCalledWith({
+        where: { id: 'c1', restaurantId: 'test-rest-1' },
+        data: { name: 'Alice' },
+      });
+    });
+
+    it('retourne 409 (Conflict) si Prisma soulève P2002 (création concurrente)', async () => {
       const app = await getApp();
       const prismaError = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
         code: 'P2002',
         clientVersion: '6.0.0',
       });
-      vi.mocked(db.customer.upsert).mockRejectedValue(prismaError);
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockRejectedValue(prismaError);
 
       const res = await app.inject({
         method: 'POST',
@@ -378,7 +397,8 @@ describe('customer.routes', () => {
 
     it('propage les autres erreurs Prisma en 500 (pas wrap)', async () => {
       const app = await getApp();
-      vi.mocked(db.customer.upsert).mockRejectedValue(
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockRejectedValue(
         Object.assign(new Error('Connection lost'), { code: 'P1001' }),
       );
 
@@ -405,11 +425,41 @@ describe('customer.routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(db.customer.upsert).not.toHaveBeenCalled();
+      expect(db.customer.create).not.toHaveBeenCalled();
     });
   });
 
   describe('PATCH /customers/:id', () => {
+    it("retire l'ancienne identité email quand l'email est remplacé ou effacé", async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        emailNormalized: 'old@example.com',
+      } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({
+        id: '00000000-0000-0000-0000-000000000001',
+        restaurantId: 'test-rest-1',
+        phone: '+33612345678',
+        emailNormalized: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test' },
+        payload: { email: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.customerIdentity.deleteMany).toHaveBeenCalledWith({
+        where: {
+          restaurantId: 'test-rest-1',
+          customerId: '00000000-0000-0000-0000-000000000001',
+          type: 'EMAIL',
+          normalizedValue: 'old@example.com',
+        },
+      });
+    });
+
     it('met à jour + invalide le cache Redis (key customer:{rest}:{phone})', async () => {
       const app = await getApp();
       const updated = {

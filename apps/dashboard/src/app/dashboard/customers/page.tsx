@@ -68,7 +68,14 @@ function CustomerMobileCard({
               {customerInitials(customer.name)}
             </span>
             <div className="min-w-0">
-              <h2 className="truncate text-[15px] font-semibold text-foreground">{name}</h2>
+              <h2 className="truncate text-[15px] font-semibold text-foreground">
+                <Link
+                  href={`/dashboard/customers/crm/${customer.id}`}
+                  className="transition-all duration-200 hover:underline"
+                >
+                  {name}
+                </Link>
+              </h2>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{customer.phone}</p>
             </div>
           </div>
@@ -89,7 +96,9 @@ function CustomerMobileCard({
             <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
               Visites
             </p>
-            <p className="mt-1 text-base font-semibold text-foreground">{customer.visitCount}</p>
+            <p className="mt-1 text-base font-semibold text-foreground">
+              {customer.visitSummary?.visits ?? '—'}
+            </p>
           </div>
           <div className="px-2 text-center">
             <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
@@ -104,7 +113,7 @@ function CustomerMobileCard({
               Dernière visite
             </p>
             <p className="mt-1 truncate text-sm font-medium text-foreground">
-              {formatLastVisit(customer.lastSeenAt)}
+              {formatLastVisit(customer.visitSummary?.lastVisitAt ?? null)}
             </p>
           </div>
         </div>
@@ -295,7 +304,7 @@ export default function CustomersPage() {
           />
           <Input
             type="text"
-            placeholder="Rechercher un nom ou un téléphone…"
+            placeholder="Rechercher un nom, un téléphone ou un email…"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             aria-label="Rechercher un client par nom ou téléphone"
@@ -381,10 +390,15 @@ export default function CustomersPage() {
                 {customers.map((c) => (
                   <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">
-                      {c.name || <span className="opacity-50">—</span>}
+                      <Link
+                        href={`/dashboard/customers/crm/${c.id}`}
+                        className="transition-all duration-200 hover:underline"
+                      >
+                        {c.name || <span className="opacity-50">Client sans nom</span>}
+                      </Link>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{c.phone}</TableCell>
-                    <TableCell>{c.visitCount}</TableCell>
+                    <TableCell>{c.visitSummary?.visits ?? '—'}</TableCell>
                     <TableCell className="max-w-[220px]">
                       <CustomerLifecycleBadge lifecycle={c.lifecycle} showReason />
                     </TableCell>
@@ -407,8 +421,8 @@ export default function CustomersPage() {
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {c.lastSeenAt ? (
-                        new Date(c.lastSeenAt).toLocaleDateString('fr-FR')
+                      {c.visitSummary?.lastVisitAt ? (
+                        new Date(c.visitSummary.lastVisitAt).toLocaleDateString('fr-FR')
                       ) : (
                         <span className="opacity-50">—</span>
                       )}

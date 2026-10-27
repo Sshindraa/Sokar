@@ -19,7 +19,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
 import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
-import { getErrorMessage } from '@/types/api';
+import {
+  getErrorMessage,
+  type CustomerLifecycle,
+  type CustomerLifecycleStatus,
+  type CustomerVisitSummary,
+} from '@/types/api';
+import { CustomerLifecycleBadge, LIFECYCLE_LABELS } from '@/components/CustomerLifecycleBadge';
 
 type CustomerMetricSnapshot = {
   honored365d: number;
@@ -35,10 +41,11 @@ type CrmCustomer = {
   name: string | null;
   phone: string;
   emailNormalized: string | null;
-  visitCount: number;
   isVip: boolean;
   updatedAt: string;
   metricSnapshot: CustomerMetricSnapshot | null;
+  lifecycle?: CustomerLifecycle | null;
+  visitSummary?: CustomerVisitSummary | null;
 };
 
 type CrmListResponse = {
@@ -76,6 +83,7 @@ export default function CrmPage() {
   const [search, setSearch] = useState('');
   const [isVip, setIsVip] = useState<'all' | 'true' | 'false'>('all');
   const [minHonored365d, setMinHonored365d] = useState('');
+  const [lifecycle, setLifecycle] = useState<'all' | CustomerLifecycleStatus>('all');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -83,7 +91,12 @@ export default function CrmPage() {
   const [lock, setLock] = useState<FeatureLock | null>(null);
   // Filtres réellement envoyés au serveur : ils ne changent qu'au clic sur « Rechercher » ou au choix VIP,
   // pas à chaque frappe (sinon le tableau clignote et la liste se recharge pour rien).
-  const [applied, setApplied] = useState({ search: '', isVip: 'all', minHonored365d: '' });
+  const [applied, setApplied] = useState({
+    search: '',
+    isVip: 'all',
+    minHonored365d: '',
+    lifecycle: 'all',
+  });
 
   const load = useCallback(
     async (cursor?: string) => {
@@ -100,6 +113,7 @@ export default function CrmPage() {
       if (applied.isVip !== 'all') params.set('isVip', applied.isVip);
       if (applied.minHonored365d.trim())
         params.set('minHonored365d', applied.minHonored365d.trim());
+      if (applied.lifecycle !== 'all') params.set('lifecycle', applied.lifecycle);
       params.set('limit', '50');
       if (cursor) params.set('cursor', cursor);
       try {
@@ -125,18 +139,22 @@ export default function CrmPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setApplied({ search, isVip, minHonored365d });
+    setApplied({ search, isVip, minHonored365d, lifecycle });
   }
 
   function clearFilters() {
     setSearch('');
     setIsVip('all');
     setMinHonored365d('');
-    setApplied({ search: '', isVip: 'all', minHonored365d: '' });
+    setLifecycle('all');
+    setApplied({ search: '', isVip: 'all', minHonored365d: '', lifecycle: 'all' });
   }
 
   const hasFilters =
-    applied.search.trim() !== '' || applied.isVip !== 'all' || applied.minHonored365d.trim() !== '';
+    applied.search.trim() !== '' ||
+    applied.isVip !== 'all' ||
+    applied.minHonored365d.trim() !== '' ||
+    applied.lifecycle !== 'all';
 
   return (
     <div className="space-y-6">
@@ -169,7 +187,7 @@ export default function CrmPage() {
         </CardHeader>
         <CardContent>
           <form
-            className="grid gap-3 md:grid-cols-[minmax(0,1fr)_170px_170px_auto]"
+            className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_170px_170px_170px_auto]"
             onSubmit={submit}
           >
             <label className="relative">
@@ -201,6 +219,26 @@ export default function CrmPage() {
                 <option value="all">Tous les clients</option>
                 <option value="true">VIP uniquement</option>
                 <option value="false">Hors VIP</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm">
+              <span className="sr-only">Filtre statut</span>
+              <select
+                aria-label="Filtre statut"
+                className="h-10 w-full bg-transparent text-foreground outline-none"
+                value={lifecycle}
+                onChange={(event) => {
+                  const value = event.target.value as 'all' | CustomerLifecycleStatus;
+                  setLifecycle(value);
+                  setApplied((previous) => ({ ...previous, lifecycle: value }));
+                }}
+              >
+                <option value="all">Tous les statuts</option>
+                {(Object.keys(LIFECYCLE_LABELS) as CustomerLifecycleStatus[]).map((status) => (
+                  <option key={status} value={status}>
+                    {LIFECYCLE_LABELS[status]}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -294,12 +332,13 @@ export default function CrmPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full min-w-[880px] text-sm">
                 <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-6 py-3 font-medium">Client</th>
                     <th className="px-4 py-3 font-medium">Visites</th>
-                    <th className="px-4 py-3 font-medium">Comportement 365 j</th>
+                    <th className="px-4 py-3 font-medium">Statut</th>
+                    <th className="px-4 py-3 font-medium">365 derniers jours</th>
                     <th className="px-4 py-3 font-medium">Dépense caisse</th>
                     <th className="px-4 py-3 font-medium">Dernière visite</th>
                     <th className="px-6 py-3 text-right font-medium"> </th>
@@ -328,11 +367,17 @@ export default function CrmPage() {
                             {customer.emailNormalized ? ` · ${customer.emailNormalized}` : ''}
                           </p>
                         </td>
-                        <td className="px-4 py-4 font-medium">{customer.visitCount}</td>
+                        <td className="px-4 py-4 font-medium">
+                          {customer.visitSummary?.visits ?? '—'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <CustomerLifecycleBadge lifecycle={customer.lifecycle} />
+                        </td>
                         <td className="px-4 py-4 text-muted-foreground">
-                          {metrics ? (
+                          {customer.visitSummary ? (
                             <span>
-                              {metrics.honored365d} honorée(s) · {metrics.noShow365d} no-show
+                              {customer.visitSummary.visits365d} visite(s) ·{' '}
+                              {customer.visitSummary.noShows365d} no-show
                             </span>
                           ) : (
                             '—'
@@ -342,7 +387,7 @@ export default function CrmPage() {
                           {formatSpend(metrics?.actualLifetimeSpend)}
                         </td>
                         <td className="px-4 py-4 text-muted-foreground">
-                          {formatDate(metrics?.lastHonoredAt)}
+                          {formatDate(customer.visitSummary?.lastVisitAt)}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <Button asChild variant="ghost" size="sm">

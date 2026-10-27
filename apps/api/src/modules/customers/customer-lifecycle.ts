@@ -20,8 +20,6 @@ const DAY_MS = 86_400_000;
 
 /** Every threshold of the lifecycle, in one place. */
 export const LIFECYCLE_THRESHOLDS = {
-  /** How far back the visit history is read. */
-  historyDays: 730,
   /** Window for the "regular" count. */
   regularWindowDays: 90,
   /** Visits within `regularWindowDays` to be a regular. */
@@ -50,6 +48,28 @@ export interface LifecycleReservation {
 export interface CustomerVisitStats {
   visitDates: Date[];
   noShows365d: number;
+}
+
+/**
+ * The one visit count shown everywhere (lists, profile, reactivation, duplicates):
+ * honoured visits read from the reservations. Replaces the legacy `visitCount`
+ * (phone bookings, absences included) and `lastSeenAt` (bumped by every call).
+ */
+export interface CustomerVisitSummary {
+  visits: number;
+  visits365d: number;
+  noShows365d: number;
+  lastVisitAt: Date | null;
+}
+
+export function summarizeVisits(stats: CustomerVisitStats, now: Date): CustomerVisitSummary {
+  const since365 = now.getTime() - LIFECYCLE_THRESHOLDS.noShowWindowDays * DAY_MS;
+  return {
+    visits: stats.visitDates.length,
+    visits365d: stats.visitDates.filter((date) => date.getTime() >= since365).length,
+    noShows365d: stats.noShows365d,
+    lastVisitAt: stats.visitDates[stats.visitDates.length - 1] ?? null,
+  };
 }
 
 /** Past visits (ascending) and recent no-shows from a customer's reservations. */
@@ -152,12 +172,11 @@ export async function loadCustomerVisitStats(
   const ids = [...new Set(customerIds)];
   const stats = new Map<string, CustomerVisitStats>();
   if (ids.length === 0) return stats;
-  const since = new Date(now.getTime() - LIFECYCLE_THRESHOLDS.historyDays * DAY_MS);
+  // Whole history: a window made a regular from three years ago look like a new customer.
   const reservations = await db.reservation.findMany({
     where: {
       restaurantId,
       customerId: { in: ids },
-      reservedAt: { gte: since },
     },
     select: { customerId: true, state: true, status: true, startsAt: true, reservedAt: true },
   });
@@ -188,7 +207,9 @@ export async function withCustomerLifecycles<T extends { id: string }>(
   restaurantId: string,
   customers: T[],
   now = new Date(),
-): Promise<Array<T & { lifecycle: CustomerLifecycle | null }>> {
+): Promise<
+  Array<T & { lifecycle: CustomerLifecycle | null; visitSummary: CustomerVisitSummary | null }>
+> {
   let stats: Map<string, CustomerVisitStats> | null = null;
   try {
     stats = await loadCustomerVisitStats(
@@ -202,10 +223,12 @@ export async function withCustomerLifecycles<T extends { id: string }>(
       '[crm] customer lifecycle unavailable',
     );
   }
-  return customers.map((customer) => ({
-    ...customer,
-    lifecycle: stats
-      ? computeCustomerLifecycle(stats.get(customer.id)?.visitDates ?? [], now)
-      : null,
-  }));
+  return customers.map((customer) => {
+    const customerStats = stats?.get(customer.id) ?? { visitDates: [], noShows365d: 0 };
+    return {
+      ...customer,
+      lifecycle: stats ? computeCustomerLifecycle(customerStats.visitDates, now) : null,
+      visitSummary: stats ? summarizeVisits(customerStats, now) : null,
+    };
+  });
 }

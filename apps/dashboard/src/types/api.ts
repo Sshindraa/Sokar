@@ -231,6 +231,7 @@ export interface Customer {
   id: string;
   name: string | null;
   phone: string;
+  /** Legacy: phone bookings, absences included. Use `visitSummary`. */
   visitCount: number;
   /** Legacy score, no longer computed; kept for API compatibility. Use `lifecycle`. */
   loyaltyScore: number;
@@ -239,6 +240,19 @@ export interface Customer {
   lastSeenAt: string | null;
   /** Computed from real visits; null when the visit history could not be read. */
   lifecycle?: CustomerLifecycle | null;
+  /** Honoured visits from the reservations; null when the history could not be read. */
+  visitSummary?: CustomerVisitSummary | null;
+}
+
+/**
+ * The one visit count shown on every customer screen. `visitCount` (phone bookings,
+ * absences included) and `lastSeenAt` (every call) are legacy fields: never display them.
+ */
+export interface CustomerVisitSummary {
+  visits: number;
+  visits365d: number;
+  noShows365d: number;
+  lastVisitAt: string | null;
 }
 
 export type CustomerLifecycleStatus = 'new' | 'active' | 'regular' | 'at_risk' | 'dormant';

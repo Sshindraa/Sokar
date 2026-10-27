@@ -4,6 +4,7 @@ import { logger } from '../../shared/logger/pino';
 import {
   appendCustomerTimelineEvent,
   buildCustomerTimelineDedupeKey,
+  customerPhoneLookupValues,
   normalizeCustomerPhone,
   rebuildCustomerMetricSnapshot,
   upsertCustomerIdentity,
@@ -51,39 +52,16 @@ export class CustomerService {
     const cached = name ? null : await getCachedContext(cacheKey);
     if (cached) return cached;
 
-    const identityCandidate = normalizedPhone
-      ? await db.customerIdentity.findUnique({
-          where: {
-            restaurantId_type_normalizedValue: {
-              restaurantId,
-              type: 'PHONE',
-              normalizedValue: normalizedPhone,
-            },
-          },
-          include: {
-            customer: {
-              select: { id: true, restaurantId: true, archivedAt: true, mergedIntoId: true },
-            },
-          },
-        })
-      : null;
-    const identity =
-      identityCandidate &&
-      identityCandidate.customer.restaurantId === restaurantId &&
-      identityCandidate.customer.archivedAt === null &&
-      identityCandidate.customer.mergedIntoId === null
-        ? identityCandidate
-        : null;
-
-    const customer = identity
-      ? await db.customer.update({
-          where: { id: identity.customerId, restaurantId },
-          data: name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() },
-        })
+    const existingId = (await findCustomerForPhone(restaurantId, phone, normalizedPhone))?.id;
+    const touch = name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() };
+    // New profiles are stored in E.164 so a dashboard « 06… » and a caller « +336… » share one.
+    const storedPhone = normalizedPhone ?? phone;
+    const customer = existingId
+      ? await db.customer.update({ where: { id: existingId, restaurantId }, data: touch })
       : await db.customer.upsert({
-          where: { restaurantId_phone: { restaurantId, phone } },
-          create: { restaurantId, phone, name: name ?? null, visitCount: 0 },
-          update: name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() },
+          where: { restaurantId_phone: { restaurantId, phone: storedPhone } },
+          create: { restaurantId, phone: storedPhone, name: name ?? null, visitCount: 0 },
+          update: touch,
         });
 
     if (normalizedPhone) {
@@ -221,12 +199,16 @@ export class CustomerService {
     partySize: number | null,
     options?: { callId?: string; occurredAt?: Date },
   ): Promise<void> {
+    const normalizedPhone = normalizeCustomerPhone(phone);
+    // Same resolution as lookupOrCreate: a legacy « 06… » profile still gets the call.
+    const customer = await findCustomerForPhone(restaurantId, phone, normalizedPhone);
+    if (!customer) return;
     const data: Record<string, unknown> = { lastCallAt: new Date() };
     if (partySize && partySize > 0) {
       // 70% recent weight, 30% prior — let pattern emerge over time without
       // overwriting the first few samples. Falls back to prior if no history.
       const existing = await db.customer.findUnique({
-        where: { restaurantId_phone: { restaurantId, phone } },
+        where: { id: customer.id },
         select: { partySizeTypical: true },
       });
       const prior = existing?.partySizeTypical ? Number(existing.partySizeTypical) : null;
@@ -238,34 +220,30 @@ export class CustomerService {
     }
 
     await db.customer.updateMany({
-      where: { restaurantId, phone },
+      where: { id: customer.id, restaurantId },
       data,
     });
-    const normalizedPhone = normalizeCustomerPhone(phone);
     await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? phone}`);
 
     if (options?.callId) {
       try {
-        const customer = await findCustomerForPhone(restaurantId, phone, normalizedPhone);
-        if (customer) {
-          await appendCustomerTimelineEvent({
+        await appendCustomerTimelineEvent({
+          restaurantId,
+          customerId: customer.id,
+          eventType: 'CALL_RECEIVED',
+          sourceType: 'call',
+          sourceId: options.callId,
+          dedupeKey: buildCustomerTimelineDedupeKey({
             restaurantId,
             customerId: customer.id,
             eventType: 'CALL_RECEIVED',
             sourceType: 'call',
             sourceId: options.callId,
-            dedupeKey: buildCustomerTimelineDedupeKey({
-              restaurantId,
-              customerId: customer.id,
-              eventType: 'CALL_RECEIVED',
-              sourceType: 'call',
-              sourceId: options.callId,
-            }),
-            occurredAt: options.occurredAt,
-            summaryCode: 'call.received',
-            metadata: partySize && partySize > 0 ? { partySize } : undefined,
-          });
-        }
+          }),
+          occurredAt: options.occurredAt,
+          summaryCode: 'call.received',
+          metadata: partySize && partySize > 0 ? { partySize } : undefined,
+        });
       } catch (error) {
         // See incrementVisit: timeline projection failures are repairable and
         // must not make the Telnyx webhook retry.
@@ -386,42 +364,41 @@ function formatVoiceDate(iso: string, timezone: string, withTime: boolean): stri
   }).format(new Date(iso));
 }
 
+/**
+ * The active profile behind a phone, whatever form it was saved in: by identity first, then by
+ * the stored number (E.164 or the national form of older rows). Archived and merged profiles
+ * are never returned.
+ */
 export async function findCustomerForPhone(
   restaurantId: string,
   phone: string,
   normalizedPhone: string | null,
 ): Promise<{ id: string } | null> {
+  const values = customerPhoneLookupValues(phone);
   if (normalizedPhone) {
-    const identity = await db.customerIdentity.findUnique({
-      where: {
-        restaurantId_type_normalizedValue: {
-          restaurantId,
-          type: 'PHONE',
-          normalizedValue: normalizedPhone,
+    // Identities hold compact values: E.164 first, then the legacy national form.
+    for (const normalizedValue of values.filter((value) => /^\+?[0-9]+$/.test(value))) {
+      const identity = await db.customerIdentity.findUnique({
+        where: {
+          restaurantId_type_normalizedValue: { restaurantId, type: 'PHONE', normalizedValue },
         },
-      },
-      include: {
-        customer: {
-          select: { id: true, restaurantId: true, archivedAt: true, mergedIntoId: true },
+        include: {
+          customer: {
+            select: { id: true, restaurantId: true, archivedAt: true, mergedIntoId: true },
+          },
         },
-      },
-    });
-    if (
-      identity?.customer.restaurantId === restaurantId &&
-      identity.customer.archivedAt === null &&
-      identity.customer.mergedIntoId === null
-    ) {
-      return { id: identity.customer.id };
+      });
+      if (
+        identity?.customer.restaurantId === restaurantId &&
+        identity.customer.archivedAt === null &&
+        identity.customer.mergedIntoId === null
+      ) {
+        return { id: identity.customer.id };
+      }
     }
   }
-  return db.customer
-    .findUnique({
-      where: { restaurantId_phone: { restaurantId, phone } },
-      select: { id: true, archivedAt: true, mergedIntoId: true },
-    })
-    .then((customer) =>
-      customer && customer.archivedAt === null && customer.mergedIntoId === null
-        ? { id: customer.id }
-        : null,
-    );
+  return db.customer.findFirst({
+    where: { restaurantId, phone: { in: values }, archivedAt: null, mergedIntoId: null },
+    select: { id: true },
+  });
 }

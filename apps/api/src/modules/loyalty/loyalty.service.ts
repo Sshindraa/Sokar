@@ -6,7 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
-import { summarizeLifecycleReservations } from '../customers/customer-lifecycle';
+import { loadCustomerVisitStats } from '../customers/customer-lifecycle';
 
 export const LOYALTY_BENEFIT_RULES = [
   'ANY',
@@ -578,19 +578,8 @@ async function countHonoredVisits(
   customerId: string,
   now: Date,
 ): Promise<number> {
-  const reservations = await db.reservation.findMany({
-    where: { restaurantId, customerId },
-    select: { state: true, status: true, startsAt: true, reservedAt: true },
-  });
-  return summarizeLifecycleReservations(
-    reservations.map((reservation) => ({
-      state: String(reservation.state),
-      status: String(reservation.status),
-      startsAt: reservation.startsAt,
-      reservedAt: reservation.reservedAt,
-    })),
-    now,
-  ).visitDates.length;
+  const stats = await loadCustomerVisitStats(restaurantId, [customerId], now);
+  return stats.get(customerId)?.visitDates.length ?? 0;
 }
 
 async function assertCustomerEligible(input: {

@@ -7,6 +7,7 @@ import {
 } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
+import { loadCustomerVisitStats } from './customer-lifecycle';
 import {
   CUSTOMER_PREFERENCE_KEYS,
   normalizeCustomerEmail,
@@ -199,6 +200,8 @@ export type DuplicateCustomerSummary = {
   phone: string;
   emailNormalized: string | null;
   visitCount: number;
+  /** Honoured visits from the reservations; set on the duplicate list. */
+  visits?: number;
   isVip: boolean;
   archivedAt: Date | null;
 };
@@ -1615,8 +1618,23 @@ export async function listCustomerDuplicates(args: {
     : 0;
   const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
   const page = all.slice(start, start + limit);
+  // Same visit count as the lists and the profile: honoured visits, not the legacy counter.
+  const now = new Date();
+  const stats = await loadCustomerVisitStats(
+    args.restaurantId,
+    page.flatMap((candidate) => [candidate.left.id, candidate.right.id]),
+    now,
+  );
+  const withVisits = (summary: DuplicateCustomerSummary): DuplicateCustomerSummary => ({
+    ...summary,
+    visits: stats.get(summary.id)?.visitDates.length ?? 0,
+  });
   return {
-    data: page,
+    data: page.map((candidate) => ({
+      ...candidate,
+      left: withVisits(candidate.left),
+      right: withVisits(candidate.right),
+    })),
     nextCursor: start + limit < all.length ? (page.at(-1)?.id ?? null) : null,
   };
 }

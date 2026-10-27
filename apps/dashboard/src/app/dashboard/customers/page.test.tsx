@@ -53,6 +53,40 @@ describe('CustomersPage', () => {
     expect(customerCalls()).toHaveLength(2);
   });
 
+  it('affiche les visites honorées et la dernière vraie visite, jamais le compteur hérité', async () => {
+    mocks.get.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'customer-1',
+          phone: '+33600000000',
+          name: 'Alice Demo',
+          visitCount: 9,
+          isVip: false,
+          notes: null,
+          lastSeenAt: '2026-10-26T12:00:00.000Z',
+          lifecycle: { status: 'active', reason: '2 visites' },
+          visitSummary: {
+            visits: 2,
+            visits365d: 2,
+            noShows365d: 0,
+            lastVisitAt: '2026-08-14T19:00:00.000Z',
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    render(<CustomersPage />);
+
+    const link = await screen.findByRole('link', { name: 'Alice Demo' });
+    expect(link).toHaveAttribute('href', '/dashboard/customers/crm/customer-1');
+    const row = link.closest('tr')!;
+    expect(row).toHaveTextContent('2');
+    expect(row).not.toHaveTextContent('9');
+    expect(row).toHaveTextContent('14/08/2026');
+    expect(row).not.toHaveTextContent('26/10/2026');
+  });
+
   it('affiche les clients renvoyés dans l’enveloppe API data', async () => {
     mocks.get.mockResolvedValueOnce({
       data: [

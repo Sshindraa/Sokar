@@ -50,6 +50,33 @@ describe('CrmPage', () => {
     expect(apiMocks.get).toHaveBeenCalledWith(expect.stringContaining('crm/customers?'));
   });
 
+  it('filtre par statut côté serveur et affiche les vraies visites', async () => {
+    apiMocks.get.mockResolvedValue({
+      data: [
+        {
+          ...customer,
+          lifecycle: { status: 'at_risk', reason: 'Dernière visite il y a 3 mois' },
+          visitSummary: { visits: 4, visits365d: 3, noShows365d: 1, lastVisitAt: null },
+        },
+      ],
+      nextCursor: null,
+    });
+    render(<CrmPage />);
+    await screen.findByText('Alice Martin');
+
+    fireEvent.change(screen.getByLabelText('Filtre statut'), { target: { value: 'at_risk' } });
+
+    await waitFor(() =>
+      expect(apiMocks.get).toHaveBeenLastCalledWith(expect.stringContaining('lifecycle=at_risk')),
+    );
+    const row = screen.getByText('Alice Martin').closest('tr')!;
+    expect(row).toHaveTextContent('À risque');
+    expect(row).toHaveTextContent('3 visite(s) · 1 no-show');
+    // Le compteur hérité (8) et la projection (6 honorées) ne sont plus affichés.
+    expect(row.querySelectorAll('td')[1]).toHaveTextContent(/^4$/);
+    expect(row).not.toHaveTextContent('6 honorée');
+  });
+
   it('envoie les filtres saisis au serveur', async () => {
     render(<CrmPage />);
     await screen.findByText('Alice Martin');

@@ -215,9 +215,27 @@ describe('loyalty benefits foundation', () => {
     } as never);
     const past = new Date('2026-08-01T19:00:00.000Z');
     vi.mocked(db.reservation.findMany).mockResolvedValue([
-      { state: 'HONORED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
-      { state: 'NO_SHOW', status: 'NO_SHOW', startsAt: past, reservedAt: past },
-      { state: 'CONFIRMED', status: 'CANCELLED', startsAt: past, reservedAt: past },
+      {
+        customerId: CUSTOMER_ID,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: past,
+        reservedAt: past,
+      },
+      {
+        customerId: CUSTOMER_ID,
+        state: 'NO_SHOW',
+        status: 'NO_SHOW',
+        startsAt: past,
+        reservedAt: past,
+      },
+      {
+        customerId: CUSTOMER_ID,
+        state: 'CONFIRMED',
+        status: 'CANCELLED',
+        startsAt: past,
+        reservedAt: past,
+      },
     ] as never);
 
     await expect(
@@ -230,7 +248,9 @@ describe('loyalty benefits foundation', () => {
       }),
     ).rejects.toMatchObject({ reason: 'MIN_VISITS_NOT_REACHED' });
     expect(db.reservation.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { restaurantId: RESTAURANT_ID, customerId: CUSTOMER_ID } }),
+      expect.objectContaining({
+        where: { restaurantId: RESTAURANT_ID, customerId: { in: [CUSTOMER_ID] } },
+      }),
     );
 
     // A regular who books online, with no phone booking at all, qualifies.
@@ -242,8 +262,20 @@ describe('loyalty benefits foundation', () => {
       metricSnapshot: null,
     } as never);
     vi.mocked(db.reservation.findMany).mockResolvedValue([
-      { state: 'HONORED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
-      { state: 'SEATED', status: 'CONFIRMED', startsAt: past, reservedAt: past },
+      {
+        customerId: CUSTOMER_ID,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: past,
+        reservedAt: past,
+      },
+      {
+        customerId: CUSTOMER_ID,
+        state: 'SEATED',
+        status: 'CONFIRMED',
+        startsAt: past,
+        reservedAt: past,
+      },
     ] as never);
     vi.mocked(db.loyaltyGrant.count).mockResolvedValue(0);
     vi.mocked(db.loyaltyGrant.create).mockResolvedValue(grantRow() as never);
