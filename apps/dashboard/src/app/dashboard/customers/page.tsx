@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApi } from '../../../lib/api';
 import { ApiError } from '@/lib/api-error';
-import { getErrorMessage, type Customer } from '@/types/api';
+import { getErrorMessage, type Customer, type CustomerLifecycleStatus } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import {
   Table,
@@ -17,13 +17,42 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, Star, Phone, Sparkles, StickyNote, X } from 'lucide-react';
+import { Users, Search, Star, Phone, Copy, Lock, StickyNote, X } from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
-import { CustomerLifecycleBadge } from '@/components/CustomerLifecycleBadge';
+import { CustomerLifecycleBadge, LIFECYCLE_LABELS } from '@/components/CustomerLifecycleBadge';
 
 type CustomerListResponse = Customer[] | { data?: Customer[]; total?: number };
 
 const PAGE_SIZE = 50;
+
+type Filters = {
+  search: string;
+  isVip: 'all' | 'true' | 'false';
+  lifecycle: 'all' | CustomerLifecycleStatus;
+  minVisits: string;
+};
+const NO_FILTERS: Filters = { search: '', isVip: 'all', lifecycle: 'all', minVisits: '' };
+
+/** La fiche détaillée est une fonction de CRM Pro : sans la formule, le nom reste un simple texte. */
+function ProfileLink({
+  id,
+  linked,
+  children,
+}: {
+  id: string;
+  linked: boolean;
+  children: React.ReactNode;
+}) {
+  if (!linked) return <>{children}</>;
+  return (
+    <Link
+      href={`/dashboard/customers/crm/${id}`}
+      className="transition-all duration-200 hover:underline"
+    >
+      {children}
+    </Link>
+  );
+}
 
 function formatLastVisit(value: string | null) {
   if (!value) return '—';
@@ -50,9 +79,11 @@ function customerInitials(name: string | null) {
 function CustomerMobileCard({
   customer,
   onToggleVip,
+  profileLinked,
 }: {
   customer: Customer;
   onToggleVip: (id: string, current: boolean) => void;
+  profileLinked: boolean;
 }) {
   const name = customer.name || 'Client inconnu';
 
@@ -69,12 +100,9 @@ function CustomerMobileCard({
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-[15px] font-semibold text-foreground">
-                <Link
-                  href={`/dashboard/customers/crm/${customer.id}`}
-                  className="transition-all duration-200 hover:underline"
-                >
+                <ProfileLink id={customer.id} linked={profileLinked}>
                   {name}
-                </Link>
+                </ProfileLink>
               </h2>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">{customer.phone}</p>
             </div>
@@ -158,29 +186,32 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState('');
-  // Saisie en cours, et recherche réellement appliquée (celle que « Afficher plus » doit continuer).
-  const [searchText, setSearchText] = useState('');
-  const [appliedSearch, setAppliedSearch] = useState('');
+  // Saisie en cours, et filtres réellement appliqués (ceux que « Afficher plus » doit continuer).
+  const [draft, setDraft] = useState<Filters>(NO_FILTERS);
+  const [applied, setApplied] = useState<Filters>(NO_FILTERS);
   const [error, setError] = useState('');
   // Le premier chargement affiche des squelettes ; une recherche garde la page et le champ en place.
   const [loadedOnce, setLoadedOnce] = useState(false);
-  // « CRM Pro » n'est proposé que s'il est ouvert (ou à débloquer par la formule), jamais quand il est fermé.
-  const [crmEntry, setCrmEntry] = useState(false);
+  // CRM Pro : « open » = filtres et fiches ouverts, « locked » = hors formule (CRM de base), « hidden » = fermé ou en panne.
+  const [crmState, setCrmState] = useState<'open' | 'locked' | 'hidden'>('hidden');
 
-  const customersUrl = useCallback((search: string, offset: number) => {
+  const customersUrl = useCallback((filters: Filters, offset: number) => {
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
     // Un nom ou un numéro tel qu'on le tape (« 06 12 34 56 78 »), entier ou en partie.
-    if (search) params.set('search', search);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.isVip !== 'all') params.set('isVip', filters.isVip);
+    if (filters.lifecycle !== 'all') params.set('lifecycle', filters.lifecycle);
+    if (filters.minVisits) params.set('minHonored365d', filters.minVisits);
     return `customers?${params.toString()}`;
   }, []);
 
   const fetchCustomers = useCallback(
-    async (search = '') => {
+    async (filters: Filters = NO_FILTERS) => {
       setLoading(true);
       setError('');
       setMoreError('');
       try {
-        const response = await get<CustomerListResponse>(customersUrl(search, 0));
+        const response = await get<CustomerListResponse>(customersUrl(filters, 0));
         const rows = Array.isArray(response) ? response : response.data;
         const list = Array.isArray(rows) ? rows : [];
         setCustomers(list);
@@ -189,7 +220,8 @@ export default function CustomersPage() {
             ? response.total
             : list.length,
         );
-        setAppliedSearch(search);
+        setApplied(filters);
+        setDraft(filters);
         setLoadedOnce(true);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger les clients'));
@@ -204,9 +236,7 @@ export default function CustomersPage() {
     setLoadingMore(true);
     setMoreError('');
     try {
-      const response = await get<CustomerListResponse>(
-        customersUrl(appliedSearch, customers.length),
-      );
+      const response = await get<CustomerListResponse>(customersUrl(applied, customers.length));
       const rows = Array.isArray(response) ? response : response.data;
       const next = Array.isArray(rows) ? rows : [];
       setCustomers((current) => {
@@ -232,10 +262,14 @@ export default function CustomersPage() {
     if (!orgId || !loadedOnce || crmProbed.current) return;
     crmProbed.current = true;
     Promise.resolve(get('crm/customers?limit=1'))
-      .then(() => setCrmEntry(true))
-      // Hors formule : on montre le bouton, la page CRM explique la formule. Fermé ou en panne : on le cache.
-      .catch((err: unknown) => setCrmEntry(err instanceof ApiError && err.kind === 'not-included'));
+      .then(() => setCrmState('open'))
+      // Hors formule : les filtres avancés sont présentés comme inclus dans CRM Pro. Fermé ou en panne : on les cache.
+      .catch((err: unknown) =>
+        setCrmState(err instanceof ApiError && err.kind === 'not-included' ? 'locked' : 'hidden'),
+      );
   }, [orgId, get, loadedOnce]);
+
+  const hasFilters = JSON.stringify(applied) !== JSON.stringify(NO_FILTERS);
 
   async function toggleVip(id: string, current: boolean) {
     try {
@@ -277,11 +311,11 @@ export default function CustomersPage() {
           <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
             {total} client{total > 1 ? 's' : ''}
           </span>
-          {crmEntry ? (
+          {crmState === 'open' ? (
             <Button asChild variant="outline" size="sm" className="px-2.5 sm:px-3">
-              <Link href="/dashboard/customers/crm">
-                <Sparkles size={14} />
-                CRM Pro
+              <Link href="/dashboard/customers/crm/duplicates">
+                <Copy size={14} />
+                Doublons
               </Link>
             </Button>
           ) : null}
@@ -292,12 +326,12 @@ export default function CustomersPage() {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void fetchCustomers(searchText.trim());
+          void fetchCustomers({ ...draft, search: draft.search.trim() });
         }}
-        className="flex min-w-0 gap-2"
+        className="flex min-w-0 flex-wrap gap-2"
         role="search"
       >
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-[16rem] flex-1">
           <Search
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -305,8 +339,8 @@ export default function CustomersPage() {
           <Input
             type="text"
             placeholder="Rechercher un nom, un téléphone ou un email…"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
+            value={draft.search}
+            onChange={(e) => setDraft((current) => ({ ...current, search: e.target.value }))}
             aria-label="Rechercher un client par nom ou téléphone"
             className="w-full pl-9 pr-28"
           />
@@ -318,13 +352,12 @@ export default function CustomersPage() {
           >
             Rechercher
           </Button>
-          {searchText && (
+          {draft.search && (
             <button
               type="button"
               aria-label="Effacer la recherche"
               onClick={() => {
-                setSearchText('');
-                void fetchCustomers();
+                void fetchCustomers({ ...applied, search: '' });
               }}
               className="absolute right-[5.75rem] top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -332,13 +365,79 @@ export default function CustomersPage() {
             </button>
           )}
         </div>
+        <label>
+          <span className="sr-only">Filtre VIP</span>
+          <select
+            aria-label="Filtre VIP"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            value={draft.isVip}
+            onChange={(event) => {
+              void fetchCustomers({ ...applied, isVip: event.target.value as Filters['isVip'] });
+            }}
+          >
+            <option value="all">Tous les clients</option>
+            <option value="true">VIP uniquement</option>
+            <option value="false">Hors VIP</option>
+          </select>
+        </label>
+        {crmState === 'open' ? (
+          <>
+            <label>
+              <span className="sr-only">Filtre statut</span>
+              <select
+                aria-label="Filtre statut"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                value={draft.lifecycle}
+                onChange={(event) => {
+                  void fetchCustomers({
+                    ...applied,
+                    lifecycle: event.target.value as Filters['lifecycle'],
+                  });
+                }}
+              >
+                <option value="all">Tous les statuts</option>
+                {(Object.keys(LIFECYCLE_LABELS) as CustomerLifecycleStatus[]).map((status) => (
+                  <option key={status} value={status}>
+                    {LIFECYCLE_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="sr-only">Visites honorées minimum</span>
+              <Input
+                type="number"
+                min={0}
+                max={10000}
+                className="w-40"
+                value={draft.minVisits}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, minVisits: event.target.value }))
+                }
+                placeholder="Visites min. (365 j)"
+              />
+            </label>
+          </>
+        ) : null}
       </form>
+      {crmState === 'locked' ? (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Lock size={12} aria-hidden="true" />
+          Filtres par statut et par visites, fiches détaillées et doublons : inclus dans CRM Pro.
+          <Link
+            href="/pricing"
+            className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
+          >
+            Voir les formules
+          </Link>
+        </p>
+      ) : null}
 
       {/* Contenu */}
       {error && (
         <DataFetchError
           message={error}
-          onRetry={() => fetchCustomers(appliedSearch)}
+          onRetry={() => fetchCustomers(applied)}
           retrying={loading}
         />
       )}
@@ -347,16 +446,26 @@ export default function CustomersPage() {
           <div className="sokar-empty">
             <Users size={40} className="opacity-30" />
             <p className="text-sm">
-              {appliedSearch
+              {hasFilters
                 ? 'Aucun client ne correspond à cette recherche'
                 : 'Aucun client enregistré'}
             </p>
             <p className="max-w-sm text-xs opacity-60">
-              {appliedSearch
-                ? 'Essayez un autre nom, ou seulement quelques chiffres du numéro.'
+              {hasFilters
+                ? 'Essayez un autre nom, seulement quelques chiffres du numéro, ou retirez un filtre.'
                 : 'Les clients apparaîtront après vos premiers appels.'}
             </p>
-            {!appliedSearch && (
+            {hasFilters ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-1"
+                onClick={() => void fetchCustomers(NO_FILTERS)}
+              >
+                Effacer les filtres
+              </Button>
+            ) : (
               <Button asChild size="sm" variant="outline" className="mt-1">
                 <Link href="/dashboard/calls">Voir les appels</Link>
               </Button>
@@ -367,7 +476,12 @@ export default function CustomersPage() {
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-3">
           {customers.map((customer) => (
-            <CustomerMobileCard key={customer.id} customer={customer} onToggleVip={toggleVip} />
+            <CustomerMobileCard
+              key={customer.id}
+              customer={customer}
+              onToggleVip={toggleVip}
+              profileLinked={crmState === 'open'}
+            />
           ))}
         </div>
       ) : (
@@ -390,12 +504,9 @@ export default function CustomersPage() {
                 {customers.map((c) => (
                   <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">
-                      <Link
-                        href={`/dashboard/customers/crm/${c.id}`}
-                        className="transition-all duration-200 hover:underline"
-                      >
+                      <ProfileLink id={c.id} linked={crmState === 'open'}>
                         {c.name || <span className="opacity-50">Client sans nom</span>}
-                      </Link>
+                      </ProfileLink>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{c.phone}</TableCell>
                     <TableCell>{c.visitSummary?.visits ?? '—'}</TableCell>

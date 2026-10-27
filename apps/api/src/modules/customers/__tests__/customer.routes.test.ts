@@ -256,6 +256,87 @@ describe('customer.routes', () => {
       ]);
     });
 
+    it('filtre sur le VIP quelle que soit la formule', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([] as never);
+      vi.mocked(db.customer.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?isVip=true',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(db.customer.findMany).mock.calls[0][0]?.where).toMatchObject({
+        restaurantId: 'test-rest-1',
+        isVip: true,
+      });
+    });
+
+    it('réserve le filtre par statut et par visites à CRM Pro (offre Essential = CRM de base)', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?lifecycle=dormant',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({
+        error: 'CAPABILITY_NOT_INCLUDED',
+        capability: 'customers.advanced',
+      });
+      expect(db.customer.findMany).not.toHaveBeenCalled();
+    });
+
+    it('filtre par statut et par visites sur les réservations et pagine le résultat', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        plan: 'PRO',
+        crmSensitiveNoteRoles: null,
+      } as never);
+      const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce([{ id: 'c3', restaurantId: 'test-rest-1', name: 'Chloé' }] as never);
+      const honoured = (customerId: string, days: number) => ({
+        customerId,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: recent(days),
+        reservedAt: recent(days + 2),
+      });
+      // c1 : une seule visite récente ; c2 : aucune ; c3 : trois visites récentes.
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        honoured('c1', 10),
+        honoured('c3', 5),
+        honoured('c3', 12),
+        honoured('c3', 20),
+      ] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?minHonored365d=2&limit=1&offset=0',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.total).toBe(1);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).toMatchObject({ id: 'c3', visitSummary: { visits365d: 3 } });
+      expect(vi.mocked(db.customer.findMany).mock.calls[1][0]?.where).toEqual({
+        restaurantId: 'test-rest-1',
+        id: { in: ['c3'] },
+      });
+    });
+
     it('rejette un phone invalide (regex E.164) avec 400', async () => {
       const app = await getApp();
 

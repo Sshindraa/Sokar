@@ -624,9 +624,9 @@ export default function CrmCustomerPage() {
     return (
       <div className="space-y-4">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/dashboard/customers/crm">
+          <Link href="/dashboard/customers">
             <ArrowLeft size={16} />
-            Retour au CRM
+            Retour aux clients
           </Link>
         </Button>
         <Card className="border-destructive/40">
@@ -663,9 +663,9 @@ export default function CrmCustomerPage() {
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="space-y-3">
           <Button asChild variant="ghost" size="sm" className="-ml-3">
-            <Link href="/dashboard/customers/crm">
+            <Link href="/dashboard/customers">
               <ArrowLeft size={16} />
-              Retour au CRM
+              Retour aux clients
             </Link>
           </Button>
           <div className="flex items-center gap-2">

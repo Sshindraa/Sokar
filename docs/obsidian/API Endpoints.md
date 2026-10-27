@@ -187,7 +187,10 @@ Chaque client porte `lifecycle` et `visitSummary` (visites honorées, 365 j, no-
 visite réelle), calculés sur les réservations. Les colonnes `visitCount` et `loyaltyScore` n'existent plus
 (migration `20261027150000`) ; `lastSeenAt` bouge à chaque appel et ne doit pas être affiché
 comme dernière visite. Recherche commune avec CRM Pro : nom, email, numéro saisi à la
-française. Tri : dernier contact.
+française. Tri : dernier contact. Filtres : `isVip` (toutes les formules) ; `lifecycle` et
+`minHonored365d` (visites honorées sur 365 j) exigent `customers.advanced` (offre Pro, 403
+`CAPABILITY_NOT_INCLUDED` sinon ; offre Essential = CRM de base) et portent sur les 5 000 premiers
+clients. Pagination `limit`/`offset`, `total` = résultats filtrés.
 
 ### PATCH /customers/:id
 

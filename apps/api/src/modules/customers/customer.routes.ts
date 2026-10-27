@@ -22,7 +22,8 @@ import {
   redactSensitiveCustomerFields,
 } from './customer-privacy';
 import { findCustomerForPhone } from './customer.service';
-import { withCustomerLifecycles } from './customer-lifecycle';
+import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
+import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   loadReservationServiceCards,
   SERVICE_CARD_MAX_RESERVATIONS,
@@ -74,6 +75,8 @@ export function buildCustomerSearchFilter(search: string): Prisma.CustomerWhereI
   return filters;
 }
 
+const COMPUTED_FILTER_SCAN_LIMIT = 5_000;
+
 export async function customerRoutes(app: FastifyInstance) {
   app.get(
     '/customers',
@@ -92,21 +95,49 @@ export async function customerRoutes(app: FastifyInstance) {
       if (query.phone) where.phone = query.phone;
       if (query.search) where.OR = buildCustomerSearchFilter(query.search);
 
-      const [customers, total, restaurant] = await Promise.all([
-        db.customer.findMany({
+      if (query.isVip !== undefined) where.isVip = query.isVip;
+      // Derniers contacts d'abord ; `id` départage pour une pagination stable.
+      const orderBy: Prisma.CustomerOrderByWithRelationInput[] = [
+        { lastSeenAt: { sort: 'desc', nulls: 'last' } },
+        { id: 'desc' },
+      ];
+
+      let customers;
+      let total: number;
+      if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
+        // Statut et visites viennent des réservations : fonction de CRM Pro (offre Essential = CRM de base).
+        await requireCapability('customers.advanced')(req, reply);
+        if (reply.sent) return reply;
+        // shortcut: le filtrage calculé porte sur les 5 000 premiers clients, à relever si un site les dépasse.
+        const candidates = await db.customer.findMany({
           where,
-          // Derniers contacts d'abord ; l'ancien `visitCount` ne comptait que les réservations
-          // par téléphone. `id` départage pour une pagination stable.
-          orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
-          take: query.limit,
-          skip: query.offset,
-        }),
-        db.customer.count({ where }),
-        db.restaurant.findUnique({
-          where: { id: restaurantId },
-          select: { crmSensitiveNoteRoles: true },
-        }),
-      ]);
+          orderBy,
+          select: { id: true },
+          take: COMPUTED_FILTER_SCAN_LIMIT,
+        });
+        const matching = await filterCustomerIdsByVisits(
+          restaurantId!,
+          candidates.map((candidate) => candidate.id),
+          query,
+          new Date(),
+        );
+        total = matching.length;
+        const pageIds = matching.slice(query.offset, query.offset + query.limit);
+        const rows = await db.customer.findMany({
+          where: { restaurantId, id: { in: pageIds } },
+        });
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        customers = pageIds.flatMap((id) => byId.get(id) ?? []);
+      } else {
+        [customers, total] = await Promise.all([
+          db.customer.findMany({ where, orderBy, take: query.limit, skip: query.offset }),
+          db.customer.count({ where }),
+        ]);
+      }
+      const restaurant = await db.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { crmSensitiveNoteRoles: true },
+      });
 
       const canViewNotes = canViewSensitiveNotes(req.siteRole, restaurant?.crmSensitiveNoteRoles);
       const withLifecycle = await withCustomerLifecycles(restaurantId, customers);

@@ -32,12 +32,7 @@ import {
   redactSensitiveCustomerFields,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
-import {
-  computeCustomerLifecycle,
-  loadCustomerVisitStats,
-  summarizeVisits,
-  withCustomerLifecycles,
-} from './customer-lifecycle';
+import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
 import { buildCustomerSearchFilter } from './customer.routes';
 
 /**
@@ -436,21 +431,12 @@ export async function customerCrmRoutes(app: FastifyInstance) {
         select: { id: true },
         take: CRM_COMPUTED_FILTER_SCAN_LIMIT,
       });
-      const ids = candidates.map((candidate) => candidate.id);
-      const stats = await loadCustomerVisitStats(restaurantId, ids, now);
-      const matching = ids.filter((id) => {
-        const customerStats = stats.get(id) ?? { visitDates: [], noShows365d: 0 };
-        if (
-          query.minHonored365d !== undefined &&
-          summarizeVisits(customerStats, now).visits365d < query.minHonored365d
-        ) {
-          return false;
-        }
-        return (
-          query.lifecycle === undefined ||
-          computeCustomerLifecycle(customerStats.visitDates, now).status === query.lifecycle
-        );
-      });
+      const matching = await filterCustomerIdsByVisits(
+        restaurantId,
+        candidates.map((candidate) => candidate.id),
+        query,
+        now,
+      );
       const start = query.cursor ? matching.indexOf(query.cursor) + 1 : 0;
       const pageIds = matching.slice(start, start + query.limit);
       if (start + query.limit < matching.length) nextCursor = pageIds[pageIds.length - 1] ?? null;

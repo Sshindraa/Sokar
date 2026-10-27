@@ -391,7 +391,7 @@ describe('CrmCustomerPage', () => {
     );
     expect(screen.queryByText('CUSTOMER_NOT_FOUND')).toBeNull();
     expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /Retour au CRM/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Retour aux clients/ })).toBeInTheDocument();
   });
 
   it('propose de réessayer pour une vraie panne', async () => {

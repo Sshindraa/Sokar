@@ -199,6 +199,32 @@ export async function loadCustomerVisitStats(
 }
 
 /**
+ * Keeps the ids whose status and honoured visits match, from the reservations: the numbers the
+ * lists then show. Order is preserved.
+ */
+export async function filterCustomerIdsByVisits(
+  restaurantId: string,
+  ids: string[],
+  filters: { lifecycle?: CustomerLifecycleStatus; minHonored365d?: number },
+  now: Date,
+): Promise<string[]> {
+  const stats = await loadCustomerVisitStats(restaurantId, ids, now);
+  return ids.filter((id) => {
+    const customerStats = stats.get(id) ?? { visitDates: [], noShows365d: 0 };
+    if (
+      filters.minHonored365d !== undefined &&
+      summarizeVisits(customerStats, now).visits365d < filters.minHonored365d
+    ) {
+      return false;
+    }
+    return (
+      filters.lifecycle === undefined ||
+      computeCustomerLifecycle(customerStats.visitDates, now).status === filters.lifecycle
+    );
+  });
+}
+
+/**
  * Adds `lifecycle` to each customer of a page, with a single reservation query.
  * Best effort: the status is an additive field, so a failed read leaves it null
  * instead of breaking the customer list.
