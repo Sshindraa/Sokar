@@ -268,9 +268,11 @@ describe('CustomersPage', () => {
       );
       expect(screen.queryByLabelText('Filtre statut')).not.toBeInTheDocument();
       expect(screen.queryByRole('link', { name: /Doublons/ })).not.toBeInTheDocument();
-      // La fiche détaillée est une fonction de CRM Pro : pas de lien vers un écran verrouillé.
-      expect(screen.queryByRole('link', { name: 'Alice Demo' })).not.toBeInTheDocument();
-      expect(screen.getByText('Alice Demo')).toBeInTheDocument();
+      // La fiche simple (historique, allergies, préférences) s'ouvre dès Essential.
+      expect(screen.getByRole('link', { name: 'Alice Demo' })).toHaveAttribute(
+        'href',
+        '/dashboard/customers/crm/customer-1',
+      );
       expect(screen.getByLabelText('Filtre VIP')).toBeInTheDocument();
     });
 

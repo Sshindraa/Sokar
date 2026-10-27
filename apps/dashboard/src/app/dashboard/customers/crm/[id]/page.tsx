@@ -10,6 +10,7 @@ import {
   Check,
   Download,
   Loader2,
+  Lock,
   Mail,
   Plus,
   Phone,
@@ -87,8 +88,10 @@ type CrmCustomerDetail = {
   notes: string | null;
   visitSummary?: CustomerVisitSummary | null;
   identities: CustomerIdentity[];
-  metricSnapshot: CustomerMetricSnapshot | null;
-  metrics: CustomerMetricSnapshot | null;
+  // « basic » (Essential) : ni valeur ni tags ; l'API omet ces champs.
+  crmAccess?: 'basic' | 'pro';
+  metricSnapshot?: CustomerMetricSnapshot | null;
+  metrics?: CustomerMetricSnapshot | null;
   preferences: CustomerPreference[];
   tags: CustomerTag[];
   tagAssignments: CustomerTagAssignment[];
@@ -292,7 +295,16 @@ export default function CrmCustomerPage() {
     setLock(null);
     try {
       const response = await get<{ data: CrmCustomerDetail }>(`crm/customers/${customerId}`);
-      setCustomer(response.data ?? null);
+      // La fiche simple (Essential) arrive sans tags : listes vides pour garder un seul rendu.
+      setCustomer(
+        response.data
+          ? {
+              ...response.data,
+              tags: response.data.tags ?? [],
+              tagAssignments: response.data.tagAssignments ?? [],
+            }
+          : null,
+      );
     } catch (err: unknown) {
       setNotFound(err instanceof ApiError && err.kind === 'not-found');
       setLock(featureLockFromError(err));
@@ -654,6 +666,7 @@ export default function CrmCustomerPage() {
   }
 
   const metrics = customer.metrics ?? customer.metricSnapshot;
+  const isPro = customer.crmAccess !== 'basic';
   const visiblePreferences = customer.preferences.filter((preference) =>
     isVisiblePreference(preference),
   );
@@ -679,10 +692,25 @@ export default function CrmCustomerPage() {
             Fiche client · {customer.visitSummary?.visits ?? '—'} visite(s) honorée(s)
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/dashboard/customers/crm/duplicates">Gérer les doublons</Link>
-        </Button>
+        {isPro ? (
+          <Button asChild variant="outline">
+            <Link href="/dashboard/customers/crm/duplicates">Gérer les doublons</Link>
+          </Button>
+        ) : null}
       </div>
+
+      {isPro ? null : (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Lock size={12} aria-hidden="true" />
+          Valeur client, tags, doublons et consentements marketing : inclus dans CRM Pro.
+          <Link
+            href="/pricing"
+            className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
+          >
+            Voir les formules
+          </Link>
+        </p>
+      )}
 
       <Card>
         <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
@@ -840,7 +868,9 @@ export default function CrmCustomerPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Valeur et récence</CardTitle>
+            <CardTitle className="text-base">
+              {isPro ? 'Valeur et récence' : 'Historique'}
+            </CardTitle>
             <CardDescription>Calculées à partir des réservations.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -848,137 +878,150 @@ export default function CrmCustomerPage() {
               <span className="text-muted-foreground">Honorées (365 j)</span>
               <strong>{customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}</strong>
             </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Couverts (365 j)</span>
-              <strong>{metrics?.covers365d ?? 0}</strong>
-            </div>
+            {isPro ? (
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Couverts (365 j)</span>
+                <strong>{metrics?.covers365d ?? 0}</strong>
+              </div>
+            ) : null}
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">No-show (365 j)</span>
               <strong>{customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}</strong>
             </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Dépense encaissée</span>
-              <strong>
-                {metrics?.actualLifetimeSpend === null || metrics?.actualLifetimeSpend === undefined
-                  ? 'Non raccordée'
-                  : `${formatNumber(metrics.actualLifetimeSpend)} €`}
-              </strong>
-            </div>
+            {isPro ? (
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground">Dépense encaissée</span>
+                <strong>
+                  {metrics?.actualLifetimeSpend === null ||
+                  metrics?.actualLifetimeSpend === undefined
+                    ? 'Non raccordée'
+                    : `${formatNumber(metrics.actualLifetimeSpend)} €`}
+                </strong>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
               <CalendarDays size={14} />
               Dernière visite :{' '}
               {formatDate(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
             </div>
-            <div className="border-t border-border pt-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Exactitude des chiffres
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Compare ces chiffres avec les réservations.
-                  </p>
+            {isPro ? (
+              <div className="border-t border-border pt-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Exactitude des chiffres
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Compare ces chiffres avec les réservations.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void inspectProjection()}
+                    disabled={repairLoading}
+                  >
+                    {repairLoading ? 'Vérification…' : 'Vérifier'}
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void inspectProjection()}
-                  disabled={repairLoading}
-                >
-                  {repairLoading ? 'Vérification…' : 'Vérifier'}
-                </Button>
+                {repairPreview ? (
+                  <div className="mt-3 space-y-2 text-xs">
+                    <p className={repairPreview.changed ? 'text-warning' : 'text-success'}>
+                      {repairPreview.changed
+                        ? `Écart détecté sur ${repairPreview.reservationCount} réservation(s).`
+                        : 'Chiffres à jour.'}
+                    </p>
+                    {repairPreview.changed ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void repairProjection()}
+                        disabled={repairLoading}
+                      >
+                        Recalculer les chiffres
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {repairNotice ? <p className="mt-2 text-xs text-success">{repairNotice}</p> : null}
+                {repairError ? (
+                  <p className="mt-2 text-xs text-destructive">{repairError}</p>
+                ) : null}
               </div>
-              {repairPreview ? (
-                <div className="mt-3 space-y-2 text-xs">
-                  <p className={repairPreview.changed ? 'text-warning' : 'text-success'}>
-                    {repairPreview.changed
-                      ? `Écart détecté sur ${repairPreview.reservationCount} réservation(s).`
-                      : 'Chiffres à jour.'}
-                  </p>
-                  {repairPreview.changed ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void repairProjection()}
-                      disabled={repairLoading}
-                    >
-                      Recalculer les chiffres
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              {repairNotice ? <p className="mt-2 text-xs text-success">{repairNotice}</p> : null}
-              {repairError ? <p className="mt-2 text-xs text-destructive">{repairError}</p> : null}
-            </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>
 
-      <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+      {isPro ? (
+        <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Tag size={17} />
-              Préférences et tags
+              {isPro ? 'Préférences et tags' : 'Préférences de service'}
             </CardTitle>
             <CardDescription>Informations structurées utiles pendant le service.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Tags</p>
-                <span className="text-xs text-muted-foreground">Réservé aux responsables</span>
-              </div>
-              {customer.tags.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun tag.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {customer.tags.map((tag) => (
-                    <span key={tag.id} className="inline-flex items-center gap-1">
-                      <Badge variant="secondary">{tag.label}</Badge>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        aria-label={`Retirer le tag ${tag.label}`}
-                        onClick={() => void removeTag(tag)}
-                        disabled={crmMutationLoading}
-                      >
-                        <X size={13} />
-                      </Button>
-                    </span>
-                  ))}
+            {isPro ? (
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tags</p>
+                  <span className="text-xs text-muted-foreground">Réservé aux responsables</span>
                 </div>
-              )}
-              <form
-                className="mt-3 flex flex-col gap-2 sm:flex-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void saveTag();
-                }}
-              >
-                <Input
-                  value={tagLabel}
-                  onChange={(event) => setTagLabel(event.target.value)}
-                  placeholder="Nom du tag, par exemple « VIP régulier »"
-                  aria-label="Nom du tag"
-                  maxLength={80}
-                  disabled={crmMutationLoading}
-                />
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={crmMutationLoading || !tagLabel.trim()}
+                {customer.tags.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aucun tag.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {customer.tags.map((tag) => (
+                      <span key={tag.id} className="inline-flex items-center gap-1">
+                        <Badge variant="secondary">{tag.label}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          aria-label={`Retirer le tag ${tag.label}`}
+                          onClick={() => void removeTag(tag)}
+                          disabled={crmMutationLoading}
+                        >
+                          <X size={13} />
+                        </Button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <form
+                  className="mt-3 flex flex-col gap-2 sm:flex-row"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveTag();
+                  }}
                 >
-                  <Plus size={14} />
-                  Ajouter
-                </Button>
-              </form>
-            </div>
+                  <Input
+                    value={tagLabel}
+                    onChange={(event) => setTagLabel(event.target.value)}
+                    placeholder="Nom du tag, par exemple « VIP régulier »"
+                    aria-label="Nom du tag"
+                    maxLength={80}
+                    disabled={crmMutationLoading}
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={crmMutationLoading || !tagLabel.trim()}
+                  >
+                    <Plus size={14} />
+                    Ajouter
+                  </Button>
+                </form>
+              </div>
+            ) : null}
             <div>
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Préférences</p>

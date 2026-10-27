@@ -33,7 +33,7 @@ type Filters = {
 };
 const NO_FILTERS: Filters = { search: '', isVip: 'all', lifecycle: 'all', minVisits: '' };
 
-/** La fiche détaillée est une fonction de CRM Pro : sans la formule, le nom reste un simple texte. */
+/** La fiche s'ouvre dès Essential (fiche simple) ; fermée ou en panne, le nom reste un simple texte. */
 function ProfileLink({
   id,
   linked,
@@ -423,7 +423,7 @@ export default function CustomersPage() {
       {crmState === 'locked' ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Filtres par statut et par visites, fiches détaillées et doublons : inclus dans CRM Pro.
+          Filtres par statut et par visites, valeur client et doublons : inclus dans CRM Pro.
           <Link
             href="/pricing"
             className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
@@ -480,7 +480,7 @@ export default function CustomersPage() {
               key={customer.id}
               customer={customer}
               onToggleVip={toggleVip}
-              profileLinked={crmState === 'open'}
+              profileLinked={crmState !== 'hidden'}
             />
           ))}
         </div>
@@ -505,7 +505,7 @@ export default function CustomersPage() {
                 {customers.map((c) => (
                   <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">
-                      <ProfileLink id={c.id} linked={crmState === 'open'}>
+                      <ProfileLink id={c.id} linked={crmState !== 'hidden'}>
                         {c.name || <span className="opacity-50">Client sans nom</span>}
                       </ProfileLink>
                     </TableCell>
