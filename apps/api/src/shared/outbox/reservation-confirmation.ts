@@ -8,9 +8,28 @@ export async function enqueueReservationConfirmation(
     restaurantId: string;
     state: string;
     customerPhone: string | null;
+    customerEmail?: string | null;
     channel: string;
+    isTest?: boolean;
   },
 ): Promise<boolean> {
+  // Confirmation e-mail: WEB bookings that kept an address, whatever the SMS setting.
+  if (
+    reservation.channel === 'WEB' &&
+    reservation.state === 'CONFIRMED' &&
+    reservation.customerEmail &&
+    !reservation.isTest
+  ) {
+    await enqueue(tx, {
+      restaurantId: reservation.restaurantId,
+      topic: 'reservation-confirmation-email',
+      aggregateType: 'reservation',
+      aggregateId: reservation.id,
+      eventType: 'reservation.confirmation_email.requested',
+      idempotencyKey: `reservation-confirmation-email:${reservation.id}`,
+      payload: { reservationId: reservation.id },
+    });
+  }
   // Voice keeps its existing confirmation path; do not open messaging on MCP/other integrations.
   if (
     reservation.channel !== 'WEB' ||

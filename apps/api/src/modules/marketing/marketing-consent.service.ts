@@ -239,19 +239,24 @@ export async function restaurantNameForConsent(restaurantId: string): Promise<st
 export type MarketingEmailConsentStatus = 'OFFERABLE' | 'ALREADY_OPTED_IN' | 'UNAVAILABLE';
 
 /**
- * Dit si la ligne « recevoir les offres » peut être proposée. Non sans adresse, si un accord ou un
- * retrait existe, ou si l'adresse figure au registre d'opposition. Sans registre configuré, rien
- * n'est proposé : l'opposition ne peut pas être vérifiée.
+ * Dit si la ligne « recevoir les offres » peut être proposée à cette adresse, celle qui a reçu la
+ * confirmation. Non sans adresse, si un accord ou un retrait existe, si l'adresse figure au registre
+ * d'opposition, ou si le client en a déjà une autre : elle n'est jamais remplacée. Sans registre
+ * configuré, rien n'est proposé : l'opposition ne peut pas être vérifiée.
  */
 export async function marketingEmailConsentStatus(args: {
   restaurantId: string;
   customerId: string;
+  address: string | null;
 }): Promise<MarketingEmailConsentStatus> {
+  if (!args.address) return 'UNAVAILABLE';
   const customer = await db.customer.findFirst({
     where: { id: args.customerId, restaurantId: args.restaurantId, archivedAt: null },
     select: { emailNormalized: true },
   });
-  if (!customer?.emailNormalized) return 'UNAVAILABLE';
+  if (!customer || (customer.emailNormalized && customer.emailNormalized !== args.address)) {
+    return 'UNAVAILABLE';
+  }
 
   const permission = await db.marketingPermission.findFirst({
     where: { restaurantId: args.restaurantId, customerId: args.customerId, channel: 'EMAIL' },
@@ -264,25 +269,44 @@ export async function marketingEmailConsentStatus(args: {
   const optedOut = await isMarketingOptedOut({
     restaurantId: args.restaurantId,
     channel: 'EMAIL',
-    address: customer.emailNormalized,
+    address: args.address,
   });
   return optedOut ? 'UNAVAILABLE' : 'OFFERABLE';
 }
 
 /**
- * Enregistre l'accord coché depuis le lien de l'e-mail de confirmation. Un accord déjà donné ne
- * réécrit rien : ni nouvelle preuve, ni nouvel événement, même si le formulaire part deux fois.
+ * Enregistre l'accord coché depuis le lien de la confirmation. L'adresse de la réservation n'est
+ * rattachée au client qu'à ce moment, la case cochée, et jamais en remplacement. Un accord déjà donné
+ * ne réécrit rien : ni nouvelle preuve, ni nouvel événement, même si le formulaire part deux fois.
  */
 export async function recordConfirmationEmailConsent(args: {
   restaurantId: string;
   customerId: string;
+  reservationId: string;
   occurredAt?: Date;
 }): Promise<'RECORDED' | 'ALREADY_GRANTED' | 'NOT_RECORDED'> {
   const restaurantName = await restaurantNameForConsent(args.restaurantId);
   if (!restaurantName) return 'NOT_RECORDED';
-  const status = await marketingEmailConsentStatus(args);
-  if (status === 'UNAVAILABLE') return 'NOT_RECORDED';
+  const reservation = await db.reservation.findFirst({
+    where: { id: args.reservationId, restaurantId: args.restaurantId, customerId: args.customerId },
+    select: { customerEmail: true },
+  });
+  const address = reservation?.customerEmail
+    ? normalizeCustomerEmail(reservation.customerEmail)
+    : null;
+  const status = await marketingEmailConsentStatus({
+    restaurantId: args.restaurantId,
+    customerId: args.customerId,
+    address,
+  });
+  if (!address || status === 'UNAVAILABLE') return 'NOT_RECORDED';
   if (status === 'ALREADY_OPTED_IN') return 'ALREADY_GRANTED';
+  const attached = await attachBookingEmail({
+    restaurantId: args.restaurantId,
+    customerId: args.customerId,
+    email: address,
+  });
+  if (attached !== 'OK') return 'NOT_RECORDED';
   return grantChannel({
     restaurantId: args.restaurantId,
     customerId: args.customerId,

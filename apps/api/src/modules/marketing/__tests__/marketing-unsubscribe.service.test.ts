@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketingPermissionStatus } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import {
+  buildMarketingConsentUrl,
   buildMarketingUnsubscribeUrl,
   consumeMarketingUnsubscribeToken,
   createMarketingConsentToken,
@@ -16,6 +17,7 @@ vi.mock('../../../shared/db/client', () => ({
     marketingPermission: { upsert: vi.fn() },
     marketingPermissionEvent: { create: vi.fn() },
     customerTimelineEvent: { create: vi.fn(), findUnique: vi.fn() },
+    reservation: { findFirst: vi.fn() },
   },
 }));
 
@@ -85,22 +87,34 @@ describe('marketing consent link token', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.MARKETING_UNSUBSCRIBE_SECRET = 'u'.repeat(48);
-    vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'customer-1' } as never);
+    vi.mocked(db.reservation.findFirst).mockResolvedValue({ id: 'reservation-1' } as never);
   });
 
   function consentToken(): Promise<string> {
     return createMarketingConsentToken({
       restaurantId: 'restaurant-1',
       customerId: 'customer-1',
+      reservationId: 'reservation-1',
       issuedAt: ISSUED_AT,
     });
   }
+
+  it('ouvre la page de consentement sur l’origine de l’API', async () => {
+    process.env.API_URL = 'https://api.sokar.test/';
+    const url = new URL(buildMarketingConsentUrl(await consentToken()));
+    expect(`${url.origin}${url.pathname}`).toBe('https://api.sokar.test/marketing/consent');
+    expect(url.searchParams.get('token')).toMatch(/^c1\./);
+  });
 
   it('est valable 30 jours puis expire', async () => {
     const token = await consentToken();
     expect(token).toMatch(/^c1\./);
     expect(verifyMarketingConsentToken(token, new Date(ISSUED_AT.getTime() + 29 * DAY_MS))).toEqual(
-      { restaurantId: 'restaurant-1', customerId: 'customer-1' },
+      {
+        restaurantId: 'restaurant-1',
+        customerId: 'customer-1',
+        reservationId: 'reservation-1',
+      },
     );
     expect(() =>
       verifyMarketingConsentToken(token, new Date(ISSUED_AT.getTime() + 31 * DAY_MS)),

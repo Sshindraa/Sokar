@@ -22,6 +22,7 @@ vi.mock('../../../shared/db/client', () => ({
     restaurant: { findUnique: vi.fn() },
     marketingPermission: { findFirst: vi.fn() },
     marketingOptOut: { findMany: vi.fn() },
+    reservation: { findFirst: vi.fn() },
   },
 }));
 vi.mock('../../customers/customer-crm.service', async (importActual) => ({
@@ -283,46 +284,56 @@ describe('marketing consent wording', () => {
 
 describe('ligne « recevoir les offres » de l’e-mail de confirmation', () => {
   const ids = { restaurantId: 'restaurant-1', customerId: 'customer-1' };
+  const reservation = { ...ids, reservationId: 'reservation-1' };
+  const address = 'client@example.com';
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.MARKETING_OPTOUT_HASH_SECRET = 'o'.repeat(48);
     vi.mocked(db.customer.findFirst).mockResolvedValue({
-      emailNormalized: 'client@example.com',
+      emailNormalized: address,
     } as never);
+    vi.mocked(db.reservation.findFirst).mockResolvedValue({ customerEmail: address } as never);
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({ name: 'Chez Sokar' } as never);
     vi.mocked(db.marketingPermission.findFirst).mockResolvedValue(null);
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValue([]);
     vi.mocked(upsertMarketingPermission).mockResolvedValue({} as never);
+    vi.mocked(upsertCustomerIdentity).mockResolvedValue({ status: 'created' } as never);
   });
 
-  it('n’est proposée qu’à une adresse joignable, sans accord, sans retrait ni opposition', async () => {
-    expect(await marketingEmailConsentStatus(ids)).toBe('OFFERABLE');
+  it('n’est proposée qu’à l’adresse de la confirmation, sans accord, sans retrait ni opposition', async () => {
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('OFFERABLE');
+    expect(await marketingEmailConsentStatus({ ...ids, address: null })).toBe('UNAVAILABLE');
+
+    vi.mocked(db.customer.findFirst).mockResolvedValueOnce({
+      emailNormalized: 'autre@example.com',
+    } as never);
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
 
     vi.mocked(db.customer.findFirst).mockResolvedValueOnce({ emailNormalized: null } as never);
-    expect(await marketingEmailConsentStatus(ids)).toBe('UNAVAILABLE');
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('OFFERABLE');
 
     vi.mocked(db.marketingPermission.findFirst).mockResolvedValueOnce({
       status: MarketingPermissionStatus.OPTED_IN,
     } as never);
-    expect(await marketingEmailConsentStatus(ids)).toBe('ALREADY_OPTED_IN');
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('ALREADY_OPTED_IN');
 
     vi.mocked(db.marketingPermission.findFirst).mockResolvedValueOnce({
       status: MarketingPermissionStatus.OPTED_OUT,
     } as never);
-    expect(await marketingEmailConsentStatus(ids)).toBe('UNAVAILABLE');
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
 
     vi.mocked(db.marketingOptOut.findMany).mockResolvedValueOnce([
-      { addressHash: marketingOptOutHash('EMAIL', 'client@example.com') },
+      { addressHash: marketingOptOutHash('EMAIL', address) },
     ] as never);
-    expect(await marketingEmailConsentStatus(ids)).toBe('UNAVAILABLE');
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
 
     delete process.env.MARKETING_OPTOUT_HASH_SECRET;
-    expect(await marketingEmailConsentStatus(ids)).toBe('UNAVAILABLE');
+    expect(await marketingEmailConsentStatus({ ...ids, address })).toBe('UNAVAILABLE');
   });
 
   it('enregistre une seule fois : la deuxième soumission ne réécrit ni preuve ni événement', async () => {
-    expect(await recordConfirmationEmailConsent({ ...ids, occurredAt: OCCURRED_AT })).toBe(
+    expect(await recordConfirmationEmailConsent({ ...reservation, occurredAt: OCCURRED_AT })).toBe(
       'RECORDED',
     );
     expect(upsertMarketingPermission).toHaveBeenCalledTimes(1);
@@ -339,18 +350,38 @@ describe('ligne « recevoir les offres » de l’e-mail de confirmation', () => 
     vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
       status: MarketingPermissionStatus.OPTED_IN,
     } as never);
-    expect(await recordConfirmationEmailConsent(ids)).toBe('ALREADY_GRANTED');
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('ALREADY_GRANTED');
     expect(upsertMarketingPermission).toHaveBeenCalledTimes(1);
   });
 
-  it('n’enregistre rien sans adresse ni pour un client désinscrit', async () => {
-    vi.mocked(db.customer.findFirst).mockResolvedValueOnce({ emailNormalized: null } as never);
-    expect(await recordConfirmationEmailConsent(ids)).toBe('NOT_RECORDED');
+  it('rattache l’adresse de la confirmation à la case cochée, jamais en remplacement', async () => {
+    vi.mocked(db.customer.findFirst).mockResolvedValue({ emailNormalized: null } as never);
+    vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('RECORDED');
+    expect(db.customer.updateMany).toHaveBeenCalledWith({
+      where: { id: 'customer-1', restaurantId: 'restaurant-1', emailNormalized: null },
+      data: { emailNormalized: address },
+    });
+
+    vi.mocked(db.customer.findFirst).mockResolvedValue({
+      emailNormalized: 'autre@example.com',
+    } as never);
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('NOT_RECORDED');
+    expect(upsertMarketingPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it('n’enregistre rien sans réservation, sans adresse ou pour un client désinscrit', async () => {
+    vi.mocked(db.reservation.findFirst).mockResolvedValueOnce(null);
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('NOT_RECORDED');
+
+    vi.mocked(db.reservation.findFirst).mockResolvedValueOnce({ customerEmail: null } as never);
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('NOT_RECORDED');
 
     vi.mocked(db.marketingPermission.findFirst).mockResolvedValue({
       status: MarketingPermissionStatus.OPTED_OUT,
     } as never);
-    expect(await recordConfirmationEmailConsent(ids)).toBe('NOT_RECORDED');
+    expect(await recordConfirmationEmailConsent(reservation)).toBe('NOT_RECORDED');
     expect(upsertMarketingPermission).not.toHaveBeenCalled();
   });
 });

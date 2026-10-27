@@ -208,9 +208,17 @@ Ce texte a été **validé par Hamza le 27/10/2026** (sans relecture juridique e
   de quelqu'un d'autre ; la désinscription ultérieure ne remplace jamais l'autorisation préalable.
   Acceptable pour le pilote (adresses de test, personnes informées), à ajouter avant d'écrire à de vrais
   clients (jeton signé et état « en attente de confirmation » : phase suivante, non faite).
-- **Adresse enregistrée seulement avec l'accord** : aujourd'hui l'adresse saisie sur la page de réservation
-  n'est conservée nulle part. Elle n'est rattachée à la fiche client que si le client coche la case e-mail,
-  et jamais en remplacement d'une adresse déjà connue (dans ce cas, l'accord n'est pas enregistré).
+- **Adresse enregistrée seulement avec l'accord** : l'adresse saisie sur la page de réservation est gardée
+  sur la réservation, comme le téléphone, pour envoyer la confirmation (`reservations.customer_email`,
+  anonymisée avec la réservation). Elle n'est rattachée à la fiche client que si le client coche la case
+  e-mail (formulaire ou lien de la confirmation), et jamais en remplacement d'une adresse déjà connue (dans
+  ce cas, l'accord n'est pas enregistré).
+- **E-mail de confirmation** : après une réservation web confirmée avec une adresse, un e-mail transactionnel
+  part depuis `EMAIL_FROM` (outbox `reservation-confirmation-email`, une fois par réservation). Il ne contient
+  aucune offre. La ligne « Recevoir les offres et actualités de {restaurant} » y figure seulement si
+  `marketingEmailConsentStatus` l'autorise (adresse de la confirmation, pas d'accord ni de retrait, pas
+  d'opposition). Sans `MARKETING_OPTOUT_HASH_SECRET` ou `MARKETING_UNSUBSCRIBE_SECRET`, la confirmation part
+  sans la ligne.
 - **Où les cases apparaissent** : sur le formulaire de réservation en ligne du dashboard, servi sur
   `sokar.tech`, les sous-domaines et les domaines personnalisés (`/widget/<slug>`, `/book/<slug>`,
   `embed.js`). Uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le

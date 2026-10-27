@@ -879,8 +879,14 @@ export async function marketingRoutes(app: FastifyInstance) {
           'Aucune case cochée : rien n’a été enregistré.',
         );
       }
-      const { restaurantId, customerId } = verifyMarketingConsentToken(candidate.data);
-      const outcome = await recordConfirmationEmailConsent({ restaurantId, customerId });
+      const { restaurantId, customerId, reservationId } = verifyMarketingConsentToken(
+        candidate.data,
+      );
+      const outcome = await recordConfirmationEmailConsent({
+        restaurantId,
+        customerId,
+        reservationId,
+      });
       return sendUnsubscribePage(reply, 200, renderConsentDonePage(outcome));
     } catch (error) {
       if (isUnsubscribeTokenError(error)) {

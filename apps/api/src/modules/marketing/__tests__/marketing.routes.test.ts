@@ -882,8 +882,16 @@ describe('marketing control plane routes', () => {
     });
 
     async function consentToken(): Promise<string> {
+      vi.mocked(db.reservation.findFirst).mockResolvedValue({
+        id: 'reservation-1',
+        customerEmail: 'client@example.com',
+      } as never);
       const { createMarketingConsentToken } = await import('../marketing-unsubscribe.service');
-      return createMarketingConsentToken({ restaurantId: 'test-rest-1', customerId: 'customer-1' });
+      return createMarketingConsentToken({
+        restaurantId: 'test-rest-1',
+        customerId: 'customer-1',
+        reservationId: 'reservation-1',
+      });
     }
 
     function consentPost(token: string, consent: boolean) {

@@ -21,6 +21,8 @@ type UnsubscribeTokenPayload = {
   v: 1;
   restaurantId: string;
   customerId: string;
+  /** Seulement sur le lien de consentement : la réservation dont la confirmation porte ce lien. */
+  reservationId?: string;
   channel: MarketingChannelCode;
   exp: number;
 };
@@ -193,24 +195,27 @@ export async function consumeMarketingUnsubscribeToken(args: {
 }
 
 /**
- * Jeton du lien « recevoir les offres » de l'e-mail de confirmation : 30 jours, client et restaurant
- * fixés. Ouvrir le lien n'enregistre rien ; l'accord vient du POST de la page.
+ * Jeton du lien « recevoir les offres » de la confirmation d'une réservation : 30 jours. Ouvrir le
+ * lien n'enregistre rien ; l'accord vient du POST de la page.
  */
 export async function createMarketingConsentToken(args: {
   restaurantId: string;
   customerId: string;
+  reservationId: string;
   issuedAt?: Date;
 }): Promise<string> {
   const issuedAt = validDate(args.issuedAt, 'issuedAt');
-  const customer = await db.customer.findFirst({
-    where: { id: args.customerId, restaurantId: args.restaurantId, archivedAt: null },
+  // Le lien ne vaut que pour une réservation de ce client : son adresse est celle de la confirmation.
+  const reservation = await db.reservation.findFirst({
+    where: { id: args.reservationId, restaurantId: args.restaurantId, customerId: args.customerId },
     select: { id: true },
   });
-  if (!customer) throw new Error('CUSTOMER_NOT_FOUND');
+  if (!reservation) throw new Error('RESERVATION_NOT_FOUND');
   return issueToken(CONSENT_TOKEN_VERSION, {
     v: 1,
     restaurantId: args.restaurantId,
     customerId: args.customerId,
+    reservationId: args.reservationId,
     channel: 'EMAIL',
     exp: Math.floor((issuedAt.getTime() + CONSENT_TOKEN_TTL_DAYS * 86_400_000) / 1000),
   });
@@ -223,7 +228,20 @@ export async function createMarketingConsentToken(args: {
 export function verifyMarketingConsentToken(
   token: string,
   now = new Date(),
-): { restaurantId: string; customerId: string } {
+): { restaurantId: string; customerId: string; reservationId: string } {
   const payload = parseToken(token, now, CONSENT_TOKEN_VERSION);
-  return { restaurantId: payload.restaurantId, customerId: payload.customerId };
+  if (typeof payload.reservationId !== 'string') throw new Error('INVALID_UNSUBSCRIBE_TOKEN');
+  return {
+    restaurantId: payload.restaurantId,
+    customerId: payload.customerId,
+    reservationId: payload.reservationId,
+  };
+}
+
+/** Lien de la page de consentement, sur l'origine de l'API. */
+export function buildMarketingConsentUrl(token: string): string {
+  const base = (process.env.API_URL?.trim() || 'https://api.sokar.tech').replace(/\/+$/, '');
+  const url = new URL(`${base}/marketing/consent`);
+  url.searchParams.set('token', token);
+  return url.toString();
 }

@@ -30,6 +30,7 @@ import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
 import { ConnectService, hashPhone } from './connect.service';
+import { normalizeCustomerEmail } from '../customers/customer-crm.service';
 import {
   CapacityAwareAvailabilityService,
   DEFAULT_RESTAURANT_TIMEZONE,
@@ -855,6 +856,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             endsAt: hold.slotEnd,
             customerName,
             customerPhone: bodyParse.data.customer.phone,
+            customerEmail: isTest
+              ? null
+              : normalizeCustomerEmail(bodyParse.data.customer.email ?? ''),
             channel: 'WEB',
             policy,
             actor: 'connect:web',
