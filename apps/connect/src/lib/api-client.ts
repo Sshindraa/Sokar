@@ -94,6 +94,20 @@ export type SitemapRestaurantEntry = {
 };
 
 /**
+ * Une limitation (429) ou une panne de l'API n'est pas une absence : on lève une erreur au lieu de
+ * renvoyer null ou une liste vide, sinon la page publierait un faux « introuvable » ou un catalogue
+ * vide. Next garde alors la dernière donnée en cache, ou affiche sa page d'erreur.
+ */
+// 400 = slug invalide : la page n'existe pas plus qu'en 404.
+function isNotFound(res: Response): boolean {
+  return res.status === 404 || res.status === 400;
+}
+
+function apiUnavailable(path: string, res: Response): Error {
+  return new Error(`public API unavailable (${path} ${res.status})`);
+}
+
+/**
  * Récupère un restaurant publié par slug.
  * Renvoie null si introuvable ou non publié (404 géré).
  */
@@ -101,22 +115,16 @@ export async function fetchPublicRestaurant(
   slug: string,
   options: { revalidate?: number; tags?: string[]; preview?: boolean } = {},
 ): Promise<PublicRestaurantDto | null> {
-  try {
-    const query = options.preview ? '?preview=1' : '';
-    const res = await fetch(`${await getApiUrl()}/public/r/${slug}${query}`, {
-      next: {
-        revalidate: options.preview ? 0 : (options.revalidate ?? 60),
-        tags: options.tags ?? [`restaurant:${slug}`],
-      },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      return null;
-    }
-    return (await res.json()) as PublicRestaurantDto;
-  } catch {
-    return null;
-  }
+  const query = options.preview ? '?preview=1' : '';
+  const res = await fetch(`${await getApiUrl()}/public/r/${slug}${query}`, {
+    next: {
+      revalidate: options.preview ? 0 : (options.revalidate ?? 60),
+      tags: options.tags ?? [`restaurant:${slug}`],
+    },
+  });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/r/:slug', res);
+  return (await res.json()) as PublicRestaurantDto;
 }
 
 /**
@@ -129,21 +137,15 @@ export async function fetchWidgetRestaurant(
   slug: string,
   options: { revalidate?: number; tags?: string[] } = {},
 ): Promise<WidgetRestaurantDto | null> {
-  try {
-    const res = await fetch(`${await getApiUrl()}/public/widget/${slug}`, {
-      next: {
-        revalidate: options.revalidate ?? 60,
-        tags: options.tags ?? [`widget:restaurant:${slug}`],
-      },
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      return null;
-    }
-    return (await res.json()) as WidgetRestaurantDto;
-  } catch {
-    return null;
-  }
+  const res = await fetch(`${await getApiUrl()}/public/widget/${slug}`, {
+    next: {
+      revalidate: options.revalidate ?? 60,
+      tags: options.tags ?? [`widget:restaurant:${slug}`],
+    },
+  });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/widget/:slug', res);
+  return (await res.json()) as WidgetRestaurantDto;
 }
 
 /**
@@ -189,18 +191,12 @@ export async function fetchPublicRestaurants(
   limit = 12,
   options: { revalidate?: number } = {},
 ): Promise<PaginatedRestaurantsDto> {
-  try {
-    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-    const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
-      next: { revalidate: options.revalidate ?? 300 },
-    });
-    if (!res.ok) {
-      return { restaurants: [], total: 0, page, limit };
-    }
-    return (await res.json()) as PaginatedRestaurantsDto;
-  } catch {
-    return { restaurants: [], total: 0, page, limit };
-  }
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
+    next: { revalidate: options.revalidate ?? 300 },
+  });
+  if (!res.ok) throw apiUnavailable('/public/restaurants', res);
+  return (await res.json()) as PaginatedRestaurantsDto;
 }
 
 /**
@@ -302,15 +298,11 @@ export async function fetchCityPage(
   citySlug: string,
   cuisine?: string,
 ): Promise<import('./cities').CityCuisinePageData | null> {
-  try {
-    const params = new URLSearchParams();
-    if (cuisine) params.set('cuisine', cuisine);
-    const url = `${await getApiUrl()}/public/cities/${citySlug}${params.toString() ? `?${params}` : ''}`;
-    const res = await fetch(url, { next: { revalidate: 300 } });
-    if (res.status === 404) return null;
-    if (!res.ok) return null;
-    return (await res.json()) as import('./cities').CityCuisinePageData;
-  } catch {
-    return null;
-  }
+  const params = new URLSearchParams();
+  if (cuisine) params.set('cuisine', cuisine);
+  const url = `${await getApiUrl()}/public/cities/${citySlug}${params.toString() ? `?${params}` : ''}`;
+  const res = await fetch(url, { next: { revalidate: 300 } });
+  if (isNotFound(res)) return null;
+  if (!res.ok) throw apiUnavailable('/public/cities/:slug', res);
+  return (await res.json()) as import('./cities').CityCuisinePageData;
 }

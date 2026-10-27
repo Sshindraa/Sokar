@@ -26,6 +26,8 @@ export async function registerClerk(app: FastifyInstance) {
   await app.register(clerkPlugin, {
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY as string,
     secretKey: process.env.CLERK_SECRET_KEY as string,
+    // Authentifier avant le limiteur global, qui compte par utilisateur (rate-limit.ts).
+    hookName: 'onRequest',
   });
 }
 

@@ -7,8 +7,13 @@
  *
  * Tiers, from most permissive to most restrictive:
  *
- * - GLOBAL — 100 req/min/IP. Default for authenticated dashboard and API
- *   traffic, where the caller is a known restaurant user.
+ * - USER_READ / USER_WRITE — 600 / 120 req/min per signed-in Clerk user, in
+ *   two separate counters. Several floor screens on one restaurant router no
+ *   longer share an IP budget, and polling reads never starve a staff action.
+ *   One account is often shared by every device of a restaurant: a Salle screen
+ *   polls ~24 reads/min, so 600 covers a large room with headroom.
+ *
+ * - GLOBAL — 100 req/min/IP. Default for anonymous traffic (no Clerk session).
  *
  * - PROVIDER_WEBHOOK — 600 req/min/IP. Callbacks authenticated by signature
  *   (Telnyx voice/SMS/WhatsApp, Stripe billing and reservation payments). A
@@ -35,6 +40,10 @@
 export const RATE_LIMIT_WINDOW = '1 minute';
 
 export const RATE_LIMIT_GLOBAL_MAX = 100;
+
+export const RATE_LIMIT_USER_READ_MAX = 600;
+
+export const RATE_LIMIT_USER_WRITE_MAX = 120;
 
 export const RATE_LIMIT_PROVIDER_WEBHOOK = {
   max: 600,
