@@ -208,7 +208,7 @@ export class CustomerService {
       // 70% recent weight, 30% prior — let pattern emerge over time without
       // overwriting the first few samples. Falls back to prior if no history.
       const existing = await db.customer.findUnique({
-        where: { id: customer.id },
+        where: { id: customer.id, restaurantId },
         select: { partySizeTypical: true },
       });
       const prior = existing?.partySizeTypical ? Number(existing.partySizeTypical) : null;

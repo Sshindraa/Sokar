@@ -430,7 +430,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       // Status and visits come from the reservations, the same numbers the list then shows.
       const now = new Date();
       const candidates = await db.customer.findMany({
-        where,
+        where: { ...where, restaurantId },
         orderBy,
         select: { id: true },
         take: CRM_COMPUTED_FILTER_SCAN_LIMIT,
@@ -461,7 +461,7 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       page = pageIds.flatMap((id) => byId.get(id) ?? []);
     } else {
       const customers = await db.customer.findMany({
-        where,
+        where: { ...where, restaurantId },
         orderBy,
         ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
         take: query.limit + 1,
