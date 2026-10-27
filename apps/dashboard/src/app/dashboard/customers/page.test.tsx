@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   orgId: 'org_test',
   isMobile: false,
+  activeSite: { role: 'OWNER' } as { role: string } | null,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -18,10 +19,15 @@ vi.mock('@/lib/useMediaQuery', () => ({
   useIsMobile: () => mocks.isMobile,
 }));
 
+vi.mock('@/features/sites/site-context', () => ({
+  useSiteSelection: () => ({ activeSite: mocks.activeSite }),
+}));
+
 describe('CustomersPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isMobile = false;
+    mocks.activeSite = { role: 'OWNER' };
     // Par défaut le CRM avancé est fermé : la sonde du bouton « CRM Pro » ne doit pas perturber les tests.
     mocks.get.mockImplementation((path: string) =>
       path.startsWith('crm/')
@@ -256,6 +262,14 @@ describe('CustomersPage', () => {
         'href',
         '/dashboard/customers/crm/customer-1',
       );
+    });
+
+    it('masque l’export aux responsables qui ne sont pas propriétaires', async () => {
+      mocks.activeSite = { role: 'MANAGER' };
+      mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
+      render(<CustomersPage />);
+      expect(await screen.findByText(/inclus dans CRM Pro/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Exporter/ })).not.toBeInTheDocument();
     });
 
     it('exporte le fichier clients en CSV, sur toutes les formules', async () => {
