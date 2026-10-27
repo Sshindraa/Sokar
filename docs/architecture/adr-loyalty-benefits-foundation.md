@@ -1,7 +1,7 @@
 # ADR — Fondation des avantages fidélité opérationnels
 
 - **Date :** 2026-09-14
-- **Statut :** livré localement, activation commerciale bloquée
+- **Statut :** version manuelle ouverte aux offres Pro et Multi-site
 - **Décideurs :** produit Sokar / équipe API
 
 ## Contexte
@@ -60,14 +60,11 @@ Les routes sont montées dans `apps/api/src/modules/loyalty/loyalty.routes.ts` :
 - `POST /loyalty/grants/:id/redeem` et `/void` pour les transitions ;
 - `POST /api/internal/loyalty/grants/expire` pour l'expiration opérée par le scheduler.
 
-Toutes les routes exigent `requireOrg`, la capability `reputation.loyalty`, un établissement actif
-et `LOYALTY_ENABLED=true`. Owner et Manager administrent le catalogue et émettent ; Staff peut
+Les routes de gestion exigent `requireOrg`, la capability `reputation.loyalty` et un établissement actif. Owner et Manager administrent le catalogue et émettent ; Staff peut
 consulter et consommer mais ne peut pas créer, modifier ou annuler un avantage. Les identifiants
 restent tenant-scoped et le téléphone est limité à ses quatre derniers chiffres dans les listes.
 
-La capability est incluse dans Pro et Multi-site, refusée par Essential. Le flag vaut `false` dans
-les environnements d'exemple afin que le code et la page dashboard puissent être vérifiés sans
-ouvrir de parcours client.
+La capability est incluse dans Pro et Multi-site, refusée par Essential. La version manuelle est ouverte.
 
 ## Expiration, audit et interface
 
@@ -89,25 +86,23 @@ Cette fondation ne fournit pas encore :
   avantages multi-établissements ;
 - une preuve de coût réel, un pilote terrain ou une promesse de revenu incrémental.
 
-Ces écarts restent attachés aux portes P8 et P9 dans `docs/release/product-gates.json`. Le simple
-fait que l'interface locale existe ne clôt pas la qualification fidélité et ne justifie pas une
-activation production pendant le gel.
+Les canaux et intégrations externes restent à qualifier séparément dans les portes P8 et P9.
 
 ## Migration, rollback et porte de sortie
 
 La migration `20260914180000_loyalty_benefits_foundation` est additive : elle crée uniquement les
-enums, tables, index et contraintes des avantages et grants. Un rollback applicatif consiste à
-laisser `LOYALTY_ENABLED=false`; aucune donnée de carte ou secret externe n'est à révoquer. Une
-restauration de base suit le runbook de rollback et une sauvegarde horodatée.
+enums, tables, index et contraintes des avantages et grants. Un rollback applicatif revient à une
+release antérieure ; aucune donnée de carte ou secret externe n'est à révoquer. Une restauration de
+base suit le runbook de rollback et une sauvegarde horodatée.
 
-Avant d'ouvrir un pilote, il faut :
+Pour qualifier le parcours en salle et les futures extensions :
 
 1. tester l'émission, l'expiration et le redeem avec des clients réels anonymisés ;
 2. faire relire les règles et le coût estimé par un gérant et documenter la procédure en salle ;
 3. vérifier les limites de fréquence, le consentement et l'export/effacement RGPD si un canal est
    ajouté ;
 4. décider si les bénéfices restent manuels ou s'intègrent à un POS choisi ;
-5. joindre les preuves au registre P8, puis seulement envisager un changement de flag et de statut.
+5. joindre les preuves de pilote au registre P8.
 
 ## Preuves locales
 

@@ -58,7 +58,6 @@ describe('loyalty routes', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     vi.clearAllMocks();
-    vi.stubEnv('LOYALTY_ENABLED', 'false');
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
       plan: 'PRO',
@@ -76,16 +75,15 @@ describe('loyalty routes', () => {
     await closeApp();
   });
 
-  it('keeps benefits disabled during the freeze', async () => {
+  it('allows a Pro restaurant to list benefits', async () => {
+    vi.mocked(db.loyaltyBenefit.findMany).mockResolvedValue([benefitRow()] as never);
     const app = await getApp();
     const response = await app.inject({ method: 'GET', url: '/loyalty/benefits', headers: AUTH });
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({ error: 'LOYALTY_DISABLED' });
-    expect(db.loyaltyBenefit.findMany).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toHaveLength(1);
   });
 
-  it('enforces the Pro entitlement before the runtime flag', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
+  it('enforces the Pro entitlement', async () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
       plan: 'ESSENTIAL',
@@ -100,8 +98,7 @@ describe('loyalty routes', () => {
     });
   });
 
-  it('creates a benefit for an enabled Pro restaurant', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
+  it('creates a benefit for a Pro restaurant', async () => {
     vi.mocked(db.loyaltyBenefit.create).mockResolvedValue(benefitRow() as never);
     const app = await getApp();
     const response = await app.inject({
@@ -124,7 +121,6 @@ describe('loyalty routes', () => {
   });
 
   it('issues an idempotent grant and returns its code once', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
     vi.mocked(db.loyaltyGrant.findUnique).mockResolvedValue(null);
     vi.mocked(db.loyaltyBenefit.findFirst).mockResolvedValue(benefitRow() as never);
     vi.mocked(db.customer.findFirst).mockResolvedValue({
@@ -152,7 +148,6 @@ describe('loyalty routes', () => {
   });
 
   it('redeems a grant through the operator route', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
     vi.mocked(db.loyaltyGrant.findFirst)
       .mockResolvedValueOnce(
         grantRow({
@@ -173,7 +168,6 @@ describe('loyalty routes', () => {
   });
 
   it('allows staff to list grants but not to issue one', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
     vi.mocked(db.loyaltyGrant.findMany).mockResolvedValue([grantRow()] as never);
     const app = await getApp();
     const listResponse = await app.inject({
@@ -195,7 +189,6 @@ describe('loyalty routes', () => {
   });
 
   it('allows staff to redeem a grant during service', async () => {
-    vi.stubEnv('LOYALTY_ENABLED', 'true');
     vi.mocked(db.loyaltyGrant.findFirst)
       .mockResolvedValueOnce(grantRow({ codeHash: codeHash('ABCDEF123456') }) as never)
       .mockResolvedValueOnce(grantRow({ status: LoyaltyGrantStatus.REDEEMED }) as never);

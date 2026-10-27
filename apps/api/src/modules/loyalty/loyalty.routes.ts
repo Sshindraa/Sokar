@@ -61,26 +61,11 @@ const RedeemGrantBodySchema = z.object({
 const VoidGrantBodySchema = z.object({ note: z.string().max(1_000).nullable().optional() });
 const IdempotencyKeySchema = z.string().trim().min(8).max(200);
 
-function loyaltyEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-  return environment.LOYALTY_ENABLED === 'true';
-}
-
 function readIdempotencyKey(request: FastifyRequest): string | undefined {
   const value = request.headers['idempotency-key'];
   const candidate = Array.isArray(value) ? value[0] : value;
   if (candidate === undefined) return undefined;
   return IdempotencyKeySchema.parse(candidate);
-}
-
-async function requireLoyaltyFeature(
-  _request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void | FastifyReply> {
-  if (loyaltyEnabled()) return;
-  return reply.status(503).send({
-    error: 'LOYALTY_DISABLED',
-    message: 'Les avantages restent désactivés jusqu’à la qualification du pilote.',
-  });
 }
 
 async function requireLoyaltyReadRole(
@@ -134,23 +119,16 @@ function sendLoyaltyError(error: unknown, reply: FastifyReply): FastifyReply | u
   return undefined;
 }
 
-const loyaltyRead = [
-  requireOrg(),
-  requireCapability('reputation.loyalty'),
-  requireLoyaltyReadRole,
-  requireLoyaltyFeature,
-];
+const loyaltyRead = [requireOrg(), requireCapability('reputation.loyalty'), requireLoyaltyReadRole];
 const loyaltyWrite = [
   requireOrg(),
   requireCapability('reputation.loyalty'),
   requireLoyaltyWriteRole,
-  requireLoyaltyFeature,
 ];
 const loyaltyConsume = [
   requireOrg(),
   requireCapability('reputation.loyalty'),
   requireLoyaltyReadRole,
-  requireLoyaltyFeature,
 ];
 
 /**
@@ -263,10 +241,7 @@ export async function loyaltyRoutes(app: FastifyInstance): Promise<void> {
     '/api/internal/loyalty/grants/expire',
     { preHandler: requireSokarOperator() },
     async (_request, reply) => {
-      if (!loyaltyEnabled()) return reply.status(503).send({ error: 'LOYALTY_DISABLED' });
       return reply.send({ expiredCount: await expireLoyaltyGrants() });
     },
   );
 }
-
-export { loyaltyEnabled };

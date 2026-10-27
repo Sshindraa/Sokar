@@ -28,7 +28,7 @@ sont des estimations d'ordre de grandeur, pas des engagements.
 | Expériences (interne)                        | `EXPERIENCES_ENABLED`              | 2 529 lignes / 25 tests / 19 tests                             | Avancée : checkout Stripe Connect, page Connect                 | CGV, TVA, notifications, qualification staging                                    | **Finir** (le plus avancé des socles)                            |
 | Réservation publique d'expériences           | `EXPERIENCE_BOOKING_ENABLED`       | inclus ci-dessus + Connect (523 lignes)                        | Prête à qualifier (`experience-booking-pilot.md`)               | Même qualification ; compte Stripe Connect du restaurant                          | **Finir**, juste après la ligne précédente                       |
 | Paiement de réservation (empreinte, acompte) | `RESERVATION_PAYMENTS_ENABLED`     | 1 250 lignes / 10 tests / aucun écran                          | Partielle : webhook et machine d'états, pas d'adaptateur Stripe | Modèle marchand, TVA/litiges, adaptateur, capture après no-show                   | **Finir** si l'acompte est une promesse produit, sinon supprimer |
-| Fidélité (avantages)                         | `LOYALTY_ENABLED`                  | 1 234 lignes / 23 tests / 10 tests                             | Locale, aucun point ni envoi                                    | Décider manuel ou POS ; revue gérant                                              | **Finir** en version manuelle, ou supprimer                      |
+| Fidélité (avantages)                         | Aucun (Pro/Multi-site)             | 1 234 lignes / 23 tests / 10 tests                             | Locale, aucun point ni envoi                                    | Décider manuel ou POS ; revue gérant                                              | **Finir** en version manuelle, ou supprimer                      |
 | Réputation (retours post-visite)             | `REPUTATION_ENABLED`               | 1 147 lignes / 16 tests / 8 tests                              | Locale, aucun envoi                                             | Canal d'envoi (SMS/e-mail), lien public signé, pilote                             | **Finir** si un canal d'envoi est choisi, sinon supprimer        |
 | Événements et billetterie                    | `EVENTS_ENABLED`                   | 2 322 lignes / 26 tests / 12 tests                             | Locale : aucune facture, aucun paiement                         | Paiement, facture fiscale, notifications, widget public                           | **Supprimer** (recouvre les expériences)                         |
 | Canaux partenaires (distribution)            | `DISTRIBUTION_ENABLED`             | 1 795 lignes / 20 tests / 7 tests                              | Coquille : aucun fournisseur choisi                             | Fournisseur, contrat, OAuth, secret manager, adaptateur, worker                   | **Supprimer**                                                    |
@@ -224,7 +224,7 @@ sont des estimations d'ordre de grandeur, pas des engagements.
   liste (estimation : plusieurs semaines). Sinon supprimer, mais c'est la suppression que je recommande le
   moins.
 
-### 8. Fidélité (avantages) : `LOYALTY_ENABLED`
+### 8. Fidélité (avantages) : version manuelle Pro/Multi-site
 
 - **Ce que la fonction fait.** Le restaurateur définit des avantages (un verre offert, un dessert), les
   émet à un client éligible sous forme d'attribution à code haché, puis les marque utilisés ou annulés. Pas
@@ -233,13 +233,11 @@ sont des estimations d'ordre de grandeur, pas des engagements.
   `/dashboard/loyalty` (1 283 lignes, 10 tests), tables `LoyaltyBenefit` et `LoyaltyGrant`, capacité
   `reputation.loyalty`. Entrée « Fidélité » dans la barre latérale.
 - **Taille.** 1 234 lignes API, 23 tests API, 10 tests dashboard.
-- **Maturité.** Locale, fonctionnelle en saisie manuelle. ADR : statut « livré localement, activation
-  commerciale bloquée ». Registre P8 : choisir les avantages, la fréquence et le coût, décider manuel ou POS.
+- **Maturité.** Version manuelle ouverte aux offres Pro et Multi-site ; pas de points ni d'envoi.
 - **Bloquant.** Aucun fournisseur. C'est une décision produit : la version manuelle est utilisable telle
   quelle ; l'intégration caisse est l'autre fiche (POS).
 - **Suppression.** Moyenne (2 tables, une page, une entrée de menu, une capacité).
-- **Recommandation.** Finir en version manuelle : après relecture par un gérant, activer pour tous. Si vous
-  ne voulez pas d'un outil de fidélité sans automatisation, supprimer.
+- **Décision.** Ouvrir la version manuelle aux offres Pro et Multi-site.
 
 ### 9. Réputation (retours après visite) : `REPUTATION_ENABLED`
 

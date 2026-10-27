@@ -241,18 +241,6 @@ describe('LoyaltyPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('explique calmement que le module n’est pas encore ouvert, sans formulaire ni compteurs', async () => {
-    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'LOYALTY_DISABLED' }));
-    render(<LoyaltyPage />);
-
-    expect(
-      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('LOYALTY_DISABLED')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enregistrer l’attention' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
-  });
-
   it('propose les formules quand la fidélité est hors formule', async () => {
     apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<LoyaltyPage />);
