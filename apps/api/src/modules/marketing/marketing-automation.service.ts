@@ -217,6 +217,7 @@ export async function findMarketingAutomationCandidates(args: {
   if (candidates.length === 0) return candidates;
   const served = await db.marketingAutomationDispatch.findMany({
     where: {
+      restaurantId: args.automation.restaurantId,
       automationId: args.automation.id,
       customerId: { in: candidates.map((candidate) => candidate.customerId) },
     },
@@ -539,7 +540,7 @@ export async function createMarketingAutomationCampaign(args: {
       skipDuplicates: true,
     });
     const dispatches = await tx.marketingAutomationDispatch.findMany({
-      where: { campaignId: campaign.id },
+      where: { restaurantId: args.automation.restaurantId, campaignId: campaign.id },
       select: { customerId: true, triggerKey: true, occurredAt: true },
     });
     if (dispatches.length === 0) {

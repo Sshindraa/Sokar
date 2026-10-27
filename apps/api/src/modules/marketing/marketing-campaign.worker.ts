@@ -515,7 +515,10 @@ export async function processMarketingCampaignJob(
         if (campaign.audienceCount > (await remainingDailyEmailBudget(tx, now, campaign.id))) {
           return 'BUDGET_EXCEEDED';
         }
-        const claimed = await tx.marketingCampaign.updateMany(claim);
+        const claimed = await tx.marketingCampaign.updateMany({
+          ...claim,
+          where: { ...claim.where, restaurantId: job.data.restaurantId },
+        });
         return claimed.count === 1 ? 'CLAIMED' : 'LOST';
       });
       if (verdict === 'BUDGET_EXCEEDED') {
@@ -534,7 +537,10 @@ export async function processMarketingCampaignJob(
       }
       if (verdict === 'LOST') return { processed: 0, accepted: 0, failed: 0 };
     } else {
-      const claimed = await dependencies.db.marketingCampaign.updateMany(claim);
+      const claimed = await dependencies.db.marketingCampaign.updateMany({
+        ...claim,
+        where: { ...claim.where, restaurantId: job.data.restaurantId },
+      });
       if (claimed.count !== 1) return { processed: 0, accepted: 0, failed: 0 };
     }
   }
