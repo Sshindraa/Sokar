@@ -3,6 +3,7 @@ import rateLimitPlugin from '@fastify/rate-limit';
 import { getAuth } from '@clerk/fastify';
 import {
   RATE_LIMIT_GLOBAL_MAX,
+  RATE_LIMIT_INTERNAL_READ_MAX,
   RATE_LIMIT_USER_READ_MAX,
   RATE_LIMIT_USER_WRITE_MAX,
   RATE_LIMIT_WINDOW,
@@ -31,6 +32,16 @@ export function rateLimitBucket(req: FastifyRequest): { key: string; max: number
   return READ_METHODS.has(req.method)
     ? { key: `user:${userId}:read`, max: RATE_LIMIT_USER_READ_MAX }
     : { key: `user:${userId}:write`, max: RATE_LIMIT_USER_WRITE_MAX };
+}
+
+const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * Plafond d'une lecture publique que Connect appelle côté serveur : le trafic loopback (rendu
+ * serveur de Connect, sans X-Forwarded-For) a son propre budget, les visiteurs gardent `max`.
+ */
+export function publicReadMax(max: number) {
+  return (req: FastifyRequest) => (LOOPBACK_IPS.has(req.ip) ? RATE_LIMIT_INTERNAL_READ_MAX : max);
 }
 
 /**

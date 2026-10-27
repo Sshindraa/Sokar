@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { normalizePhone } from '@sokar/shared';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
+import { publicReadMax } from '../../plugins/rate-limit';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
@@ -881,7 +882,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
   // pour les aperçus/cartes cadeaux ; bookingEnabled annonce la capacité de réserver.
   app.get(
     '/public/widget/:slug',
-    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: publicReadMax(60), timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
       try {

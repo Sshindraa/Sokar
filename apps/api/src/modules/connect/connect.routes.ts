@@ -70,6 +70,7 @@ import {
 } from '../agentic-reservations/core/waiting-list.errors';
 import { ConsentService } from '../rgpd/consent.service';
 import { requireSokarOperator } from '../../plugins/clerk';
+import { publicReadMax } from '../../plugins/rate-limit';
 import {
   computeIdempotencyScope,
   hashPayload,
@@ -184,7 +185,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug',
     {
-      config: { rateLimit: { max: RATE_LIMIT_PREVIEW_MAX, timeWindow: '1 minute' } },
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_PREVIEW_MAX), timeWindow: '1 minute' } },
     },
     async (req, reply) => {
       const parse = SlugParamSchema.safeParse(req.params);
@@ -223,7 +224,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     '/public/resolve-custom-domain',
     {
       config: {
-        rateLimit: { max: RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX, timeWindow: '1 minute' },
+        rateLimit: {
+          max: publicReadMax(RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX),
+          timeWindow: '1 minute',
+        },
       },
     },
     async (req, reply) => {
@@ -259,7 +263,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/sitemap-data',
-    { config: { rateLimit: { max: RATE_LIMIT_SITEMAP_MAX, timeWindow: '1 minute' } } },
+    {
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_SITEMAP_MAX), timeWindow: '1 minute' } },
+    },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: DISCOVERABLE_CONNECT_WHERE,
@@ -298,7 +304,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/restaurants',
-    { config: { rateLimit: { max: RATE_LIMIT_RESTAURANTS_MAX, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_RESTAURANTS_MAX), timeWindow: '1 minute' },
+      },
+    },
     async (req, reply) => {
       const query = RestaurantsQuerySchema.safeParse(req.query ?? {});
       if (!query.success) {
@@ -314,7 +324,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities',
-    { config: { rateLimit: { max: RATE_LIMIT_CITIES_MAX, timeWindow: '1 minute' } } },
+    {
+      config: { rateLimit: { max: publicReadMax(RATE_LIMIT_CITIES_MAX), timeWindow: '1 minute' } },
+    },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
@@ -359,7 +371,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities/:slug',
-    { config: { rateLimit: { max: RATE_LIMIT_CITY_DETAIL_MAX, timeWindow: '1 minute' } } },
+    {
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_CITY_DETAIL_MAX), timeWindow: '1 minute' },
+      },
+    },
     async (req, reply) => {
       const params = req.params as { slug: string };
       if (!isValidCitySlug(params.slug)) {
@@ -487,7 +503,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug/availability',
     {
-      config: { rateLimit: { max: RATE_LIMIT_AVAILABILITY_MAX, timeWindow: '1 minute' } },
+      config: {
+        rateLimit: { max: publicReadMax(RATE_LIMIT_AVAILABILITY_MAX), timeWindow: '1 minute' },
+      },
     },
     async (req, reply) => {
       const slugParse = SlugParamSchema.safeParse(req.params);
