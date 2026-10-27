@@ -14,11 +14,11 @@ describe('customer.routes', () => {
   });
 
   describe('GET /customers', () => {
-    it('liste les clients du restaurant, triés par visitCount desc', async () => {
+    it('liste les clients du restaurant, triés par dernier contact', async () => {
       const app = await getApp();
       const customers = [
-        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 10 },
-        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 5 },
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice' },
+        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob' },
       ];
       vi.mocked(db.customer.findMany).mockResolvedValue(
         customers as unknown as Awaited<ReturnType<typeof db.customer.findMany>>,
@@ -34,7 +34,7 @@ describe('customer.routes', () => {
       expect(res.statusCode).toBe(200);
       expect(db.customer.findMany).toHaveBeenCalledWith({
         where: { restaurantId: 'test-rest-1', archivedAt: null, mergedIntoId: null },
-        orderBy: { visitCount: 'desc' },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         take: 10,
         skip: 0,
       });
@@ -49,8 +49,8 @@ describe('customer.routes', () => {
     it('ajoute le statut de cycle de vie calculé sur les vraies visites, en une seule requête', async () => {
       const app = await getApp();
       vi.mocked(db.customer.findMany).mockResolvedValue([
-        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 40 },
-        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 0 },
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice' },
+        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob' },
       ] as never);
       vi.mocked(db.customer.count).mockResolvedValue(2);
       const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
@@ -93,7 +93,7 @@ describe('customer.routes', () => {
       const [alice, bob] = res.json().data;
       expect(alice.lifecycle.status).toBe('new');
       expect(bob.lifecycle).toEqual({ status: 'regular', reason: '3 visites en 90 jours' });
-      expect(alice.visitCount).toBe(40);
+      expect(alice).not.toHaveProperty('visitCount');
     });
 
     describe('GET /customers/service-cards', () => {
@@ -146,7 +146,7 @@ describe('customer.routes', () => {
           mergedIntoId: null,
           phone: '+33612345678',
         },
-        orderBy: { visitCount: 'desc' },
+        orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
         take: 50,
         skip: 0,
       });
@@ -188,6 +188,7 @@ describe('customer.routes', () => {
             restaurantId: 'test-rest-1',
             OR: [
               { name: { contains: '06 12 34 56 78', mode: 'insensitive' } },
+              { emailNormalized: { contains: '06 12 34 56 78' } },
               { phone: { contains: '0612345678' } },
               { phone: { contains: '612345678' } },
             ],
@@ -210,7 +211,10 @@ describe('customer.routes', () => {
       expect(db.customer.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            OR: [{ name: { contains: 'Martin', mode: 'insensitive' } }],
+            OR: [
+              { name: { contains: 'Martin', mode: 'insensitive' } },
+              { emailNormalized: { contains: 'martin' } },
+            ],
           }),
         }),
       );
@@ -245,9 +249,92 @@ describe('customer.routes', () => {
           restaurantId: 'test-rest-1',
           name: 'Alice',
           notes: null,
+          specialOccasion: null,
           lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
+          visitSummary: { visits: 0, visits365d: 0, noShows365d: 0, lastVisitAt: null },
         },
       ]);
+    });
+
+    it('filtre sur le VIP quelle que soit la formule', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([] as never);
+      vi.mocked(db.customer.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?isVip=true',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(db.customer.findMany).mock.calls[0][0]?.where).toMatchObject({
+        restaurantId: 'test-rest-1',
+        isVip: true,
+      });
+    });
+
+    it('réserve le filtre par statut et par visites à CRM Pro (offre Essential = CRM de base)', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?lifecycle=dormant',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({
+        error: 'CAPABILITY_NOT_INCLUDED',
+        capability: 'customers.advanced',
+      });
+      expect(db.customer.findMany).not.toHaveBeenCalled();
+    });
+
+    it('filtre par statut et par visites sur les réservations et pagine le résultat', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        plan: 'PRO',
+        crmSensitiveNoteRoles: null,
+      } as never);
+      const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce([{ id: 'c3', restaurantId: 'test-rest-1', name: 'Chloé' }] as never);
+      const honoured = (customerId: string, days: number) => ({
+        customerId,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: recent(days),
+        reservedAt: recent(days + 2),
+      });
+      // c1 : une seule visite récente ; c2 : aucune ; c3 : trois visites récentes.
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        honoured('c1', 10),
+        honoured('c3', 5),
+        honoured('c3', 12),
+        honoured('c3', 20),
+      ] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers?minHonored365d=2&limit=1&offset=0',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.total).toBe(1);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).toMatchObject({ id: 'c3', visitSummary: { visits365d: 3 } });
+      expect(vi.mocked(db.customer.findMany).mock.calls[1][0]?.where).toEqual({
+        restaurantId: 'test-rest-1',
+        id: { in: ['c3'] },
+      });
     });
 
     it('rejette un phone invalide (regex E.164) avec 400', async () => {
@@ -304,7 +391,8 @@ describe('customer.routes', () => {
       expect(create.statusCode).toBe(403);
       expect(create.json()).toEqual({
         error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-        message: 'La modification des notes client est réservée aux responsables.',
+        message:
+          'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
       });
       expect(db.customer.upsert).not.toHaveBeenCalled();
 
@@ -318,7 +406,45 @@ describe('customer.routes', () => {
       expect(db.customer.update).not.toHaveBeenCalled();
     });
 
-    it("crée un client (201) avec le restaurantId issu de l'auth, pas du payload", async () => {
+    it('laisse STAFF écrire une note quand le site lui a ouvert la lecture des notes', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: 'OWNER,STAFF',
+      } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({
+        id: 'c1',
+        phone: '+33612345678',
+        notes: 'Note',
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: { notes: 'Note' },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("interdit d'écrire l'occasion spéciale à un rôle qui ne lit pas les notes", async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: { specialOccasion: 'Divorce' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(db.customer.update).not.toHaveBeenCalled();
+    });
+
+    it("crée un client (201) en E.164 avec le restaurantId issu de l'auth, pas du payload", async () => {
       const app = await getApp();
       const created = {
         id: 'c1',
@@ -326,9 +452,8 @@ describe('customer.routes', () => {
         phone: '+33612345678',
         name: 'Alice',
       };
-      vi.mocked(db.customer.upsert).mockResolvedValue(
-        created as unknown as Awaited<ReturnType<typeof db.customer.upsert>>,
-      );
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockResolvedValue(created as never);
 
       const res = await app.inject({
         method: 'POST',
@@ -336,31 +461,46 @@ describe('customer.routes', () => {
         headers: { authorization: 'Bearer test' },
         payload: {
           restaurantId: 'other-rest-should-be-ignored',
-          phone: '+33612345678',
+          phone: '0612345678',
           name: 'Alice',
         },
       });
 
       expect(res.statusCode).toBe(201);
       expect(res.json()).toEqual(created);
-      const upsertArgs = vi.mocked(db.customer.upsert).mock.calls[0][0]!;
-      expect(upsertArgs.where.restaurantId_phone!.restaurantId).toBe('test-rest-1');
-      expect(upsertArgs.where.restaurantId_phone!.restaurantId).not.toBe(
-        'other-rest-should-be-ignored',
-      );
-      expect(upsertArgs.create.restaurantId).toBe('test-rest-1');
-      expect(upsertArgs.create.name).toBe('Alice');
-      expect(upsertArgs.update.name).toBe('Alice');
+      expect(db.customer.create).toHaveBeenCalledWith({
+        data: { restaurantId: 'test-rest-1', phone: '+33612345678', name: 'Alice' },
+      });
     });
 
-    it('retourne 409 (Conflict) si Prisma soulève P2002', async () => {
-      // Le code wrap P2002 en 409 — vérifions le mapping.
+    it("met à jour un client existant sans retirer son VIP ni vider ce qui n'est pas envoyé", async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'c1' } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({ id: 'c1', isVip: true } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/customers',
+        headers: { authorization: 'Bearer test' },
+        payload: { restaurantId: 'test-rest-1', phone: '+33612345678', name: 'Alice' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(db.customer.create).not.toHaveBeenCalled();
+      expect(db.customer.update).toHaveBeenCalledWith({
+        where: { id: 'c1', restaurantId: 'test-rest-1' },
+        data: { name: 'Alice' },
+      });
+    });
+
+    it('retourne 409 (Conflict) si Prisma soulève P2002 (création concurrente)', async () => {
       const app = await getApp();
       const prismaError = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
         code: 'P2002',
         clientVersion: '6.0.0',
       });
-      vi.mocked(db.customer.upsert).mockRejectedValue(prismaError);
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockRejectedValue(prismaError);
 
       const res = await app.inject({
         method: 'POST',
@@ -378,7 +518,8 @@ describe('customer.routes', () => {
 
     it('propage les autres erreurs Prisma en 500 (pas wrap)', async () => {
       const app = await getApp();
-      vi.mocked(db.customer.upsert).mockRejectedValue(
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customer.create).mockRejectedValue(
         Object.assign(new Error('Connection lost'), { code: 'P1001' }),
       );
 
@@ -405,11 +546,41 @@ describe('customer.routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(db.customer.upsert).not.toHaveBeenCalled();
+      expect(db.customer.create).not.toHaveBeenCalled();
     });
   });
 
   describe('PATCH /customers/:id', () => {
+    it("retire l'ancienne identité email quand l'email est remplacé ou effacé", async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findFirst).mockResolvedValue({
+        emailNormalized: 'old@example.com',
+      } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({
+        id: '00000000-0000-0000-0000-000000000001',
+        restaurantId: 'test-rest-1',
+        phone: '+33612345678',
+        emailNormalized: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test' },
+        payload: { email: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.customerIdentity.deleteMany).toHaveBeenCalledWith({
+        where: {
+          restaurantId: 'test-rest-1',
+          customerId: '00000000-0000-0000-0000-000000000001',
+          type: 'EMAIL',
+          normalizedValue: 'old@example.com',
+        },
+      });
+    });
+
     it('met à jour + invalide le cache Redis (key customer:{rest}:{phone})', async () => {
       const app = await getApp();
       const updated = {
@@ -454,11 +625,8 @@ describe('customer.routes', () => {
   });
 
   describe('DELETE /customers/:id', () => {
-    it('supprime scoped au restaurant et retourne 204', async () => {
+    it("n'existe plus : une suppression effacerait les refus marketing", async () => {
       const app = await getApp();
-      vi.mocked(db.customer.delete).mockResolvedValue(
-        {} as unknown as Awaited<ReturnType<typeof db.customer.delete>>,
-      );
 
       const res = await app.inject({
         method: 'DELETE',
@@ -466,10 +634,8 @@ describe('customer.routes', () => {
         headers: { authorization: 'Bearer test' },
       });
 
-      expect(res.statusCode).toBe(204);
-      expect(db.customer.delete).toHaveBeenCalledWith({
-        where: { id: '00000000-0000-0000-0000-000000000001', restaurantId: 'test-rest-1' },
-      });
+      expect(res.statusCode).toBe(404);
+      expect(db.customer.delete).not.toHaveBeenCalled();
     });
   });
 

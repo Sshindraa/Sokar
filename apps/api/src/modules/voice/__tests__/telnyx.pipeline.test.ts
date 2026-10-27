@@ -196,7 +196,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
   const knownCaller = {
     id: 'cust-1',
     name: 'Jean',
-    visitCount: 3,
     isVip: false,
     specialOccasion: null,
     notes: null,
@@ -230,7 +229,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: 'Jean',
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,
@@ -428,7 +426,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-vip',
       name: 'Mme Dupont',
-      visitCount: 12,
       isVip: true,
       specialOccasion: null,
       notes: null,
@@ -462,7 +459,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-vip',
       name: 'Mme Dupont',
-      visitCount: 12,
       isVip: true,
       specialOccasion: null,
       notes: null,
@@ -510,7 +506,6 @@ describe('POST /voice/telnyx — call.initiated', () => {
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,
@@ -878,7 +873,6 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
     mockLookupOrCreate.mockResolvedValue({
       id: 'cust-1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,

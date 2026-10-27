@@ -7,6 +7,7 @@ vi.mock('../../../shared/db/client', () => ({
   db: {
     customer: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
       upsert: vi.fn(),
       update: vi.fn(),
@@ -34,7 +35,6 @@ describe('CustomerService', () => {
   const baseCustomer = {
     id: '1',
     name: 'Jean Dupont',
-    visitCount: 0,
     isVip: false,
     specialOccasion: null,
     notes: null,
@@ -60,7 +60,6 @@ describe('CustomerService', () => {
       const result = CustomerService.buildVipPromptExtra(
         {
           ...baseCustomer,
-          visitCount: 9,
           voiceProfile: {
             ...emptyProfile,
             pastVisits: 3,
@@ -79,7 +78,6 @@ describe('CustomerService', () => {
     it('dit « aucune visite » quand le numéro a seulement réservé', () => {
       const result = CustomerService.buildVipPromptExtra({
         ...baseCustomer,
-        visitCount: 2,
         voiceProfile: emptyProfile,
       });
       expect(result).toContain('Aucune visite passée connue.');
@@ -169,7 +167,6 @@ describe('CustomerService', () => {
       expect(
         CustomerService.returningCustomerFirstName({
           ...baseCustomer,
-          visitCount: 5,
           voiceProfile: emptyProfile,
         }),
       ).toBe('');
@@ -191,7 +188,6 @@ describe('CustomerService', () => {
     const cachedWithoutName = {
       id: 'c1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,
@@ -220,6 +216,29 @@ describe('CustomerService', () => {
       expect(result.name).toBe('Hamza');
     });
 
+    it('crée une nouvelle fiche en E.164 quand le numéro est saisi à la française', async () => {
+      await CustomerService.lookupOrCreate('r1', '06 12 34 56 78', 'Hamza');
+      expect(db.customer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId_phone: { restaurantId: 'r1', phone: '+33612345678' } },
+          create: expect.objectContaining({ phone: '+33612345678' }),
+        }),
+      );
+    });
+
+    it('réutilise une ancienne fiche « 06… » au lieu de créer un doublon', async () => {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'legacy-1' } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({ ...row, id: 'legacy-1' } as never);
+
+      const result = await CustomerService.lookupOrCreate('r1', '+33612345678', 'Hamza');
+
+      expect(db.customer.upsert).not.toHaveBeenCalled();
+      expect(db.customer.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'legacy-1', restaurantId: 'r1' } }),
+      );
+      expect(result.id).toBe('legacy-1');
+    });
+
     it("un nom vide n'efface rien et sert la mémoire", async () => {
       const result = await CustomerService.lookupOrCreate('r1', '+33600000000', '   ');
       expect(result).toBe(cachedWithoutName);
@@ -228,6 +247,32 @@ describe('CustomerService', () => {
   });
 
   describe('recordCallActivity', () => {
+    beforeEach(() => {
+      vi.mocked(db.customer.findFirst).mockResolvedValue({ id: 'c1' } as never);
+    });
+
+    it('retrouve une ancienne fiche enregistrée en « 06… » pour un appel en +33', async () => {
+      await CustomerService.recordCallActivity('rest-1', '+33611111111', null);
+
+      expect(db.customer.findFirst).toHaveBeenCalledWith({
+        where: {
+          restaurantId: 'rest-1',
+          phone: { in: ['+33611111111', '0611111111'] },
+          archivedAt: null,
+          mergedIntoId: null,
+        },
+        select: { id: true },
+      });
+    });
+
+    it("n'écrit rien quand aucune fiche active ne correspond", async () => {
+      vi.mocked(db.customer.findFirst).mockResolvedValue(null);
+
+      await CustomerService.recordCallActivity('rest-1', '+33611111111', 2);
+
+      expect(db.customer.updateMany).not.toHaveBeenCalled();
+    });
+
     it('met à jour lastCallAt sur tout appel et invalide le cache', async () => {
       vi.mocked(db.customer.findUnique).mockResolvedValue(
         null as unknown as Awaited<ReturnType<typeof db.customer.findUnique>>,
@@ -240,7 +285,7 @@ describe('CustomerService', () => {
 
       expect(db.customer.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { restaurantId: 'rest-1', phone: '+33611111111' },
+          where: { id: 'c1', restaurantId: 'rest-1' },
           data: expect.objectContaining({ lastCallAt: expect.any(Date) }),
         }),
       );

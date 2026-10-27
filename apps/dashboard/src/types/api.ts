@@ -231,14 +231,25 @@ export interface Customer {
   id: string;
   name: string | null;
   phone: string;
-  visitCount: number;
-  /** Legacy score, no longer computed; kept for API compatibility. Use `lifecycle`. */
-  loyaltyScore: number;
+  emailNormalized?: string | null;
   isVip: boolean;
   notes: string | null;
   lastSeenAt: string | null;
   /** Computed from real visits; null when the visit history could not be read. */
   lifecycle?: CustomerLifecycle | null;
+  /** Honoured visits from the reservations; null when the history could not be read. */
+  visitSummary?: CustomerVisitSummary | null;
+}
+
+/**
+ * The one visit count shown on every customer screen. `lastSeenAt` moves with every call:
+ * never display it as the last visit.
+ */
+export interface CustomerVisitSummary {
+  visits: number;
+  visits365d: number;
+  noShows365d: number;
+  lastVisitAt: string | null;
 }
 
 export type CustomerLifecycleStatus = 'new' | 'active' | 'regular' | 'at_risk' | 'dormant';

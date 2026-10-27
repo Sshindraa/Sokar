@@ -25,7 +25,6 @@ const candidate = {
     name: 'Alice Martin',
     phone: '+33612345678',
     emailNormalized: null,
-    visitCount: 5,
     isVip: true,
   },
   right: {
@@ -33,7 +32,6 @@ const candidate = {
     name: 'Alice Martin',
     phone: '+33612345678',
     emailNormalized: null,
-    visitCount: 2,
     isVip: false,
   },
 };

@@ -29,9 +29,18 @@ import {
   canViewSensitiveNotes,
   effectiveSensitiveNoteRoles,
   hasSensitiveNoteRoleOverride,
+  redactSensitiveCustomerFields,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
-import { withCustomerLifecycles } from './customer-lifecycle';
+import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
+import { buildCustomerSearchFilter } from './customer.routes';
+
+/**
+ * Most profiles read to filter by status or visits, both computed from the reservations.
+ * shortcut: filters in memory over at most this many profiles; move the status into the
+ * metric projection once a restaurant gets close to it.
+ */
+const CRM_COMPUTED_FILTER_SCAN_LIMIT = 5_000;
 
 const CustomerIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
@@ -49,6 +58,7 @@ const CrmListQuerySchema = z.object({
     .transform((value) => value === 'true')
     .optional(),
   minHonored365d: z.coerce.number().int().min(0).max(10_000).optional(),
+  lifecycle: z.enum(['new', 'active', 'regular', 'at_risk', 'dormant']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().trim().min(1).max(128).optional(),
 });
@@ -398,34 +408,57 @@ export async function customerCrmRoutes(app: FastifyInstance) {
 
   app.get('/crm/customers', { preHandler: requireCrmAdvanced }, async (request, reply) => {
     const query = CrmListQuerySchema.parse(request.query);
+    const restaurantId = request.restaurantId!;
     const where = {
-      restaurantId: request.restaurantId,
+      restaurantId,
       archivedAt: null,
+      mergedIntoId: null,
       ...(query.isVip === undefined ? {} : { isVip: query.isVip }),
-      ...(query.minHonored365d === undefined
-        ? {}
-        : { metricSnapshot: { honored365d: { gte: query.minHonored365d } } }),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: 'insensitive' as const } },
-              { phone: { contains: query.search } },
-              { emailNormalized: { contains: query.search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+      ...(query.search ? { OR: buildCustomerSearchFilter(query.search) } : {}),
     };
-    const customers = await db.customer.findMany({
-      where,
-      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      take: query.limit + 1,
-      include: { metricSnapshot: true },
-    });
-    const hasNextPage = customers.length > query.limit;
-    const page = hasNextPage ? customers.slice(0, query.limit) : customers;
-    const nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
-    const data = await withCustomerLifecycles(request.restaurantId!, page);
+    // `createdAt` never changes: unlike `updatedAt`, bumped by every call, the cursor cannot
+    // skip or repeat a profile between two pages.
+    const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+
+    let page;
+    let nextCursor: string | null = null;
+    if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
+      // Status and visits come from the reservations, the same numbers the list then shows.
+      const now = new Date();
+      const candidates = await db.customer.findMany({
+        where: { ...where, restaurantId },
+        orderBy,
+        select: { id: true },
+        take: CRM_COMPUTED_FILTER_SCAN_LIMIT,
+      });
+      const matching = await filterCustomerIdsByVisits(
+        restaurantId,
+        candidates.map((candidate) => candidate.id),
+        query,
+        now,
+      );
+      const start = query.cursor ? matching.indexOf(query.cursor) + 1 : 0;
+      const pageIds = matching.slice(start, start + query.limit);
+      if (start + query.limit < matching.length) nextCursor = pageIds[pageIds.length - 1] ?? null;
+      const rows = await db.customer.findMany({
+        where: { restaurantId, id: { in: pageIds } },
+        include: { metricSnapshot: true },
+      });
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      page = pageIds.flatMap((id) => byId.get(id) ?? []);
+    } else {
+      const customers = await db.customer.findMany({
+        where: { ...where, restaurantId },
+        orderBy,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+        take: query.limit + 1,
+        include: { metricSnapshot: true },
+      });
+      const hasNextPage = customers.length > query.limit;
+      page = hasNextPage ? customers.slice(0, query.limit) : customers;
+      nextCursor = hasNextPage ? (page[page.length - 1]?.id ?? null) : null;
+    }
+    const data = await withCustomerLifecycles(restaurantId, page);
     return reply.send({ data, nextCursor });
   });
 
@@ -468,14 +501,15 @@ export async function customerCrmRoutes(app: FastifyInstance) {
       request.siteRole,
       customer.restaurant?.crmSensitiveNoteRoles,
     );
-    const [{ lifecycle }] = await withCustomerLifecycles(request.restaurantId!, [
+    const [{ lifecycle, visitSummary }] = await withCustomerLifecycles(request.restaurantId!, [
       { id: customer.id },
     ]);
+    const { restaurant: _restaurant, ...profile } = customer;
     return reply.send({
       data: {
-        ...customer,
+        ...(canViewNotes ? profile : redactSensitiveCustomerFields(profile)),
         lifecycle,
-        notes: canViewNotes ? customer.notes : null,
+        visitSummary,
         metrics: customer.metricSnapshot,
         preferences: customer.preferences,
         tags: customer.tagAssignments.map((assignment) => assignment.tag),

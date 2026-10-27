@@ -58,10 +58,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33612345678',
         name: 'Jean Dupont',
-        visitCount: 12,
         isVip: true,
         notes: 'Client fidèle, préfère la table près de la fenêtre',
-        loyaltyScore: 85,
       },
     }),
     db.customer.create({
@@ -69,10 +67,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33623456789',
         name: 'Marie Martin',
-        visitCount: 5,
         isVip: false,
         notes: 'Allergique aux fruits de mer',
-        loyaltyScore: 35,
       },
     }),
     db.customer.create({
@@ -80,10 +76,8 @@ async function seed() {
         restaurantId: restaurant.id,
         phone: '+33634567890',
         name: 'Pierre Durand',
-        visitCount: 1,
         isVip: false,
         notes: '',
-        loyaltyScore: 5,
       },
     }),
   ]);

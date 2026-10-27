@@ -43,17 +43,12 @@ export function rateLimitKey(route: string, ip: string): string {
 
 /**
  * Extrait l'IP du client depuis la requête Fastify.
- * Gère les proxies (X-Forwarded-For).
+ * `req.ip` applique déjà `trustProxy` : lire X-Forwarded-For ici laisserait le
+ * client choisir son IP en préfixant le header.
  */
 export function getClientIp(req: {
   ip?: string;
-  headers?: Record<string, string | string[] | undefined>;
   raw?: { socket?: { remoteAddress?: string } };
 }): string {
-  const forwarded = req.headers?.['x-forwarded-for'];
-  if (forwarded) {
-    const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
-    return ip.trim();
-  }
   return req.ip ?? req.raw?.socket?.remoteAddress ?? 'unknown';
 }

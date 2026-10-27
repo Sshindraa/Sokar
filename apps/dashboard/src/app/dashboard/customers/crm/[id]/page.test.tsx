@@ -46,7 +46,6 @@ describe('CrmCustomerPage', () => {
         name: 'Alice Martin',
         phone: '+33612345678',
         emailNormalized: 'alice@example.com',
-        visitCount: 8,
         isVip: true,
         notes: 'Table calme',
         identities: [{ id: 'identity-1', type: 'POS', value: 'C-42' }],
@@ -135,6 +134,19 @@ describe('CrmCustomerPage', () => {
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1');
     expect(await screen.findByText('Consentement marketing')).toBeInTheDocument();
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
+  });
+
+  it('montre l’offre CRM Pro, pas une erreur, quand la formule ne l’inclut pas', async () => {
+    apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
+
+    render(<CrmCustomerPage />);
+
+    expect(await screen.findByRole('region', { name: 'CRM Pro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Réessayer/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Retour aux clients/ })).toHaveAttribute(
+      'href',
+      '/dashboard/customers',
+    );
   });
 
   it('protège et télécharge l’export CRM après code SMS', async () => {
@@ -255,7 +267,6 @@ describe('CrmCustomerPage', () => {
         id: 'customer-1',
         name: 'Alice Martin',
         phone: '+33612345678',
-        visitCount: 0,
         isVip: false,
         notes: null,
         identities: [],
@@ -303,7 +314,6 @@ describe('CrmCustomerPage', () => {
         id: 'customer-1',
         name: 'Alice Martin',
         phone: '+33612345678',
-        visitCount: 0,
         isVip: false,
         notes: null,
         identities: [],
@@ -381,7 +391,7 @@ describe('CrmCustomerPage', () => {
     );
     expect(screen.queryByText('CUSTOMER_NOT_FOUND')).toBeNull();
     expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /Retour au CRM/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Retour aux clients/ })).toBeInTheDocument();
   });
 
   it('propose de réessayer pour une vraie panne', async () => {

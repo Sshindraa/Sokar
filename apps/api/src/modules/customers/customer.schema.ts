@@ -10,13 +10,17 @@ export const CreateCustomerSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   notes: z.string().max(500).optional(),
   specialOccasion: z.string().max(200).optional(),
-  isVip: z.boolean().default(false),
+  // No default: an upsert of an existing guest without `isVip` must keep their VIP status.
+  isVip: z.boolean().optional(),
 });
 
-export const UpdateCustomerSchema = CreateCustomerSchema.partial().omit({
-  restaurantId: true,
-  phone: true,
-});
+export const UpdateCustomerSchema = CreateCustomerSchema.partial()
+  .omit({
+    restaurantId: true,
+    phone: true,
+  })
+  // `null` clears the email (and its identity), as the PATCH route already expects.
+  .extend({ email: z.string().email().max(320).nullable().optional() });
 
 export const ToggleVipSchema = z.object({
   isVip: z.boolean(),
@@ -36,6 +40,13 @@ export const CustomerQuerySchema = z.object({
   search: z.string().trim().min(1).max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  isVip: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
+  // Statut et visites honorées (365 j) : calculés sur les réservations, réservés à CRM Pro.
+  lifecycle: z.enum(['new', 'active', 'regular', 'at_risk', 'dormant']).optional(),
+  minHonored365d: z.coerce.number().int().min(0).max(10_000).optional(),
 });
 
 export type CreateCustomerInput = z.infer<typeof CreateCustomerSchema>;
