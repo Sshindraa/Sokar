@@ -713,5 +713,26 @@ describe('customer.routes', () => {
         }),
       );
     });
+    it('refuse un export de plus de 10 000 clients, sans fichier partiel', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      vi.mocked(db.customer.findMany).mockResolvedValueOnce(
+        Array.from({ length: 10_001 }, (_, index) => ({
+          id: `c${index}`,
+          name: null,
+          phone: '+33600000000',
+          emailNormalized: null,
+          isVip: false,
+        })) as never,
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/customers/export',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'OWNER' },
+      });
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ error: 'CUSTOMER_EXPORT_TOO_LARGE' });
+    });
   });
 });

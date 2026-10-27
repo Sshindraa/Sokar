@@ -182,12 +182,18 @@ export async function customerRoutes(app: FastifyInstance) {
       const customers = await db.customer.findMany({
         where: { restaurantId, archivedAt: null, mergedIntoId: null },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: EXPORT_LIMIT,
+        take: EXPORT_LIMIT + 1,
       });
+      // Un CSV partiel ferait croire à une sauvegarde complète : on refuse plutôt que de tronquer.
+      if (customers.length > EXPORT_LIMIT) {
+        return reply.status(422).send({
+          error: 'CUSTOMER_EXPORT_TOO_LARGE',
+          message: `Le fichier dépasse ${EXPORT_LIMIT} clients : l'export complet n'est pas disponible.`,
+        });
+      }
       const withVisits = await withCustomerLifecycles(restaurantId, customers);
       return reply.send({
         data: { csv: buildCustomersCsv(withVisits), count: withVisits.length },
-        truncated: customers.length === EXPORT_LIMIT,
       });
     },
   );
