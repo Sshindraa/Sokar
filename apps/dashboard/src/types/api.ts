@@ -231,6 +231,7 @@ export interface Customer {
   id: string;
   name: string | null;
   phone: string;
+  emailNormalized?: string | null;
   isVip: boolean;
   notes: string | null;
   lastSeenAt: string | null;

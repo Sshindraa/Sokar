@@ -494,6 +494,7 @@ export default function CustomersPage() {
                   <TableHead>Nom</TableHead>
                   <TableHead>Téléphone</TableHead>
                   <TableHead>Visites</TableHead>
+                  <TableHead>365 jours</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>VIP</TableHead>
                   <TableHead>Notes</TableHead>
@@ -508,8 +509,16 @@ export default function CustomersPage() {
                         {c.name || <span className="opacity-50">Client sans nom</span>}
                       </ProfileLink>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{c.phone}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <span className="block">{c.phone}</span>
+                      {c.emailNormalized ? (
+                        <span className="block max-w-[220px] truncate text-xs opacity-70">
+                          {c.emailNormalized}
+                        </span>
+                      ) : null}
+                    </TableCell>
                     <TableCell>{c.visitSummary?.visits ?? '—'}</TableCell>
+                    <TableCell>{c.visitSummary?.visits365d ?? '—'}</TableCell>
                     <TableCell className="max-w-[220px]">
                       <CustomerLifecycleBadge lifecycle={c.lifecycle} showReason />
                     </TableCell>

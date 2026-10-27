@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toApiError } from '@/lib/api-error';
 import CustomersPage from './page';
 
@@ -62,12 +62,13 @@ describe('CustomersPage', () => {
           id: 'customer-1',
           phone: '+33600000000',
           name: 'Alice Demo',
+          emailNormalized: 'alice@example.com',
           isVip: false,
           notes: null,
           lastSeenAt: '2026-10-26T12:00:00.000Z',
           lifecycle: { status: 'active', reason: '2 visites' },
           visitSummary: {
-            visits: 2,
+            visits: 4,
             visits365d: 2,
             noShows365d: 0,
             lastVisitAt: '2026-08-14T19:00:00.000Z',
@@ -82,7 +83,10 @@ describe('CustomersPage', () => {
     const link = await screen.findByRole('link', { name: 'Alice Demo' });
     expect(link).toHaveAttribute('href', '/dashboard/customers/crm/customer-1');
     const row = link.closest('tr')!;
-    expect(row).toHaveTextContent('2');
+    expect(row).toHaveTextContent('alice@example.com');
+    const cells = within(row).getAllByRole('cell');
+    expect(cells[2]).toHaveTextContent(/^4$/); // visites honorées
+    expect(cells[3]).toHaveTextContent(/^2$/); // sur 365 jours
     expect(row).not.toHaveTextContent('9');
     expect(row).toHaveTextContent('14/08/2026');
     expect(row).not.toHaveTextContent('26/10/2026');
