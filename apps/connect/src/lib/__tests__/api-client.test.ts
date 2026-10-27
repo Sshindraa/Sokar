@@ -29,4 +29,21 @@ describe('api-client Connect : limitation ≠ introuvable', () => {
     mockFetch(503);
     await expect(fetchPublicRestaurants()).rejects.toThrow('503');
   });
+
+  it('au build, sans API, le catalogue part vide au lieu de casser la compilation', async () => {
+    vi.stubEnv('NEXT_PHASE', 'phase-production-build');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    );
+    await expect(fetchPublicRestaurants()).resolves.toEqual({
+      restaurants: [],
+      total: 0,
+      page: 1,
+      limit: 12,
+    });
+    vi.unstubAllEnvs();
+  });
 });

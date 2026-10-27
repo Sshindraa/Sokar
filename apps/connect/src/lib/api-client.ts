@@ -192,11 +192,20 @@ export async function fetchPublicRestaurants(
   options: { revalidate?: number } = {},
 ): Promise<PaginatedRestaurantsDto> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-  const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
-    next: { revalidate: options.revalidate ?? 300 },
-  });
-  if (!res.ok) throw apiUnavailable('/public/restaurants', res);
-  return (await res.json()) as PaginatedRestaurantsDto;
+  try {
+    const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
+      next: { revalidate: options.revalidate ?? 300 },
+    });
+    if (!res.ok) throw apiUnavailable('/public/restaurants', res);
+    return (await res.json()) as PaginatedRestaurantsDto;
+  } catch (error) {
+    // Au build (CI sans API), il n'y a encore aucun cache à préserver : la page part vide et l'ISR
+    // la régénère avec les vraies données. Au runtime, l'erreur garde la dernière page en cache.
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
+      return { restaurants: [], total: 0, page, limit };
+    }
+    throw error;
+  }
 }
 
 /**
