@@ -12,7 +12,14 @@ import { RestaurantCard } from '@/components/restaurant-card';
 export const revalidate = 300;
 
 export default async function HomePage() {
-  const { restaurants, total } = await fetchPublicRestaurants(1, 12);
+  const { restaurants, total } = await fetchPublicRestaurants(1, 12).catch((error: unknown) => {
+    // shortcut: au build (CI, API absente) le catalogue part vide jusqu'à la première
+    // revalidation (5 min) ; à l'exécution l'erreur remonte et Next garde la page en cache.
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
+      return { restaurants: [], total: 0 };
+    }
+    throw error;
+  });
 
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-6 py-12">
