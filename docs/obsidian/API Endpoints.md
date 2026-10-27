@@ -178,9 +178,9 @@ Module : `apps/api/src/modules/customers/customer.routes.ts`
 
 ### GET /customers / POST /customers
 
-Liste et upsert tenant-scoped. La liste masque `notes` pour les rôles absents de la politique CRM
+Liste et upsert tenant-scoped. La liste masque `notes` et `specialOccasion` pour les rôles absents de la politique CRM
 effective du site. L'upsert conserve les champs opérationnels pour l'équipe, mais la modification
-de `notes` est réservée à Owner/Manager (`CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
+de `notes` ou de `specialOccasion` est réservée aux rôles autorisés à lire les notes (même politique que la lecture, jamais READ_ONLY ; `CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
 Le numéro est stocké en E.164 (« 06… » → « +33… ») et un client connu est retrouvé sous l'une ou
 l'autre forme ; l'upsert n'écrit que les champs envoyés (`isVip` absent = VIP conservé).
 Chaque client porte `lifecycle` et `visitSummary` (visites honorées, 365 j, no-show, dernière
@@ -190,7 +190,7 @@ française. Tri : dernier contact.
 
 ### PATCH /customers/:id
 
-Mise à jour. Comme pour l'upsert, une modification de `notes` exige Owner/Manager ;
+Mise à jour. Comme pour l'upsert, une modification de `notes` ou `specialOccasion` suit la même règle ;
 les autres champs restent soumis à l'authentification du site. Aucune suppression définitive
 (`DELETE /customers/:id` retiré le 27/10/2026) : elle effaçait en cascade les refus marketing et
 les preuves de consentement. L'effacement passe par l'anonymisation RGPD.
@@ -219,7 +219,7 @@ Module : `apps/api/src/modules/customers/customer-crm.routes.ts`
 | GET | `/crm/privacy` | Politique effective de visibilité des notes du site (Owner). |
 | PATCH | `/crm/privacy` | Définit `sensitiveNoteRoles` pour le site ou `null` pour revenir au fallback environnement (Owner). |
 
-Les deux routes de lecture du profil et de la chronologie masquent `notes` et `metadata` pour les
+Les deux routes de lecture du profil et de la chronologie masquent `notes`, `specialOccasion` (profil) et `metadata` pour les
 rôles absents de la politique effective du site. Sans surcharge, `CRM_SENSITIVE_NOTE_ROLES` est
 utilisé ; la valeur par défaut est `OWNER,MANAGER`. Le masquage est fait dans la réponse et ne
 modifie pas les données persistées.

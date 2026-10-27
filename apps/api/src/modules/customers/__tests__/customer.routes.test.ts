@@ -249,6 +249,7 @@ describe('customer.routes', () => {
           restaurantId: 'test-rest-1',
           name: 'Alice',
           notes: null,
+          specialOccasion: null,
           lifecycle: { status: 'new', reason: 'Aucune visite pour l’instant' },
           visitSummary: { visits: 0, visits365d: 0, noShows365d: 0, lastVisitAt: null },
         },
@@ -309,7 +310,8 @@ describe('customer.routes', () => {
       expect(create.statusCode).toBe(403);
       expect(create.json()).toEqual({
         error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-        message: 'La modification des notes client est réservée aux responsables.',
+        message:
+          'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
       });
       expect(db.customer.upsert).not.toHaveBeenCalled();
 
@@ -320,6 +322,44 @@ describe('customer.routes', () => {
         payload: { notes: 'Note privée' },
       });
       expect(update.statusCode).toBe(403);
+      expect(db.customer.update).not.toHaveBeenCalled();
+    });
+
+    it('laisse STAFF écrire une note quand le site lui a ouvert la lecture des notes', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: 'OWNER,STAFF',
+      } as never);
+      vi.mocked(db.customer.update).mockResolvedValue({
+        id: 'c1',
+        phone: '+33612345678',
+        notes: 'Note',
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: { notes: 'Note' },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("interdit d'écrire l'occasion spéciale à un rôle qui ne lit pas les notes", async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: null,
+      } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: { specialOccasion: 'Divorce' },
+      });
+
+      expect(res.statusCode).toBe(403);
       expect(db.customer.update).not.toHaveBeenCalled();
     });
 

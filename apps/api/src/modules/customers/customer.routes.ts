@@ -16,7 +16,11 @@ import {
   normalizeCustomerPhone,
   upsertCustomerIdentity,
 } from './customer-crm.service';
-import { canViewSensitiveNotes } from './customer-privacy';
+import {
+  canViewSensitiveNotes,
+  canWriteSensitiveNotes,
+  redactSensitiveCustomerFields,
+} from './customer-privacy';
 import { findCustomerForPhone } from './customer.service';
 import { withCustomerLifecycles } from './customer-lifecycle';
 import {
@@ -38,8 +42,15 @@ const ServiceCardQuerySchema = z.object({
     .pipe(z.array(z.string().min(1).max(128)).min(1).max(SERVICE_CARD_MAX_RESERVATIONS)),
 });
 
-function canWriteCustomerNotes(siteRole: string | undefined): boolean {
-  return siteRole === 'OWNER' || siteRole === 'MANAGER';
+async function canWriteCustomerNotes(
+  restaurantId: string | undefined,
+  siteRole: string | undefined,
+): Promise<boolean> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { crmSensitiveNoteRoles: true },
+  });
+  return canWriteSensitiveNotes(siteRole, restaurant?.crmSensitiveNoteRoles);
 }
 
 /**
@@ -101,7 +112,7 @@ export async function customerRoutes(app: FastifyInstance) {
       const withLifecycle = await withCustomerLifecycles(restaurantId, customers);
       return reply.send({
         data: withLifecycle.map((customer) =>
-          canViewNotes ? customer : { ...customer, notes: null },
+          canViewNotes ? customer : redactSensitiveCustomerFields(customer),
         ),
         total,
         limit: query.limit,
@@ -133,10 +144,14 @@ export async function customerRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = CreateCustomerSchema.parse(req.body);
       const restaurantId = req.restaurantId!;
-      if (body.notes !== undefined && !canWriteCustomerNotes(req.siteRole)) {
+      if (
+        (body.notes !== undefined || body.specialOccasion !== undefined) &&
+        !(await canWriteCustomerNotes(req.restaurantId, req.siteRole))
+      ) {
         return reply.status(403).send({
           error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-          message: 'La modification des notes client est réservée aux responsables.',
+          message:
+            'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
         });
       }
       const emailNormalized = body.email ? normalizeCustomerEmail(body.email) : null;
@@ -200,10 +215,14 @@ export async function customerRoutes(app: FastifyInstance) {
       const { id } = CustomerParamsSchema.parse(req.params);
       const restaurantId = req.restaurantId;
       const body = UpdateCustomerSchema.parse(req.body);
-      if (body.notes !== undefined && !canWriteCustomerNotes(req.siteRole)) {
+      if (
+        (body.notes !== undefined || body.specialOccasion !== undefined) &&
+        !(await canWriteCustomerNotes(req.restaurantId, req.siteRole))
+      ) {
         return reply.status(403).send({
           error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
-          message: 'La modification des notes client est réservée aux responsables.',
+          message:
+            'La modification des notes et de l’occasion spéciale est réservée aux rôles autorisés à les consulter.',
         });
       }
       const { email, ...rest } = body;

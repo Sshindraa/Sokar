@@ -220,6 +220,8 @@ describe('customer CRM routes', () => {
       id: 'customer-1',
       restaurantId: 'test-rest-1',
       notes: 'Allergie à confirmer',
+      specialOccasion: 'Divorce',
+      restaurant: { crmSensitiveNoteRoles: null },
       identities: [],
       metricSnapshot: null,
       preferences: [],
@@ -241,6 +243,7 @@ describe('customer CRM routes', () => {
     expect(staff.statusCode).toBe(200);
     expect(staff.json().data).toMatchObject({
       notes: null,
+      specialOccasion: null,
       timeline: [{ id: 'timeline-sensitive', metadata: {} }],
     });
 
@@ -250,8 +253,10 @@ describe('customer CRM routes', () => {
       headers: { authorization: 'Bearer test', 'x-test-site-role': 'MANAGER' },
     });
     expect(manager.statusCode).toBe(200);
+    expect(manager.json().data).not.toHaveProperty('restaurant');
     expect(manager.json().data).toMatchObject({
       notes: 'Allergie à confirmer',
+      specialOccasion: 'Divorce',
       timeline: [
         {
           id: 'timeline-sensitive',

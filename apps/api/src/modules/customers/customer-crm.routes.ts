@@ -29,6 +29,7 @@ import {
   canViewSensitiveNotes,
   effectiveSensitiveNoteRoles,
   hasSensitiveNoteRoleOverride,
+  redactSensitiveCustomerFields,
   SENSITIVE_NOTE_ROLE_ORDER,
 } from './customer-privacy';
 import {
@@ -520,10 +521,9 @@ export async function customerCrmRoutes(app: FastifyInstance) {
     const { restaurant: _restaurant, ...profile } = customer;
     return reply.send({
       data: {
-        ...profile,
+        ...(canViewNotes ? profile : redactSensitiveCustomerFields(profile)),
         lifecycle,
         visitSummary,
-        notes: canViewNotes ? customer.notes : null,
         metrics: customer.metricSnapshot,
         preferences: customer.preferences,
         tags: customer.tagAssignments.map((assignment) => assignment.tag),
