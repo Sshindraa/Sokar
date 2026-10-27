@@ -16,7 +16,7 @@
 - [ ] Notifications ops : #463 en prod, CI/smokes et API/workers/DB/Redis/fichiers OK. Régulation active ; test staging : deux alertes groupées, doublon supprimé ; admission prod vérifiée sans fournisseur. Clé staging posée, prod/allowlist intactes. Suivre volumes et jobs historiques ; quota Free ≠ débit. Voir `resend-alert-regulation.md`.
 - [ ] SMS : staging livré. Prod : 40008 rejeté ; pas de rejeu ; SMS résa/WhatsApp off partout ; cause Telnyx à établir.
 - [ ] Croissance : ICP-01/METRIC-01 prêts localement (§10.23), essais exclus. France entière; présélection publique, contacts/envois autorisés par Hamza. Entretiens/SEO en parallèle; deux pilotes, recette avant activation.
-- [ ] Voix : #586–#588 livrés (`22546523`), staging/prod et 4566 tests API verts. Ink complet anticipé, silence épellation déduit ; seuil DG inchangé. Gain téléphonique à mesurer ; clients off.
+- [ ] Voix : #586–#588 livrés (`22546523`), staging/prod et 4566 tests API verts. Ink complet anticipé, silence épellation déduit ; seuil DG inchangé. #580 garde 160 ms en branche, rejeux verts ; qualification sur appel staging à finir (`voice-stt-qualification.md`) ; clients off.
 - [ ] Naturel : phase 1 en branche, 1601 tests voix verts. Qualification Chez Sokar seul ; recette audio avant extension. Voir `voice-conversation-continuity.md`.
 - [ ] Cartes cadeaux : finir le compte Stripe sandbox démo (encaissements/versements) et qualifier les notifications avant ouverture commerciale.
 - [ ] Expériences : migration et qualification Stripe/CGV/TVA/notifications en staging; garder `EXPERIENCE_BOOKING_ENABLED=false`.
@@ -39,6 +39,7 @@
 - [ ] Rapport d’appel : après le prochain test réel, vérifier le lien de l’appel et le statut `linked` dans `voice_call_audio.py report <id>`.
 - [ ] Après déploiement, lire le premier rapport d’appel et décider si l’ancien code de dialogue réservé au banc STT peut être déplacé.
 - [ ] Voix (local, non déployé) : écouter un appel avec le vrai modèle sur les répétitions et les confirmations (consignes communes et du tour structuré, garde-fou) avant tout déploiement; décider ensuite si le registre par restaurant (`VOICE_PERSONALITY_STYLE_RESTAURANT_IDS`, vide par défaut) s'étend à tous.
+- [ ] Voix #580 : correctif anti-bruit livré en production ; effectuer et analyser un appel entrant réel sur Chez Sokar.
 - [ ] ChatGPT/OpenAI Reserve : Cloudflare Pages publié ; l’URL `.html` redirige (308) vers `/restaurant-reservation` (200), CORS prod vérifié. Accord « ChatGPT merchants » non confirmé ; attendre l’accord avant activation.
 
 ## Décisions récentes
