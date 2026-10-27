@@ -1,3 +1,4 @@
+import { VOICE_CONVERSATION_RULES } from '../conversation-rules';
 import { describe, it, expect } from 'vitest';
 import { agentVoiceGender, buildSystemPrompt, formatOpeningHours } from '../prompts';
 import {
@@ -24,6 +25,43 @@ describe('buildSystemPrompt', () => {
     },
     personality: null,
   };
+
+  it('partage une seule règle de continuité et de récapitulatif avec le tour structuré', () => {
+    const prompt = buildSystemPrompt(baseCtx, new Date('2026-10-26T10:00:00Z'));
+    for (const systemPrompt of [prompt, 'Prompt de test']) {
+      const [system] = buildStructuredTurnMessages({
+        systemPrompt,
+        history: [],
+        transcript: 'et demain, vous avez une terrasse ?',
+        state: createStructuredTurnState(),
+      });
+      expect(system.content.split(VOICE_CONVERSATION_RULES)).toHaveLength(2);
+      expect(system.content).not.toContain('la date complète seulement au récapitulatif');
+      expect(system.content).toContain('Si le jour est éloigné ou ambigu');
+      expect(system.content).toContain('retiens la valeur, réponds à sa question');
+      expect(system.content).toContain('canResumeConfirmation=true');
+      expect(system.content).toContain('create_reservation uniquement');
+    }
+  });
+
+  it('après opération demande uniquement la formulation, sans nouveau brouillon', () => {
+    const [system] = buildStructuredTurnMessages({
+      systemPrompt: buildSystemPrompt(baseCtx),
+      history: [],
+      transcript: 'demain pour quatre',
+      state: createStructuredTurnState(),
+      afterAction: true,
+      understanding: true,
+      actionResult: 'La vérification a échoué. Aucun horaire vérifié.',
+    });
+    expect(system.content).toContain('RÉPONSE APRÈS UNE OPÉRATION TERMINÉE');
+    expect(system.content).not.toContain('MODE DE RÉPONSE STRUCTURÉ');
+    expect(system.content).not.toContain('COMPRÉHENSION VÉRIFIÉE');
+    expect(system.content).toContain(
+      'Ne promets jamais une réussite si le résultat indique un échec',
+    );
+    expect(system.content).toContain('La vérification a échoué');
+  });
 
   it.each([
     [undefined, 8],

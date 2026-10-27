@@ -92,3 +92,112 @@ LLM et la latence audio ; tester une épellation lente avec pause et reprise,
 une correction de nombre/date et une négation. Garder les clients hors de la
 qualification. Retour arrière applicatif habituel, sans restauration DB ;
 retirer le restaurant de la liste de remplacement Ink désactive son anticipation.
+
+## Coordination des attentes — 26 octobre 2026, branche #595
+
+Revue du chemin Deepgram → tour structuré → ElevenLabs : plusieurs protections
+mesurent déjà le silence depuis la dernière voix. Leurs durées ne s'additionnent
+pas comme des pauses successives.
+
+| Contrôle                    | Horloge et comportement                                                |
+| --------------------------- | ---------------------------------------------------------------------- |
+| Clôture locale Deepgram     | Silence audio ; seuil adaptatif existant                               |
+| Retenue d'épellation        | Silence déjà déduit, grâce tardive et reprise des lettres conservées   |
+| Juge de fin de tour         | Exécution parallèle, délai maximal inchangé                            |
+| Désaccord juge/modèle       | Silence audio ; une reprise maintient le verdict d'attente             |
+| Relance après tour inachevé | **Corrigée : dernière voix fiable, sinon réception du texte**          |
+| Premier son                 | Silence audio ; aucune nouvelle attente si le seuil est déjà satisfait |
+
+La relance après un tour inachevé comptait ses 2 000 ms depuis la réception de
+la transcription, sans déduire le silence déjà écoulé pendant le STT. Elle ne
+réévaluait une reprise que si une partielle STT était disponible. Désormais :
+
+- avec au moins 500 ms d'audio suivi et une dernière voix connue, elle déduit
+  le silence audio courant du budget configuré ;
+- la grâce minimale existante de 300 ms reste présente pour une suite tardive ;
+- au déclenchement, une reprise audio réévalue le temps restant même si le STT
+  n'a pas encore émis de mots ;
+- les partielles en cours, les cinq reports bornés existants et la validation
+  avant le premier son restent en place ;
+- sans horloge audio fiable, elle compte depuis la réception de la transcription
+  comme auparavant. Aucun seuil ni fournisseur ne change.
+
+Exemple déterministe couvert en test : 1 200 ms de silence à la réception du
+texte → 800 ms restantes au lieu de 2 000 ms. Si la voix reprend pendant ces
+800 ms, le silence est à nouveau vérifié avant la relance. Avec un budget déjà
+écoulé, la grâce de 300 ms s'applique. Ce gain de 1 200 ms est une propriété du
+scénario synthétique, pas une mesure d'appel ni une réduction sur tous les tours.
+Les réponses jugées complètes ne passent pas par ce minuteur.
+
+Les événements existants `dialogue_guard`, avec `guard=incomplete_turn_silence`,
+portent l'horloge (`caller_audio` ou `turn_received`), le budget, le silence déjà
+écoulé et l'attente programmée. À la libération : résultat silence/plafond,
+nombre de reports et budget restant. Aucun texte ni donnée personnelle ajouté.
+
+Les tests couvrent les deux horloges, le budget épuisé, la reprise audio sans
+partielle et les reports historiques bornés. La recette réelle reste nécessaire
+sur hésitation, correction et épellation lente ; aucun changement du secours Ink
+ou de ses temporisations sémantiques n'est inclus dans cette correction.
+
+## Formulation après opération — 26 octobre 2026, branche #595
+
+Le second passage ne reconstruit plus un tour complet quand une opération vient
+réellement d'être exécutée : vérification de disponibilité (succès ou échec),
+création de réservation, enregistrement d'un message ou transfert simulé.
+Les refus des garde-fous et les corrections de brouillon gardent le contrat
+complet, sauf si une vérification réelle est ensuite exécutée. Le premier
+passage et son autorisation d'action restent inchangés.
+
+Le contrat interne `voice_action_reply` génère `awaiting`, `action` (none ou
+end_call), `confidence`, `tone` si actif, puis `say`. Le modèle ne génère ni
+compréhension, ni interprétation, ni brouillon ni message métier. L'adaptateur
+reconstitue les champs attendus par le moteur avec une copie du brouillon
+vérifié et l'interprétation du premier passage (hors congé explicite) ; il n'accepte aucun nouveau brouillon ni nouvelle action. Les champs
+avant `say` sont validés avant streaming, la sortie entière est ensuite validée.
+Le contrôle des lettres avant relecture et la confiance avant congé sont
+conservés. Les erreurs suivent le secours existant ; aucune opération n'est
+réexécutée par la formulation.
+
+Le prompt de ce passage décrit seulement la formulation d'un résultat connu,
+avec les règles d'accord, de récapitulatif complet, d'épellation et de question
+suivante. Il conserve les faits vérifiés et les règles communes du restaurant.
+Les événements `llm_say_started` et `structured_turn` portent un champ additif
+`contract=action_reply|full_turn`, sans texte d'appel supplémentaire.
+
+### Mesure exploratoire avec le vrai modèle
+
+Rejeu existant `voice-behavior-replay.mjs`, modèle `openai/gpt-6-luna` relu dans
+la configuration production, clé staging restant sur le serveur. Raisonnement
+`effort=none`, pas de température, concurrence 1, bras alternés. Quatre cas
+fictifs : disponibilité sans nom, disponibilité avec nom, réservation créée,
+échec de disponibilité. Deux tirages par cas et par bras : 16 requêtes par
+comparaison, plus une sonde préalable ; aucune action métier ni synthèse vocale.
+
+Le premier prototype a montré un awaiting incorrect sur une question : les
+règles de question/récapitulatif/lettres ont été rétablies avant un nouveau
+rejeu des deux bras. Mesure de la version retenue :
+
+| Mesure sur 8 réponses par bras | Tour complet | Formulation seule |
+| ------------------------------ | ------------ | ----------------- |
+| Tokens d'entrée fournisseur    | 40 402       | 22 226            |
+| Tokens de sortie fournisseur   | 874          | 433               |
+| Médiane réponse JSON entière   | 1 804,5 ms   | 1 859 ms          |
+
+Soit **45 % de tokens d'entrée et 50 % de sortie en moins**. La baisse de
+latence n'est **pas démontrée** : le premier prototype était plus rapide mais
+le rejeu final ne l'est pas. Ce banc non streaming mesure la réponse entière,
+pas le premier contenu utile ni le délai audio au téléphone. Les huit réponses
+finales compactes ont été relues : résultat et question attendue cohérents,
+aucune action supplémentaire ni réussite annoncée sur l'échec. Cela reste un
+petit corpus exploratoire, pas une garantie sur toutes les conversations.
+
+Les artefacts locaux restent hors dépôt dans
+`/Users/hamza/.codex/voice-action-reply-2026-10-26/` (`reference.json`,
+`candidate.json`, `results-staging-v2.json`). La sonde locale initiale a refusé
+la clé (401) avant tout cas ; deux comparaisons ont ensuite été exécutées avec
+la clé staging. Aucun secret n'a été exporté ni écrit dans ces artefacts.
+
+Décision : garder la réduction du contrat pour le volume mesuré, sans annoncer
+un gain de vitesse. Avant extension, qualifier au téléphone disponibilité,
+réservation, échec, message, correction et épellation ; comparer les jalons du
+premier contenu utile par contrat. Aucun déploiement dans cette passe.

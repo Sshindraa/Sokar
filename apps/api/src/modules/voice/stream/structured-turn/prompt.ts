@@ -1,3 +1,4 @@
+import { VOICE_CONVERSATION_RULES } from '../../conversation-rules';
 import { normalizeOpeningHours } from '@sokar/shared';
 import { nameLetterSequence, nameLettersData } from './name-readback';
 import { replyScopeInstruction, type ReplyScope } from './reply-scope';
@@ -9,6 +10,16 @@ import { spelledLettersOf, type DayAvailability, type StructuredTurnState } from
  * remplacent l'usage des outils : le modèle choisit une action, le code
  * l'exécute puis lui rend le résultat.
  */
+const AFTER_ACTION_INSTRUCTIONS = `RÉPONSE APRÈS UNE OPÉRATION TERMINÉE :
+Le RÉSULTAT D'ACTION est un fait déjà obtenu, y compris s'il signale un échec. Tu formules seulement la réponse à l'appelant, sans réinterpréter sa demande ni reconstruire le brouillon vérifié.
+Renvoie uniquement awaiting, action, confidence, éventuellement tone si demandé, puis say en dernier. Aucun autre champ.
+- action : none ; end_call seulement si l'appelant termine explicitement l'échange. Aucune vérification, réservation, prise de message ni transfert supplémentaire.
+- say : annonce fidèlement le résultat, puis pose au plus une question utile. Ne promets jamais une réussite si le résultat indique un échec. Ne dis pas que tu vas exécuter ce qui est déjà fait. Ne redemande aucune valeur connue non ambiguë.
+- awaiting : ce que ta réponse attend. customerName pour demander le nom ; customerNameConfirmation seulement pour relire les lettres ; confirmation seulement si say relit date, heure, nombre et nom ET demande l'accord pour réserver ; confirmationResume uniquement si canResumeConfirmation=true ; humanFallback pour proposer le gérant ou un message ; open pour une question ouverte ; none si tu n'attends rien. Une réservation déjà créée ne demande pas un nouvel accord.
+Toute question parlée doit avoir l'awaiting correspondant, jamais none. Une confirmation de l'orthographe porte awaiting=customerNameConfirmation, jamais confirmation ni none ; une orthographe confirmée ne suffit pas pour réserver. Si tu demandes ensuite l'accord de réservation, relis le récapitulatif complet (date, heure, nombre ET nom) avec awaiting=confirmation. Pour le nom, nameLetters donne les lettres vérifiées : relis-les isolées, dans l'ordre, chaque lettre répétée selon count ; ne dis pas le nom comme un mot pendant cette relecture.
+- confidence : high, medium ou low selon ta certitude sur la formulation. En cas de doute, demande une clarification sans prendre congé.
+Les faits de l'ÉTAT VÉRIFIÉ et du RÉSULTAT D'ACTION font foi. Les règles de formulation communes restent applicables.`;
+
 const STRUCTURED_TURN_INSTRUCTIONS = `MODE DE RÉPONSE STRUCTURÉ :
 Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit ta compréhension et ta réponse.
 - turnComplete : false si l'appelant n'a visiblement pas fini sa phrase ou sa pensée (phrase coupée au milieu, hésitation, « attendez », il cherche ses mots) ; alors say est vide, action none, et tu le laisses continuer. true sinon, y compris pour une réponse courte mais complète (« oui », « trois », « non »). Une phrase qui annonce ce que l'appelant veut faire, ou qui introduit sa réponse, sans donner encore l'information que tu attends, n'est pas finie : il cherche sa réponse. Attends, et ne le relance que s'il se tait vraiment. De même, une phrase qui se termine en rejetant ou en niant la valeur qu'elle vient de donner est une correction en cours : la valeur de remplacement arrive dans la seconde qui suit. N'agis pas sur la valeur rejetée, ne réponds pas, attends la suite.
@@ -28,8 +39,6 @@ Tu n'appelles aucun outil. À chaque tour, tu renvoies un objet JSON qui décrit
 - message : vide sauf pour take_message.
 - confidence : high si tu es sûr de ta compréhension, low si tu hésites (alors pose une question de clarification et action none).
 - say : ta phrase parlée, naturelle et courte, qui se termine par au plus une question. Comme au téléphone : pas de « Parfait » ou « Très bien » systématique en ouverture, ni aucune autre formule qui revient à chaque tour, pas de reprise de sa phrase (une valeur peut revenir en passant, quand la phrase y gagne, jamais en confirmation à chaque tour), pas de point d'exclamation, pas la même question mot pour mot qu'au tour précédent. Quand tu dois reposer une question restée sans réponse (l'appelant a posé une autre question, ou n'a rien répondu), ne recopie jamais ta dernière phrase : reprends-la plus brièvement et avec d'autres mots, ou enchaîne sans la répéter en entier.
-Quand l'appelant pose une question qui contient, clairement dite, une date, une heure ou un nombre (ses mots suffisent à savoir de quelle information il s'agit), il répond déjà en creux à ta question ouverte : retiens la valeur, réponds à sa question, puis enchaîne sur l'information suivante. Tu ne demandes pas de confirmer cette date, cette heure ou ce nombre, sauf s'ils sont ambigus. Ta question de fin de phrase porte alors sur l'information suivante : ne repose jamais à vide la question à laquelle il vient de répondre. Cela vaut aussi quand tu n'attends rien : une date, une heure ou un nombre que l'appelant dit clairement est retenu dans draft dès qu'il est dit, même dans une question sur les horaires ou les disponibilités. Tu ne les redemandes jamais après les avoir retenus, sauf s'ils sont ambiguës, contredits par ce que l'appelant vient de dire, ou si le créneau n'est plus disponible. Tu montres que tu écoutes par la question suivante, pas en reformulant chaque réponse.
-Un récapitulatif va droit au contenu, sans phrase d'introduction, et dit chaque information une seule fois sous sa forme parlée la plus courte : un jour proche se dit par son nom relatif seul, sans le répéter en date complète. Il ne rejoue pas ce que l'appelant vient de confirmer. Il n'a lieu qu'à la fin de la réservation, avant son accord, ou pour lever une ambiguïté. Une fois l'orthographe d'un nom confirmée, dis-le comme un nom, pas lettre par lettre.
 Une fois la réservation créée et ton au revoir dit, un mot de politesse ou de salutation de l'appelant est sa façon de prendre congé, pas un nouvel appel : réponds-y d'une courte phrase avec action=end_call. S'il fait une nouvelle demande, traite-la normalement. Si tu ne comprends pas ce qu'il dit à ce moment-là, ne lui redemande pas ce qu'il veut : rien ne manque à la réservation, et des mots qui ne veulent rien dire après ton au revoir sont presque toujours un au revoir mal transcrit. Prends congé de la même façon.
 Une formule de politesse se rapporte au moment où tu parles (MOMENT DE LA JOURNÉE), pas au moment dont vous parlez (la réservation).
 N'annonce jamais une disponibilité, une réservation, un message ou un transfert que l'ÉTAT VÉRIFIÉ ou un RÉSULTAT D'ACTION ne confirme pas.
@@ -194,6 +203,8 @@ export function buildStructuredTurnMessages(input: {
   transcript: string;
   state: StructuredTurnState;
   actionResult?: string;
+  /** Formulation seule après une opération réellement terminée, sans brouillon généré. */
+  afterAction?: boolean;
   /** Horaires du restaurant : les faits du jour réservé sont calculés ici, pas par le modèle. */
   openingHours?: unknown;
   /** Date du jour (AAAA-MM-JJ, fuseau du restaurant), point de départ du calendrier. */
@@ -240,8 +251,9 @@ export function buildStructuredTurnMessages(input: {
   const calendar = input.today ? describeCalendar(input.today, input.openingHours) : '';
   const system = [
     input.systemPrompt,
-    STRUCTURED_TURN_INSTRUCTIONS,
-    input.understanding ? UNDERSTANDING_INSTRUCTIONS : '',
+    input.systemPrompt.includes(VOICE_CONVERSATION_RULES) ? '' : VOICE_CONVERSATION_RULES,
+    input.afterAction ? AFTER_ACTION_INSTRUCTIONS : STRUCTURED_TURN_INSTRUCTIONS,
+    input.understanding && !input.afterAction ? UNDERSTANDING_INSTRUCTIONS : '',
     input.tone ? TONE_INSTRUCTIONS : '',
     calendar
       ? `CALENDRIER (calculé, fait foi pour tout jour, date ou horaire ; ne le recalcule jamais toi-même) :\n${calendar}`

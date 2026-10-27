@@ -8,6 +8,8 @@
 
 ## TODOs actifs
 
+- [ ] Voix, prosodie (#595) : choix utilisateur phrase complète (6 préférences, 2 virgule, 1 égalité) appliqué en branche ; consignes unifiées et flush ElevenLabs conservé. Relance inachevée : silence audio déduit et reprise réévaluée, seuils conservés. Après opération : contrat réduit et brouillon figé, gain de volume mesuré, vitesse non démontrée. Recette téléphonique #594/prosodie/attentes/après-action à qualifier avant extension. Voir `voice-prosody-comparison.md`.
+
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
 - [ ] WhatsApp : flags off. Téléphone = confirmation SMS, sans rappel ; WEB avec consentement = rappel WhatsApp sans repli SMS. Callbacks Meta signés (7 j, rapprochement ID ; sans ID → manuel). Template FR/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta, qualification staging ; SMS staging validé. Voir `whatsapp-reservation-activation.md`.
 - [ ] SEO/confidentialité : accueil/privacy #438–#442 ; comparer GSC après couverture 16–22/10 (§10.36), staging noindex. Dashboard/Connect/API : notice par catégories, annexe client en projet (`privacy-client-annex.md`), preuves internes. Workspace Business Starter, stockage « Aucune préférence » : pas de promesse UE. ATDC Google autorisé ; notifications démo minimisées. Resend Free/DPA archivé ; rétention et autres contrats à vérifier. `/privacy` noindex en revue. Mentions légales incomplètes : identité EI non publiable, adresse seule autorisée ; réseaux facultatifs.
