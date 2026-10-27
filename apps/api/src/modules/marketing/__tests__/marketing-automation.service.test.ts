@@ -10,6 +10,7 @@ import { marketingOptOutHash } from '../marketing-opt-out.service';
 import {
   createMarketingAutomationCampaign,
   evaluateMarketingAutomation,
+  evaluateMarketingAutomations,
   findMarketingAutomationCandidates,
   parseMarketingAutomationConfig,
   upsertMarketingAutomation,
@@ -23,11 +24,12 @@ vi.mock('../../../shared/db/client', () => ({
     marketingSuppression: { findMany: vi.fn() },
     marketingFrequencyWindow: { findMany: vi.fn() },
     marketingOptOut: { findMany: vi.fn() },
-    marketingAutomation: { update: vi.fn(), upsert: vi.fn() },
+    marketingAutomation: { findMany: vi.fn(), update: vi.fn(), upsert: vi.fn() },
     marketingAutomationDispatch: { create: vi.fn() },
     marketingCampaign: { create: vi.fn(), update: vi.fn() },
     campaignAudienceMember: { findMany: vi.fn(), createMany: vi.fn() },
-    campaignMessage: { createMany: vi.fn() },
+    campaignMessage: { count: vi.fn(), createMany: vi.fn() },
+    $executeRaw: vi.fn().mockResolvedValue(0),
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
   },
 }));
@@ -197,6 +199,105 @@ describe('marketing automation engine', () => {
         now: new Date('2026-09-13T12:00:00.000Z'),
       }),
     ).resolves.toEqual([expect.objectContaining({ triggerKey: 'birthday:2026-09-14' })]);
+  });
+
+  it('refuse une automatisation e-mail au-delà du budget quotidien sans rien créer', async () => {
+    vi.mocked(db.campaignMessage.count).mockImplementation((async ({
+      where,
+    }: {
+      where: { acceptedAt?: unknown };
+    }) => (where.acceptedAt ? 0 : 38)) as never);
+    vi.mocked(db.marketingCampaign.create).mockResolvedValue({
+      id: 'campaign-email',
+      status: MarketingCampaignStatus.READY,
+    } as never);
+    vi.mocked(db.marketingAutomationDispatch.create).mockImplementation((async ({
+      data,
+    }: {
+      data: { customerId: string; triggerKey: string; occurredAt: Date };
+    }) => ({
+      id: `dispatch-${data.customerId}`,
+      ...data,
+    })) as never);
+    const candidates = ['customer-1', 'customer-2', 'customer-3'].map((customerId) => ({
+      customerId,
+      name: 'Client',
+      phone: '',
+      emailNormalized: `${customerId}@example.com`,
+      triggerKey: `first-honored:${customerId}`,
+      occurredAt: new Date('2026-09-12T10:00:00.000Z'),
+      inclusionReason: 'AUTOMATION_AFTER_FIRST_HONORED',
+    }));
+
+    // 38 e-mails attendent déjà : il reste 2, l'automatisation en demande 3.
+    await expect(
+      createMarketingAutomationCampaign({
+        automation: {
+          ...AUTOMATION,
+          channel: 'EMAIL',
+          config: { ...(AUTOMATION.config as object), subject: 'Merci' },
+        } as unknown as AutomationFixture,
+        candidates,
+        now: NOW,
+      }),
+    ).rejects.toThrow('MARKETING_DAILY_BUDGET_EXCEEDED');
+    expect(db.campaignAudienceMember.createMany).not.toHaveBeenCalled();
+    expect(db.campaignMessage.createMany).not.toHaveBeenCalled();
+  });
+
+  it('reporte une automatisation e-mail au-delà du budget sans bloquer l’évaluation', async () => {
+    vi.mocked(db.marketingAutomation.findMany).mockResolvedValue([
+      {
+        ...AUTOMATION,
+        channel: 'EMAIL',
+        config: { ...(AUTOMATION.config as object), subject: 'Merci' },
+      },
+    ] as never);
+    vi.mocked(db.customer.findMany).mockResolvedValue(
+      ['customer-1', 'customer-2', 'customer-3'].map((id) => ({
+        id,
+        name: 'Client',
+        phone: '',
+        emailNormalized: `${id}@example.com`,
+        timelineEvents: [
+          {
+            id: `event-${id}`,
+            sourceId: `reservation-${id}`,
+            occurredAt: new Date('2026-09-12T10:00:00.000Z'),
+          },
+        ],
+      })) as never,
+    );
+    vi.mocked(db.marketingPermission.findMany).mockResolvedValue(
+      ['customer-1', 'customer-2', 'customer-3'].map((customerId) => ({
+        customerId,
+        status: MarketingPermissionStatus.OPTED_IN,
+      })) as never,
+    );
+    vi.mocked(db.campaignMessage.count).mockImplementation((async ({
+      where,
+    }: {
+      where: { acceptedAt?: unknown };
+    }) => (where.acceptedAt ? 0 : 38)) as never);
+    vi.mocked(db.marketingCampaign.create).mockResolvedValue({
+      id: 'campaign-email',
+      status: MarketingCampaignStatus.READY,
+    } as never);
+    vi.mocked(db.marketingAutomationDispatch.create).mockImplementation((async ({
+      data,
+    }: {
+      data: { customerId: string; triggerKey: string; occurredAt: Date };
+    }) => ({
+      id: `dispatch-${data.customerId}`,
+      ...data,
+    })) as never);
+
+    await expect(evaluateMarketingAutomations({ now: NOW })).resolves.toEqual({
+      automations: 1,
+      campaigns: 0,
+      eligible: 0,
+    });
+    expect(db.campaignAudienceMember.createMany).not.toHaveBeenCalled();
   });
 
   it('crée une campagne snapshot et une claim durable, puis reste idempotent', async () => {

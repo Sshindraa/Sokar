@@ -64,6 +64,7 @@ describe('dashboard.routes tenant isolation', () => {
     expect(res.json()).toMatchObject({
       period: '7d',
       total_calls: 10,
+      call_reservations: 1,
       total_reservations: 2,
       covers: 6,
       // 1 réservation rattachée à un appel sur 10 appels (la réservation en ligne n'est pas un appel)
@@ -218,7 +219,11 @@ describe('dashboard.routes tenant isolation', () => {
       headers: { authorization: 'Bearer test' },
     });
 
-    expect(res.json()).toMatchObject({ total_reservations: 40, conversion_rate: 0 });
+    expect(res.json()).toMatchObject({
+      total_reservations: 40,
+      call_reservations: 0,
+      conversion_rate: 0,
+    });
   });
 
   it('GET /dashboard/empty-slots donne la bonne date à chaque jour et garde les réservations installées', async () => {

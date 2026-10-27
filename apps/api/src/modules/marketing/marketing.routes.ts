@@ -202,6 +202,8 @@ const CAMPAIGN_CONFLICT_MESSAGES: Record<string, string> = {
   CAMPAIGN_NOT_READY: 'Cette campagne n’est pas encore prête à partir.',
   CAMPAIGN_ALREADY_RUNNING: 'Cette campagne est déjà en cours d’envoi.',
   CAMPAIGN_NOT_DUE: 'Cette campagne n’est pas encore à l’heure de son envoi.',
+  MARKETING_DAILY_BUDGET_EXCEEDED:
+    'Audience trop grande pour aujourd’hui : le budget d’e-mails marketing du jour ne couvre pas cette campagne. Réessayez demain ou choisissez un segment plus petit.',
 };
 
 /** Réponse 409 lisible pour un refus d'état connu ; `null` pour toute autre erreur. */
@@ -652,6 +654,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },
@@ -693,6 +697,8 @@ export async function marketingRoutes(app: FastifyInstance) {
         if (status === 404) return reply.status(status).send({ error: 'CAMPAIGN_NOT_FOUND' });
         if (status === 503)
           return reply.status(status).send({ error: 'MARKETING_QUEUE_ENQUEUE_UNKNOWN' });
+        const conflict = campaignConflict(error);
+        if (conflict) return reply.status(409).send(conflict);
         throw error;
       }
     },

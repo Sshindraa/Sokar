@@ -68,7 +68,7 @@ export function getMarketingProviderReadiness(
   );
   const email = channelReadiness(
     environment,
-    ['RESEND_API_KEY', 'EMAIL_FROM'],
+    ['RESEND_API_KEY', 'MARKETING_EMAIL_FROM'],
     ['RESEND_WEBHOOK_SECRET'],
   );
   const whatsappEnabled = environment.MARKETING_WHATSAPP_ENABLED === 'true';

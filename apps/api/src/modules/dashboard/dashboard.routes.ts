@@ -171,6 +171,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     return reply.send({
       period: query.period,
       total_calls: totalCalls,
+      call_reservations: callReservations,
       total_reservations: totalReservations,
       covers,
       conversion_rate: conversionRate,

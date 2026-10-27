@@ -5,7 +5,10 @@ import { marketingOptOutHash } from '../marketing-opt-out.service';
 import {
   cancelMarketingCampaign,
   createMarketingCampaign,
+  assertDailyEmailBudget,
   prepareMarketingCampaign,
+  scheduleMarketingCampaign,
+  startMarketingCampaign,
   previewMarketingAudience,
   previewMarketingCampaign,
   toMarketingHtml,
@@ -23,8 +26,15 @@ vi.mock('../../../shared/db/client', () => ({
     marketingFrequencyWindow: { findMany: vi.fn() },
     marketingOptOut: { findMany: vi.fn() },
     usageTariff: { findFirst: vi.fn() },
-    marketingCampaign: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+    marketingCampaign: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
     campaignAudienceMember: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
+    campaignMessage: { count: vi.fn(), createMany: vi.fn() },
+    $executeRaw: vi.fn().mockResolvedValue(0),
     $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
   },
 }));
@@ -34,6 +44,82 @@ const DEFINITION = {
   operator: 'AND' as const,
   conditions: [{ field: 'isVip' as const, op: 'EQ' as const, value: true }],
 };
+
+type Filter = string | { in: string[] };
+type Range = { gte?: Date; lt?: Date };
+type CampaignWhere = { OR?: CampaignWhere[]; status?: Filter; scheduledAt?: Range };
+type MessageWhere = {
+  channel?: Filter;
+  status?: Filter;
+  acceptedAt?: Range;
+  campaign?: CampaignWhere;
+};
+type MessageRow = {
+  channel: string;
+  status: string;
+  acceptedAt: Date | null;
+  campaign: { status: string; scheduledAt: Date | null };
+};
+
+const BUDGET_NOW = new Date('2030-01-10T12:00:00.000Z');
+const YESTERDAY = new Date('2030-01-09T12:00:00.000Z');
+
+function matchesFilter(value: string, filter: Filter | undefined): boolean {
+  if (filter === undefined) return true;
+  return typeof filter === 'string' ? value === filter : filter.in.includes(value);
+}
+
+function matchesRange(value: Date | null, range: Range | undefined): boolean {
+  if (range === undefined) return true;
+  if (value === null) return false;
+  return (
+    (range.gte === undefined || value >= range.gte) && (range.lt === undefined || value < range.lt)
+  );
+}
+
+function matchesCampaign(campaign: MessageRow['campaign'], where: CampaignWhere): boolean {
+  if (where.OR) return where.OR.some((clause) => matchesCampaign(campaign, clause));
+  return (
+    matchesFilter(campaign.status, where.status) &&
+    matchesRange(campaign.scheduledAt, where.scheduledAt)
+  );
+}
+
+/** Évalue le `where` de `campaignMessage.count` sur des lignes en mémoire : pas de base dans les tests. */
+function countMessages(rows: MessageRow[], where: MessageWhere): number {
+  return rows.filter(
+    (row) =>
+      matchesFilter(row.channel, where.channel) &&
+      matchesFilter(row.status, where.status) &&
+      matchesRange(row.acceptedAt, where.acceptedAt) &&
+      (where.campaign === undefined || matchesCampaign(row.campaign, where.campaign)),
+  ).length;
+}
+
+function emailRows(count: number, row: Omit<MessageRow, 'channel'>): MessageRow[] {
+  return Array.from({ length: count }, () => ({ channel: 'EMAIL', ...row }));
+}
+
+function mockMessages(rows: MessageRow[]): void {
+  vi.mocked(db.campaignMessage.count).mockImplementation((async ({
+    where,
+  }: {
+    where: MessageWhere;
+  }) => countMessages(rows, where)) as never);
+}
+
+function mockCampaigns(
+  campaigns: Array<{ id: string; status: string; audienceCount: number }>,
+): void {
+  vi.mocked(db.marketingCampaign.findFirst).mockImplementation((async ({
+    where,
+  }: {
+    where: { id: string };
+  }) => {
+    const campaign = campaigns.find((item) => item.id === where.id);
+    return campaign ? { channel: 'EMAIL', scheduledAt: null, ...campaign } : null;
+  }) as never);
+}
 
 describe('marketing campaign control plane', () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -191,6 +277,128 @@ describe('marketing campaign control plane', () => {
     await expect(
       prepareMarketingCampaign({ restaurantId: 'restaurant-1', campaignId: 'campaign-empty' }),
     ).rejects.toThrow('AUDIENCE_EMPTY');
+  });
+
+  it('une campagne READY oubliée ne bloque pas le lancement d’une autre campagne', async () => {
+    mockCampaigns([{ id: 'campaign-b', status: MarketingCampaignStatus.READY, audienceCount: 30 }]);
+    mockMessages(
+      emailRows(40, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'READY', scheduledAt: null },
+      }),
+    );
+    vi.mocked(db.marketingCampaign.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    await expect(
+      startMarketingCampaign({
+        restaurantId: 'restaurant-1',
+        campaignId: 'campaign-b',
+        now: BUDGET_NOW,
+      }),
+    ).resolves.toBeDefined();
+    expect(db.marketingCampaign.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: MarketingCampaignStatus.SENDING }),
+      }),
+    );
+  });
+
+  it('refuse un envoi immédiat qui dépasse le reste du jour, sans rien lancer', async () => {
+    mockCampaigns([{ id: 'campaign-b', status: MarketingCampaignStatus.READY, audienceCount: 20 }]);
+    // 25 e-mails acceptés aujourd’hui : il reste 15, la campagne en demande 20.
+    mockMessages(
+      emailRows(25, {
+        status: 'ACCEPTED',
+        acceptedAt: BUDGET_NOW,
+        campaign: { status: 'SENT', scheduledAt: null },
+      }),
+    );
+    vi.mocked(db.marketingCampaign.updateMany).mockResolvedValue({ count: 1 } as never);
+
+    await expect(
+      startMarketingCampaign({
+        restaurantId: 'restaurant-1',
+        campaignId: 'campaign-b',
+        now: BUDGET_NOW,
+      }),
+    ).rejects.toThrow('MARKETING_DAILY_BUDGET_EXCEEDED');
+    expect(db.marketingCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('compte les envois en cours et les acceptés du jour, jamais ceux de la veille', async () => {
+    mockMessages([
+      ...emailRows(20, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'SENDING', scheduledAt: null },
+      }),
+      ...emailRows(40, {
+        status: 'ACCEPTED',
+        acceptedAt: YESTERDAY,
+        campaign: { status: 'SENT', scheduledAt: null },
+      }),
+    ]);
+    const tx = db as unknown as Prisma.TransactionClient;
+
+    await expect(assertDailyEmailBudget(tx, 20, BUDGET_NOW)).resolves.toBeUndefined();
+    await expect(assertDailyEmailBudget(tx, 21, BUDGET_NOW)).rejects.toThrow(
+      'MARKETING_DAILY_BUDGET_EXCEEDED',
+    );
+  });
+
+  it('programme selon le jour d’envoi : une campagne d’un autre jour ne prend pas le budget', async () => {
+    mockMessages(
+      emailRows(30, {
+        status: 'PENDING',
+        acceptedAt: null,
+        campaign: { status: 'SCHEDULED', scheduledAt: new Date('2030-01-10T18:00:00.000Z') },
+      }),
+    );
+    mockCampaigns([
+      { id: 'campaign-next-day', status: MarketingCampaignStatus.READY, audienceCount: 30 },
+      { id: 'campaign-same-day', status: MarketingCampaignStatus.READY, audienceCount: 30 },
+    ]);
+    vi.mocked(db.marketingCampaign.update).mockResolvedValue({
+      status: MarketingCampaignStatus.SCHEDULED,
+    } as never);
+
+    await expect(
+      scheduleMarketingCampaign({
+        restaurantId: 'restaurant-1',
+        campaignId: 'campaign-next-day',
+        scheduledAt: new Date('2030-01-11T09:00:00.000Z'),
+      }),
+    ).resolves.toMatchObject({ status: MarketingCampaignStatus.SCHEDULED });
+    await expect(
+      scheduleMarketingCampaign({
+        restaurantId: 'restaurant-1',
+        campaignId: 'campaign-same-day',
+        scheduledAt: new Date('2030-01-10T20:00:00.000Z'),
+      }),
+    ).rejects.toThrow('MARKETING_DAILY_BUDGET_EXCEEDED');
+    expect(db.marketingCampaign.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('la préparation ne consulte plus le budget : une campagne prête ne réserve rien', async () => {
+    mockMessages(
+      emailRows(40, {
+        status: 'ACCEPTED',
+        acceptedAt: BUDGET_NOW,
+        campaign: { status: 'SENT', scheduledAt: null },
+      }),
+    );
+    mockCampaigns([
+      { id: 'campaign-email', status: MarketingCampaignStatus.DRAFT, audienceCount: 30 },
+    ]);
+    vi.mocked(db.marketingCampaign.update).mockResolvedValue({
+      id: 'campaign-email',
+      status: MarketingCampaignStatus.READY,
+    } as never);
+
+    await expect(
+      prepareMarketingCampaign({ restaurantId: 'restaurant-1', campaignId: 'campaign-email' }),
+    ).resolves.toMatchObject({ status: MarketingCampaignStatus.READY });
   });
 
   it('renders a campaign from its immutable snapshot and reports billable units', async () => {

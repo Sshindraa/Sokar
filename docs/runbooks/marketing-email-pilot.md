@@ -55,11 +55,20 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   (confirmations, alertes, démos). Elle n'existe côté CI que pour staging (`EMAIL_TEST_ALLOWLIST_STAGING`).
   En production, utilisez `MARKETING_RECIPIENT_ALLOWLIST`, qui ne touche que les messages marketing.
 - **Secrets non propagés par la CI.** `RESEND_WEBHOOK_SECRET`, `MARKETING_UNSUBSCRIBE_SECRET`,
-  `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_SENDS_ENABLED` et `MARKETING_RECIPIENT_ALLOWLIST` ne passent par
+  `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_EMAIL_FROM`, `MARKETING_SENDS_ENABLED` et `MARKETING_RECIPIENT_ALLOWLIST` ne passent par
   aucun workflow ni `sync-env.sh` : ils se posent à la main dans `apps/api/.env` du VPS, puis
   `pm2 reload sokar-api --update-env` et rechargement des workers.
-- **Quota Resend.** Le plan constaté est Free : 100 e-mails par jour et 3 000 par mois, partagés avec les
-  e-mails transactionnels. Un pilote de quelques adresses tient largement.
+- **Quota Resend et budget marketing.** Le plan constaté est Free : 100 e-mails par jour et 3 000 par mois,
+  partagés avec les e-mails transactionnels. Le marketing ne doit jamais consommer ce quota : il est plafonné à
+  `MARKETING_EMAIL_DAILY_BUDGET` e-mails par jour pour **toute la plateforme** (40 par défaut, entier ≥ 0 validé
+  au démarrage, jour UTC). Le contrôle a lieu **au lancement** : envoi immédiat, ou programmation pour le jour de
+  l'envoi. Une campagne dont l'audience dépasse le reste du jour est refusée (409, « Audience trop grande pour
+  aujourd’hui ») : elle n'est ni tronquée, ni étalée en silence. Le reste compte les e-mails acceptés ce jour-là,
+  les envois en cours ou suspendus, et les campagnes programmées pour ce jour. Une campagne **prête (READY) ne
+  réserve rien** : une campagne oubliée ne bloque pas les autres. Les automatisations e-mail contrôlent leur
+  audience à leur création, puisqu'elles partent aussitôt. Un pilote de quelques adresses tient largement.
+  Relevez ou retirez ce plafond au passage à un plan Resend supérieur (`shortcut:` dans
+  `marketing-campaign.service.ts`).
 - **Jeton dans les journaux d'accès.** L'URL de désinscription contient le jeton ; il n'embarque que des
   identifiants opaques (aucune adresse), mais ne le copiez pas dans un ticket.
 - **Le consentement historique n'autorise plus l'e-mail.** Un `CustomerConsent.marketingOptIn` est un
@@ -92,10 +101,30 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   la preuve, et la mention dans l'annexe client (`privacy-client-annex.md`). Resend : DPA signé archivé en
   privé ; conservation effective à valider (voir `Context.md`).
 
-### Texte de consentement (à valider par Hamza)
+### Décisions de Hamza du 27/10/2026 (ouverture de l'envoi e-mail)
 
-Ce texte est une **proposition par défaut**. Il n'a pas été validé juridiquement : Hamza (avec un conseil
-juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il vit à un seul endroit,
+1. **Base légale** : opt-in explicite uniquement (case jamais cochée d'avance). Pas de soft opt-in en v1 ;
+   à revoir avec un juriste quand le volume le justifiera.
+2. **Texte de consentement** : validé tel quel, version `marketing-consent-2026-10-22` inchangée.
+3. **Conservation** : fichier de prospection 3 ans après le dernier contact venant du client (une réservation
+   en est un) ; preuve du consentement tant que la permission est active, puis 5 ans après le retrait
+   (prescription civile) ; registre d'opposition 3 ans (décision du 23/10). Le code ne l'applique pas encore.
+4. **Expéditeur** : sous-domaine dédié `news.sokar.tech`, nom affiché = restaurant, `Reply-To` = adresse
+   du restaurant. Les e-mails transactionnels gardent leur domaine.
+5. **Resend** : plan Free pour l'instant (pas encore de volume) ; passage au plan supérieur dès les premiers
+   clients. D'ici là, le marketing ne doit jamais consommer le quota des transactionnels.
+6. **Verrou** : fenêtre courte pendant le pilote, puis suppression de `MARKETING_SENDS_ENABLED` et de son
+   entrée dans `verify-product-gates.mjs` (règle : aucun drapeau actif durable).
+7. **Testeurs** : Hamza et deux ou trois proches prévenus, sur des messageries différentes (Gmail, Outlook,
+   Orange).
+8. **Contrat restaurant** : clause « Sokar sous-traitant » dans les CGV, attestation de consentement pour
+   toute liste importée ; relecture juridique de la clause.
+9. **Vocal** : Léa ne recueille rien ; le consentement passe par un lien dans la confirmation de réservation.
+10. **Tarifs** : « Envoi de campagnes » reste dans l'offre Pro (fonction en cours de livraison).
+
+### Texte de consentement (validé le 27/10/2026)
+
+Ce texte a été **validé par Hamza le 27/10/2026** (sans relecture juridique externe). Il vit à un seul endroit,
 `packages/shared/src/marketing-consent.ts`, utilisé à la fois par les écrans et par l'API.
 
 | Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                                                                                                        |
@@ -160,10 +189,11 @@ juridique si besoin) doit l'approuver avant que de vrais clients le voient. Il v
   signé ne règle pas toute la chaîne : contrat restaurant–Sokar, sous-traitance ultérieure, conservation et
   transferts hors UE doivent être documentés. Une réutilisation par Sokar pour ses propres finalités exige une
   analyse distincte.
-- **Expéditeur** : le message doit rendre identifiable le restaurant pour lequel il est envoyé. L'expéditeur
-  actuel est « Sokar <noreply@sokar.tech> » (`EMAIL_FROM`) : « Sokar » seul peut être ambigu pour une campagne
-  de restaurant. À traiter avant de vrais clients (nom du restaurant dans le nom d'expéditeur) ; pour le
-  pilote, le nom du restaurant figure dans le corps.
+- **Expéditeur** : le message doit rendre identifiable le restaurant pour lequel il est envoyé. Un e-mail
+  marketing part de `MARKETING_EMAIL_FROM` (par exemple `bonjour@news.sokar.tech`), avec le nom du restaurant
+  comme nom affiché et son adresse en `Reply-To` (`managerEmail`, la seule adresse e-mail du restaurant dans le
+  schéma). Sans `MARKETING_EMAIL_FROM`, le worker refuse l'envoi (`MARKETING_EMAIL_FROM_MISSING`) et ne se rabat
+  jamais sur `EMAIL_FROM` (`noreply@sokar.tech`), réservé aux transactionnels.
 - **Pas de double confirmation** : l'adresse saisie n'est pas vérifiée par un e-mail de confirmation. Ce
   n'est pas une obligation générale pour toute newsletter, mais une mesure recommandée ici pour réduire les
   inscriptions avec l'adresse d'autrui et renforcer la preuve. Une personne peut cocher la case avec l'adresse
@@ -194,7 +224,7 @@ production la fenêtre d'envoi.
 
 | #   | Action                                                                                                                                                                                                                                                                                                                                                        | Critère de réussite                                                                                                                 |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`                                                                                                                                                                                   | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
+| A1  | Resend : domaine `sokar.tech` vérifié (DKIM `resend._domainkey`, retour `send.sokar.tech`), clé d'envoi présente dans `RESEND_API_KEY`, `EMAIL_FROM` = `noreply@sokar.tech`, `MARKETING_EMAIL_FROM` = `bonjour@news.sokar.tech` (domaine `news.sokar.tech` vérifié)                                                                                           | Tableau de bord Resend : domaine « Verified » ; `readiness.email.missing` vide                                                      |
 | A2  | DNS : SPF racine avec Google, DMARC `_dmarc.sokar.tech` (voir `email-sms-deliverability.md`, absents à la date du 17/10, à reconfirmer)                                                                                                                                                                                                                       | `dig TXT sokar.tech` et `dig TXT _dmarc.sokar.tech` renvoient les valeurs attendues                                                 |
 | A3  | Resend → Webhooks : endpoint `https://api.sokar.tech/marketing/webhooks/resend` (staging : `api-staging.sokar.tech`), événements `email.sent`, `delivered`, `bounced`, `complained`, `failed`, `suppressed` (**pas** `opened` ni `clicked` : voir §4, suivi des ouvertures et des clics). Copier le secret de signature dans `RESEND_WEBHOOK_SECRET`          | `readiness.email.callbackConfigured` = `true` ; l'historique du webhook Resend montre des réponses 200 (et aucune 403 de signature) |
 | A4  | Poser `MARKETING_UNSUBSCRIBE_SECRET` (≥ 32 caractères, distinct de l'attribution), `MARKETING_ATTRIBUTION_SECRET`, `MARKETING_OPTOUT_HASH_SECRET` (≥ 32 caractères, **à sauvegarder** : sans elle aucun envoi, et la perdre rend le registre d'opposition inutilisable), et `MARKETING_UNSUBSCRIBE_BASE_URL` = `https://api.sokar.tech/marketing/unsubscribe` | `GET` d'un lien généré affiche la page de confirmation sur le bon domaine                                                           |
@@ -292,7 +322,7 @@ exporter le rapport, ajouter une entrée au Journal, mettre à jour les bloqueur
 1. **Resend** : confirmer le domaine vérifié, créer le webhook (A3) et laisser les événements
    d'ouverture/clic désactivés (§4) ; copier le secret dans l'`.env` du VPS (staging puis production).
 2. **Secrets et drapeaux sur le VPS** : poser `MARKETING_UNSUBSCRIBE_SECRET`, `MARKETING_ATTRIBUTION_SECRET`,
-   `MARKETING_UNSUBSCRIBE_BASE_URL`, `MARKETING_RECIPIENT_ALLOWLIST` ; décider qui ouvre la fenêtre
+   `MARKETING_UNSUBSCRIBE_BASE_URL`, `MARKETING_EMAIL_FROM`, `MARKETING_RECIPIENT_ALLOWLIST` ; décider qui ouvre la fenêtre
    `MARKETING_SENDS_ENABLED=true` (voir le verrou de déploiement du §3). Je n'y ai pas touché.
 3. **DNS** : reconfirmer SPF/DMARC chez Cloudflare.
 4. **Choisir les testeurs** : liste des adresses réelles (hors dépôt), avec leur accord.

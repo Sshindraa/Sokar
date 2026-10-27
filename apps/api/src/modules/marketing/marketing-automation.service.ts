@@ -9,7 +9,9 @@ import {
 } from '@prisma/client';
 import { z } from 'zod';
 import { db } from '../../shared/db/client';
+import { logger } from '../../shared/logger/pino';
 import {
+  assertDailyEmailBudget,
   CAMPAIGN_CHANNELS,
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
@@ -525,6 +527,10 @@ export async function createMarketingAutomationCampaign(args: {
       });
       return null;
     }
+    if (String(args.automation.channel) === 'EMAIL') {
+      // Rollback de la transaction si le budget quotidien ne couvre pas l'audience.
+      await assertDailyEmailBudget(tx, dispatches.length, now);
+    }
     await tx.campaignAudienceMember.createMany({
       data: dispatches.map((dispatch) => {
         const candidate = args.candidates.find(
@@ -601,9 +607,20 @@ export async function evaluateMarketingAutomations(args: {
   let campaigns = 0;
   let eligible = 0;
   for (const automation of automations) {
-    const result = await evaluateMarketingAutomation({ automation, now: args.now });
-    if (result.campaignId) campaigns += 1;
-    eligible += result.eligibleCount;
+    try {
+      const result = await evaluateMarketingAutomation({ automation, now: args.now });
+      if (result.campaignId) campaigns += 1;
+      eligible += result.eligibleCount;
+    } catch (error) {
+      // Budget e-mail du jour atteint : cette automatisation sera réévaluée, les autres continuent.
+      const budgetExceeded =
+        error instanceof Error && error.message === 'MARKETING_DAILY_BUDGET_EXCEEDED';
+      if (!budgetExceeded) throw error;
+      logger.warn(
+        { automationId: automation.id, type: automation.type },
+        'marketing automation deferred: daily email budget reached',
+      );
+    }
   }
   return { automations: automations.length, campaigns, eligible };
 }

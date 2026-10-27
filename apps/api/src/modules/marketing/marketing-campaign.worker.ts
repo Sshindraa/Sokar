@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Worker, type Job } from 'bullmq';
 import { MarketingCampaignStatus, MarketingMessageStatus, type PrismaClient } from '@prisma/client';
+import { env } from '../../env';
 import { db } from '../../shared/db/client';
 import { sendEmail } from '../../shared/email';
 import { sendSms } from '../../shared/telnyx/client';
@@ -11,8 +12,10 @@ import {
 } from '../../shared/queue/notification-idempotency';
 import { redisQueue } from '../../shared/redis/client';
 import { setupWorkerListeners, jobLogger } from '../../shared/queue/workers/helper';
+import { normalizeCustomerEmail } from '../customers/customer-crm.service';
 import type { MessagingUsageContext } from '../usage/messaging-usage.service';
 import {
+  dayWindow,
   ensureCampaignMessages,
   MAX_SENDS_PER_FREQUENCY_WINDOW,
   renderMarketingTemplate,
@@ -57,6 +60,8 @@ export type MarketingCampaignWorkerDependencies = {
   /** Injected in tests; production persists a signed campaign link per recipient. */
   createAttributionLink?: typeof createMarketingAttributionLink;
   sendsEnabled: boolean;
+  /** Expéditeur dédié aux e-mails marketing ; `null` refuse tout envoi e-mail. */
+  marketingEmailFrom: string | null;
   now: () => Date;
 };
 
@@ -72,6 +77,7 @@ function defaultDependencies(): MarketingCampaignWorkerDependencies {
     createUnsubscribeToken: createMarketingUnsubscribeToken,
     createAttributionLink: createMarketingAttributionLink,
     sendsEnabled: process.env.MARKETING_SENDS_ENABLED === 'true',
+    marketingEmailFrom: env.MARKETING_EMAIL_FROM ?? null,
     now: () => new Date(),
   };
 }
@@ -79,14 +85,6 @@ function defaultDependencies(): MarketingCampaignWorkerDependencies {
 function validNow(now: Date): Date {
   if (Number.isNaN(now.getTime())) throw new Error('now must be valid');
   return now;
-}
-
-function dayWindow(now: Date): { start: Date; end: Date } {
-  const start = new Date(now);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  return { start, end };
 }
 
 /**
@@ -262,6 +260,11 @@ export function marketingRecipientAllowlist(
   return entries.length > 0 ? new Set(entries) : null;
 }
 
+/** Nom affiché = restaurant, entre guillemets : une virgule dans le nom ne casse pas l'en-tête. */
+function marketingFromHeader(restaurantName: string, address: string): string {
+  return `"${restaurantName.replaceAll(/["\\\r\n]/g, '')}" <${address}>`;
+}
+
 async function eligibility(
   deps: MarketingCampaignWorkerDependencies,
   args: {
@@ -351,7 +354,7 @@ async function sendOne(
     channel: MarketingChannelCode;
     subject: string | null;
     bodyTemplate: string;
-    restaurant: { name: string; slug: string | null };
+    restaurant: { name: string; slug: string | null; managerEmail: string };
   },
   message: {
     id: string;
@@ -404,12 +407,16 @@ async function sendOne(
   }
   if (campaign.channel === 'EMAIL') {
     if (!message.customer.emailNormalized) throw new Error('NO_CONTACT');
+    // Garde-fou : sans expéditeur dédié, sendEmail retomberait sur EMAIL_FROM.
+    if (!deps.marketingEmailFrom) throw new Error('MARKETING_EMAIL_FROM_MISSING');
     return {
       result: normalizeNotificationSendResult(
         await deps.sendEmail({
           to: message.customer.emailNormalized,
           subject: campaign.subject ?? campaign.restaurant.name,
           html: toMarketingHtml(rendered),
+          from: marketingFromHeader(campaign.restaurant.name, deps.marketingEmailFrom),
+          replyTo: normalizeCustomerEmail(campaign.restaurant.managerEmail),
           // Désinscription en un clic (RFC 8058) : Gmail et Outlook affichent un bouton natif.
           headers: {
             'List-Unsubscribe': `<${context.unsubscribeUrl}>`,
@@ -457,7 +464,7 @@ export async function processMarketingCampaignJob(
   const now = validNow(dependencies.now());
   const campaign = await dependencies.db.marketingCampaign.findFirst({
     where: { id: job.data.campaignId, restaurantId: job.data.restaurantId },
-    include: { restaurant: { select: { name: true, slug: true } } },
+    include: { restaurant: { select: { name: true, slug: true, managerEmail: true } } },
   });
   if (!campaign) return { processed: 0, accepted: 0, failed: 0 };
   if (
@@ -472,6 +479,22 @@ export async function processMarketingCampaignJob(
     campaign.status !== MarketingCampaignStatus.SENDING
   ) {
     throw new Error('CAMPAIGN_NOT_READY');
+  }
+
+  if (campaign.channel === 'EMAIL' && !dependencies.marketingEmailFrom) {
+    // Refus avant tout appel fournisseur : la campagne redevient prête, sans destinataire consommé.
+    await dependencies.db.marketingCampaign.updateMany({
+      where: {
+        id: campaign.id,
+        restaurantId: campaign.restaurantId,
+        status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.SCHEDULED] },
+      },
+      data: {
+        status: MarketingCampaignStatus.READY,
+        lastErrorCode: 'MARKETING_EMAIL_FROM_MISSING',
+      },
+    });
+    throw new Error('MARKETING_EMAIL_FROM_MISSING');
   }
 
   if (campaign.status !== MarketingCampaignStatus.SENDING) {

@@ -6,6 +6,7 @@ import {
   Prisma,
   type MarketingCampaign,
 } from '@prisma/client';
+import { env } from '../../env';
 import { db } from '../../shared/db/client';
 import {
   compileCustomerSegmentWhere,
@@ -784,6 +785,49 @@ export async function updateMarketingCampaign(args: {
   });
 }
 
+/** Jour UTC, comme les plafonds par destinataire. */
+export function dayWindow(now: Date): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
+}
+
+/**
+ * Refuse un lancement qui dépasse le reste du budget du jour d'envoi (UTC). Le reste compte les
+ * e-mails acceptés ce jour-là, les envois en cours ou suspendus, et les campagnes programmées pour
+ * ce jour. Une campagne READY ne réserve rien. Le verrou de transaction sérialise les vérifications.
+ */
+export async function assertDailyEmailBudget(
+  tx: Prisma.TransactionClient,
+  audienceCount: number,
+  sendAt: Date,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('marketing_email_daily_budget'))`;
+  const { start, end } = dayWindow(sendAt);
+  const [acceptedOnDay, awaitingSend] = await Promise.all([
+    tx.campaignMessage.count({
+      where: { channel: MarketingChannel.EMAIL, acceptedAt: { gte: start, lt: end } },
+    }),
+    tx.campaignMessage.count({
+      where: {
+        channel: MarketingChannel.EMAIL,
+        status: { in: [MarketingMessageStatus.PENDING, MarketingMessageStatus.SENDING] },
+        campaign: {
+          OR: [
+            { status: { in: [MarketingCampaignStatus.SENDING, MarketingCampaignStatus.PAUSED] } },
+            { status: MarketingCampaignStatus.SCHEDULED, scheduledAt: { gte: start, lt: end } },
+          ],
+        },
+      },
+    }),
+  ]);
+  if (acceptedOnDay + awaitingSend + audienceCount > env.MARKETING_EMAIL_DAILY_BUDGET) {
+    throw new Error('MARKETING_DAILY_BUDGET_EXCEEDED');
+  }
+}
+
 export async function prepareMarketingCampaign(args: {
   restaurantId: string;
   campaignId: string;
@@ -816,9 +860,14 @@ export async function scheduleMarketingCampaign(args: {
   if (campaign.status !== MarketingCampaignStatus.READY) {
     throw new Error('CAMPAIGN_NOT_READY');
   }
-  return db.marketingCampaign.update({
-    where: { id: campaign.id },
-    data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+  return db.$transaction(async (tx) => {
+    if (campaign.channel === MarketingChannel.EMAIL) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, scheduledAt);
+    }
+    return tx.marketingCampaign.update({
+      where: { id: campaign.id },
+      data: { status: MarketingCampaignStatus.SCHEDULED, scheduledAt, lastErrorCode: null },
+    });
   });
 }
 
@@ -846,20 +895,29 @@ export async function startMarketingCampaign(args: {
       throw new Error('CAMPAIGN_NOT_DUE');
     }
   }
-  const claimed = await db.marketingCampaign.updateMany({
-    where: {
-      id: campaign.id,
-      restaurantId: args.restaurantId,
-      status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
-    },
-    data: {
-      status: MarketingCampaignStatus.SENDING,
-      startedAt: now,
-      completedAt: null,
-      lastErrorCode: null,
-    },
+  // Un envoi immédiat (READY) passe le contrôle du budget ; une programmation l'a déjà passé.
+  await db.$transaction(async (tx) => {
+    if (
+      campaign.status === MarketingCampaignStatus.READY &&
+      campaign.channel === MarketingChannel.EMAIL
+    ) {
+      await assertDailyEmailBudget(tx, campaign.audienceCount, now);
+    }
+    const claimed = await tx.marketingCampaign.updateMany({
+      where: {
+        id: campaign.id,
+        restaurantId: args.restaurantId,
+        status: { in: [MarketingCampaignStatus.READY, MarketingCampaignStatus.SCHEDULED] },
+      },
+      data: {
+        status: MarketingCampaignStatus.SENDING,
+        startedAt: now,
+        completedAt: null,
+        lastErrorCode: null,
+      },
+    });
+    if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   });
-  if (claimed.count !== 1) throw new Error('CAMPAIGN_ALREADY_RUNNING');
   const updated = await getMarketingCampaign(args);
   if (!updated) throw new Error('CAMPAIGN_NOT_FOUND');
   return updated;

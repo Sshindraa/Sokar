@@ -343,6 +343,59 @@ describe('marketing control plane routes', () => {
     });
   });
 
+  it('explique en français qu’un envoi au-delà du reste du jour est refusé, sans rien lancer', async () => {
+    process.env.MARKETING_SENDS_ENABLED = 'true';
+    const app = await getApp();
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      restaurantId: 'test-rest-1',
+      status: MarketingCampaignStatus.READY,
+      channel: 'EMAIL',
+      audienceCount: 41,
+      scheduledAt: null,
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValue(0);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/campaigns/campaign-1/send',
+      headers: AUTH,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+      message: expect.stringContaining('Audience trop grande pour aujourd’hui'),
+    });
+    expect(db.marketingCampaign.updateMany).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse une programmation au-delà du reste du jour d’envoi, sans la enregistrer', async () => {
+    process.env.MARKETING_SENDS_ENABLED = 'true';
+    const app = await getApp();
+    vi.mocked(db.marketingCampaign.findFirst).mockResolvedValue({
+      id: 'campaign-1',
+      restaurantId: 'test-rest-1',
+      status: MarketingCampaignStatus.READY,
+      channel: 'EMAIL',
+      audienceCount: 41,
+      scheduledAt: null,
+    } as never);
+    vi.mocked(db.campaignMessage.count).mockResolvedValue(0);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/marketing/campaigns/campaign-1/schedule',
+      headers: AUTH,
+      payload: { scheduledAt: new Date(Date.now() + 86_400_000).toISOString() },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'MARKETING_DAILY_BUDGET_EXCEEDED',
+      message: expect.stringContaining('Audience trop grande pour aujourd’hui'),
+    });
+    expect(db.marketingCampaign.update).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
   it('refuse une règle sans lien de désinscription avec un message lisible, pas une erreur 500', async () => {
     const app = await getApp();
     const response = await app.inject({
