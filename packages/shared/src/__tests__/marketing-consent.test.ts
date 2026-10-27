@@ -10,15 +10,19 @@ import {
 } from '../marketing-consent';
 
 describe('marketing consent wording', () => {
-  it('names the restaurant, the channel and the right to unsubscribe, in the first person', () => {
+  it('names the restaurant and the channel in a short label', () => {
     expect(buildMarketingConsentLabel('EMAIL', 'Chez Sokar')).toBe(
-      'Je souhaite recevoir par e-mail les offres et actualités de Chez Sokar. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.',
+      'Recevoir les offres et actualités de Chez Sokar par e-mail',
     );
-    expect(buildMarketingConsentLabel('SMS', 'Chez Sokar')).toContain('par SMS');
+    expect(buildMarketingConsentLabel('SMS', 'Chez Sokar')).toBe(
+      'Recevoir les offres et actualités de Chez Sokar par SMS',
+    );
   });
 
   it('falls back to a neutral name when the restaurant has none', () => {
-    expect(buildMarketingConsentLabel('EMAIL', '   ')).toContain('de ce restaurant.');
+    expect(buildMarketingConsentLabel('EMAIL', '   ')).toBe(
+      'Recevoir les offres et actualités de ce restaurant par e-mail',
+    );
   });
 
   it('builds a proof bound to the version, the channel and the exact sentence', () => {

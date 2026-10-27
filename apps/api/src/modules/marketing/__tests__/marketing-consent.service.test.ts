@@ -274,9 +274,9 @@ describe('recordStaffMarketingConsent', () => {
 });
 
 describe('marketing consent wording', () => {
-  it('uses first-person wording and names the restaurant', () => {
+  it('names the restaurant and the channel', () => {
     expect(buildMarketingConsentLabel('EMAIL', 'Chez Sokar')).toBe(
-      'Je souhaite recevoir par e-mail les offres et actualités de Chez Sokar. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.',
+      'Recevoir les offres et actualités de Chez Sokar par e-mail',
     );
     expect(buildMarketingConsentLabel('SMS', '  ')).toContain('ce restaurant');
   });

@@ -6,7 +6,7 @@
  * see it (docs/runbooks/marketing-email-pilot.md, section "Texte de consentement"). Any change of
  * wording must come with a new version: an older proof must keep matching the text it was given for.
  */
-export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-22';
+export const MARKETING_CONSENT_VERSION = 'marketing-consent-2026-10-27';
 
 export const MARKETING_CONSENT_CHANNELS = ['EMAIL', 'SMS'] as const;
 export type MarketingConsentChannel = (typeof MARKETING_CONSENT_CHANNELS)[number];
@@ -20,14 +20,13 @@ function restaurantLabel(restaurantName: string): string {
   return restaurantName.trim() || 'ce restaurant';
 }
 
-/** The sentence shown next to an unchecked box. Never pre-checked, never required to book. */
+/** The label shown next to an unchecked box. Never pre-checked, never required to book. */
 export function buildMarketingConsentLabel(
   channel: MarketingConsentChannel,
   restaurantName: string,
 ): string {
-  return `Je souhaite recevoir ${CHANNEL_WORDING[channel]} les offres et actualités de ${restaurantLabel(
-    restaurantName,
-  )}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation.`;
+  const name = restaurantLabel(restaurantName);
+  return `Recevoir les offres et actualités de ${name} ${CHANNEL_WORDING[channel]}`;
 }
 
 /**

@@ -112,7 +112,7 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 
 1. **Base légale** : opt-in explicite uniquement (case jamais cochée d'avance). Pas de soft opt-in en v1 ;
    à revoir avec un juriste quand le volume le justifiera.
-2. **Texte de consentement** : validé tel quel, version `marketing-consent-2026-10-22` inchangée.
+2. **Texte de consentement** : validé le 27/10/2026, puis raccourci le même jour à la demande de Hamza (version `marketing-consent-2026-10-27`). Relecture juridique à faire avant les vrais clients.
 3. **Conservation** : fichier de prospection 3 ans après le dernier contact venant du client (une réservation
    en est un) ; preuve du consentement tant que la permission est active, puis 5 ans après le retrait
    (prescription civile) ; registre d'opposition 3 ans (décision du 23/10). Le code ne l'applique pas encore.
@@ -129,25 +129,25 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
 9. **Vocal** : Léa ne recueille rien ; le consentement passe par un lien dans la confirmation de réservation.
 10. **Tarifs** : « Envoi de campagnes » reste dans l'offre Pro (fonction en cours de livraison).
 
-### Texte de consentement (validé le 27/10/2026)
+### Texte de consentement (version 2026-10-27)
 
-Ce texte a été **validé par Hamza le 27/10/2026** (sans relecture juridique externe). Il vit à un seul endroit,
+Ce texte a été **validé par Hamza le 27/10/2026**, puis raccourci le même jour. Il n'a pas de relecture juridique externe. Il vit à un seul endroit,
 `packages/shared/src/marketing-consent.ts`, utilisé à la fois par les écrans et par l'API.
 
-| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                                                                                                        |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E-mail | « Je souhaite recevoir par e-mail les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation. » |
-| SMS    | « Je souhaite recevoir par SMS les offres et actualités de {nom du restaurant}. Je peux me désinscrire à tout moment, sans conséquence sur ma réservation. »    |
+| Canal  | Texte affiché à côté de la case (jamais cochée d'avance)                |
+| ------ | ----------------------------------------------------------------------- |
+| E-mail | « Recevoir les offres et actualités de {nom du restaurant} par e-mail » |
+| SMS    | « Recevoir les offres et actualités de {nom du restaurant} par SMS »    |
 
-- **Version** : `marketing-consent-2026-10-22` (`MARKETING_CONSENT_VERSION`). Toute modification du texte
+- **Version** : `marketing-consent-2026-10-27` (`MARKETING_CONSENT_VERSION`). Les preuves enregistrées avec `marketing-consent-2026-10-22` gardent l'ancien texte. Toute modification du texte
   exige une nouvelle version : une preuve ancienne doit rester rattachée au texte que le client a lu. Une
   page qui envoie une version inconnue n'enregistre rien (la réservation, elle, aboutit).
 - **Finalité** : envoi d'offres et d'actualités du restaurant, par le canal coché, rien d'autre.
 - **Ce qui est conservé** (par canal et par client) : état (donné / retiré), date, source (`CONNECT`,
   `DASHBOARD_IN_PERSON`, `DASHBOARD_PHONE`, `DASHBOARD_PAPER`, `UNSUBSCRIBE_LINK`, `DASHBOARD_WITHDRAWAL`,
   `CONFIRMATION_EMAIL`),
-  version du texte et **empreinte SHA-256** de la preuve `version|canal|phrase exacte`. Le texte brut n'est
-  pas stocké (il se reconstruit à partir de la version et du nom du restaurant). Pour un accord saisi par le
+  version du texte et **empreinte SHA-256** de la preuve `version|canal|phrase exacte`. La phrase exacte est
+  aussi conservée dans le journal (`proof_text`) : une preuve reste lisible si le texte change. Pour un accord saisi par le
   restaurant, la manière de le recueillir est ajoutée à la preuve. Chaque changement ajoute une ligne au
   journal `MarketingPermissionEvent` (aucune adresse ni téléphone dans les journaux applicatifs).
 - **Durées de conservation : trois obligations distinctes.** Le registre d'opposition est conservé **3 ans** (décision de Hamza du 23/10/2026, appliquée par une purge sur le worker de réconciliation). Le fichier de prospection et la preuve n'ont pas encore de durée appliquée par le code.
@@ -223,7 +223,7 @@ Ce texte a été **validé par Hamza le 27/10/2026** (sans relecture juridique e
   `sokar.tech`, les sous-domaines et les domaines personnalisés (`/widget/<slug>`, `/book/<slug>`,
   `embed.js`). Uniquement sous le formulaire de coordonnées, après l'adresse (case e-mail) ou le
   téléphone (case SMS) saisis. Le consentement n'est jamais une condition pour réserver. Le texte
-  « Ce choix est indépendant de votre réservation » est affiché sous les cases.
+  « Facultatif, sans effet sur votre réservation. Désinscription possible à tout moment. » est affiché sous les cases.
 - **Retrait** : par le client avec le lien de désinscription de chaque message ; par le restaurant depuis la
   fiche client (« Retirer l'accord », avec confirmation).
 - **Non couvert** : l'agent vocal (aucun accord recueilli à l'appel), la liste d'attente Connect, le widget
