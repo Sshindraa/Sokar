@@ -66,8 +66,9 @@ Références : [ADR du plan de contrôle CRM/marketing](../architecture/adr-crm-
   l'audience dépasse le reste du jour est refusée (409 : « Audience trop grande pour aujourd’hui », ou « pour ce
   jour-là » en programmation) : elle n'est ni tronquée, ni étalée en silence. Une programmation refusée au moment
   de partir redevient prête, avec `MARKETING_DAILY_BUDGET_EXCEEDED`. Le reste compte les e-mails acceptés ce
-  jour-là, les envois en cours ou suspendus, les programmations de ce jour et les automatisations prêtes. Une
-  campagne **prête (READY) ne réserve rien** : une campagne oubliée ne bloque pas les autres. Relevez ou retirez
+  jour-là, les envois en cours ou suspendus et les programmations de ce jour. Une
+  campagne **prête (READY) ne réserve rien** : une campagne oubliée ne bloque pas les autres. Seule exception :
+  une automatisation prête, avec ses occasions, réserve son audience, puisqu'elle part à la même passe. Relevez ou retirez
   ce plafond au passage à un plan Resend supérieur (`shortcut:` dans `marketing-campaign.service.ts`).
 - **Automatisations e-mail.** Elles contrôlent leur audience à leur création, puisqu'elles partent à la même
   passe. Un lot n'est jamais refusé en entier : il est découpé sur le reste du jour, et ce qui ne tient pas reste
