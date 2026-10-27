@@ -64,10 +64,10 @@ export function buildReservationConfirmationEmail(data: ReservationConfirmationE
     : '';
   return {
     // Un objet sur une seule ligne : pas de retour à la ligne venu du nom du restaurant.
-    subject: `Votre réservation chez ${data.restaurantName.replace(/\s+/g, ' ').trim()} est confirmée`,
+    subject: `Votre réservation au restaurant ${data.restaurantName.replace(/\s+/g, ' ').trim()} est confirmée`,
     html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
   <h1 style="color: #0F172A;">Votre réservation est confirmée</h1>
-  <p>Vous avez réservé chez <strong>${name}</strong> le <strong>${escapeHtml(data.date)}</strong> à <strong>${escapeHtml(data.time)}</strong> pour <strong>${people}</strong>.</p>
+  <p>Vous avez réservé une table au restaurant <strong>${name}</strong> le <strong>${escapeHtml(data.date)}</strong> à <strong>${escapeHtml(data.time)}</strong> pour <strong>${people}</strong>.</p>
   ${manage}
   ${consent}
 </div>`,

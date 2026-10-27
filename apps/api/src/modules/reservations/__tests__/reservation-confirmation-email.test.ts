@@ -119,7 +119,7 @@ describe('confirmation e-mail after a web booking', () => {
 
     const message = sendEmail.mock.calls[0][0];
     expect(message.to).toBe('client@example.com');
-    expect(message.subject).toContain('Chez Sokar');
+    expect(message.subject).toBe('Votre réservation au restaurant Chez Sokar est confirmée');
     expect(message.html).not.toContain('/marketing/consent');
     expect(dbMock.reservationAuditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -238,6 +238,9 @@ describe('confirmation e-mail content', () => {
     const { html } = buildReservationConfirmationEmail(base);
 
     expect(html).toContain('Chez &lt;Sokar&gt;');
+    expect(html).toContain(
+      'Vous avez réservé une table au restaurant <strong>Chez &lt;Sokar&gt;</strong>',
+    );
     expect(html).toContain('à <strong>19:30</strong>');
     expect(html).toContain('pour <strong>2 personnes</strong>');
     expect(html).not.toContain('offres');
