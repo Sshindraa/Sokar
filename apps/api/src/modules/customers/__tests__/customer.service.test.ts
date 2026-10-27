@@ -35,7 +35,6 @@ describe('CustomerService', () => {
   const baseCustomer = {
     id: '1',
     name: 'Jean Dupont',
-    visitCount: 0,
     isVip: false,
     specialOccasion: null,
     notes: null,
@@ -61,7 +60,6 @@ describe('CustomerService', () => {
       const result = CustomerService.buildVipPromptExtra(
         {
           ...baseCustomer,
-          visitCount: 9,
           voiceProfile: {
             ...emptyProfile,
             pastVisits: 3,
@@ -80,7 +78,6 @@ describe('CustomerService', () => {
     it('dit « aucune visite » quand le numéro a seulement réservé', () => {
       const result = CustomerService.buildVipPromptExtra({
         ...baseCustomer,
-        visitCount: 2,
         voiceProfile: emptyProfile,
       });
       expect(result).toContain('Aucune visite passée connue.');
@@ -170,7 +167,6 @@ describe('CustomerService', () => {
       expect(
         CustomerService.returningCustomerFirstName({
           ...baseCustomer,
-          visitCount: 5,
           voiceProfile: emptyProfile,
         }),
       ).toBe('');
@@ -192,7 +188,6 @@ describe('CustomerService', () => {
     const cachedWithoutName = {
       id: 'c1',
       name: null,
-      visitCount: 0,
       isVip: false,
       specialOccasion: null,
       notes: null,

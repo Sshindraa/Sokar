@@ -184,8 +184,9 @@ de `notes` ou de `specialOccasion` est réservée aux rôles autorisés à lire 
 Le numéro est stocké en E.164 (« 06… » → « +33… ») et un client connu est retrouvé sous l'une ou
 l'autre forme ; l'upsert n'écrit que les champs envoyés (`isVip` absent = VIP conservé).
 Chaque client porte `lifecycle` et `visitSummary` (visites honorées, 365 j, no-show, dernière
-visite réelle), calculés sur les réservations : `visitCount` et `lastSeenAt` sont hérités et ne
-doivent plus être affichés. Recherche commune avec CRM Pro : nom, email, numéro saisi à la
+visite réelle), calculés sur les réservations. Les colonnes `visitCount` et `loyaltyScore` n'existent plus
+(migration `20261027150000`) ; `lastSeenAt` bouge à chaque appel et ne doit pas être affiché
+comme dernière visite. Recherche commune avec CRM Pro : nom, email, numéro saisi à la
 française. Tri : dernier contact.
 
 ### PATCH /customers/:id

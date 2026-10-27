@@ -124,7 +124,6 @@ describe('loyalty benefits foundation', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: CUSTOMER_ID,
       isVip: true,
-      visitCount: 3,
       birthMonth: 1,
       metricSnapshot: null,
     } as never);
@@ -183,7 +182,6 @@ describe('loyalty benefits foundation', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: CUSTOMER_ID,
       isVip: false,
-      visitCount: 2,
       birthMonth: 4,
       metricSnapshot: null,
     } as never);
@@ -200,7 +198,7 @@ describe('loyalty benefits foundation', () => {
     expect(db.loyaltyGrant.create).not.toHaveBeenCalled();
   });
 
-  it('counts honoured visits from reservations for MIN_VISITS, never the legacy visitCount', async () => {
+  it('counts honoured visits from reservations for MIN_VISITS, not a stored counter', async () => {
     vi.mocked(db.loyaltyGrant.findUnique).mockResolvedValue(null);
     vi.mocked(db.loyaltyBenefit.findFirst).mockResolvedValue(
       benefitRow({ rule: LoyaltyBenefitRule.MIN_VISITS, ruleValue: 2 }) as never,
@@ -209,7 +207,6 @@ describe('loyalty benefits foundation', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: CUSTOMER_ID,
       isVip: false,
-      visitCount: 9,
       birthMonth: null,
       metricSnapshot: null,
     } as never);
@@ -257,7 +254,6 @@ describe('loyalty benefits foundation', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: CUSTOMER_ID,
       isVip: false,
-      visitCount: 0,
       birthMonth: null,
       metricSnapshot: null,
     } as never);
@@ -298,7 +294,6 @@ describe('loyalty benefits foundation', () => {
     vi.mocked(db.customer.findFirst).mockResolvedValue({
       id: CUSTOMER_ID,
       isVip: false,
-      visitCount: 0,
       birthMonth: null,
       metricSnapshot: null,
     } as never);

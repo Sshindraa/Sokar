@@ -14,11 +14,11 @@ describe('customer.routes', () => {
   });
 
   describe('GET /customers', () => {
-    it('liste les clients du restaurant, triés par dernier contact (plus par visitCount)', async () => {
+    it('liste les clients du restaurant, triés par dernier contact', async () => {
       const app = await getApp();
       const customers = [
-        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 10 },
-        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 5 },
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice' },
+        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob' },
       ];
       vi.mocked(db.customer.findMany).mockResolvedValue(
         customers as unknown as Awaited<ReturnType<typeof db.customer.findMany>>,
@@ -49,8 +49,8 @@ describe('customer.routes', () => {
     it('ajoute le statut de cycle de vie calculé sur les vraies visites, en une seule requête', async () => {
       const app = await getApp();
       vi.mocked(db.customer.findMany).mockResolvedValue([
-        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 40 },
-        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 0 },
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice' },
+        { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob' },
       ] as never);
       vi.mocked(db.customer.count).mockResolvedValue(2);
       const recent = (days: number) => new Date(Date.now() - days * 86_400_000);
@@ -93,7 +93,7 @@ describe('customer.routes', () => {
       const [alice, bob] = res.json().data;
       expect(alice.lifecycle.status).toBe('new');
       expect(bob.lifecycle).toEqual({ status: 'regular', reason: '3 visites en 90 jours' });
-      expect(alice.visitCount).toBe(40);
+      expect(alice).not.toHaveProperty('visitCount');
     });
 
     describe('GET /customers/service-cards', () => {

@@ -26,7 +26,6 @@ const VOICE_PREFERENCE_LABELS: Record<CustomerVoiceProfile['preferences'][number
 export interface CustomerContext {
   id: string;
   name: string | null;
-  visitCount: number;
   isVip: boolean;
   specialOccasion: string | null;
   notes: string | null;
@@ -60,7 +59,7 @@ export class CustomerService {
       ? await db.customer.update({ where: { id: existingId, restaurantId }, data: touch })
       : await db.customer.upsert({
           where: { restaurantId_phone: { restaurantId, phone: storedPhone } },
-          create: { restaurantId, phone: storedPhone, name: name ?? null, visitCount: 0 },
+          create: { restaurantId, phone: storedPhone, name: name ?? null },
           update: touch,
         });
 
@@ -82,7 +81,6 @@ export class CustomerService {
     const ctx: CustomerContext = {
       id: customer.id,
       name: customer.name,
-      visitCount: customer.visitCount,
       isVip: customer.isVip,
       specialOccasion: customer.specialOccasion,
       notes: customer.notes,
@@ -102,7 +100,7 @@ export class CustomerService {
   ): Promise<void> {
     await db.customer.updateMany({
       where: { restaurantId, phone },
-      data: { visitCount: { increment: 1 }, lastSeenAt: new Date() },
+      data: { lastSeenAt: new Date() },
     });
     const normalizedPhone = normalizeCustomerPhone(phone);
     await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? phone}`);

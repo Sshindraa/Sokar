@@ -882,8 +882,6 @@ model Customer {
   mergedIntoId                  String?                       @map("merged_into_id")
   archivedAt                    DateTime?                     @map("archived_at")
   name                          String?
-  visitCount                    Int                           @default(0) @map("visit_count")
-  loyaltyScore                  Decimal                       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
   isVip                         Boolean                       @default(false) @map("is_vip")
   notes                         String?
   specialOccasion               String?                       @map("special_occasion")
@@ -923,7 +921,6 @@ model Customer {
 
   @@unique([restaurantId, phone])
   @@index([restaurantId, isVip])
-  @@index([restaurantId, visitCount(sort: Desc)], map: "customers_restaurant_visit_count_idx")
   @@index([restaurantId, lastCallAt(sort: Desc)], map: "customers_restaurant_last_call_at_idx")
   @@index([restaurantId, emailNormalized], map: "customers_restaurant_email_normalized_idx")
   @@index([restaurantId, archivedAt], map: "customers_restaurant_archived_at_idx")

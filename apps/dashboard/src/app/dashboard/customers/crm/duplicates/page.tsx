@@ -25,8 +25,7 @@ type DuplicateCustomer = {
   name: string | null;
   phone: string;
   emailNormalized: string | null;
-  visitCount: number;
-  /** Honoured visits from the reservations (the legacy `visitCount` is never shown). */
+  /** Honoured visits from the reservations. */
   visits?: number;
   isVip: boolean;
 };

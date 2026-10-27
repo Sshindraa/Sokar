@@ -17,7 +17,6 @@ const customer = {
   name: 'Alice Martin',
   phone: '+33612345678',
   emailNormalized: 'alice@example.com',
-  visitCount: 8,
   isVip: true,
   updatedAt: new Date().toISOString(),
   metricSnapshot: {

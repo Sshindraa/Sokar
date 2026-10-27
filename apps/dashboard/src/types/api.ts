@@ -231,10 +231,6 @@ export interface Customer {
   id: string;
   name: string | null;
   phone: string;
-  /** Legacy: phone bookings, absences included. Use `visitSummary`. */
-  visitCount: number;
-  /** Legacy score, no longer computed; kept for API compatibility. Use `lifecycle`. */
-  loyaltyScore: number;
   isVip: boolean;
   notes: string | null;
   lastSeenAt: string | null;
@@ -245,8 +241,8 @@ export interface Customer {
 }
 
 /**
- * The one visit count shown on every customer screen. `visitCount` (phone bookings,
- * absences included) and `lastSeenAt` (every call) are legacy fields: never display them.
+ * The one visit count shown on every customer screen. `lastSeenAt` moves with every call:
+ * never display it as the last visit.
  */
 export interface CustomerVisitSummary {
   visits: number;
