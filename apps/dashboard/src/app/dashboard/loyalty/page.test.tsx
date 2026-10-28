@@ -103,7 +103,7 @@ describe('LoyaltyPage', () => {
   it('charge les règles, les attributions, les clients et les métriques', async () => {
     render(<LoyaltyPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Attentions clients' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fidélité' })).toBeInTheDocument();
     expect(await screen.findAllByText(/Dessert anniversaire/)).not.toHaveLength(0);
     expect(await screen.findAllByText(/Alice Martin/)).not.toHaveLength(0);
     expect(screen.getByText('Attentions à utiliser')).toBeInTheDocument();
@@ -114,8 +114,9 @@ describe('LoyaltyPage', () => {
 
   it('crée une attention avec des libellés métier et des valeurs par défaut', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
+    fireEvent.click(screen.getByText('Créer une attention', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('Nom de l’attention'), {
       target: { value: 'Café VIP' },
     });
@@ -140,8 +141,9 @@ describe('LoyaltyPage', () => {
 
   it('convertit les montants en euros vers les centimes attendus par l’API', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
+    fireEvent.click(screen.getByText('Créer une attention', { selector: 'summary' }));
     fireEvent.change(screen.getByLabelText('Nom de l’attention'), {
       target: { value: 'Menu fidélité' },
     });
@@ -172,7 +174,7 @@ describe('LoyaltyPage', () => {
 
   it('attribue une attention à un client et affiche le code une seule fois', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
     // Le titre s’affiche avant les données : le bouton reste désactivé tant que les attentions et les
     // clients ne sont pas chargés, et React ignore un clic sur un bouton désactivé.
     await waitFor(() =>
@@ -212,7 +214,7 @@ describe('LoyaltyPage', () => {
 
   it('valide une attention avec son attribution et son code', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
     // Tant que les attributions ne sont pas chargées, l’option manque et le bouton reste désactivé.
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Valider l’attention' })).toBeEnabled(),
@@ -240,10 +242,16 @@ describe('LoyaltyPage', () => {
 
   it('permet d’annuler une attribution en attente avec confirmation', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
     // Le bouton n’existe qu’une fois la liste des attributions chargée.
-    fireEvent.click(await screen.findByRole('button', { name: 'Annuler l’attribution' }));
+    fireEvent.pointerDown(
+      await screen.findByRole('button', {
+        name: 'Autres actions pour Dessert anniversaire · Alice Martin',
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Annuler l’attribution' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/ne pourra plus être validée/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Annuler l’attribution' }));
@@ -278,7 +286,7 @@ describe('LoyaltyPage', () => {
 
   it('ne propose plus de champ technique (référence interne, identifiant de réservation)', async () => {
     render(<LoyaltyPage />);
-    await screen.findByRole('heading', { name: 'Attentions clients' });
+    await screen.findByRole('heading', { name: 'Fidélité' });
 
     expect(screen.queryByLabelText(/Référence interne/)).toBeNull();
     expect(screen.queryByLabelText(/Réservation liée/)).toBeNull();

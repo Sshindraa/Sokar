@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toApiError } from '@/lib/api-error';
 import ReputationPage from './page';
+import { Toaster } from '@/components/ui/sonner';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -61,10 +62,10 @@ describe('ReputationPage', () => {
     render(<ReputationPage />);
 
     expect(await screen.findByRole('heading', { name: 'Réputation' })).toBeInTheDocument();
-    expect(await screen.findByText('2.0/5')).toBeInTheDocument();
+    expect(await screen.findByText('2,0/5')).toBeInTheDocument();
     expect(await screen.findAllByText('Service trop long')).toHaveLength(2);
     expect(await screen.findByText('À traiter')).toBeInTheDocument();
-    expect(await screen.findByText('1 active(s)')).toBeInTheDocument();
+    expect(await screen.findByText('1 active')).toBeInTheDocument();
   });
 
   it('met une récupération en cours avec une mutation tenant-scoped', async () => {
@@ -119,7 +120,12 @@ describe('ReputationPage', () => {
     apiMocks.patch.mockRejectedValue(
       toApiError(409, { error: 'REPUTATION_RECOVERY_TRANSITION_INVALID' }),
     );
-    render(<ReputationPage />);
+    render(
+      <>
+        <ReputationPage />
+        <Toaster />
+      </>,
+    );
     await screen.findByRole('heading', { name: 'Réputation' });
 
     await clickWhenEnabled('Prendre en charge');
