@@ -14,57 +14,57 @@ datasource db {
 // Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
-  id                        String                 @id @default(uuid())
+  id                         String                 @id @default(uuid())
   /// Compte commercial auquel appartient cet établissement.
   /// Nullable pendant le backfill initial pour préserver les restaurants existants.
-  accountId                 String?                @map("account_id")
-  isPrimary                 Boolean                @default(false) @map("is_primary")
-  siteStatus                String                 @default("ACTIVE") @map("site_status")
-  name                      String
-  plan                      Plan                   @default(STARTER)
+  accountId                  String?                @map("account_id")
+  isPrimary                  Boolean                @default(false) @map("is_primary")
+  siteStatus                 String                 @default("ACTIVE") @map("site_status")
+  name                       String
+  plan                       Plan                   @default(STARTER)
   /// Maintien du copilote pour les établissements présents avant la séparation Essential/Pro.
   serviceCopilotLegacyAccess Boolean                @default(false) @map("service_copilot_legacy_access")
-  managerPhone              String                 @map("manager_phone")
-  managerEmail              String                 @map("manager_email")
-  phoneNumber               String                 @unique @map("phone_number")
-  openingHours              Json                   @map("opening_hours")
-  carrier                   String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
-  smsConfirmEnabled         Boolean                @default(true) @map("sms_confirm_enabled")
-  theforkSavings            Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
-  onboardingTasks           Json                   @default("{}") @map("onboarding_tasks")
-  onboardingDone            Boolean                @default(false) @map("onboarding_done")
-  onboardingCompletedAt     DateTime?              @map("onboarding_completed_at")
-  onboardingActivatedAt     DateTime?              @map("onboarding_activated_at")
-  onboardingLastSeenAt      DateTime?              @map("onboarding_last_seen_at")
-  firstCallAt               DateTime?              @map("first_call_at")
+  managerPhone               String                 @map("manager_phone")
+  managerEmail               String                 @map("manager_email")
+  phoneNumber                String                 @unique @map("phone_number")
+  openingHours               Json                   @map("opening_hours")
+  carrier                    String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled          Boolean                @default(true) @map("sms_confirm_enabled")
+  theforkSavings             Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  onboardingTasks            Json                   @default("{}") @map("onboarding_tasks")
+  onboardingDone             Boolean                @default(false) @map("onboarding_done")
+  onboardingCompletedAt      DateTime?              @map("onboarding_completed_at")
+  onboardingActivatedAt      DateTime?              @map("onboarding_activated_at")
+  onboardingLastSeenAt       DateTime?              @map("onboarding_last_seen_at")
+  firstCallAt                DateTime?              @map("first_call_at")
   // Provisioning fields
-  provisioningStatus        String                 @default("PENDING") @map("provisioning_status")
-  telnyxPhoneNumberId       String?                @map("telnyx_phone_number_id")
-  forwardingConfiguredAt    DateTime?              @map("forwarding_configured_at")
-  testCallValidatedAt       DateTime?              @map("test_call_validated_at")
-  createdAt                 DateTime               @default(now()) @map("created_at")
-  updatedAt                 DateTime               @default(now()) @updatedAt @map("updated_at")
-  calls                     Call[]
-  reservations              Reservation[]
-  customers                 Customer[]
-  messages                  Message[]
-  reactivationCampaigns     ReactivationCampaign[]
-  personality               AgentPersonality?
-  callQuotas                CallQuota[]
-  agenticHolds              AgenticHold[]
-  floorPlans                FloorPlan[]
-  giftCards                 GiftCard[]
-  giftCardPacks             GiftCardPack[]
-  waitingListEntries        WaitingListEntry[]
-  giftCardMinimumAmount     Int?                   @map("gift_card_minimum_amount")
-  giftCardCommissionRate    Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
-  giftCardEnabled           Boolean                @default(false) @map("gift_card_enabled")
-  giftCardStripeAccountId   String?                @unique @map("gift_card_stripe_account_id")
-  experienceStripeAccountId String?                @unique @map("experience_stripe_account_id")
-  experienceCommissionRate  Decimal?               @map("experience_commission_rate") @db.Decimal(5, 4)
+  provisioningStatus         String                 @default("PENDING") @map("provisioning_status")
+  telnyxPhoneNumberId        String?                @map("telnyx_phone_number_id")
+  forwardingConfiguredAt     DateTime?              @map("forwarding_configured_at")
+  testCallValidatedAt        DateTime?              @map("test_call_validated_at")
+  createdAt                  DateTime               @default(now()) @map("created_at")
+  updatedAt                  DateTime               @default(now()) @updatedAt @map("updated_at")
+  calls                      Call[]
+  reservations               Reservation[]
+  customers                  Customer[]
+  messages                   Message[]
+  reactivationCampaigns      ReactivationCampaign[]
+  personality                AgentPersonality?
+  callQuotas                 CallQuota[]
+  agenticHolds               AgenticHold[]
+  floorPlans                 FloorPlan[]
+  giftCards                  GiftCard[]
+  giftCardPacks              GiftCardPack[]
+  waitingListEntries         WaitingListEntry[]
+  giftCardMinimumAmount      Int?                   @map("gift_card_minimum_amount")
+  giftCardCommissionRate     Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
+  giftCardEnabled            Boolean                @default(false) @map("gift_card_enabled")
+  giftCardStripeAccountId    String?                @unique @map("gift_card_stripe_account_id")
+  experienceStripeAccountId  String?                @unique @map("experience_stripe_account_id")
+  experienceCommissionRate   Decimal?               @map("experience_commission_rate") @db.Decimal(5, 4)
   /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
   /// Null signifie « utiliser CRM_SENSITIVE_NOTE_ROLES » au niveau de l'API.
-  crmSensitiveNoteRoles     String?                @map("crm_sensitive_note_roles")
+  crmSensitiveNoteRoles      String?                @map("crm_sensitive_note_roles")
 
   // Agentic reservations (P0)
   slug                              String?                            @unique @map("slug")
@@ -155,15 +155,15 @@ model Restaurant {
   // Google Places — rating importé (aggregateRating JSON-LD, Phase 3)
   // Sync périodique via worker google-places-sync. Respect CGU Google :
   // attribution obligatoire, pas de republication du texte des avis.
-  googlePlaceId        String?   @map("google_place_id")
-  googleRating         Float?    @map("google_rating")
-  googleReviewCount    Int?      @map("google_review_count")
-  googleRatingSyncedAt DateTime? @map("google_rating_synced_at")
+  googlePlaceId        String?           @map("google_place_id")
+  googleRating         Float?            @map("google_rating")
+  googleReviewCount    Int?              @map("google_review_count")
+  googleRatingSyncedAt DateTime?         @map("google_rating_synced_at")
+  marketingOptOuts     MarketingOptOut[]
 
   @@index([city, publishedAt], map: "restaurants_city_published_at_idx")
   @@index([accountId, siteStatus], map: "restaurants_account_site_status_idx")
   @@map("restaurants")
-  marketingOptOuts MarketingOptOut[]
 }
 
 /// Compte commercial multi-site. Clerk reste la source de vérité de
@@ -572,7 +572,7 @@ model CallQuota {
 }
 
 model UsageEvent {
-  id             String        @id @default(uuid())
+  id             String        @id @default(uuid()) @db.Uuid
   restaurantId   String        @map("restaurant_id")
   accountId      String?       @map("account_id")
   category       UsageCategory
@@ -612,7 +612,7 @@ model UsageMonthlyRollup {
 /// Durable event intent used to bridge Postgres mutations and BullMQ delivery.
 /// Events are at-least-once and consumers must remain idempotent.
 model OutboxEvent {
-  id             String       @id @default(uuid())
+  id             String       @id @default(uuid()) @db.Uuid
   restaurantId   String?      @map("restaurant_id")
   topic          String
   aggregateType  String       @map("aggregate_type")
@@ -640,7 +640,7 @@ model OutboxEvent {
 /// Versioned internal cost catalog. Empty rows mean the provider is explicitly
 /// unpriced; callers must never invent a vendor rate in application code.
 model UsageTariff {
-  id            String        @id @default(uuid())
+  id            String        @id @default(uuid()) @db.Uuid
   category      UsageCategory
   provider      String
   unit          String
@@ -766,7 +766,7 @@ model ReservationPaymentEvent {
 /// Explicit operator decision for a provider/ledger difference. Adjustments
 /// never rewrite immutable UsageEvent rows or monthly rollups.
 model UsageReconciliationAdjustment {
-  id             String                @id @default(uuid())
+  id             String                @id @default(uuid()) @db.Uuid
   idempotencyKey String                @unique @map("idempotency_key")
   reportHash     String                @map("report_hash")
   evidenceRef    String                @map("evidence_ref")
@@ -1300,8 +1300,8 @@ model ExperienceCheckout {
   reservation             ExperienceReservation?   @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   events                  ExperiencePaymentEvent[]
 
-  @@index([restaurantId, status, expiresAt])
-  @@index([sessionId, status, expiresAt])
+  @@index([restaurantId, status, expiresAt], map: "experience_checkouts_restaurant_status_expires_idx")
+  @@index([sessionId, status, expiresAt], map: "experience_checkouts_session_status_expires_idx")
   @@map("experience_checkouts")
 }
 
@@ -1318,8 +1318,8 @@ model ExperiencePaymentEvent {
   restaurant      Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   checkout        ExperienceCheckout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
 
-  @@unique([checkoutId, providerEventId])
-  @@index([restaurantId, occurredAt])
+  @@unique([checkoutId, providerEventId], map: "experience_payment_events_checkout_provider_event_id_key")
+  @@index([restaurantId, occurredAt], map: "experience_payment_events_restaurant_occurred_idx")
   @@map("experience_payment_events")
 }
 
@@ -1645,8 +1645,8 @@ model DistributionAvailabilitySnapshot {
   observedAt     DateTime               @default(now()) @map("observed_at")
   createdAt      DateTime               @default(now()) @map("created_at")
   updatedAt      DateTime               @updatedAt @map("updated_at")
-  restaurant     Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  connection     DistributionConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  restaurant     Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade, map: "distribution_availability_restaurant_id_fkey")
+  connection     DistributionConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade, map: "distribution_availability_connection_id_fkey")
 
   @@unique([connectionId, slotKey], map: "distribution_availability_connection_slot_key")
   @@index([restaurantId, serviceDate, startsAt], map: "distribution_availability_restaurant_date_starts_idx")
@@ -2066,6 +2066,7 @@ model MarketingCampaign {
   legacyReactivation   ReactivationCampaign?
 
   @@index([restaurantId, status, updatedAt(sort: Desc)], map: "marketing_campaigns_restaurant_status_updated_idx")
+  @@index([restaurantId, status, startedAt], map: "marketing_campaigns_restaurant_status_started_idx")
   @@index([segmentId], map: "marketing_campaigns_segment_idx")
   @@index([eventId], map: "marketing_campaigns_event_idx")
   @@map("marketing_campaigns")
@@ -2615,14 +2616,14 @@ model WaitingListEntry {
   promotedAt              DateTime?         @map("promoted_at")
   cancelledAt             DateTime?         @map("cancelled_at")
   createdAt               DateTime          @default(now()) @map("created_at")
-  updatedAt               DateTime          @updatedAt @map("updated_at")
+  updatedAt               DateTime          @default(now()) @updatedAt @map("updated_at")
 
   restaurant          Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   preferredSection    Section?     @relation(fields: [preferredSectionId], references: [id], onDelete: SetNull)
   promotedReservation Reservation? @relation(fields: [promotedReservationId], references: [id], onDelete: SetNull)
 
-  @@index([restaurantId, status, slotStart, createdAt])
-  @@index([restaurantId, customerPhoneNormalized])
+  @@index([restaurantId, status, slotStart, createdAt], map: "waiting_list_entries_restaurant_id_status_slot_start_created_at")
+  @@index([restaurantId, customerPhoneNormalized], map: "waiting_list_entries_restaurant_id_customer_phone_normalized_id")
   @@index([expiresAt])
   @@map("waiting_list_entries")
 }
@@ -2671,7 +2672,7 @@ enum CopilotTelemetryEventType {
 }
 
 model CopilotOccurrence {
-  id            String                  @id @default(uuid())
+  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   restaurantId  String                  @map("restaurant_id")
   occurrenceKey String                  @map("occurrence_key")
   kind          String
@@ -2694,8 +2695,8 @@ model CopilotOccurrence {
 }
 
 model CopilotTelemetryEvent {
-  id             String                    @id @default(uuid())
-  occurrenceId   String                    @map("occurrence_id")
+  id             String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurrenceId   String                    @map("occurrence_id") @db.Uuid
   idempotencyKey String                    @unique @map("idempotency_key")
   event          CopilotTelemetryEventType
   reasonCode     String?                   @map("reason_code")
@@ -2856,7 +2857,7 @@ model GiftCard {
   status          String    @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
   purchasedAt     DateTime  @default(now()) @map("purchased_at")
   expiresAt       DateTime? @map("expires_at")
-  reminderSentAt  DateTime? @map("reminder_sent_at")
+  reminderSentAt  DateTime? @map("reminder_sent_at") @db.Timestamp(6)
   validityMonths  Int       @default(12) @map("validity_months")
 
   // Montant libre ou pack expérience
@@ -2918,16 +2919,16 @@ model GiftCardRedemption {
   operationKey     String?  @unique @map("operation_key")
   restaurantId     String?  @map("restaurant_id")
   ticketReference  String?  @map("ticket_reference")
-  billAmount Decimal? @db.Decimal(10, 2) @map("bill_amount")
-  balanceAfter Decimal? @db.Decimal(10, 2) @map("balance_after")
-  complementAmount Decimal? @db.Decimal(10, 2) @map("complement_amount")
+  billAmount       Decimal? @map("bill_amount") @db.Decimal(10, 2)
+  balanceAfter     Decimal? @map("balance_after") @db.Decimal(10, 2)
+  complementAmount Decimal? @map("complement_amount") @db.Decimal(10, 2)
   actor            String?
 
   giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
-  @@index([giftCardId])
   @@unique([restaurantId, ticketReference])
+  @@index([giftCardId])
   @@map("gift_card_redemptions")
 }
 
@@ -2957,7 +2958,7 @@ model GiftCardPack {
   minPartySize Int        @default(1) @map("min_party_size")
   maxPartySize Int        @default(2) @map("max_party_size")
   isActive     Boolean    @default(true) @map("is_active")
-  deletedAt    DateTime?  @map("deleted_at")
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamp(6)
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   giftCards    GiftCard[]
 

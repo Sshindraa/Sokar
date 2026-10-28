@@ -199,7 +199,7 @@ if [ "$DRY_RUN" = false ]; then
     log info ""
     log info "📦 Snapshot pré-build (rollback safety net)..."
     snapshot_artifacts "$PREV_RELEASE" "pre-build"
-    backup_db "$PREV_RELEASE" || true
+    backup_db "$PREV_RELEASE"
 
     # Variable globale pour le trap ERR
     RESTORE_ON_FAIL="$PREV_RELEASE"
