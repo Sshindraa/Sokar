@@ -34,10 +34,12 @@ Pour restaurer aussi la base de données depuis la backup horodatée dans le dos
 de release, ajouter `--with-db-rollback` :
 
 ```zsh
-bash scripts/deploy.sh --env prod --confirm-production rollback --with-db-rollback
+bash scripts/deploy.sh --env prod --confirm-production rollback --with-db-rollback 20260726T194319Z-pre
 ```
 
-> ⚠️ Le rollback DB restaure la backup prise **avant** le build de la release cible.
+> ⚠️ Le snapshot `-pre` conserve les artefacts et la base juste avant le déploiement.
+> Sélectionner explicitement ce snapshot pour un rollback DB : les snapshots post-build
+> ne contiennent pas de dump. Les snapshots suivent la même limite de rétention que les releases.
 > Toute donnée écrite après cette backup sera perdue.
 
 > Sans `--with-db-rollback`, un rollback applicatif ne restaure pas la base de données.
