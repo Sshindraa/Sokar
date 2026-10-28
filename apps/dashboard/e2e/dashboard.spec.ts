@@ -45,7 +45,7 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     const headerBox = await header.boundingBox();
     expect(headerBox).not.toBeNull();
 
-    const firstWidget = page.getByRole('article', { name: 'Indicateur Réservations' });
+    const firstWidget = page.getByRole('article', { name: 'Indicateur Réservations', exact: true });
     await expect(firstWidget).toBeVisible();
     const widgetBox = await firstWidget.boundingBox();
     expect(widgetBox).not.toBeNull();
@@ -64,9 +64,15 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
   test("les KPIs et graphiques s'affichent", async ({ page }) => {
     // KPIs — labels des cartes KpiCard (exact pour éviter les matches multiples
     // avec d'autres textes comme "des appels reçus").
-    await expect(page.getByRole('article', { name: 'Indicateur Réservations' })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Indicateur Couverts' })).toBeVisible();
-    await expect(page.getByRole('article', { name: 'Indicateur CA estimé' })).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur Réservations', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur Couverts', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur CA estimé', exact: true }),
+    ).toBeVisible();
 
     // Graphiques — DashboardCharts (dynamic import recharts).
     // Les titres des cartes graphique sont rendus une fois recharts hydraté.
