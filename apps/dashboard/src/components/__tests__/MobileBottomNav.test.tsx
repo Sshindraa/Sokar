@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import MobileBottomNav from '../MobileBottomNav';
 import { triggerHaptic } from '@/lib/utils';
 
@@ -48,16 +48,19 @@ vi.mock('next-intl', () => ({
       marketing: 'Campagnes',
       reputation: 'Avis',
       loyalty: 'Fidélité',
-      reactivation: 'Relances',
+      reactivation: 'Réactivation',
+      growth: 'Marketing',
+      offers: 'Offres',
+      channels: 'Canaux',
       openButton: 'Créer une offre',
       title: 'Que souhaitez-vous créer ?',
-      experiences: 'Expériences à réserver',
-      events: 'Événements & billets',
+      experiences: 'Expériences',
+      events: 'Événements',
       giftCards: 'Cartes cadeaux',
       connect: 'Connect',
       widget: 'Widget',
-      distribution: 'Partenaires',
-      agentic: 'Agent IA',
+      distribution: 'Distribution',
+      agentic: 'Agents IA',
       settings: 'Réglages',
       themeTooltipLight: 'Passer en mode sombre',
       themeTooltipDark: 'Passer en mode clair',
@@ -96,6 +99,28 @@ describe('MobileBottomNav', () => {
       container.querySelector('.dashboard-mobile-nav__active-indicator'),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Pilotage/i })).toHaveClass('is-active');
+  });
+
+  it('range le menu Plus par section, sans répéter la barre du bas', () => {
+    render(<MobileBottomNav />);
+    fireEvent.click(screen.getByRole('button', { name: /Plus/i }));
+
+    const menu = screen.getByRole('dialog', { name: 'Plus' });
+    const headings = within(menu)
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual(['Service', 'Clients', 'Marketing', 'Offres', 'Canaux', 'Réglages']);
+    expect(within(menu).getByRole('link', { name: 'Appels' })).toHaveAttribute(
+      'href',
+      '/dashboard/calls',
+    );
+    expect(within(menu).queryByRole('link', { name: 'Réservations' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('link', { name: 'Clients' })).not.toBeInTheDocument();
+    expect(
+      within(menu)
+        .queryAllByRole('link')
+        .map((link) => link.getAttribute('href')),
+    ).not.toContain('/dashboard/floor-plan?view=service-live');
   });
 
   it('ouvre le briefing du service depuis la barre du bas', () => {
