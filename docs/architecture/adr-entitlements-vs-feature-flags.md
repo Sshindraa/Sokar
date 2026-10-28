@@ -50,11 +50,11 @@ doit jamais devenir un entitlement client.
 
 Les capabilities CRM avancé, campagnes, attribution et réputation sont maintenant présentes dans la
 matrice et protègent les routes correspondantes. Les capacités POS, paiement de réservation, groupe,
-réputation, fidélité, expériences et distribution suivent
+expériences et distribution suivent
 la même séparation entitlement/flag. Elles restent toutefois soumises aux flags/runtime health :
 les campagnes d'envoi sont bloquées par défaut (`MARKETING_SENDS_ENABLED`), comme les connecteurs
 POS (`POS_CONNECTORS_ENABLED`), la protection bancaire (`RESERVATION_PAYMENTS_ENABLED`), le
-groupe CRM (`CUSTOMER_GROUPS_ENABLED`), la réputation (`REPUTATION_ENABLED`), les expériences
+groupe CRM (`CUSTOMER_GROUPS_ENABLED`), les expériences
 (`EXPERIENCES_ENABLED`), les événements
 (`EVENTS_ENABLED`) et la distribution (`DISTRIBUTION_ENABLED`). Le code local peut
 donc être testé sans ouvrir un effet
@@ -70,3 +70,5 @@ Toute nouvelle restriction sur une fonction déjà utilisée doit être déploy�
 
 La réactivation est directement protégée car elle est déjà définie comme une fonction Pro et ses
 tests couvrent explicitement Essential refusé et Pro autorisé.
+
+La réputation et la fidélité manuelle sont réservées à Pro/Multi-site sans flag de gel.

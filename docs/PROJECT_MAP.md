@@ -41,7 +41,7 @@ packages/
 | `customers`            | CRM avancé local : identité, timeline, RFM, préférences, tags et segments bornés.                                                                                                                |
 | `pos`                  | Fondation caisse provider-neutral : connexions, tickets normalisés, import idempotent et matcher réservation-ticket.                                                                             |
 | `marketing`            | Permissions par canal, audiences, campagnes, automations bornées, worker, désinscription et attribution locale.                                                                                  |
-| `reputation`           | Feedback post-visite tokenisé, scores bornés, tâches de récupération et expiration périodique ; providers désactivés.                                                                            |
+| `reputation`           | Feedback privé post-visite par e-mail, scores bornés, tâches de récupération et expiration périodique.                                                                                           |
 | `loyalty`              | Catalogue d'avantages Pro, règles explicables, grants à code hashé, consommation atomique et expiration ; providers désactivés.                                                                  |
 | `experiences`          | Catalogue d'expériences Pro, sessions datées, capacité atomique, snapshot prix, réservations/annulations idempotentes et expiration ; paiement/canaux externes désactivés.                       |
 | `events`               | Catalogue événementiel Pro, sessions/tarifs, jauge atomique, commandes et billets hashés, check-in, liste d'attente et traces locales ; paiement/distribution désactivés.                        |
@@ -84,12 +84,7 @@ qualifiés. Les projections `Customer` restent attachées à leur établissement
 `CustomerGroupMembership` explicite et unique par compte/client fait le lien, et les réponses ne
 retournent que les quatre derniers chiffres du téléphone.
 
-La fondation réputation est authentifiée par organisation via `requireOrg`, la capability
-`reputation.feedback`, un rôle Owner/Manager et `REPUTATION_ENABLED=false` par défaut. Une demande
-ne peut viser qu'une réservation `HONORED` avec un client actif. Le endpoint public reçoit un token
-opaque expirant dont seul le hash est conservé ; une note ≤ 2 crée une tâche de récupération dans
-la même transaction. Aucun SMS, email, WhatsApp ou fournisseur d'avis n'est appelé par cette
-fondation.
+La réputation est réservée à Pro/Multi-site et aux rôles Owner/Manager. Après une visite honorée, un e-mail de retour privé part à J+1, au plus une fois par client et restaurant en 90 jours, avec désinscription et plafond de 10 tentatives par jour UTC. Une note ≤ 2 crée une tâche de récupération. Aucun lien vers une plateforme d'avis n'est envoyé.
 
 La fidélité opérationnelle est authentifiée par organisation via `requireOrg`, la capability
 `reputation.loyalty` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
@@ -164,8 +159,7 @@ rollback reste possible.
   dashboard ne les présente avant la qualification d'un fournisseur d'identité et d'un pilote
   multi-site.
 - La page réputation (`/dashboard/reputation`) lit les retours et les tâches via l'API et permet les
-  transitions `OPEN → IN_PROGRESS → RESOLVED`. Elle reste verrouillée par `REPUTATION_ENABLED=false`
-  tant que les providers d'envoi, les sources d'avis et le pilote ne sont pas qualifiés.
+  transitions `OPEN → IN_PROGRESS → RESOLVED` pour Pro/Multi-site.
 - La page fidélité (`/dashboard/loyalty`) lit les avantages et grants via l'API et expose les
   transitions d'émission/consommation pour Pro et Multi-site, en version manuelle.
 - La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des dates et annule les
@@ -278,8 +272,7 @@ rollback reste possible.
 - `reputation.service.ts` vérifie `HONORED`, hache les tokens, borne score/commentaire, rend la
   soumission idempotente et crée une tâche pour les scores faibles dans la même transaction.
 - `reputation-feedback-expiry.worker.ts` expire les demandes `PENDING`/`SENT` toutes les 15 minutes.
-  `REPUTATION_ENABLED=false` bloque les routes tant que l'envoi, les sources d'avis et le pilote
-  n'ont pas été qualifiés.
+  L’envoi privé utilise Resend et le budget transactionnel, avec un plafond de 10 tentatives quotidiennes.
 
 ### Fidélité opérationnelle
 

@@ -180,6 +180,8 @@ export class ErasureService {
             data: {
               phone: `erased:${subjectHash.slice(0, 12)}:${customer.id.slice(-16)}`,
               emailNormalized: null,
+              feedbackEmailOptOutAt: null,
+              feedbackEmailRequestedAt: null,
               birthMonth: null,
               birthDay: null,
               preferredLocale: null,

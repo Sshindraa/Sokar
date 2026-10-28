@@ -876,6 +876,8 @@ model Customer {
   restaurantId                  String                        @map("restaurant_id")
   phone                         String
   emailNormalized               String?                       @map("email_normalized")
+  feedbackEmailOptOutAt         DateTime?                     @map("feedback_email_opt_out_at")
+  feedbackEmailRequestedAt      DateTime?                     @map("feedback_email_requested_at")
   birthMonth                    Int?                          @map("birth_month")
   birthDay                      Int?                          @map("birth_day")
   preferredLocale               String?                       @map("preferred_locale")
@@ -1022,11 +1024,22 @@ model ReputationFeedbackRequest {
   reservation Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   feedback    ReputationFeedback?
+  emailAttempts ReputationEmailAttempt[]
 
   @@index([restaurantId, status, expiresAt], map: "reputation_feedback_requests_status_expiry_idx")
   @@index([restaurantId, requestedAt], map: "reputation_feedback_requests_restaurant_requested_idx")
   @@index([customerId, requestedAt], map: "reputation_feedback_requests_customer_requested_idx")
   @@map("reputation_feedback_requests")
+}
+
+model ReputationEmailAttempt {
+  id          String                    @id @default(uuid())
+  requestId   String                    @map("request_id")
+  attemptedAt DateTime                  @default(now()) @map("attempted_at")
+  request     ReputationFeedbackRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([attemptedAt], map: "reputation_email_attempts_attempted_at_idx")
+  @@map("reputation_email_attempts")
 }
 
 /// The customer's score and optional comment. Scores are bounded to 1..5 by
