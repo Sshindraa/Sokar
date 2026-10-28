@@ -2887,3 +2887,7 @@ Sur demande de Hamza, ajout d’une simulation animée locale : échange client/
 ## 2026-10-28 — Retour réputation privé
 
 Décision : Pro/Multi-site, e-mail de service à J+1 après visite honorée, au plus une demande par client et restaurant sur 90 jours, désinscription et tâche de récupération pour une note ≤ 2. Aucun lien vers une plateforme d’avis. Le plafond est fixé à 10 tentatives par jour UTC pour la plateforme ; ces messages utilisent le budget transactionnel Resend. Migration additive et secret dédié requis ; qualification staging à effectuer avant ouverture.
+
+## 2026-10-28 — Qualification staging du retour privé
+
+CI verte et migration additive appliquée sur staging. Parcours validé sur un établissement Pro de test non publié : réservation honorée, événement à J+1 avancé pour le test, e-mail reçu via Resend, note 1/5, tâche ouverte visible dans Réputation et désinscription enregistrée. Établissement réarchivé et liste des destinataires restaurée. Avant toute production : configurer le secret d’envoi dédié.
