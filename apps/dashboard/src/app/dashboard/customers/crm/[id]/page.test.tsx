@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import { toApiError } from '@/lib/api-error';
 import CrmCustomerPage from './page';
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -25,6 +28,15 @@ vi.mock('@/lib/api', () => ({
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'customer-1' }),
 }));
+
+// Le menu « Plus d’actions » s’ouvre au pointeur (Radix) : on le reproduit dans jsdom.
+function openExportMenu(): void {
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Plus d’actions' }), {
+    button: 0,
+    ctrlKey: false,
+  });
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Export RGPD' }));
+}
 
 describe('CrmCustomerPage', () => {
   beforeEach(() => {
@@ -120,7 +132,7 @@ describe('CrmCustomerPage', () => {
     expect(screen.queryByText(/Exactitude des chiffres/)).not.toBeInTheDocument();
     // Les consentements ne se chargent qu'à l'ouverture de leur onglet.
     expect(apiMocks.get).not.toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
-    fireEvent.click(screen.getByRole('tab', { name: 'Consentements' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Consentements' }));
     expect(await screen.findByText('Consentement marketing')).toBeInTheDocument();
     expect(apiMocks.get).toHaveBeenCalledWith('crm/customers/customer-1/marketing-permissions');
   });
@@ -174,7 +186,7 @@ describe('CrmCustomerPage', () => {
     expect(await screen.findByRole('heading', { name: 'Alice Martin' })).toBeInTheDocument();
     expect(screen.getByText('No-show · 365 j').nextElementSibling).toHaveTextContent('2');
     expect(screen.queryByRole('tab', { name: 'Consentements' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: 'Préférences' }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Préférences' }));
     expect(screen.getByText('noix')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ajouter/ })).toBeInTheDocument();
     expect(screen.queryByText('Dépense encaissée')).not.toBeInTheDocument();
@@ -193,7 +205,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('button', { name: 'Export RGPD' }));
+    openExportMenu();
     fireEvent.click(await screen.findByRole('button', { name: 'Envoyer le code SMS' }));
     expect(await screen.findByText(/Code envoyé par SMS/)).toBeInTheDocument();
 
@@ -221,7 +233,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('tab', { name: /Préférences/ }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Préférences/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
     fireEvent.change(screen.getByLabelText('Valeur de la préférence'), {
       target: { value: 'en' },
@@ -234,7 +246,7 @@ describe('CrmCustomerPage', () => {
         expect.objectContaining({ value: 'en', source: 'MANUAL', confidence: 1 }),
       ),
     );
-    expect(await screen.findByText('Préférence enregistrée.')).toBeInTheDocument();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Préférence enregistrée.'));
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Supprimer la préférence Langue préférée' }),
@@ -290,7 +302,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('tab', { name: /Préférences/ }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Préférences/ }));
     expect(screen.getByText('Entendu au téléphone, à confirmer')).toBeInTheDocument();
     expect(screen.queryByText('terrasse')).not.toBeInTheDocument();
 
@@ -307,7 +319,7 @@ describe('CrmCustomerPage', () => {
         }),
       ),
     );
-    expect(await screen.findByText('Préférence confirmée.')).toBeInTheDocument();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Préférence confirmée.'));
     expect(screen.queryByText('Entendu au téléphone, à confirmer')).not.toBeInTheDocument();
   });
 
@@ -341,7 +353,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('tab', { name: /Préférences/ }));
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Préférences/ }));
     fireEvent.click(
       screen.getByRole('button', { name: 'Écarter la suggestion Régimes alimentaires' }),
     );
@@ -448,7 +460,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('button', { name: 'Export RGPD' }));
+    openExportMenu();
     fireEvent.click(await screen.findByRole('button', { name: 'Envoyer le code SMS' }));
     fireEvent.change(await screen.findByLabelText('Code d’export RGPD'), {
       target: { value: '123456' },
@@ -490,7 +502,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     await screen.findByRole('heading', { name: 'Alice Martin' });
-    fireEvent.click(screen.getByRole('button', { name: 'Export RGPD' }));
+    openExportMenu();
     fireEvent.click(await screen.findByRole('button', { name: 'Envoyer le code SMS' }));
     fireEvent.change(await screen.findByLabelText('Code d’export RGPD'), {
       target: { value: '000000' },

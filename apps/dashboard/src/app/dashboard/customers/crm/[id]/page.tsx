@@ -16,6 +16,7 @@ import {
   Loader2,
   Lock,
   Mail,
+  MoreHorizontal,
   Plus,
   Phone,
   RefreshCw,
@@ -38,13 +39,21 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
 import { useApi } from '@/lib/api';
 import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage, type CustomerVisitSummary } from '@/types/api';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
-import { cn, formatPhone } from '@/lib/utils';
+import { formatPhone } from '@/lib/utils';
+import { toast } from 'sonner';
 
 type CustomerIdentity = {
   id: string;
@@ -316,7 +325,6 @@ export default function CrmCustomerPage() {
   const [tagLabel, setTagLabel] = useState('');
   const [crmMutationLoading, setCrmMutationLoading] = useState(false);
   const [crmMutationError, setCrmMutationError] = useState('');
-  const [crmMutationNotice, setCrmMutationNotice] = useState('');
 
   const load = useCallback(async () => {
     if (!orgId || !customerId) {
@@ -423,7 +431,6 @@ export default function CrmCustomerPage() {
     setPreferenceKey(preference.key);
     setPreferenceValue(preferenceInputFromValue(preference.value));
     setCrmMutationError('');
-    setCrmMutationNotice('');
   }
 
   function resetPreferenceForm(): void {
@@ -442,7 +449,6 @@ export default function CrmCustomerPage() {
     }
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await put<{ data: CustomerPreference }>(
         `crm/customers/${customerId}/preferences/${preferenceKey}`,
@@ -462,7 +468,7 @@ export default function CrmCustomerPage() {
         ].sort((left, right) => left.key.localeCompare(right.key));
         return { ...current, preferences };
       });
-      setCrmMutationNotice('Préférence enregistrée.');
+      toast.success('Préférence enregistrée.');
       resetPreferenceForm();
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible d’enregistrer la préférence.'));
@@ -475,7 +481,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await put<{ data: CustomerPreference }>(
         `crm/customers/${customerId}/preferences/${preference.key}`,
@@ -498,7 +503,7 @@ export default function CrmCustomerPage() {
             }
           : current,
       );
-      setCrmMutationNotice('Préférence confirmée.');
+      toast.success('Préférence confirmée.');
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible de confirmer la préférence.'));
     } finally {
@@ -510,7 +515,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       await del(`crm/customers/${customerId}/preferences/${preference.key}`);
       setCustomer((current) =>
@@ -522,7 +526,7 @@ export default function CrmCustomerPage() {
           : current,
       );
       if (editingPreferenceId === preference.id) resetPreferenceForm();
-      setCrmMutationNotice('Préférence supprimée.');
+      toast.success('Préférence supprimée.');
     } catch (err: unknown) {
       if (err instanceof ApiError && err.kind === 'not-found') {
         // Déjà supprimée ailleurs : on recharge la fiche plutôt que d'afficher une erreur.
@@ -539,7 +543,6 @@ export default function CrmCustomerPage() {
     if (!customerId || !tagLabel.trim()) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await post<{
         data: { tag: CustomerTag; assignment: CustomerTagAssignment };
@@ -561,7 +564,7 @@ export default function CrmCustomerPage() {
         return { ...current, tags, tagAssignments };
       });
       setTagLabel('');
-      setCrmMutationNotice('Tag ajouté.');
+      toast.success('Tag ajouté.');
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible d’ajouter le tag.'));
     } finally {
@@ -573,7 +576,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       await del(`crm/customers/${customerId}/tags/${tag.id}`);
       setCustomer((current) =>
@@ -585,7 +587,7 @@ export default function CrmCustomerPage() {
             }
           : current,
       );
-      setCrmMutationNotice('Tag retiré.');
+      toast.success('Tag retiré.');
     } catch (err: unknown) {
       if (err instanceof ApiError && err.kind === 'not-found') {
         await load();
@@ -783,19 +785,33 @@ export default function CrmCustomerPage() {
                 </Link>
               </Button>
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="transition-all duration-200"
-              onClick={() => {
-                setExportOpen(true);
-                setExportError('');
-              }}
-            >
-              <ShieldCheck size={14} />
-              Export RGPD
-            </Button>
+            {/* Export RGPD est rare : on le range dans un menu. Menu non modal : il ouvre un dialogue,
+                et deux couches modales se disputent le focus. */}
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="transition-all duration-200"
+                  aria-label="Plus d’actions"
+                >
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              {/* Le dialogue doit garder le focus : le menu ne le rend pas au bouton à la fermeture. */}
+              <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setExportOpen(true);
+                    setExportError('');
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  Export RGPD
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -837,240 +853,216 @@ export default function CrmCustomerPage() {
         </p>
       )}
 
-      {crmMutationNotice ? (
-        <p role="status" className="text-xs text-success">
-          {crmMutationNotice}
-        </p>
-      ) : null}
       {crmMutationError ? <p className="text-xs text-destructive">{crmMutationError}</p> : null}
 
-      <div>
-        <div role="tablist" aria-label="Fiche client" className="flex gap-6 border-b border-border">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as ProfileTab)}>
+        <TabsList aria-label="Fiche client">
           {tabs.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`tab-${item.id}`}
-              aria-selected={tab === item.id}
-              aria-controls={`panel-${item.id}`}
-              onClick={() => setTab(item.id)}
-              className={cn(
-                '-mb-px inline-flex items-center gap-1.5 border-b-2 pb-2.5 text-sm font-medium transition-all duration-200',
-                tab === item.id
-                  ? 'border-foreground text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
+            <TabsTrigger key={item.id} value={item.id}>
               {item.label}
               {item.badge ? (
                 <span className="rounded-full bg-warning/15 px-1.5 text-xs tabular-nums text-foreground">
                   {item.badge}
                 </span>
               ) : null}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
 
-        <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-4">
-          {tab === 'activity' ? (
-            customer.timeline.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">Aucune activité.</p>
-            ) : (
-              <ol className="rounded-lg border border-border bg-card px-4">
-                {customer.timeline.map((event) => {
-                  const Icon = timelineIcon(event.summaryCode);
-                  return (
-                    <li
-                      key={event.id}
-                      className="flex items-center gap-3 border-b border-border py-3 last:border-0"
-                    >
-                      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                        <Icon size={14} />
-                      </span>
-                      <p className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {timelineLabel(event.summaryCode)}
-                      </p>
-                      <p className="flex-none text-xs tabular-nums text-muted-foreground">
-                        {formatDate(event.occurredAt)}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ol>
-            )
-          ) : null}
-
-          {tab === 'preferences' ? (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="mb-2 flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPreferenceFormOpen(true);
-                    setEditingPreferenceId(null);
-                    setCrmMutationError('');
-                    setCrmMutationNotice('');
-                  }}
-                  disabled={crmMutationLoading}
-                >
-                  <Plus size={14} />
-                  Ajouter
-                </Button>
-              </div>
-              {visiblePreferences.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">Aucune préférence.</p>
-              ) : (
-                <dl className="divide-y divide-border text-sm">
-                  {visiblePreferences.map((preference) =>
-                    isPendingVoiceSuggestion(preference) ? (
-                      <div
-                        key={preference.id}
-                        className="flex flex-wrap items-center justify-between gap-3 py-2.5"
-                      >
-                        <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
-                          <dt className="text-muted-foreground">
-                            {preferenceLabel(preference.key)}
-                          </dt>
-                          <dd className="flex min-w-0 flex-wrap items-center gap-2 font-medium">
-                            <span className="truncate">{displayValue(preference.value)}</span>
-                            <Badge variant="outline" className="gap-1 font-normal">
-                              <Phone size={12} />
-                              Entendu au téléphone, à confirmer
-                            </Badge>
-                          </dd>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="transition-all duration-200"
-                            onClick={() => void confirmPreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <Check size={14} />
-                            Confirmer
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="transition-all duration-200"
-                            aria-label={`Écarter la suggestion ${preferenceLabel(preference.key)}`}
-                            onClick={() => void removePreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <X size={14} />
-                            Écarter
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        key={preference.id}
-                        className="flex items-center justify-between gap-3 py-2.5"
-                      >
-                        <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
-                          <dt className="text-muted-foreground">
-                            {preferenceLabel(preference.key)}
-                          </dt>
-                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => editPreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            Modifier
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
-                            onClick={() => void removePreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </dl>
-              )}
-              {preferenceFormOpen ? (
-                <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium">
-                      {editingPreferenceId ? 'Modifier la préférence' : 'Nouvelle préférence'}
+        <TabsContent value="activity">
+          {customer.timeline.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Aucune activité.</p>
+          ) : (
+            <ol className="rounded-lg border border-border bg-card px-4">
+              {customer.timeline.map((event) => {
+                const Icon = timelineIcon(event.summaryCode);
+                return (
+                  <li
+                    key={event.id}
+                    className="flex items-center gap-3 border-b border-border py-3 last:border-0"
+                  >
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                      <Icon size={14} />
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {timelineLabel(event.summaryCode)}
                     </p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label="Fermer le formulaire de préférence"
-                      onClick={resetPreferenceForm}
-                    >
-                      <X size={14} />
-                    </Button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <select
-                      value={preferenceKey}
-                      onChange={(event) => setPreferenceKey(event.target.value)}
-                      aria-label="Type de préférence"
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      disabled={crmMutationLoading || Boolean(editingPreferenceId)}
-                    >
-                      {Object.entries(PREFERENCE_LABELS).map(([key, label]) => (
-                        <option key={key} value={key}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                    <Input
-                      value={preferenceValue}
-                      onChange={(event) => setPreferenceValue(event.target.value)}
-                      placeholder={
-                        LIST_PREFERENCES.has(preferenceKey) ? 'sans gluten, végétarien' : 'terrasse'
-                      }
-                      aria-label="Valeur de la préférence"
-                      disabled={crmMutationLoading}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void savePreference()}
-                      disabled={crmMutationLoading || !preferenceValue.trim()}
-                    >
-                      <Save size={14} />
-                      Enregistrer
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={resetPreferenceForm}>
-                      Annuler
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                    <p className="flex-none text-xs tabular-nums text-muted-foreground">
+                      {formatDate(event.occurredAt)}
+                    </p>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </TabsContent>
 
-          {tab === 'consents' && isPro ? (
+        <TabsContent value="preferences">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="mb-2 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPreferenceFormOpen(true);
+                  setEditingPreferenceId(null);
+                  setCrmMutationError('');
+                }}
+                disabled={crmMutationLoading}
+              >
+                <Plus size={14} />
+                Ajouter
+              </Button>
+            </div>
+            {visiblePreferences.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Aucune préférence.</p>
+            ) : (
+              <dl className="divide-y divide-border text-sm">
+                {visiblePreferences.map((preference) =>
+                  isPendingVoiceSuggestion(preference) ? (
+                    <div
+                      key={preference.id}
+                      className="flex flex-wrap items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
+                        <dd className="flex min-w-0 flex-wrap items-center gap-2 font-medium">
+                          <span className="truncate">{displayValue(preference.value)}</span>
+                          <Badge variant="outline" className="gap-1 font-normal">
+                            <Phone size={12} />
+                            Entendu au téléphone, à confirmer
+                          </Badge>
+                        </dd>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="transition-all duration-200"
+                          onClick={() => void confirmPreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          <Check size={14} />
+                          Confirmer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="transition-all duration-200"
+                          aria-label={`Écarter la suggestion ${preferenceLabel(preference.key)}`}
+                          onClick={() => void removePreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          <X size={14} />
+                          Écarter
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={preference.id}
+                      className="flex items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
+                        <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => editPreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          Modifier
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
+                          onClick={() => void removePreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </dl>
+            )}
+            {preferenceFormOpen ? (
+              <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium">
+                    {editingPreferenceId ? 'Modifier la préférence' : 'Nouvelle préférence'}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label="Fermer le formulaire de préférence"
+                    onClick={resetPreferenceForm}
+                  >
+                    <X size={14} />
+                  </Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select
+                    value={preferenceKey}
+                    onChange={(event) => setPreferenceKey(event.target.value)}
+                    aria-label="Type de préférence"
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    disabled={crmMutationLoading || Boolean(editingPreferenceId)}
+                  >
+                    {Object.entries(PREFERENCE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    value={preferenceValue}
+                    onChange={(event) => setPreferenceValue(event.target.value)}
+                    placeholder={
+                      LIST_PREFERENCES.has(preferenceKey) ? 'sans gluten, végétarien' : 'terrasse'
+                    }
+                    aria-label="Valeur de la préférence"
+                    disabled={crmMutationLoading}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void savePreference()}
+                    disabled={crmMutationLoading || !preferenceValue.trim()}
+                  >
+                    <Save size={14} />
+                    Enregistrer
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={resetPreferenceForm}>
+                    Annuler
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </TabsContent>
+
+        {isPro ? (
+          <TabsContent value="consents">
             <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
-          ) : null}
-        </div>
-      </div>
+          </TabsContent>
+        ) : null}
+      </Tabs>
 
       <Dialog
         open={exportOpen}

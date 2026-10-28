@@ -2921,3 +2921,7 @@ Liste Clients : effectif à côté du titre, segments en onglets (Tous, VIP ; Ha
 ## 2026-10-28 — Liste Clients : effectifs par segment, tri, téléphones lisibles
 
 API additive : `GET /customers/segment-counts` et `sort=visits365d|lastVisit` sur `GET /customers` (CRM Pro, calculés sur les réservations, même plafond de 5 000 clients que les filtres de statut). Dashboard : effectif sur chaque onglet (l'onglet actif garde le total réel de la liste), tri par clic sur « Visites 365 j » et « Dernière visite », numéros français affichés « +33 6 12 34 56 78 » (`formatPhone` dans `lib/utils.ts`), colonne Téléphone repliée sous le nom en dessous de 1024 px pour que le tableau tienne sur iPad. Revue visuelle faite en sombre et clair, desktop / iPad / iPhone, API simulée.
+
+## 2026-10-28 — Composants Tabs, menu, infobulle, notifications
+
+Ajout de `@radix-ui/react-tabs`, `react-dropdown-menu`, `react-tooltip` et `sonner` (composants `components/ui/tabs|dropdown-menu|tooltip|sonner`, `Toaster` et `TooltipProvider` montés dans `providers.tsx`). Le CRM les utilise : onglets Radix (clavier), confirmations en notification (les erreurs restent dans la page), export RGPD dans un menu « Plus d’actions », raison du statut en infobulle dans la liste. Couleurs des notifications branchées sur les tokens via les variables de sonner (sinon elles suivent le thème système). `Context.md` : section « Liens rapides » archivée pour repasser sous 8 Ko ; marge faible, les TODO qui mêlent « livré » et « à faire » sont à resserrer par Hamza.

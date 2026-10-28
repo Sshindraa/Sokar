@@ -20,6 +20,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Users,
   Search,
@@ -220,6 +222,10 @@ export default function CustomersPage() {
   const [moreError, setMoreError] = useState('');
   // Saisie en cours, et filtres réellement appliqués (ceux que « Afficher plus » doit continuer).
   const [draft, setDraft] = useState<Filters>(NO_FILTERS);
+  // Segment actif = celui dont les filtres correspondent au brouillon (aucun si filtres libres).
+  const activeSegmentKey = SEGMENTS.find(
+    (segment) => draft.isVip === segment.isVip && draft.lifecycle === segment.lifecycle,
+  )?.key;
   const [applied, setApplied] = useState<Filters>(NO_FILTERS);
   const [error, setError] = useState('');
   // Le premier chargement affiche des squelettes ; une recherche garde la page et le champ en place.
@@ -450,41 +456,33 @@ export default function CustomersPage() {
       </div>
 
       {/* Segments : un clic recharge la liste, la recherche en cours reste en place */}
-      <div
-        role="tablist"
-        aria-label="Segments de clients"
-        className="flex gap-6 border-b border-border overflow-x-auto"
+      <Tabs
+        value={activeSegmentKey ?? ''}
+        onValueChange={(key) => {
+          const segment = SEGMENTS.find((item) => item.key === key);
+          if (segment) {
+            applyFilters({ ...draft, isVip: segment.isVip, lifecycle: segment.lifecycle });
+          }
+        }}
       >
-        {SEGMENTS.filter((segment) => !segment.crmOnly || crmState === 'open').map((segment) => {
-          const active = draft.isVip === segment.isVip && draft.lifecycle === segment.lifecycle;
-          // L'onglet actif montre le total de la liste (il suit aussi « Visites min. ») ; les autres,
-          // leur effectif quand le CRM Pro le fournit.
-          const count = crmState === 'open' ? segmentCounts?.[segment.key] : undefined;
-          const shown = active ? total : (count ?? null);
-          return (
-            <button
-              key={segment.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() =>
-                applyFilters({ ...draft, isVip: segment.isVip, lifecycle: segment.lifecycle })
-              }
-              className={cn(
-                '-mb-px border-b-2 pb-2.5 text-sm font-medium whitespace-nowrap transition-all duration-200',
-                active
-                  ? 'border-foreground text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {segment.label}
-              {shown !== null ? (
-                <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{shown}</span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+        <TabsList aria-label="Segments de clients">
+          {SEGMENTS.filter((segment) => !segment.crmOnly || crmState === 'open').map((segment) => {
+            const active = segment.key === activeSegmentKey;
+            // L'onglet actif montre le total de la liste (il suit aussi « Visites min. ») ; les autres,
+            // leur effectif quand le CRM Pro le fournit.
+            const count = crmState === 'open' ? segmentCounts?.[segment.key] : undefined;
+            const shown = active ? total : (count ?? null);
+            return (
+              <TabsTrigger key={segment.key} value={segment.key}>
+                {segment.label}
+                {shown !== null ? (
+                  <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{shown}</span>
+                ) : null}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
 
       {/* Recherche */}
       <form
@@ -678,7 +676,21 @@ export default function CustomersPage() {
                       {c.visitSummary?.visits365d ?? '—'}
                     </TableCell>
                     <TableCell>
-                      <CustomerLifecycleBadge lifecycle={c.lifecycle} />
+                      {/* Le motif du statut n'est pas dans la cellule : on le lit au survol. */}
+                      {c.lifecycle ? (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex">
+                                <CustomerLifecycleBadge lifecycle={c.lifecycle} />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{c.lifecycle.reason}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <CustomerLifecycleBadge lifecycle={c.lifecycle} />
+                      )}
                     </TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
                       {formatVisitDate(c.visitSummary?.lastVisitAt ?? null)}

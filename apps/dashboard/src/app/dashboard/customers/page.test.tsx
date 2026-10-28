@@ -328,7 +328,7 @@ describe('CustomersPage', () => {
     it('filtre par segment puis par visites côté serveur, sans bouton de validation', async () => {
       mockCrm(() => Promise.resolve({ data: [] }));
       render(<CustomersPage />);
-      fireEvent.click(await screen.findByRole('tab', { name: 'Endormis' }));
+      fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Endormis' }));
 
       await waitFor(() =>
         expect(mocks.get).toHaveBeenCalledWith('customers?limit=50&offset=0&lifecycle=dormant'),
@@ -352,7 +352,7 @@ describe('CustomersPage', () => {
       fireEvent.change(screen.getByRole('textbox', { name: /rechercher un client/i }), {
         target: { value: 'Alice' },
       });
-      fireEvent.click(screen.getByRole('tab', { name: 'VIP' }));
+      fireEvent.mouseDown(screen.getByRole('tab', { name: 'VIP' }));
 
       await waitFor(() =>
         expect(mocks.get).toHaveBeenLastCalledWith(
@@ -364,7 +364,7 @@ describe('CustomersPage', () => {
     it('filtre sur le VIP quelle que soit la formule', async () => {
       mockCrm(() => Promise.reject(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' })));
       render(<CustomersPage />);
-      fireEvent.click(await screen.findByRole('tab', { name: 'VIP' }));
+      fireEvent.mouseDown(await screen.findByRole('tab', { name: 'VIP' }));
       await waitFor(() =>
         expect(mocks.get).toHaveBeenCalledWith('customers?limit=50&offset=0&isVip=true'),
       );
