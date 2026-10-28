@@ -2959,8 +2959,16 @@ Points à valider côté produit : renommages Fidélité, Avis, Distribution, No
 
 Suite : push, puis vérification sur staging avec un vrai compte (Pro, Essential, rôle équipe de service, plusieurs sites, page Cartes cadeaux), puis Réglages, puis audit seul de la Salle.
 
-## 2026-10-28 — Passation : mise à jour (Appels et Briefing commités)
+## 2026-10-29 — Passation : addendum (Appels, Briefing et Pilotage commités)
 
-Commits ajoutés depuis la passation : `466657fd` feat(dashboard): appels refaits (statuts, durées et dates partagés), avec le seul hunk `callerPhone` de `types/api.ts` ; `ea5330e7` feat(dashboard): briefing refait (alertes sobres, sans icône décorative). Vérifié sur HEAD seul : typecheck à 0, 124 fichiers et 1 062 tests verts.
+Commits depuis la passation :
+- `466657fd` feat(dashboard): appels refaits (statuts, durées et dates partagés), avec le seul hunk `callerPhone` de `types/api.ts`.
+- `ea5330e7` feat(dashboard): briefing refait (alertes sobres, sans icône décorative).
+- `05edc3d9` feat(dashboard): jauge et réservations par canal, style sobre. Sur `ReservationChannels`, la refonte propre se limite au texte de l'état vide.
+- `f21d00de` feat(dashboard): pilotage refait, avec la partie dashboard du chantier métriques du 26/10. Pilotage commité avec la partie dashboard du chantier métriques du 26/10 (API embarquée par erreur dans `d93d6d48`).
 
-Reste non commité : Pilotage (`page.tsx` et widgets). Les widgets ne contiennent pas de marqueur clair de l'autre chantier, mais aucune base avant refonte n'existe pour confirmer quels hunks lui appartiennent : il faut le désigner avant de commiter. Réservations reste non commité (tiroir et colonne Notes mêlés à l'autre chantier).
+Vérifié sur HEAD seul (`f21d00de`) : typecheck sans erreur, 125 fichiers et 1 068 tests verts.
+
+Reste non commité, et pourquoi :
+- `reservations/page.tsx` et `types/api.ts` (hors `callerPhone`, déjà commité) : mêlés au chantier de modification de réservation (tiroir, colonne Notes, `specialRequests`, `overbooked`, `channel`).
+- `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `components/reservation/service-card-badges.tsx`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `apps/api/**` : autres chantiers, à ne pas commiter avec ce lot.
