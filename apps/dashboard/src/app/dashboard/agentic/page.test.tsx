@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toApiError } from '@/lib/api-error';
 import AgenticSettingsPage from './page';
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
 
 const mocks = vi.hoisted(() => ({
   orgId: 'org_test',
@@ -13,6 +15,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({ useApi: () => mocks }));
 vi.mock('@/features/onboarding/onboarding-guard', () => ({ OnboardingLockBanner: () => null }));
+
+const routerPush = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: routerPush }) }));
 
 // Valeur factice assemblée à l'exécution : un fixture ne doit pas ressembler à une vraie clé.
 const createdKeyFixture = ['valeur', 'factice', 'du', 'test'].join('-');
@@ -108,7 +113,11 @@ describe('AgenticSettingsPage', () => {
     loadSucceeds();
     render(<AgenticSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Révoquer' }));
+    await screen.findByText('Claude Desktop');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions pour Claude Desktop' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Révoquer' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('Révoquer cette clé ?');
@@ -129,7 +138,11 @@ describe('AgenticSettingsPage', () => {
     loadSucceeds();
     render(<AgenticSettingsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Révoquer' }));
+    await screen.findByText('Claude Desktop');
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions pour Claude Desktop' }), {
+      key: 'Enter',
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Révoquer' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
 
     await waitFor(() => {
@@ -143,7 +156,7 @@ describe('AgenticSettingsPage', () => {
     loadSucceeds();
     render(<AgenticSettingsPage />);
 
-    expect(await screen.findByText(/Activez les canaux/)).toBeInTheDocument();
+    expect(await screen.findByText('Canaux')).toBeInTheDocument();
     expect(screen.queryByText(/TTL/)).not.toBeInTheDocument();
     expect(screen.queryByText(/PENDING|rollback|pilote/i)).not.toBeInTheDocument();
   });
@@ -196,7 +209,7 @@ describe('AgenticSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Créer/ }));
 
     expect(
-      await screen.findByText('Copiez cette clé maintenant : elle ne sera plus affichée.'),
+      await screen.findByText(/Nouvelle clé : copiez-la maintenant, elle ne sera plus affichée/),
     ).toBeInTheDocument();
   });
 
@@ -214,10 +227,17 @@ describe('AgenticSettingsPage', () => {
     const buttons = await screen.findAllByRole('button', { name: 'Activer' });
     fireEvent.click(buttons[buttons.length - 1]);
 
-    expect(await screen.findByText(/complétez les informations du restaurant/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Compléter le profil' })).toHaveAttribute(
-      'href',
-      '/dashboard/settings',
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('complétez les informations du restaurant'),
+        expect.objectContaining({
+          action: expect.objectContaining({ label: 'Compléter le profil' }),
+        }),
+      ),
     );
+
+    const options = toast.error.mock.calls[0][1] as { action: { onClick: () => void } };
+    options.action.onClick();
+    expect(routerPush).toHaveBeenCalledWith('/dashboard/settings');
   });
 });

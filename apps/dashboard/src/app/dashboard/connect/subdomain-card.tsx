@@ -1,9 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { CheckCircle2, Copy, ExternalLink, Info } from 'lucide-react';
+import { toast } from 'sonner';
+import { StatusBadge } from '@/components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Link2, CheckCircle2, Copy, Sparkles, ExternalLink } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type Props = {
   slug: string;
@@ -28,49 +31,55 @@ export function SubdomainCard({ slug, connectPublished }: Props) {
   const fullUrl = `https://${subdomain}`;
 
   function copyUrl() {
-    navigator.clipboard.writeText(fullUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard
+      .writeText(fullUrl)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => toast.error('Copie impossible. Sélectionnez l’adresse et copiez-la à la main.'));
   }
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Link2 className="h-4 w-4 text-primary" />
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="flex items-center gap-1.5 text-base">
           Sous-domaine gratuit
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Précision sur le sous-domaine"
+                  className="inline-flex text-muted-foreground transition-all duration-200 hover:text-foreground"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                Attribué automatiquement à chaque restaurant sur {PRIMARY_HOST}, sans configuration.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </CardTitle>
+        <StatusBadge level={connectPublished ? 'progress' : 'neutral'}>
+          {connectPublished ? 'En ligne' : 'Inactif'}
+        </StatusBadge>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-            <Sparkles className="h-3 w-3" />
-            Gratuit
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-            Instantané
-          </span>
-        </div>
-
-        <p className="text-sm text-muted-foreground">
-          Chaque restaurant obtient automatiquement un sous-domaine{' '}
-          <span className="font-medium text-foreground">{PRIMARY_HOST}</span>. Aucune configuration
-          requise.
-        </p>
-
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2 rounded-lg border border-border p-3">
           {connectPublished ? (
             <a
               href={fullUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex flex-1 items-center gap-1.5 truncate font-mono text-sm font-medium text-foreground transition-all duration-200 hover:text-primary"
+              className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-sm font-medium transition-all duration-200 hover:text-primary"
             >
-              <span className="truncate">{subdomain}</span>
+              <span className="min-w-0 break-all">{subdomain}</span>
               <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </a>
           ) : (
-            <span className="flex-1 truncate font-mono text-sm text-muted-foreground">
+            <span className="min-w-0 flex-1 break-all font-mono text-sm text-muted-foreground">
               {subdomain}
             </span>
           )}
@@ -78,7 +87,7 @@ export function SubdomainCard({ slug, connectPublished }: Props) {
             variant="ghost"
             size="sm"
             onClick={copyUrl}
-            className="h-7 px-2 transition-all duration-200"
+            className="h-7 shrink-0 px-2 transition-all duration-200"
             aria-label="Copier l'URL"
           >
             {copied ? (
@@ -88,17 +97,8 @@ export function SubdomainCard({ slug, connectPublished }: Props) {
             )}
           </Button>
         </div>
-
-        {connectPublished ? (
-          <div className="flex items-center gap-2 text-sm text-success">
-            <CheckCircle2 className="h-4 w-4" />
-            <span>Actif — votre page est en ligne</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="inline-flex h-2 w-2 rounded-full bg-muted-foreground/40" />
-            <span>Inactif — publiez votre page Connect pour activer</span>
-          </div>
+        {!connectPublished && (
+          <p className="text-sm text-muted-foreground">Publiez votre page pour l’activer.</p>
         )}
       </CardContent>
     </Card>
