@@ -180,7 +180,7 @@ une archive par défaut.
   par `CUSTOMER_GROUPS_ENABLED=false` tant que les identités réelles et l'effacement inter-sites ne
   sont pas prouvés.
 - Collecte de feedback réputation : l'API post-visite, les tokens opaques, les scores 1–5, les
-  tâches de récupération et l'expiration sont livrés localement derrière `REPUTATION_ENABLED=false`.
+  tâches de récupération et l’expiration sont accompagnés d’un envoi privé à J+1 pour Pro/Multi-site.
 - Fidélité opérationnelle Pro : le catalogue d'avantages, les règles explicables, les grants à code
   hashé, le redeem atomique, l'expiration et la page `/dashboard/loyalty` sont livrés localement
   pour les offres Pro et Multi-site. Aucun provider, portefeuille de points ou débit POS n'est actif.

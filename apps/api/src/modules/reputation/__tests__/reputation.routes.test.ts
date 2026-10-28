@@ -74,7 +74,6 @@ function recoveryRow(overrides: Record<string, unknown> = {}) {
 describe('reputation foundation routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('REPUTATION_ENABLED', 'false');
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
       plan: 'PRO',
@@ -87,20 +86,25 @@ describe('reputation foundation routes', () => {
     await closeApp();
   });
 
-  it('keeps feedback disabled during the production freeze', async () => {
+  it('serves private pages without mutating the opt-out on GET', async () => {
     const app = await getApp();
-    const response = await app.inject({
-      method: 'GET',
-      url: '/reputation/feedback',
-      headers: AUTH,
+    for (const url of ['/reputation/respond', '/reputation/unsubscribe']) {
+      const response = await app.inject({ method: 'GET', url });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(response.body).not.toMatch(/google|tripadvisor/i);
+    }
+    expect(db.customer.update).not.toHaveBeenCalled();
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/reputation/unsubscribe',
+      payload: { token: 'bad' },
     });
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({ error: 'REPUTATION_DISABLED' });
-    expect(db.reputationFeedback.findMany).not.toHaveBeenCalled();
+    expect(invalid.statusCode).toBe(400);
   });
 
-  it('enforces the Pro entitlement before the runtime flag', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
+  it('enforces the Pro entitlement', async () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
       plan: 'ESSENTIAL',
@@ -120,7 +124,6 @@ describe('reputation foundation routes', () => {
   });
 
   it('creates a dry-run request only from an honoured reservation', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
     vi.mocked(db.reservation.findFirst).mockResolvedValue({
       id: 'reservation-1',
       state: ReservationState.HONORED,
@@ -146,7 +149,6 @@ describe('reputation foundation routes', () => {
   });
 
   it('hides non-honoured reservations behind a generic not-found error', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
     vi.mocked(db.reservation.findFirst).mockResolvedValue({
       id: 'reservation-1',
       state: ReservationState.CONFIRMED,
@@ -164,7 +166,6 @@ describe('reputation foundation routes', () => {
   });
 
   it('accepts one public low score and opens a recovery task without PII in the response', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
     vi.mocked(db.reputationFeedbackRequest.findUnique).mockResolvedValue(requestRow() as never);
     vi.mocked(db.reputationFeedback.create).mockResolvedValue(feedbackRow({ score: 1 }) as never);
     vi.mocked(db.reputationFeedbackRequest.update).mockResolvedValue(
@@ -190,7 +191,6 @@ describe('reputation foundation routes', () => {
   });
 
   it('returns a generic 404 for an invalid public token', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
     vi.mocked(db.reputationFeedbackRequest.findUnique).mockResolvedValue(null);
     const app = await getApp();
     const response = await app.inject({
@@ -203,7 +203,6 @@ describe('reputation foundation routes', () => {
   });
 
   it('allows a manager to close a recovery task with an explicit resolution', async () => {
-    vi.stubEnv('REPUTATION_ENABLED', 'true');
     vi.mocked(db.reputationRecoveryTask.findFirst).mockResolvedValue(recoveryRow() as never);
     vi.mocked(db.reputationRecoveryTask.update).mockResolvedValue(
       recoveryRow({
