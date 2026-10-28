@@ -44,6 +44,8 @@
 
 ## Décisions récentes
 
+- 2026-10-28 — [Fidélité et intégrations] Fidélité manuelle ouverte à Pro/Multi-site après livraison ; POS et groupes restent coupés jusqu’au premier client L’Addition / multi-site.
+
 - 2026-10-25 — [Intégrations] Google Agenda retiré complètement (code, UI, offre, colonnes DB) : peu utile aux restaurateurs et synchro partielle (téléphone seulement).
 - 2026-10-22 — [Voix] Aucune fonction voix par restaurant ni coupée par défaut : tout est actif pour tous les restaurants (seuls le débogage et l'enregistrement restent limités).
 - 2026-10-06 — [Voix/TTS] Voix Cartesia par défaut : Sarah (`90358bc7-3328-4b93-a942-d0447d7d4b5c`), à la place de Katie pour les profils sans voix personnalisée.

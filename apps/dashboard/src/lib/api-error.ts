@@ -3,7 +3,7 @@
  *
  * L'API répond de trois façons : un message français rédigé pour l'utilisateur (« La modification des
  * notes client est réservée aux responsables. »), un code stable (`CAPABILITY_NOT_INCLUDED`,
- * `LOYALTY_DISABLED`…), ou un texte technique anglais (« Authentication required », « Validation Error »).
+ * `DISTRIBUTION_DISABLED`…), ou un texte technique anglais (« Authentication required », « Validation Error »).
  * Seul le premier cas est lisible tel quel : les deux autres sont traduits ici, une fois pour toutes les
  * pages, au lieu d'afficher « Erreur 409 » ou du jargon.
  */

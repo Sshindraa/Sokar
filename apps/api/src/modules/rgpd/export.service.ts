@@ -278,6 +278,8 @@ export class ExportService {
             restaurantId: true,
             phone: true,
             emailNormalized: true,
+            feedbackEmailOptOutAt: true,
+            feedbackEmailRequestedAt: true,
             birthMonth: true,
             birthDay: true,
             preferredLocale: true,

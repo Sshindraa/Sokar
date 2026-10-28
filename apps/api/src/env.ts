@@ -392,6 +392,7 @@ const EnvSchema = z
     RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
     EMAIL_REPLY_TO: z.string().optional(),
+    REPUTATION_EMAIL_SECRET: z.string().optional(),
     // Les rapports récurrents envoient un email aux gestionnaires. Staging les
     // désactive explicitement tant qu'il n'existe pas de canal d'envoi isolé.
     EVENING_REPORTS_ENABLED: z
@@ -437,10 +438,6 @@ const EnvSchema = z
     RESERVATION_PAYMENTS_ENABLED: z.enum(['true', 'false']).default('false'),
     // Shared CRM identity is limited to qualified multi-site pilots.
     CUSTOMER_GROUPS_ENABLED: z.enum(['true', 'false']).default('false'),
-    // Feedback and benefits remain local-only until channels, rules and a
-    // restaurant pilot are qualified.
-    REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
-    LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
     // Internal experience management and public paid bookings have independent
     // gates. Public Checkout remains off until Connect/payment readiness is proven.
     EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),

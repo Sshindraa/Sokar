@@ -79,19 +79,6 @@ describe('ReputationPage', () => {
     );
   });
 
-  it('explique calmement que le module est fermé, sans « Réessayer » ni compteurs à zéro', async () => {
-    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'REPUTATION_DISABLED' }));
-    render(<ReputationPage />);
-
-    expect(
-      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('REPUTATION_DISABLED')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
-    expect(screen.queryByText('Aucune récupération à traiter')).toBeNull();
-    expect(screen.queryByText('Retours reçus')).toBeNull();
-  });
-
   it('propose les formules quand le module n’est pas inclus', async () => {
     apiMocks.get.mockRejectedValue(toApiError(403, { error: 'CAPABILITY_NOT_INCLUDED' }));
     render(<ReputationPage />);
