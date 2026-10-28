@@ -193,6 +193,21 @@ describe('LoyaltyPage', () => {
     );
     expect(await screen.findByText('Code à remettre au client')).toBeInTheDocument();
     expect(screen.getByText('ABC123DEF456')).toBeInTheDocument();
+    expect(screen.getByText(/30 jours · 2 attributions/)).toBeInTheDocument();
+  });
+
+  it('ne compte pas une attribution rejouée deux fois', async () => {
+    apiMocks.post.mockResolvedValue({ data: { ...grant, code: null, replayed: true } });
+    render(<LoyaltyPage />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Attribuer l’attention' })).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByLabelText('Client destinataire'), {
+      target: { value: 'customer-2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Attribuer l’attention' }));
+    expect(await screen.findByText(/30 jours · 1 attribution/)).toBeInTheDocument();
+    expect(await screen.findByText(/avait déjà été attribuée/)).toBeInTheDocument();
   });
 
   it('valide une attention avec son attribution et son code', async () => {
@@ -239,18 +254,6 @@ describe('LoyaltyPage', () => {
     expect(
       await screen.findByText('Attribution annulée. Elle ne peut plus être validée en salle.'),
     ).toBeInTheDocument();
-  });
-
-  it('explique calmement que le module n’est pas encore ouvert, sans formulaire ni compteurs', async () => {
-    apiMocks.get.mockRejectedValue(toApiError(503, { error: 'LOYALTY_DISABLED' }));
-    render(<LoyaltyPage />);
-
-    expect(
-      await screen.findByText('Cette fonctionnalité n’est pas encore ouverte sur votre compte.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('LOYALTY_DISABLED')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Enregistrer l’attention' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /réessayer/i })).toBeNull();
   });
 
   it('propose les formules quand la fidélité est hors formule', async () => {

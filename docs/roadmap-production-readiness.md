@@ -87,11 +87,11 @@ Checkout, facture, portail, échec `past_due`, récupération et annulation. La 
 cadence doit encore être déployée et les projections historiques backfillées avant d'ouvrir la vente
 production ; deux pilotes Essential de sept jours restent la preuve commerciale attendue.
 
-### 1.7 Douze surfaces Pro sont livrées mais non qualifiées
+### 1.7 Surfaces Pro livrées mais non qualifiées
 
 `CRM_ADVANCED_ENABLED`, `MARKETING_FEATURES_ENABLED`, `MARKETING_SENDS_ENABLED`,
 `MARKETING_WHATSAPP_ENABLED`, `POS_CONNECTORS_ENABLED`, `RESERVATION_PAYMENTS_ENABLED`,
-`CUSTOMER_GROUPS_ENABLED`, `REPUTATION_ENABLED`, `LOYALTY_ENABLED`, `EXPERIENCES_ENABLED`,
+`CUSTOMER_GROUPS_ENABLED`, `REPUTATION_ENABLED`, `EXPERIENCES_ENABLED`,
 `EVENTS_ENABLED`, `DISTRIBUTION_ENABLED` sont toutes à `false`. Les portes correspondantes sont
 `LOCAL_ONLY` : code et tests présents, preuve externe absente. C'est une dette de **qualification**,
 pas de développement — mais elle est réelle et bloque le discours commercial.

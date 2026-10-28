@@ -24,7 +24,7 @@ describe('classifyApiError', () => {
   it.each([
     [401, null, 'session'],
     [403, 'CAPABILITY_NOT_INCLUDED', 'not-included'],
-    [503, 'LOYALTY_DISABLED', 'not-ready'],
+    [503, 'REPUTATION_DISABLED', 'not-ready'],
     [503, 'RESEND_WEBHOOK_NOT_CONFIGURED', 'not-ready'],
     [403, null, 'forbidden'],
     [404, null, 'not-found'],
@@ -182,7 +182,7 @@ describe('toApiError', () => {
   it('ne signale comme blocage que les fonctions fermées ou hors formule', () => {
     expect(featureLockFromError(toApiError(500, {}))).toBeNull();
     expect(featureLockFromError(new Error('boom'))).toBeNull();
-    expect(featureLockFromError(toApiError(503, { error: 'LOYALTY_DISABLED' }))).toMatchObject({
+    expect(featureLockFromError(toApiError(503, { error: 'REPUTATION_DISABLED' }))).toMatchObject({
       kind: 'not-ready',
     });
   });

@@ -476,6 +476,16 @@ export default function LoyaltyPage() {
       );
       if (response.data) {
         setIssuedCode(response.data.code);
+        if (!response.data.replayed) {
+          const benefitId = response.data.benefitId;
+          setBenefits((current) =>
+            current.map((benefit) =>
+              benefit.id === benefitId
+                ? { ...benefit, grantCount: benefit.grantCount + 1 }
+                : benefit,
+            ),
+          );
+        }
         setGrants((current) => [
           response.data!,
           ...current.filter((item) => item.id !== response.data!.id),

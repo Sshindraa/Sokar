@@ -885,7 +885,7 @@ La brique P8-03 est maintenant livrée localement dans `apps/api/src/modules/loy
 `/dashboard/loyalty`. Elle définit des avantages EUR bornés, des règles `ANY`, `VIP`,
 `MIN_VISITS`, `BIRTHDAY_MONTH` ou `MIN_ESTIMATED_SPEND`, émet un grant avec code à usage unique
 hashé, autorise une consommation atomique et expire les émissions toutes les 15 minutes. La
-capability `reputation.loyalty` est Pro/Multi-site ; `LOYALTY_ENABLED=false` reste le défaut.
+capability `reputation.loyalty` est réservée à Pro/Multi-site ; la version manuelle est ouverte.
 Cette fondation ne contacte aucun canal et ne constitue pas encore un programme de points.
 
 ### P8-01 — Retour après visite
@@ -1366,8 +1366,8 @@ Les pages suivantes sont déjà présentes localement : `/admin`, `/admin/margin
 `/dashboard/loyalty`, `/dashboard/experiences`, `/dashboard/reactivation`, `/dashboard/reservations` et `/dashboard/settings`.
 Les écrans
 `payments` et l'administration POS restent à construire après qualification des parcours externes ;
-l'écran réputation et la fidélité existent localement mais restent verrouillés par
-`REPUTATION_ENABLED=false`, `LOYALTY_ENABLED=false` et `EXPERIENCES_ENABLED=false`.
+l'écran réputation et les expériences restent verrouillés par `REPUTATION_ENABLED=false` et
+`EXPERIENCES_ENABLED=false` ; la fidélité manuelle est réservée à Pro/Multi-site.
 
 ```text
 apps/dashboard/src/app/

@@ -92,8 +92,7 @@ la même transaction. Aucun SMS, email, WhatsApp ou fournisseur d'avis n'est app
 fondation.
 
 La fidélité opérationnelle est authentifiée par organisation via `requireOrg`, la capability
-`reputation.loyalty`, un rôle Owner/Manager/Staff selon l'opération et `LOYALTY_ENABLED=false` par
-défaut. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
+`reputation.loyalty` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
 conserve uniquement le hash d'un code à usage unique. Le redeem est atomique et le worker
 `loyalty-grant-expiry` expire les grants toutes les 15 minutes. Aucun point, canal d'envoi, POS ou
 débit n'est appelé.
@@ -168,8 +167,7 @@ rollback reste possible.
   transitions `OPEN → IN_PROGRESS → RESOLVED`. Elle reste verrouillée par `REPUTATION_ENABLED=false`
   tant que les providers d'envoi, les sources d'avis et le pilote ne sont pas qualifiés.
 - La page fidélité (`/dashboard/loyalty`) lit les avantages et grants via l'API et expose les
-  transitions d'émission/consommation. Elle reste verrouillée par `LOYALTY_ENABLED=false` tant que
-  les règles, les canaux, le POS éventuel et le pilote ne sont pas qualifiés.
+  transitions d'émission/consommation pour Pro et Multi-site, en version manuelle.
 - La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des dates et annule les
   réservations via l'API. Elle affiche l'état réel de l'ouverture publique ; le checkout Connect
   reste désactivé par `EXPERIENCE_BOOKING_ENABLED=false` jusqu'à qualification staging.
@@ -290,7 +288,7 @@ rollback reste possible.
 - `loyalty.service.ts` borne les règles et les montants, vérifie l'éligibilité CRM, hache le code,
   protège la limite d'utilisation par advisory lock et rend le redeem idempotent.
 - `loyalty-grant-expiry.worker.ts` traite la queue `loyalty-grant-expiry` toutes les 15 minutes.
-  `LOYALTY_ENABLED=false` reste le défaut ; points, envoi et POS sont hors périmètre.
+  Les points, l'envoi et le POS sont hors périmètre.
 
 ### Expériences et sessions
 
