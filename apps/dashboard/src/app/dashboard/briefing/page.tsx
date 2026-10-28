@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { AlertCircle, RefreshCw } from 'lucide-react';
 import { ServiceCardBadges, useServiceCards } from '@/components/reservation/service-card-badges';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -41,10 +40,10 @@ export default function BriefingPage() {
   const tiles = [
     { label: 'Réservations', value: summary.reservations },
     { label: 'Couverts', value: summary.covers },
-    { label: 'Allergies', value: summary.allergies, alert: 'text-destructive' },
+    { label: 'Allergies', value: summary.allergies, alert: true },
     { label: 'Habitués', value: summary.regulars },
-    { label: 'Occasions', value: summary.occasions, alert: 'text-warning' },
-    { label: 'Risque d’absence', value: summary.noShowRisks, alert: 'text-warning' },
+    { label: 'Occasions', value: summary.occasions },
+    { label: 'Risque d’absence', value: summary.noShowRisks, alert: true },
   ];
 
   return (
@@ -59,7 +58,6 @@ export default function BriefingPage() {
       {error ? (
         <Card className="border-destructive/40">
           <CardContent className="flex items-start gap-3 pt-6 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
             <div className="space-y-3">
               <p role="alert">{error}</p>
               <Button
@@ -72,7 +70,6 @@ export default function BriefingPage() {
                   setAttempt((count) => count + 1);
                 }}
               >
-                <RefreshCw size={14} />
                 Réessayer
               </Button>
             </div>
@@ -88,26 +85,18 @@ export default function BriefingPage() {
           <Skeleton className="h-64 rounded-2xl" />
         </div>
       ) : rows.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Aucune réservation à servir aujourd’hui.
-          </CardContent>
-        </Card>
+        <p className="text-sm text-muted-foreground">Aucune réservation à servir aujourd’hui.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
             {tiles.map((tile) => (
-              <Card key={tile.label}>
+              <Card
+                key={tile.label}
+                className={cn(tile.value > 0 && tile.alert && 'border-foreground bg-secondary')}
+              >
                 <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">{tile.label}</p>
-                  <p
-                    className={cn(
-                      'mt-1 text-2xl font-semibold tabular-nums',
-                      tile.value > 0 && tile.alert,
-                    )}
-                  >
-                    {tile.value}
-                  </p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums">{tile.value}</p>
                 </CardContent>
               </Card>
             ))}
@@ -134,12 +123,12 @@ export default function BriefingPage() {
                           {customerId ? (
                             <Link
                               href={`/dashboard/customers/crm/${customerId}`}
-                              className="block truncate font-medium transition-all duration-200 hover:underline"
+                              className="block break-words font-medium transition-all duration-200 hover:underline"
                             >
                               {reservation.customerName}
                             </Link>
                           ) : (
-                            <p className="truncate font-medium">{reservation.customerName}</p>
+                            <p className="break-words font-medium">{reservation.customerName}</p>
                           )}
                           <p className="text-xs text-muted-foreground">
                             {reservation.partySize} couvert
