@@ -2909,3 +2909,7 @@ Décision : Pro/Multi-site, e-mail de service à J+1 après visite honorée, au 
 ## 2026-10-28 — Qualification staging du retour privé
 
 CI verte et migration additive appliquée sur staging. Parcours validé sur un établissement Pro de test non publié : réservation honorée, événement à J+1 avancé pour le test, e-mail reçu via Resend, note 1/5, tâche ouverte visible dans Réputation et désinscription enregistrée. Établissement réarchivé et liste des destinataires restaurée. Avant toute production : configurer le secret d’envoi dédié.
+
+## 2026-10-28 — Refonte UI de la fiche client CRM
+
+Fiche `/dashboard/customers/crm/[id]` refaite après l'audit UI (« trop IA, trop de blabla ») : en-tête profil (initiales, VIP, téléphone/e-mail cliquables, tags éditables en ligne), bande de chiffres 365 j, onglets Activité / Préférences / Consentements (les consentements ne se chargent qu'à l'ouverture de leur onglet), export RGPD dans une fenêtre. Supprimés : toutes les descriptions sous les titres, l'icône Sparkles, le texte juridique de la carte consentement, et le bloc « Exactitude des chiffres / Recalculer » côté restaurateur (les routes API `projection-repair*` restent, sans écran pour l'instant). Prochaines étapes : la liste Clients (segments, recherche instantanée, tri), puis les doublons.

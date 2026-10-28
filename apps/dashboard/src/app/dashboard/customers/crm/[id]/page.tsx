@@ -2,13 +2,17 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
   CalendarDays,
   Check,
+  CircleDot,
+  Clock,
+  Copy,
   Download,
+  Gift,
   Loader2,
   Lock,
   Mail,
@@ -17,14 +21,22 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
-  Sparkles,
-  Tag,
+  Star,
   Trash2,
+  UserRound,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
@@ -32,6 +44,7 @@ import { useApi } from '@/lib/api';
 import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage, type CustomerVisitSummary } from '@/types/api';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
+import { cn } from '@/lib/utils';
 
 type CustomerIdentity = {
   id: string;
@@ -116,32 +129,20 @@ type ExportPayload = {
   marketingPermissions?: unknown[];
 };
 
-type ProjectionRepairPreview = {
-  customerId: string;
-  restaurantId: string;
-  calculatedAt: string;
-  reservationCount: number;
-  changed: boolean;
-  current: Record<string, unknown> | null;
-  expected: Record<string, unknown>;
-  projectionVersion?: number;
-  repaired?: boolean;
-  replayed?: boolean;
-};
-
-function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `crm-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? '—'
     : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatDay(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatNumber(value: number | string | null | undefined): string {
@@ -245,6 +246,42 @@ function timelineLabel(code: string): string {
   return TIMELINE_LABELS[code] ?? 'Événement';
 }
 
+const TIMELINE_ICONS: Record<string, LucideIcon> = {
+  reservation: CalendarDays,
+  call: Phone,
+  waitlist: Clock,
+  gift_card: Gift,
+  customer: UserRound,
+  marketing: Mail,
+};
+
+function timelineIcon(code: string): LucideIcon {
+  return TIMELINE_ICONS[code.split('.')[0]] ?? CircleDot;
+}
+
+function initials(name: string | null): string {
+  return (
+    (name || '?')
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || '?'
+  );
+}
+
+function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-[9rem] flex-1 bg-card px-4 py-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight">{value}</dd>
+    </div>
+  );
+}
+
+type ProfileTab = 'activity' | 'preferences' | 'consents';
+
 const IDENTITY_LABELS: Record<string, string> = {
   PHONE: 'Téléphone',
   EMAIL: 'E-mail',
@@ -271,10 +308,7 @@ export default function CrmCustomerPage() {
   const [exportSubmitting, setExportSubmitting] = useState(false);
   const [exportRequest, setExportRequest] = useState<ExportVerificationResponse | null>(null);
   const [exportPayload, setExportPayload] = useState<ExportPayload | null>(null);
-  const [repairPreview, setRepairPreview] = useState<ProjectionRepairPreview | null>(null);
-  const [repairLoading, setRepairLoading] = useState(false);
-  const [repairError, setRepairError] = useState('');
-  const [repairNotice, setRepairNotice] = useState('');
+  const [tab, setTab] = useState<ProfileTab>('activity');
   const [preferenceFormOpen, setPreferenceFormOpen] = useState(false);
   const [preferenceKey, setPreferenceKey] = useState('preferred_language');
   const [preferenceValue, setPreferenceValue] = useState('');
@@ -380,48 +414,6 @@ export default function CrmCustomerPage() {
       setExportStep('idle');
     } finally {
       setExportSubmitting(false);
-    }
-  }
-
-  async function inspectProjection(): Promise<void> {
-    if (!customerId) return;
-    setRepairLoading(true);
-    setRepairError('');
-    setRepairNotice('');
-    try {
-      const response = await get<{ data: ProjectionRepairPreview }>(
-        `crm/customers/${customerId}/projection-repair-preview`,
-      );
-      setRepairPreview(response.data ?? null);
-    } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'Impossible de vérifier les chiffres de ce client.'));
-      setRepairPreview(null);
-    } finally {
-      setRepairLoading(false);
-    }
-  }
-
-  async function repairProjection(): Promise<void> {
-    if (!customerId || !repairPreview?.changed) return;
-    setRepairLoading(true);
-    setRepairError('');
-    setRepairNotice('');
-    try {
-      const response = await post<{ data: ProjectionRepairPreview }>(
-        `crm/customers/${customerId}/projection-repair`,
-        undefined,
-        { headers: { 'Idempotency-Key': newIdempotencyKey() } },
-      );
-      setRepairPreview(response.data ?? null);
-      setRepairNotice(
-        response.data?.replayed
-          ? 'La réparation a déjà été appliquée pour cette demande.'
-          : 'Chiffres recalculés depuis les réservations.',
-      );
-    } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'Le recalcul a échoué.'));
-    } finally {
-      setRepairLoading(false);
     }
   }
 
@@ -608,12 +600,15 @@ export default function CrmCustomerPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-48 rounded-full" />
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-48 rounded-2xl lg:col-span-2" />
-          <Skeleton className="h-48 rounded-2xl" />
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
         </div>
-        <Skeleton className="h-72 rounded-2xl" />
+        <Skeleton className="h-20 rounded-lg" />
+        <Skeleton className="h-72 rounded-lg" />
       </div>
     );
   }
@@ -670,39 +665,169 @@ export default function CrmCustomerPage() {
   const visiblePreferences = customer.preferences.filter((preference) =>
     isVisiblePreference(preference),
   );
+  const pendingSuggestions = visiblePreferences.filter(isPendingVoiceSuggestion).length;
+  const spend = metrics?.actualLifetimeSpend;
+  const tabs: { id: ProfileTab; label: string; badge?: number }[] = [
+    { id: 'activity', label: 'Activité' },
+    { id: 'preferences', label: 'Préférences', badge: pendingSuggestions || undefined },
+    ...(isPro ? [{ id: 'consents' as const, label: 'Consentements' }] : []),
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="space-y-3">
-          <Button asChild variant="ghost" size="sm" className="-ml-3">
-            <Link href="/dashboard/customers">
-              <ArrowLeft size={16} />
-              Retour aux clients
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Sparkles className="text-primary" size={20} />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-              {customer.name || 'Client sans nom'}
-            </h1>
-            {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
+      <div className="space-y-4">
+        <Button asChild variant="ghost" size="sm" className="-ml-3">
+          <Link href="/dashboard/customers">
+            <ArrowLeft size={16} />
+            Retour aux clients
+          </Link>
+        </Button>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <span
+              aria-hidden="true"
+              className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-secondary text-base font-semibold text-foreground"
+            >
+              {initials(customer.name)}
+            </span>
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-semibold tracking-tight md:text-2xl">
+                  {customer.name || 'Client sans nom'}
+                </h1>
+                {customer.isVip ? (
+                  <Badge variant="outline" className="gap-1">
+                    <Star size={12} className="fill-current" />
+                    VIP
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <a
+                  href={`tel:${customer.phone}`}
+                  className="inline-flex items-center gap-1.5 tabular-nums transition-all duration-200 hover:text-foreground"
+                >
+                  <Phone size={14} />
+                  {customer.phone}
+                </a>
+                {customer.emailNormalized ? (
+                  <a
+                    href={`mailto:${customer.emailNormalized}`}
+                    className="inline-flex items-center gap-1.5 transition-all duration-200 hover:text-foreground"
+                  >
+                    <Mail size={14} />
+                    {customer.emailNormalized}
+                  </a>
+                ) : null}
+                {customer.identities.map((identity) => (
+                  <span key={identity.id}>
+                    {IDENTITY_LABELS[identity.type] ?? 'Autre coordonnée'} · {identity.value}
+                  </span>
+                ))}
+              </div>
+              {isPro ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {customer.tags.map((tag) => (
+                    <Badge key={tag.id} variant="secondary" className="gap-1 pr-1">
+                      {tag.label}
+                      <button
+                        type="button"
+                        aria-label={`Retirer le tag ${tag.label}`}
+                        onClick={() => void removeTag(tag)}
+                        disabled={crmMutationLoading}
+                        className="rounded-sm p-0.5 text-muted-foreground transition-all duration-200 hover:bg-background hover:text-foreground"
+                      >
+                        <X size={12} />
+                      </button>
+                    </Badge>
+                  ))}
+                  <form
+                    className="inline-flex items-center gap-1"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveTag();
+                    }}
+                  >
+                    <Input
+                      value={tagLabel}
+                      onChange={(event) => setTagLabel(event.target.value)}
+                      placeholder="Nouveau tag"
+                      aria-label="Nom du tag"
+                      maxLength={80}
+                      disabled={crmMutationLoading}
+                      className="h-7 w-32 text-xs"
+                    />
+                    {tagLabel.trim() ? (
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={crmMutationLoading}
+                      >
+                        <Plus size={12} />
+                        Ajouter
+                      </Button>
+                    ) : null}
+                  </form>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Fiche client · {customer.visitSummary?.visits ?? '—'} visite(s) honorée(s)
-          </p>
+          <div className="flex flex-none gap-2">
+            {isPro ? (
+              <Button asChild variant="outline" size="sm" className="transition-all duration-200">
+                <Link href="/dashboard/customers/crm/duplicates">
+                  <Copy size={14} />
+                  Doublons
+                </Link>
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="transition-all duration-200"
+              onClick={() => {
+                setExportOpen(true);
+                setExportError('');
+              }}
+            >
+              <ShieldCheck size={14} />
+              Export RGPD
+            </Button>
+          </div>
         </div>
-        {isPro ? (
-          <Button asChild variant="outline">
-            <Link href="/dashboard/customers/crm/duplicates">Gérer les doublons</Link>
-          </Button>
-        ) : null}
       </div>
+
+      <dl className="flex flex-wrap gap-px overflow-hidden rounded-lg border border-border bg-border">
+        <Stat
+          label="Visites · 365 j"
+          value={customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}
+        />
+        {isPro ? (
+          <Stat label="Couverts · 365 j" value={formatNumber(metrics?.covers365d ?? 0)} />
+        ) : null}
+        <Stat
+          label="No-show · 365 j"
+          value={customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}
+        />
+        {isPro ? (
+          <Stat
+            label="Dépense encaissée"
+            value={spend === null || spend === undefined ? '—' : `${formatNumber(spend)} €`}
+          />
+        ) : null}
+        <Stat
+          label="Dernière visite"
+          value={formatDay(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
+        />
+      </dl>
 
       {isPro ? null : (
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Valeur client, tags, doublons et consentements marketing : inclus dans CRM Pro.
+          Valeur client, tags, doublons et consentements : CRM Pro.
           <Link
             href="/pricing"
             className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
@@ -712,319 +837,73 @@ export default function CrmCustomerPage() {
         </p>
       )}
 
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Download size={17} />
-              Export RGPD
-            </CardTitle>
-            <CardDescription>
-              Fichier des données de ce client (réservations, profil, consentements marketing),
-              téléchargeable après vérification par SMS.
-            </CardDescription>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setExportOpen((value) => !value);
-              setExportError('');
-            }}
-            aria-expanded={exportOpen}
-          >
-            <ShieldCheck size={15} />
-            {exportOpen ? 'Fermer' : 'Préparer un export'}
-          </Button>
-        </CardHeader>
-        {exportOpen ? (
-          <CardContent className="space-y-4 border-t border-border pt-4">
-            {exportStep === 'idle' ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Un code à six chiffres sera envoyé au {customer.phone}. Il expire après quelques
-                  minutes et n’est utilisable qu’une fois.
-                </p>
-                <Button type="button" onClick={() => void requestExportCode()}>
-                  Envoyer le code SMS
-                </Button>
-              </div>
-            ) : null}
-
-            {exportStep === 'requesting' ? (
-              <p className="text-sm text-muted-foreground">Envoi du code en cours…</p>
-            ) : null}
-
-            {exportStep === 'confirming' && exportRequest ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'e-mail'}. Saisissez-le
-                  pour télécharger le fichier.
-                </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    value={exportCode}
-                    onChange={(event) =>
-                      setExportCode(event.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    aria-label="Code d’export RGPD"
-                    className="sm:max-w-40"
-                    disabled={exportSubmitting}
-                  />
-                  <Button
-                    type="button"
-                    className="transition-all duration-200"
-                    onClick={() => void confirmExport()}
-                    disabled={exportCode.length !== 6 || exportSubmitting}
-                  >
-                    {exportSubmitting ? (
-                      <>
-                        <Loader2 size={15} className="animate-spin" />
-                        Vérification…
-                      </>
-                    ) : (
-                      'Télécharger l’export'
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="transition-all duration-200"
-                    disabled={exportSubmitting}
-                    onClick={() => void requestExportCode()}
-                  >
-                    Renvoyer
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {exportStep === 'done' && exportPayload ? (
-              <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-success">Export téléchargé.</p>
-                  <p className="text-muted-foreground">
-                    Généré le {formatDate(exportPayload.exportedAt)}.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => downloadExport(exportPayload)}
-                >
-                  <Download size={15} />
-                  Télécharger à nouveau
-                </Button>
-              </div>
-            ) : null}
-
-            {exportError ? <p className="text-sm text-destructive">{exportError}</p> : null}
-          </CardContent>
-        ) : null}
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Coordonnées et identités</CardTitle>
-            <CardDescription>Les autres coordonnées connues de ce client.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="flex items-start gap-3">
-              <Phone className="mt-0.5 text-muted-foreground" size={18} />
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Téléphone</p>
-                <p className="mt-1 font-medium">{customer.phone}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <Mail className="mt-0.5 text-muted-foreground" size={18} />
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Email</p>
-                <p className="mt-1 font-medium">{customer.emailNormalized || 'Non renseigné'}</p>
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Identités secondaires
-              </p>
-              {customer.identities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune identité secondaire.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {customer.identities.map((identity) => (
-                    <Badge key={identity.id} variant="secondary">
-                      {IDENTITY_LABELS[identity.type] ?? 'Autre coordonnée'} · {identity.value}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {isPro ? 'Valeur et récence' : 'Historique'}
-            </CardTitle>
-            <CardDescription>Calculées à partir des réservations.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Honorées (365 j)</span>
-              <strong>{customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}</strong>
-            </div>
-            {isPro ? (
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Couverts (365 j)</span>
-                <strong>{metrics?.covers365d ?? 0}</strong>
-              </div>
-            ) : null}
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">No-show (365 j)</span>
-              <strong>{customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}</strong>
-            </div>
-            {isPro ? (
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Dépense encaissée</span>
-                <strong>
-                  {metrics?.actualLifetimeSpend === null ||
-                  metrics?.actualLifetimeSpend === undefined
-                    ? 'Non raccordée'
-                    : `${formatNumber(metrics.actualLifetimeSpend)} €`}
-                </strong>
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-              <CalendarDays size={14} />
-              Dernière visite :{' '}
-              {formatDate(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
-            </div>
-            {isPro ? (
-              <div className="border-t border-border pt-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Exactitude des chiffres
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Compare ces chiffres avec les réservations.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void inspectProjection()}
-                    disabled={repairLoading}
-                  >
-                    {repairLoading ? 'Vérification…' : 'Vérifier'}
-                  </Button>
-                </div>
-                {repairPreview ? (
-                  <div className="mt-3 space-y-2 text-xs">
-                    <p className={repairPreview.changed ? 'text-warning' : 'text-success'}>
-                      {repairPreview.changed
-                        ? `Écart détecté sur ${repairPreview.reservationCount} réservation(s).`
-                        : 'Chiffres à jour.'}
-                    </p>
-                    {repairPreview.changed ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void repairProjection()}
-                        disabled={repairLoading}
-                      >
-                        Recalculer les chiffres
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                {repairNotice ? <p className="mt-2 text-xs text-success">{repairNotice}</p> : null}
-                {repairError ? (
-                  <p className="mt-2 text-xs text-destructive">{repairError}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
-
-      {isPro ? (
-        <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+      {crmMutationNotice ? (
+        <p role="status" className="text-xs text-success">
+          {crmMutationNotice}
+        </p>
       ) : null}
+      {crmMutationError ? <p className="text-xs text-destructive">{crmMutationError}</p> : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Tag size={17} />
-              {isPro ? 'Préférences et tags' : 'Préférences de service'}
-            </CardTitle>
-            <CardDescription>Informations structurées utiles pendant le service.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {isPro ? (
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tags</p>
-                  <span className="text-xs text-muted-foreground">Réservé aux responsables</span>
-                </div>
-                {customer.tags.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun tag.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {customer.tags.map((tag) => (
-                      <span key={tag.id} className="inline-flex items-center gap-1">
-                        <Badge variant="secondary">{tag.label}</Badge>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          aria-label={`Retirer le tag ${tag.label}`}
-                          onClick={() => void removeTag(tag)}
-                          disabled={crmMutationLoading}
-                        >
-                          <X size={13} />
-                        </Button>
+      <div>
+        <div role="tablist" aria-label="Fiche client" className="flex gap-6 border-b border-border">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`tab-${item.id}`}
+              aria-selected={tab === item.id}
+              aria-controls={`panel-${item.id}`}
+              onClick={() => setTab(item.id)}
+              className={cn(
+                '-mb-px inline-flex items-center gap-1.5 border-b-2 pb-2.5 text-sm font-medium transition-all duration-200',
+                tab === item.id
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {item.label}
+              {item.badge ? (
+                <span className="rounded-full bg-warning/15 px-1.5 text-xs tabular-nums text-foreground">
+                  {item.badge}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+
+        <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="pt-4">
+          {tab === 'activity' ? (
+            customer.timeline.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">Aucune activité.</p>
+            ) : (
+              <ol className="rounded-lg border border-border bg-card px-4">
+                {customer.timeline.map((event) => {
+                  const Icon = timelineIcon(event.summaryCode);
+                  return (
+                    <li
+                      key={event.id}
+                      className="flex items-center gap-3 border-b border-border py-3 last:border-0"
+                    >
+                      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                        <Icon size={14} />
                       </span>
-                    ))}
-                  </div>
-                )}
-                <form
-                  className="mt-3 flex flex-col gap-2 sm:flex-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void saveTag();
-                  }}
-                >
-                  <Input
-                    value={tagLabel}
-                    onChange={(event) => setTagLabel(event.target.value)}
-                    placeholder="Nom du tag, par exemple « VIP régulier »"
-                    aria-label="Nom du tag"
-                    maxLength={80}
-                    disabled={crmMutationLoading}
-                  />
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={crmMutationLoading || !tagLabel.trim()}
-                  >
-                    <Plus size={14} />
-                    Ajouter
-                  </Button>
-                </form>
-              </div>
-            ) : null}
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Préférences</p>
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {timelineLabel(event.summaryCode)}
+                      </p>
+                      <p className="flex-none text-xs tabular-nums text-muted-foreground">
+                        {formatDate(event.occurredAt)}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ol>
+            )
+          ) : null}
+
+          {tab === 'preferences' ? (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-2 flex justify-end">
                 <Button
                   type="button"
                   variant="outline"
@@ -1042,24 +921,26 @@ export default function CrmCustomerPage() {
                 </Button>
               </div>
               {visiblePreferences.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune préférence confirmée.</p>
+                <p className="py-6 text-center text-sm text-muted-foreground">Aucune préférence.</p>
               ) : (
                 <dl className="divide-y divide-border text-sm">
                   {visiblePreferences.map((preference) =>
                     isPendingVoiceSuggestion(preference) ? (
                       <div
                         key={preference.id}
-                        className="flex flex-wrap items-center justify-between gap-3 py-2 first:pt-0"
+                        className="flex flex-wrap items-center justify-between gap-3 py-2.5"
                       >
-                        <div className="min-w-0">
-                          <dt className="flex flex-wrap items-center gap-2 text-muted-foreground">
+                        <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                          <dt className="text-muted-foreground">
                             {preferenceLabel(preference.key)}
+                          </dt>
+                          <dd className="flex min-w-0 flex-wrap items-center gap-2 font-medium">
+                            <span className="truncate">{displayValue(preference.value)}</span>
                             <Badge variant="outline" className="gap-1 font-normal">
                               <Phone size={12} />
                               Entendu au téléphone, à confirmer
                             </Badge>
-                          </dt>
-                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                          </dd>
                         </div>
                         <div className="flex shrink-0 gap-1">
                           <Button
@@ -1090,9 +971,9 @@ export default function CrmCustomerPage() {
                     ) : (
                       <div
                         key={preference.id}
-                        className="flex items-center justify-between gap-3 py-2 first:pt-0"
+                        className="flex items-center justify-between gap-3 py-2.5"
                       >
-                        <div className="min-w-0">
+                        <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
                           <dt className="text-muted-foreground">
                             {preferenceLabel(preference.key)}
                           </dt>
@@ -1160,9 +1041,7 @@ export default function CrmCustomerPage() {
                       value={preferenceValue}
                       onChange={(event) => setPreferenceValue(event.target.value)}
                       placeholder={
-                        LIST_PREFERENCES.has(preferenceKey)
-                          ? 'Séparez par des virgules : sans gluten, végétarien'
-                          : 'Par exemple : terrasse'
+                        LIST_PREFERENCES.has(preferenceKey) ? 'sans gluten, végétarien' : 'terrasse'
                       }
                       aria-label="Valeur de la préférence"
                       disabled={crmMutationLoading}
@@ -1185,41 +1064,108 @@ export default function CrmCustomerPage() {
                 </div>
               ) : null}
             </div>
-            {crmMutationNotice ? <p className="text-xs text-success">{crmMutationNotice}</p> : null}
-            {crmMutationError ? (
-              <p className="text-xs text-destructive">{crmMutationError}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+          ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Chronologie récente</CardTitle>
-            <CardDescription>
-              Réservations, appels, liste d’attente, cartes cadeaux et modifications de la fiche.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {customer.timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Aucun événement récent.</p>
-            ) : (
-              <ol className="space-y-4">
-                {customer.timeline.map((event) => (
-                  <li key={event.id} className="flex gap-3">
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{timelineLabel(event.summaryCode)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(event.occurredAt)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
+          {tab === 'consents' && isPro ? (
+            <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+          ) : null}
+        </div>
       </div>
+
+      <Dialog
+        open={exportOpen}
+        onOpenChange={(open) => {
+          setExportOpen(open);
+          setExportError('');
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export RGPD</DialogTitle>
+            <DialogDescription>
+              Réservations, profil et consentements de ce client, après vérification par code.
+            </DialogDescription>
+          </DialogHeader>
+
+          {exportStep === 'idle' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Un code à usage unique sera envoyé au {customer.phone}.
+              </p>
+              <Button type="button" onClick={() => void requestExportCode()}>
+                Envoyer le code SMS
+              </Button>
+            </div>
+          ) : null}
+
+          {exportStep === 'requesting' ? (
+            <p className="text-sm text-muted-foreground">Envoi du code…</p>
+          ) : null}
+
+          {exportStep === 'confirming' && exportRequest ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'e-mail'}.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  value={exportCode}
+                  onChange={(event) =>
+                    setExportCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  aria-label="Code d’export RGPD"
+                  className="tabular-nums sm:max-w-32"
+                  disabled={exportSubmitting}
+                />
+                <Button
+                  type="button"
+                  className="transition-all duration-200"
+                  onClick={() => void confirmExport()}
+                  disabled={exportCode.length !== 6 || exportSubmitting}
+                >
+                  {exportSubmitting ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      Vérification…
+                    </>
+                  ) : (
+                    'Télécharger l’export'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="transition-all duration-200"
+                  disabled={exportSubmitting}
+                  onClick={() => void requestExportCode()}
+                >
+                  Renvoyer
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {exportStep === 'done' && exportPayload ? (
+            <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-success">Export téléchargé.</p>
+                <p className="text-muted-foreground">
+                  Généré le {formatDate(exportPayload.exportedAt)}.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => downloadExport(exportPayload)}>
+                <Download size={15} />
+                Télécharger à nouveau
+              </Button>
+            </div>
+          ) : null}
+
+          {exportError ? <p className="text-sm text-destructive">{exportError}</p> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
