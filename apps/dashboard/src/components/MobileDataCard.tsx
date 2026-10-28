@@ -137,7 +137,7 @@ export default function MobileDataCard({
                 setOffsetX(0); // auto-close
               }}
               className={cn(
-                'w-[68px] flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white transition-opacity active:opacity-75',
+                'w-[68px] flex flex-col items-center justify-center gap-1 text-xs font-bold text-white transition-opacity active:opacity-75',
                 act.colorClass || 'bg-brand',
               )}
             >
@@ -169,7 +169,7 @@ export default function MobileDataCard({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-foreground truncate">{title}</p>
             {subtitle && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{subtitle}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground truncate">{subtitle}</p>
             )}
           </div>
           <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -198,10 +198,8 @@ export default function MobileDataCard({
           <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
             {details.map((d) => (
               <div key={d.label} className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                  {d.label}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">{d.value}</p>
+                <p className="text-xs font-medium text-muted-foreground">{d.label}</p>
+                <div className="text-xs text-muted-foreground truncate">{d.value}</div>
               </div>
             ))}
           </div>
@@ -239,7 +237,7 @@ export default function MobileDataCard({
                   setOffsetX(0);
                 }}
                 className={cn(
-                  'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold text-white transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-white transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   act.colorClass || 'bg-brand',
                 )}
               >
