@@ -23,6 +23,7 @@ function makeCall(index: number, overrides: Record<string, unknown> = {}) {
   return {
     id: `call-${index}`,
     callSid: `sid-${index}`,
+    callerPhone: '+33612345678',
     durationSec: 60,
     transcript: `Bonjour, je voudrais réserver une table pour ${index} personnes ce soir.`,
     intent: 'RESERVATION',
@@ -52,12 +53,12 @@ describe('CallsPage', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Impossible de joindre le serveur API');
-    expect(screen.queryByText('Aucun appel enregistré')).not.toBeInTheDocument();
+    expect(screen.queryByText('Aucun appel.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Aucun appel enregistré')).toBeInTheDocument();
+      expect(screen.getByText('Aucun appel.')).toBeInTheDocument();
     });
     expect(mocks.get).toHaveBeenCalledTimes(2);
   });
@@ -92,11 +93,11 @@ describe('CallsPage', () => {
 
     render(<CallsPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /lire la transcription/i }));
+    fireEvent.click(await screen.findByText('+33 6 12 34 56 78'));
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent("Fin de l'appel.");
-    expect(dialog).toHaveTextContent("Transcription de l'appel");
+    expect(dialog).toHaveTextContent('Appel');
   });
 
   it("n'affiche plus l'opérateur télécom, et dit « Transcription » en français", async () => {
@@ -115,6 +116,7 @@ describe('CallsPage', () => {
     render(<CallsPage />);
     await screen.findByText('1 appel');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /lire la transcription/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('+33 6 12 34 56 78'));
+    expect(await screen.findByRole('dialog', { name: 'Appel' })).toBeInTheDocument();
   });
 });

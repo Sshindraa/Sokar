@@ -196,6 +196,7 @@ export interface VoiceTurnTelemetry {
 }
 
 export interface Call {
+  callerPhone: string | null;
   id: string;
   callSid: string;
   durationSec: number | null;
