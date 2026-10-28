@@ -193,6 +193,21 @@ describe('LoyaltyPage', () => {
     );
     expect(await screen.findByText('Code à remettre au client')).toBeInTheDocument();
     expect(screen.getByText('ABC123DEF456')).toBeInTheDocument();
+    expect(screen.getByText(/30 jours · 2 attributions/)).toBeInTheDocument();
+  });
+
+  it('ne compte pas une attribution rejouée deux fois', async () => {
+    apiMocks.post.mockResolvedValue({ data: { ...grant, code: null, replayed: true } });
+    render(<LoyaltyPage />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Attribuer l’attention' })).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByLabelText('Client destinataire'), {
+      target: { value: 'customer-2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Attribuer l’attention' }));
+    expect(await screen.findByText(/30 jours · 1 attribution/)).toBeInTheDocument();
+    expect(await screen.findByText(/avait déjà été attribuée/)).toBeInTheDocument();
   });
 
   it('valide une attention avec son attribution et son code', async () => {
