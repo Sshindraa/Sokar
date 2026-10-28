@@ -47,6 +47,8 @@ export const CustomerQuerySchema = z.object({
   // Statut et visites honorées (365 j) : calculés sur les réservations, réservés à CRM Pro.
   lifecycle: z.enum(['new', 'active', 'regular', 'at_risk', 'dormant']).optional(),
   minHonored365d: z.coerce.number().int().min(0).max(10_000).optional(),
+  // « recent » = dernier contact (défaut) ; les deux autres sont calculés, réservés à CRM Pro.
+  sort: z.enum(['recent', 'visits365d', 'lastVisit']).optional(),
 });
 
 export type CreateCustomerInput = z.infer<typeof CreateCustomerSchema>;

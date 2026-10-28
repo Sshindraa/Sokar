@@ -8,7 +8,7 @@ import { ApiError } from '@/lib/api-error';
 import { getErrorMessage, type Customer, type CustomerLifecycleStatus } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { useSiteSelection } from '@/features/sites/site-context';
-import { cn } from '@/lib/utils';
+import { cn, formatPhone } from '@/lib/utils';
 import {
   Table,
   TableHeader,
@@ -20,7 +20,18 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, Star, Phone, Copy, Lock, StickyNote, X, Download } from 'lucide-react';
+import {
+  Users,
+  Search,
+  Star,
+  Phone,
+  Copy,
+  Lock,
+  StickyNote,
+  X,
+  Download,
+  ArrowDown,
+} from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
 import { CustomerLifecycleBadge } from '@/components/CustomerLifecycleBadge';
 
@@ -33,8 +44,15 @@ type Filters = {
   isVip: 'all' | 'true' | 'false';
   lifecycle: 'all' | CustomerLifecycleStatus;
   minVisits: string;
+  sort: 'recent' | 'visits365d' | 'lastVisit';
 };
-const NO_FILTERS: Filters = { search: '', isVip: 'all', lifecycle: 'all', minVisits: '' };
+const NO_FILTERS: Filters = {
+  search: '',
+  isVip: 'all',
+  lifecycle: 'all',
+  minVisits: '',
+  sort: 'recent',
+};
 
 type Segment = {
   key: string;
@@ -122,7 +140,9 @@ function CustomerMobileCard({
                   {name}
                 </ProfileLink>
               </h2>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{customer.phone}</p>
+              <p className="mt-0.5 truncate text-xs tabular-nums text-muted-foreground">
+                {formatPhone(customer.phone)}
+              </p>
             </div>
           </div>
           {customer.isVip ? (
@@ -214,6 +234,8 @@ export default function CustomersPage() {
     if (filters.isVip !== 'all') params.set('isVip', filters.isVip);
     if (filters.lifecycle !== 'all') params.set('lifecycle', filters.lifecycle);
     if (filters.minVisits) params.set('minHonored365d', filters.minVisits);
+    // Le tri récent est celui de l'API par défaut : inutile de le transmettre.
+    if (filters.sort !== 'recent') params.set('sort', filters.sort);
     return `customers?${params.toString()}`;
   }, []);
 
@@ -297,7 +319,56 @@ export default function CustomersPage() {
       );
   }, [orgId, get, loadedOnce]);
 
-  const hasFilters = JSON.stringify(applied) !== JSON.stringify(NO_FILTERS);
+  // Le tri n'est pas un filtre : il ne compte pas dans « filtres actifs ».
+  const hasFilters =
+    JSON.stringify({ ...applied, sort: NO_FILTERS.sort }) !== JSON.stringify(NO_FILTERS);
+
+  // Compteurs par segment (CRM Pro), recalculés à chaque recherche ; en cas d'échec, pas de compteur.
+  const [segmentCounts, setSegmentCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (crmState !== 'open') return;
+    let cancelled = false;
+    const query = applied.search
+      ? `?${new URLSearchParams({ search: applied.search }).toString()}`
+      : '';
+    void (async () => {
+      try {
+        const response = await get<{ data: Record<string, number> }>(
+          `customers/segment-counts${query}`,
+        );
+        if (!cancelled) setSegmentCounts(response.data);
+      } catch {
+        if (!cancelled) setSegmentCounts(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [crmState, applied.search, get]);
+
+  // Un second clic sur la colonne active revient au tri récent.
+  function toggleSort(sort: 'visits365d' | 'lastVisit') {
+    applyFilters({ ...draft, sort: applied.sort === sort ? 'recent' : sort });
+  }
+
+  // Les en-têtes ne sont cliquables qu'au CRM Pro ouvert ; ailleurs, simple texte.
+  function sortHeader(label: string, sort: 'visits365d' | 'lastVisit') {
+    if (crmState !== 'open') return label;
+    const active = applied.sort === sort;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(sort)}
+        className={cn(
+          'inline-flex items-center gap-1 transition-all duration-200 hover:text-foreground',
+          active && 'text-foreground',
+        )}
+      >
+        {label}
+        {active ? <ArrowDown size={14} aria-hidden="true" /> : null}
+      </button>
+    );
+  }
 
   const [exporting, setExporting] = useState(false);
   async function exportCsv() {
@@ -386,6 +457,10 @@ export default function CustomersPage() {
       >
         {SEGMENTS.filter((segment) => !segment.crmOnly || crmState === 'open').map((segment) => {
           const active = draft.isVip === segment.isVip && draft.lifecycle === segment.lifecycle;
+          // L'onglet actif montre le total de la liste (il suit aussi « Visites min. ») ; les autres,
+          // leur effectif quand le CRM Pro le fournit.
+          const count = crmState === 'open' ? segmentCounts?.[segment.key] : undefined;
+          const shown = active ? total : (count ?? null);
           return (
             <button
               key={segment.key}
@@ -403,9 +478,8 @@ export default function CustomersPage() {
               )}
             >
               {segment.label}
-              {/* Pas de compteur par segment : l'API ne le fournit pas, seul le total actif est affiché. */}
-              {active ? (
-                <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{total}</span>
+              {shown !== null ? (
+                <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{shown}</span>
               ) : null}
             </button>
           );
@@ -534,10 +608,24 @@ export default function CustomersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nom</TableHead>
-                  <TableHead>Téléphone</TableHead>
-                  <TableHead>Visites 365 j</TableHead>
+                  <TableHead className="hidden lg:table-cell">Téléphone</TableHead>
+                  <TableHead
+                    aria-sort={
+                      crmState === 'open' && applied.sort === 'visits365d'
+                        ? 'descending'
+                        : undefined
+                    }
+                  >
+                    {sortHeader('Visites 365 j', 'visits365d')}
+                  </TableHead>
                   <TableHead>Statut</TableHead>
-                  <TableHead>Dernière visite</TableHead>
+                  <TableHead
+                    aria-sort={
+                      crmState === 'open' && applied.sort === 'lastVisit' ? 'descending' : undefined
+                    }
+                  >
+                    {sortHeader('Dernière visite', 'lastVisit')}
+                  </TableHead>
                   <TableHead>VIP</TableHead>
                 </TableRow>
               </TableHeader>
@@ -571,15 +659,21 @@ export default function CustomersPage() {
                           <ProfileLink id={c.id} linked={crmState !== 'hidden'}>
                             {c.name || <span className="opacity-50">Client sans nom</span>}
                           </ProfileLink>
+                          {/* Sous 1024 px la colonne Téléphone disparaît : le numéro passe sous le nom. */}
+                          <p className="text-xs tabular-nums text-muted-foreground lg:hidden">
+                            {formatPhone(c.phone)}
+                          </p>
                           {c.emailNormalized ? (
-                            <p className="max-w-[220px] truncate text-xs text-muted-foreground">
+                            <p className="hidden max-w-[220px] truncate text-xs text-muted-foreground lg:block">
                               {c.emailNormalized}
                             </p>
                           ) : null}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">{c.phone}</TableCell>
+                    <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">
+                      {formatPhone(c.phone)}
+                    </TableCell>
                     <TableCell className="tabular-nums">
                       {c.visitSummary?.visits365d ?? '—'}
                     </TableCell>

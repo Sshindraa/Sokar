@@ -190,7 +190,14 @@ comme dernière visite. Recherche commune avec CRM Pro : nom, email, numéro sai
 française. Tri : dernier contact. Filtres : `isVip` (toutes les formules) ; `lifecycle` et
 `minHonored365d` (visites honorées sur 365 j) exigent `customers.advanced` (offre Pro, 403
 `CAPABILITY_NOT_INCLUDED` sinon ; offre Essential = CRM de base) et portent sur les 5 000 premiers
-clients. Pagination `limit`/`offset`, `total` = résultats filtrés.
+clients. Pagination `limit`/`offset`, `total` = résultats filtrés. `sort` : `recent` (défaut,
+dernier contact), `visits365d` ou `lastVisit` (décroissant, calculés, `customers.advanced`).
+
+### GET /customers/segment-counts
+
+Effectifs des onglets de la liste (`customers.advanced`) : `{ data: { all, vip, new, active,
+regular, at_risk, dormant } }`, avec la même `search` et le même périmètre que la liste. `all` et
+`vip` sont exacts ; les statuts portent sur les 5 000 premiers clients.
 
 ### PATCH /customers/:id
 

@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
 import { featureLockFromError, type FeatureLock } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
+import { cn, formatPhone } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
 
 type DuplicateCustomer = {
@@ -364,7 +364,7 @@ export default function CustomerDuplicatesPage() {
                           {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
                         </div>
                         <p className="mt-2 text-sm text-muted-foreground tabular-nums">
-                          {customer.phone}
+                          {formatPhone(customer.phone)}
                         </p>
                         {customer.emailNormalized ? (
                           <p className="truncate text-xs text-muted-foreground">

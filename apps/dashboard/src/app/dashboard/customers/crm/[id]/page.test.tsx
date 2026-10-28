@@ -109,7 +109,7 @@ describe('CrmCustomerPage', () => {
     render(<CrmCustomerPage />);
 
     expect(await screen.findByRole('heading', { name: 'Alice Martin' })).toBeInTheDocument();
-    expect(screen.getByText('+33612345678')).toBeInTheDocument();
+    expect(screen.getByText('+33 6 12 34 56 78')).toBeInTheDocument();
     expect(screen.getByText('alice@example.com')).toBeInTheDocument();
     expect(screen.getByText('Caisse · C-42')).toBeInTheDocument();
     expect(screen.getByText('Visite honorée')).toBeInTheDocument();

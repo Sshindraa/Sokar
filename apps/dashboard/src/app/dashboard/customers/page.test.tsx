@@ -374,8 +374,68 @@ describe('CustomersPage', () => {
       mockCrm(() => Promise.resolve({ data: [] }));
       render(<CustomersPage />);
       await screen.findByRole('link', { name: /Doublons/ });
-      fireEvent.click(screen.getByText('+33600000000'));
+      fireEvent.click(screen.getAllByText('+33 6 00 00 00 00')[0]);
       expect(mocks.push).toHaveBeenCalledWith('/dashboard/customers/crm/customer-1');
+    });
+
+    it('affiche un compteur sur chaque segment quand le CRM Pro est ouvert', async () => {
+      mocks.get.mockImplementation((path: string) => {
+        if (path.startsWith('crm/')) return Promise.resolve({ data: [] });
+        if (path.startsWith('customers/segment-counts')) {
+          return Promise.resolve({
+            data: { all: 12, vip: 3, new: 2, active: 5, regular: 4, at_risk: 1, dormant: 0 },
+          });
+        }
+        return Promise.resolve(one);
+      });
+      render(<CustomersPage />);
+      await waitFor(() =>
+        expect(screen.getByRole('tab', { name: /VIP/ })).toHaveTextContent(/VIP\s*3/),
+      );
+      // L'onglet actif garde le total de la liste, qui suit aussi « Visites min. ».
+      expect(screen.getByRole('tab', { name: /Tous/ })).toHaveTextContent(/Tous\s*1$/);
+      expect(screen.getByRole('tab', { name: /Habitués/ })).toHaveTextContent(/Habitués\s*4/);
+      expect(screen.getByRole('tab', { name: /À risque/ })).toHaveTextContent(/À risque\s*1/);
+      expect(screen.getByRole('tab', { name: /Endormis/ })).toHaveTextContent(/Endormis\s*0/);
+      expect(screen.getByRole('tab', { name: /Nouveaux/ })).toHaveTextContent(/Nouveaux\s*2/);
+    });
+
+    it('trie par visites 365 j au clic sur l’en-tête, puis revient au tri récent', async () => {
+      mockCrm(() => Promise.resolve({ data: [] }));
+      render(<CustomersPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Visites 365 j' }));
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenLastCalledWith('customers?limit=50&offset=0&sort=visits365d'),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('columnheader', { name: /Visites 365 j/ })).toHaveAttribute(
+          'aria-sort',
+          'descending',
+        ),
+      );
+      expect(screen.getByRole('columnheader', { name: /Dernière visite/ })).not.toHaveAttribute(
+        'aria-sort',
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Visites 365 j' }));
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenLastCalledWith('customers?limit=50&offset=0'),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('columnheader', { name: /Visites 365 j/ })).not.toHaveAttribute(
+          'aria-sort',
+        ),
+      );
+    });
+
+    it('ne demande pas les compteurs quand le CRM Pro est fermé', async () => {
+      mockCrm(() => Promise.reject(toApiError(503, { error: 'CRM_ADVANCED_DISABLED' })));
+      render(<CustomersPage />);
+      await screen.findByText('Alice Demo');
+      await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('crm/customers?limit=1'));
+      expect(
+        mocks.get.mock.calls.some(([path]) => String(path).startsWith('customers/segment-counts')),
+      ).toBe(false);
     });
   });
 });

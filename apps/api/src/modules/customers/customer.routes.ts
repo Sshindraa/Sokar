@@ -23,7 +23,11 @@ import {
 } from './customer-privacy';
 import { findCustomerForPhone } from './customer.service';
 import { buildCustomersCsv } from './customer-export';
-import { filterCustomerIdsByVisits, withCustomerLifecycles } from './customer-lifecycle';
+import {
+  countCustomersByLifecycle,
+  filterCustomerIdsByVisits,
+  withCustomerLifecycles,
+} from './customer-lifecycle';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import {
   loadReservationServiceCards,
@@ -86,6 +90,7 @@ export async function customerRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const query = CustomerQuerySchema.parse(req.query);
       const restaurantId = req.restaurantId;
+      const computedSort = query.sort === 'recent' ? undefined : query.sort;
       // Profils archivés exclus : un client effacé au titre du RGPD (nom « ANON », téléphone « erased:… »)
       // et un profil source déjà fusionné ne sont plus des clients. Le CRM et la segmentation
       // appliquent déjà la même règle ; le total suit puisqu'il partage ce `where`.
@@ -106,7 +111,11 @@ export async function customerRoutes(app: FastifyInstance) {
 
       let customers;
       let total: number;
-      if (query.lifecycle !== undefined || query.minHonored365d !== undefined) {
+      if (
+        query.lifecycle !== undefined ||
+        query.minHonored365d !== undefined ||
+        computedSort !== undefined
+      ) {
         // Statut et visites viennent des réservations : fonction de CRM Pro (offre Essential = CRM de base).
         await requireCapability('customers.advanced')(req, reply);
         if (reply.sent) return reply;
@@ -120,7 +129,7 @@ export async function customerRoutes(app: FastifyInstance) {
         const matching = await filterCustomerIdsByVisits(
           restaurantId!,
           candidates.map((candidate) => candidate.id),
-          query,
+          { ...query, sort: computedSort },
           new Date(),
         );
         total = matching.length;
@@ -156,6 +165,42 @@ export async function customerRoutes(app: FastifyInstance) {
         limit: query.limit,
         offset: query.offset,
       });
+    },
+  );
+
+  /** Customers per list segment (all, VIP, each lifecycle status), with the list's search. */
+  app.get(
+    '/customers/segment-counts',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      await requireCapability('customers.advanced')(req, reply);
+      if (reply.sent) return reply;
+      const { search } = CustomerQuerySchema.parse(req.query);
+      const restaurantId = req.restaurantId!;
+      // Même périmètre que la liste : sans profils archivés ni fusionnés.
+      const where: Prisma.CustomerWhereInput = {
+        restaurantId,
+        archivedAt: null,
+        mergedIntoId: null,
+      };
+      if (search) where.OR = buildCustomerSearchFilter(search);
+      const [all, vip, candidates] = await Promise.all([
+        db.customer.count({ where }),
+        db.customer.count({ where: { ...where, isVip: true } }),
+        // shortcut: les statuts portent sur les 5 000 premiers clients, comme le filtre de la liste.
+        db.customer.findMany({
+          where,
+          orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+          select: { id: true },
+          take: COMPUTED_FILTER_SCAN_LIMIT,
+        }),
+      ]);
+      const lifecycle = await countCustomersByLifecycle(
+        restaurantId,
+        candidates.map((candidate) => candidate.id),
+        new Date(),
+      );
+      return reply.send({ data: { all, vip, ...lifecycle } });
     },
   );
 

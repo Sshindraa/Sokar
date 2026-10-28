@@ -44,7 +44,7 @@ import { useApi } from '@/lib/api';
 import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage, type CustomerVisitSummary } from '@/types/api';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
-import { cn } from '@/lib/utils';
+import { cn, formatPhone } from '@/lib/utils';
 
 type CustomerIdentity = {
   id: string;
@@ -708,7 +708,7 @@ export default function CrmCustomerPage() {
                   className="inline-flex items-center gap-1.5 tabular-nums transition-all duration-200 hover:text-foreground"
                 >
                   <Phone size={14} />
-                  {customer.phone}
+                  {formatPhone(customer.phone)}
                 </a>
                 {customer.emailNormalized ? (
                   <a
@@ -1090,7 +1090,7 @@ export default function CrmCustomerPage() {
           {exportStep === 'idle' ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Un code à usage unique sera envoyé au {customer.phone}.
+                Un code à usage unique sera envoyé au {formatPhone(customer.phone)}.
               </p>
               <Button type="button" onClick={() => void requestExportCode()}>
                 Envoyer le code SMS

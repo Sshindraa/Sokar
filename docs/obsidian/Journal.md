@@ -2917,3 +2917,7 @@ Fiche `/dashboard/customers/crm/[id]` refaite après l'audit UI (« trop IA, tro
 ## 2026-10-28 — Refonte UI liste Clients et Doublons
 
 Liste Clients : effectif à côté du titre, segments en onglets (Tous, VIP ; Habitués, À risque, Endormis, Nouveaux en CRM Pro) à la place des listes déroulantes, recherche à la frappe (300 ms), tableau ramené à 6 colonnes avec ligne cliquable et étoile VIP, même format de date partout. Doublons : texte d'explication retiré, titre de carte = raisons, aperçu affiché seulement après choix d'un profil. Limites API connues : pas d'effectif par segment (seul l'onglet actif affiche son total) ni de tri serveur par visites ou dernière visite ; à ajouter côté API avant d'offrir ces deux fonctions.
+
+## 2026-10-28 — Liste Clients : effectifs par segment, tri, téléphones lisibles
+
+API additive : `GET /customers/segment-counts` et `sort=visits365d|lastVisit` sur `GET /customers` (CRM Pro, calculés sur les réservations, même plafond de 5 000 clients que les filtres de statut). Dashboard : effectif sur chaque onglet (l'onglet actif garde le total réel de la liste), tri par clic sur « Visites 365 j » et « Dernière visite », numéros français affichés « +33 6 12 34 56 78 » (`formatPhone` dans `lib/utils.ts`), colonne Téléphone repliée sous le nom en dessous de 1024 px pour que le tableau tienne sur iPad. Revue visuelle faite en sombre et clair, desktop / iPad / iPhone, API simulée.
