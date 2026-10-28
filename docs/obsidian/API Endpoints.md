@@ -199,6 +199,13 @@ Effectifs des onglets de la liste (`customers.advanced`) : `{ data: { all, vip, 
 regular, at_risk, dormant } }`, avec la même `search` et le même périmètre que la liste. `all` et
 `vip` sont exacts ; les statuts portent sur les 5 000 premiers clients.
 
+### Admin : recalcul des chiffres d'un client
+
+`GET /admin/restaurants/:restaurantId/customers/:customerId/projection-repair-preview` et
+`POST …/projection-repair` (en-tête `Idempotency-Key`), opérateurs Sokar uniquement
+(`requireSokarOperator`). Même calcul que `/crm/customers/:id/projection-repair*`, conservées
+côté restaurant pour compatibilité mais sans écran ; l'outil vit dans l'admin « Santé du restaurant ».
+
 ### PATCH /customers/:id
 
 Mise à jour. Comme pour l'upsert, une modification de `notes` ou `specialOccasion` suit la même règle ;

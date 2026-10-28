@@ -2925,3 +2925,7 @@ API additive : `GET /customers/segment-counts` et `sort=visits365d|lastVisit` su
 ## 2026-10-28 — Composants Tabs, menu, infobulle, notifications
 
 Ajout de `@radix-ui/react-tabs`, `react-dropdown-menu`, `react-tooltip` et `sonner` (composants `components/ui/tabs|dropdown-menu|tooltip|sonner`, `Toaster` et `TooltipProvider` montés dans `providers.tsx`). Le CRM les utilise : onglets Radix (clavier), confirmations en notification (les erreurs restent dans la page), export RGPD dans un menu « Plus d’actions », raison du statut en infobulle dans la liste. Couleurs des notifications branchées sur les tokens via les variables de sonner (sinon elles suivent le thème système). `Context.md` : section « Liens rapides » archivée pour repasser sous 8 Ko ; marge faible, les TODO qui mêlent « livré » et « à faire » sont à resserrer par Hamza.
+
+## 2026-10-28 — Recalcul des chiffres client dans l'admin
+
+Décision Hamza : l'outil « Vérifier / Recalculer » retiré de la fiche client va dans l'admin. Nouvelles routes opérateur `GET|POST /admin/restaurants/:restaurantId/customers/:customerId/projection-repair[-preview]` (même service, auteur tracé `operator:<userId>`), carte « Recalculer les chiffres d’un client » dans `/admin/health` (ID du client tiré de l'URL de la fiche). Routes `/crm/customers/:id/projection-repair*` conservées (surface d'intégration). Carte testée en unitaire seulement : l'admin exige une vraie session opérateur.

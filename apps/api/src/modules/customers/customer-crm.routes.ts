@@ -227,7 +227,7 @@ function mergeErrorResponse(
   return reply.status(status).send({ error: error.code, message: error.message });
 }
 
-function projectionRepairErrorResponse(
+export function projectionRepairErrorResponse(
   error: unknown,
   reply: { status: (code: number) => { send: (body: unknown) => unknown } },
 ) {

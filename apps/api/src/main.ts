@@ -52,6 +52,7 @@ import { flagsRoutes } from './modules/admin/flags.routes';
 import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
 import { provisioningRoutes } from './modules/admin/provisioning.routes';
 import { restaurantHealthRoutes } from './modules/admin/restaurant-health.routes';
+import { adminCustomerRepairRoutes } from './modules/admin/customer-repair.routes';
 import { posRoutes } from './modules/pos/pos.routes';
 import { reservationPaymentRoutes } from './modules/reservation-payments/reservation-payment.routes';
 import { customerGroupRoutes } from './modules/customer-groups/customer-group.routes';
@@ -259,6 +260,7 @@ export async function buildApp() {
   await app.register(onboardingFunnelRoutes);
   await app.register(provisioningRoutes);
   await app.register(restaurantHealthRoutes);
+  await app.register(adminCustomerRepairRoutes);
   await app.register(posRoutes);
   await app.register(reservationPaymentRoutes);
   await app.register(customerGroupRoutes);
