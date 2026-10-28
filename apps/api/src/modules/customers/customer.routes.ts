@@ -185,11 +185,11 @@ export async function customerRoutes(app: FastifyInstance) {
       };
       if (search) where.OR = buildCustomerSearchFilter(search);
       const [all, vip, candidates] = await Promise.all([
-        db.customer.count({ where }),
-        db.customer.count({ where: { ...where, isVip: true } }),
+        db.customer.count({ where: { ...where, restaurantId } }),
+        db.customer.count({ where: { ...where, restaurantId, isVip: true } }),
         // shortcut: les statuts portent sur les 5 000 premiers clients, comme le filtre de la liste.
         db.customer.findMany({
-          where,
+          where: { ...where, restaurantId },
           orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
           select: { id: true },
           take: COMPUTED_FILTER_SCAN_LIMIT,
