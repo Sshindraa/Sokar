@@ -2913,3 +2913,7 @@ CI verte et migration additive appliquée sur staging. Parcours validé sur un �
 ## 2026-10-28 — Refonte UI de la fiche client CRM
 
 Fiche `/dashboard/customers/crm/[id]` refaite après l'audit UI (« trop IA, trop de blabla ») : en-tête profil (initiales, VIP, téléphone/e-mail cliquables, tags éditables en ligne), bande de chiffres 365 j, onglets Activité / Préférences / Consentements (les consentements ne se chargent qu'à l'ouverture de leur onglet), export RGPD dans une fenêtre. Supprimés : toutes les descriptions sous les titres, l'icône Sparkles, le texte juridique de la carte consentement, et le bloc « Exactitude des chiffres / Recalculer » côté restaurateur (les routes API `projection-repair*` restent, sans écran pour l'instant). Prochaines étapes : la liste Clients (segments, recherche instantanée, tri), puis les doublons.
+
+## 2026-10-28 — Refonte UI liste Clients et Doublons
+
+Liste Clients : effectif à côté du titre, segments en onglets (Tous, VIP ; Habitués, À risque, Endormis, Nouveaux en CRM Pro) à la place des listes déroulantes, recherche à la frappe (300 ms), tableau ramené à 6 colonnes avec ligne cliquable et étoile VIP, même format de date partout. Doublons : texte d'explication retiré, titre de carte = raisons, aperçu affiché seulement après choix d'un profil. Limites API connues : pas d'effectif par segment (seul l'onglet actif affiche son total) ni de tri serveur par visites ou dernière visite ; à ajouter côté API avant d'offrir ces deux fonctions.
