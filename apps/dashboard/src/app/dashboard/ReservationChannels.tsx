@@ -120,9 +120,8 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
       </div>
 
       {total === 0 ? (
-        <p className="mt-5 rounded-xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
-          Aucune réservation confirmée sur cette période. Chaque nouvelle réservation apparaîtra ici
-          avec son canal.
+        <p className="mt-4 text-sm text-muted-foreground">
+          Aucune réservation confirmée sur cette période.
         </p>
       ) : (
         <>
