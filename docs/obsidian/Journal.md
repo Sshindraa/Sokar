@@ -2958,3 +2958,9 @@ Garde-fou : `apps/dashboard/eslint.config.mjs` interdit majuscules, tracking lar
 Points à valider côté produit : renommages Fidélité, Avis, Distribution, Notifications du partenaire (ex-Webhooks), Clés d’accès, Connect ; traductions es et it (à relire) ; restes sur Clients : icône d’état vide et champ « Visites min. (365 j) » tronqué ; Widget : `field-sizing: content` n’est pas pris en charge par Firefox, qui utilise le nombre de lignes calculé : vérifier le rendu sur Firefox et Safari ; action requise en `bg-warning` plein, en contradiction avec la note de `globals.css` sur `--warning` ; en démo, les liens « Ouvrir l’historique » des cartes KPI restent masqués.
 
 Suite : push, puis vérification sur staging avec un vrai compte (Pro, Essential, rôle équipe de service, plusieurs sites, page Cartes cadeaux), puis Réglages, puis audit seul de la Salle.
+
+## 2026-10-28 — Passation : mise à jour (Appels et Briefing commités)
+
+Commits ajoutés depuis la passation : `466657fd` feat(dashboard): appels refaits (statuts, durées et dates partagés), avec le seul hunk `callerPhone` de `types/api.ts` ; `ea5330e7` feat(dashboard): briefing refait (alertes sobres, sans icône décorative). Vérifié sur HEAD seul : typecheck à 0, 124 fichiers et 1 062 tests verts.
+
+Reste non commité : Pilotage (`page.tsx` et widgets). Les widgets ne contiennent pas de marqueur clair de l'autre chantier, mais aucune base avant refonte n'existe pour confirmer quels hunks lui appartiennent : il faut le désigner avant de commiter. Réservations reste non commité (tiroir et colonne Notes mêlés à l'autre chantier).
