@@ -274,7 +274,7 @@ Module : `apps/api/src/modules/loyalty/`
 
 La capability `reputation.loyalty` est incluse dans Pro/Multi-site et refusée par Essential. Toutes
 les routes utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon
-l'opération et `LOYALTY_ENABLED=false` dans les environnements suivis. Aucun provider, point,
+l'opération. Aucun provider, point,
 paiement ou POS n'est appelé.
 
 | Méthode | Route                                 | Description                                                                                  |

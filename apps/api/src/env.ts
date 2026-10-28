@@ -440,7 +440,6 @@ const EnvSchema = z
     // Feedback and benefits remain local-only until channels, rules and a
     // restaurant pilot are qualified.
     REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
-    LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
     // Internal experience management and public paid bookings have independent
     // gates. Public Checkout remains off until Connect/payment readiness is proven.
     EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),

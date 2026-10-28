@@ -183,7 +183,7 @@ une archive par défaut.
   tâches de récupération et l'expiration sont livrés localement derrière `REPUTATION_ENABLED=false`.
 - Fidélité opérationnelle Pro : le catalogue d'avantages, les règles explicables, les grants à code
   hashé, le redeem atomique, l'expiration et la page `/dashboard/loyalty` sont livrés localement
-  derrière `LOYALTY_ENABLED=false`. Aucun provider, portefeuille de points ou débit POS n'est actif.
+  pour les offres Pro et Multi-site. Aucun provider, portefeuille de points ou débit POS n'est actif.
 - Expériences Pro : le catalogue, les sessions datées, la capacité transactionnelle, le snapshot de
   prix, la réservation/annulation idempotente, l'expiration et la page `/dashboard/experiences` sont
   livrés localement derrière `EXPERIENCES_ENABLED=false`. Aucun paiement, widget, téléphone ou canal
