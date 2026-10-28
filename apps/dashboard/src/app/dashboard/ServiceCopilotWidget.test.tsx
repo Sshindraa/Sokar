@@ -87,4 +87,45 @@ describe('ServiceCopilotWidget', () => {
     expect(await screen.findByText(recommendation.title)).toBeInTheDocument();
     expect(screen.getByText('20 min de retard')).toBeInTheDocument();
   });
+  it('montre les retards avec leur action et exclut les optimisations de salle', async () => {
+    mocks.get.mockResolvedValue({
+      recommendations: [
+        {
+          id: 'delay',
+          kind: 'reported-delay',
+          title: 'Retard signalé',
+          reason: 'Signalé par téléphone',
+          action: {
+            type: 'link',
+            href: '/dashboard/floor-plan?reservationId=res-1',
+            label: 'Analyser l’impact',
+          },
+        },
+        { id: 'table', kind: 'table-soon-free', title: 'Table bientôt libre', action: {} },
+      ],
+    });
+    render(<ServiceCopilotWidget density="overview" />);
+    const summary = await screen.findByText('1 point à vérifier dans Salle');
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(screen.queryByText('Table bientôt libre')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Analyser l’impact' })).toHaveAttribute(
+      'href',
+      '/dashboard/floor-plan?reservationId=res-1',
+    );
+  });
+
+  it('ne présente pas une panne comme une absence de signalement', async () => {
+    mocks.get.mockRejectedValue(new Error('réseau'));
+    render(<ServiceCopilotWidget density="overview" />);
+    expect(await screen.findByText('Suivi de salle indisponible')).toBeInTheDocument();
+    expect(screen.queryByText(/Aucun retard signalé/)).not.toBeInTheDocument();
+  });
+
+  it('ne réserve pas de bloc si aucun point n’est à vérifier', async () => {
+    mocks.get.mockResolvedValue({ recommendations: [] });
+    const { container } = render(<ServiceCopilotWidget density="overview" />);
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    expect(screen.queryByText('Copilot opérationnel')).not.toBeInTheDocument();
+  });
 });

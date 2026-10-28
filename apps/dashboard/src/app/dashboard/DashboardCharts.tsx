@@ -10,7 +10,6 @@ import {
   YAxis,
 } from 'recharts';
 
-import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import type { AnalyticsPoint } from './page';
 
 function ChartCard({
@@ -25,7 +24,7 @@ function ChartCard({
   return (
     <article className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-5">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-black tracking-tight text-foreground font-display">{title}</h2>
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
         {header}
       </header>
       {children}
@@ -64,9 +63,9 @@ function ChartTooltip({
         {orderedPayload.map((item, index) => (
           <p
             key={`${item.name ?? 'series'}-${index}`}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
           >
-            <span aria-hidden="true" className="text-[10px]" style={{ color: item.color }}>
+            <span aria-hidden="true" className="text-xs" style={{ color: item.color }}>
               ●
             </span>
             <span>{item.name}</span>
@@ -83,22 +82,11 @@ function ChartTooltip({
 }
 
 export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoint[] }) {
-  const { theme } = useDashboardTheme();
-  const isLight = theme === 'light';
-  const axisColor = isLight ? 'hsl(0 0% 6.7% / 0.4)' : 'hsl(60 13% 95.5% / 0.4)';
-  const gridColor = isLight ? 'hsl(0 0% 6.7% / 0.08)' : 'hsl(60 13% 95.5% / 0.1)';
+  const axisColor = 'hsl(var(--muted-foreground))';
+  const gridColor = 'hsl(var(--border))';
   // Les deux séries restent neutres : la couleur ne porte ici aucun statut.
   const coversColor = 'hsl(var(--metal))';
-  const reservationsColor = isLight
-    ? 'hsl(var(--foreground) / 0.62)'
-    : 'hsl(var(--foreground) / 0.72)';
-  const totals = analytics.reduce(
-    (acc, point) => ({
-      reservations: acc.reservations + point.reservations,
-      covers: acc.covers + point.covers,
-    }),
-    { reservations: 0, covers: 0 },
-  );
+  const reservationsColor = 'hsl(var(--foreground) / 0.85)';
   const peak = analytics.reduce<AnalyticsPoint | null>(
     (best, point) => (!best || point.covers > best.covers ? point : best),
     null,
@@ -118,34 +106,28 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <span
                 aria-hidden="true"
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: reservationsColor }}
+                className="w-4 border-t-2"
+                style={{ borderColor: reservationsColor }}
               />
               <span>Réservations</span>
-              <span className="font-bold text-foreground">{totals.reservations}</span>
             </div>
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <span
                 aria-hidden="true"
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: coversColor }}
+                className="w-4 border-t-2 border-dashed"
+                style={{ borderColor: coversColor }}
               />
               <span>Couverts</span>
-              <span className="font-bold text-foreground">{totals.covers}</span>
             </div>
           </div>
         }
       >
-        <div className="h-[15.5rem] min-h-0 sm:h-[17.5rem]">
+        <div className="h-[15.5rem] min-h-0 sm:h-[20rem]">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <AreaChart data={analytics} margin={{ left: 0, right: 8, top: 42, bottom: 0 }}>
               <defs>
-                <linearGradient id="coversGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={coversColor} stopOpacity={0.2} />
-                  <stop offset="95%" stopColor={coversColor} stopOpacity={0} />
-                </linearGradient>
                 <linearGradient id="reservationsGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={reservationsColor} stopOpacity={0.2} />
+                  <stop offset="5%" stopColor={reservationsColor} stopOpacity={0.12} />
                   <stop offset="95%" stopColor={reservationsColor} stopOpacity={0} />
                 </linearGradient>
               </defs>
@@ -153,6 +135,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
               <XAxis
                 dataKey="label"
                 stroke={axisColor}
+                tick={{ fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={10}
@@ -160,6 +143,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
               />
               <YAxis
                 stroke={axisColor}
+                tick={{ fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={6}
@@ -194,7 +178,8 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
                 dataKey="covers"
                 name="Couverts"
                 stroke={coversColor}
-                fill="url(#coversGradient)"
+                fill="none"
+                strokeDasharray="5 5"
                 strokeWidth={2.25}
                 activeDot={{ r: 4, strokeWidth: 2, stroke: coversColor, fill: 'hsl(var(--card))' }}
               />

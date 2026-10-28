@@ -79,7 +79,9 @@ describe('EmptySlotsWidget', () => {
 
     // Une panne ne doit pas ressembler à « aucun jour à renforcer ».
     expect(await screen.findByRole('alert')).toHaveTextContent('Network error');
-    expect(screen.queryByText('Semaine bien remplie')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Au moins 3 réservations sur chaque journée ouverte.'),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /réessayer/i }));
 
@@ -111,19 +113,23 @@ describe('EmptySlotsWidget', () => {
 
     // Le titre reste court et directement exploitable en salle
     await waitFor(() => {
-      expect(screen.getByText('Jours creux')).toBeInTheDocument();
+      expect(screen.getByText('Journées peu remplies')).toBeInTheDocument();
     });
 
     // Seul le jour sous-réservé (actionable) est listé
     expect(screen.getByText('Mercredi')).toBeInTheDocument();
     expect(
       screen.getByText(
-        (_, element) => element?.textContent?.replace(/\s+/g, ' ').trim() === '2 / 3 réservations',
-        { selector: 'p' },
+        (_, element) => element?.textContent?.replace(/\s+/g, ' ').trim() === '2 réservations',
+        { selector: 'span' },
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Manque à gagner estimé : 120 €')).toBeInTheDocument();
-    expect(screen.getByText('Manque à gagner : 120 €')).toBeInTheDocument();
+    expect(screen.queryByText(/120 €/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    fireEvent.focus(
+      screen.getByRole('button', { name: 'Comprendre le seuil des journées peu remplies' }),
+    );
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('ne mesure pas le remplissage');
 
     // Les jours pleins et fermés ne sont pas affichés
     expect(screen.queryByText('Mardi')).not.toBeInTheDocument();
@@ -141,7 +147,9 @@ describe('EmptySlotsWidget', () => {
     render(<EmptySlotsWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('Semaine bien remplie')).toBeInTheDocument();
+      expect(
+        screen.getByText('Au moins 3 réservations sur chaque journée ouverte.'),
+      ).toBeInTheDocument();
     });
   });
 
