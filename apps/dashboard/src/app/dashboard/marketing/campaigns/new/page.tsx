@@ -2,19 +2,10 @@
 
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  ArrowLeft,
-  Check,
-  Eye,
-  Info,
-  Loader2,
-  Megaphone,
-  RefreshCw,
-} from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
@@ -382,32 +373,20 @@ export default function NewMarketingCampaignPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <Megaphone className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Nouvelle campagne</h1>
-            <Badge variant="secondary">Marketing Pro</Badge>
-          </div>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Construisez un brouillon, contrôlez l’audience et vérifiez le rendu avant toute
-            préparation d’envoi.
-          </p>
-        </div>
-        <Button asChild variant="outline" size="sm" className="transition-all duration-200">
+      <header className="space-y-3">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-3 w-fit transition-all duration-200"
+        >
           <Link href="/dashboard/marketing">
-            <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Retour au marketing
+            <ArrowLeft className="h-4 w-4" />
+            Retour au marketing
           </Link>
         </Button>
+        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Nouvelle campagne</h1>
       </header>
-
-      <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
-        <Info className="mt-0.5 h-4 w-4 flex-none text-warning" />
-        <p className="text-muted-foreground">
-          Cette campagne est enregistrée comme brouillon : aucun message ne part tant que vous ne
-          l&apos;avez pas préparée et lancée depuis la liste des campagnes.
-        </p>
-      </div>
 
       {lock && <FeatureLockCard lock={lock} feature="Campagnes" />}
       {!lock && segmentsError && (
@@ -426,7 +405,7 @@ export default function NewMarketingCampaignPage() {
             className="transition-all duration-200"
             onClick={() => void loadSegments()}
           >
-            <RefreshCw className="mr-1 h-3.5 w-3.5" /> Réessayer
+            Réessayer
           </Button>
         </div>
       )}
@@ -449,9 +428,6 @@ export default function NewMarketingCampaignPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Contenu et ciblage</CardTitle>
-            <CardDescription>
-              Les variables acceptées sont remplacées côté serveur au moment du rendu.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {frozen && (
@@ -462,7 +438,7 @@ export default function NewMarketingCampaignPage() {
             <fieldset disabled={frozen} className="space-y-4 border-0 p-0">
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1 text-sm font-medium">
-                  Nom interne
+                  Nom
                   <Input
                     value={draft.name}
                     onChange={(event) => updateDraft({ name: event.target.value })}
@@ -590,11 +566,7 @@ export default function NewMarketingCampaignPage() {
                   disabled={action !== null || !draft.segmentId || frozen}
                   className="transition-all duration-200"
                 >
-                  {action === 'audience' ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Eye className="mr-1 h-4 w-4" />
-                  )}
+                  {action === 'audience' && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                   Prévisualiser l’audience
                 </Button>
                 <Button
@@ -602,14 +574,11 @@ export default function NewMarketingCampaignPage() {
                   disabled={action !== null || frozen || segmentsError !== ''}
                   className="transition-all duration-200"
                 >
-                  {action === 'create' ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Check className="mr-1 h-4 w-4" />
-                  )}
+                  {action === 'create' && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                   Créer et prévisualiser
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">Rien n&apos;est envoyé à cette étape.</p>
             </fieldset>
             {frozen && (
               <Button asChild variant="outline" className="transition-all duration-200">
@@ -620,146 +589,136 @@ export default function NewMarketingCampaignPage() {
         </Card>
 
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Audience calculée</CardTitle>
-              <CardDescription>
-                Seuls les clients ayant donné leur consentement sont retenus ; les désinscrits et
-                les clients déjà sollicités récemment sont écartés.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {audience ? (
-                <div className="space-y-3 text-sm">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-border bg-muted/30 p-3">
-                      <p className="text-xs text-muted-foreground">Profils candidats</p>
-                      <p className="mt-1 text-xl font-semibold">{audience.candidateCount}</p>
+          {audience && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Audience calculée</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {audience ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Clients candidats</p>
+                        <p className="mt-1 text-xl font-semibold">{audience.candidateCount}</p>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Éligibles</p>
+                        <p className="mt-1 text-xl font-semibold">{audience.eligibleCount}</p>
+                      </div>
                     </div>
-                    <div className="rounded-lg border border-border bg-muted/30 p-3">
-                      <p className="text-xs text-muted-foreground">Éligibles</p>
-                      <p className="mt-1 text-xl font-semibold">{audience.eligibleCount}</p>
-                    </div>
-                  </div>
-                  {Object.keys(audience.excludedByReason).length > 0 && (
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <p className="font-medium text-foreground">Exclusions</p>
-                      {Object.entries(audience.excludedByReason).map(([reason, count]) => (
-                        <p key={reason} className="flex justify-between gap-2">
-                          <span>{exclusionLabel(reason)}</span>
-                          <strong>{count}</strong>
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {audience.sample.length > 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      Exemples :{' '}
-                      {audience.sample.map((item) => item.name || 'Client sans nom').join(' · ')}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Aucun profil éligible sur cet aperçu.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Lancez un aperçu pour vérifier la taille et les exclusions avant de créer le
-                  brouillon.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Aperçu du message</CardTitle>
-              <CardDescription>
-                L’aperçu utilise un client de votre audience, sans aucun envoi.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {campaignPreview ? (
-                <div className="space-y-3 text-sm">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    {campaignPreview.render.subject && (
-                      <p className="mb-2 font-medium">{campaignPreview.render.subject}</p>
+                    {Object.keys(audience.excludedByReason).length > 0 && (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p className="font-medium text-foreground">Exclusions</p>
+                        {Object.entries(audience.excludedByReason).map(([reason, count]) => (
+                          <p key={reason} className="flex justify-between gap-2">
+                            <span>{exclusionLabel(reason)}</span>
+                            <strong>{count}</strong>
+                          </p>
+                        ))}
+                      </div>
                     )}
-                    <p className="whitespace-pre-wrap">{campaignPreview.render.body}</p>
+                    {audience.sample.length > 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Exemples :{' '}
+                        {audience.sample.map((item) => item.name || 'Client sans nom').join(' · ')}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Aucun client éligible sur cet aperçu.
+                      </p>
+                    )}
                   </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <Badge variant="secondary">
-                      {campaignPreview.audience.eligible} destinataires
-                    </Badge>
-                    <Badge variant="secondary">
-                      {campaignPreview.usage.totalUnits}{' '}
-                      {channelUsageLabel(campaignPreview.usage.category)}
-                    </Badge>
-                    <Badge variant="secondary">
-                      {encodingLabel(campaignPreview.usage.encoding)}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {campaignPreview.costEstimate.amount === null
-                      ? 'Coût : estimation indisponible pour le moment.'
-                      : `Coût fournisseur estimé : ${formatEur(campaignPreview.costEstimate.amount)} (${campaignPreview.costEstimate.pricePerUnit ?? 'tarif versionné'} / unité).`}
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Lancez un aperçu pour vérifier la taille et les exclusions avant de créer le
+                    brouillon.
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {campaignPreview.render.usedFallbackCustomer
-                      ? 'L’aperçu utilise un client fictif, faute de client dans l’audience.'
-                      : `Exemple basé sur ${campaignPreview.audience.sampleCustomer ?? 'un client de l’audience'}.`}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Brouillon enregistré · prévu le{' '}
-                    {formatDate(campaignPreview.campaign.scheduledAt)}
-                  </p>
-                  {createdCampaignId && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void testForManager()}
-                      disabled={action !== null}
-                      className="transition-all duration-200"
-                    >
-                      {action === 'test' ? (
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Eye className="mr-1 h-3.5 w-3.5" />
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {campaignPreview && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Aperçu du message</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {campaignPreview ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      {campaignPreview.render.subject && (
+                        <p className="mb-2 font-medium">{campaignPreview.render.subject}</p>
                       )}
-                      Tester l’aperçu
-                    </Button>
-                  )}
-                  {testPreview && (
-                    <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                      Test effectué : aucun message n’a été envoyé.
+                      <p className="whitespace-pre-wrap">{campaignPreview.render.body}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <Badge variant="secondary">
+                        {campaignPreview.audience.eligible} destinataires
+                      </Badge>
+                      <Badge variant="secondary">
+                        {campaignPreview.usage.totalUnits}{' '}
+                        {channelUsageLabel(campaignPreview.usage.category)}
+                      </Badge>
+                      <Badge variant="secondary">
+                        {encodingLabel(campaignPreview.usage.encoding)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {campaignPreview.costEstimate.amount === null
+                        ? 'Coût : estimation indisponible pour le moment.'
+                        : `Coût fournisseur estimé : ${formatEur(campaignPreview.costEstimate.amount)} (${campaignPreview.costEstimate.pricePerUnit ?? 'tarif indisponible'} / unité).`}
                     </p>
-                  )}
-                </div>
-              ) : previewFailed && createdCampaignId ? (
-                <div className="space-y-3 text-sm">
-                  <p className="text-muted-foreground">
-                    Brouillon créé, mais l’aperçu n’a pas pu être généré.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void generatePreview(createdCampaignId)}
-                    disabled={action !== null}
-                    className="transition-all duration-200"
-                  >
-                    <RefreshCw className="mr-1 h-3.5 w-3.5" /> Réessayer l’aperçu
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  L’aperçu apparaîtra après la création du brouillon.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                    <p className="text-xs text-muted-foreground">
+                      {campaignPreview.render.usedFallbackCustomer
+                        ? 'L’aperçu utilise un client fictif, faute de client dans l’audience.'
+                        : `Exemple basé sur ${campaignPreview.audience.sampleCustomer ?? 'un client de l’audience'}.`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Brouillon enregistré · prévu le{' '}
+                      {formatDate(campaignPreview.campaign.scheduledAt)}
+                    </p>
+                    {createdCampaignId && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void testForManager()}
+                        disabled={action !== null}
+                        className="transition-all duration-200"
+                      >
+                        {action === 'test' && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                        Tester l’aperçu
+                      </Button>
+                    )}
+                    {testPreview && (
+                      <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                        Test effectué : aucun message n’a été envoyé.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
+          {previewFailed && createdCampaignId && (
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                Brouillon créé, mais l’aperçu n’a pas pu être généré.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void generatePreview(createdCampaignId)}
+                disabled={action !== null}
+                className="transition-all duration-200"
+              >
+                Réessayer l’aperçu
+              </Button>
+            </div>
+          )}
         </div>
       </form>
     </div>

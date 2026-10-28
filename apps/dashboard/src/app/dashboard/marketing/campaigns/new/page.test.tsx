@@ -98,7 +98,7 @@ describe('NewMarketingCampaignPage', () => {
     expect(await screen.findByRole('heading', { name: 'Nouvelle campagne' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Prévisualiser l’audience' }));
 
-    expect(await screen.findByText('Profils candidats')).toBeInTheDocument();
+    expect(await screen.findByText('Clients candidats')).toBeInTheDocument();
     expect(screen.getByText('12', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText('Consentement non recueilli')).toBeInTheDocument();
     expect(screen.queryByText('NO_CONSENT')).toBeNull();
