@@ -2933,3 +2933,28 @@ Décision Hamza : l'outil « Vérifier / Recalculer » retiré de la fiche clien
 ## 2026-10-28 — Passation : refonte UI du CRM
 
 Fait : fiche, liste et doublons refaits ; effectifs par segment + tri (API) ; composants Tabs/menu/infobulle/notifications ; recalcul des chiffres client dans l'admin. Tout sur la PR #613 (branche `codex/stt-bench-runtime-keys`), testé avec API simulée seulement. Suite : (1) après fusion, vérifier sur staging avec un compte CRM Pro et un Essential (effectifs, tri, fiche, export RGPD, fusion, carte admin) ; (2) même audit UI « trop IA » sur Réservations, puis Appels, Marketing, Pilotage. Fichiers clés : `apps/dashboard/src/app/dashboard/customers/**`, `components/ui/{tabs,dropdown-menu,tooltip,sonner}.tsx`, `apps/api/src/modules/customers/customer.routes.ts`, `modules/admin/customer-repair.routes.ts`. Points ouverts : `Context.md` à 64 octets de la limite (TODO à resserrer) ; `pnpm pr:submit` refuse tant que les modifications dashboard non commitées (widgets, `api.ts`) restent dans l'arbre.
+
+## 2026-10-28 — Passation : refonte UI du dashboard, consolidation
+
+Fait (branche `codex/stt-bench-runtime-keys`, commits locaux, aucun push) :
+- `17cb9682` feat(dashboard): badges de statut, formats partagés et garde-fou de style
+- `c7bc40f3` feat(dashboard): navigation par sections et libellés es/it
+- `fe7317fd` style(dashboard): cartes mobiles sans texte sous 12 px
+- `efc30722` feat(dashboard): marketing refait (campagnes, nouvelle campagne, segments)
+- `34e353ab` feat(dashboard): réputation, fidélité et réactivation refaites
+- `bbe43b15` feat(dashboard): canaux refaits (widget, connect, distribution, agents ia)
+
+Relecture avant commit : régressions corrigées. Lien « Vérifier l’assistant » rétabli dans l’état vide des Appels ; lien « Ouvrir le widget » rétabli dans l’état vide des Réservations ; raccourcis « Voir les appels » et « Réservations » rétablis dans l’en-tête du Pilotage (seul restait le lien derrière une boîte de dialogue, absent en démo) ; `role="group"` sur le sélecteur de période. Bug introduit puis corrigé à l’étape des badges : une fonction locale `StatusBadge` entrait en conflit avec le composant partagé (import sous l’alias `StatusPill`).
+
+Non commité, à reprendre :
+- Appels (`calls/page.tsx` et test) : dépend de `callerPhone` dans `types/api.ts`, qui mêle les champs de l’autre chantier. Le hook pre-commit restage le fichier entier : le hunk ne peut pas être commité seul.
+- Réservations (`reservations/page.tsx` et test) : mêle le tiroir ReservationDetails, la colonne et la ligne Notes, et les autres éléments de l’autre chantier.
+- Pilotage (`page.tsx` et widgets `DashboardCharts`, `EmptySlotsWidget`, `GaugeDial`, `NoShowWidget`, `ReservationChannels`, `ServiceCopilotWidget`, tests) : les widgets contenaient des modifications de l’autre chantier avant la refonte ; `page.tsx` dépend des widgets.
+- Briefing : importe `service-card-badges.tsx`, fichier de l’autre chantier.
+- Autre chantier, à ne pas commiter avec ce lot : `apps/api/**`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `service-card-badges.tsx`, `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `DashboardJourneys.test.tsx`, et dans `types/api.ts` les champs `specialRequests`, `overbooked`, `channel`.
+
+Garde-fou : `apps/dashboard/eslint.config.mjs` interdit majuscules, tracking large et texte sous 12 px dans les écrans ; 17 écrans hors périmètre sont exclus par liste datée du 2026-10-28, à retirer à leur refonte.
+
+Points à valider côté produit : renommages Fidélité, Avis, Distribution, Notifications du partenaire (ex-Webhooks), Clés d’accès, Connect ; traductions es et it (à relire) ; restes sur Clients : icône d’état vide et champ « Visites min. (365 j) » tronqué ; Widget : `field-sizing: content` n’est pas pris en charge par Firefox, qui utilise le nombre de lignes calculé : vérifier le rendu sur Firefox et Safari ; action requise en `bg-warning` plein, en contradiction avec la note de `globals.css` sur `--warning` ; en démo, les liens « Ouvrir l’historique » des cartes KPI restent masqués.
+
+Suite : push, puis vérification sur staging avec un vrai compte (Pro, Essential, rôle équipe de service, plusieurs sites, page Cartes cadeaux), puis Réglages, puis audit seul de la Salle.
