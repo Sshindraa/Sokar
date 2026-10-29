@@ -88,17 +88,23 @@ describe('MarketingPage', () => {
   it('affiche les trois cartes et une campagne après chargement', async () => {
     render(<MarketingPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Marketing Pro' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Marketing' })).toBeInTheDocument();
     expect(screen.getByText('Après la première visite')).toBeInTheDocument();
     expect(screen.getByText('Client dormant')).toBeInTheDocument();
     expect(screen.getByText('Anniversaire')).toBeInTheDocument();
     expect(screen.getByText('Merci première visite')).toBeInTheDocument();
     expect(screen.getByText('Envoyée')).toBeInTheDocument();
-    expect(screen.getByText('État des canaux')).toBeInTheDocument();
-    expect(screen.getByText('Envois bientôt disponibles')).toBeInTheDocument();
+    expect(screen.getByText('SMS · Email prêts — WhatsApp bientôt disponible')).toBeInTheDocument();
+    expect(
+      screen.getByText("Envois désactivés : aucun message ne part pour l'instant."),
+    ).toBeInTheDocument();
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'Autres actions pour Merci première visite' }),
+      { button: 0, ctrlKey: false },
+    );
     // Aucun nom de variable serveur ni jargon d'exploitation côté restaurateur.
     expect(screen.queryByText(/MARKETING_SENDS_ENABLED|RESEND_WEBHOOK_SECRET|Callback/)).toBeNull();
-    expect(screen.getByRole('link', { name: /CSV/ })).toHaveAttribute(
+    expect(screen.getByRole('menuitem', { name: /CSV/ })).toHaveAttribute(
       'href',
       '/api/proxy/marketing/campaigns/campaign-1/report.csv?siteId=org_test_123',
     );
@@ -106,7 +112,8 @@ describe('MarketingPage', () => {
 
   it('enregistre une automation avec son template et ses bornes', async () => {
     render(<MarketingPage />);
-    await screen.findByRole('heading', { name: 'Marketing Pro' });
+    await screen.findByRole('heading', { name: 'Marketing' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Modifier' })[0]);
 
     const textareas = screen.getAllByRole('textbox');
     fireEvent.change(textareas[0], { target: { value: 'Merci {{unsubscribeUrl}}' } });
@@ -157,7 +164,8 @@ describe('MarketingPage', () => {
 
   it('refuse d’enregistrer un message sans lien de désinscription, avec un texte clair', async () => {
     render(<MarketingPage />);
-    await screen.findByRole('heading', { name: 'Marketing Pro' });
+    await screen.findByRole('heading', { name: 'Marketing' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Modifier' })[0]);
 
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Merci à vous' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Enregistrer' })[0]);
@@ -170,7 +178,8 @@ describe('MarketingPage', () => {
 
   it('n’envoie jamais un nombre vide comme 0 : il est refusé avec ses bornes', async () => {
     render(<MarketingPage />);
-    await screen.findByRole('heading', { name: 'Marketing Pro' });
+    await screen.findByRole('heading', { name: 'Marketing' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Modifier' })[0]);
 
     fireEvent.change(screen.getByRole('spinbutton', { name: /délai/i }), { target: { value: '' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Enregistrer' })[0]);
@@ -181,7 +190,7 @@ describe('MarketingPage', () => {
 
   it('signale les modifications non enregistrées', async () => {
     render(<MarketingPage />);
-    await screen.findByRole('heading', { name: 'Marketing Pro' });
+    await screen.findByRole('heading', { name: 'Marketing' });
     expect(screen.queryByText('Modifications non enregistrées')).toBeNull();
 
     fireEvent.click(screen.getByLabelText('Activer Client dormant'));
@@ -197,7 +206,11 @@ describe('MarketingPage', () => {
     });
     render(<MarketingPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Annuler la campagne' }));
+    fireEvent.pointerDown(
+      await screen.findByRole('button', { name: 'Autres actions pour Merci première visite' }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Annuler la campagne' }));
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('Annuler cette campagne ?');

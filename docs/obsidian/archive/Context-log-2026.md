@@ -771,3 +771,9 @@
 2026-09-19 — [dashboard, floor-plan, editor, ux, responsive] **Palette rééquilibrée** — La palette desktop passe à 144 px pour garder `Table ronde` et `Table rectangulaire` sur une ligne. Les cinq cartes partagent la même largeur et la même hauteur minimale ; les groupes `TABLES` et `ÉLÉMENTS` rendent la hiérarchie explicite. Les toggles conservent leur point d’état mais reposent d’abord sur un fond actif, un liseré discret et un contraste de texte. Suite dashboard 39 fichiers / 241 tests, typecheck, lint CSS, Prettier et diff-check verts ; branche dev locale uniquement.
 
 2026-09-19 — [dashboard, floor-plan, editor, ux, responsive] **Toolbar et palette affinées** — `Grille` et `Magnétisme` signalent leur état avec une surface active, un liseré discret et un point d’état ; `Paramètres` est isolé du groupe Annuler/Rétablir et se marque lorsqu’il est ouvert. La palette desktop passe à 96 px, conserve une hauteur exploitable et affiche `Table ronde` / `Table rectangulaire` sans ambiguïté. Le canvas et l’état vide restent inchangés. Suite dashboard 39 fichiers / 241 tests, typecheck, lint CSS, Prettier et diff-check verts ; branche dev locale uniquement.
+
+<!-- Déplacé de Context.md le 2026-10-28 (limite de taille du vault) -->
+
+## Liens rapides
+
+[[README]] [[Architecture]] [[Journal]] [[Telnyx Pipeline]] [[Sokar Connect P0]] [[API Endpoints]]

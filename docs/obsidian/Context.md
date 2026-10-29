@@ -55,7 +55,3 @@
 - 2026-10-06 — [Onboarding] Appel test sur le numéro public uniquement.
 - 2026-10-03 — [UI/widget] Retour à la référence visuelle de phase 2; conserver les corrections fonctionnelles suivantes.
 - Cartes cadeaux : encaissement restaurant via Stripe Connect; aucun débit à la réservation, consommation sur l’addition réelle. Qualification financière avant ouverture commerciale; commit/push du lot autorisés le 06/10.
-
-## Liens rapides
-
-[[README]] [[Architecture]] [[Journal]] [[Telnyx Pipeline]] [[Sokar Connect P0]] [[API Endpoints]]

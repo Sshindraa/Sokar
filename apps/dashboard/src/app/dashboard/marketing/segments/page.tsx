@@ -2,11 +2,17 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, Check, ListFilter, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useApi } from '@/lib/api';
@@ -142,7 +148,7 @@ const SEGMENT_TEMPLATES: SegmentTemplate[] = [
   {
     key: 'vip',
     name: 'VIP manuels',
-    description: 'Profils marqués VIP dans Sokar.',
+    description: 'Clients marqués VIP dans Sokar.',
     operator: 'AND',
     conditions: [{ field: 'isVip', op: 'EQ', value: 'true' }],
   },
@@ -314,7 +320,7 @@ export default function MarketingSegmentsPage() {
       const response = await get<{ data: Segment[] }>('marketing/segments');
       setSegments(Array.isArray(response.data) ? response.data : []);
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de charger les segments Pro'));
+      setError(getErrorMessage(err, 'Impossible de charger les segments'));
       setSegments([]);
     } finally {
       setLoading(false);
@@ -440,20 +446,20 @@ export default function MarketingSegmentsPage() {
     <div className="space-y-6">
       <header className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div className="space-y-3">
-          <Button asChild variant="ghost" size="sm" className="-ml-3">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="-ml-3 w-fit transition-all duration-200"
+          >
             <Link href="/dashboard/marketing">
-              <ArrowLeft size={16} />
+              <ArrowLeft className="h-4 w-4" />
               Retour au marketing
             </Link>
           </Button>
           <div className="flex items-center gap-2">
-            <ListFilter className="text-primary" size={20} />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Segments Pro</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Segments</h1>
           </div>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Construisez une audience expliquée avec des champs et opérateurs bornés. Le snapshot est
-            recalculé avant une campagne.
-          </p>
         </div>
         <Button
           type="button"
@@ -461,7 +467,6 @@ export default function MarketingSegmentsPage() {
           onClick={() => void loadSegments()}
           disabled={loading}
         >
-          <RefreshCw size={15} />
           Actualiser
         </Button>
       </header>
@@ -492,36 +497,28 @@ export default function MarketingSegmentsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Nouveau segment</CardTitle>
-            <CardDescription>
-              Les conditions sont validées par l’API avant tout enregistrement.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-xl border border-border bg-muted/20 p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Modèles recommandés
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Les modèles utilisent uniquement les champs disponibles ; ajustez-les avant de
-                sauvegarder votre segment.
-              </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" className="transition-all duration-200">
+                  Partir d&apos;un modèle
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
                 {SEGMENT_TEMPLATES.map((template) => (
-                  <button
+                  <DropdownMenuItem
                     key={template.key}
-                    type="button"
-                    className="rounded-lg border border-border bg-background p-2 text-left transition-all duration-200 hover:border-primary/50 hover:bg-accent"
-                    onClick={() => applyTemplate(template)}
+                    onSelect={() => applyTemplate(template)}
+                    className="flex flex-col items-start"
                   >
-                    <span className="block text-sm font-medium">{template.name}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {template.description}
-                    </span>
-                  </button>
+                    <span className="text-sm font-medium">{template.name}</span>
+                    <span className="text-xs text-muted-foreground">{template.description}</span>
+                  </DropdownMenuItem>
                 ))}
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
               <label className="space-y-1 text-sm font-medium">
                 Nom
                 <Input
@@ -533,12 +530,12 @@ export default function MarketingSegmentsPage() {
               <label className="space-y-1 text-sm font-medium">
                 Combinaison
                 <select
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal"
+                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal transition-all duration-200 sm:w-44"
                   value={groupOperator}
                   onChange={(event) => setGroupOperator(event.target.value as 'AND' | 'OR')}
                 >
-                  <option value="AND">Toutes (ET)</option>
-                  <option value="OR">Au moins une (OU)</option>
+                  <option value="AND">Toutes</option>
+                  <option value="OR">Au moins une</option>
                 </select>
               </label>
             </div>
@@ -553,7 +550,7 @@ export default function MarketingSegmentsPage() {
                     className="rounded-xl border border-border bg-muted/20 p-3"
                   >
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <span className="text-sm font-medium text-muted-foreground">
                         Condition {index + 1}
                       </span>
                       {conditions.length > 1 ? (
@@ -575,7 +572,7 @@ export default function MarketingSegmentsPage() {
                     <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)]">
                       <select
                         aria-label={`Champ condition ${index + 1}`}
-                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm transition-all duration-200"
                         value={condition.field}
                         onChange={(event) =>
                           updateCondition(condition.id, {
@@ -591,7 +588,7 @@ export default function MarketingSegmentsPage() {
                       </select>
                       <select
                         aria-label={`Opérateur condition ${index + 1}`}
-                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                        className="h-10 rounded-lg border border-input bg-background px-3 text-sm transition-all duration-200"
                         value={condition.op}
                         onChange={(event) =>
                           updateCondition(condition.id, {
@@ -612,7 +609,7 @@ export default function MarketingSegmentsPage() {
                       ) : condition.field === 'isVip' ? (
                         <select
                           aria-label={`Valeur condition ${index + 1}`}
-                          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                          className="h-10 rounded-lg border border-input bg-background px-3 text-sm transition-all duration-200"
                           value={condition.value}
                           onChange={(event) =>
                             updateCondition(condition.id, { value: event.target.value })
@@ -624,7 +621,7 @@ export default function MarketingSegmentsPage() {
                       ) : condition.field === 'preference' ? (
                         <select
                           aria-label={`Valeur condition ${index + 1}`}
-                          className="h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                          className="h-10 rounded-lg border border-input bg-background px-3 text-sm transition-all duration-200"
                           value={condition.value}
                           onChange={(event) =>
                             updateCondition(condition.id, { value: event.target.value })
@@ -663,13 +660,12 @@ export default function MarketingSegmentsPage() {
             <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-3">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={conditions.length >= 20}
                 onClick={() => setConditions((current) => [...current, newCondition()])}
               >
-                <Plus size={15} />
-                Ajouter une condition
+                <Plus className="h-4 w-4" /> Ajouter une condition
               </Button>
               <div className="flex gap-2">
                 <Button
@@ -692,7 +688,7 @@ export default function MarketingSegmentsPage() {
 
             {preview ? (
               <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
-                <p className="font-medium">{preview.count} profil(s) correspondent</p>
+                <p className="font-medium">{preview.count} client(s) correspondent</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Règles : {describeDefinition(definition)}
                 </p>
@@ -702,7 +698,7 @@ export default function MarketingSegmentsPage() {
                     {preview.sample.map((item) => item.name || 'Client sans nom').join(' · ')}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-muted-foreground">Aucun profil exemple.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Aucun client exemple.</p>
                 )}
               </div>
             ) : null}
@@ -712,7 +708,6 @@ export default function MarketingSegmentsPage() {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="text-base">Segments enregistrés</CardTitle>
-            <CardDescription>Le nombre affiché correspond au dernier refresh.</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -731,8 +726,10 @@ export default function MarketingSegmentsPage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{segment.name}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {segment.lastCount ?? '—'} profil(s) · évalué{' '}
-                          {formatDate(segment.lastEvaluatedAt)}
+                          {segment.lastCount ?? '—'} client{segment.lastCount === 1 ? '' : 's'} ·{' '}
+                          {segment.lastEvaluatedAt
+                            ? `calculé le ${formatDate(segment.lastEvaluatedAt)}`
+                            : 'jamais calculé'}
                         </p>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/80">
                           {segment.systemDescription || describeDefinition(segment.definition)}
@@ -743,8 +740,8 @@ export default function MarketingSegmentsPage() {
                         {segment.definition?.operator ? (
                           <Badge variant="secondary">
                             {segment.definition.operator === 'AND'
-                              ? 'Toutes (ET)'
-                              : 'Au moins une (OU)'}
+                              ? 'Toutes les conditions'
+                              : 'Au moins une condition'}
                           </Badge>
                         ) : null}
                       </div>
@@ -757,7 +754,6 @@ export default function MarketingSegmentsPage() {
                         disabled={Boolean(action)}
                         onClick={() => void refreshSegment(segment)}
                       >
-                        <RefreshCw size={14} />
                         Recalculer
                       </Button>
                       {!segment.isSystem ? (
@@ -768,7 +764,6 @@ export default function MarketingSegmentsPage() {
                           disabled={Boolean(action)}
                           onClick={() => setSegmentToDelete(segment)}
                         >
-                          <Trash2 size={14} />
                           Supprimer
                         </Button>
                       ) : null}

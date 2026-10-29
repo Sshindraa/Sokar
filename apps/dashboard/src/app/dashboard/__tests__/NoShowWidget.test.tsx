@@ -50,7 +50,7 @@ function makeStats(overrides: Partial<NoShowStats> = {}): NoShowStats {
     revenueLost: 1234,
     withSms: makeSmsGroup(),
     withoutSms: makeSmsGroup({ total: 40, noShows: 5, rate: 12.5 }),
-    impact: 2.3,
+    impact: 8.5,
     ...overrides,
   };
 }
@@ -102,24 +102,30 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('No-shows')).toBeInTheDocument();
+      expect(screen.getByText('Absences')).toBeInTheDocument();
     });
 
     expect(screen.getByText(/120 réservations/)).toBeInTheDocument();
     expect(screen.getByText('Taux')).toBeInTheDocument();
     expect(screen.getByText('6,7 %')).toBeInTheDocument();
-    expect(screen.getByText(/8 no-shows sur 120/)).toBeInTheDocument();
+    expect(screen.getByText(/8 absences sur 120/)).toBeInTheDocument();
 
-    expect(screen.getByText('CA estimé perdu')).toBeInTheDocument();
+    expect(screen.getByText('Montant associé aux absences')).toBeInTheDocument();
     expect(screen.getByText(/1\s234\s€/)).toBeInTheDocument();
 
-    expect(screen.getByText('Effet du rappel SMS')).toBeInTheDocument();
-    expect(screen.getByText('2,3 pts')).toBeInTheDocument();
-    expect(screen.getByText('de no-shows en moins grâce au SMS')).toBeInTheDocument();
+    expect(screen.getByText('Écart observé avec / sans SMS')).toBeInTheDocument();
+    fireEvent.focus(
+      screen.getByRole('button', { name: 'Comprendre la comparaison avec et sans SMS' }),
+    );
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'ne prouve pas un effet du rappel',
+    );
+    expect(screen.getByText('8,5 pts')).toBeInTheDocument();
+    expect(screen.getByText('d’absences en moins dans le groupe avec SMS')).toBeInTheDocument();
     expect(screen.getByText('4,0 % avec SMS · 12,5 % sans')).toBeInTheDocument();
   });
 
-  it('affiche "Pas encore mesurable" quand le calcul impact est impossible', async () => {
+  it('affiche "Données insuffisantes" quand le calcul impact est impossible', async () => {
     mockGet.mockResolvedValue(
       makeStats({
         impact: null,
@@ -129,7 +135,7 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('Pas encore mesurable')).toBeInTheDocument();
+      expect(screen.getByText('Données insuffisantes')).toBeInTheDocument();
     });
 
     expect(screen.getByText(/2\/5 réservations avec SMS/)).toBeInTheDocument();
@@ -147,14 +153,14 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('No-shows')).toBeInTheDocument();
+      expect(screen.getByText('Absences')).toBeInTheDocument();
     });
 
     // Taux global à 0,0 % et CA perdu à 0 €
     expect(screen.getByText('0,0 %')).toBeInTheDocument();
     expect(screen.getByText(/0\s€/)).toBeInTheDocument();
-    // Impact SMS non calculable → "Pas encore mesurable"
-    expect(screen.getByText('Pas encore mesurable')).toBeInTheDocument();
+    // Impact SMS non calculable → "Données insuffisantes"
+    expect(screen.getByText('Données insuffisantes')).toBeInTheDocument();
   });
 
   it('dit « aucun gain mesuré » quand les no-shows sont plus nombreux avec le SMS', async () => {
@@ -168,10 +174,12 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('Aucun gain mesuré')).toBeInTheDocument();
+      expect(screen.getByText('2,0 pts')).toBeInTheDocument();
     });
-    expect(screen.getByText('2,0 pts de no-shows en plus avec le SMS')).toBeInTheDocument();
-    expect(screen.queryByText(/de no-shows en moins/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText('2,0 pts d’absences en plus dans le groupe avec SMS'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/d’absences en moins/)).not.toBeInTheDocument();
   });
 
   it('signale une panne au lieu de disparaître, avec un bouton pour réessayer', async () => {
@@ -181,14 +189,14 @@ describe('NoShowWidget', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText('Les statistiques de no-show sont momentanément indisponibles.'),
+        screen.getByText('Les statistiques d’absence sont momentanément indisponibles.'),
       ).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
 
     await waitFor(() => {
-      expect(screen.getByText('No-shows')).toBeInTheDocument();
+      expect(screen.getByText('Absences')).toBeInTheDocument();
     });
     expect(mockGet).toHaveBeenCalledTimes(2);
   });
@@ -198,7 +206,7 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('No-shows')).toBeInTheDocument();
+      expect(screen.getByText('Absences')).toBeInTheDocument();
     });
 
     expect(mockGet).toHaveBeenCalledWith('dashboard/no-show-stats');

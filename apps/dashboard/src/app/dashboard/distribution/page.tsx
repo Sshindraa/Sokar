@@ -1,13 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, Link2, RefreshCw, Share2, Webhook } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ChevronDown, Info, MoreHorizontal, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusLevel } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DataFetchError } from '@/components/DataFetchError';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
 import { useApi } from '@/lib/api';
@@ -147,12 +157,36 @@ function formatDate(value: string | null | undefined): string {
     : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function statusVariant(
+// Niveau par sens : actif = en cours ; succès = terminé ; à vérifier ou en attente = action ; erreur ou annulé = erreur.
+function statusLevel(
   status: ConnectionStatus | SyncStatus | LinkStatus | WebhookStatus,
-): 'default' | 'secondary' | 'destructive' {
-  if (status === 'ACTIVE' || status === 'SUCCEEDED' || status === 'PROCESSED') return 'default';
-  if (status === 'ERROR' || status === 'FAILED' || status === 'NEEDS_REVIEW') return 'destructive';
-  return 'secondary';
+): StatusLevel {
+  if (status === 'SUCCEEDED' || status === 'PROCESSED') return 'done';
+  if (status === 'ACTIVE' || status === 'QUEUED' || status === 'RUNNING' || status === 'RECEIVED') {
+    return 'progress';
+  }
+  if (status === 'PENDING' || status === 'NEEDS_REVIEW') return 'action';
+  if (status === 'ERROR' || status === 'FAILED' || status === 'CANCELLED') return 'error';
+  return 'neutral';
+}
+
+function InfoTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            className="inline-flex text-muted-foreground transition-all duration-200 hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">{children}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 function LoadingRows() {
@@ -175,11 +209,10 @@ export default function DistributionPage() {
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   // Échec du chargement (ou module fermé) : on n'affiche ni formulaire ni listes vides.
   const [loadError, setLoadError] = useState('');
   const [lock, setLock] = useState<FeatureLock | null>(null);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [connectionForm, setConnectionForm] = useState({
     provider: 'GOOGLE_RESERVE' as Provider,
     externalAccountId: '',
@@ -189,7 +222,6 @@ export default function DistributionPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
     setLoadError('');
     setLock(null);
     try {
@@ -247,8 +279,6 @@ export default function DistributionPage() {
   async function createConnection(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setError('');
-    setNotice('');
     try {
       const response = await post<MutationResponse<Connection>>('distribution/connections', {
         provider: connectionForm.provider,
@@ -265,9 +295,9 @@ export default function DistributionPage() {
         externalAccountId: '',
         credentialReference: '',
       });
-      setNotice('Connexion enregistrée. Aucun partenaire n’a été contacté pour le moment.');
+      toast.success('Connexion enregistrée. Aucun partenaire n’a été contacté pour le moment.');
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible d’enregistrer la connexion'));
+      toast.error(getErrorMessage(err, 'Impossible d’enregistrer la connexion'));
     } finally {
       setBusy(false);
     }
@@ -276,34 +306,31 @@ export default function DistributionPage() {
   async function disconnectConnection() {
     if (!selectedConnection) return;
     setBusy(true);
-    setError('');
-    setNotice('');
     try {
       await post(`distribution/connections/${selectedConnection.id}/disconnect`);
-      setNotice('Connexion déconnectée. L’historique reste consultable.');
+      toast.success('Connexion déconnectée. L’historique reste consultable.');
       await load();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de déconnecter la connexion'));
+      toast.error(getErrorMessage(err, 'Impossible de déconnecter la connexion'));
     } finally {
       setBusy(false);
+      setDisconnectOpen(false);
     }
   }
 
   async function queueSync() {
     if (!selectedConnection) return;
     setBusy(true);
-    setError('');
-    setNotice('');
     try {
       await post(
         `distribution/connections/${selectedConnection.id}/sync-runs`,
         { direction },
         { headers: { 'Idempotency-Key': `dashboard-distribution-${Date.now()}` } },
       );
-      setNotice('Synchronisation programmée.');
+      toast.success('Synchronisation programmée.');
       await load();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Impossible de lancer la synchronisation.'));
+      toast.error(getErrorMessage(err, 'Impossible de lancer la synchronisation.'));
     } finally {
       setBusy(false);
     }
@@ -311,121 +338,108 @@ export default function DistributionPage() {
 
   return (
     <div className="w-full space-y-6">
-      <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <div className="flex items-center gap-2">
-            <Share2 className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Canaux partenaires</h1>
-            <Badge variant="secondary">Pro</Badge>
-          </div>
-          <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Préparez la diffusion de vos disponibilités chez vos partenaires. Aucun partenaire n’est
-            contacté tant que le canal n’est pas ouvert sur votre compte.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Distribution</h1>
+          <Badge variant="secondary">Pro</Badge>
+          <InfoTip label="Précision sur la distribution">
+            Aucun partenaire n’est contacté tant que le canal n’est pas ouvert sur votre compte.
+            Phase pilote : ouvert à tous les établissements après validation.
+          </InfoTip>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
-          <RefreshCw className="mr-2 h-4 w-4" />
+          <RefreshCw className="h-4 w-4" />
           Actualiser
         </Button>
-      </header>
-
-      {error && (
-        <div
-          role="alert"
-          className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"
-        >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <span>{error}</span>
-        </div>
-      )}
-      {notice && (
-        <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <span>{notice}</span>
-        </div>
-      )}
+      </div>
 
       {lock ? (
-        <FeatureLockCard lock={lock} feature="Canaux partenaires" />
+        <FeatureLockCard lock={lock} feature="Distribution" />
       ) : loadError ? (
         <DataFetchError message={loadError} onRetry={() => void load()} retrying={loading} />
       ) : (
         <>
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <Card>
-              <CardHeader>
-                <CardTitle>Connexions</CardTitle>
-                <CardDescription>
-                  Une connexion par partenaire et par établissement. Vos identifiants ne sont jamais
-                  affichés en entier.
-                </CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-base">
+                  Connexions
+                  <InfoTip label="Précision sur les identifiants">
+                    Une connexion par partenaire et par établissement. Vos identifiants ne sont
+                    jamais affichés en entier.
+                  </InfoTip>
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form
-                  className="grid gap-3 rounded-xl border border-border p-4"
-                  onSubmit={createConnection}
-                >
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div>
-                      <Label htmlFor="distribution-provider">Partenaire</Label>
-                      <select
-                        id="distribution-provider"
-                        value={connectionForm.provider}
-                        onChange={(event) =>
-                          setConnectionForm({
-                            ...connectionForm,
-                            provider: event.target.value as Provider,
-                          })
-                        }
-                        className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      >
-                        {Object.entries(providerLabels).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
+                <details className="group rounded-lg border border-border">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 text-sm font-medium transition-all duration-200 [&::-webkit-details-marker]:hidden">
+                    Ajouter une connexion
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-all duration-200 group-open:rotate-180" />
+                  </summary>
+                  <form
+                    className="grid gap-3 border-t border-border p-3"
+                    onSubmit={createConnection}
+                  >
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="distribution-provider">Partenaire</Label>
+                        <select
+                          id="distribution-provider"
+                          value={connectionForm.provider}
+                          onChange={(event) =>
+                            setConnectionForm({
+                              ...connectionForm,
+                              provider: event.target.value as Provider,
+                            })
+                          }
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          {Object.entries(providerLabels).map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="distribution-account">Identifiant chez le partenaire</Label>
+                        <Input
+                          id="distribution-account"
+                          value={connectionForm.externalAccountId}
+                          onChange={(event) =>
+                            setConnectionForm({
+                              ...connectionForm,
+                              externalAccountId: event.target.value,
+                            })
+                          }
+                          placeholder="Fourni par le partenaire"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="distribution-credential">Référence d’accès</Label>
+                        <Input
+                          id="distribution-credential"
+                          value={connectionForm.credentialReference}
+                          onChange={(event) =>
+                            setConnectionForm({
+                              ...connectionForm,
+                              credentialReference: event.target.value,
+                            })
+                          }
+                          placeholder="Fournie par l’équipe Sokar"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="distribution-account">Identifiant chez le partenaire</Label>
-                      <Input
-                        id="distribution-account"
-                        value={connectionForm.externalAccountId}
-                        onChange={(event) =>
-                          setConnectionForm({
-                            ...connectionForm,
-                            externalAccountId: event.target.value,
-                          })
-                        }
-                        placeholder="Fourni par le partenaire"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="distribution-credential">Référence d’accès</Label>
-                      <Input
-                        id="distribution-credential"
-                        value={connectionForm.credentialReference}
-                        onChange={(event) =>
-                          setConnectionForm({
-                            ...connectionForm,
-                            credentialReference: event.target.value,
-                          })
-                        }
-                        placeholder="Fournie par l’équipe Sokar"
-                      />
-                    </div>
-                  </div>
-                  <Button type="submit" disabled={busy}>
-                    Enregistrer la connexion
-                  </Button>
-                </form>
+                    <Button type="submit" disabled={busy} className="w-full sm:w-auto">
+                      Enregistrer la connexion
+                    </Button>
+                  </form>
+                </details>
 
                 {loading ? (
                   <LoadingRows />
                 ) : connections.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                    Aucune connexion préparée.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Aucune connexion préparée.</p>
                 ) : (
                   <div className="space-y-2">
                     {connections.map((connection) => (
@@ -435,15 +449,15 @@ export default function DistributionPage() {
                         onClick={() => setSelectedConnectionId(connection.id)}
                         className={`w-full rounded-xl border p-3 text-left transition-all duration-200 ${
                           connection.id === selectedConnectionId
-                            ? 'border-primary bg-primary/5'
+                            ? 'border-foreground'
                             : 'border-border hover:bg-accent'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="font-medium">{providerLabels[connection.provider]}</span>
-                          <Badge variant={statusVariant(connection.status)}>
+                          <StatusBadge level={statusLevel(connection.status)}>
                             {statusLabels[connection.status]}
-                          </Badge>
+                          </StatusBadge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Compte •••• {connection.externalAccountLast4 ?? '—'} · accès{' '}
@@ -458,41 +472,57 @@ export default function DistributionPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Synchronisation</CardTitle>
-                <CardDescription>
-                  Chaque synchronisation est enregistrée dans l’historique. Tant que le canal n’est
-                  pas ouvert, elle reste interne : aucun partenaire n’est contacté.
-                </CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-base">
+                  Synchronisation
+                  <InfoTip label="Précision sur la synchronisation">
+                    Chaque synchronisation est enregistrée dans l’historique. Tant que le canal
+                    n’est pas ouvert, elle reste interne.
+                  </InfoTip>
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {selectedConnection ? (
                   <>
-                    <div className="rounded-xl border border-border p-4 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium">
-                          {providerLabels[selectedConnection.provider]}
-                        </span>
-                        <Badge variant={statusVariant(selectedConnection.status)}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">
+                        {providerLabels[selectedConnection.provider]}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge level={statusLevel(selectedConnection.status)}>
                           {statusLabels[selectedConnection.status]}
-                        </Badge>
+                        </StatusBadge>
+                        <DropdownMenu modal={false}>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Actions de la connexion"
+                              disabled={busy}
+                              className="h-8 w-8 transition-all duration-200"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              disabled={selectedConnection.status === 'DISCONNECTED'}
+                              onSelect={() => setDisconnectOpen(true)}
+                            >
+                              Déconnecter
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                      <Button
-                        variant="outline"
-                        className="mt-3"
-                        onClick={() => void disconnectConnection()}
-                        disabled={busy || selectedConnection.status === 'DISCONNECTED'}
-                      >
-                        Déconnecter
-                      </Button>
                     </div>
-                    <div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="distribution-direction">Sens</Label>
                       <select
                         id="distribution-direction"
                         value={direction}
                         onChange={(event) => setDirection(event.target.value as SyncDirection)}
-                        className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       >
                         <option value="BIDIRECTIONAL">{directionLabels.BIDIRECTIONAL}</option>
                         <option value="PUSH">{directionLabels.PUSH}</option>
@@ -502,15 +532,13 @@ export default function DistributionPage() {
                     <Button
                       onClick={() => void queueSync()}
                       disabled={busy || selectedConnection.status === 'DISCONNECTED'}
+                      className="w-full transition-all duration-200 sm:w-auto"
                     >
-                      <RefreshCw className="mr-2 h-4 w-4" />
                       Lancer une synchronisation
                     </Button>
                   </>
                 ) : (
-                  <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                    Sélectionnez une connexion pour lancer une synchronisation.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Sélectionnez une connexion.</p>
                 )}
               </CardContent>
             </Card>
@@ -518,19 +546,19 @@ export default function DistributionPage() {
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
-              <CardHeader>
-                <CardTitle>Disponibilités reçues</CardTitle>
-                <CardDescription>
-                  Les créneaux vus chez le partenaire, à titre indicatif : Sokar reste la référence.
-                </CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-base">
+                  Disponibilités reçues
+                  <InfoTip label="Précision sur les disponibilités">
+                    Créneaux vus chez le partenaire, à titre indicatif : Sokar reste la référence.
+                  </InfoTip>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <LoadingRows />
                 ) : availability.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Aucune disponibilité reçue pour cette connexion.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Aucune disponibilité reçue.</p>
                 ) : (
                   <div className="space-y-2">
                     {availability.slice(0, 12).map((slot) => (
@@ -554,19 +582,14 @@ export default function DistributionPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Historique des synchronisations</CardTitle>
-                <CardDescription>
-                  Les échanges avec ce partenaire, du plus récent au plus ancien.
-                </CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Historique des synchronisations</CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
                   <LoadingRows />
                 ) : selectedRuns.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Aucune synchronisation pour cette connexion.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Aucune synchronisation.</p>
                 ) : (
                   <div className="space-y-2">
                     {selectedRuns.slice(0, 12).map((run) => (
@@ -575,9 +598,9 @@ export default function DistributionPage() {
                           <span className="font-medium">
                             {directionLabels[run.direction]} · {formatDate(run.createdAt)}
                           </span>
-                          <Badge variant={statusVariant(run.status)}>
+                          <StatusBadge level={statusLevel(run.status)}>
                             {statusLabels[run.status]}
-                          </Badge>
+                          </StatusBadge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           envoyés {run.pushedCount} · reçus {run.pulledCount} · erreurs{' '}
@@ -592,13 +615,8 @@ export default function DistributionPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Link2 className="h-4 w-4" /> Liens de réservations
-                </CardTitle>
-                <CardDescription>
-                  Les réservations reçues par ce partenaire et rattachées à une réservation Sokar.
-                </CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Liens de réservations</CardTitle>
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -613,9 +631,9 @@ export default function DistributionPage() {
                         className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm"
                       >
                         <span>Réservation liée · réf. partenaire •••• {link.externalIdLast4}</span>
-                        <Badge variant={statusVariant(link.status)}>
+                        <StatusBadge level={statusLevel(link.status)}>
                           {statusLabels[link.status]}
-                        </Badge>
+                        </StatusBadge>
                       </div>
                     ))}
                   </div>
@@ -624,14 +642,13 @@ export default function DistributionPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Webhook className="h-4 w-4" /> Webhooks
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-1.5 text-base">
+                  Notifications du partenaire
+                  <InfoTip label="Précision sur les notifications">
+                    Les réceptions automatiques ne sont pas encore ouvertes.
+                  </InfoTip>
                 </CardTitle>
-                <CardDescription>
-                  Les notifications envoyées par ce partenaire. Les réceptions automatiques ne sont
-                  pas encore ouvertes.
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -646,9 +663,9 @@ export default function DistributionPage() {
                           <span className="font-medium">
                             {webhookEventLabel(webhook.eventType)}
                           </span>
-                          <Badge variant={statusVariant(webhook.status)}>
+                          <StatusBadge level={statusLevel(webhook.status)}>
                             {statusLabels[webhook.status]}
-                          </Badge>
+                          </StatusBadge>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Reçu {formatDate(webhook.receivedAt)}
@@ -661,15 +678,16 @@ export default function DistributionPage() {
             </Card>
           </div>
 
-          <Card>
-            <CardContent className="flex items-start gap-3 p-5 text-sm text-muted-foreground">
-              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <p>
-                Ce canal est en phase pilote : il sera ouvert à tous les établissements après
-                validation.
-              </p>
-            </CardContent>
-          </Card>
+          <ConfirmDialog
+            open={disconnectOpen}
+            title="Déconnecter cette connexion ?"
+            description="Aucune synchronisation ne sera plus lancée. L’historique reste consultable."
+            confirmLabel="Déconnecter"
+            variant="destructive"
+            pending={busy}
+            onConfirm={() => void disconnectConnection()}
+            onCancel={() => setDisconnectOpen(false)}
+          />
         </>
       )}
     </div>

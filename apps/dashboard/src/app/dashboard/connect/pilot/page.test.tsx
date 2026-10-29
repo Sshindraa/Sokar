@@ -33,7 +33,7 @@ describe('ConnectPilotPage', () => {
     mocks.get.mockRejectedValue(toApiError(503, {}));
     render(<ConnectPilotPage />);
 
-    expect(await screen.findByText('KPIs indisponibles')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /réessayer/i })).toBeInTheDocument();
   });
 });

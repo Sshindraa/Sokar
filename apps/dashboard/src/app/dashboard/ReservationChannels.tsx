@@ -1,4 +1,3 @@
-import { Globe, Phone, Search, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type ReservationChannelKey = 'phone' | 'website' | 'google' | 'ai' | 'team';
@@ -11,8 +10,6 @@ export interface ReservationChannelStat {
 
 interface ChannelMeta {
   label: string;
-  detail: string;
-  icon: LucideIcon;
   /** Nuance du segment : la palette est monochrome, les canaux se lisent par intensité. */
   tone: string;
 }
@@ -20,32 +17,22 @@ interface ChannelMeta {
 const CHANNEL_META: Record<ReservationChannelKey, ChannelMeta> = {
   phone: {
     label: 'Téléphone',
-    detail: 'Appels pris par Sokar',
-    icon: Phone,
     tone: 'bg-foreground',
   },
   website: {
     label: 'Site et réseaux',
-    detail: 'Votre site, Instagram, QR code',
-    icon: Globe,
     tone: 'bg-foreground/65',
   },
   google: {
     label: 'Google',
-    detail: 'Recherche et fiche Google',
-    icon: Search,
     tone: 'bg-foreground/40',
   },
   ai: {
     label: 'Assistants IA',
-    detail: 'ChatGPT, Perplexity et agents',
-    icon: Sparkles,
     tone: 'bg-foreground/25',
   },
   team: {
     label: 'Équipe',
-    detail: 'Ajoutées depuis le dashboard',
-    icon: Users,
     tone: 'bg-foreground/10',
   },
 };
@@ -89,40 +76,20 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
     (channel) => byChannel.get(channel) ?? { channel, reservations: 0, covers: 0 },
   );
   const total = rows.reduce((sum, row) => sum + row.reservations, 0);
-  const withoutTeam = total - (byChannel.get('team')?.reservations ?? 0);
   const activeChannels = rows.filter((row) => row.reservations > 0).length;
 
   return (
     <section
       aria-labelledby="reservation-channels-title"
-      className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6"
+      className="rounded-2xl border border-border bg-card p-4 md:p-5"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h2
-            id="reservation-channels-title"
-            className="text-base font-bold text-foreground md:text-lg"
-          >
-            Réservations par canal
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-            Où vos clients ont réservé sur la période.
-          </p>
-        </div>
-        {total > 0 && (
-          <p className="text-xs font-semibold text-muted-foreground sm:text-right sm:text-sm">
-            <span className="text-2xl font-black tracking-tight text-foreground md:text-3xl">
-              {withoutTeam.toLocaleString('fr-FR')}
-            </span>{' '}
-            prises sans votre équipe
-          </p>
-        )}
-      </div>
+      <h2 id="reservation-channels-title" className="text-base font-semibold text-foreground">
+        Réservations par canal
+      </h2>
 
       {total === 0 ? (
-        <p className="mt-5 rounded-xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
-          Aucune réservation confirmée sur cette période. Chaque nouvelle réservation apparaîtra ici
-          avec son canal.
+        <p className="mt-4 text-sm text-muted-foreground">
+          Aucune réservation confirmée sur cette période.
         </p>
       ) : (
         <>
@@ -135,7 +102,7 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
                   `${CHANNEL_META[row.channel].label} ${formatShare(row.reservations, total)}`,
               )
               .join(', ')}
-            className="mt-5 flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-secondary"
+            className="mt-4 flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-secondary"
           >
             {rows
               .filter((row) => row.reservations > 0)
@@ -151,51 +118,72 @@ export default function ReservationChannels({ stats }: { stats: ReservationChann
               ))}
           </div>
 
-          <ul className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+          <div
+            aria-hidden="true"
+            className="mt-3 hidden grid-cols-[minmax(0,1fr)_6rem_5rem_3rem] gap-3 pb-2 text-right text-xs font-medium text-muted-foreground sm:grid"
+          >
+            <span className="text-left">Canal</span>
+            <span>Réservations</span>
+            <span>Couverts</span>
+            <span>Part</span>
+          </div>
+          <ul className="mt-3 divide-y divide-border sm:mt-0">
             {rows.map((row) => {
               const meta = CHANNEL_META[row.channel];
-              const Icon = meta.icon;
               const empty = row.reservations === 0;
               return (
                 <li
                   key={row.channel}
                   className={cn(
-                    'grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3.5 py-3 transition-all duration-200 sm:grid-cols-[auto_1fr_5rem_5rem_4rem] sm:px-4',
+                    'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-2 transition-all duration-200 sm:py-3 sm:grid-cols-[minmax(0,1fr)_6rem_5rem_3rem]',
                     empty && 'text-muted-foreground',
                   )}
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground/75">
-                    <Icon size={15} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        aria-hidden="true"
-                        className={cn('h-2 w-2 shrink-0 rounded-full', meta.tone)}
-                      />
-                      <p
-                        className={cn(
-                          'truncate text-sm font-bold',
-                          empty ? 'text-muted-foreground' : 'text-foreground',
-                        )}
-                      >
-                        {meta.label}
-                      </p>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {empty ? 'Aucune pour l’instant' : meta.detail}
-                    </p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={cn('h-2 w-2 shrink-0 rounded-full', meta.tone)}
+                    />
+                    <span
+                      className={cn(
+                        'text-sm font-medium',
+                        empty ? 'text-muted-foreground' : 'text-foreground',
+                      )}
+                    >
+                      {row.channel === 'ai' ? (
+                        <span
+                          tabIndex={0}
+                          aria-describedby="ai-channel-description"
+                          className="group relative cursor-help rounded-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {meta.label}
+                          <span
+                            id="ai-channel-description"
+                            role="tooltip"
+                            className="absolute bottom-full left-0 z-10 hidden w-max max-w-52 rounded-md border border-border bg-popover px-3 py-2 text-xs font-normal text-popover-foreground shadow-sm group-hover:block group-focus:block"
+                          >
+                            ChatGPT, Perplexity et autres agents de réservation.
+                          </span>
+                        </span>
+                      ) : (
+                        meta.label
+                      )}
+                      {empty && <span className="sr-only"> — Aucune pour l’instant</span>}
+                    </span>
                   </div>
-                  <p className="text-right text-sm font-black tabular-nums text-foreground sm:text-base">
+                  <p className="text-right text-sm font-semibold tabular-nums text-foreground sm:text-base">
+                    <span className="sr-only">Réservations : </span>
                     {row.reservations.toLocaleString('fr-FR')}
-                    <span className="ml-1 text-xs font-semibold text-muted-foreground sm:hidden">
+                    <span className="ml-1 text-xs font-normal text-muted-foreground sm:hidden">
                       · {formatShare(row.reservations, total)}
                     </span>
                   </p>
-                  <p className="hidden text-right text-xs font-semibold tabular-nums text-muted-foreground sm:block">
-                    {row.covers.toLocaleString('fr-FR')} couv.
+                  <p className="hidden text-right text-sm font-normal tabular-nums text-muted-foreground sm:block">
+                    <span className="sr-only">Couverts : </span>
+                    {row.covers.toLocaleString('fr-FR')}
                   </p>
-                  <p className="hidden text-right text-sm font-bold tabular-nums text-foreground sm:block">
+                  <p className="hidden text-right text-sm font-normal tabular-nums text-foreground sm:block">
+                    <span className="sr-only">Part : </span>
                     {formatShare(row.reservations, total)}
                   </p>
                 </li>

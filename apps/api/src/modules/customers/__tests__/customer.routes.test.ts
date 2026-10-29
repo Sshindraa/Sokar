@@ -337,6 +337,108 @@ describe('customer.routes', () => {
       });
     });
 
+    it('trie par visites sur 365 jours ou par dernière visite, en CRM Pro seulement', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        plan: 'PRO',
+        crmSensitiveNoteRoles: null,
+      } as never);
+      const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+      const honoured = (customerId: string, days: number) => ({
+        customerId,
+        state: 'HONORED',
+        status: 'CONFIRMED',
+        startsAt: ago(days),
+        reservedAt: ago(days + 2),
+      });
+      // c1 : 1 visite il y a 3 j ; c2 : aucune ; c3 : 2 visites, la dernière il y a 40 j.
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        honoured('c1', 3),
+        honoured('c3', 40),
+        honoured('c3', 80),
+      ] as never);
+      const page = (ids: string[]) =>
+        ids.map((id) => ({ id, restaurantId: 'test-rest-1', name: id })) as never;
+
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce(page(['c1', 'c2', 'c3']));
+      const byVisits = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=visits365d',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(byVisits.json().data.map((row: { id: string }) => row.id)).toEqual(['c3', 'c1', 'c2']);
+
+      vi.mocked(db.customer.findMany)
+        .mockResolvedValueOnce([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }] as never)
+        .mockResolvedValueOnce(page(['c1', 'c2', 'c3']));
+      const byLastVisit = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=lastVisit',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(byLastVisit.json().data.map((row: { id: string }) => row.id)).toEqual([
+        'c1',
+        'c3',
+        'c2',
+      ]);
+
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      const essential = await app.inject({
+        method: 'GET',
+        url: '/customers?sort=lastVisit',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(essential.statusCode).toBe(403);
+    });
+
+    it('compte les clients par segment avec la recherche de la liste, en CRM Pro seulement', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
+      vi.mocked(db.customer.count).mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+      vi.mocked(db.customer.findMany).mockResolvedValueOnce([
+        { id: 'c1' },
+        { id: 'c2' },
+        { id: 'c3' },
+      ] as never);
+      const ago = (days: number) => new Date(Date.now() - days * 86_400_000);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        {
+          customerId: 'c1',
+          state: 'HONORED',
+          status: 'CONFIRMED',
+          startsAt: ago(400),
+          reservedAt: ago(402),
+        },
+      ] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers/segment-counts?search=mar',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const { data } = res.json();
+      expect(data).toMatchObject({ all: 3, vip: 1 });
+      expect(data.new + data.active + data.regular + data.at_risk + data.dormant).toBe(3);
+      expect(vi.mocked(db.customer.count).mock.calls[0][0]?.where).toMatchObject({
+        restaurantId: 'test-rest-1',
+        archivedAt: null,
+        mergedIntoId: null,
+        OR: expect.any(Array),
+      });
+
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'ESSENTIAL' } as never);
+      const essential = await app.inject({
+        method: 'GET',
+        url: '/customers/segment-counts',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(essential.statusCode).toBe(403);
+    });
+
     it('rejette un phone invalide (regex E.164) avec 400', async () => {
       const app = await getApp();
 

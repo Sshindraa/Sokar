@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserX, TrendingDown, MessageSquare, Euro } from 'lucide-react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useApi } from '../../lib/api';
@@ -69,11 +70,11 @@ export default function NoShowWidget() {
   if (failed) {
     return (
       <section
-        aria-label="No-shows"
+        aria-label="Absences"
         className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between md:p-6"
       >
         <p className="text-sm text-muted-foreground">
-          Les statistiques de no-show sont momentanément indisponibles.
+          Les statistiques d’absence sont momentanément indisponibles.
         </p>
         <Button
           type="button"
@@ -91,14 +92,13 @@ export default function NoShowWidget() {
   if (!data || data.total === 0) return null;
 
   const hasComparison = data.impact !== null;
-  const smsWorks = data.impact !== null && data.impact > 0;
+  const lowerWithSms = data.impact !== null && data.impact > 0;
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 md:p-6">
       <div className="mb-4 flex items-center gap-3">
-        <UserX size={20} className="text-destructive" />
         <div>
-          <h2 className="text-lg font-bold text-foreground">No-shows</h2>
+          <h2 className="text-lg font-bold text-foreground">Absences</h2>
           <p className="text-sm text-muted-foreground">
             90 derniers jours · {data.total} réservations
           </p>
@@ -109,63 +109,86 @@ export default function NoShowWidget() {
         {/* Taux global */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <TrendingDown size={14} className="text-destructive" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Taux
-            </span>
+            <span className="text-sm font-medium text-muted-foreground">Taux</span>
           </div>
-          <p className="mt-2 text-3xl font-black text-foreground">
+          <p className="mt-2 text-3xl font-semibold tabular-nums text-foreground">
             {formatDecimal(data.noShowRate)}&nbsp;%
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {data.noShows} no-show{data.noShows > 1 ? 's' : ''} sur {data.total}
+            {data.noShows} absence{data.noShows > 1 ? 's' : ''} sur {data.total}
           </p>
         </div>
 
-        {/* CA perdu */}
+        {/* Montants associés, sans attribution causale. */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <Euro size={14} className="text-destructive" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              CA estimé perdu
+            <span className="text-sm font-medium text-muted-foreground">
+              Montant associé aux absences
             </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Comprendre le montant associé aux absences"
+                    className="inline-flex rounded text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Montants confirmés ou estimés des réservations absentes ; encaissements non
+                  vérifiés.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
-          <p className="mt-2 text-3xl font-black text-destructive">
+          <p className="mt-2 text-3xl font-semibold tabular-nums text-foreground">
             {data.revenueLost.toLocaleString('fr-FR')} €
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {data.noShows} absence{data.noShows > 1 ? 's' : ''}
-          </p>
         </div>
 
-        {/* Effet du rappel SMS : le sens passe par le texte, pas par un signe ni une couleur */}
+        {/* Écart observé avec / sans SMS : le sens passe par le texte, pas par un signe ni une couleur */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <MessageSquare size={14} className="text-muted-foreground" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Effet du rappel SMS
+            <span className="text-sm font-medium text-muted-foreground">
+              Écart observé avec / sans SMS
             </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Comprendre la comparaison avec et sans SMS"
+                    className="inline-flex rounded text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  La comparaison porte sur {data.withSms.total} réservations avec SMS et{' '}
+                  {data.withoutSms.total} sans SMS. Les groupes peuvent différer ; cet écart ne
+                  prouve pas un effet du rappel.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {hasComparison ? (
             <>
               <p
-                className={`mt-2 text-3xl font-black ${
-                  smsWorks ? 'text-foreground' : 'text-muted-foreground'
+                className={`mt-2 text-3xl font-semibold tabular-nums ${
+                  lowerWithSms ? 'text-foreground' : 'text-muted-foreground'
                 }`}
               >
-                {smsWorks
-                  ? `${formatDecimal(Math.abs(data.impact!))} pts`
-                  : data.impact === 0
-                    ? 'Écart nul'
-                    : 'Aucun gain mesuré'}
+                {data.impact === 0 ? 'Écart nul' : `${formatDecimal(Math.abs(data.impact!))} pts`}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {smsWorks
-                  ? 'de no-shows en moins grâce au SMS'
+                {lowerWithSms
+                  ? 'd’absences en moins dans le groupe avec SMS'
                   : data.impact === 0
-                    ? 'autant de no-shows avec et sans SMS'
-                    : `${formatDecimal(Math.abs(data.impact!))} pts de no-shows en plus avec le SMS`}
+                    ? 'autant d’absences avec et sans SMS'
+                    : `${formatDecimal(Math.abs(data.impact!))} pts d’absences en plus dans le groupe avec SMS`}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {formatDecimal(data.withSms.rate)}&nbsp;% avec SMS ·{' '}
@@ -175,7 +198,9 @@ export default function NoShowWidget() {
             </>
           ) : (
             <>
-              <p className="mt-2 text-sm font-medium text-muted-foreground">Pas encore mesurable</p>
+              <p className="mt-2 text-sm font-medium text-muted-foreground">
+                Données insuffisantes
+              </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {data.withSms.total < 5
                   ? `${data.withSms.total}/5 réservations avec SMS`

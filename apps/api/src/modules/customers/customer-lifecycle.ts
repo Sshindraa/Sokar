@@ -198,18 +198,27 @@ export async function loadCustomerVisitStats(
   return stats;
 }
 
+export type CustomerVisitSort = 'visits365d' | 'lastVisit';
+
 /**
  * Keeps the ids whose status and honoured visits match, from the reservations: the numbers the
- * lists then show. Order is preserved.
+ * lists then show. Order is preserved, unless `sort` asks for most visits or latest visit first
+ * (ties keep the incoming order).
  */
 export async function filterCustomerIdsByVisits(
   restaurantId: string,
   ids: string[],
-  filters: { lifecycle?: CustomerLifecycleStatus; minHonored365d?: number },
+  filters: {
+    lifecycle?: CustomerLifecycleStatus;
+    minHonored365d?: number;
+    sort?: CustomerVisitSort;
+  },
   now: Date,
 ): Promise<string[]> {
   const stats = await loadCustomerVisitStats(restaurantId, ids, now);
-  return ids.filter((id) => {
+  const summaryOf = (id: string) =>
+    summarizeVisits(stats.get(id) ?? { visitDates: [], noShows365d: 0 }, now);
+  const kept = ids.filter((id) => {
     const customerStats = stats.get(id) ?? { visitDates: [], noShows365d: 0 };
     if (
       filters.minHonored365d !== undefined &&
@@ -222,6 +231,34 @@ export async function filterCustomerIdsByVisits(
       computeCustomerLifecycle(customerStats.visitDates, now).status === filters.lifecycle
     );
   });
+  if (!filters.sort) return kept;
+  const key =
+    filters.sort === 'visits365d'
+      ? (id: string) => summaryOf(id).visits365d
+      : (id: string) => summaryOf(id).lastVisitAt?.getTime() ?? -1;
+  const keys = new Map(kept.map((id) => [id, key(id)]));
+  return kept.sort((a, b) => keys.get(b)! - keys.get(a)!);
+}
+
+/** Customers per lifecycle status, from the same reservations the lists read. */
+export async function countCustomersByLifecycle(
+  restaurantId: string,
+  ids: string[],
+  now: Date,
+): Promise<Record<CustomerLifecycleStatus, number>> {
+  const stats = await loadCustomerVisitStats(restaurantId, ids, now);
+  const counts: Record<CustomerLifecycleStatus, number> = {
+    new: 0,
+    active: 0,
+    regular: 0,
+    at_risk: 0,
+    dormant: 0,
+  };
+  for (const id of ids) {
+    const visitDates = stats.get(id)?.visitDates ?? [];
+    counts[computeCustomerLifecycle(visitDates, now).status] += 1;
+  }
+  return counts;
 }
 
 /**

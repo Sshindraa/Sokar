@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useApi } from '../../../lib/api';
 import { ApiError } from '@/lib/api-error';
 import { getErrorMessage, type Customer, type CustomerLifecycleStatus } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { useSiteSelection } from '@/features/sites/site-context';
+import { cn, formatPhone } from '@/lib/utils';
 import {
   Table,
   TableHeader,
@@ -18,9 +20,22 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, Star, Phone, Copy, Lock, StickyNote, X, Download } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Users,
+  Search,
+  Star,
+  Phone,
+  Copy,
+  Lock,
+  StickyNote,
+  X,
+  Download,
+  ArrowDown,
+} from 'lucide-react';
 import { DataFetchError } from '@/components/DataFetchError';
-import { CustomerLifecycleBadge, LIFECYCLE_LABELS } from '@/components/CustomerLifecycleBadge';
+import { CustomerLifecycleBadge } from '@/components/CustomerLifecycleBadge';
 
 type CustomerListResponse = Customer[] | { data?: Customer[]; total?: number };
 
@@ -31,8 +46,32 @@ type Filters = {
   isVip: 'all' | 'true' | 'false';
   lifecycle: 'all' | CustomerLifecycleStatus;
   minVisits: string;
+  sort: 'recent' | 'visits365d' | 'lastVisit';
 };
-const NO_FILTERS: Filters = { search: '', isVip: 'all', lifecycle: 'all', minVisits: '' };
+const NO_FILTERS: Filters = {
+  search: '',
+  isVip: 'all',
+  lifecycle: 'all',
+  minVisits: '',
+  sort: 'recent',
+};
+
+type Segment = {
+  key: string;
+  label: string;
+  isVip: Filters['isVip'];
+  lifecycle: Filters['lifecycle'];
+  // Statuts : filtres serveur réservés au CRM Pro.
+  crmOnly?: boolean;
+};
+const SEGMENTS: Segment[] = [
+  { key: 'all', label: 'Tous', isVip: 'all', lifecycle: 'all' },
+  { key: 'vip', label: 'VIP', isVip: 'true', lifecycle: 'all' },
+  { key: 'regular', label: 'Habitués', isVip: 'all', lifecycle: 'regular', crmOnly: true },
+  { key: 'at_risk', label: 'À risque', isVip: 'all', lifecycle: 'at_risk', crmOnly: true },
+  { key: 'dormant', label: 'Endormis', isVip: 'all', lifecycle: 'dormant', crmOnly: true },
+  { key: 'new', label: 'Nouveaux', isVip: 'all', lifecycle: 'new', crmOnly: true },
+];
 
 /** La fiche s'ouvre dès Essential (fiche simple) ; fermée ou en panne, le nom reste un simple texte. */
 function ProfileLink({
@@ -55,16 +94,14 @@ function ProfileLink({
   );
 }
 
-function formatLastVisit(value: string | null) {
+// Une seule date pour tout l'écran (tableau et cartes).
+function formatVisitDate(value: string | null) {
   if (!value) return '—';
 
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
 
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-  }).format(date);
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function customerInitials(name: string | null) {
@@ -86,7 +123,7 @@ function CustomerMobileCard({
   onToggleVip: (id: string, current: boolean) => void;
   profileLinked: boolean;
 }) {
-  const name = customer.name || 'Client inconnu';
+  const name = customer.name || 'Client sans nom';
 
   return (
     <article className="overflow-hidden rounded-2xl border border-border bg-card/80 shadow-sm">
@@ -105,44 +142,36 @@ function CustomerMobileCard({
                   {name}
                 </ProfileLink>
               </h2>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{customer.phone}</p>
+              <p className="mt-0.5 truncate text-xs tabular-nums text-muted-foreground">
+                {formatPhone(customer.phone)}
+              </p>
             </div>
           </div>
-          <span
-            className={`inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-              customer.isVip
-                ? 'border-primary/20 bg-secondary text-foreground'
-                : 'border-border bg-secondary/70 text-muted-foreground'
-            }`}
-          >
-            <Star size={12} className={customer.isVip ? 'fill-current' : ''} />
-            {customer.isVip ? 'VIP' : 'Standard'}
-          </span>
+          {customer.isVip ? (
+            <span className="inline-flex flex-none items-center gap-1 rounded-full border border-primary/20 bg-secondary px-2.5 py-1 text-[11px] font-medium text-foreground">
+              <Star size={12} className="fill-current" />
+              VIP
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-4 grid grid-cols-3 divide-x divide-border border-y border-border/60 py-3">
           <div className="px-2 text-center">
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Visites
-            </p>
+            <p className="text-xs text-muted-foreground">Visites 365 j</p>
             <p className="mt-1 text-base font-semibold text-foreground">
-              {customer.visitSummary?.visits ?? '—'}
+              {customer.visitSummary?.visits365d ?? '—'}
             </p>
           </div>
           <div className="px-2 text-center">
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Statut
-            </p>
+            <p className="text-xs text-muted-foreground">Statut</p>
             <div className="mt-1 flex justify-center">
               <CustomerLifecycleBadge lifecycle={customer.lifecycle} />
             </div>
           </div>
           <div className="min-w-0 px-2 text-center">
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              Dernière visite
-            </p>
+            <p className="text-xs text-muted-foreground">Dernière</p>
             <p className="mt-1 truncate text-sm font-medium text-foreground">
-              {formatLastVisit(customer.visitSummary?.lastVisitAt ?? null)}
+              {formatVisitDate(customer.visitSummary?.lastVisitAt ?? null)}
             </p>
           </div>
         </div>
@@ -181,6 +210,7 @@ function CustomerMobileCard({
 export default function CustomersPage() {
   const { get, post, orgId } = useApi();
   const { activeSite } = useSiteSelection();
+  const router = useRouter();
   // Export réservé au propriétaire ; sans rôle connu, c'est le serveur qui tranche.
   const canExport = !activeSite?.role || activeSite.role === 'OWNER';
   const isMobile = useIsMobile();
@@ -192,6 +222,10 @@ export default function CustomersPage() {
   const [moreError, setMoreError] = useState('');
   // Saisie en cours, et filtres réellement appliqués (ceux que « Afficher plus » doit continuer).
   const [draft, setDraft] = useState<Filters>(NO_FILTERS);
+  // Segment actif = celui dont les filtres correspondent au brouillon (aucun si filtres libres).
+  const activeSegmentKey = SEGMENTS.find(
+    (segment) => draft.isVip === segment.isVip && draft.lifecycle === segment.lifecycle,
+  )?.key;
   const [applied, setApplied] = useState<Filters>(NO_FILTERS);
   const [error, setError] = useState('');
   // Le premier chargement affiche des squelettes ; une recherche garde la page et le champ en place.
@@ -206,9 +240,12 @@ export default function CustomersPage() {
     if (filters.isVip !== 'all') params.set('isVip', filters.isVip);
     if (filters.lifecycle !== 'all') params.set('lifecycle', filters.lifecycle);
     if (filters.minVisits) params.set('minHonored365d', filters.minVisits);
+    // Le tri récent est celui de l'API par défaut : inutile de le transmettre.
+    if (filters.sort !== 'recent') params.set('sort', filters.sort);
     return `customers?${params.toString()}`;
   }, []);
 
+  // La saisie ne se réécrit pas depuis la réponse : une lettre tapée pendant le chargement serait perdue.
   const fetchCustomers = useCallback(
     async (filters: Filters = NO_FILTERS) => {
       setLoading(true);
@@ -225,7 +262,6 @@ export default function CustomersPage() {
             : list.length,
         );
         setApplied(filters);
-        setDraft(filters);
         setLoadedOnce(true);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger les clients'));
@@ -234,6 +270,12 @@ export default function CustomersPage() {
     },
     [get, customersUrl],
   );
+
+  // Segment, effacement ou Entrée : la saisie suit tout de suite et la liste se recharge.
+  function applyFilters(next: Filters) {
+    setDraft(next);
+    void fetchCustomers({ ...next, search: next.search.trim() });
+  }
 
   // Sans suite, la liste s'arrêtait aux 50 premiers clients et l'en-tête annonçait « 50 clients ».
   async function loadMore() {
@@ -260,6 +302,16 @@ export default function CustomersPage() {
     void fetchCustomers();
   }, [orgId, fetchCustomers]);
 
+  // Recherche à la frappe : une pause de 300 ms évite une requête par lettre.
+  useEffect(() => {
+    const search = draft.search.trim();
+    if (search === applied.search && draft.minVisits === applied.minVisits) return;
+    const timer = setTimeout(() => {
+      void fetchCustomers({ ...draft, search });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draft, applied, fetchCustomers]);
+
   // Une seule sonde, une fois la liste chargée : elle ne doit ni ralentir ni perturber le chargement des clients.
   const crmProbed = useRef(false);
   useEffect(() => {
@@ -273,7 +325,56 @@ export default function CustomersPage() {
       );
   }, [orgId, get, loadedOnce]);
 
-  const hasFilters = JSON.stringify(applied) !== JSON.stringify(NO_FILTERS);
+  // Le tri n'est pas un filtre : il ne compte pas dans « filtres actifs ».
+  const hasFilters =
+    JSON.stringify({ ...applied, sort: NO_FILTERS.sort }) !== JSON.stringify(NO_FILTERS);
+
+  // Compteurs par segment (CRM Pro), recalculés à chaque recherche ; en cas d'échec, pas de compteur.
+  const [segmentCounts, setSegmentCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (crmState !== 'open') return;
+    let cancelled = false;
+    const query = applied.search
+      ? `?${new URLSearchParams({ search: applied.search }).toString()}`
+      : '';
+    void (async () => {
+      try {
+        const response = await get<{ data: Record<string, number> }>(
+          `customers/segment-counts${query}`,
+        );
+        if (!cancelled) setSegmentCounts(response.data);
+      } catch {
+        if (!cancelled) setSegmentCounts(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [crmState, applied.search, get]);
+
+  // Un second clic sur la colonne active revient au tri récent.
+  function toggleSort(sort: 'visits365d' | 'lastVisit') {
+    applyFilters({ ...draft, sort: applied.sort === sort ? 'recent' : sort });
+  }
+
+  // Les en-têtes ne sont cliquables qu'au CRM Pro ouvert ; ailleurs, simple texte.
+  function sortHeader(label: string, sort: 'visits365d' | 'lastVisit') {
+    if (crmState !== 'open') return label;
+    const active = applied.sort === sort;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(sort)}
+        className={cn(
+          'inline-flex items-center gap-1 transition-all duration-200 hover:text-foreground',
+          active && 'text-foreground',
+        )}
+      >
+        {label}
+        {active ? <ArrowDown size={14} aria-hidden="true" /> : null}
+      </button>
+    );
+  }
 
   const [exporting, setExporting] = useState(false);
   async function exportCsv() {
@@ -326,14 +427,10 @@ export default function CustomersPage() {
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clients</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Contacts et historique des visites</p>
-        </div>
+        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
+          Clients <span className="text-muted-foreground font-normal tabular-nums">{total}</span>
+        </h1>
         <div className="flex flex-none items-center gap-2">
-          <span className="whitespace-nowrap text-xs text-muted-foreground sm:text-sm">
-            {total} client{total > 1 ? 's' : ''}
-          </span>
           {canExport ? (
             <Button
               type="button"
@@ -358,11 +455,40 @@ export default function CustomersPage() {
         </div>
       </div>
 
+      {/* Segments : un clic recharge la liste, la recherche en cours reste en place */}
+      <Tabs
+        value={activeSegmentKey ?? ''}
+        onValueChange={(key) => {
+          const segment = SEGMENTS.find((item) => item.key === key);
+          if (segment) {
+            applyFilters({ ...draft, isVip: segment.isVip, lifecycle: segment.lifecycle });
+          }
+        }}
+      >
+        <TabsList aria-label="Segments de clients">
+          {SEGMENTS.filter((segment) => !segment.crmOnly || crmState === 'open').map((segment) => {
+            const active = segment.key === activeSegmentKey;
+            // L'onglet actif montre le total de la liste (il suit aussi « Visites min. ») ; les autres,
+            // leur effectif quand le CRM Pro le fournit.
+            const count = crmState === 'open' ? segmentCounts?.[segment.key] : undefined;
+            const shown = active ? total : (count ?? null);
+            return (
+              <TabsTrigger key={segment.key} value={segment.key}>
+                {segment.label}
+                {shown !== null ? (
+                  <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{shown}</span>
+                ) : null}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
+
       {/* Recherche */}
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void fetchCustomers({ ...draft, search: draft.search.trim() });
+          applyFilters(draft);
         }}
         className="flex min-w-0 flex-wrap gap-2"
         role="search"
@@ -378,88 +504,40 @@ export default function CustomersPage() {
             value={draft.search}
             onChange={(e) => setDraft((current) => ({ ...current, search: e.target.value }))}
             aria-label="Rechercher un client par nom ou téléphone"
-            className="w-full pl-9 pr-28"
+            className="w-full pl-9 pr-10"
           />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={loading}
-            className="absolute right-1 top-1 h-8 rounded-md px-2.5 text-xs sm:px-3"
-          >
-            Rechercher
-          </Button>
           {draft.search && (
             <button
               type="button"
               aria-label="Effacer la recherche"
-              onClick={() => {
-                void fetchCustomers({ ...applied, search: '' });
-              }}
-              className="absolute right-[5.75rem] top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => applyFilters({ ...draft, search: '' })}
+              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <X size={15} />
             </button>
           )}
         </div>
-        <label>
-          <span className="sr-only">Filtre VIP</span>
-          <select
-            aria-label="Filtre VIP"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-            value={draft.isVip}
-            onChange={(event) => {
-              void fetchCustomers({ ...applied, isVip: event.target.value as Filters['isVip'] });
-            }}
-          >
-            <option value="all">Tous les clients</option>
-            <option value="true">VIP uniquement</option>
-            <option value="false">Hors VIP</option>
-          </select>
-        </label>
         {crmState === 'open' ? (
-          <>
-            <label>
-              <span className="sr-only">Filtre statut</span>
-              <select
-                aria-label="Filtre statut"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-                value={draft.lifecycle}
-                onChange={(event) => {
-                  void fetchCustomers({
-                    ...applied,
-                    lifecycle: event.target.value as Filters['lifecycle'],
-                  });
-                }}
-              >
-                <option value="all">Tous les statuts</option>
-                {(Object.keys(LIFECYCLE_LABELS) as CustomerLifecycleStatus[]).map((status) => (
-                  <option key={status} value={status}>
-                    {LIFECYCLE_LABELS[status]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="sr-only">Visites honorées minimum</span>
-              <Input
-                type="number"
-                min={0}
-                max={10000}
-                className="w-40"
-                value={draft.minVisits}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, minVisits: event.target.value }))
-                }
-                placeholder="Visites min. (365 j)"
-              />
-            </label>
-          </>
+          <label>
+            <span className="sr-only">Visites honorées minimum</span>
+            <Input
+              type="number"
+              min={0}
+              max={10000}
+              className="w-40"
+              value={draft.minVisits}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, minVisits: event.target.value }))
+              }
+              placeholder="Visites min. (365 j)"
+            />
+          </label>
         ) : null}
       </form>
       {crmState === 'locked' ? (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Filtres par statut et par visites, valeur client et doublons : inclus dans CRM Pro.
+          Segments par statut, valeur client et doublons : CRM Pro.
           <Link
             href="/pricing"
             className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
@@ -497,7 +575,7 @@ export default function CustomersPage() {
                 size="sm"
                 variant="outline"
                 className="mt-1"
-                onClick={() => void fetchCustomers(NO_FILTERS)}
+                onClick={() => applyFilters(NO_FILTERS)}
               >
                 Effacer les filtres
               </Button>
@@ -528,60 +606,115 @@ export default function CustomersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nom</TableHead>
-                  <TableHead>Téléphone</TableHead>
-                  <TableHead>Visites</TableHead>
-                  <TableHead>365 jours</TableHead>
+                  <TableHead className="hidden lg:table-cell">Téléphone</TableHead>
+                  <TableHead
+                    aria-sort={
+                      crmState === 'open' && applied.sort === 'visits365d'
+                        ? 'descending'
+                        : undefined
+                    }
+                  >
+                    {sortHeader('Visites 365 j', 'visits365d')}
+                  </TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead
+                    aria-sort={
+                      crmState === 'open' && applied.sort === 'lastVisit' ? 'descending' : undefined
+                    }
+                  >
+                    {sortHeader('Dernière visite', 'lastVisit')}
+                  </TableHead>
                   <TableHead>VIP</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead>Dernière visite</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {customers.map((c) => (
-                  <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
+                  <TableRow
+                    key={c.id}
+                    onClick={
+                      crmState === 'hidden'
+                        ? undefined
+                        : (event) => {
+                            // Le nom et le bouton VIP ont leur propre action : la ligne ne les doublonne pas.
+                            if ((event.target as HTMLElement).closest('a,button')) return;
+                            router.push(`/dashboard/customers/crm/${c.id}`);
+                          }
+                    }
+                    className={cn(
+                      'transition-all duration-200 hover:bg-accent',
+                      crmState !== 'hidden' && 'cursor-pointer',
+                    )}
+                  >
                     <TableCell className="font-medium">
-                      <ProfileLink id={c.id} linked={crmState !== 'hidden'}>
-                        {c.name || <span className="opacity-50">Client sans nom</span>}
-                      </ProfileLink>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="block">{c.phone}</span>
-                      {c.emailNormalized ? (
-                        <span className="block max-w-[220px] truncate text-xs opacity-70">
-                          {c.emailNormalized}
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground"
+                        >
+                          {customerInitials(c.name)}
                         </span>
-                      ) : null}
+                        <div className="min-w-0">
+                          <ProfileLink id={c.id} linked={crmState !== 'hidden'}>
+                            {c.name || <span className="opacity-50">Client sans nom</span>}
+                          </ProfileLink>
+                          {/* Sous 1024 px la colonne Téléphone disparaît : le numéro passe sous le nom. */}
+                          <p className="text-xs tabular-nums text-muted-foreground lg:hidden">
+                            {formatPhone(c.phone)}
+                          </p>
+                          {c.emailNormalized ? (
+                            <p className="hidden max-w-[220px] truncate text-xs text-muted-foreground lg:block">
+                              {c.emailNormalized}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
                     </TableCell>
-                    <TableCell>{c.visitSummary?.visits ?? '—'}</TableCell>
-                    <TableCell>{c.visitSummary?.visits365d ?? '—'}</TableCell>
-                    <TableCell className="max-w-[220px]">
-                      <CustomerLifecycleBadge lifecycle={c.lifecycle} showReason />
+                    <TableCell className="hidden tabular-nums text-muted-foreground lg:table-cell">
+                      {formatPhone(c.phone)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {c.visitSummary?.visits365d ?? '—'}
                     </TableCell>
                     <TableCell>
-                      <button
-                        onClick={() => toggleVip(c.id, c.isVip)}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all duration-200 ${
-                          c.isVip
-                            ? 'border border-primary/20 bg-secondary text-foreground hover:bg-accent'
-                            : 'bg-muted text-muted-foreground hover:bg-accent'
-                        }`}
-                      >
-                        <Star size={12} className={c.isVip ? 'fill-current' : ''} />
-                        {c.isVip ? 'VIP' : 'Ajouter'}
-                      </button>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      <span className="block max-w-[200px] truncate" title={c.notes ?? undefined}>
-                        {c.notes || <span className="opacity-50">—</span>}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c.visitSummary?.lastVisitAt ? (
-                        new Date(c.visitSummary.lastVisitAt).toLocaleDateString('fr-FR')
+                      {/* Le motif du statut n'est pas dans la cellule : on le lit au survol. */}
+                      {c.lifecycle ? (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex">
+                                <CustomerLifecycleBadge lifecycle={c.lifecycle} />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>{c.lifecycle.reason}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       ) : (
-                        <span className="opacity-50">—</span>
+                        <CustomerLifecycleBadge lifecycle={c.lifecycle} />
                       )}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {formatVisitDate(c.visitSummary?.lastVisitAt ?? null)}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={c.isVip ? 'Retirer VIP' : 'Marquer VIP'}
+                        aria-pressed={c.isVip}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void toggleVip(c.id, c.isVip);
+                        }}
+                        className="transition-all duration-200"
+                      >
+                        <Star
+                          size={16}
+                          className={
+                            c.isVip ? 'fill-current text-foreground' : 'text-muted-foreground'
+                          }
+                        />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -2,36 +2,58 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
   CalendarDays,
   Check,
+  CircleDot,
+  Clock,
+  Copy,
   Download,
+  Gift,
   Loader2,
   Lock,
   Mail,
+  MoreHorizontal,
   Plus,
   Phone,
   RefreshCw,
   Save,
   ShieldCheck,
-  Sparkles,
-  Tag,
+  Star,
   Trash2,
+  UserRound,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MarketingConsentCard } from '@/components/crm/marketing-consent-card';
 import { useApi } from '@/lib/api';
 import { ApiError, featureLockFromError, type FeatureLock } from '@/lib/api-error';
 import { getErrorMessage, type CustomerVisitSummary } from '@/types/api';
 import { FeatureLockCard } from '@/components/FeatureLockCard';
+import { formatPhone } from '@/lib/utils';
+import { toast } from 'sonner';
 
 type CustomerIdentity = {
   id: string;
@@ -116,32 +138,20 @@ type ExportPayload = {
   marketingPermissions?: unknown[];
 };
 
-type ProjectionRepairPreview = {
-  customerId: string;
-  restaurantId: string;
-  calculatedAt: string;
-  reservationCount: number;
-  changed: boolean;
-  current: Record<string, unknown> | null;
-  expected: Record<string, unknown>;
-  projectionVersion?: number;
-  repaired?: boolean;
-  replayed?: boolean;
-};
-
-function newIdempotencyKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `crm-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? '—'
     : date.toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatDay(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatNumber(value: number | string | null | undefined): string {
@@ -245,6 +255,42 @@ function timelineLabel(code: string): string {
   return TIMELINE_LABELS[code] ?? 'Événement';
 }
 
+const TIMELINE_ICONS: Record<string, LucideIcon> = {
+  reservation: CalendarDays,
+  call: Phone,
+  waitlist: Clock,
+  gift_card: Gift,
+  customer: UserRound,
+  marketing: Mail,
+};
+
+function timelineIcon(code: string): LucideIcon {
+  return TIMELINE_ICONS[code.split('.')[0]] ?? CircleDot;
+}
+
+function initials(name: string | null): string {
+  return (
+    (name || '?')
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || '?'
+  );
+}
+
+function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-[9rem] flex-1 bg-card px-4 py-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums tracking-tight">{value}</dd>
+    </div>
+  );
+}
+
+type ProfileTab = 'activity' | 'preferences' | 'consents';
+
 const IDENTITY_LABELS: Record<string, string> = {
   PHONE: 'Téléphone',
   EMAIL: 'E-mail',
@@ -271,10 +317,7 @@ export default function CrmCustomerPage() {
   const [exportSubmitting, setExportSubmitting] = useState(false);
   const [exportRequest, setExportRequest] = useState<ExportVerificationResponse | null>(null);
   const [exportPayload, setExportPayload] = useState<ExportPayload | null>(null);
-  const [repairPreview, setRepairPreview] = useState<ProjectionRepairPreview | null>(null);
-  const [repairLoading, setRepairLoading] = useState(false);
-  const [repairError, setRepairError] = useState('');
-  const [repairNotice, setRepairNotice] = useState('');
+  const [tab, setTab] = useState<ProfileTab>('activity');
   const [preferenceFormOpen, setPreferenceFormOpen] = useState(false);
   const [preferenceKey, setPreferenceKey] = useState('preferred_language');
   const [preferenceValue, setPreferenceValue] = useState('');
@@ -282,7 +325,6 @@ export default function CrmCustomerPage() {
   const [tagLabel, setTagLabel] = useState('');
   const [crmMutationLoading, setCrmMutationLoading] = useState(false);
   const [crmMutationError, setCrmMutationError] = useState('');
-  const [crmMutationNotice, setCrmMutationNotice] = useState('');
 
   const load = useCallback(async () => {
     if (!orgId || !customerId) {
@@ -383,55 +425,12 @@ export default function CrmCustomerPage() {
     }
   }
 
-  async function inspectProjection(): Promise<void> {
-    if (!customerId) return;
-    setRepairLoading(true);
-    setRepairError('');
-    setRepairNotice('');
-    try {
-      const response = await get<{ data: ProjectionRepairPreview }>(
-        `crm/customers/${customerId}/projection-repair-preview`,
-      );
-      setRepairPreview(response.data ?? null);
-    } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'Impossible de vérifier les chiffres de ce client.'));
-      setRepairPreview(null);
-    } finally {
-      setRepairLoading(false);
-    }
-  }
-
-  async function repairProjection(): Promise<void> {
-    if (!customerId || !repairPreview?.changed) return;
-    setRepairLoading(true);
-    setRepairError('');
-    setRepairNotice('');
-    try {
-      const response = await post<{ data: ProjectionRepairPreview }>(
-        `crm/customers/${customerId}/projection-repair`,
-        undefined,
-        { headers: { 'Idempotency-Key': newIdempotencyKey() } },
-      );
-      setRepairPreview(response.data ?? null);
-      setRepairNotice(
-        response.data?.replayed
-          ? 'La réparation a déjà été appliquée pour cette demande.'
-          : 'Chiffres recalculés depuis les réservations.',
-      );
-    } catch (err: unknown) {
-      setRepairError(getErrorMessage(err, 'Le recalcul a échoué.'));
-    } finally {
-      setRepairLoading(false);
-    }
-  }
-
   function editPreference(preference: CustomerPreference): void {
     setPreferenceFormOpen(true);
     setEditingPreferenceId(preference.id);
     setPreferenceKey(preference.key);
     setPreferenceValue(preferenceInputFromValue(preference.value));
     setCrmMutationError('');
-    setCrmMutationNotice('');
   }
 
   function resetPreferenceForm(): void {
@@ -450,7 +449,6 @@ export default function CrmCustomerPage() {
     }
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await put<{ data: CustomerPreference }>(
         `crm/customers/${customerId}/preferences/${preferenceKey}`,
@@ -470,7 +468,7 @@ export default function CrmCustomerPage() {
         ].sort((left, right) => left.key.localeCompare(right.key));
         return { ...current, preferences };
       });
-      setCrmMutationNotice('Préférence enregistrée.');
+      toast.success('Préférence enregistrée.');
       resetPreferenceForm();
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible d’enregistrer la préférence.'));
@@ -483,7 +481,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await put<{ data: CustomerPreference }>(
         `crm/customers/${customerId}/preferences/${preference.key}`,
@@ -506,7 +503,7 @@ export default function CrmCustomerPage() {
             }
           : current,
       );
-      setCrmMutationNotice('Préférence confirmée.');
+      toast.success('Préférence confirmée.');
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible de confirmer la préférence.'));
     } finally {
@@ -518,7 +515,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       await del(`crm/customers/${customerId}/preferences/${preference.key}`);
       setCustomer((current) =>
@@ -530,7 +526,7 @@ export default function CrmCustomerPage() {
           : current,
       );
       if (editingPreferenceId === preference.id) resetPreferenceForm();
-      setCrmMutationNotice('Préférence supprimée.');
+      toast.success('Préférence supprimée.');
     } catch (err: unknown) {
       if (err instanceof ApiError && err.kind === 'not-found') {
         // Déjà supprimée ailleurs : on recharge la fiche plutôt que d'afficher une erreur.
@@ -547,7 +543,6 @@ export default function CrmCustomerPage() {
     if (!customerId || !tagLabel.trim()) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       const response = await post<{
         data: { tag: CustomerTag; assignment: CustomerTagAssignment };
@@ -569,7 +564,7 @@ export default function CrmCustomerPage() {
         return { ...current, tags, tagAssignments };
       });
       setTagLabel('');
-      setCrmMutationNotice('Tag ajouté.');
+      toast.success('Tag ajouté.');
     } catch (err: unknown) {
       setCrmMutationError(getErrorMessage(err, 'Impossible d’ajouter le tag.'));
     } finally {
@@ -581,7 +576,6 @@ export default function CrmCustomerPage() {
     if (!customerId) return;
     setCrmMutationLoading(true);
     setCrmMutationError('');
-    setCrmMutationNotice('');
     try {
       await del(`crm/customers/${customerId}/tags/${tag.id}`);
       setCustomer((current) =>
@@ -593,7 +587,7 @@ export default function CrmCustomerPage() {
             }
           : current,
       );
-      setCrmMutationNotice('Tag retiré.');
+      toast.success('Tag retiré.');
     } catch (err: unknown) {
       if (err instanceof ApiError && err.kind === 'not-found') {
         await load();
@@ -608,12 +602,15 @@ export default function CrmCustomerPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-48 rounded-full" />
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-48 rounded-2xl lg:col-span-2" />
-          <Skeleton className="h-48 rounded-2xl" />
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
         </div>
-        <Skeleton className="h-72 rounded-2xl" />
+        <Skeleton className="h-20 rounded-lg" />
+        <Skeleton className="h-72 rounded-lg" />
       </div>
     );
   }
@@ -670,39 +667,183 @@ export default function CrmCustomerPage() {
   const visiblePreferences = customer.preferences.filter((preference) =>
     isVisiblePreference(preference),
   );
+  const pendingSuggestions = visiblePreferences.filter(isPendingVoiceSuggestion).length;
+  const spend = metrics?.actualLifetimeSpend;
+  const tabs: { id: ProfileTab; label: string; badge?: number }[] = [
+    { id: 'activity', label: 'Activité' },
+    { id: 'preferences', label: 'Préférences', badge: pendingSuggestions || undefined },
+    ...(isPro ? [{ id: 'consents' as const, label: 'Consentements' }] : []),
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div className="space-y-3">
-          <Button asChild variant="ghost" size="sm" className="-ml-3">
-            <Link href="/dashboard/customers">
-              <ArrowLeft size={16} />
-              Retour aux clients
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Sparkles className="text-primary" size={20} />
-            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-              {customer.name || 'Client sans nom'}
-            </h1>
-            {customer.isVip ? <Badge variant="outline">VIP</Badge> : null}
+      <div className="space-y-4">
+        <Button asChild variant="ghost" size="sm" className="-ml-3">
+          <Link href="/dashboard/customers">
+            <ArrowLeft size={16} />
+            Retour aux clients
+          </Link>
+        </Button>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 items-start gap-4">
+            <span
+              aria-hidden="true"
+              className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-secondary text-base font-semibold text-foreground"
+            >
+              {initials(customer.name)}
+            </span>
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-semibold tracking-tight md:text-2xl">
+                  {customer.name || 'Client sans nom'}
+                </h1>
+                {customer.isVip ? (
+                  <Badge variant="outline" className="gap-1">
+                    <Star size={12} className="fill-current" />
+                    VIP
+                  </Badge>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                <a
+                  href={`tel:${customer.phone}`}
+                  className="inline-flex items-center gap-1.5 tabular-nums transition-all duration-200 hover:text-foreground"
+                >
+                  <Phone size={14} />
+                  {formatPhone(customer.phone)}
+                </a>
+                {customer.emailNormalized ? (
+                  <a
+                    href={`mailto:${customer.emailNormalized}`}
+                    className="inline-flex items-center gap-1.5 transition-all duration-200 hover:text-foreground"
+                  >
+                    <Mail size={14} />
+                    {customer.emailNormalized}
+                  </a>
+                ) : null}
+                {customer.identities.map((identity) => (
+                  <span key={identity.id}>
+                    {IDENTITY_LABELS[identity.type] ?? 'Autre coordonnée'} · {identity.value}
+                  </span>
+                ))}
+              </div>
+              {isPro ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {customer.tags.map((tag) => (
+                    <Badge key={tag.id} variant="secondary" className="gap-1 pr-1">
+                      {tag.label}
+                      <button
+                        type="button"
+                        aria-label={`Retirer le tag ${tag.label}`}
+                        onClick={() => void removeTag(tag)}
+                        disabled={crmMutationLoading}
+                        className="rounded-sm p-0.5 text-muted-foreground transition-all duration-200 hover:bg-background hover:text-foreground"
+                      >
+                        <X size={12} />
+                      </button>
+                    </Badge>
+                  ))}
+                  <form
+                    className="inline-flex items-center gap-1"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveTag();
+                    }}
+                  >
+                    <Input
+                      value={tagLabel}
+                      onChange={(event) => setTagLabel(event.target.value)}
+                      placeholder="Nouveau tag"
+                      aria-label="Nom du tag"
+                      maxLength={80}
+                      disabled={crmMutationLoading}
+                      className="h-7 w-32 text-xs"
+                    />
+                    {tagLabel.trim() ? (
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={crmMutationLoading}
+                      >
+                        <Plus size={12} />
+                        Ajouter
+                      </Button>
+                    ) : null}
+                  </form>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Fiche client · {customer.visitSummary?.visits ?? '—'} visite(s) honorée(s)
-          </p>
+          <div className="flex flex-none gap-2">
+            {isPro ? (
+              <Button asChild variant="outline" size="sm" className="transition-all duration-200">
+                <Link href="/dashboard/customers/crm/duplicates">
+                  <Copy size={14} />
+                  Doublons
+                </Link>
+              </Button>
+            ) : null}
+            {/* Export RGPD est rare : on le range dans un menu. Menu non modal : il ouvre un dialogue,
+                et deux couches modales se disputent le focus. */}
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="transition-all duration-200"
+                  aria-label="Plus d’actions"
+                >
+                  <MoreHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              {/* Le dialogue doit garder le focus : le menu ne le rend pas au bouton à la fermeture. */}
+              <DropdownMenuContent align="end" onCloseAutoFocus={(event) => event.preventDefault()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setExportOpen(true);
+                    setExportError('');
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  Export RGPD
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        {isPro ? (
-          <Button asChild variant="outline">
-            <Link href="/dashboard/customers/crm/duplicates">Gérer les doublons</Link>
-          </Button>
-        ) : null}
       </div>
+
+      <dl className="flex flex-wrap gap-px overflow-hidden rounded-lg border border-border bg-border">
+        <Stat
+          label="Visites · 365 j"
+          value={customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}
+        />
+        {isPro ? (
+          <Stat label="Couverts · 365 j" value={formatNumber(metrics?.covers365d ?? 0)} />
+        ) : null}
+        <Stat
+          label="No-show · 365 j"
+          value={customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}
+        />
+        {isPro ? (
+          <Stat
+            label="Dépense encaissée"
+            value={spend === null || spend === undefined ? '—' : `${formatNumber(spend)} €`}
+          />
+        ) : null}
+        <Stat
+          label="Dernière visite"
+          value={formatDay(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
+        />
+      </dl>
 
       {isPro ? null : (
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Lock size={12} aria-hidden="true" />
-          Valeur client, tags, doublons et consentements marketing : inclus dans CRM Pro.
+          Valeur client, tags, doublons et consentements : CRM Pro.
           <Link
             href="/pricing"
             className="underline underline-offset-4 transition-all duration-200 hover:text-foreground"
@@ -712,514 +853,311 @@ export default function CrmCustomerPage() {
         </p>
       )}
 
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Download size={17} />
-              Export RGPD
-            </CardTitle>
-            <CardDescription>
-              Fichier des données de ce client (réservations, profil, consentements marketing),
-              téléchargeable après vérification par SMS.
-            </CardDescription>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setExportOpen((value) => !value);
-              setExportError('');
-            }}
-            aria-expanded={exportOpen}
-          >
-            <ShieldCheck size={15} />
-            {exportOpen ? 'Fermer' : 'Préparer un export'}
-          </Button>
-        </CardHeader>
-        {exportOpen ? (
-          <CardContent className="space-y-4 border-t border-border pt-4">
-            {exportStep === 'idle' ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Un code à six chiffres sera envoyé au {customer.phone}. Il expire après quelques
-                  minutes et n’est utilisable qu’une fois.
-                </p>
-                <Button type="button" onClick={() => void requestExportCode()}>
-                  Envoyer le code SMS
-                </Button>
-              </div>
-            ) : null}
+      {crmMutationError ? <p className="text-xs text-destructive">{crmMutationError}</p> : null}
 
-            {exportStep === 'requesting' ? (
-              <p className="text-sm text-muted-foreground">Envoi du code en cours…</p>
-            ) : null}
+      <Tabs value={tab} onValueChange={(value) => setTab(value as ProfileTab)}>
+        <TabsList aria-label="Fiche client">
+          {tabs.map((item) => (
+            <TabsTrigger key={item.id} value={item.id}>
+              {item.label}
+              {item.badge ? (
+                <span className="rounded-full bg-warning/15 px-1.5 text-xs tabular-nums text-foreground">
+                  {item.badge}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-            {exportStep === 'confirming' && exportRequest ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'e-mail'}. Saisissez-le
-                  pour télécharger le fichier.
-                </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    value={exportCode}
-                    onChange={(event) =>
-                      setExportCode(event.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    aria-label="Code d’export RGPD"
-                    className="sm:max-w-40"
-                    disabled={exportSubmitting}
-                  />
-                  <Button
-                    type="button"
-                    className="transition-all duration-200"
-                    onClick={() => void confirmExport()}
-                    disabled={exportCode.length !== 6 || exportSubmitting}
+        <TabsContent value="activity">
+          {customer.timeline.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">Aucune activité.</p>
+          ) : (
+            <ol className="rounded-lg border border-border bg-card px-4">
+              {customer.timeline.map((event) => {
+                const Icon = timelineIcon(event.summaryCode);
+                return (
+                  <li
+                    key={event.id}
+                    className="flex items-center gap-3 border-b border-border py-3 last:border-0"
                   >
-                    {exportSubmitting ? (
-                      <>
-                        <Loader2 size={15} className="animate-spin" />
-                        Vérification…
-                      </>
-                    ) : (
-                      'Télécharger l’export'
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="transition-all duration-200"
-                    disabled={exportSubmitting}
-                    onClick={() => void requestExportCode()}
-                  >
-                    Renvoyer
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {exportStep === 'done' && exportPayload ? (
-              <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium text-success">Export téléchargé.</p>
-                  <p className="text-muted-foreground">
-                    Généré le {formatDate(exportPayload.exportedAt)}.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => downloadExport(exportPayload)}
-                >
-                  <Download size={15} />
-                  Télécharger à nouveau
-                </Button>
-              </div>
-            ) : null}
-
-            {exportError ? <p className="text-sm text-destructive">{exportError}</p> : null}
-          </CardContent>
-        ) : null}
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Coordonnées et identités</CardTitle>
-            <CardDescription>Les autres coordonnées connues de ce client.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="flex items-start gap-3">
-              <Phone className="mt-0.5 text-muted-foreground" size={18} />
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Téléphone</p>
-                <p className="mt-1 font-medium">{customer.phone}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <Mail className="mt-0.5 text-muted-foreground" size={18} />
-              <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Email</p>
-                <p className="mt-1 font-medium">{customer.emailNormalized || 'Non renseigné'}</p>
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Identités secondaires
-              </p>
-              {customer.identities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune identité secondaire.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {customer.identities.map((identity) => (
-                    <Badge key={identity.id} variant="secondary">
-                      {IDENTITY_LABELS[identity.type] ?? 'Autre coordonnée'} · {identity.value}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {isPro ? 'Valeur et récence' : 'Historique'}
-            </CardTitle>
-            <CardDescription>Calculées à partir des réservations.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Honorées (365 j)</span>
-              <strong>{customer.visitSummary?.visits365d ?? metrics?.honored365d ?? 0}</strong>
-            </div>
-            {isPro ? (
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Couverts (365 j)</span>
-                <strong>{metrics?.covers365d ?? 0}</strong>
-              </div>
-            ) : null}
-            <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">No-show (365 j)</span>
-              <strong>{customer.visitSummary?.noShows365d ?? metrics?.noShow365d ?? 0}</strong>
-            </div>
-            {isPro ? (
-              <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">Dépense encaissée</span>
-                <strong>
-                  {metrics?.actualLifetimeSpend === null ||
-                  metrics?.actualLifetimeSpend === undefined
-                    ? 'Non raccordée'
-                    : `${formatNumber(metrics.actualLifetimeSpend)} €`}
-                </strong>
-              </div>
-            ) : null}
-            <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-              <CalendarDays size={14} />
-              Dernière visite :{' '}
-              {formatDate(customer.visitSummary?.lastVisitAt ?? metrics?.lastHonoredAt)}
-            </div>
-            {isPro ? (
-              <div className="border-t border-border pt-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Exactitude des chiffres
+                    <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                      <Icon size={14} />
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {timelineLabel(event.summaryCode)}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      Compare ces chiffres avec les réservations.
+                    <p className="flex-none text-xs tabular-nums text-muted-foreground">
+                      {formatDate(event.occurredAt)}
                     </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void inspectProjection()}
-                    disabled={repairLoading}
-                  >
-                    {repairLoading ? 'Vérification…' : 'Vérifier'}
-                  </Button>
-                </div>
-                {repairPreview ? (
-                  <div className="mt-3 space-y-2 text-xs">
-                    <p className={repairPreview.changed ? 'text-warning' : 'text-success'}>
-                      {repairPreview.changed
-                        ? `Écart détecté sur ${repairPreview.reservationCount} réservation(s).`
-                        : 'Chiffres à jour.'}
-                    </p>
-                    {repairPreview.changed ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void repairProjection()}
-                        disabled={repairLoading}
-                      >
-                        Recalculer les chiffres
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                {repairNotice ? <p className="mt-2 text-xs text-success">{repairNotice}</p> : null}
-                {repairError ? (
-                  <p className="mt-2 text-xs text-destructive">{repairError}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </TabsContent>
 
-      {isPro ? (
-        <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
-      ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Tag size={17} />
-              {isPro ? 'Préférences et tags' : 'Préférences de service'}
-            </CardTitle>
-            <CardDescription>Informations structurées utiles pendant le service.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {isPro ? (
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Tags</p>
-                  <span className="text-xs text-muted-foreground">Réservé aux responsables</span>
-                </div>
-                {customer.tags.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Aucun tag.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {customer.tags.map((tag) => (
-                      <span key={tag.id} className="inline-flex items-center gap-1">
-                        <Badge variant="secondary">{tag.label}</Badge>
+        <TabsContent value="preferences">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="mb-2 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPreferenceFormOpen(true);
+                  setEditingPreferenceId(null);
+                  setCrmMutationError('');
+                }}
+                disabled={crmMutationLoading}
+              >
+                <Plus size={14} />
+                Ajouter
+              </Button>
+            </div>
+            {visiblePreferences.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Aucune préférence.</p>
+            ) : (
+              <dl className="divide-y divide-border text-sm">
+                {visiblePreferences.map((preference) =>
+                  isPendingVoiceSuggestion(preference) ? (
+                    <div
+                      key={preference.id}
+                      className="flex flex-wrap items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
+                        <dd className="flex min-w-0 flex-wrap items-center gap-2 font-medium">
+                          <span className="truncate">{displayValue(preference.value)}</span>
+                          <Badge variant="outline" className="gap-1 font-normal">
+                            <Phone size={12} />
+                            Entendu au téléphone, à confirmer
+                          </Badge>
+                        </dd>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="transition-all duration-200"
+                          onClick={() => void confirmPreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          <Check size={14} />
+                          Confirmer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="transition-all duration-200"
+                          aria-label={`Écarter la suggestion ${preferenceLabel(preference.key)}`}
+                          onClick={() => void removePreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          <X size={14} />
+                          Écarter
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={preference.id}
+                      className="flex items-center justify-between gap-3 py-2.5"
+                    >
+                      <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
+                        <dt className="text-muted-foreground">{preferenceLabel(preference.key)}</dt>
+                        <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => editPreference(preference)}
+                          disabled={crmMutationLoading}
+                        >
+                          Modifier
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6"
-                          aria-label={`Retirer le tag ${tag.label}`}
-                          onClick={() => void removeTag(tag)}
+                          className="h-8 w-8"
+                          aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
+                          onClick={() => void removePreference(preference)}
                           disabled={crmMutationLoading}
                         >
-                          <X size={13} />
+                          <Trash2 size={14} />
                         </Button>
-                      </span>
-                    ))}
-                  </div>
+                      </div>
+                    </div>
+                  ),
                 )}
-                <form
-                  className="mt-3 flex flex-col gap-2 sm:flex-row"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void saveTag();
-                  }}
-                >
+              </dl>
+            )}
+            {preferenceFormOpen ? (
+              <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium">
+                    {editingPreferenceId ? 'Modifier la préférence' : 'Nouvelle préférence'}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label="Fermer le formulaire de préférence"
+                    onClick={resetPreferenceForm}
+                  >
+                    <X size={14} />
+                  </Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select
+                    value={preferenceKey}
+                    onChange={(event) => setPreferenceKey(event.target.value)}
+                    aria-label="Type de préférence"
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    disabled={crmMutationLoading || Boolean(editingPreferenceId)}
+                  >
+                    {Object.entries(PREFERENCE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                   <Input
-                    value={tagLabel}
-                    onChange={(event) => setTagLabel(event.target.value)}
-                    placeholder="Nom du tag, par exemple « VIP régulier »"
-                    aria-label="Nom du tag"
-                    maxLength={80}
+                    value={preferenceValue}
+                    onChange={(event) => setPreferenceValue(event.target.value)}
+                    placeholder={
+                      LIST_PREFERENCES.has(preferenceKey) ? 'sans gluten, végétarien' : 'terrasse'
+                    }
+                    aria-label="Valeur de la préférence"
                     disabled={crmMutationLoading}
                   />
+                </div>
+                <div className="flex gap-2">
                   <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={crmMutationLoading || !tagLabel.trim()}
+                    type="button"
+                    size="sm"
+                    onClick={() => void savePreference()}
+                    disabled={crmMutationLoading || !preferenceValue.trim()}
                   >
-                    <Plus size={14} />
-                    Ajouter
+                    <Save size={14} />
+                    Enregistrer
                   </Button>
-                </form>
+                  <Button type="button" variant="ghost" size="sm" onClick={resetPreferenceForm}>
+                    Annuler
+                  </Button>
+                </div>
               </div>
             ) : null}
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Préférences</p>
+          </div>
+        </TabsContent>
+
+        {isPro ? (
+          <TabsContent value="consents">
+            <MarketingConsentCard customerId={customer.id} email={customer.emailNormalized} />
+          </TabsContent>
+        ) : null}
+      </Tabs>
+
+      <Dialog
+        open={exportOpen}
+        onOpenChange={(open) => {
+          setExportOpen(open);
+          setExportError('');
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Export RGPD</DialogTitle>
+            <DialogDescription>
+              Réservations, profil et consentements de ce client, après vérification par code.
+            </DialogDescription>
+          </DialogHeader>
+
+          {exportStep === 'idle' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Un code à usage unique sera envoyé au {formatPhone(customer.phone)}.
+              </p>
+              <Button type="button" onClick={() => void requestExportCode()}>
+                Envoyer le code SMS
+              </Button>
+            </div>
+          ) : null}
+
+          {exportStep === 'requesting' ? (
+            <p className="text-sm text-muted-foreground">Envoi du code…</p>
+          ) : null}
+
+          {exportStep === 'confirming' && exportRequest ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Code envoyé par {exportRequest.channel === 'sms' ? 'SMS' : 'e-mail'}.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  value={exportCode}
+                  onChange={(event) =>
+                    setExportCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  aria-label="Code d’export RGPD"
+                  className="tabular-nums sm:max-w-32"
+                  disabled={exportSubmitting}
+                />
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPreferenceFormOpen(true);
-                    setEditingPreferenceId(null);
-                    setCrmMutationError('');
-                    setCrmMutationNotice('');
-                  }}
-                  disabled={crmMutationLoading}
+                  className="transition-all duration-200"
+                  onClick={() => void confirmExport()}
+                  disabled={exportCode.length !== 6 || exportSubmitting}
                 >
-                  <Plus size={14} />
-                  Ajouter
+                  {exportSubmitting ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      Vérification…
+                    </>
+                  ) : (
+                    'Télécharger l’export'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="transition-all duration-200"
+                  disabled={exportSubmitting}
+                  onClick={() => void requestExportCode()}
+                >
+                  Renvoyer
                 </Button>
               </div>
-              {visiblePreferences.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucune préférence confirmée.</p>
-              ) : (
-                <dl className="divide-y divide-border text-sm">
-                  {visiblePreferences.map((preference) =>
-                    isPendingVoiceSuggestion(preference) ? (
-                      <div
-                        key={preference.id}
-                        className="flex flex-wrap items-center justify-between gap-3 py-2 first:pt-0"
-                      >
-                        <div className="min-w-0">
-                          <dt className="flex flex-wrap items-center gap-2 text-muted-foreground">
-                            {preferenceLabel(preference.key)}
-                            <Badge variant="outline" className="gap-1 font-normal">
-                              <Phone size={12} />
-                              Entendu au téléphone, à confirmer
-                            </Badge>
-                          </dt>
-                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="transition-all duration-200"
-                            onClick={() => void confirmPreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <Check size={14} />
-                            Confirmer
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="transition-all duration-200"
-                            aria-label={`Écarter la suggestion ${preferenceLabel(preference.key)}`}
-                            onClick={() => void removePreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <X size={14} />
-                            Écarter
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        key={preference.id}
-                        className="flex items-center justify-between gap-3 py-2 first:pt-0"
-                      >
-                        <div className="min-w-0">
-                          <dt className="text-muted-foreground">
-                            {preferenceLabel(preference.key)}
-                          </dt>
-                          <dd className="truncate font-medium">{displayValue(preference.value)}</dd>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => editPreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            Modifier
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            aria-label={`Supprimer la préférence ${preferenceLabel(preference.key)}`}
-                            onClick={() => void removePreference(preference)}
-                            disabled={crmMutationLoading}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </dl>
-              )}
-              {preferenceFormOpen ? (
-                <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium">
-                      {editingPreferenceId ? 'Modifier la préférence' : 'Nouvelle préférence'}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      aria-label="Fermer le formulaire de préférence"
-                      onClick={resetPreferenceForm}
-                    >
-                      <X size={14} />
-                    </Button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <select
-                      value={preferenceKey}
-                      onChange={(event) => setPreferenceKey(event.target.value)}
-                      aria-label="Type de préférence"
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      disabled={crmMutationLoading || Boolean(editingPreferenceId)}
-                    >
-                      {Object.entries(PREFERENCE_LABELS).map(([key, label]) => (
-                        <option key={key} value={key}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                    <Input
-                      value={preferenceValue}
-                      onChange={(event) => setPreferenceValue(event.target.value)}
-                      placeholder={
-                        LIST_PREFERENCES.has(preferenceKey)
-                          ? 'Séparez par des virgules : sans gluten, végétarien'
-                          : 'Par exemple : terrasse'
-                      }
-                      aria-label="Valeur de la préférence"
-                      disabled={crmMutationLoading}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void savePreference()}
-                      disabled={crmMutationLoading || !preferenceValue.trim()}
-                    >
-                      <Save size={14} />
-                      Enregistrer
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={resetPreferenceForm}>
-                      Annuler
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
             </div>
-            {crmMutationNotice ? <p className="text-xs text-success">{crmMutationNotice}</p> : null}
-            {crmMutationError ? (
-              <p className="text-xs text-destructive">{crmMutationError}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+          ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Chronologie récente</CardTitle>
-            <CardDescription>
-              Réservations, appels, liste d’attente, cartes cadeaux et modifications de la fiche.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {customer.timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Aucun événement récent.</p>
-            ) : (
-              <ol className="space-y-4">
-                {customer.timeline.map((event) => (
-                  <li key={event.id} className="flex gap-3">
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{timelineLabel(event.summaryCode)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(event.occurredAt)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          {exportStep === 'done' && exportPayload ? (
+            <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-success">Export téléchargé.</p>
+                <p className="text-muted-foreground">
+                  Généré le {formatDate(exportPayload.exportedAt)}.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => downloadExport(exportPayload)}>
+                <Download size={15} />
+                Télécharger à nouveau
+              </Button>
+            </div>
+          ) : null}
+
+          {exportError ? <p className="text-sm text-destructive">{exportError}</p> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -3,18 +3,17 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  BarChart3,
-  CalendarCheck,
-  ChevronDown,
-  Euro,
-  RefreshCw,
-  TrendingUp,
-  Users,
-} from 'lucide-react';
+import { ChevronDown, Info } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
 import ReservationChannels, {
@@ -59,6 +58,10 @@ const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
   ),
 });
 
+const ServiceCopilotWidget = dynamic(() => import('./ServiceCopilotWidget'), {
+  ssr: false,
+});
+
 const NoShowWidget = dynamic(() => import('./NoShowWidget'), {
   ssr: false,
 });
@@ -70,7 +73,7 @@ interface DashboardStatsResponse {
   total_calls?: number;
   total_reservations?: number;
   covers?: number;
-  conversion_rate?: number;
+  call_reservations?: number;
   answered_rate?: number;
   estimated_revenue?: number;
   by_channel?: ReservationChannelStat[];
@@ -92,7 +95,7 @@ interface DashboardStats {
   totalCalls: number;
   totalReservations: number;
   covers: number;
-  conversionRate: number;
+  callReservations: number | null;
   answeredRate: number;
   estimatedRevenue: number;
 }
@@ -107,7 +110,7 @@ const EMPTY_STATS: DashboardStats = {
   totalCalls: 0,
   totalReservations: 0,
   covers: 0,
-  conversionRate: 0,
+  callReservations: null,
   answeredRate: 0,
   estimatedRevenue: 0,
 };
@@ -153,7 +156,9 @@ function summarizeAnalytics(data: AnalyticsPoint[]): DashboardStats {
     totalCalls,
     totalReservations,
     covers,
-    conversionRate: totalCalls > 0 ? Math.round((totalReservations / totalCalls) * 100) : 0,
+    callReservations: demoReservationChannels(totalReservations, covers).find(
+      (row) => row.channel === 'phone',
+    )!.reservations,
     answeredRate: 94,
     estimatedRevenue,
   };
@@ -203,7 +208,7 @@ export default function DashboardPage() {
           totalCalls: statsResponse.total_calls ?? 0,
           totalReservations: statsResponse.total_reservations ?? 0,
           covers: statsResponse.covers ?? 0,
-          conversionRate: statsResponse.conversion_rate ?? 0,
+          callReservations: statsResponse.call_reservations ?? null,
           answeredRate: statsResponse.answered_rate ?? 0,
           estimatedRevenue: statsResponse.estimated_revenue ?? 0,
         });
@@ -234,12 +239,6 @@ export default function DashboardPage() {
   );
   // Les chiffres comptent les réservations PRISES sur la période (date d'enregistrement), pas celles
   // du service du jour : « 2 réservations » peut coexister avec 25 tables attendues ce soir.
-  const periodLabel =
-    period === 'today'
-      ? 'Réservations prises aujourd’hui'
-      : period === '7d'
-        ? 'Réservations prises ces 7 derniers jours'
-        : 'Réservations prises ces 30 derniers jours';
   const averagePartySize =
     stats.totalReservations > 0
       ? `${(stats.covers / stats.totalReservations).toLocaleString('fr-FR', {
@@ -251,24 +250,28 @@ export default function DashboardPage() {
       ? `${Math.round(stats.estimatedRevenue / stats.totalReservations).toLocaleString('fr-FR')} € / résa`
       : 'sur la période';
 
-  if (isLoading) return <DashboardSkeleton />;
-
   return (
-    <div className="space-y-4 select-none md:space-y-6">
+    <div className="space-y-5 md:space-y-7">
       <header className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-black tracking-tight text-foreground font-display md:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
             Pilotage
           </h1>
-          <p className="mt-1 text-xs font-medium text-muted-foreground sm:text-sm">{periodLabel}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/dashboard/calls">Voir les appels</Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link href="/dashboard/reservations">Réservations</Link>
+            </Button>
+          </div>
         </div>
-
         <div className="relative shrink-0 sm:hidden">
           <select
             value={period}
             onChange={(event) => setPeriod(event.target.value as Period)}
             aria-label="Période d’analyse"
-            className="h-8 appearance-none rounded-lg border border-border bg-card py-0 pl-3 pr-8 text-xs font-semibold text-foreground shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 appearance-none rounded-lg border border-border bg-card py-0 pl-3 pr-8 text-xs font-semibold text-foreground shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring"
           >
             {PERIOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -284,7 +287,8 @@ export default function DashboardPage() {
         </div>
 
         <div
-          className="hidden shrink-0 grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 shadow-sm sm:grid"
+          role="group"
+          className="hidden shrink-0 grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 sm:grid"
           aria-label="Période d’analyse"
         >
           {PERIOD_OPTIONS.map((option) => (
@@ -293,7 +297,7 @@ export default function DashboardPage() {
               type="button"
               onClick={() => setPeriod(option.value)}
               aria-pressed={period === option.value}
-              className={`rounded-lg px-3 py-2 text-center text-xs font-bold transition-all duration-200 ${
+              className={`min-h-11 rounded-lg px-4 py-2 text-center text-xs font-medium transition-all duration-200 ${
                 period === option.value
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -304,47 +308,87 @@ export default function DashboardPage() {
           ))}
         </div>
       </header>
+      {!isDemo && <ServiceCopilotWidget key={orgId} density="overview" accessFallback={null} />}
 
-      {error && (
-        <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
+      <section
+        aria-label="Synthèse de la période"
+        aria-busy={isLoading}
+        className="space-y-6 md:space-y-8"
+      >
+        {isLoading && <DashboardSkeleton />}
+        {!isLoading && error && (
+          <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
+        )}
+
+        {!isLoading && !error && hasData && (
+          <section
+            aria-label="Indicateurs clés"
+            className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-border py-3 sm:grid-cols-4 sm:gap-x-8"
+          >
+            <KpiCard
+              label="Réservations"
+              value={stats.totalReservations}
+              caption="confirmées"
+              description="Réservations enregistrées sur la période, confirmées, installées ou honorées. Annulations et absences exclues. La date retenue est celle de la prise de réservation, pas celle du repas."
+              historyHref={isDemo ? undefined : '/dashboard/reservations'}
+            />
+            <KpiCard
+              label="Couverts"
+              value={stats.covers}
+              caption={averagePartySize}
+              description="Nombre de personnes associé aux réservations comptées sur la période. Ce n’est pas le nombre de personnes attendues au service du jour."
+              historyHref={isDemo ? undefined : '/dashboard/reservations'}
+            />
+            <KpiCard
+              label="CA estimé"
+              value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
+              caption={averageReservationRevenue}
+              description="Somme des montants associés aux réservations : montant confirmé s’il est renseigné, sinon estimation disponible. Les montants inconnus ne contribuent pas au total. Ce chiffre ne mesure ni les encaissements ni le revenu supplémentaire apporté par Sokar."
+              historyHref={isDemo ? undefined : '/dashboard/reservations'}
+            />
+            <KpiCard
+              label="Réservations téléphone"
+              description={
+                stats.callReservations === null
+                  ? 'Le nombre de réservations rattachées à un appel est indisponible.'
+                  : `${stats.callReservations.toLocaleString('fr-FR')} réservations de la période sont rattachées à un appel. ${stats.totalCalls.toLocaleString('fr-FR')} appels ont été reçus sur la période. Les appels peuvent aussi concerner des renseignements ou une modification ; une absence de réservation ne signifie pas un échec.`
+              }
+              historyHref={isDemo ? undefined : '/dashboard/calls'}
+              value={stats.callReservations ?? '—'}
+              caption={
+                stats.callReservations === null
+                  ? 'donnée indisponible'
+                  : `sur ${stats.totalCalls.toLocaleString('fr-FR')} appels reçus`
+              }
+            />
+          </section>
+        )}
+
+        {!isLoading && !error && !hasData && <EmptyDashboardState />}
+
+        {!isLoading && !error && hasData && (
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(22rem,1fr)]">
+            <DashboardCharts analytics={analytics} />
+            <ReservationChannels stats={channels} />
+          </div>
+        )}
+      </section>
+
+      {!isDemo && (
+        <details className="group border-t border-border pt-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronDown
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 transition-all duration-200 group-open:rotate-180"
+            />
+            Prévisions sur 7 jours et absences sur 90 jours
+          </summary>
+          <div className="mt-4 space-y-4">
+            <EmptySlotsWidget />
+            <NoShowWidget />
+          </div>
+        </details>
       )}
-
-      {!error && !isDemo && <EmptySlotsWidget />}
-
-      {!error && hasData && (
-        <section
-          aria-label="Indicateurs clés"
-          className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-sm sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-4"
-        >
-          <KpiCard
-            label="Réservations"
-            value={stats.totalReservations}
-            icon={CalendarCheck}
-            caption="confirmées"
-          />
-          <KpiCard label="Couverts" value={stats.covers} icon={Users} caption={averagePartySize} />
-          <KpiCard
-            label="CA estimé"
-            value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
-            icon={Euro}
-            caption={averageReservationRevenue}
-          />
-          <KpiCard
-            label="Conversion appels"
-            value={stats.totalCalls > 0 ? `${stats.conversionRate}\u00a0%` : '—'}
-            icon={TrendingUp}
-            caption="des appels"
-          />
-        </section>
-      )}
-
-      {!error && !hasData && <EmptyDashboardState />}
-
-      {!error && hasData && <ReservationChannels stats={channels} />}
-
-      {!error && hasData && <DashboardCharts analytics={analytics} />}
-
-      {!isDemo && <NoShowWidget />}
     </div>
   );
 }
@@ -352,73 +396,60 @@ export default function DashboardPage() {
 function KpiCard({
   label,
   value,
-  icon: Icon,
   caption,
-  className,
+  description,
+  historyHref,
 }: {
   label: string;
   value: number | string;
-  icon: typeof CalendarCheck;
   caption: string;
-  className?: string;
+  description: string;
+  historyHref?: string;
 }) {
   return (
-    <article
-      aria-label={`Indicateur ${label}`}
-      className={cn(
-        'flex min-h-[6.75rem] min-w-0 flex-col justify-between bg-card p-3.5 sm:min-h-[7.75rem] sm:rounded-2xl sm:p-4 sm:shadow-sm md:p-5',
-        className,
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground/75">
-            <Icon size={15} aria-hidden="true" />
-          </span>
-          <p className="truncate whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] sm:text-xs sm:tracking-wider">
-            {label}
-          </p>
-        </div>
-        <span className="hidden shrink-0 text-[10px] font-semibold text-muted-foreground sm:block">
-          {caption}
-        </span>
+    <article aria-label={`Indicateur ${label}`} className="min-w-0 py-2">
+      <div className="flex min-h-10 items-center justify-between gap-1">
+        <p className="text-xs font-medium leading-snug text-muted-foreground sm:text-sm">{label}</p>
+        <Dialog>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Comprendre ${label}`}
+              className="-my-2 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Info size={13} aria-hidden="true" />
+            </button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{label}</DialogTitle>
+              <DialogDescription className="pt-2 leading-relaxed">{description}</DialogDescription>
+            </DialogHeader>
+            {historyHref ? (
+              <Link
+                href={historyHref}
+                className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4 transition-all duration-200 hover:text-primary"
+              >
+                Ouvrir l’historique
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Données de démonstration, sans dossier associé.
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
-      <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
-        <p className="truncate text-[1.8rem] font-black leading-none tracking-tight text-foreground sm:text-2xl md:text-3xl">
-          {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
-        </p>
-      </div>
-      <span className="mt-2 text-[10px] font-semibold text-muted-foreground sm:hidden">
-        {caption}
-      </span>
+      <p className="mt-3 break-words text-3xl font-semibold tabular-nums tracking-tight text-foreground md:text-4xl">
+        {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
+      </p>
+      <p className="mt-2 text-xs leading-snug text-muted-foreground">{caption}</p>
     </article>
   );
 }
 
 function EmptyDashboardState() {
-  return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-          <BarChart3 size={18} />
-        </span>
-        <div>
-          <h2 className="font-bold text-foreground">Aucune activité sur cette période</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Les résultats apparaîtront après un appel ou une réservation confirmée.
-          </p>
-        </div>
-      </div>
-      <div className="flex shrink-0 gap-2 pl-[52px] sm:pl-0">
-        <Button asChild variant="outline" size="sm">
-          <Link href="/dashboard/calls">Voir les appels</Link>
-        </Button>
-        <Button asChild size="sm">
-          <Link href="/dashboard/reservations">Réservations</Link>
-        </Button>
-      </div>
-    </section>
-  );
+  return <p className="text-sm text-muted-foreground">Aucune activité sur cette période.</p>;
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -426,7 +457,6 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
     <div className="rounded-2xl border border-destructive/50 bg-destructive/10 p-5 text-destructive">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <AlertCircle size={20} />
           <p className="text-sm font-semibold">{message}</p>
         </div>
         <Button
@@ -434,9 +464,8 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
           variant="outline"
           size="sm"
           onClick={onRetry}
-          className="border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+          className="border-destructive/30 text-xs font-bold text-destructive transition-all duration-200 hover:bg-destructive/10 hover:text-destructive"
         >
-          <RefreshCw size={14} />
           Réessayer
         </Button>
       </div>
