@@ -58,6 +58,23 @@ describe('notification-repair', () => {
     });
   });
 
+  it('répare la trace email sans envoyer à nouveau le message', async () => {
+    const create = vi.fn();
+    const db = makeDb({
+      reservation: { findUnique: vi.fn().mockResolvedValue({ id: 'res-1' }) },
+      reservationAuditLog: { findFirst: vi.fn().mockResolvedValue(null), create },
+    });
+    await expect(
+      repairNotificationAfterProviderSuccess(
+        db,
+        'notification:reservation-confirmation-email:res-1',
+      ),
+    ).resolves.toBe('repaired');
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ event: 'CONFIRMATION_EMAIL_SENT', reservationId: 'res-1' }),
+    });
+  });
+
   it('pose le marqueur de rappel seulement pour une réservation toujours confirmée', async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const db = makeDb({

@@ -37,6 +37,36 @@ describe('ExportService.exportSubject', () => {
     );
   });
 
+  it('retrouve les formes nationale et internationale et accepte un sujet avec appels seuls', async () => {
+    vi.mocked(prisma.reservation.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.customerConsent.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.call.findMany).mockResolvedValue([
+      {
+        id: 'call-1',
+        restaurantId: 'r-1',
+        outcome: null,
+        intent: null,
+        durationSec: 5,
+        createdAt: new Date('2026-01-01'),
+      },
+    ] as never);
+
+    const result = await service.exportSubject({ subject: '+33601020304' });
+    const phoneFilter = { in: ['+33601020304', '0601020304'] };
+    expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { customerPhone: phoneFilter } }),
+    );
+    expect(prisma.call.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { callerPhone: phoneFilter } }),
+    );
+    expect(prisma.customerConsent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { subjectHash: { in: expect.arrayContaining([expect.any(String)]) } },
+      }),
+    );
+    expect(result.calls).toHaveLength(1);
+  });
+
   it('export les résas triées desc par date avec profil de la première résa', async () => {
     const future = new Date('2026-07-15T19:00:00Z');
     (prisma.reservation.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([

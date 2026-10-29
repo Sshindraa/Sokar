@@ -1022,7 +1022,14 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           accountId: event.account ?? null,
           session: event.data.object as Stripe.Checkout.Session,
         });
-        if (!result.handled) {
+        if (
+          !result.handled &&
+          !(
+            event.type === 'checkout.session.completed' &&
+            !event.account &&
+            (await handleBillingWebhook(event))
+          )
+        ) {
           logger.info(
             { eventType: event.type },
             '[stripe-webhook] Unhandled checkout session event',

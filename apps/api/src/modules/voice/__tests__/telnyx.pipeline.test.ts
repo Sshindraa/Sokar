@@ -340,8 +340,82 @@ describe('POST /voice/telnyx — call.initiated', () => {
     });
   });
 
+  it('renvoie une erreur si le décrochage et son secours échouent tous les deux', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockTelnyxFetch.mockRejectedValueOnce(new Error('network unavailable'));
+    vi.mocked(queues.telnyxWebhooks.add).mockRejectedValueOnce(new Error('queue unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('demande un rejeu si la recherche du restaurant échoue temporairement', async () => {
+    mockLoadContext.mockRejectedValueOnce(new Error('database unavailable'));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(res.statusCode).toBe(500);
+  });
+
+  it('conserve la session active lorsque Telnyx répète le début de l’appel', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    const first = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(first.statusCode).toBe(200);
+    const original = CallSessionManager.getInstance().get('cc-1')!;
+    original.transcript = 'conversation en cours';
+    vi.mocked(db.call.create).mockRejectedValueOnce(
+      Object.assign(new Error('duplicate'), { code: 'P2002' }),
+    );
+    vi.mocked(db.call.findUnique).mockResolvedValueOnce({
+      outcome: null,
+      durationSec: null,
+    } as never);
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(CallSessionManager.getInstance().get('cc-1')).toBe(original);
+    expect(original.transcript).toBe('conversation en cours');
+  });
+
+  it('réutilise une seule session pour deux notifications simultanées', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    const manager = CallSessionManager.getInstance();
+    const create = vi.spyOn(manager, 'create');
+
+    const replies = await Promise.all(
+      [1, 2].map(() =>
+        app.inject({ method: 'POST', url: '/voice/telnyx', payload: makeInitiatedPayload() }),
+      ),
+    );
+
+    expect(replies.map((reply) => reply.statusCode)).toEqual([200, 200]);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(manager.get('cc-1')).toBeDefined();
+    create.mockRestore();
+  });
+
   it('returns 200 and does nothing when loadContext throws (unknown phone number)', async () => {
-    mockLoadContext.mockRejectedValue(new Error('Restaurant not found'));
+    mockLoadContext.mockRejectedValue(
+      Object.assign(new Error('Restaurant not found'), { code: 'P2025' }),
+    );
 
     const res = await app.inject({
       method: 'POST',

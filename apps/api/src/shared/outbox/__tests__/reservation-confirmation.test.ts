@@ -44,6 +44,26 @@ describe('transactional reservation confirmation intent', () => {
     await enqueueReservationConfirmation(transaction(), { ...reservation, customerPhone: null });
     expect(enqueue).not.toHaveBeenCalled();
   });
+  it('queues both confirmation intents for ADMIN and respects the SMS setting', async () => {
+    await enqueueReservationConfirmation(transaction(), {
+      ...reservation,
+      channel: 'ADMIN',
+      customerEmail: 'client@example.com',
+    });
+    expect(vi.mocked(enqueue).mock.calls.map(([, event]) => event.topic)).toEqual([
+      'reservation-confirmation-email',
+      'reservation-confirmation',
+    ]);
+    vi.mocked(enqueue).mockClear();
+    await enqueueReservationConfirmation(transaction(false), {
+      ...reservation,
+      channel: 'ADMIN',
+      customerEmail: 'client@example.com',
+    });
+    expect(vi.mocked(enqueue).mock.calls.map(([, event]) => event.topic)).toEqual([
+      'reservation-confirmation-email',
+    ]);
+  });
 
   it.each(['MCP', 'PHONE'])(
     'does not change the existing notification contract of %s',

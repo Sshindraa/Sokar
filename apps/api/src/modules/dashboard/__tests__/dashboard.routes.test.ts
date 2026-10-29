@@ -238,7 +238,14 @@ describe('dashboard.routes tenant isolation', () => {
           sun: { open: '12:00', close: '22:00' },
         },
       } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
-      vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+      vi.mocked(db.reservation.findMany)
+        .mockResolvedValueOnce([
+          { reservedAt: new Date('2026-10-17T18:00:00+02:00'), partySize: 4 },
+        ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>)
+        .mockResolvedValueOnce([
+          { estimatedRevenue: 80, confirmedRevenue: 100 },
+          { estimatedRevenue: 60, confirmedRevenue: null },
+        ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -247,7 +254,14 @@ describe('dashboard.routes tenant isolation', () => {
       });
 
       const days = res.json().days as Array<{ date: string; dayName: string; isOpen: boolean }>;
-      expect(days[0]).toMatchObject({ date: '2026-10-17', dayName: 'sam', isOpen: true });
+      expect(days[0]).toMatchObject({
+        date: '2026-10-17',
+        dayName: 'sam',
+        isOpen: true,
+        reservationCount: 1,
+        covers: 4,
+        revenueAtRisk: 160,
+      });
       expect(days[1]).toMatchObject({ date: '2026-10-18', dayName: 'dim', isOpen: true });
       expect(days[6]).toMatchObject({ date: '2026-10-23', dayName: 'ven', isOpen: false });
       expect(db.reservation.findMany).toHaveBeenCalledWith(
@@ -278,6 +292,40 @@ describe('dashboard.routes tenant isolation', () => {
         }),
       }),
     );
+  });
+
+  it('compare seulement les SMS attestés aux réservations sans rappel connu', async () => {
+    const app = await getApp();
+    const base = { state: 'HONORED', estimatedRevenue: 50, confirmedRevenue: null };
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      { ...base, id: 'sms', confirmationStatus: 'PENDING', confirmationSentAt: new Date() },
+      { ...base, id: 'whatsapp', confirmationStatus: 'PENDING', confirmationSentAt: new Date() },
+      { ...base, id: 'inconnu', confirmationStatus: 'PENDING', confirmationSentAt: new Date() },
+      { ...base, id: 'aucun', confirmationStatus: 'NOT_REQUIRED', confirmationSentAt: null },
+      { ...base, id: 'attente', confirmationStatus: 'NOT_REQUIRED', confirmationSentAt: null },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    vi.mocked(db.usageEvent.findMany).mockResolvedValue([
+      { sourceId: 'sms', category: 'SMS_SEGMENTS' },
+      { sourceId: 'whatsapp', category: 'WHATSAPP_MESSAGES' },
+      { sourceId: 'attente', category: 'WHATSAPP_MESSAGES' },
+    ] as unknown as Awaited<ReturnType<typeof db.usageEvent.findMany>>);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/dashboard/no-show-stats',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ total: 5, withSms: { total: 1 }, withoutSms: { total: 1 } });
+    expect(db.usageEvent.findMany).toHaveBeenCalledWith({
+      where: {
+        restaurantId: 'test-rest-1',
+        sourceType: 'reservation_reminder',
+        category: { in: ['SMS_SEGMENTS', 'WHATSAPP_MESSAGES'] },
+        occurredAt: { gte: expect.any(Date) },
+      },
+      select: { sourceId: true, category: true },
+    });
   });
 
   it('GET /dashboard/recent-activity scope les deux listes au restaurant auth', async () => {

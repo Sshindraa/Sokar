@@ -142,7 +142,7 @@ describe('reservation payment foundation routes', () => {
       currency: 'EUR',
       stripeAccountId: null,
       stripeSetupIntentId: null,
-      stripePaymentIntentId: null,
+      stripePaymentIntentId: 'pi_1',
       idempotencyKey: 'payment-key-1',
       policySnapshot: {},
       expiresAt: new Date('2026-09-14T12:00:00.000Z'),
@@ -211,5 +211,46 @@ describe('reservation payment foundation routes', () => {
       resultingStatus: 'CAPTURED',
       reservationConfirmed: true,
     });
+  });
+
+  it('enregistre un échec Stripe même si aucun montant n’a été encaissé', async () => {
+    vi.stubEnv('RESERVATION_PAYMENTS_ENABLED', 'true');
+    vi.mocked(constructWebhookEvent).mockResolvedValue({
+      id: 'evt_failed',
+      created: 1_789_000_000,
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_failed',
+          amount: 2500,
+          amount_received: 0,
+          currency: 'eur',
+          metadata: { restaurantId: 'test-rest-1', reservationPaymentId: 'payment-1' },
+        },
+      },
+    } as never);
+    vi.mocked(db.reservationPaymentEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.reservationPayment.findFirst).mockResolvedValue({
+      id: 'payment-1',
+      restaurantId: 'test-rest-1',
+      reservationId: 'reservation-1',
+      status: ReservationPaymentStatus.REQUIRES_PAYMENT_METHOD,
+      amount: new Prisma.Decimal('25'),
+      currency: 'EUR',
+      stripeAccountId: null,
+      stripePaymentIntentId: 'pi_failed',
+      stripeSetupIntentId: null,
+      lastProviderEventAt: null,
+    } as never);
+    vi.mocked(db.reservationPaymentEvent.create).mockResolvedValue({ id: 'evt_row' } as never);
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/webhooks/stripe/reservation-payments',
+      headers: { 'stripe-signature': 't=1,v1=test', 'content-type': 'application/json' },
+      payload: '{}',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().resultingStatus).toBe('FAILED');
   });
 });

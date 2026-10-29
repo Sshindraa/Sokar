@@ -43,7 +43,11 @@ import {
   inferReservationObservationSource,
   observeReservationMutation,
 } from '../../../shared/observability/reservation-contract';
-import { ACTIVE_RESERVATION_STATES } from '../../../shared/reservations/capacity.js';
+import {
+  ACTIVE_RESERVATION_STATES,
+  reservationOverlapWhere,
+} from '../../../shared/reservations/capacity.js';
+import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types';
 import {
   creationProjection,
   type CreatableReservationState,
@@ -132,6 +136,8 @@ export type CreateReservationInput = {
   noShowPolicySnap?: unknown;
   /** Optionnel : requêtes spéciales */
   specialRequests?: string;
+  allowOverbook?: boolean;
+  beforeCreate?: (tx: Prisma.TransactionClient) => Promise<void>;
   /** Optionnel : tableId pré-allouée (ex. Connect hold) */
   tableId?: string | null;
   /** Optionnel : code carte cadeau à appliquer */
@@ -235,7 +241,7 @@ export class ReservationService {
 
     // 2. Si un holdToken est fourni, vérifier qu'il existe et est valide
     let holdId: string | null = null;
-    let tableId: string | null = input.tableId ?? null;
+    let tableId: string | null = input.allowOverbook ? null : (input.tableId ?? null);
     if (input.holdToken) {
       const hold = await this.holds.findActiveByToken(input.holdToken);
       if (!hold) {
@@ -256,25 +262,6 @@ export class ReservationService {
 
     const isTest = input.isTest === true;
     let customerId: string | null = null;
-    try {
-      if (!isTest) {
-        customerId = (
-          await CustomerService.lookupOrCreate(
-            input.restaurantId,
-            input.customerPhone,
-            input.customerName,
-          )
-        ).id;
-      }
-    } catch (error) {
-      logger.warn(
-        {
-          err: error instanceof Error ? error.message : String(error),
-          restaurantId: input.restaurantId,
-        },
-        '[AgenticReservationService] Customer CRM dual-write unavailable',
-      );
-    }
 
     // 3. Réserver l'idempotence (Postgres first, Redis cache)
     const reserveResult = await this.idempotency.reserve({
@@ -306,6 +293,26 @@ export class ReservationService {
       throw new IdempotencyPendingError(idempotency.scope, idempotency.key);
     }
 
+    try {
+      if (!isTest) {
+        customerId = (
+          await CustomerService.lookupOrCreate(
+            input.restaurantId,
+            input.customerPhone,
+            input.customerName,
+          )
+        ).id;
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          restaurantId: input.restaurantId,
+        },
+        '[AgenticReservationService] Customer CRM dual-write unavailable',
+      );
+    }
+
     // 4. INSERT dans une transaction
     let reservationId: string;
     let confirmationRequested = false;
@@ -321,19 +328,49 @@ export class ReservationService {
         // être sérialisés, sinon chacun pourrait lire l'absence de blocker
         // avant le commit de l'autre.
         await this.lockCapacitySlot(tx, input.restaurantId);
-        const globalBlocker = await this.findGlobalUnassignedBlocker(tx, {
-          restaurantId: input.restaurantId,
-          startsAt: input.startsAt,
-          endsAt: input.endsAt,
-          now,
-          excludeHoldId: holdId,
-        });
+        const globalBlocker = input.allowOverbook
+          ? null
+          : await this.findGlobalUnassignedBlocker(tx, {
+              restaurantId: input.restaurantId,
+              startsAt: input.startsAt,
+              endsAt: input.endsAt,
+              now,
+              excludeHoldId: holdId,
+            });
         if (globalBlocker) {
           throw new ReservationSlotUnavailableError(
             input.restaurantId,
             input.startsAt,
             input.partySize,
           );
+        }
+
+        if (input.channel === 'ADMIN' && input.actor.startsWith('staff:') && !input.allowOverbook) {
+          const hasTables = await tx.table.findFirst({
+            where: {
+              isActive: true,
+              floorPlan: { restaurantId: input.restaurantId, isActive: true },
+            },
+            select: { id: true },
+          });
+          const table =
+            hasTables &&
+            (await this.tableAllocation.allocate(
+              {
+                restaurantId: input.restaurantId,
+                partySize: input.partySize,
+                startsAt: input.startsAt,
+                endsAt: input.endsAt,
+              },
+              tx,
+            ));
+          if (hasTables && !table)
+            throw new ReservationSlotUnavailableError(
+              input.restaurantId,
+              input.startsAt,
+              input.partySize,
+            );
+          if (table) tableId = table.id;
         }
 
         if (holdId) {
@@ -369,7 +406,7 @@ export class ReservationService {
             throw new HoldAlreadyConsumedError(hold.id);
           }
           consumedHoldId = hold.id;
-        } else {
+        } else if (!input.allowOverbook) {
           await this.expireOverdueHoldForSlot(tx, {
             restaurantId: input.restaurantId,
             partySize: input.partySize,
@@ -404,6 +441,23 @@ export class ReservationService {
 
         // Vérifier que la table pré-allouée est toujours disponible.
         if (tableId) {
+          const belongsToRestaurant = await tx.table.findFirst({
+            where: {
+              id: tableId,
+              isActive: true,
+              capacity: { gte: input.partySize },
+              minCapacity: { lte: input.partySize },
+              floorPlan: { restaurantId: input.restaurantId, isActive: true },
+            },
+            select: { id: true },
+          });
+          if (!belongsToRestaurant) {
+            throw new ReservationSlotUnavailableError(
+              input.restaurantId,
+              input.startsAt,
+              input.partySize,
+            );
+          }
           const locked = await this.tableAllocation.lockTable(tx, tableId);
           if (!locked) {
             throw new ReservationSlotUnavailableError(
@@ -434,11 +488,15 @@ export class ReservationService {
           }
         }
 
-        const blockingReservation = await this.findBlockingReservation(tx, {
-          restaurantId: input.restaurantId,
-          partySize: input.partySize,
-          startsAt: input.startsAt,
-        });
+        const blockingReservation =
+          input.allowOverbook || tableId
+            ? null
+            : await this.findBlockingReservation(tx, {
+                restaurantId: input.restaurantId,
+                partySize: input.partySize,
+                startsAt: input.startsAt,
+                endsAt: input.endsAt,
+              });
         if (blockingReservation) {
           throw new ReservationSlotUnavailableError(
             input.restaurantId,
@@ -446,11 +504,32 @@ export class ReservationService {
             input.partySize,
           );
         }
+        if (!input.allowOverbook && !tableId) {
+          const blockingHold = await tx.agenticHold.findFirst({
+            where: {
+              restaurantId: input.restaurantId,
+              type: 'HOLD',
+              status: 'ACTIVE',
+              expiresAt: { gt: now },
+              ...(consumedHoldId ? { id: { not: consumedHoldId } } : {}),
+              slotStart: { lt: input.endsAt },
+              slotEnd: { gt: input.startsAt },
+            },
+            select: { id: true },
+          });
+          if (blockingHold)
+            throw new ReservationSlotUnavailableError(
+              input.restaurantId,
+              input.startsAt,
+              input.partySize,
+            );
+        }
 
         // Une réservation test est invisible pour le restaurant : personne ne pourrait la valider.
         const initialState: CreatableReservationState =
           input.policy.requireManualValidation && !input.isTest ? 'PENDING' : 'CONFIRMED';
 
+        await input.beforeCreate?.(tx);
         const reservation = await tx.reservation.create({
           data: {
             restaurantId: input.restaurantId,
@@ -535,6 +614,7 @@ export class ReservationService {
               partySize: input.partySize,
               channel: input.channel,
               requiresManualValidation: input.policy.requireManualValidation,
+              ...(input.allowOverbook ? { overbooked: true } : {}),
             },
           },
         });
@@ -749,6 +829,8 @@ export class ReservationService {
     startsAt?: Date;
     endsAt?: Date;
     customerName?: string;
+    specialRequests?: string | null;
+    preserveDuration?: boolean;
     /** Internal adapter authorization, rechecked under the same capacity/row locks. */
     beforeModify?: (tx: Prisma.TransactionClient, current: Reservation) => Promise<void>;
     auditMetadata?: Prisma.InputJsonObject;
@@ -777,23 +859,39 @@ export class ReservationService {
       await args.beforeModify?.(tx, current);
 
       const startsAt = args.startsAt ?? current.startsAt ?? current.reservedAt;
-      const endsAt = args.endsAt ?? current.endsAt;
+      const endsAt =
+        args.preserveDuration && args.startsAt && current.endsAt
+          ? new Date(
+              args.startsAt.getTime() +
+                current.endsAt.getTime() -
+                (current.startsAt ?? current.reservedAt).getTime(),
+            )
+          : (args.endsAt ?? current.endsAt);
       const partySize = args.partySize ?? current.partySize;
-      if (!endsAt || endsAt <= startsAt || startsAt <= new Date()) {
+      if (
+        (!args.actor.startsWith('staff:') ||
+          args.publicClient ||
+          args.startsAt !== undefined ||
+          args.partySize !== undefined) &&
+        (!endsAt || endsAt <= startsAt || startsAt <= new Date())
+      ) {
         throw new ReservationModificationNotAllowedError();
       }
       const capacityChanged =
         startsAt.getTime() !== (current.startsAt ?? current.reservedAt).getTime() ||
-        endsAt.getTime() !== current.endsAt?.getTime() ||
+        endsAt?.getTime() !== current.endsAt?.getTime() ||
         partySize !== current.partySize;
       const nameChanged =
         args.customerName !== undefined && args.customerName !== current.customerName;
-      if (!capacityChanged && !nameChanged) {
+      const notesChanged =
+        args.specialRequests !== undefined && args.specialRequests !== current.specialRequests;
+      if (!capacityChanged && !nameChanged && !notesChanged) {
         return { reservation: current, changed: false, capacityChanged: false };
       }
 
       let tableId = current.tableId;
       if (capacityChanged) {
+        if (!endsAt) throw new ReservationModificationNotAllowedError();
         const blocker = await this.findGlobalUnassignedBlocker(tx, {
           restaurantId: args.restaurantId,
           startsAt,
@@ -823,6 +921,7 @@ export class ReservationService {
           const otherReservation = await tx.reservation.findFirst({
             where: {
               restaurantId: args.restaurantId,
+              isTest: false,
               id: { not: current.id },
               state: { in: [...ACTIVE_RESERVATION_STATES] },
               startsAt: { lt: endsAt },
@@ -848,6 +947,7 @@ export class ReservationService {
             restaurantId: args.restaurantId,
             partySize,
             startsAt,
+            endsAt,
             excludeReservationId: current.id,
           });
           if (sameSlot) {
@@ -863,6 +963,7 @@ export class ReservationService {
             ? { partySize, reservedAt: startsAt, startsAt, endsAt, tableId }
             : {}),
           ...(nameChanged ? { customerName: args.customerName } : {}),
+          ...(notesChanged ? { specialRequests: args.specialRequests } : {}),
         },
       });
       await tx.reservationAuditLog.create({
@@ -878,6 +979,7 @@ export class ReservationService {
             changedFields: [
               ...(capacityChanged ? ['partySize', 'startsAt', 'endsAt', 'tableId'] : []),
               ...(nameChanged ? ['customerName'] : []),
+              ...(notesChanged ? ['specialRequests'] : []),
             ],
           },
         },
@@ -897,7 +999,11 @@ export class ReservationService {
     }
     if (result.changed) {
       observeReservationMutation({
-        source: args.actor === 'customer:personal-link' ? 'direct' : 'mcp',
+        source: args.actor.startsWith('staff:')
+          ? 'dashboard'
+          : args.actor === 'customer:personal-link'
+            ? 'direct'
+            : 'mcp',
         operation: 'update',
         status: result.reservation.status,
         state: result.reservation.state,
@@ -1013,15 +1119,24 @@ export class ReservationService {
       restaurantId: string;
       partySize: number;
       startsAt: Date;
+      endsAt: Date;
       excludeReservationId?: string;
     },
   ): Promise<{ id: string } | null> {
+    const settings = await tx.restaurantExposureSettings.findUnique({
+      where: { restaurantId: args.restaurantId },
+      select: { capacitySpecials: true },
+    });
     return tx.reservation.findFirst({
       where: {
         restaurantId: args.restaurantId,
+        isTest: false,
         ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
-        partySize: args.partySize,
-        OR: [{ reservedAt: args.startsAt }, { startsAt: args.startsAt }],
+        OR: reservationOverlapWhere(
+          args.startsAt,
+          args.endsAt,
+          resolveServiceDurationMinutes(settings?.capacitySpecials),
+        ),
         state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
       },
       select: { id: true },
@@ -1039,26 +1154,22 @@ export class ReservationService {
       excludeReservationId?: string;
     },
   ): Promise<{ kind: 'reservation' | 'hold'; id: string } | null> {
+    const settings = await tx.restaurantExposureSettings.findUnique({
+      where: { restaurantId: args.restaurantId },
+      select: { capacitySpecials: true },
+    });
     const reservation = await tx.reservation.findFirst({
       where: {
         restaurantId: args.restaurantId,
+        isTest: false,
         ...(args.excludeReservationId ? { id: { not: args.excludeReservationId } } : {}),
         tableId: null,
         state: { in: [...ACTIVE_RESERVATION_STATES] },
-        OR: [
-          {
-            startsAt: { lt: args.endsAt },
-            endsAt: { gt: args.startsAt },
-          },
-          {
-            startsAt: { gte: args.startsAt, lt: args.endsAt },
-            endsAt: null,
-          },
-          {
-            startsAt: null,
-            reservedAt: { gte: args.startsAt, lt: args.endsAt },
-          },
-        ],
+        OR: reservationOverlapWhere(
+          args.startsAt,
+          args.endsAt,
+          resolveServiceDurationMinutes(settings?.capacitySpecials),
+        ),
       },
       select: { id: true },
     });

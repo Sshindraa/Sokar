@@ -1,5 +1,6 @@
 import { db } from '../../shared/db/client';
 import { THEFORK_COMMISSION_PER_PAX, DEFAULT_AVERAGE_TICKET, PLAN_PRICE_MAP } from '@sokar/config';
+import { COUNTED_RESERVATION_STATES } from '../../shared/reservations/reservation-state';
 
 export interface RoiReport {
   period: string;
@@ -23,7 +24,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     db.reservation.findMany({
       where: {
         restaurantId,
-        state: 'CONFIRMED',
+        state: { in: [...COUNTED_RESERVATION_STATES] },
         createdAt: { gte: start, lte: end },
       },
     }),

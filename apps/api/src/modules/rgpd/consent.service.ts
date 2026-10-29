@@ -28,7 +28,7 @@ export class ConsentRequiredError extends Error {
 }
 
 export class ConsentService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: Pick<PrismaClient, 'customerConsent'>) {}
 
   /**
    * Hash un subject (téléphone E.164) pour identifier le sujet RGPD

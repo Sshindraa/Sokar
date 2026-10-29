@@ -15,6 +15,13 @@ import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vites
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from '../reservation.service';
+import {
+  ReservationService as AgenticReservationService,
+  ReservationModificationNotAllowedError,
+  ReservationNotFoundError,
+  ReservationSlotUnavailableError,
+} from '../../agentic-reservations/core/reservation.service';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 
 describe('reservation.routes', () => {
   beforeEach(() => {
@@ -25,11 +32,127 @@ describe('reservation.routes', () => {
     await closeApp();
   });
 
+  describe('staff reservation routes', () => {
+    const payload = {
+      startsAt: '2099-06-05T19:00:00Z',
+      partySize: 4,
+      customerName: 'Alice',
+      customerPhone: '06 12 34 56 78',
+      customerEmail: 'Alice@example.com',
+      specialRequests: 'Terrasse',
+      idempotencyKey: '550e8400-e29b-41d4-a716-446655440000',
+    };
+    const settings = {
+      maxPartySize: 20,
+      minLeadTimeMinutes: 120,
+      requireManualValidation: false,
+      quoteTtlSeconds: 300,
+      holdTtlSeconds: 420,
+      noShowPolicy: 'warning',
+      notificationChannels: ['sms'],
+      capacitySpecials: { serviceDurationMinutes: 90 },
+    };
+    const request = async (body: object = payload) =>
+      (await getApp()).inject({
+        method: 'POST',
+        url: '/reservations/staff',
+        headers: { authorization: 'Bearer test' },
+        payload: body,
+      });
+    beforeEach(() => {
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(settings as never);
+    });
+    it('creates a scoped staff reservation with normalized contact and service duration', async () => {
+      const create = vi
+        .spyOn(AgenticReservationService.prototype, 'createReservation')
+        .mockResolvedValue({ reservationId: 'r1', state: 'CONFIRMED', reused: false } as never);
+      const response = await request();
+      expect(response.statusCode).toBe(201);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          restaurantId: 'test-rest-1',
+          channel: 'ADMIN',
+          actor: 'staff:test-user-1',
+          customerPhone: '+33612345678',
+          customerEmail: 'alice@example.com',
+          specialRequests: 'Terrasse',
+          endsAt: new Date('2099-06-05T20:30:00Z'),
+          allowOverbook: false,
+          policy: expect.objectContaining({ minLeadTimeMinutes: 0 }),
+        }),
+        expect.objectContaining({ key: payload.idempotencyKey }),
+      );
+      expect((await request({ ...payload, restaurantId: 'other' })).statusCode).toBe(400);
+    });
+    it('returns a conflict for a full slot', async () => {
+      vi.spyOn(AgenticReservationService.prototype, 'createReservation').mockRejectedValue(
+        new ReservationSlotUnavailableError('test-rest-1', new Date(payload.startsAt), 4),
+      );
+      const response = await request();
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: 'Ce créneau est complet pour 4 couverts.',
+        code: 'SLOT_FULL',
+      });
+    });
+    it('explique les règles absentes en français', async () => {
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(null);
+      const response = await request();
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: 'Les règles de réservation de ce restaurant ne sont pas configurées.',
+      });
+    });
+    it('passes the explicit overbook choice', async () => {
+      const create = vi
+        .spyOn(AgenticReservationService.prototype, 'createReservation')
+        .mockResolvedValue({ reservationId: 'r1', state: 'CONFIRMED', reused: false } as never);
+      expect((await request({ ...payload, overbook: true })).statusCode).toBe(201);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ allowOverbook: true }),
+        expect.anything(),
+      );
+    });
+    it('returns staff availability without online lead time', async () => {
+      const getAvailability = vi
+        .spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability')
+        .mockResolvedValue({
+          restaurantId: 'test-rest-1',
+          date: '2099-06-05',
+          partySize: 4,
+          slots: [{ time: '19:00', available: false, past: true }],
+        });
+      const response = await (
+        await getApp()
+      ).inject({
+        method: 'GET',
+        url: '/reservations/staff-availability?date=2099-06-05&partySize=4',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(response.json()).toEqual({
+        slots: [{ time: '19:00', available: false, past: true }],
+      });
+      expect(getAvailability).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        date: '2099-06-05',
+        partySize: 4,
+        allowWithoutTables: true,
+        includePast: true,
+      });
+    });
+  });
+
   describe('GET /reservations', () => {
     it('retourne les réservations du restaurant authentifié', async () => {
       const app = await getApp();
       const reservations = [
-        { id: 'r1', restaurantId: 'test-rest-1', reservedAt: new Date('2099-06-05T19:00:00') },
+        {
+          id: 'r1',
+          restaurantId: 'test-rest-1',
+          reservedAt: new Date('2099-06-05T19:00:00'),
+          specialRequests: 'Terrasse',
+          channel: 'WEB',
+        },
         { id: 'r2', restaurantId: 'test-rest-1', reservedAt: new Date('2099-06-05T20:00:00') },
       ];
       vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue(
@@ -47,6 +170,7 @@ describe('reservation.routes', () => {
       const body = res.json();
       expect(body).toHaveLength(2);
       expect(body[0].id).toBe('r1');
+      expect(body[0]).toMatchObject({ specialRequests: 'Terrasse', channel: 'WEB' });
     });
 
     it('retourne 401 sans en-tête Authorization (auth guard)', async () => {
@@ -91,6 +215,65 @@ describe('reservation.routes', () => {
 
       expect(res.statusCode).toBe(400);
       expect(ReservationService.findByRestaurant).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /reservations/:id/staff-modification', () => {
+    const request = async (payload: object = {}) =>
+      (await getApp()).inject({
+        method: 'POST',
+        url: '/reservations/r1/staff-modification',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+    it('transmet les modifications et le contexte du personnel', async () => {
+      const modify = vi
+        .spyOn(AgenticReservationService.prototype, 'modifyReservation')
+        .mockResolvedValue({ reservationId: 'r1', state: 'CONFIRMED', changed: true });
+      const res = await request({
+        startsAt: '2099-06-05T19:00:00Z',
+        partySize: 4,
+        customerName: 'Alice',
+        specialRequests: 'Terrasse',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(modify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reservationId: 'r1',
+          restaurantId: 'test-rest-1',
+          actor: 'staff:test-user-1',
+          publicClient: false,
+          startsAt: new Date('2099-06-05T19:00:00Z'),
+          preserveDuration: true,
+          partySize: 4,
+          specialRequests: 'Terrasse',
+        }),
+      );
+    });
+
+    it.each([
+      [
+        new ReservationSlotUnavailableError('test-rest-1', new Date('2099-06-05T19:00:00Z'), 4),
+        409,
+        'Ce créneau est complet pour 4 couverts.',
+      ],
+      [new ReservationNotFoundError('r1'), 404, 'Not found'],
+      [
+        new ReservationModificationNotAllowedError(),
+        409,
+        'Cette réservation ne peut plus être modifiée.',
+      ],
+    ])('traduit les erreurs du service', async (error, status, message) => {
+      vi.spyOn(AgenticReservationService.prototype, 'modifyReservation').mockRejectedValue(error);
+      const res = await request();
+      expect(res.statusCode).toBe(status);
+      expect(res.json().error).toBe(message);
+    });
+
+    it('rejette les champs invalides', async () => {
+      const res = await request({ partySize: 21, startsAt: 'demain' });
+      expect(res.statusCode).toBe(400);
     });
   });
 

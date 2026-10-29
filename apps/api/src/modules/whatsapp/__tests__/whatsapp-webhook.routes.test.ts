@@ -44,13 +44,13 @@ describe('POST /whatsapp/webhook', () => {
       payload: {
         data: {
           event_type: 'message.received',
-          payload: { from: '+336****5678', text: 'OUI' },
+          payload: { id: 'message-1', from: '+336****5678', text: 'OUI' },
         },
       },
     });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.payload)).toEqual({ result: 'ok' });
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'whatsapp');
+    expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'whatsapp', 'message-1');
   });
 
   it('ignore les events de statut (sent, delivered, etc.)', async () => {
@@ -113,11 +113,11 @@ describe('POST /whatsapp/webhook', () => {
       payload: {
         data: {
           event_type: 'message.received',
-          payload: { from: { phone_number: '+336****9999' }, text: 'NON' },
+          payload: { id: 'message-2', from: { phone_number: '+336****9999' }, text: 'NON' },
         },
       },
     });
     expect(res.statusCode).toBe(200);
-    expect(mockHandleReply).toHaveBeenCalledWith('+336****9999', 'NON', 'whatsapp');
+    expect(mockHandleReply).toHaveBeenCalledWith('+336****9999', 'NON', 'whatsapp', 'message-2');
   });
 });

@@ -267,10 +267,20 @@ export async function reservationPaymentRoutes(app: FastifyInstance): Promise<vo
       ) {
         return reply.status(403).send({ error: 'PAYMENT_TENANT_MISMATCH' });
       }
-      const amount = numberValue(object.amount_received) ?? numberValue(object.amount);
+      const amount =
+        event.type === 'payment_intent.succeeded'
+          ? (numberValue(object.amount_received) ?? numberValue(object.amount))
+          : numberValue(object.amount);
+      const refundedAmount = numberValue(object.amount_refunded);
       const currency = stringValue(object.currency)?.toUpperCase();
       const occurredAt = new Date(event.created * 1000);
-      const paymentIntentId = stringValue(object.payment_intent) ?? stringValue(object.id);
+      const paymentIntentId =
+        event.type === 'charge.refunded'
+          ? (stringValue(object.payment_intent) ??
+            (object.payment_intent && typeof object.payment_intent === 'object'
+              ? stringValue((object.payment_intent as Record<string, unknown>).id)
+              : undefined))
+          : stringValue(object.id);
       const setupIntentId = event.type.startsWith('setup_intent.')
         ? stringValue(object.id)
         : undefined;
@@ -281,9 +291,12 @@ export async function reservationPaymentRoutes(app: FastifyInstance): Promise<vo
         eventType: event.type,
         occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
         payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+        stripeAccountId: event.account ?? null,
         ...(amount !== undefined ? { amount: amount / 100 } : {}),
+        ...(refundedAmount !== undefined ? { refundedAmount: refundedAmount / 100 } : {}),
         ...(currency ? { currency } : {}),
-        ...(paymentIntentId && event.type.startsWith('payment_intent.')
+        ...(paymentIntentId &&
+        (event.type.startsWith('payment_intent.') || event.type === 'charge.refunded')
           ? { stripePaymentIntentId: paymentIntentId }
           : {}),
         ...(setupIntentId ? { stripeSetupIntentId: setupIntentId } : {}),

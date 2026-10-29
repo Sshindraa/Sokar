@@ -457,19 +457,80 @@ export class BillingTrialAlreadyUsedError extends Error {
   }
 }
 
+async function stripeSubscriptions(customer: string): Promise<Stripe.Subscription[]> {
+  const subscriptions: Stripe.Subscription[] = [];
+  let startingAfter: string | undefined;
+  do {
+    const page = await getStripe().subscriptions.list({
+      customer,
+      status: 'all',
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    subscriptions.push(...page.data);
+    startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
+    if (page.has_more && !startingAfter) throw new BillingCheckoutError();
+  } while (startingAfter);
+  return subscriptions;
+}
+
+async function closeOpenBillingSessions(
+  customer: string,
+  reusableId?: string,
+  canRecover?: (session: Stripe.Checkout.Session) => boolean,
+): Promise<Stripe.Checkout.Session | undefined> {
+  let reusable: Stripe.Checkout.Session | undefined;
+  let startingAfter: string | undefined;
+  do {
+    const page = await getStripe().checkout.sessions.list({
+      customer,
+      status: 'open',
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    startingAfter = page.has_more ? page.data.at(-1)?.id : undefined;
+    if (page.has_more && !startingAfter) throw new BillingCheckoutError();
+    for (const session of page.data) {
+      if (session.mode !== 'subscription') continue;
+      if (!reusable && session.url && (session.id === reusableId || canRecover?.(session)))
+        reusable = session;
+      else await getStripe().checkout.sessions.expire(session.id);
+    }
+  } while (startingAfter);
+  return reusable;
+}
+
+function activeStripeSubscription(
+  subscriptions: Stripe.Subscription[],
+): Stripe.Subscription | undefined {
+  return subscriptions.find(
+    (subscription) => !['canceled', 'incomplete_expired'].includes(subscription.status),
+  );
+}
+
 /**
  * Starts the free trial on the chosen plan without Stripe Checkout (onboarding). No card is asked,
  * so Checkout would only be a detour: the restaurant adds a card, or changes plan, from the
  * customer portal before the end. Same Stripe settings as a Checkout trial, so the reminder,
  * suspension and portal flows apply unchanged.
  */
-export async function startTrial(input: {
+type StartTrialInput = {
   restaurantId: string;
   accountId?: string;
   plan?: PublicBillingPlan;
   billing?: BillingInterval;
   siteCount?: number;
-}): Promise<{ status: 'trialing'; trialEndsAt: string }> {
+};
+
+export async function startTrial(
+  input: StartTrialInput,
+): Promise<{ status: 'trialing'; trialEndsAt: string }> {
+  return withBillingLock(input.restaurantId, () => startTrialLocked(input));
+}
+
+async function startTrialLocked(
+  input: StartTrialInput,
+): Promise<{ status: 'trialing'; trialEndsAt: string }> {
   const plan = input.plan ?? 'essential';
   const interval = input.billing ?? 'monthly';
   const siteCount = normalizeSiteCount(plan, input.siteCount);
@@ -495,6 +556,28 @@ export async function startTrial(input: {
     where: { restaurantId: billingAnchor.id },
   });
   const current = accountBilling?.stripeSubscriptionId ? accountBilling : billing;
+  const pendingTrialKey = current?.stripeCustomerId
+    ? `sokar-trial-${current.stripeCustomerId}-${plan}-${interval}-${siteCount}`
+    : null;
+  if (
+    current?.stripeSubscriptionId &&
+    current.subscriptionStatus === 'trialing' &&
+    pendingTrialKey &&
+    billing?.checkoutIdempotencyKey === pendingTrialKey
+  ) {
+    const live = await retrieveLiveSubscription(current.stripeSubscriptionId);
+    if (live.status !== 'trialing') throw new BillingAlreadySubscribedError();
+    await applySubscriptionSnapshot(billingAnchor.id, live, false, {
+      lastStripeEventCreated: current.lastStripeEventCreated ?? 0,
+      lastStripeEventId: current.lastStripeEventId ?? '',
+    });
+    return {
+      status: 'trialing',
+      trialEndsAt: new Date(
+        (live.trial_end ?? live.created + TRIAL_DAYS * 86400) * 1000,
+      ).toISOString(),
+    };
+  }
   if (
     current?.stripeSubscriptionId &&
     ['active', 'trialing', 'past_due'].includes(current.subscriptionStatus ?? '')
@@ -511,6 +594,64 @@ export async function startTrial(input: {
     accountId,
     billingAnchor,
     existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
+  const trialKey = `sokar-trial-${customerId}-${plan}-${interval}-${siteCount}`;
+  if (
+    billing?.checkoutIdempotencyKey &&
+    !billing.checkoutSessionId &&
+    billing.checkoutIdempotencyKey !== trialKey
+  ) {
+    throw new BillingCheckoutError();
+  }
+  const existingSubscriptions = await stripeSubscriptions(customerId);
+  const existingSubscription = activeStripeSubscription(existingSubscriptions);
+  if (existingSubscription) {
+    if (
+      billing?.checkoutIdempotencyKey === trialKey &&
+      existingSubscription.status === 'trialing'
+    ) {
+      await applySubscriptionSnapshot(
+        billingAnchor.id,
+        existingSubscription as unknown as SubscriptionObject,
+        false,
+        {
+          lastStripeEventCreated: existingSubscription.created - 1,
+          lastStripeEventId: '',
+        },
+      );
+      return {
+        status: 'trialing',
+        trialEndsAt: new Date(
+          (existingSubscription.trial_end ?? existingSubscription.created + TRIAL_DAYS * 86400) *
+            1000,
+        ).toISOString(),
+      };
+    }
+    throw new BillingAlreadySubscribedError();
+  }
+  if (existingSubscriptions.length) throw new BillingTrialAlreadyUsedError();
+  if (
+    billing?.checkoutIdempotencyKey === trialKey &&
+    (!billing.checkoutCreatedAt ||
+      Date.now() - billing.checkoutCreatedAt.getTime() >= 23 * 60 * 60 * 1000)
+  ) {
+    throw new BillingCheckoutError();
+  }
+  await closeOpenBillingSessions(customerId);
+  if (activeStripeSubscription(await stripeSubscriptions(customerId)))
+    throw new BillingAlreadySubscribedError();
+  await db.restaurantBilling.update({
+    where: { restaurantId: billingAnchor.id },
+    data: {
+      checkoutIdempotencyKey: trialKey,
+      checkoutSessionId: null,
+      checkoutSessionUrl: null,
+      checkoutPlan: plan,
+      checkoutBillingInterval: interval,
+      checkoutSiteCount: siteCount,
+      checkoutCreatedAt:
+        billing?.checkoutIdempotencyKey === trialKey ? billing.checkoutCreatedAt : new Date(),
+    },
   });
   const metadata = {
     restaurantId: restaurant.id,
@@ -536,7 +677,7 @@ export async function startTrial(input: {
         payment_settings: { save_default_payment_method: 'on_subscription' },
         metadata,
       },
-      { idempotencyKey: `sokar-trial-${customerId}-${plan}-${interval}-${siteCount}` },
+      { idempotencyKey: trialKey },
     );
   } catch (error) {
     logger.error(
@@ -573,7 +714,7 @@ export async function startTrial(input: {
   await db.restaurantBilling.upsert({
     where: { restaurantId: billingAnchor.id },
     create: { restaurantId: billingAnchor.id, ...projection },
-    update: projection,
+    update: { ...projection, ...clearCheckoutAttempt() },
   });
   return {
     status: 'trialing',
@@ -581,7 +722,7 @@ export async function startTrial(input: {
   };
 }
 
-export async function createCheckoutSession(input: {
+type CheckoutInput = {
   restaurantId: string;
   accountId?: string;
   plan: PublicBillingPlan;
@@ -589,7 +730,17 @@ export async function createCheckoutSession(input: {
   siteCount?: number;
   returnTo?: CheckoutReturnTo;
   idempotencyKey?: string;
-}): Promise<{ id: string; url: string }> {
+};
+
+export async function createCheckoutSession(
+  input: CheckoutInput,
+): Promise<{ id: string; url: string }> {
+  return withBillingLock(input.restaurantId, () => createCheckoutSessionLocked(input));
+}
+
+async function createCheckoutSessionLocked(
+  input: CheckoutInput,
+): Promise<{ id: string; url: string }> {
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
   const addonPriceId =
@@ -615,7 +766,7 @@ export async function createCheckoutSession(input: {
         where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
       })) ?? restaurant)
     : restaurant;
-  const idempotencyKey = buildCheckoutIdempotencyKey({
+  const requestKey = buildCheckoutIdempotencyKey({
     ...input,
     restaurantId: billingAnchor.id,
     scopeId: accountId,
@@ -633,19 +784,67 @@ export async function createCheckoutSession(input: {
   ) {
     throw new BillingAlreadySubscribedError();
   }
-  if (
-    billing?.checkoutIdempotencyKey === idempotencyKey &&
-    billing.checkoutSessionId &&
-    billing.checkoutSessionUrl
-  ) {
-    return { id: billing.checkoutSessionId, url: billing.checkoutSessionUrl };
-  }
   const stripe = getStripe();
   const customerId = await ensureStripeCustomer({
     restaurantId: restaurant.id,
     accountId,
     billingAnchor,
     existingCustomerId: accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null,
+  });
+
+  const sameAttempt =
+    billing?.checkoutIdempotencyKey === requestKey ||
+    Boolean(billing?.checkoutIdempotencyKey?.startsWith(`${requestKey}.`));
+  let idempotencyKey = sameAttempt ? billing!.checkoutIdempotencyKey! : requestKey;
+  if (billing?.checkoutIdempotencyKey && !billing.checkoutSessionId && !sameAttempt) {
+    throw new BillingCheckoutError();
+  }
+  if (activeStripeSubscription(await stripeSubscriptions(customerId)))
+    throw new BillingAlreadySubscribedError();
+  const reusable = await closeOpenBillingSessions(
+    customerId,
+    sameAttempt ? (billing?.checkoutSessionId ?? undefined) : undefined,
+    sameAttempt && !billing?.checkoutSessionId
+      ? (session) =>
+          session.metadata?.plan === input.plan &&
+          session.metadata?.billing === input.billing &&
+          session.metadata?.siteCount === String(siteCount)
+      : undefined,
+  );
+  if (activeStripeSubscription(await stripeSubscriptions(customerId)))
+    throw new BillingAlreadySubscribedError();
+  if (reusable?.url) {
+    await db.restaurantBilling.update({
+      where: { restaurantId: billingAnchor.id },
+      data: { checkoutSessionId: reusable.id, checkoutSessionUrl: reusable.url },
+    });
+    return { id: reusable.id, url: reusable.url };
+  }
+  if (sameAttempt && billing?.checkoutSessionId) {
+    idempotencyKey = `${requestKey}.${createHash('sha256').update(billing.checkoutSessionId).digest('hex').slice(0, 16)}`;
+  }
+  if (
+    sameAttempt &&
+    !billing?.checkoutSessionId &&
+    (!billing?.checkoutCreatedAt ||
+      Date.now() - billing.checkoutCreatedAt.getTime() >= 23 * 60 * 60 * 1000)
+  ) {
+    throw new BillingCheckoutError();
+  }
+  await db.restaurantBilling.update({
+    where: { restaurantId: billingAnchor.id },
+    data: {
+      checkoutIdempotencyKey: idempotencyKey,
+      checkoutSessionId: null,
+      checkoutSessionUrl: null,
+      checkoutPlan: input.plan,
+      checkoutBillingInterval: input.billing,
+      checkoutSiteCount: siteCount,
+      checkoutCreatedAt:
+        sameAttempt && !billing?.checkoutSessionId
+          ? (billing?.checkoutCreatedAt ?? new Date())
+          : new Date(),
+    },
   });
 
   // One free trial per account: an account that already had a subscription pays from day one.
@@ -993,19 +1192,26 @@ type StripeEventOrder = 'stale' | 'tie' | 'newer';
 async function compareStripeEvent(
   restaurantId: string,
   event: Stripe.Event,
+  tx: Prisma.TransactionClient = db,
 ): Promise<StripeEventOrder> {
-  const current = await db.restaurantBilling.findUnique({
+  const current = await tx.restaurantBilling.findUnique({
     where: { restaurantId },
   });
-  const lastCreated = current?.lastStripeEventCreated;
+  const restaurant = await tx.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { accountId: true },
+  });
+  const account = restaurant?.accountId
+    ? await tx.restaurantAccountBilling.findUnique({ where: { accountId: restaurant.accountId } })
+    : null;
+  const checkpoints = [current?.lastStripeEventCreated, account?.lastStripeEventCreated].filter(
+    (value): value is number => value !== null && value !== undefined,
+  );
+  const lastCreated = checkpoints.length ? Math.max(...checkpoints) : null;
   if (lastCreated === null || lastCreated === undefined) return 'newer';
   const incomingCreated = eventCreated(event);
   if (incomingCreated < lastCreated) return 'stale';
   return incomingCreated === lastCreated ? 'tie' : 'newer';
-}
-
-async function isStaleStripeEvent(restaurantId: string, event: Stripe.Event): Promise<boolean> {
-  return (await compareStripeEvent(restaurantId, event)) === 'stale';
 }
 
 /** Current subscription state from Stripe; an error propagates so Stripe redelivers the event. */
@@ -1157,21 +1363,22 @@ async function projectAccountBilling(
     lastStripeEventCreated: number;
     lastStripeEventId: string;
   },
+  tx: Prisma.TransactionClient = db,
 ): Promise<void> {
-  const restaurant = await db.restaurant.findUnique({
+  const restaurant = await tx.restaurant.findUnique({
     where: { id: restaurantId },
     select: { accountId: true },
   });
   if (!restaurant?.accountId) return;
 
   if (data.plan) {
-    await db.restaurant.updateMany({
+    await tx.restaurant.updateMany({
       where: { accountId: restaurant.accountId },
       data: { plan: data.plan },
     });
   }
 
-  await db.restaurantAccountBilling.upsert({
+  await tx.restaurantAccountBilling.upsert({
     where: { accountId: restaurant.accountId },
     create: {
       accountId: restaurant.accountId,
@@ -1203,41 +1410,61 @@ async function projectAccountBilling(
   });
 }
 
-async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
+async function handleCheckoutCompleted(
+  event: Stripe.Event,
+  tx: Prisma.TransactionClient,
+): Promise<boolean> {
   const session = event.data.object as Stripe.Checkout.Session;
   if (session.mode !== 'subscription') return false;
   const metadata = session.metadata ?? {};
-  const restaurantId = metadata.restaurantId ?? session.client_reference_id ?? undefined;
+  const eventRestaurantId = metadata.restaurantId ?? session.client_reference_id ?? undefined;
   const plan = metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
-  if (!restaurantId || !plan) return false;
-  if (await isStaleStripeEvent(restaurantId, event)) return true;
-
+  if (!eventRestaurantId || !plan) return false;
+  const restaurantId = await billingAnchorId(tx, eventRestaurantId);
   const subscriptionId = stripeObjectId(session.subscription);
+  const order = await compareStripeEvent(restaurantId, event, tx);
+  if (order === 'stale') return true;
+  if (order === 'tie') {
+    if (!subscriptionId) throw new BillingCheckoutError();
+    const live = await retrieveLiveSubscription(subscriptionId);
+    await applySubscriptionSnapshot(
+      restaurantId,
+      live,
+      live.status === 'canceled',
+      eventCheckpoint(event),
+      tx,
+    );
+    return true;
+  }
   const customerId = stripeObjectId(session.customer);
   const billingInterval =
     metadata.billing && isBillingInterval(metadata.billing) ? metadata.billing : 'monthly';
   const siteCount = metadataSiteCount(metadata);
   // A trial Checkout completes without payment: the subscription is `trialing`, not `active`.
   const subscriptionStatus = metadata.trial === 'true' ? 'trialing' : 'active';
-  await db.restaurant.update({
+  await tx.restaurant.update({
     where: { id: restaurantId },
     data: { plan: PLAN_TO_DATABASE[plan] },
   });
   // Project the account entitlement before advancing the legacy restaurant
   // checkpoint. If this write fails, Stripe can retry the event instead of
   // seeing a stale checkpoint and skipping the projection.
-  await projectAccountBilling(restaurantId, {
-    stripeCustomerId: customerId,
-    stripeSubscriptionId: subscriptionId,
-    subscriptionStatus,
-    subscriptionPriceId: resolvePriceId(plan, billingInterval),
-    subscriptionBillingInterval: billingInterval,
-    plan: PLAN_TO_DATABASE[plan],
-    entitledSiteCount: siteCount,
-    lastStripeEventCreated: eventCreated(event),
-    lastStripeEventId: eventId(event),
-  });
-  await db.restaurantBilling.upsert({
+  await projectAccountBilling(
+    restaurantId,
+    {
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      subscriptionStatus,
+      subscriptionPriceId: resolvePriceId(plan, billingInterval),
+      subscriptionBillingInterval: billingInterval,
+      plan: PLAN_TO_DATABASE[plan],
+      entitledSiteCount: siteCount,
+      lastStripeEventCreated: eventCreated(event),
+      lastStripeEventId: eventId(event),
+    },
+    tx,
+  );
+  await tx.restaurantBilling.upsert({
     where: { restaurantId },
     create: {
       restaurantId,
@@ -1270,30 +1497,33 @@ async function handleSubscriptionEvent(
     | 'customer.subscription.deleted'
     | 'customer.subscription.trial_will_end',
   subscription: SubscriptionObject,
+  tx: Prisma.TransactionClient,
+  queueNotification: (restaurantId: string, subscription: SubscriptionObject) => void,
 ): Promise<boolean> {
   const metadata = subscription.metadata ?? {};
   let restaurantId: string | undefined = metadata.restaurantId;
   if (!restaurantId) {
-    const existing = await db.restaurantBilling.findUnique({
+    const existing = await tx.restaurantBilling.findUnique({
       where: { stripeSubscriptionId: subscription.id },
     });
     restaurantId = existing?.restaurantId;
   }
   if (!restaurantId) return false;
+  restaurantId = await billingAnchorId(tx, restaurantId);
 
   // The trial reminder only schedules an e-mail (the worker re-checks it at send time). Its
   // snapshot can predate the subscription's current state: it never rewrites the projection.
   if (eventType === 'customer.subscription.trial_will_end') {
-    await enqueueBillingNotification(eventType, restaurantId, subscription);
+    queueNotification(restaurantId, subscription);
     return true;
   }
 
-  const order = await compareStripeEvent(restaurantId, event);
+  const order = await compareStripeEvent(restaurantId, event, tx);
   if (order === 'stale') return true;
   const current = order === 'tie' ? await retrieveLiveSubscription(subscription.id) : subscription;
   const deleted = eventType === 'customer.subscription.deleted' || current.status === 'canceled';
-  await applySubscriptionSnapshot(restaurantId, current, deleted, eventCheckpoint(event));
-  await enqueueBillingNotification(eventType, restaurantId, subscription);
+  await applySubscriptionSnapshot(restaurantId, current, deleted, eventCheckpoint(event), tx);
+  queueNotification(restaurantId, subscription);
   return true;
 }
 
@@ -1306,6 +1536,7 @@ async function applySubscriptionSnapshot(
   subscription: SubscriptionObject,
   deleted: boolean,
   checkpoint: { lastStripeEventCreated: number; lastStripeEventId: string },
+  tx: Prisma.TransactionClient = db,
 ): Promise<void> {
   const metadata = subscription.metadata ?? {};
   const priceId = subscription.items.data[0]?.price?.id;
@@ -1317,22 +1548,26 @@ async function applySubscriptionSnapshot(
   const billingData = subscriptionUpdateData(subscription, deleted);
   const siteCount = deleted ? 1 : metadataSiteCount(metadata);
   if (plan && deleted) {
-    await db.restaurant.update({ where: { id: restaurantId }, data: { plan: 'STARTER' } });
+    await tx.restaurant.update({ where: { id: restaurantId }, data: { plan: 'STARTER' } });
   } else if (plan) {
-    await db.restaurant.update({
+    await tx.restaurant.update({
       where: { id: restaurantId },
       data: { plan: PLAN_TO_DATABASE[plan] },
     });
   }
   // Keep this projection ahead of the legacy checkpoint for the same retry
   // reason as checkout.session.completed above.
-  await projectAccountBilling(restaurantId, {
-    ...billingData,
-    plan: plan ? (deleted ? 'STARTER' : PLAN_TO_DATABASE[plan]) : undefined,
-    entitledSiteCount: siteCount,
-    ...checkpoint,
-  });
-  await db.restaurantBilling.upsert({
+  await projectAccountBilling(
+    restaurantId,
+    {
+      ...billingData,
+      plan: plan ? (deleted ? 'STARTER' : PLAN_TO_DATABASE[plan]) : undefined,
+      entitledSiteCount: siteCount,
+      ...checkpoint,
+    },
+    tx,
+  );
+  await tx.restaurantBilling.upsert({
     where: { restaurantId },
     create: {
       restaurantId,
@@ -1514,17 +1749,18 @@ function invoicePeriodEnd(invoice: InvoiceObject): Date | undefined {
 
 async function findBillingForInvoice(
   invoice: InvoiceObject,
+  tx: Prisma.TransactionClient = db,
 ): Promise<{ billing: InvoiceBillingRecord | null; restaurantId: string } | null> {
   const subscriptionId = stripeObjectId(invoice.subscription);
   const customerId = stripeObjectId(invoice.customer);
   let billing = subscriptionId
-    ? ((await db.restaurantBilling.findUnique({
+    ? ((await tx.restaurantBilling.findUnique({
         where: { stripeSubscriptionId: subscriptionId },
       })) as InvoiceBillingRecord | null)
     : null;
 
   if (!billing && customerId) {
-    billing = (await db.restaurantBilling.findUnique({
+    billing = (await tx.restaurantBilling.findUnique({
       where: { stripeCustomerId: customerId },
     })) as InvoiceBillingRecord | null;
   }
@@ -1535,13 +1771,13 @@ async function findBillingForInvoice(
   return { billing, restaurantId };
 }
 
-async function findAccountBillingForRestaurant(restaurantId: string) {
-  const restaurant = await db.restaurant.findUnique({
+async function findAccountBillingForRestaurant(restaurantId: string, tx: Prisma.TransactionClient) {
+  const restaurant = await tx.restaurant.findUnique({
     where: { id: restaurantId },
     select: { accountId: true },
   });
   if (!restaurant?.accountId) return null;
-  return db.restaurantAccountBilling.findUnique({ where: { accountId: restaurant.accountId } });
+  return tx.restaurantAccountBilling.findUnique({ where: { accountId: restaurant.accountId } });
 }
 
 /**
@@ -1554,13 +1790,15 @@ async function findAccountBillingForRestaurant(restaurantId: string) {
 async function handleInvoiceEvent(
   event: Stripe.Event,
   eventType: 'invoice.paid' | 'invoice.payment_failed' | 'invoice.payment_succeeded',
+  tx: Prisma.TransactionClient,
 ): Promise<boolean> {
   const invoice = event.data.object as unknown as InvoiceObject;
-  const resolved = await findBillingForInvoice(invoice);
+  const resolved = await findBillingForInvoice(invoice, tx);
   if (!resolved) return false;
 
-  const { billing, restaurantId } = resolved;
-  const order = await compareStripeEvent(restaurantId, event);
+  const { billing } = resolved;
+  const restaurantId = await billingAnchorId(tx, resolved.restaurantId);
+  const order = await compareStripeEvent(restaurantId, event, tx);
   if (order === 'stale') return true;
 
   const metadata = (invoice.metadata ?? {}) as Record<string, string>;
@@ -1573,7 +1811,7 @@ async function handleInvoiceEvent(
   const planFromMetadata =
     metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
   const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
-  const accountBilling = await findAccountBillingForRestaurant(restaurantId);
+  const accountBilling = await findAccountBillingForRestaurant(restaurantId, tx);
   const siteCount =
     metadataSiteCountOrUndefined(metadata) ?? accountBilling?.entitledSiteCount ?? 1;
   const paid = eventType !== 'invoice.payment_failed';
@@ -1584,42 +1822,50 @@ async function handleInvoiceEvent(
   // so the subscription status comes from Stripe (see compareStripeEvent).
   const live =
     order === 'tie' && subscriptionId ? await retrieveLiveSubscription(subscriptionId) : null;
-  const status = live ? live.status : trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
-  const periodEnd =
-    (live ? subscriptionPeriodEnd(live) : null) ??
-    invoicePeriodEnd(invoice) ??
-    billing?.subscriptionCurrentPeriodEnd ??
-    null;
-  const cancelAtPeriodEnd = live
-    ? live.cancel_at_period_end
-    : (billing?.subscriptionCancelAtPeriodEnd ?? false);
+  if (live) {
+    await applySubscriptionSnapshot(
+      restaurantId,
+      live,
+      live.status === 'canceled',
+      eventCheckpoint(event),
+      tx,
+    );
+    return true;
+  }
+  const status = trialStartInvoice ? 'trialing' : paid ? 'active' : 'past_due';
+  const periodEnd = invoicePeriodEnd(invoice) ?? billing?.subscriptionCurrentPeriodEnd ?? null;
+  const cancelAtPeriodEnd = billing?.subscriptionCancelAtPeriodEnd ?? false;
 
   // A successful first or renewal invoice can carry the plan snapshot. A
   // failed attempt must leave the existing entitlement untouched during the
   // provider's grace window.
-  const entitles = paid && Boolean(plan) && status !== 'canceled';
+  const entitles = paid && Boolean(plan);
   if (entitles && plan) {
-    await db.restaurant.update({
+    await tx.restaurant.update({
       where: { id: restaurantId },
       data: { plan: PLAN_TO_DATABASE[plan] },
     });
   }
 
-  await projectAccountBilling(restaurantId, {
-    stripeCustomerId: customerId,
-    stripeSubscriptionId: subscriptionId,
-    subscriptionStatus: status,
-    subscriptionPriceId: priceId,
-    ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
-    plan: entitles && plan ? PLAN_TO_DATABASE[plan] : undefined,
-    entitledSiteCount: siteCount,
-    subscriptionCurrentPeriodEnd: periodEnd,
-    subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
-    lastStripeEventCreated: eventCreated(event),
-    lastStripeEventId: eventId(event),
-  });
+  await projectAccountBilling(
+    restaurantId,
+    {
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      subscriptionStatus: status,
+      subscriptionPriceId: priceId,
+      ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
+      plan: entitles && plan ? PLAN_TO_DATABASE[plan] : undefined,
+      entitledSiteCount: siteCount,
+      subscriptionCurrentPeriodEnd: periodEnd,
+      subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
+      lastStripeEventCreated: eventCreated(event),
+      lastStripeEventId: eventId(event),
+    },
+    tx,
+  );
 
-  await db.restaurantBilling.upsert({
+  await tx.restaurantBilling.upsert({
     where: { restaurantId },
     create: {
       restaurantId,
@@ -1649,6 +1895,55 @@ async function handleInvoiceEvent(
   return true;
 }
 
+async function billingEventRestaurantId(event: Stripe.Event): Promise<string | undefined> {
+  if (event.type.startsWith('invoice.')) {
+    return (await findBillingForInvoice(event.data.object as InvoiceObject))?.restaurantId;
+  }
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    return session.metadata?.restaurantId ?? session.client_reference_id ?? undefined;
+  }
+  const subscription = event.data.object as SubscriptionObject;
+  if (subscription.metadata?.restaurantId) return subscription.metadata.restaurantId;
+  return (
+    await db.restaurantBilling.findUnique({ where: { stripeSubscriptionId: subscription.id } })
+  )?.restaurantId;
+}
+
+async function billingAnchorId(
+  tx: Prisma.TransactionClient,
+  restaurantId: string,
+): Promise<string> {
+  const restaurant = await tx.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { accountId: true },
+  });
+  if (!restaurant?.accountId) return restaurantId;
+  const primary = await tx.restaurant.findFirst({
+    where: { accountId: restaurant.accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+    select: { id: true },
+  });
+  return primary?.id ?? restaurantId;
+}
+
+async function lockBillingScope(tx: Prisma.TransactionClient, restaurantId: string): Promise<void> {
+  const restaurant = await tx.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { accountId: true },
+  });
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:${restaurant?.accountId ?? restaurantId}`}))`;
+}
+
+async function withBillingLock<T>(restaurantId: string, action: () => Promise<T>): Promise<T> {
+  return db.$transaction(
+    async (tx) => {
+      await lockBillingScope(tx, restaurantId);
+      return action();
+    },
+    { timeout: 60000 },
+  );
+}
+
 /**
  * Applies only subscription events. Gift-card events remain handled by the
  * existing payment service. Returning false lets the webhook route log an
@@ -1672,24 +1967,42 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<boolean
   if (claim === 'in-flight') throw new BillingWebhookInProgressError();
 
   try {
-    const handled =
-      event.type === 'checkout.session.completed'
-        ? await handleCheckoutCompleted(event)
-        : event.type === 'invoice.paid' ||
-            event.type === 'invoice.payment_failed' ||
-            event.type === 'invoice.payment_succeeded'
-          ? await handleInvoiceEvent(event, event.type)
-          : await handleSubscriptionEvent(
-              event,
-              event.type as Exclude<
-                SupportedBillingEvent,
-                | 'checkout.session.completed'
-                | 'invoice.paid'
-                | 'invoice.payment_failed'
-                | 'invoice.payment_succeeded'
-              >,
-              event.data.object as unknown as SubscriptionObject,
-            );
+    const restaurantId = await billingEventRestaurantId(event);
+    let notification: { restaurantId: string; subscription: SubscriptionObject } | undefined;
+    const handled = await db.$transaction(
+      async (tx) => {
+        if (restaurantId) await lockBillingScope(tx, restaurantId);
+        return event.type === 'checkout.session.completed'
+          ? handleCheckoutCompleted(event, tx)
+          : event.type === 'invoice.paid' ||
+              event.type === 'invoice.payment_failed' ||
+              event.type === 'invoice.payment_succeeded'
+            ? handleInvoiceEvent(event, event.type, tx)
+            : handleSubscriptionEvent(
+                event,
+                event.type as Exclude<
+                  SupportedBillingEvent,
+                  | 'checkout.session.completed'
+                  | 'invoice.paid'
+                  | 'invoice.payment_failed'
+                  | 'invoice.payment_succeeded'
+                >,
+                event.data.object as unknown as SubscriptionObject,
+                tx,
+                (id, subscription) => {
+                  notification = { restaurantId: id, subscription };
+                },
+              );
+      },
+      { timeout: 30000 },
+    );
+    if (notification) {
+      await enqueueBillingNotification(
+        event.type,
+        notification.restaurantId,
+        notification.subscription,
+      );
+    }
     await markStripeEventProcessed(event);
     return handled;
   } catch (error) {

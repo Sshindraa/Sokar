@@ -196,6 +196,27 @@ describe('marketing campaign worker', () => {
     );
   });
 
+  it('annule si le numéro a changé avant le dernier contrôle', async () => {
+    const { db, deps, sendSms } = makeDependencies();
+    vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);
+    vi.mocked(db.customer.findFirst)
+      .mockResolvedValueOnce({ id: 'customer-1' } as never)
+      .mockResolvedValueOnce(null);
+
+    await processMarketingCampaignJob(makeJob(), deps);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(db.customer.findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ phone: '+33601020304' }),
+      }),
+    );
+    expect(db.campaignMessage.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: MarketingMessageStatus.CANCELLED, errorCode: 'CUSTOMER_INACTIVE' },
+      }),
+    );
+  });
+
   it('n’envoie pas à une adresse inscrite au registre d’opposition, même avec un accord en base', async () => {
     const { db, deps, sendSms } = makeDependencies();
     vi.mocked(db.marketingPermission.findUnique).mockResolvedValue({ status: 'OPTED_IN' } as never);

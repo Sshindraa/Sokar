@@ -216,7 +216,10 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
       );
 
       expect(result.id).toBe('res-near');
-      expect(db.restaurantExposureSettings.findUnique).not.toHaveBeenCalled();
+      expect(db.restaurantExposureSettings.findUnique).toHaveBeenCalledWith({
+        where: { restaurantId: 'rest-123' },
+        select: { capacitySpecials: true },
+      });
     } finally {
       vi.useRealTimers();
     }
