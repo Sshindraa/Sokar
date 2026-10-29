@@ -2972,3 +2972,131 @@ Vérifié sur HEAD seul (`f21d00de`) : typecheck sans erreur, 125 fichiers et 1 
 Reste non commité, et pourquoi :
 - `reservations/page.tsx` et `types/api.ts` (hors `callerPhone`, déjà commité) : mêlés au chantier de modification de réservation (tiroir, colonne Notes, `specialRequests`, `overbooked`, `channel`).
 - `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `components/reservation/service-card-badges.tsx`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `apps/api/**` : autres chantiers, à ne pas commiter avec ce lot.
+
+## 2026-10-29 — Audit ciblé et performance du pilotage
+
+La route des jours sous-réservés lit en parallèle les réservations à venir et l'historique, avec uniquement les colonnes utilisées. Résultats vérifiés par les tests dashboard et analytics ; typecheck API vert. Gain réel à mesurer sur base représentative.
+
+À examiner : ROI ne compte que `CONFIRMED`, contrairement au pilotage qui inclut `SEATED` et `HONORED` ; la comparaison des rappels classe aussi les rappels WhatsApp comme SMS ; les statistiques de latence chargent toutes les traces du mois et les mois invalides sont acceptés par la validation analytics. Audit ciblé, sans validation complète des autres modules ni test de charge.
+
+## 2026-10-29 — Corrections des indicateurs et latence
+
+ROI et pilotage partagent les états comptabilisés ; analytics refuse les mois hors 01–12. Les centiles de latence sont calculés dans PostgreSQL et les détails limités à 50. Les absences comparent les SMS attestés par le journal d'usage aux réservations sans rappel connu ; les rappels WhatsApp et ceux dont le canal est inconnu sont exclus de la comparaison. Les envois historiques sans preuve durable peuvent donc manquer dans le groupe SMS ; le journal d'usage est alimenté de façon asynchrone.
+
+## 2026-10-29 — Audit réservations : correctifs locaux
+
+Isolation des sections et tables par restaurant ; contrôle de capacité transactionnel des modifications historiques ; réservations sur tables distinctes, attribution sans auto-conflit, créneaux publics ouverts, durées historiques et réservations test corrigés. Les holds comparent leur expiration à l'heure UTC PostgreSQL. La confirmation consommée peut être rejouée avec le même restaurant, la même identité et la même empreinte complète ; le consentement est écrit dans la transaction de création, sans effets répétés sur rejeu.
+
+Vérifié localement : suite API 4 743 tests verts (96 ignorés), 43 tests PostgreSQL de concurrence verts et 10 tests PostgreSQL de modification personnelle verts. Base de test isolée `sokar_reservation_audit_20261029_1` conservée ; aucune qualification staging ou production. Les holds consommés créés avant ce changement utilisent l'ancienne empreinte et ne peuvent pas profiter du nouveau rejeu strict. Le rejeu ne restitue pas le jeton de retrait WhatsApp ni le résultat transitoire d'association d'une carte cadeau.
+
+## 2026-10-29 — Audit paiements : correctifs locaux
+
+Facturation : création d'essai et sessions Checkout coordonnées par compte, tentative persistée avant Stripe et reprise après réponse perdue ; sessions ouvertes remplacées avant une nouvelle souscription. Webhooks Checkout routés vers Billing et projections du compte sérialisées en transaction, avec relecture Stripe à la même seconde. Cartes cadeaux : sortie de revue de litige après contrôle des paiements liés. Paiements de réservation : compte et identifiants Stripe vérifiés, transitions verrouillées, échecs et remboursements partiels distingués.
+
+Vérifié localement : suite API 4 747 tests verts (103 ignorés), typecheck API, 22 tests PostgreSQL de finance cadeau et tests PostgreSQL/Stripe en mode test sur concurrence et reprise. Bases locales dédiées `sokar_reservation_audit_20261029_1` et `sokar_gift_card_finance` conservées. Les tentatives Stripe ambiguës anciennes restent bloquées pour contrôle manuel ; qualification staging, configuration des flags et production non vérifiées.
+
+## 2026-10-29 — Audit accès : correctifs locaux partiels
+
+Rattachement invité : contrôle de toute attribution existante et verrou PostgreSQL partagé avec l'ajout de site et le retrait d'équipe ; facturation historique refusée si le rôle propriétaire n'est pas établi. Tests : 4 750 tests API verts (105 ignorés), typecheck et deux tests concurrents PostgreSQL verts. Reste à décider : autorité du premier propriétaire et règle de rétrogradation globale ; traiter aussi le rattachement possible après retrait de la dernière attribution de site avant de considérer l'isolation terminée. Aucun déploiement ni vérification Clerk/staging/prod.
+
+## 2026-10-29 — Rétrogradation et retrait de site
+
+Décision utilisateur : une rétrogradation globale READ_ONLY s'applique à tous les sites. Les attributions existantes sont mises à jour sous verrou ; le resolver plafonne également les anciens rôles et les nouvelles attributions supérieures sont refusées. Lors du retrait de la dernière attribution d'un membre, l'ancienne invitation est invalidée chez Clerk avant la suppression locale ; une panne Clerk bloque le retrait. Suite API : 4 755 tests verts (105 ignorés), typecheck vert, deux tests PostgreSQL de concurrence verts.
+
+Reste : décider qui peut devenir propriétaire initial. Les comptes sans aucune attribution conservent leur compatibilité ORG_MEMBER ; après retrait du dernier membre de tout un compte, cette compatibilité doit aussi être fermée dans le correctif de propriétaire initial. Clerk réel, staging et production non vérifiés.
+
+## 2026-10-29 — Propriété du compte et transfert local
+
+Décision : la personne qui crée l'organisation est le propriétaire initial lorsqu'elle est vérifiée par Clerk ; sinon l'attribution est refusée. Un compte multi-site sans attribution n'autorise que la synchronisation de démarrage. Le propriétaire peut transférer volontairement son rôle à un membre du compte en choisissant de conserver un rôle responsable, lecture seule ou aucun accès ; confirmation UI, verrou par compte, contrôle de l'unicité et journal d'audit. Un transfert enregistré empêche une réattribution automatique au créateur historique. La facturation historique vérifie le créateur auprès de Clerk avant de lui donner accès.
+
+Validation locale : 4 763 tests API verts (106 ignorés), 13 tests dashboard, typechecks API et dashboard, trois tests PostgreSQL concurrents. Les opérations Clerk sont simulées dans les tests ; qualification Clerk réelle et staging nécessaire, notamment pour l'absence d'identifiant créateur et le choix de retrait complet. Aucun déploiement.
+
+Le choix « aucun accès » neutralise d'abord le rattachement automatique chez Clerk, puis retire les droits Sokar dans la transaction ; la suppression de l'appartenance Clerk après validation est best-effort et laisse une alerte de journal si elle échoue. Le transfert cible actuellement un membre disposant d'une attribution au niveau du compte ; les membres limités à un site ne figurent pas dans ce parcours.
+
+## 2026-10-29 — Cadrage commercial de Sokar
+
+Présentation harmonisée : Sokar est une plateforme de réservations, d'organisation du service et de relation client ; la voix en est une fonction. Carte produit enrichie avec les capacités développées et leurs limites d'activation ; guide d'entretien, pitch fondateur, plan d'acquisition, brief des offres, roadmap et positionnement concurrentiel réconciliés. Le pilote Essential reste un périmètre ciblé, distinct du produit complet. Aucun changement de flags, d'offre ni d'état de déploiement.
+
+## 2026-10-29 — Correctifs locaux de l'audit voix
+
+Flux WebSocket : jeton par session, contrôle de l'ordre et de l'identité, protection contre le nettoyage d'une connexion remplacée ; la démo conserve son parcours. Réutilisation des sessions aux retransmissions, échec de décrochage renvoyé si la queue échoue, distinction entre numéro inconnu et panne technique. Pagination de la réconciliation et écritures de diagnostic asynchrones. Les configurations Nginx locales désactivent les journaux d'accès du flux ; le journal de l'API masque sa chaîne de requête.
+
+Tests locaux ciblés : authentification et ordre du flux, notifications simultanées simulées, expiration, erreurs de décrochage et pagination au-delà de 200 appels. Aucun déploiement ni appel staging. Avant livraison : installer la configuration Nginx avant l'API, vérifier les journaux des intermédiaires et qualifier un appel réel. La session en mémoire ne survit pas à un redémarrage et ne garantit pas le routage multiprocessus ; l'état de déploiement constaté ne prouve pas la topologie complète des processus.
+
+## 2026-10-29 — Fiabilité des notifications en local
+
+Les livraisons de confirmation, cartes cadeaux et demandes d'avis en échec, ainsi que la file SMS de confirmation, sont reprises après une heure avec les protections métier existantes ; les autres sujets restent en reprise manuelle. Les alertes SMS responsables ont une limitation atomique et un claim par tâche : un refus certain peut être retenté, un résultat inconnu est réconcilié. Un refus de rappel est placé dans une tâche propre et ne bloque pas les réservations suivantes. Les traces SMS/e-mail manquantes après succès sont réparées lors du balayage quotidien.
+
+Validation locale : tests de refus, réponse perdue, concurrence simulée, panne de file, reprise des deux étapes et réparation des traces ; suite API et typecheck. Aucun fournisseur ni environnement déployé testé. Les expirations Redis, la surveillance des anciennes entrées en file d'échecs et le rattrapage doivent être qualifiés en staging. Les optimisations de débit et de mémoire restent à mesurer.
+
+## 2026-10-29 — Entrées publiques et réponses clients en local
+
+Échanges des codes et renouvellements OAuth atomiques par script Redis ; vérification scrypt MCP asynchrone ; plafond Fastify partagé dans Redis hors tests. Réponses SMS/WhatsApp : identifiant fournisseur obligatoire, verrou et cible persistée 7 jours pour les reprises, texte contradictoire et plusieurs candidats ignorés, échecs propagés ; notification gérant en file avec seuls des identifiants dans le payload. Une réponse dont le numéro d'envoi est partagé ne possède pas de lien fiable avec une réservation même si une seule est candidate : ce risque reste ouvert, définir une corrélation avant de garantir l'isolation complète.
+
+Tests locaux et Redis isolé : un seul échange concurrent accepté, limite partagée entre deux serveurs. Aucun déploiement ni test Telnyx réel. Qualifier la disponibilité Redis, la conservation des événements, les retransmissions et les alertes en staging. La vulnérabilité d'identité RGPD du précédent audit reste à corriger ; la route a répondu en production à une requête invalide, sans essai sur des données personnelles.
+
+## 2026-10-29 — Vérification RGPD sécurisée localement
+
+La demande vérifie désormais le numéro par SMS même si une adresse e-mail est fournie ; les anciens liens e-mail et jetons d'action sont refusés, les nouveaux jetons portent la preuve SMS. Suppression du secret de repli connu ; sans secret configuré, la vérification est refusée. Consommation et comptage des OTP conditionnels en base ; URLs du lien historique masquées dans les journaux API et Nginx local.
+
+Pas de déploiement ni de SMS réel : la route vulnérable reste exposée en production jusqu'à livraison. Qualifier la configuration du secret, les SMS, les liens anciens et la concurrence PostgreSQL en staging ; poser la configuration Nginx avant l'API et vérifier les autres intermédiaires. L'effacement partiel, l'export, l'opposition marketing et la corrélation des réponses sur numéro partagé restent ouverts.
+
+### 2026-10-29 — Audit RGPD : effacement atomique local
+
+Les messages, appels, réservations, projections et la trace d’audit passent dans la même transaction ; les liens d’expériences sont détachés avant anonymisation. Échec d’écriture propagé à la route. Tests locaux sur mocks ; qualification PostgreSQL et staging à poursuivre. Le jeton est toujours consommé avant l’opération : en cas d’échec, une nouvelle vérification est nécessaire. Export et opposition marketing restent à traiter. Aucun déploiement.
+
+### 2026-10-29 — Audit RGPD : export local
+
+Export : recherche des numéros sous formes nationale et internationale françaises reconnues, y compris les consentements hachés ; un sujet avec appels seuls est retrouvé. Formats historiques avec ponctuation ou espaces restent à examiner prudemment. Tests sur mocks, aucun déploiement.
+
+### 2026-10-29 — Audit marketing : coordonnées au dernier contrôle
+
+Les contrôles des campagnes vérifient que le téléphone ou l’adresse e-mail correspondent encore aux coordonnées retenues pour l’envoi. Tests avec mocks ; changement ultérieur au dernier contrôle toujours possible. La conservation des oppositions après effacement reste ouverte : le registre peut être omis en cas d’échec ou de clé absente. Aucun déploiement.
+
+### 2026-10-29 — Incident potentiel RGPD : mitigation production
+
+Avec autorisation utilisateur, Nginx production bloque temporairement /api/rgpd/ et /api/proxy/api/rgpd/ sur les vhosts publics ; contrôles externes 503, /privacy 200. Vérification Nginx et reload réussis ; base inchangée. Release active 88549d488ca905e77d0090a7d39726aea86d3c61, copie de configuration initiale /tmp/sokar-rgpd-nginx-3SIf5n99 sur le VPS ; rétablissement possible via install-nginx/reload-nginx après qualification du correctif. Le checkout serveur a été restauré : tout déploiement peut écraser la mitigation ; surveiller et intégrer une protection persistante avant toute livraison. Autres chemins réseau non vérifiés. Les demandes peuvent être adressées à privacy@sokar.tech ; organiser leur traitement manuel. Aucune donnée client manipulée.
+
+Correctif RGPD isolé dans /Users/hamza/.codex/worktrees/rgpd-security/Sokar depuis la release 88549d4, sans commit ni livraison. Tests ciblés 34 verts ; PostgreSQL local dédié : 8 validations OTP puis 8 usages de jeton concurrents, un succès à chaque étape ; suite API 4710 tests réussis, 84 ignorés ; typecheck vert. Fichiers d’environnement des deux checkouts ont une entrée CLERK_SECRET_KEY, valeur effective non vérifiée. Qualifier Nginx, secrets effectifs, SMS et staging/CI ; ne pas laisser un déploiement retirer la mitigation avant qualification.
+
+### 2026-10-29 — Incident RGPD : qualification du lot
+
+Workflow Deploy Production suspendu pour éviter le retrait automatique de la mitigation ; staging reste actif. PR #615 créée depuis 88549d48 : preuve SMS, blocage Nginx prod maintenu dans le lot et test de concurrence PostgreSQL. Numéro de test fourni par l’utilisateur, ne pas le journaliser ; SMS à qualifier après livraison staging. Fusion humaine et CI/staging verts nécessaires ; le workflow production devra être réactivé après qualification.
+
+### 2026-10-29 — RGPD : livraison staging et SMS de test
+
+PR #615 fusionnée après accord utilisateur ; workflow staging 40941895037 vert, tests de santé verts. Envoi SMS sur numéro de test autorisé : API staging 200 canal SMS, réception confirmée par l’utilisateur ; GET lien historique de test refusé (400). Code de confirmation non demandé ni vérifié de bout en bout. Routes production toujours bloquées (503) et workflow de déploiement production suspendu ; il reste la qualification complète et le contrôle des journaux avant réouverture.
+
+### 2026-10-29 — RGPD : qualification et livraison en production
+
+Staging : code synthétique incorrect, expiré et valide testé ; rejeux code/jeton et anciens jetons/liens signés refusés. Secret effectif vérifié sans affichage ; données synthétiques nettoyées. Réception SMS réel confirmée par l’utilisateur. CI et staging verts ; workflow production réactivé et run 40943626571 vert, release 90a9411bf2df. Routes RGPD et proxy toujours en 503, page privacy 200 ; blocage inclus dans la configuration. Réouverture, journaux historiques/intermédiaires et autres chantiers RGPD restent à traiter.
+
+### 2026-10-29 — RGPD : réouverture partielle en production
+
+Configuration Nginx validée et rechargée : vérification SMS, export et politique de confidentialité rouverts ; effacement et opposition marketing restent en 503 pour éviter les résultats incomplets de la version prod. Contrôles directs et proxy vérifiés ; PR #616 rend la configuration persistante. Demande SMS de test en production acceptée ; réception à confirmer. Maintenir traitement manuel via privacy@sokar.tech pour les demandes bloquées.
+
+Le SMS de vérification de production envoyé au numéro de test autorisé a été reçu, confirmation utilisateur. Le code n’a pas été demandé.
+
+Correctif d’effacement en cours dans /Users/hamza/.codex/worktrees/rgpd-erasure/Sokar : écritures et audit transactionnels, recherche d’expérience avant détachement et suppression des coordonnées propres à l’expérience. Test PostgreSQL local dédié : échec message provoque retour arrière, puis effacement des coordonnées ; tests ciblés verts. Non livré : opposition marketing, reprise du jeton et portée des données à finaliser. Routes effacement/opposition toujours bloquées.
+
+PR #616 fusionnée, staging et production verts (release 6b6071ed3d56) ; réouverture partielle inscrite durablement dans Nginx. Vérification et export joignables, effacement et opposition toujours en 503. SMS production reçu et confirmé par l’utilisateur.
+
+### 2026-10-29 — iOS : premier écran réservations
+
+Projet `apps/ios/Sokar.xcodeproj` (iOS 17+, SwiftUI, sans dépendance) : `APIClient` (un seul `get`, api-staging.sokar.tech, sans jeton), `Reservation` (champs affichés seulement), `ReservationsView` (réservations du jour en date de Paris, sélecteur de date, états chargement, vide, erreur, données). Build `iphonesimulator` réussi avec Xcode 27.1, sans avertissement Swift. Décodage vérifié sur la réponse réelle de staging (3 réservations du 2026-10-29). Non fait : capture dans le simulateur (accès du panneau Simulator pas accordé), aucun commit. Hors périmètre : Clerk, appels, briefing, création ou modification, push, iPad.
+
+### 2026-10-29 — iOS : capture dans le simulateur
+
+Accès au simulateur accordé. Sokar lancé sur iPhone Duo (iOS 27.1) : la liste du 2026-10-29 s affiche 3 réservations (12:30, 13:30, 19:00), statuts en français. Capture : scratchpad, capture-reservations-ipad-duo.png. Aucun commit.
+
+### 2026-10-29 — iOS : iPad ajouté à la cible
+
+`TARGETED_DEVICE_FAMILY` passe de 1 à `"1,2"` (iPhone et iPad). Build `iphonesimulator` réussi après le changement. Lancement sur iPad (A16) en attente de l accès dans le panneau Simulator. Aucun commit.
+
+### 2026-10-29 — iOS : lancement sur iPad
+
+Sokar lancé sur iPad (A16, iOS 27.0) : même liste du 2026-10-29, mise en page pleine largeur, lisible. Capture : scratchpad, capture-reservations-ipad-a16.png. Aucun commit.
+
+### 2026-10-30 — iOS : onglet Appels
+
+TabView avec Réservations (écran inchangé) et Appels. Ajouts : `Call.swift` (champs demandés, enveloppe `data`, libellés repris du dashboard), `CallsView.swift` (liste, états, tirer-pour-rafraîchir, ligne d en-tête partagée), `CallDetailView.swift` (même en-tête, transcription sélectionnable ou « Aucune transcription »). Build `iphonesimulator` réussi, sans avertissement. Vérifié à l écran sur iPhone 17 : liste des 3 appels de staging (heures Paris, m:ss), détail avec transcription, détail sans transcription. Non vérifié : tirer-pour-rafraîchir, états vide et erreur de la liste. Aucun commit.

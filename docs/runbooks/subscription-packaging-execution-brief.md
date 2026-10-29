@@ -2,6 +2,12 @@
 
 Date : 13 octobre 2026. Document de travail pour l'agent chargé de la livraison.
 
+> Cadrage produit actualisé le 29 octobre 2026 : Sokar est une plateforme de réservations,
+> d'organisation du service et de relation client ; l'assistant vocal est une de ses fonctions.
+> Les exemples et répartitions ci-dessous restent des cibles éditoriales, pas une preuve
+> d'ouverture commerciale. Voir la [carte produit](../PROJECT_MAP.md#ce-quest-sokar) et les
+> [portes de release](../release/product-gates.json) avant de présenter une inclusion.
+
 ## Mission
 
 Travaillez dans `/Users/hamza/Projects/Sokar`.

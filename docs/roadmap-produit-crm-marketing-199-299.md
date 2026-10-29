@@ -34,12 +34,20 @@ Hypothèse de capacité : un développeur principal à temps plein, Hamza dispon
 
 ## 1. Décision produit
 
+Actualisation du 29 octobre 2026 : Sokar est une plateforme de réservations, d'organisation du
+service et de relation client. Les objectifs ci-dessous décrivent des chaînes de valeur à qualifier,
+pas une garantie de résultat. La [carte produit](./PROJECT_MAP.md#ce-quest-sokar) distingue les
+capacités déjà développées de leur ouverture effective.
+
 Sokar ne doit pas attendre d'égaler SevenRooms pour facturer 199 ou 299 € par mois. Le prix doit être justifié par deux résultats simples et mesurables :
 
-- **Essential — 199 € HT/mois/établissement** : Sokar répond aux appels, prend et modifie les réservations sans erreur, synchronise le planning et réduit le travail manuel de l'équipe.
-- **Pro — 299 € HT/mois/établissement** : Sokar ajoute une connaissance client exploitable, des relances ciblées et la mesure des réservations générées.
+- **Essential — 199 € HT/mois/établissement** : réunir les réservations dans un planning commun et aider l'équipe à préparer le service, avec un assistant vocal pour les appels transférés après qualification.
+- **Pro — 299 € HT/mois/établissement** : développer une connaissance client exploitable, des relances ciblées et leur suivi, sous réserve d'activation et de qualification des parcours.
 
-La trajectoire SevenRooms vient ensuite : caisse, revenu réel, protection bancaire, marketing avancé, CRM groupe, réputation, fidélité, événements et écosystème d'intégrations.
+La trajectoire comprend aussi la caisse, le revenu réel, la protection bancaire, le marketing avancé,
+le CRM groupe, la réputation, la fidélité, les expériences, les événements et les intégrations.
+Des fondations sont déjà développées pour plusieurs de ces domaines ; leur présence dans le code ne
+signifie pas que les fournisseurs, les pilotes ou les parcours commerciaux sont ouverts.
 
 La priorité n'est donc pas le nombre de fonctionnalités. Elle est la fermeture complète de chaînes de valeur :
 

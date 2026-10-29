@@ -2,14 +2,36 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
-> **Statut : ACTIF — vérifié le 2 octobre 2026.**
+> **Statut : ACTIF — présentation produit actualisée le 29 octobre 2026.**
 > Le statut de chaque document produit et opérationnel est centralisé dans
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md), avec la réconciliation des audits dans
 > [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md).
 
 ## Ce qu'est Sokar
 
-Sokar est un SaaS français de gestion de réservations et d'appels pour restaurants, avec une IA vocale.
+Sokar est une plateforme française pour aider les restaurants à gérer leurs réservations, organiser
+leur service et entretenir la relation avec leurs clients. L'assistant téléphonique vocal est une
+fonction de cette plateforme, pas sa définition à lui seul.
+
+Le produit couvre plusieurs usages, à des niveaux de disponibilité différents :
+
+| Usage                     | Capacités développées                                                                                  | État et limites connus                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Réservations et accueil   | Carnet et planning, réservations en salle, page Connect et widget, disponibilités, liste d'attente     | Parcours présents dans le code ; vérifier les conditions de mise en service et les preuves par canal avant une proposition.                                |
+| Service                   | Plan de salle, tables, allocation et Service Copilot                                                   | Fonctions développées ; la qualification terrain du Copilot reste à faire.                                                                                 |
+| Téléphone                 | Assistant vocal, appels transférés, consultation des disponibilités et prise de réservation            | Recette vocale et installation à vérifier avant activation client ; ne pas garantir une disponibilité continue.                                            |
+| Clients et fidélisation   | Fichier client, historique, préférences ; CRM avancé, segments, campagnes, retours privés et avantages | Socle et modules développés ; CRM avancé et envois marketing soumis aux portes de release. Fournisseurs et pilotes à qualifier avant promesse commerciale. |
+| Cartes cadeaux            | Cartes, packs, utilisation et parcours Stripe                                                          | Parcours développés ; compte Stripe sandbox de démonstration et notifications à qualifier avant ouverture commerciale.                                     |
+| Expériences et événements | Catalogues, sessions, capacités, réservations ou billets et contrôle d'accès                           | Fondations développées sous flags ; paiement et ouverture publique des expériences à qualifier ; paiement et distribution des événements non actifs.       |
+| Plusieurs établissements  | Comptes, sélection de site, rôles et facturation                                                       | Socle développé ; isolation avec identités réelles et partage client inter-sites à qualifier.                                                              |
+| Canaux et intégrations    | Réservation agentique/MCP, fondations de distribution et de connexion caisse                           | Présence dans le code ne vaut pas ouverture partenaire ; accord OpenAI Reserve non confirmé, aucun connecteur caisse ou distribution partenaire actif.     |
+
+Cette liste décrit le produit développé, pas une liste d'inclusions disponibles pour chaque client.
+Avant de vendre ou d'activer une fonction, consulter les flags et portes de
+[`product-gates.json`](./release/product-gates.json), les runbooks concernés et les TODOs actifs de
+[`Context.md`](./obsidian/Context.md). Les prix et droits d'une formule ne prouvent pas à eux seuls
+qu'un parcours est qualifié. Les SMS de réservation et WhatsApp restent désactivés en production
+selon le suivi courant.
 
 - **Dashboard** : espace privé restaurateur (Next.js + Clerk).
 - **Sokar Connect** : site public et widget de réservation (Next.js).
