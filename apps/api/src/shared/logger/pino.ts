@@ -5,6 +5,10 @@ const isDev = process.env.NODE_ENV !== 'production';
 
 export const REDACT_CENSOR = '[REDACTED]';
 
+export function safeRequestUrl(url: string | undefined): string | undefined {
+  return url?.startsWith('/api/rgpd/confirm-link') ? url.split('?')[0] : url;
+}
+
 /**
  * Centralised redaction paths for every Pino logger instance (worker logger
  * and Fastify request logger). Keep this list in sync with the env vars that

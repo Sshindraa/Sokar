@@ -1067,6 +1067,7 @@ vi.mock('../shared/db/client', () => {
       upsert: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
     signedTokenUsage: {
       create: vi.fn(),

@@ -7,7 +7,13 @@ import { setupFastifyErrorHandler } from '@sentry/node';
 import { db } from './shared/db/client';
 import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
-import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logger/pino';
+import {
+  logger,
+  newRequestId,
+  REDACT_PATHS,
+  REDACT_CENSOR,
+  safeRequestUrl,
+} from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { initGreetingCache } from './modules/voice/stream/greeting-cache';
@@ -104,6 +110,23 @@ export async function buildApp() {
     logger: {
       level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
       base: { service: 'sokar-api', env: process.env.NODE_ENV ?? 'development' },
+      serializers: {
+        req(request: {
+          method?: string;
+          url?: string;
+          hostname?: string;
+          remoteAddress?: string;
+          remotePort?: number;
+        }) {
+          return {
+            method: request.method,
+            url: safeRequestUrl(request.url),
+            hostname: request.hostname,
+            remoteAddress: request.remoteAddress,
+            remotePort: request.remotePort,
+          };
+        },
+      },
       redact: {
         paths: REDACT_PATHS,
         censor: REDACT_CENSOR,
