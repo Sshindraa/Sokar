@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import GiftCardsPage from './page';
 
 const mocks = vi.hoisted(() => ({
@@ -133,5 +133,34 @@ describe('GiftCardsPage', () => {
       expect(document.getElementById('gift-card-stripe-connect')?.hasAttribute('open')).toBe(true),
     );
     expect(window.location.search).toBe('');
+  });
+
+  it('ignore la réponse tardive d’un chargement remplacé par un plus récent', async () => {
+    const list = { items: [], total: 0, limit: 20, offset: 0 };
+    let rejectReplacedLoad: (error: Error) => void = () => undefined;
+    mocks.listGiftCards.mockReset();
+    mocks.listGiftCards
+      .mockResolvedValueOnce(list)
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectReplacedLoad = reject;
+          }),
+      )
+      .mockResolvedValue(list);
+    render(<GiftCardsPage />);
+
+    // Le premier chargement réussit ; le changement d'onglet lance un chargement qu'on bloque,
+    // puis le retour sur « Cartes cadeaux » en lance un plus récent, qui répond tout de suite.
+    fireEvent.click(await screen.findByRole('button', { name: 'Cagnottes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cartes cadeaux' }));
+    await waitFor(() => expect(mocks.listGiftCards).toHaveBeenCalledTimes(3));
+
+    // Le 403 du chargement remplacé arrive après le plus récent : il ne doit rien afficher.
+    await act(async () => {
+      rejectReplacedLoad(new Error('Accès refusé'));
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('liste prête')).toBeInTheDocument();
   });
 });
