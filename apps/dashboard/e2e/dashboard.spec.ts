@@ -45,7 +45,7 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     const headerBox = await header.boundingBox();
     expect(headerBox).not.toBeNull();
 
-    const firstWidget = page.getByRole('article', { name: 'Indicateur Réservations' });
+    const firstWidget = page.getByRole('article', { name: 'Indicateur Réservations', exact: true });
     await expect(firstWidget).toBeVisible();
     const widgetBox = await firstWidget.boundingBox();
     expect(widgetBox).not.toBeNull();
@@ -64,9 +64,19 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
   test("les KPIs et graphiques s'affichent", async ({ page }) => {
     // KPIs — labels des cartes KpiCard (exact pour éviter les matches multiples
     // avec d'autres textes comme "des appels reçus").
-    await expect(page.getByRole('article', { name: 'Indicateur Réservations' })).toBeVisible();
+    await expect(
+      page.getByRole('article', { name: 'Indicateur Réservations', exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('article', { name: 'Indicateur Couverts' })).toBeVisible();
     await expect(page.getByRole('article', { name: 'Indicateur CA estimé' })).toBeVisible();
+
+    const phoneReservations = page.getByRole('article', {
+      name: 'Indicateur Réservations téléphone',
+      exact: true,
+    });
+    await expect(phoneReservations).toContainText('50');
+    await expect(phoneReservations).toContainText('140 appels reçus');
+    await expect(page.getByText('Conversion appels', { exact: true })).toHaveCount(0);
 
     // Graphiques — DashboardCharts (dynamic import recharts).
     // Les titres des cartes graphique sont rendus une fois recharts hydraté.
@@ -75,6 +85,55 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     // recharts rend un <svg class="recharts-surface"> — preuve que le graphique
     // est effectivement dessiné (pas juste le conteneur vide).
     await expect(page.locator('.recharts-surface').first()).toBeVisible();
+  });
+
+  test('les définitions s’ouvrent depuis le chiffre concerné au clavier', async ({ page }) => {
+    const help = page.getByRole('button', { name: 'Comprendre CA estimé', exact: true });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await help.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'CA estimé', exact: true });
+    await expect(dialog.getByText(/ne mesure ni les encaissements/)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(help).toBeFocused();
+  });
+
+  test('la période ne présente qu’une seule synthèse chiffrée', async ({ page }) => {
+    test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Valeurs de démonstration locale.');
+    await expect(
+      page.getByRole('region', { name: 'Indicateurs clés' }).getByRole('article'),
+    ).toHaveCount(4);
+    await expect(page.getByRole('region', { name: 'Activité Sokar' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Analyser l’impact' })).toHaveCount(0);
+    if (page.viewportSize()!.width < 640) {
+      await page.getByRole('combobox', { name: 'Période d’analyse' }).selectOption('30d');
+    } else {
+      await page.getByRole('button', { name: '30 jours', exact: true }).click();
+    }
+    await expect(
+      page.getByRole('article', { name: 'Indicateur Réservations', exact: true }),
+    ).toContainText('301');
+    await expect(page.getByText('Réservations prises ces 30 derniers jours')).toBeVisible();
+  });
+
+  test('le graphique est dominant et précède les canaux sur petit écran', async ({ page }) => {
+    const chart = page
+      .getByRole('heading', { name: 'Réservations et couverts' })
+      .locator('..')
+      .locator('..');
+    const channels = page.getByRole('region', { name: 'Réservations par canal', exact: true });
+    await expect(chart).toBeVisible();
+    const chartBox = (await chart.boundingBox())!;
+    const channelBox = (await channels.boundingBox())!;
+    if (page.viewportSize()!.width >= 1280) {
+      expect(chartBox.width).toBeGreaterThan(channelBox.width);
+    } else {
+      expect(chartBox.y).toBeLessThan(channelBox.y);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+      false,
+    );
   });
 });
 

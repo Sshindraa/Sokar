@@ -132,6 +132,15 @@ describe('messages par code', () => {
     );
   });
 
+  it('traduit le message de limitation Fastify au lieu d’afficher son texte anglais', () => {
+    expect(toApiError(429, { message: 'Rate limit exceeded, retry in 49 seconds' }).message).toBe(
+      'Trop de requêtes. Réessayez dans 49 secondes.',
+    );
+    expect(toApiError(429, { message: 'Rate limit exceeded, retry in 1 second' }).message).toBe(
+      'Trop de requêtes. Réessayez dans 1 seconde.',
+    );
+  });
+
   it('traduit les refus de la fiche client et de la fusion', () => {
     expect(toApiError(404, { error: 'CUSTOMER_NOT_FOUND' }).message).toBe(
       'Ce client n’existe plus ou a été fusionné avec un autre profil.',

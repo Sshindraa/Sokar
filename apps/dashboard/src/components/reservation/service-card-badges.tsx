@@ -96,6 +96,16 @@ export function ServiceCardBadges({
     );
   }
   const badges = state.cards.get(reservationId)?.badges ?? [];
+  return <ServiceBadgeList badges={badges} className={className} />;
+}
+
+export function ServiceBadgeList({
+  badges,
+  className,
+}: {
+  badges: ServiceCardBadge[];
+  className?: string;
+}) {
   if (badges.length === 0) return null;
   return (
     <ul className={cn('flex flex-wrap gap-1', className)} aria-label="Fiche de service">

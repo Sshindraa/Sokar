@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth, useOrganization } from '@clerk/nextjs';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useSiteSelection } from '@/features/sites/site-context';
 import { toApiError } from '@/lib/api-error';
 
@@ -38,15 +38,18 @@ export function useApi(options: { requireSession?: boolean } = {}) {
         useClerkContext()
       : {
           isSignedIn: Boolean(demoOrgId),
+          sessionId: undefined,
           organization: null as ReturnType<typeof useOrganization>['organization'],
         };
-  const { isSignedIn, organization } = clerk;
+  const { isSignedIn, organization, sessionId } = clerk;
   const organizationId = organization?.id ?? demoOrgId ?? undefined;
   // Les routes historiques attendent un ID d'établissement dans leurs
   // paramètres. Une fois le compte multi-site chargé, orgId pointe donc vers
   // le site actif, tout en conservant organizationId pour les opérations au
   // niveau du compte (facturation, sélecteur, etc.).
   const orgId = activeSiteId ?? organizationId;
+  const requestSiteId = activeSiteId ?? (options.requireSession ? undefined : demoOrgId);
+  const pendingReads = useRef(new Map<string, Promise<unknown>>());
 
   const apiFetch = useCallback(
     async <T = unknown>(
@@ -59,38 +62,53 @@ export function useApi(options: { requireSession?: boolean } = {}) {
 
       const headers: Record<string, string> = {};
       if (body) headers['Content-Type'] = 'application/json';
-      if (activeSiteId) headers['X-Sokar-Site-ID'] = activeSiteId;
+      if (requestSiteId) headers['X-Sokar-Site-ID'] = requestSiteId;
       if (options?.headers) Object.assign(headers, options.headers);
 
-      const res = await fetch(url, {
-        method,
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: options?.signal,
-        // Dashboard responses are tenant- and session-scoped. Prevent a
-        // successful operator capability probe from being reused after a
-        // restaurant user signs in on the same browser.
-        cache: 'no-store',
-      });
+      const execute = async (): Promise<T> => {
+        const res = await fetch(url, {
+          method,
+          headers: Object.keys(headers).length > 0 ? headers : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: options?.signal,
+          // Dashboard responses are tenant- and session-scoped. Prevent a
+          // successful operator capability probe from being reused after a
+          // restaurant user signs in on the same browser.
+          cache: 'no-store',
+        });
 
-      let data: Record<string, unknown> = {};
-      const text = await res.text();
-      if (text) {
-        try {
-          data = JSON.parse(text) as Record<string, unknown>;
-        } catch {
-          data = { message: text };
+        let data: Record<string, unknown> = {};
+        const text = await res.text();
+        if (text) {
+          try {
+            data = JSON.parse(text) as Record<string, unknown>;
+          } catch {
+            data = { message: text };
+          }
         }
-      }
 
-      if (!res.ok) {
-        // Message français, code et statut : voir lib/api-error.ts.
-        throw toApiError(res.status, data);
-      }
+        if (!res.ok) {
+          // Message français, code et statut : voir lib/api-error.ts.
+          throw toApiError(res.status, data);
+        }
 
-      return data as T;
+        return data as T;
+      };
+      // Partage uniquement la lecture en cours, jamais une réponse déjà terminée.
+      // Un signal d’annulation appartient à son appelant et ne se partage pas.
+      if (method !== 'GET' || options?.signal) return execute();
+      const key = JSON.stringify([sessionId, isSignedIn, organizationId, url, headers]);
+      const pending = pendingReads.current.get(key);
+      if (pending) return pending as Promise<T>;
+      const request = execute();
+      pendingReads.current.set(key, request);
+      try {
+        return await request;
+      } finally {
+        pendingReads.current.delete(key);
+      }
     },
-    [activeSiteId],
+    [requestSiteId, organizationId, sessionId, isSignedIn],
   );
 
   const get = useCallback(
@@ -129,8 +147,8 @@ export function useApi(options: { requireSession?: boolean } = {}) {
 }
 
 function useClerkContext() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, sessionId } = useAuth();
   const { organization } = useOrganization();
 
-  return { isSignedIn, organization };
+  return { isSignedIn, organization, sessionId };
 }
