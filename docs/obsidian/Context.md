@@ -8,7 +8,7 @@
 
 ## TODOs actifs
 
-- [ ] Incident RGPD : routes publiques bloquées en production (503) ; workflow Deploy Production suspendu pour protéger la mitigation. Correctif SMS isolé en qualification ; vérifier secrets chargés, SMS et staging avant réactivation et réouverture. Les demandes manuelles passent par privacy@sokar.tech.
+- [ ] Incident RGPD : vérification SMS et export rouverts en production ; effacement et opposition marketing restent bloqués (503) jusqu’à correction. Correctif SMS livré et qualifié en staging ; examiner les anciens journaux. Les demandes manuelles passent par privacy@sokar.tech.
 
 - [ ] Notifications : #484 qualifiée staging/off prod; WEB/outbox/WhatsApp locaux. Annulation/modification #485–#487 actives et qualifiées staging; liens off prod. Après délai : contact, aucun frais auto.
 - [ ] WhatsApp : flags off. Téléphone = confirmation SMS, sans rappel ; WEB avec consentement = rappel WhatsApp sans repli SMS. Callbacks Meta signés (7 j, rapprochement ID ; sans ID → manuel). Template FR/Utility soumis, Telnyx #800571 ouvert. Reste : fournisseur, abonnement/secrets Meta, qualification staging ; SMS staging validé. Voir `whatsapp-reservation-activation.md`.
