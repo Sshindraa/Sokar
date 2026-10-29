@@ -27,7 +27,7 @@ type ApiRequestOptions = {
  * - Gestion d'erreur centralisée
  */
 export function useApi(options: { requireSession?: boolean } = {}) {
-  const { activeSiteId } = useSiteSelection();
+  const { activeSiteId, status } = useSiteSelection();
   // Les options de session sont fixes pour chaque composant appelant. Sans Clerk
   // on expose un client de preview local.
   // En staging demo mode (NEXT_PUBLIC_DEMO_RESTAURANT_ID défini), on force le
@@ -43,10 +43,12 @@ export function useApi(options: { requireSession?: boolean } = {}) {
   const { isSignedIn, organization } = clerk;
   const organizationId = organization?.id ?? demoOrgId ?? undefined;
   // Les routes historiques attendent un ID d'établissement dans leurs
-  // paramètres. Une fois le compte multi-site chargé, orgId pointe donc vers
-  // le site actif, tout en conservant organizationId pour les opérations au
-  // niveau du compte (facturation, sélecteur, etc.).
-  const orgId = activeSiteId ?? organizationId;
+  // paramètres. Tant que la liste des sites charge, l'ID du compte Clerk
+  // répondrait 403 : on n'expose donc aucun ID. La démo et le mode sans Clerk
+  // gardent le repli immédiat. organizationId reste disponible pour les
+  // opérations au niveau du compte (facturation, sélecteur, etc.).
+  const sitesPending = hasClerkKey && !demoOrgId && (status === 'idle' || status === 'loading');
+  const siteScopedId = sitesPending ? undefined : (activeSiteId ?? organizationId);
 
   const apiFetch = useCallback(
     async <T = unknown>(
@@ -116,9 +118,9 @@ export function useApi(options: { requireSession?: boolean } = {}) {
   const del = useCallback(<T = unknown>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);
 
   return {
-    orgId,
+    orgId: siteScopedId,
     organizationId,
-    siteId: activeSiteId ?? organizationId,
+    siteId: siteScopedId,
     isSignedIn,
     get,
     post,
