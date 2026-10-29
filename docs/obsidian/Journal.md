@@ -2972,3 +2972,7 @@ Vérifié sur HEAD seul (`f21d00de`) : typecheck sans erreur, 125 fichiers et 1 
 Reste non commité, et pourquoi :
 - `reservations/page.tsx` et `types/api.ts` (hors `callerPhone`, déjà commité) : mêlés au chantier de modification de réservation (tiroir, colonne Notes, `specialRequests`, `overbooked`, `channel`).
 - `lib/api.ts`, `lib/api.test.tsx`, `lib/api-error*.ts`, `components/ui/dialog.tsx`, `AccountMenu.tsx`, `components/reservation/service-card-badges.tsx`, `e2e/dashboard.spec.ts`, `next-env.d.ts`, `apps/api/**` : autres chantiers, à ne pas commiter avec ce lot.
+
+### 2026-10-29 — Incident RGPD : gel de la livraison et lot isolé
+
+Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu ; staging reste actif. Lot séparé depuis 88549d48 : preuve SMS, refus des anciens jetons, masquage des liens, protection Nginx maintenue en production et test de concurrence PostgreSQL. Qualification du SMS, des secrets effectivement chargés et du staging requise avant toute réouverture ; traitement manuel via privacy@sokar.tech.

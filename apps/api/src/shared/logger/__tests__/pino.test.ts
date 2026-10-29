@@ -1,7 +1,12 @@
 import { PassThrough } from 'node:stream';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
-import { REDACT_CENSOR, REDACT_PATHS } from '../pino';
+import { REDACT_CENSOR, REDACT_PATHS, safeRequestUrl } from '../pino';
+
+it('ne journalise pas le jeton du lien RGPD', () => {
+  expect(safeRequestUrl('/api/rgpd/confirm-link?token=secret')).toBe('/api/rgpd/confirm-link');
+  expect(safeRequestUrl('/health?probe=ready')).toBe('/health?probe=ready');
+});
 
 describe('logger redaction', () => {
   it('redacts provider phone fields at the root and in nested payloads', async () => {
