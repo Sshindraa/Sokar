@@ -2976,3 +2976,7 @@ Reste non commité, et pourquoi :
 ### 2026-10-29 — Incident RGPD : gel de la livraison et lot isolé
 
 Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu ; staging reste actif. Lot séparé depuis 88549d48 : preuve SMS, refus des anciens jetons, masquage des liens, protection Nginx maintenue en production et test de concurrence PostgreSQL. Qualification du SMS, des secrets effectivement chargés et du staging requise avant toute réouverture ; traitement manuel via privacy@sokar.tech.
+
+### 2026-10-29 — RGPD : réouverture partielle
+
+Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
