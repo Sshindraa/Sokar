@@ -11,7 +11,9 @@ import { COMPANION_TOOLS, runCompanionTool } from './companion.tools';
 import { queryScope } from './query-data';
 
 const REQUEST_TIMEOUT_MS = 20_000;
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 8;
+// Au-delà de ce volume d'entrée, la réponse part sans outil : elle se fait avec ce qui est déjà lu.
+const INPUT_TOKEN_BUDGET = 60_000;
 const MAX_OUTPUT_TOKENS = 1024;
 
 export interface CompanionMessage {
@@ -128,7 +130,9 @@ export function companionSystemPrompt(): string {
     '- Pas de conseil juridique, fiscal ni comptable : orientez vers un professionnel.',
     "- Vous n'avez accès à aucune coordonnée ni à aucun nom de client : ne les demandez pas.",
     '- Texte simple, sans Markdown : ni gras (**), ni titre (#), ni tableau. Les listes utilisent un tiret « - ».',
-    '- Ne supposez aucune cause ni aucune action absente des données. Ne suggérez donc aucune vérification (canal de réservation, synchronisation, réglage) : constatez ce que disent les chiffres, puis dites ce que vous ne savez pas.',
+    '- Reliez seulement ce que les données montrent ensemble (« en même temps, les appels non terminés ont doublé »). Jamais une cause extérieure aux données (météo, concurrence, saison, personnel), jamais un lien de cause à effet présenté comme certain. Dites ce que vous ne savez pas.',
+    "- Pour une question ouverte (« pourquoi ? », « ça marche ? », « qu'est-ce qui cloche ? »), explorez deux à quatre angles du catalogue, avec compare, avant de répondre : canaux, jours, issues d'appel, liste d'attente, avis.",
+    '- Réponse : trois à cinq phrases, en commençant par le constat principal.',
     "- Vos réponses précédentes figurent dans la conversation : pour rappeler un chiffre que vous avez déjà donné, reprenez-le sans vous désavouer. Pour toute question chiffrée nouvelle ou contestée, interrogez de nouveau l'outil : les chiffres changent pendant la journée.",
   ].join('\n');
 }
@@ -227,7 +231,7 @@ export async function answerCompanion(input: {
 
   try {
     for (let round = 0; ; round++) {
-      const withTools = round < MAX_TOOL_ROUNDS;
+      const withTools = round < MAX_TOOL_ROUNDS && trace.inputTokens < INPUT_TOKEN_BUDGET;
       const message = await requestTurn(conversation, withTools, trace, fetcher);
       if (!withTools || !message.tool_calls?.length) {
         const reply = message.content?.replaceAll('**', '').trim() ?? '';

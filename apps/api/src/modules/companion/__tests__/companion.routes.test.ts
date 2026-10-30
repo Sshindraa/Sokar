@@ -213,7 +213,8 @@ describe('POST /companion/chat', () => {
     expect(JSON.stringify(instructions)).not.toMatch(/Aujourd/);
     const system = systemText(sentBody(fetchSpy, 0).messages[0]);
     expect(system).toContain('sans Markdown');
-    expect(system).toContain('Ne supposez aucune cause');
+    expect(system).toContain('Reliez seulement ce que les données montrent ensemble');
+    expect(system).toContain('Jamais une cause extérieure aux données');
     expect(system).toContain('Vos réponses précédentes figurent dans la conversation');
   });
 
@@ -264,10 +265,39 @@ describe('POST /companion/chat', () => {
     expect(res.json().reply).toBe('Le total est de 5 couverts.');
   });
 
-  it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {
+  it('répond sans outil dès que l’entrée lue dépasse le plafond de tokens', async () => {
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({ openingHours: null } as never);
+    const heavy = completion(toolCallMessage('upcoming_days', {}, 'call_heavy'));
+    const body = (await heavy.json()) as { usage: { prompt_tokens: number } };
+    body.usage.prompt_tokens = 61_000;
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    fetchSpy.mockResolvedValueOnce(
+      completion({ role: 'assistant', content: 'Réponse avec ce qui est lu.' }),
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: CHAT_URL,
+      headers: AUTH,
+      payload: { messages: [userMessage] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().reply).toBe('Réponse avec ce qui est lu.');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(sentBody(fetchSpy, 1).tools).toBeUndefined();
+  });
+
+  it('s’arrête à 8 tours d’outils puis demande la réponse finale sans outils', async () => {
     const restaurant = { openingHours: null };
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(restaurant as never);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 8; i++) {
       fetchSpy.mockResolvedValueOnce(completion(toolCallMessage('upcoming_days', {}, `call_${i}`)));
     }
     fetchSpy.mockResolvedValueOnce(completion({ role: 'assistant', content: 'Réponse finale.' }));
@@ -282,11 +312,11 @@ describe('POST /companion/chat', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().reply).toBe('Réponse finale.');
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
-    for (let i = 0; i < 4; i++) expect(sentBody(fetchSpy, i).tools).toBeDefined();
-    expect(sentBody(fetchSpy, 4).tools).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    for (let i = 0; i < 8; i++) expect(sentBody(fetchSpy, i).tools).toBeDefined();
+    expect(sentBody(fetchSpy, 8).tools).toBeUndefined();
     // Chaque requête, avec ou sans outils, demande zéro conservation chez le fournisseur.
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 9; i++) {
       expect(sentBody(fetchSpy, i).provider).toEqual({ data_collection: 'deny' });
     }
   });

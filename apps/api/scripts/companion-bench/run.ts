@@ -10,7 +10,7 @@
  * le plus haut dans un résultat d'outil enregistré). Questions à relire : 13 à 16, 21 et 28 ; réponses
  * brutes et appels d'outils dans results/.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ReservationState } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
@@ -58,7 +58,8 @@ type Expected =
   | { kind: 'all'; value: number[] }
   | { kind: 'any'; value: number[] }
   | { kind: 'first'; value: string[]; others: string[] }
-  | { kind: 'unavailable' };
+  | { kind: 'unavailable' }
+  | { kind: 'investigation'; value: number[]; tolerance: number; facts: RegExp[] };
 
 interface Question {
   n: number;
@@ -238,6 +239,56 @@ async function findWithoutPlanRestaurant(): Promise<string> {
   throw new Error('aucun restaurant sans la formule Avis dans cette base.');
 }
 const roundOne = (value: number) => Math.round(value * 10) / 10;
+
+// Enquête : couverts d'une plage (repas prévus, réservations valables), par canal si demandé.
+async function coversBetween(
+  restaurantId: string,
+  from: string,
+  to: string,
+  channel?: string,
+): Promise<number> {
+  const rows = await reservationsBetween(restaurantId, 'reservedAt', from, to);
+  return sumCovers(channel ? rows.filter((row) => benchChannel(row) === channel) : rows);
+}
+// Enquête : appels sans issue (sans résultat), créés sur la plage.
+function unfinishedCallsBetween(restaurantId: string, from: string, to: string): Promise<number> {
+  return db.call.count({
+    where: {
+      restaurantId,
+      outcome: null,
+      createdAt: { gte: parisStart(from), lt: parisStart(shiftDay(to, 1)) },
+    },
+  });
+}
+// Enquête : couverts moyens d'un même jour de semaine, sur les 4 semaines précédentes.
+async function usualCoversOf(restaurantId: string, dayKey: string): Promise<number> {
+  const totals = await Promise.all(
+    [7, 14, 21, 28].map((weeks) =>
+      coversBetween(restaurantId, shiftDay(dayKey, -weeks), shiftDay(dayKey, -weeks)),
+    ),
+  );
+  return totals.reduce((sum, total) => sum + total, 0) / 4;
+}
+// Enquête : note moyenne des avis sur la plage, à 0,1 près.
+async function averageScoreBetween(
+  restaurantId: string,
+  from: string,
+  to: string,
+): Promise<number> {
+  const rows = await feedbacksBetween(restaurantId, from, to);
+  return roundOne(rows.reduce((sum, row) => sum + row.score, 0) / rows.length);
+}
+// Enquête : sens d'un écart, en mots que la réponse doit employer.
+const BETTER = /mieux|meilleur|hausse|augment|progress|(?:^|[\s(])\+\s?\d/i;
+const WORSE = /moins|baisse|recul|diminu|dégrad|(?:^|[\s(])-\s?\d/i;
+const DROP = /moiti|deux fois moins|baisse|recul|moins de|plus faible|diminu|calme/i;
+const UNFINISHED = /non termin|sans issue|inachev|non abouti|unfinished/i;
+const WAITLIST_EMPTY =
+  /liste d.attente[^.]*(vide|aucune|aucun|zéro)|(vide|aucune|aucun|zéro)[^.]*liste d.attente/i;
+const NO_REFERENCE =
+  /pas de donnée|aucune donnée|aucune référence|pas d.historique|sans historique|pas de référence|ne peux pas comparer|pas de comparaison|aucun historique|pas disponible|aucun couvert|aucune réservation|aucun pourcentage|pas calculable|n.est calculable/i;
+// Jour de l'anomalie planté par le seed : mardi 20 octobre 2026.
+const ANOMALY_DAY = '2026-10-20';
 
 const QUESTIONS: Question[] = [
   {
@@ -575,6 +626,88 @@ const QUESTIONS: Question[] = [
     restaurant: 'withoutPlan',
     expected: async () => ({ kind: 'unavailable' }),
   },
+  {
+    n: 42,
+    text: 'Pourquoi le mardi 20 octobre était-il si calme, en couverts ?',
+    expected: async (id) => ({
+      kind: 'investigation',
+      value: [
+        await coversBetween(id, ANOMALY_DAY, ANOMALY_DAY),
+        Math.round(await usualCoversOf(id, ANOMALY_DAY)),
+      ],
+      tolerance: 1,
+      facts: [DROP, UNFINISHED, WAITLIST_EMPTY],
+    }),
+  },
+  {
+    n: 43,
+    text: "Est-ce que les 30 derniers jours, aujourd'hui compris, marchent mieux que les 30 jours d'avant, en couverts des repas prévus ?",
+    expected: async (id) => {
+      const current = await coversBetween(id, shiftDay(today(), -29), today());
+      const previous = await coversBetween(id, shiftDay(today(), -59), shiftDay(today(), -30));
+      return {
+        kind: 'investigation',
+        value: [current, previous],
+        tolerance: 1,
+        facts: [current > previous ? BETTER : WORSE],
+      };
+    },
+  },
+  {
+    n: 44,
+    text: "Ça marche, la liste d'attente ? Comparez les demandes reçues ces 30 derniers jours, aujourd'hui compris, aux 30 jours d'avant.",
+    expected: async (id) => {
+      const current = (await waitlistBetween(id, 'createdAt', shiftDay(today(), -29), today()))
+        .length;
+      const previous = (
+        await waitlistBetween(id, 'createdAt', shiftDay(today(), -59), shiftDay(today(), -30))
+      ).length;
+      return {
+        kind: 'investigation',
+        value: [current, previous],
+        tolerance: 0,
+        facts: [/liste d.attente/i, current > previous ? BETTER : WORSE],
+      };
+    },
+  },
+  {
+    n: 45,
+    text: "Qu'est-ce qui cloche avec les appels ce mois-ci ?",
+    expected: async (id) => {
+      const [from, to] = [`${today().slice(0, 7)}-01`, today()];
+      return {
+        kind: 'investigation',
+        value: [await unfinishedCallsBetween(id, from, to)],
+        tolerance: 0,
+        facts: [UNFINISHED, /hausse|augment|plus|doubl|pic|beaucoup|explos|passé|progress/i],
+      };
+    },
+  },
+  {
+    n: 46,
+    text: "Mes clients viennent-ils plus par le site que l'an dernier, en couverts des repas prévus ?",
+    expected: async (id) => ({
+      kind: 'investigation',
+      value: [await coversBetween(id, `${today().slice(0, 7)}-01`, today(), 'website')],
+      tolerance: 1,
+      facts: [NO_REFERENCE],
+    }),
+  },
+  {
+    n: 47,
+    text: 'Les avis clients sont-ils meilleurs ce mois-ci que le mois dernier ?',
+    expected: async (id) => {
+      const current = await averageScoreBetween(id, `${today().slice(0, 7)}-01`, today());
+      const [from, to] = monthBounds(previousMonth());
+      const previous = await averageScoreBetween(id, from, to);
+      return {
+        kind: 'investigation',
+        value: [current, previous],
+        tolerance: 0.05,
+        facts: [current > previous ? BETTER : WORSE],
+      };
+    },
+  },
 ];
 
 // Nombres en lettres pour la question 7 : « Un seul jour est sous-réservé ».
@@ -607,6 +740,14 @@ function percentagesIn(reply: string): number[] {
 
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
 function valueFound(reply: string, expected: Expected): boolean {
+  if (expected.kind === 'investigation') {
+    // Chaque chiffre clé est cité à sa tolérance près, et chaque fait clé est dit.
+    const figures = numbersIn(reply);
+    const figuresOk = expected.value.every((value) =>
+      figures.some((figure) => Math.abs(figure - value) <= expected.tolerance + 1e-9),
+    );
+    return figuresOk && expected.facts.every((fact) => fact.test(reply));
+  }
   if (expected.kind === 'unavailable') {
     // Source hors formule : la réponse le dit, sans annoncer zéro.
     return /formule/i.test(reply) && !/\b0\b|zéro|aucun/i.test(reply);
@@ -660,6 +801,7 @@ function valueFound(reply: string, expected: Expected): boolean {
 function formatExpected(expected: Expected | undefined): string {
   if (!expected) return '';
   if (expected.kind === 'unavailable') return 'non incluse dans la formule';
+  if (expected.kind === 'investigation') return `${expected.value.join(' et ')} (enquête)`;
   if (expected.kind === 'day') return expected.value.join(' / ');
   if (expected.kind === 'all') return expected.value.join(' et ');
   if (expected.kind === 'any') return expected.value.join(' ou ');
@@ -734,6 +876,9 @@ interface Trial {
   calls: ToolCall[];
   toolOk: boolean | null;
   valueOk: boolean | null;
+  /** Chaque chiffre de la réponse vient d'un résultat d'outil de la même réponse. */
+  anchorOk: boolean;
+  unanchored: number[];
   input_tokens: number;
   output_tokens: number;
   cached_input_tokens: number;
@@ -752,6 +897,85 @@ const usageLog = {
   },
 } as unknown as FastifyBaseLogger;
 
+// Outil : au moins un appel, sauf pour une enquête, où il faut un appel avec compare et deux angles.
+function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
+  if (expected?.kind !== 'investigation') return calls.length > 0;
+  const compared = calls.some((call) => call.arguments.includes('"compare"'));
+  // Un angle = une source et un regroupement. Des arguments mal formés ne comptent pour aucun angle.
+  const angles = new Set(
+    calls.map((call) => {
+      try {
+        const args = JSON.parse(call.arguments || '{}') as { entity?: string; group_by?: string };
+        return `${args.entity ?? ''}:${args.group_by ?? ''}`;
+      } catch {
+        return `${call.name}:invalide`;
+      }
+    }),
+  );
+  return compared && angles.size >= 2;
+}
+
+// Nombres qui doivent venir d'un outil : hors dates, années, heures, durées et formules de calendrier.
+const MONTHS =
+  'janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre';
+const WEEKDAYS = 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche';
+function figuresIn(reply: string): number[] {
+  const text = reply
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    // Intervalles : « du 1er au 30 », « du lundi 26 au vendredi 30 », « entre le 1er et le 30 ».
+    .replace(
+      new RegExp(
+        `\\b(?:du|au)\\s+(?:(?:${WEEKDAYS})\\s+)?\\d{1,2}(?:er)?\\s+au\\s+(?:(?:${WEEKDAYS})\\s+)?\\d{1,2}(?:er)?\\b`,
+        'gi',
+      ),
+      ' ',
+    )
+    .replace(/\bentre\s+le\s+\d{1,2}(?:er)?\s+et\s+le\s+\d{1,2}(?:er)?\b/gi, ' ')
+    // Listes de jours suivies d'un mois : « les 5, 6 et 7 septembre ».
+    .replace(
+      new RegExp(`\\b(?:\\d{1,2}(?:,\\s*|\\s+et\\s+))+\\d{1,2}\\s+(?:${MONTHS})\\b`, 'gi'),
+      ' ',
+    )
+    .replace(new RegExp(`\\b(?:${WEEKDAYS})\\s+\\d{1,2}\\b`, 'gi'), ' ')
+    .replace(new RegExp(`\\b\\d{1,2}(?:er)?\\s+(?:${MONTHS})(?:\\s+\\d{4})?\\b`, 'gi'), ' ')
+    .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ')
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/\b\d{1,2}\s?h(?:\s?\d{2})?\b/gi, ' ')
+    .replace(/\b\d{1,2}:\d{2}\b/g, ' ')
+    .replace(
+      /\b\d+\s+(?:derniers?|dernières?|prochains?|prochaines?)?\s*(?:jours?|semaines?|mois|heures?|minutes?|lundis|mardis|mercredis|jeudis|vendredis|samedis|dimanches)\b/gi,
+      ' ',
+    )
+    .replace(/\b1er\b/gi, ' ')
+    .replace(/\bsur\s+5\b/gi, ' ');
+  return numbersIn(text);
+}
+
+function collectNumbers(value: unknown, into: number[]): void {
+  if (typeof value === 'number') into.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectNumbers(item, into));
+  else if (value && typeof value === 'object') {
+    Object.values(value).forEach((item) => collectNumbers(item, into));
+  }
+}
+
+// Ancrage : chaque chiffre de la réponse figure dans un résultat d'outil de la même réponse.
+function anchoredIn(reply: string, calls: ToolCall[]): { ok: boolean; unanchored: number[] } {
+  const available: number[] = [];
+  for (const call of calls) collectNumbers(call.result, available);
+  // Le signe d'un écart se dit en mots (« baisse de 20 % ») : seule la valeur absolue compte.
+  // Un chiffre arrondi à l'unité ou au dixième est ancré : arrondir n'est pas calculer.
+  // Un entier s'accepte à la demi-unité près, un décimal au dixième près.
+  const matches = (value: number, figure: number) => {
+    const tolerance = Number.isInteger(figure) ? 0.5 : 0.05;
+    return Math.abs(Math.abs(value) - figure) <= tolerance + 1e-9;
+  };
+  const unanchored = figuresIn(reply).filter(
+    (figure) => !available.some((value) => matches(value, figure)),
+  );
+  return { ok: unanchored.length === 0, unanchored };
+}
+
 async function runTrial(
   question: Question,
   expected: Expected | undefined,
@@ -767,15 +991,18 @@ async function runTrial(
       onToolCall: (call) => calls.push(call),
     });
     const sources = answer.sources.map((source) => source.tool);
+    const anchor = anchoredIn(answer.reply, calls);
     return {
       reply: answer.reply,
       sources,
       calls,
-      toolOk: question.expected ? calls.length > 0 : null,
+      toolOk: question.expected ? toolUsedFor(expected, calls) : null,
       valueOk: expected
         ? valueFound(answer.reply, expected) &&
           (expected.kind !== 'first' || firstChannelIsTop(answer.reply, calls))
         : null,
+      anchorOk: anchor.ok,
+      unanchored: anchor.unanchored,
       ...lastUsage,
     };
   } catch (error) {
@@ -785,6 +1012,8 @@ async function runTrial(
       calls,
       toolOk: question.expected ? false : null,
       valueOk: expected ? false : null,
+      anchorOk: false,
+      unanchored: [],
       error: error instanceof Error ? error.message : String(error),
       ...lastUsage,
     };
@@ -805,7 +1034,40 @@ function option(name: string): string | undefined {
   return index === -1 ? undefined : process.argv[index + 1];
 }
 
+// Renote l'ancrage d'un fichier de résultats déjà joué, sans appeler le modèle : mêmes réponses,
+// règle d'ancrage courante. Écrit <fichier>-rescored.json à côté du fichier d'origine.
+function rescoreFile(file: string): void {
+  const data = JSON.parse(readFileSync(file, 'utf-8')) as {
+    questions: Array<{ n: number; trials: Array<Trial & { error?: string }> }>;
+  };
+  let ok = 0;
+  let total = 0;
+  for (const question of data.questions) {
+    for (const trial of question.trials) {
+      total++;
+      if (trial.error) {
+        trial.anchorOk = false;
+        trial.unanchored = [];
+        continue;
+      }
+      const anchor = anchoredIn(trial.reply, trial.calls);
+      trial.anchorOk = anchor.ok;
+      trial.unanchored = anchor.unanchored;
+      if (anchor.ok) ok++;
+    }
+  }
+  const out = file.replace(/\.json$/, '-rescored.json');
+  writeFileSync(out, JSON.stringify(data, null, 2) + '\n');
+  // eslint-disable-next-line no-console -- résultats du banc, lus dans le terminal
+  console.log(`Ancrage renoté : ${ok}/${total}. Fichier : ${out}`);
+}
+
 async function main() {
+  const rescorePath = option('--rescore');
+  if (rescorePath) {
+    rescoreFile(rescorePath);
+    return;
+  }
   if (process.env.NODE_ENV === 'production' || !isLocalDatabase(process.env.DATABASE_URL)) {
     throw new Error('banc refusé : NODE_ENV=production ou DATABASE_URL hors localhost.');
   }
@@ -854,8 +1116,33 @@ async function main() {
         Question: result.text,
         Outil: result.trials.map((trial) => (trial.toolOk ? 'OK' : 'KO')).join(' '),
         Chiffre: result.trials.map((trial) => (trial.valueOk ? 'OK' : 'KO')).join(' '),
+        Ancrage: result.trials.map((trial) => (trial.anchorOk ? 'OK' : 'KO')).join(' '),
         Attendu: formatExpected(result.expected ?? undefined),
       })),
+  );
+  // Ancrage sur toutes les questions ; outil et chiffre sur les questions notées.
+  const everyTrial = results.flatMap((result) => result.trials);
+  const scoredTrials = results
+    .filter((result) => result.expected)
+    .flatMap((result) => result.trials);
+  const countOk = (list: Trial[], key: 'toolOk' | 'valueOk' | 'anchorOk') =>
+    list.filter((trial) => trial[key]).length;
+  // eslint-disable-next-line no-console -- résultats du banc, lus dans le terminal
+  console.log(
+    `Outil ${countOk(scoredTrials, 'toolOk')}/${scoredTrials.length}, chiffre ${countOk(scoredTrials, 'valueOk')}/${scoredTrials.length}, ancrage ${countOk(everyTrial, 'anchorOk')}/${everyTrial.length}.`,
+  );
+  const averageTokens = (list: Trial[]) => {
+    const average = (key: 'input_tokens' | 'cached_input_tokens') =>
+      list.length === 0
+        ? 0
+        : Math.round(list.reduce((sum, trial) => sum + trial[key], 0) / list.length);
+    return `${average('input_tokens')} entrée (dont ${average('cached_input_tokens')} du cache) par essai`;
+  };
+  const isInvestigation = (result: { expected: unknown }) =>
+    (result.expected as { kind?: string } | null)?.kind === 'investigation';
+  // eslint-disable-next-line no-console -- résultats du banc, lus dans le terminal
+  console.log(
+    `Tokens moyens, question simple : ${averageTokens(results.filter((r) => r.expected && !isInvestigation(r)).flatMap((r) => r.trials))} ; enquête : ${averageTokens(results.filter((r) => isInvestigation(r)).flatMap((r) => r.trials))}.`,
   );
 
   const trials = results.flatMap((result) => result.trials);

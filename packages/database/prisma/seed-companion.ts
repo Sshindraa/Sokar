@@ -10,6 +10,8 @@
  * - WaitingListEntry.source = 'seed-companion' ;
  * - ReputationFeedbackRequest.tokenHash préfixé 'seed-companion-' : avis et tâches de récupération
  *   partent par cascade avec leur réservation ;
+ * - Anomalie fixe du mardi 20 octobre 2026, indépendante de l'heure : moitié des couverts, 40 appels
+ *   sans issue, aucune demande en liste d'attente ce jour-là (les données du banc d'enquête) ;
  * - capacitySpecials.waitingListEnabled = true sur le restaurant, pour que la liste d'attente soit
  *   active dans le banc (les autres réglages sont conservés).
  *
@@ -39,6 +41,8 @@ const FUTURE_DAYS = 14;
 const WINDOW_DAYS = 7;
 const CUSTOMER_COUNT = 60;
 const CHUNK = 300;
+// Jour de l'anomalie planté (mardi 20 octobre 2026) : fixe, pour que les questions d'enquête le retrouvent.
+const ANOMALY_DAY = '2026-10-20';
 const WAITLIST_PAST: ReadonlyArray<readonly [WaitingListStatus, number]> = [
   ['PROMOTED', 0.45],
   ['EXPIRED', 0.35],
@@ -365,6 +369,32 @@ async function main() {
     }
   }
 
+  // Anomalie fixe : le mardi 20 octobre, les couverts tombent à la moitié de la moyenne des 4 mardis
+  // précédents. On retire des réservations de la fin jusqu'à passer sous cette moitié.
+  const dayCovers = (dayKey: string) =>
+    reservations.reduce(
+      (sum, reservation) =>
+        dayKeyOf(reservation.reservedAt as Date) === dayKey
+          ? sum + (reservation.partySize as number)
+          : sum,
+      0,
+    );
+  // Somme des 4 mardis précédents : sa moitié de moyenne vaut somme / 8.
+  const fourTuesdays = [7, 14, 21, 28].reduce(
+    (sum, weeks) => sum + dayCovers(addDays(ANOMALY_DAY, -weeks)),
+    0,
+  );
+  let anomalyCovers = dayCovers(ANOMALY_DAY);
+  for (
+    let index = reservations.length - 1;
+    index >= 0 && anomalyCovers > fourTuesdays / 8;
+    index--
+  ) {
+    if (dayKeyOf(reservations[index].reservedAt as Date) !== ANOMALY_DAY) continue;
+    anomalyCovers -= reservations[index].partySize as number;
+    reservations.splice(index, 1);
+  }
+
   // Chaque réservation par téléphone naît d'un appel RESERVED, au moment de sa création. Au-delà de
   // 15 par jour, la réservation passe en WEB : le volume d'appels reste dans la plage prévue.
   const calls: Prisma.CallCreateManyInput[] = [];
@@ -398,6 +428,21 @@ async function main() {
         createdAt: reservation ? (reservation.createdAt as Date) : callInstant(day, periods),
       });
     }
+  }
+
+  // Pic d'appels sans issue le même jour : 40 appels, à heures fixes, sans intention ni résultat.
+  for (let index = 0; index < 40; index++) {
+    calls.push({
+      id: randomUUID(),
+      restaurantId,
+      callSid: `${CALL_SID_PREFIX}${ANOMALY_DAY}-open-${index}`,
+      callerPhone: customers[index % customers.length].phone,
+      durationSec: 30,
+      intent: null,
+      outcome: null,
+      carrier: 'telnyx',
+      createdAt: parisInstant(ANOMALY_DAY, 11 * 60 + index * 12),
+    });
   }
 
   // Liste d'attente : demandes sur des créneaux à venir (en attente) ou passés (obtenues, expirées, annulées).
@@ -488,6 +533,11 @@ async function main() {
         resolvedAt: status === 'RESOLVED' || status === 'DISMISSED' ? submittedAt : null,
       });
     }
+  }
+
+  // Aucune demande en liste d'attente le jour de l'anomalie.
+  for (let index = waitlist.length - 1; index >= 0; index--) {
+    if (dayKeyOf(waitlist[index].slotStart as Date) === ANOMALY_DAY) waitlist.splice(index, 1);
   }
 
   await prisma.$transaction([

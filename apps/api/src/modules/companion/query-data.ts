@@ -116,6 +116,8 @@ const DateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isRealDay, 'date inexistante');
+export const COMPARE_MODES = ['previous_period', 'last_year', 'usual'] as const;
+type CompareMode = (typeof COMPARE_MODES)[number];
 const WeekdaySchema = z.number().int().min(0).max(6);
 const enumOf = (values: readonly string[]) => z.enum(values as [string, ...string[]]);
 // Valeurs fermées d'une dimension : texte, nombre ou booléen, chacun exact.
@@ -145,6 +147,7 @@ function sourceSchema(name: string, source: Source) {
       date_field: dates.length > 1 ? enumOf(dates) : z.literal(dates[0]).optional(),
       group_by: enumOf([...TIME_GROUPS, ...Object.keys(source.dimensions)]).optional(),
       filters: z.object(filters).strict().optional(),
+      compare: enumOf(COMPARE_MODES).optional(),
       from: DateSchema,
       to: DateSchema,
     })
@@ -167,6 +170,7 @@ interface ParsedQuery {
   date_field?: string;
   group_by?: string;
   filters?: Record<string, unknown>;
+  compare?: CompareMode;
   from: string;
   to: string;
 }
@@ -175,10 +179,17 @@ export interface QueryGroup {
   key: string | number;
   value: number | null;
 }
+/** Valeur, référence et écart calculés par le serveur ; delta_pct est null si la référence vaut 0. */
+export interface Compared {
+  value: number | null;
+  reference: number | null;
+  delta: number | null;
+  delta_pct: number | null;
+}
 export interface QueryResult {
   query: unknown;
-  total: number | null;
-  groups?: QueryGroup[];
+  total: number | null | Compared;
+  groups?: Array<QueryGroup | (Compared & { key: string | number })>;
 }
 /** Source indisponible pour ce restaurant : le modèle le dit, sans annoncer zéro. */
 export interface QueryUnavailable {
@@ -262,6 +273,88 @@ function summarize(
   };
 }
 
+const shiftYears = (dayKey: string, years: number): string => {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  return new Date(Date.UTC(year + years, month - 1, day)).toISOString().slice(0, 10);
+};
+
+// Périodes de référence de compare, pour une période de n jours : null si usual ne s'applique pas.
+function referencePeriods(
+  mode: CompareMode,
+  from: string,
+  to: string,
+): Array<[string, string]> | null {
+  if (mode === 'last_year') return [[shiftYears(from, -1), shiftYears(to, -1)]];
+  const days = (Date.parse(to) - Date.parse(from)) / DAY_MS + 1;
+  if (mode === 'previous_period') return [[addDays(from, -days), addDays(to, -days)]];
+  if (days !== 1 && days !== 7) return null;
+  return [1, 2, 3, 4].map((weeks) => [addDays(from, -7 * weeks), addDays(to, -7 * weeks)]);
+}
+
+// Écart entre une valeur et sa référence, arrondi à 0,1.
+function compared(value: number | null, reference: number | null): Compared {
+  const delta = value === null || reference === null ? null : roundTo(value - reference, 1);
+  return {
+    value,
+    reference,
+    delta,
+    delta_pct:
+      delta === null || reference === null || reference === 0
+        ? null
+        : roundTo((delta / reference) * 100, 1),
+  };
+}
+
+// Moyenne des références présentes (sans null) ; null si aucune.
+function meanOf(values: Array<number | null>): number | null {
+  const present = values.filter((value): value is number => value !== null);
+  if (present.length === 0) return null;
+  return roundTo(present.reduce((sum, value) => sum + value, 0) / present.length, 1);
+}
+
+// Totaux et groupes avec leur référence, calculés par le serveur.
+function summarizeCompared(
+  items: Item[],
+  references: Item[][],
+  groupBy: string | undefined,
+  dimension: { labels?: Record<string, string>; order?: 'key' | 'value' } | undefined,
+  value: (group: Item[]) => number | null,
+  keyOf: (item: Item) => Scalar,
+): Pick<QueryResult, 'total' | 'groups'> {
+  const total = compared(value(items), meanOf(references.map((set) => value(set))));
+  if (!groupBy) return { total };
+  const bucketsOf = (set: Item[]) => {
+    const buckets = new Map<Scalar, Item[]>();
+    for (const item of set) {
+      const key = keyOf(item);
+      buckets.set(key, [...(buckets.get(key) ?? []), item]);
+    }
+    return buckets;
+  };
+  const main = bucketsOf(items);
+  const refs = references.map(bucketsOf);
+  const keys = [...new Set([...main.keys(), ...refs.flatMap((map) => [...map.keys()])])];
+  const groups = keys.map((key) => ({
+    key,
+    ...compared(value(main.get(key) ?? []), meanOf(refs.map((map) => value(map.get(key) ?? [])))),
+  }));
+  groups.sort((a, b) =>
+    compareGroups(
+      groupBy,
+      dimension?.order,
+      { key: a.key, value: a.value },
+      { key: b.key, value: b.value },
+    ),
+  );
+  return {
+    total,
+    groups: groups.map(({ key, ...rest }) => ({
+      key: (dimension?.labels?.[String(key)] ?? key) as string | number,
+      ...rest,
+    })),
+  };
+}
+
 /**
  * Valide la requête du modèle, puis la calcule. Une requête invalide renvoie { error } au modèle :
  * elle ne lève jamais d'exception.
@@ -282,6 +375,8 @@ export async function computeQueryData(
   const query = parsed.data as unknown as ParsedQuery;
   const problem = rangeProblem(query);
   if (problem) return invalid(problem);
+  const periods = query.compare ? referencePeriods(query.compare, query.from, query.to) : [];
+  if (!periods) return invalid('compare usual : période d’un jour ou d’une semaine seulement');
 
   const source = SOURCES[query.entity as keyof typeof SOURCES] as Source;
   if (source.formula && !(await evaluateCapability(restaurantId, source.formula)).allowed) {
@@ -326,9 +421,6 @@ export async function computeQueryData(
   const states = source.states
     ? ((filters.states ?? filters.state ?? [...source.states.default]) as string[])
     : [];
-  const range = { gte: parisMidnight(query.from), lt: parisMidnight(addDays(query.to, 1)) };
-  const items = await source.read({ restaurantId, dateField, range, states, openingHours });
-
   const matches = (item: Item): boolean =>
     Object.entries(filters).every(([name, value]) => {
       if (name === 'states') return true;
@@ -339,7 +431,13 @@ export async function computeQueryData(
       const key = source.dimensions[filter.dimension].key(item);
       return filter.kind === 'flag' ? key === value : (value as Scalar[]).includes(key);
     });
-  const kept = items.filter(matches);
+  // Lecture d'une période, filtrée comme la période demandée.
+  const readFiltered = async (start: string, end: string): Promise<Item[]> => {
+    const range = { gte: parisMidnight(start), lt: parisMidnight(addDays(end, 1)) };
+    const items = await source.read({ restaurantId, dateField, range, states, openingHours });
+    return items.filter(matches);
+  };
+  const kept = await readFiltered(query.from, query.to);
 
   const keyOf = (item: Item): Scalar => {
     if (!groupBy) return null;
@@ -349,19 +447,19 @@ export async function computeQueryData(
     return dimension?.key(item) ?? null;
   };
 
+  const normalized = {
+    ...query,
+    date_field: dateField,
+    filters: { ...filters, ...(source.states ? { states } : {}) },
+  };
+  const measureOf = (group: Item[]) => measureValue(source.measures[query.metric], group);
+  if (!query.compare) {
+    return { query: normalized, ...summarize(kept, groupBy, dimension, measureOf, keyOf) };
+  }
+  const references = await Promise.all(periods!.map(([start, end]) => readFiltered(start, end)));
   return {
-    query: {
-      ...query,
-      date_field: dateField,
-      filters: { ...filters, ...(source.states ? { states } : {}) },
-    },
-    ...summarize(
-      kept,
-      groupBy,
-      dimension,
-      (group) => measureValue(source.measures[query.metric], group),
-      keyOf,
-    ),
+    query: normalized,
+    ...summarizeCompared(kept, references, groupBy, dimension, measureOf, keyOf),
   };
 }
 
@@ -407,6 +505,7 @@ export function queryDataDescription(): string {
     `Filtres (facultatifs) : ${unique(filterNames).join(', ')} (weekdays : 0 = dimanche … 6 = samedi).`,
     ...stateNotes,
     `from et to : AAAA-MM-JJ, premier et dernier jour inclus, jours de Paris ; écart ≤ ${MAX_SPAN_DAYS} jours ; regroupement par jour ≤ ${MAX_DAY_GROUP_SPAN_DAYS} jours.`,
+    `compare (facultatif) : previous_period = la même durée juste avant ; last_year = les mêmes dates un an avant ; usual = le même jour de semaine sur les 4 semaines précédentes, en moyenne (période d’un jour ou d’une semaine seulement). Avec compare, chaque total et chaque groupe donne value, reference (la référence), delta (la différence) et delta_pct (le pourcentage d’écart, null si la référence vaut 0), tous calculés par le serveur : ne recalculez rien.`,
   ].join(' ');
 }
 
@@ -469,6 +568,7 @@ export function queryDataParameters() {
         ]),
       },
       filters: { type: 'object', properties: filterProperties, additionalProperties: false },
+      compare: { type: 'string', enum: [...COMPARE_MODES] },
       from: { type: 'string', description: 'Premier jour inclus, AAAA-MM-JJ (heure de Paris).' },
       to: { type: 'string', description: 'Dernier jour inclus, AAAA-MM-JJ (heure de Paris).' },
     },
