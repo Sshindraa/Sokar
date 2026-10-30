@@ -210,9 +210,10 @@ export default function ReservationsPage() {
   function closeReservation() {
     setSelectedReservation(null);
     if (!requestedReservationId) return;
-    // Sans ce paramètre, un nouveau clic sur la même carte rouvrirait rien.
+    // Sans ces paramètres, un nouveau clic sur la même carte ne rouvrirait rien, ni le bon jour.
     const params = new URLSearchParams(searchParams.toString());
     params.delete('reservation');
+    params.delete('date');
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }

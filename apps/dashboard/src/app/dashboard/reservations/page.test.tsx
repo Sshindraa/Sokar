@@ -950,7 +950,7 @@ describe('ReservationsPage — lien depuis la carte « Ce soir »', () => {
     expect(mocks.get).toHaveBeenCalledWith('reservations?date=2099-06-05');
   });
 
-  it('retire la réservation de l’URL à la fermeture, pour la rouvrir au clic suivant', async () => {
+  it('retire la réservation et le jour de l’URL à la fermeture, pour les rouvrir au clic suivant', async () => {
     mocks.searchParams = new URLSearchParams({ date: '2099-06-05', reservation: 'r1' });
     mocks.get.mockResolvedValue([makeReservation({ id: 'r1' })]);
     render(<ReservationsPage />);
@@ -958,10 +958,10 @@ describe('ReservationsPage — lien depuis la carte « Ce soir »', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));
 
-    // Le paramètre `date` peut rester ou partir selon la version : seul `reservation` doit disparaître.
     expect(mocks.replace).toHaveBeenCalledTimes(1);
     const [url, options] = mocks.replace.mock.calls[0];
     expect(url).not.toContain('reservation=');
+    expect(url).not.toContain('date=');
     expect(options).toEqual({ scroll: false });
   });
 });
