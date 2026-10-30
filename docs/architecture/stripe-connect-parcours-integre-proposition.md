@@ -66,6 +66,15 @@ de la session. Le compte de test a été fermé. Ce découpage permet d'enregist
 l'identifiant avant la configuration et de retrouver le même compte après une
 interruption, sous réserve d'une mise en œuvre transactionnelle dans Sokar.
 
+Le 30 octobre 2026, un test de la route Sokar avec PostgreSQL local et Stripe
+test réels a créé le compte et la session puis repris le même compte ; le compte
+fictif a été fermé. Il a révélé que le jeton v2 contient plusieurs caractères
+`_`, ce qui a conduit à corriger sa validation. La création du jeton a aussi été
+vérifiée depuis un navigateur sur l'origine staging. Un essai séparé du composant
+Stripe dans un navigateur automatisé n'a pas montré d'étape du formulaire ; son
+résultat n'établit donc pas que le parcours complet fonctionne. Aucun paiement
+de bout en bout n'a encore été effectué.
+
 ## Recueil de l'accord
 
 Selon Stripe, le compte qui demande `card_payments` relève de l'accord complet

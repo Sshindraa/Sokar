@@ -503,7 +503,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         .object({
           accountToken: z
             .string()
-            .regex(/^accttok_[A-Za-z0-9]+$/)
+            .regex(/^accttok_[A-Za-z0-9_]+$/)
             .max(128),
         })
         .safeParse(req.body);
