@@ -54,7 +54,8 @@ type Expected =
     }
   | { kind: 'day'; value: string[] }
   | { kind: 'all'; value: number[] }
-  | { kind: 'any'; value: number[] };
+  | { kind: 'any'; value: number[] }
+  | { kind: 'first'; value: string[]; others: string[] };
 
 interface Question {
   n: number;
@@ -198,7 +199,7 @@ const QUESTIONS: Question[] = [
   {
     n: 2,
     text: 'Combien de couverts ont été réservés ces 7 derniers jours ?',
-    tool: 'reservation_stats',
+    tool: ['reservation_stats', 'query_data'],
     expected: async (id) => count((await computeDashboardStats(id, '7d')).covers),
   },
   {
@@ -258,7 +259,7 @@ const QUESTIONS: Question[] = [
   {
     n: 10,
     text: 'Combien de couverts le mois dernier ?',
-    tool: 'monthly_roi',
+    tool: ['monthly_roi', 'query_data'],
     expected: async (id) => count((await computeRoi(id, previousMonth())).totalCouverts),
   },
   {
@@ -399,7 +400,14 @@ const QUESTIONS: Question[] = [
         const channel = benchChannel(row);
         covers.set(channel, (covers.get(channel) ?? 0) + row.partySize);
       }
-      return { kind: 'day', value: topKeys(covers).flatMap((channel) => CHANNEL_LABELS[channel]) };
+      // Le canal attendu doit être le premier nommé : les autres canaux ne doivent pas venir avant.
+      const winners = topKeys(covers);
+      const others = Object.keys(CHANNEL_LABELS).filter((channel) => !winners.includes(channel));
+      return {
+        kind: 'first',
+        value: winners.flatMap((channel) => CHANNEL_LABELS[channel]),
+        others: others.flatMap((channel) => CHANNEL_LABELS[channel]),
+      };
     },
   },
   {
@@ -460,6 +468,13 @@ function valueFound(reply: string, expected: Expected): boolean {
   if (expected.kind === 'any') {
     return numbersIn(reply).some((n) => expected.value.includes(n));
   }
+  if (expected.kind === 'first') {
+    const text = reply
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase();
+    return firstMention(text, expected.value) < firstMention(text, expected.others);
+  }
   if (expected.kind === 'day') {
     const text = reply
       .normalize('NFD')
@@ -498,14 +513,31 @@ function formatExpected(expected: Expected | undefined): string {
   if (expected.kind === 'day') return expected.value.join(' / ');
   if (expected.kind === 'all') return expected.value.join(' et ');
   if (expected.kind === 'any') return expected.value.join(' ou ');
+  if (expected.kind === 'first') return expected.value.join(' / ');
   return expected.alt === undefined
     ? String(expected.value)
     : `${expected.value} ou ${expected.alt}`;
 }
 
+// Appel d'outil tel que le modèle l'a émis, avec le contenu renvoyé (agrégats uniquement).
+interface ToolCall {
+  name: string;
+  arguments: string;
+  result: unknown;
+}
+
+// Position du premier libellé trouvé dans le texte (Infinity si aucun).
+function firstMention(text: string, labels: string[]): number {
+  const positions = labels
+    .map((label) => text.search(new RegExp(`\\b${label}\\b`)))
+    .filter((position) => position >= 0);
+  return Math.min(...positions, Infinity);
+}
+
 interface Trial {
   reply: string;
   sources: string[];
+  calls: ToolCall[];
   toolOk: boolean | null;
   valueOk: boolean | null;
   input_tokens: number;
@@ -527,16 +559,19 @@ async function runTrial(
   restaurantId: string,
 ): Promise<Trial> {
   lastUsage = { input_tokens: 0, output_tokens: 0 };
+  const calls: ToolCall[] = [];
   try {
     const answer = await answerCompanion({
       restaurantId,
       messages: [{ role: 'user', content: question.text }],
       log: usageLog,
+      onToolCall: (call) => calls.push(call),
     });
     const sources = answer.sources.map((source) => source.tool);
     return {
       reply: answer.reply,
       sources,
+      calls,
       toolOk: question.tool ? [question.tool].flat().some((tool) => sources.includes(tool)) : null,
       valueOk: expected ? valueFound(answer.reply, expected) : null,
       ...lastUsage,
@@ -545,6 +580,7 @@ async function runTrial(
     return {
       reply: '',
       sources: [],
+      calls,
       toolOk: question.tool ? false : null,
       valueOk: expected ? false : null,
       error: error instanceof Error ? error.message : String(error),

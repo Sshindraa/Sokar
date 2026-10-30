@@ -18,6 +18,13 @@ export interface CompanionMessage {
   content: string;
 }
 
+/** Appel d'outil tel que le banc le relit : nom, arguments bruts, contenu renvoyé au modèle. */
+export interface CompanionToolCall {
+  name: string;
+  arguments: string;
+  result: unknown;
+}
+
 export interface CompanionAnswer {
   reply: string;
   sources: Array<{ tool: string; href: string }>;
@@ -96,7 +103,7 @@ export function companionSystemPrompt(now: Date): string {
     'Règles :',
     '- Vouvoyez toujours votre interlocuteur. Répondez en français, en quelques phrases courtes.',
     "- Tout chiffre que vous donnez vient d'un outil de cette conversation. Si les outils ne le fournissent pas, dites que vous ne l'avez pas.",
-    "- Ne calculez jamais vous-même un taux, un pourcentage ni une moyenne : reprenez celui que donne un outil. S'il n'existe pas, donnez les deux nombres sans le ratio.",
+    "- Ne faites aucun calcul vous-même : ni somme, ni différence, ni moyenne, ni taux, ni pourcentage. Si vous avez besoin d'un total, demandez-le à un outil (query_data sans group_by donne le total). Citez les nombres tels que les outils les renvoient.",
     "- Pour un indicateur du tableau de bord (taux de conversion, jours sous-réservés, no-shows, ROI), utilisez l'outil dédié. Pour toute autre question chiffrée, composez une requête query_data.",
     '- Choisissez date de service pour servis / prévus / ce jour-là, date de prise pour prises / reçues ; dites lequel vous avez utilisé si la question est ambiguë.',
     "- Convertissez les dates relatives (mardi dernier, le mois dernier) en dates exactes à partir d'aujourd'hui, et citez-les.",
@@ -173,6 +180,7 @@ export async function answerCompanion(input: {
   messages: CompanionMessage[];
   log: FastifyBaseLogger;
   fetcher?: typeof fetch;
+  onToolCall?: (call: CompanionToolCall) => void;
 }): Promise<CompanionAnswer> {
   const started = performance.now();
   const responseId = randomUUID();
@@ -191,7 +199,7 @@ export async function answerCompanion(input: {
       const withTools = round < MAX_TOOL_ROUNDS;
       const message = await requestTurn(conversation, withTools, trace, fetcher);
       if (!withTools || !message.tool_calls?.length) {
-        const reply = message.content?.trim() ?? '';
+        const reply = message.content?.replaceAll('**', '').trim() ?? '';
         if (!reply) throw new CompanionUpstreamError('empty_reply');
         return { reply, sources, responseId };
       }
@@ -208,6 +216,11 @@ export async function answerCompanion(input: {
           input.restaurantId,
         );
         trace.tools.push(call.function.name);
+        input.onToolCall?.({
+          name: call.function.name,
+          arguments: call.function.arguments,
+          result: result.content,
+        });
         if (result.source && !sources.some((source) => source.tool === result.source?.tool)) {
           sources.push(result.source);
         }

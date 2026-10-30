@@ -220,7 +220,7 @@ describe('POST /companion/chat', () => {
     );
     expect(system).toContain("les appels reçus par l'assistant téléphonique");
     expect(system).toContain(
-      "Ne calculez jamais vous-même un taux, un pourcentage ni une moyenne : reprenez celui que donne un outil. S'il n'existe pas, donnez les deux nombres sans le ratio.",
+      "Ne faites aucun calcul vous-même : ni somme, ni différence, ni moyenne, ni taux, ni pourcentage. Si vous avez besoin d'un total, demandez-le à un outil (query_data sans group_by donne le total). Citez les nombres tels que les outils les renvoient.",
     );
     expect(system).toContain(
       "Répondez d'abord à la question posée ; proposez les autres chiffres en une phrase, sans les dérouler. Ne rattachez jamais un chiffre à un groupe auquel il ne correspond pas.",
@@ -229,6 +229,22 @@ describe('POST /companion/chat', () => {
     expect(system).toContain('date de service pour servis / prévus / ce jour-là');
     expect(system).toContain('Convertissez les dates relatives (mardi dernier, le mois dernier)');
     expect(system).not.toContain('les jours passés par date de service ne sont pas disponibles');
+  });
+
+  it('retire le gras Markdown de la réponse finale', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      completion({ role: 'assistant', content: 'Le **total** est de **5** couverts.' }),
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: CHAT_URL,
+      headers: AUTH,
+      payload: { messages: [userMessage] },
+    });
+
+    expect(res.json().reply).toBe('Le total est de 5 couverts.');
   });
 
   it('s’arrête à 4 tours d’outils puis demande la réponse finale sans outils', async () => {
