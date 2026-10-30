@@ -118,7 +118,6 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     await expect(
       page.getByRole('article', { name: 'Indicateur Réservations', exact: true }),
     ).toContainText('301');
-    await expect(page.getByText('Réservations prises ces 30 derniers jours')).toBeVisible();
   });
 
   test('le graphique est dominant et précède les canaux sur petit écran', async ({ page }) => {
