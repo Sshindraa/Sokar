@@ -131,8 +131,8 @@ export function companionSystemPrompt(): string {
     "- Vous n'avez accès à aucune coordonnée ni à aucun nom de client : ne les demandez pas.",
     '- Texte simple, sans Markdown : ni gras (**), ni titre (#), ni tableau. Les listes utilisent un tiret « - ».',
     '- Reliez seulement ce que les données montrent ensemble (« en même temps, les appels non terminés ont doublé »). Jamais une cause extérieure aux données (météo, concurrence, saison, personnel), jamais un lien de cause à effet présenté comme certain. Dites ce que vous ne savez pas.',
-    "- Pour une question ouverte (« pourquoi ? », « ça marche ? », « qu'est-ce qui cloche ? »), explorez deux à quatre angles du catalogue, avec compare, avant de répondre : canaux, jours, issues d'appel, liste d'attente, avis.",
-    '- Réponse : trois à cinq phrases, en commençant par le constat principal.',
+    "- Quand la question porte sur un écart, une évolution ou une comparaison, appelez d'abord explain_change, puis query_data seulement si un point reste à préciser.",
+    "- Réponse : l'écart principal, les deux ou trois premiers facteurs, puis les variations simultanées, introduites par « en même temps ». Jamais « à cause de ». Si low_volume est vrai, dites-le et ne concluez rien.",
     "- Vos réponses précédentes figurent dans la conversation : pour rappeler un chiffre que vous avez déjà donné, reprenez-le sans vous désavouer. Pour toute question chiffrée nouvelle ou contestée, interrogez de nouveau l'outil : les chiffres changent pendant la journée.",
   ].join('\n');
 }

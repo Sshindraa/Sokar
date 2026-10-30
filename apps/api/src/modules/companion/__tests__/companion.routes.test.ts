@@ -244,6 +244,9 @@ describe('POST /companion/chat', () => {
       "Répondez d'abord à la question posée ; proposez les autres chiffres en une phrase, sans les dérouler. Ne rattachez jamais un chiffre à un groupe auquel il ne correspond pas.",
     );
     expect(system).toContain('composez une requête query_data');
+    expect(system).toContain(
+      "Quand la question porte sur un écart, une évolution ou une comparaison, appelez d'abord explain_change",
+    );
     expect(system).toContain('date de service pour servis / prévus / ce jour-là');
     expect(system).toContain('Convertissez les dates relatives (mardi dernier, le mois dernier)');
     expect(system).not.toContain('les jours passés par date de service ne sont pas disponibles');

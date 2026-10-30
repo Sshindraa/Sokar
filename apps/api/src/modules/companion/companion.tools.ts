@@ -12,6 +12,7 @@ import {
   computeNoShowStats,
 } from '../dashboard/dashboard.routes';
 import { computeQueryData, queryDataDescription, queryDataParameters } from './query-data';
+import { explainChange, explainChangeDescription, explainChangeParameters } from './explain-change';
 
 const DASHBOARD_HREF = '/dashboard';
 const SOURCE_HREFS: Record<string, string> = { call_stats: '/dashboard/calls' };
@@ -64,6 +65,14 @@ export const COMPANION_TOOLS = [
       name: 'query_data',
       description: queryDataDescription(),
       parameters: queryDataParameters(),
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'explain_change',
+      description: explainChangeDescription(),
+      parameters: explainChangeParameters(),
     },
   },
   {
@@ -152,6 +161,10 @@ export async function runCompanionTool(
     }
     case 'query_data': {
       result = computeQueryData(restaurantId, args);
+      break;
+    }
+    case 'explain_change': {
+      result = explainChange(restaurantId, args);
       break;
     }
     case 'upcoming_days': {

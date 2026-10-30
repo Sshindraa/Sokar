@@ -262,7 +262,8 @@ export const SOURCES = {
   },
   waitlist: {
     label: 'Liste d’attente',
-    description: 'la liste d’attente (demandes en attente, obtenues, annulées ou expirées)',
+    description:
+      'la liste d’attente : une entrée est une demande de liste d’attente pour un créneau, distincte d’une réservation (demandes en attente, obtenues, annulées ou expirées)',
     select: WAITLIST_SELECT,
     dates: {
       service: 'créneau demandé (service)',

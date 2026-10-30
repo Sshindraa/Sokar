@@ -3210,3 +3210,13 @@ Banc, 47 questions, 3 essais : outil 114/123, chiffre 112/123, ancrage 141/141. 
 Écarts : Q10 mesure les couverts du mois par date de prise (ROI) alors que `query_data` par défaut par date de service ; Q33 compte des réservations au lieu des demandes ; Q42 ne cite pas la liste d'attente vide ; Q43, Q46 et Q47 n'ont qu'un angle ou pas de `compare`.
 
 Tokens : 1 542 407 en entrée, dont 1 448 289 lus du cache (94 %), 78 579 en sortie, 141 essais. Par essai : question simple 11 041 en entrée (10 431 du cache), enquête 11 530 (10 382).
+
+### 2026-10-31 — Companion : explain_change et enquêtes réécrites (phase B2)
+
+Outil `explain_change`, construit sur le moteur de `query_data` : le total avec sa référence, les cinq groupes qui portent le plus l'écart avec leur part, les autres sources qui varient dans le même temps (au moins 25 % et une référence d'au moins 5), et `low_volume` sous une référence de 5. Le prompt pose le principe seul (« Quand la question porte sur un écart, une évolution ou une comparaison, appelez d'abord explain_change »), sans liste de formulations, et aucun routage par mots-clés n'est écrit dans le code. La fiche de liste d'attente dit qu'une entrée est une demande, distincte d'une réservation.
+
+Les enquêtes 42 à 47 ont été réécrites comme un gérant les pose, avec leurs critères figés avant le premier essai (commit `f96e950f`). Correction du correcteur : « aucune » ou « zéro » comptent comme zéro. Chiffre : 100/123 avant, 103/123 après, sur les mêmes réponses (renotage avec `--rescore`).
+
+Banc complet, 47 questions, 3 essais : outil 113/123, chiffre 103/123, ancrage 140/141. Enquêtes (18 essais) : outil 8/18, chiffres clés 5/18, ancrage 17/18. Écarts : le modèle choisit souvent les réservations plutôt que les couverts, et une période de sept jours plutôt que le mois (42, 43, 45, 46) ; il n'appelle pas explain_change sur deux questions d'évolution (44, 47) ; Q10 oppose la définition ROI (date de prise) et `query_data` (date de service) ; Q33 ne change pas avec la fiche.
+
+Tokens : 1 802 931 en entrée, dont 1 704 585 lus du cache (95 %), et 77 759 en sortie, 141 essais. Par essai : question simple 12 828 en entrée (12 190 du cache) ; enquête 14 461 (13 291 du cache).

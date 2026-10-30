@@ -728,12 +728,25 @@ function percentagesIn(reply: string): number[] {
 }
 
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
+// Zéro s'écrit aussi « aucune » ou « zéro » : une réponse sans chiffre peut être juste.
+const ZERO_WORDS = /\b(aucune?|zéro)\b/i;
+
 function valueFound(reply: string, expected: Expected): boolean {
+  if (
+    expected.kind === 'count' &&
+    expected.value === 0 &&
+    !expected.unit &&
+    ZERO_WORDS.test(reply)
+  ) {
+    return true;
+  }
   if (expected.kind === 'investigation') {
     // Chaque chiffre clé de l'anomalie figure dans la réponse, à sa tolérance près.
     const figures = numbersIn(reply);
-    return expected.value.every((value) =>
-      figures.some((figure) => Math.abs(figure - value) <= expected.tolerance + 1e-9),
+    return expected.value.every(
+      (value) =>
+        (value === 0 && ZERO_WORDS.test(reply)) ||
+        figures.some((figure) => Math.abs(figure - value) <= expected.tolerance + 1e-9),
     );
   }
   if (expected.kind === 'unavailable') {
@@ -1014,10 +1027,16 @@ function option(name: string): string | undefined {
 // règle d'ancrage courante. Écrit <fichier>-rescored.json à côté du fichier d'origine.
 function rescoreFile(file: string): void {
   const data = JSON.parse(readFileSync(file, 'utf-8')) as {
-    questions: Array<{ n: number; trials: Array<Trial & { error?: string }> }>;
+    questions: Array<{
+      n: number;
+      expected?: Expected | null;
+      trials: Array<Trial & { error?: string }>;
+    }>;
   };
   let ok = 0;
   let total = 0;
+  let figuresOk = 0;
+  let scored = 0;
   for (const question of data.questions) {
     for (const trial of question.trials) {
       total++;
@@ -1030,12 +1049,20 @@ function rescoreFile(file: string): void {
       trial.anchorOk = anchor.ok;
       trial.unanchored = anchor.unanchored;
       if (anchor.ok) ok++;
+      const expected = (question as { expected?: Expected | null }).expected ?? undefined;
+      if (expected) {
+        trial.valueOk =
+          valueFound(trial.reply, expected) &&
+          (expected.kind !== 'first' || firstChannelIsTop(trial.reply, trial.calls));
+        scored++;
+        if (trial.valueOk) figuresOk++;
+      }
     }
   }
   const out = file.replace(/\.json$/, '-rescored.json');
   writeFileSync(out, JSON.stringify(data, null, 2) + '\n');
-  // eslint-disable-next-line no-console -- résultats du banc, lus dans le terminal
-  console.log(`Ancrage renoté : ${ok}/${total}. Fichier : ${out}`);
+  // eslint-disable-next-line no-console -- renotage du banc, lu dans le terminal
+  console.log(`Renoté : ancrage ${ok}/${total}, chiffre ${figuresOk}/${scored}. Fichier : ${out}`);
 }
 
 async function main() {
