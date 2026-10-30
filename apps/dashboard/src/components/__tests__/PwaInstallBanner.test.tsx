@@ -120,6 +120,19 @@ describe('PwaInstallBanner', () => {
     expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
   });
 
+  it("ne s'affiche pas dans l'appli iOS Sokar", () => {
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 SokarIOS',
+      configurable: true,
+    });
+
+    render(<PwaInstallBanner />);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+  });
+
   it('clic dismiss sauvegarde dans localStorage', () => {
     Object.defineProperty(window.navigator, 'userAgent', {
       value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',

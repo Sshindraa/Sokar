@@ -191,25 +191,6 @@ function SettingsButton({ active = false }: { active?: boolean }) {
   );
 }
 
-function DashboardBrand({ restaurantName }: { restaurantName: string }) {
-  return (
-    <Link
-      href="/dashboard"
-      aria-label={`${restaurantName} HQ`}
-      title={`${restaurantName} HQ`}
-      className="dashboard-brand-link flex shrink-0 items-center justify-center rounded-xl border border-border bg-card/70 transition-all duration-200 hover:border-foreground/20 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Image
-        src="/sokar-restaurant-mark.png"
-        alt="Sokar"
-        width={44}
-        height={44}
-        className="dashboard-brand-logo h-9 w-9 object-contain"
-      />
-    </Link>
-  );
-}
-
 function DashboardModeSwitcher({
   salleMode,
   compact = false,
@@ -811,7 +792,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-6 z-50 h-12 items-center gap-2">
-        <DashboardBrand restaurantName={restaurantName} />
         <AccountMenu />
       </div>
       <div
@@ -829,7 +809,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         */}
         <div className="dashboard-flow-header mb-3 gap-2 sm:mb-4">
           <div className="dashboard-flow-header__brand flex min-w-0 items-center gap-2">
-            <DashboardBrand restaurantName={restaurantName} />
             <SiteSwitcher className="hidden w-[9rem] max-w-[20vw] md:flex" />
           </div>
           <DashboardModeSwitcher

@@ -158,7 +158,6 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const holds = new HoldService(db, audit);
   const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
   const reservations = new ReservationService(db, audit, holds, idempotency);
-  const consents = new ConsentService(db);
   const waitingList = new WaitingListService(db, tableAllocation, audit);
 
   // ─── Versioning : /public/v1/* → alias de /public/* (Phase 6) ───
@@ -604,6 +603,22 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(409).send(leadTimeRefusal(policy.minLeadTimeMinutes));
       }
 
+      const offered = await availability.getAvailability({
+        restaurantId: restaurant.id,
+        date: bodyParse.data.date,
+        partySize: bodyParse.data.partySize,
+        preferredSectionId: bodyParse.data.preferredSectionId,
+        minLeadTimeMinutes: policy.minLeadTimeMinutes,
+      });
+      if (!offered.slots.some((slot) => slot.time === bodyParse.data.time && slot.available)) {
+        return reply.status(409).send({
+          error: 'no_table_available',
+          waitingListEnabled:
+            (settings?.capacitySpecials as Record<string, unknown> | undefined)
+              ?.waitingListEnabled === true,
+        });
+      }
+
       try {
         const hold = await holds.createHold({
           restaurantId: restaurant.id,
@@ -719,6 +734,53 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const hold = await db.agenticHold.findFirst({
         where: { holdToken: bodyParse.data.holdToken, restaurantId: restaurant.id },
       });
+      const phoneHash = hashPhone(bodyParse.data.customer.phone);
+      const idempotencyScope = computeIdempotencyScope({
+        restaurantId: restaurant.id,
+        channel: 'WEB',
+        clientId: isTest ? `test:${phoneHash}` : phoneHash,
+      });
+      const idempotencyKey = bodyParse.data.idempotencyKey ?? hold?.id;
+      const payloadHash = hold ? hashPayload({ holdId: hold.id, ...bodyParse.data }) : null;
+      if (hold?.status === 'CONSUMED' && hold.reservationId && idempotencyKey && payloadHash) {
+        const existing = await db.reservation.findFirst({
+          where: {
+            id: hold.reservationId,
+            restaurantId: restaurant.id,
+            consumedHoldId: hold.id,
+            idempotencyScope,
+            idempotencyKey,
+            idempotencyPayloadHash: payloadHash,
+            isTest,
+          },
+        });
+        if (!existing) return reply.status(409).send({ error: 'Confirmation cannot be replayed' });
+        // tenant-scoping: global — table Restaurant, id déjà résolu.
+        const restaurantTz = await db.restaurant.findUnique({
+          where: { id: restaurant.id },
+          select: { timezone: true },
+        });
+        const local = utcToZonedParts(
+          hold.slotStart,
+          restaurantTz?.timezone ?? DEFAULT_RESTAURANT_TIMEZONE,
+        );
+        return reply.send({
+          reservationId: existing.id,
+          ...(isReservationManagementEnabled()
+            ? { managementUrl: reservationManagementUrl(existing) }
+            : {}),
+          status: 'confirmed',
+          state: existing.state,
+          reused: true,
+          restaurantName: restaurant.name,
+          date: local.date,
+          time: local.time,
+          partySize: hold.partySize,
+          source:
+            existing.source ??
+            normalizeConnectSource(bodyParse.data.source, restaurant.connectAgentic),
+        });
+      }
       if (!hold || hold.status !== 'ACTIVE' || hold.expiresAt < new Date()) {
         // Analytics : émettre reservation_hold_expired si le hold existait (spec §8.5)
         if (hold && !isTest) {
@@ -799,28 +861,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         bodyParse.data.whatsappReminderConsent?.accepted === true,
         ipHash,
       );
-      if (!isTest) {
-        await consents.recordConsent({
-          restaurantId: restaurant.id,
-          customerId: null,
-          reservationId: null,
-          subject: bodyParse.data.customer.phone,
-          channel: 'WEB',
-          context: 'web_booking_intent',
-          consents: {
-            reservationProcessing: true,
-            transactionalSms: true,
-            transactionalEmail: !!bodyParse.data.customer.email,
-            marketingOptIn: false,
-          },
-          consentIpHash: ipHash,
-        });
-      }
 
       // Idempotency: scope = web:{restaurantId}:{phoneHash}, key = holdId
       // (le hold est unique, donc 2 confirms du même hold = même réponse)
-      const phoneHash = hashPhone(bodyParse.data.customer.phone);
-
       // Rate limit per-phone (spec §8.3: 5 confirmations/heure + anti-spam §8.6)
       // Les réservations test ont leur propre quota par restaurant.
       const allowed = isTest || (await canConfirm(phoneHash));
@@ -832,21 +875,6 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       // Scope distinct pour les tests : un rejeu test ne peut jamais renvoyer une
       // réservation réelle du même téléphone, ni l'inverse.
-      const idempotencyScope = computeIdempotencyScope({
-        restaurantId: restaurant.id,
-        channel: 'WEB',
-        clientId: isTest ? `test:${phoneHash}` : phoneHash,
-      });
-      const idempotencyKey = bodyParse.data.idempotencyKey ?? hold.id;
-      const payloadHash = hashPayload({
-        holdId: hold.id,
-        customerPhone: bodyParse.data.customer.phone,
-        customerName,
-        ...(bodyParse.data.whatsappReminderConsent
-          ? { whatsappReminderConsent: bodyParse.data.whatsappReminderConsent.accepted }
-          : {}),
-      });
-
       try {
         const result = await reservations.createReservation(
           {
@@ -862,6 +890,27 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             channel: 'WEB',
             policy,
             actor: 'connect:web',
+            ...(!isTest
+              ? {
+                  beforeCreate: async (tx) => {
+                    await new ConsentService(tx).recordConsent({
+                      restaurantId: restaurant.id,
+                      customerId: null,
+                      reservationId: null,
+                      subject: bodyParse.data.customer.phone,
+                      channel: 'WEB',
+                      context: 'web_booking_intent',
+                      consents: {
+                        reservationProcessing: true,
+                        transactionalSms: true,
+                        transactionalEmail: !!bodyParse.data.customer.email,
+                        marketingOptIn: false,
+                      },
+                      consentIpHash: ipHash,
+                    });
+                  },
+                }
+              : {}),
             holdToken: bodyParse.data.holdToken,
             specialRequests: bodyParse.data.specialRequests,
             tableId: table.id,
@@ -883,8 +932,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           },
           {
             scope: idempotencyScope,
-            key: idempotencyKey,
-            payloadHash,
+            key: idempotencyKey!,
+            payloadHash: payloadHash!,
             ttlSeconds: 86400,
           },
         );
@@ -935,7 +984,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
         // Émettre l'événement analytics reservation_confirmed (T9)
         // Best-effort : si la queue est down, on log un warning mais on ne fail pas.
-        if (!isTest) {
+        if (!isTest && !result.reused) {
           await emitConnectEvent(app.queues.connectAnalytics, {
             event: 'reservation_confirmed',
             restaurantId: restaurant.id,

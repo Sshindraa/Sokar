@@ -40,6 +40,7 @@ vi.mock('../../../shared/db/client', () => {
       create: vi.fn(),
     },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
+    $executeRaw: vi.fn().mockResolvedValue(1),
     $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => fn(mockDb)),
   } as unknown as PrismaClient;
 

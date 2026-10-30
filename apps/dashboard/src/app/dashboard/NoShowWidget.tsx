@@ -167,8 +167,10 @@ export default function NoShowWidget() {
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
                   La comparaison porte sur {data.withSms.total} réservations avec SMS et{' '}
-                  {data.withoutSms.total} sans SMS. Les groupes peuvent différer ; cet écart ne
-                  prouve pas un effet du rappel.
+                  {data.withoutSms.total} sans rappel connu. Seuls les SMS acceptés par le
+                  fournisseur et enregistrés sont comptés ; les rappels connus dont le canal est
+                  inconnu sont exclus. Les groupes peuvent différer ; cet écart ne prouve pas un
+                  effet du rappel.
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

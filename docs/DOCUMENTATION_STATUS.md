@@ -19,19 +19,20 @@
 
 ## Sources de vérité
 
-| Sujet                                 | Source actuelle                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Carte du code et des flux             | [`PROJECT_MAP.md`](./PROJECT_MAP.md)                                                                   |
-| État produit courant                  | [`obsidian/Context.md`](./obsidian/Context.md)                                                         |
-| Historique des livraisons             | trois dernières entrées de [`obsidian/Journal.md`](./obsidian/Journal.md), puis recherche ciblée       |
-| Plan CRM, marketing et prix 199/299 € | [`roadmap-produit-crm-marketing-199-299.md`](./roadmap-produit-crm-marketing-199-299.md)               |
-| Déploiement et rollback               | [`runbooks/deployment.md`](./runbooks/deployment.md), [`runbooks/rollback.md`](./runbooks/rollback.md) |
-| Contrat de données                    | `packages/database/prisma/schema.prisma` et migrations SQL                                             |
-| Contrat API réellement chargé         | `apps/api/src/main.ts` et routes de chaque module                                                      |
-| Prix affichés actuellement            | `apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`                     |
-| Gel et preuves de release             | [`release/product-gates.json`](./release/product-gates.json) et `scripts/verify-product-gates.mjs`     |
-| État courant des audits et portes     | [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)                           |
-| Roadmap de passage en production      | [`roadmap-production-readiness.md`](./roadmap-production-readiness.md)                                 |
+| Sujet                                 | Source actuelle                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Carte du code et des flux             | [`PROJECT_MAP.md`](./PROJECT_MAP.md)                                                                                         |
+| Présentation produit et limites       | [`PROJECT_MAP.md` — Ce qu'est Sokar](./PROJECT_MAP.md#ce-quest-sokar) ; vérifier les portes et runbooks avant toute promesse |
+| État produit courant                  | [`obsidian/Context.md`](./obsidian/Context.md)                                                                               |
+| Historique des livraisons             | trois dernières entrées de [`obsidian/Journal.md`](./obsidian/Journal.md), puis recherche ciblée                             |
+| Plan CRM, marketing et prix 199/299 € | [`roadmap-produit-crm-marketing-199-299.md`](./roadmap-produit-crm-marketing-199-299.md)                                     |
+| Déploiement et rollback               | [`runbooks/deployment.md`](./runbooks/deployment.md), [`runbooks/rollback.md`](./runbooks/rollback.md)                       |
+| Contrat de données                    | `packages/database/prisma/schema.prisma` et migrations SQL                                                                   |
+| Contrat API réellement chargé         | `apps/api/src/main.ts` et routes de chaque module                                                                            |
+| Prix affichés actuellement            | `apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`                                           |
+| Gel et preuves de release             | [`release/product-gates.json`](./release/product-gates.json) et `scripts/verify-product-gates.mjs`                           |
+| État courant des audits et portes     | [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)                                                 |
+| Roadmap de passage en production      | [`roadmap-production-readiness.md`](./roadmap-production-readiness.md)                                                       |
 
 ## Audit de `docs/audits/`
 

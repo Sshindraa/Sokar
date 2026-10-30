@@ -24,6 +24,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildFixedGreeting } from '../agent-identity';
 import '@fastify/websocket';
 import { WebSocket } from 'ws';
+import { timingSafeEqual } from 'node:crypto';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
 import { sendAudioToStt, closeStt, connectStt, sttProviderId } from './stt-bridge';
@@ -100,6 +101,19 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
   app.get('/voice/stream/:callId', { websocket: true }, (socket, req) => {
     const callId = (req.params as { callId: string }).callId;
     const mgr = CallSessionManager.getInstance();
+    const candidate = mgr.get(callId);
+    const token = (req.query as { token?: unknown }).token;
+    if (
+      !candidate?.streamToken ||
+      typeof token !== 'string' ||
+      Buffer.byteLength(token) !== Buffer.byteLength(candidate.streamToken) ||
+      !timingSafeEqual(Buffer.from(token), Buffer.from(candidate.streamToken)) ||
+      candidate.ended ||
+      (candidate.telnyxWs && candidate.telnyxWs.readyState !== WebSocket.CLOSED)
+    ) {
+      socket.close(1008, 'unauthorized');
+      return;
+    }
 
     // Per-call child logger. Every log line emitted from this WS handler
     // (and from any function it calls) will carry `call_id`, which makes
@@ -112,10 +126,33 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
 
     // Récupérer la session créée par call.initiated
     let session: CallSession | undefined;
+    let started = false;
 
     socket.on('message', (raw: Buffer) => {
       try {
         const msg: TelnyxStreamMessage = JSON.parse(raw.toString());
+        if (msg.event === 'connected' && !started) return;
+        if (!started) {
+          if (
+            msg.event !== 'start' ||
+            msg.start?.call_control_id !== callId ||
+            mgr.get(callId) !== candidate ||
+            (candidate.telnyxWs && candidate.telnyxWs.readyState !== WebSocket.CLOSED)
+          ) {
+            socket.close(1008, 'invalid stream');
+            return;
+          }
+          started = true;
+          if (candidate.streamStartTimer) clearTimeout(candidate.streamStartTimer);
+          candidate.streamStartTimer = null;
+        } else if (
+          msg.event === 'start' ||
+          candidate.telnyxWs !== socket ||
+          mgr.get(callId) !== candidate
+        ) {
+          socket.close(1008, 'invalid stream');
+          return;
+        }
         session = handleTelnyxMessage(msg, callId, socket, mgr) ?? session;
       } catch (err) {
         log.error({ err }, '[stream] Parse error');
@@ -124,7 +161,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
 
     socket.on('close', () => {
       log.info('[stream] Telnyx WS closed');
-      if (session) {
+      if (session && session.telnyxWs === socket) {
         finishL16Endian(session);
         finishWideband(session);
         session.ended = true;
@@ -143,7 +180,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         );
         finalizeSessionCall(app, session, 'stream-close', log);
         closeStt(session);
-        mgr.delete(session.callControlId);
+        if (mgr.get(session.callControlId) === session) mgr.delete(session.callControlId);
       }
     });
 
@@ -153,7 +190,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         tags: { service: 'handler', event: 'websocket-error' },
         extra: { callId },
       });
-      if (session) {
+      if (session && session.telnyxWs === socket) {
         finishL16Endian(session);
         finishWideband(session);
         session.ended = true;
@@ -170,7 +207,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         );
         finalizeSessionCall(app, session, 'stream-error', log);
         closeStt(session);
-        mgr.delete(session.callControlId);
+        if (mgr.get(session.callControlId) === session) mgr.delete(session.callControlId);
       }
     });
   });

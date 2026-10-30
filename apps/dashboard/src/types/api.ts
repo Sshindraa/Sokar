@@ -133,6 +133,9 @@ export interface Reservation {
   /** `state` is the business source of truth; legacy rows may omit it. */
   state?: ReservationState;
   estimatedRevenue: number | null;
+  specialRequests?: string | null;
+  overbooked?: boolean;
+  channel?: 'PHONE' | 'WEB' | 'MCP' | 'OPENAI_RESERVE' | 'ADMIN' | 'API' | null;
   tableId: string | null;
   table?: { name: string } | null;
 }

@@ -288,6 +288,7 @@ function makeMockPrisma(initial: {
       },
     },
     table: {
+      findFirst: async () => tables.find((table) => table.isActive) ?? null,
       findMany: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const floorPlanId = where.floorPlanId as string | undefined;
@@ -323,6 +324,7 @@ function makeMockPrisma(initial: {
         const or = where.OR as Array<Record<string, unknown>> | undefined;
         return reservations.filter((r) => {
           if (restaurantId && r.restaurantId !== restaurantId) return false;
+          if (where.isTest === false && r.isTest) return false;
           if (state?.in && !state.in.includes(r.state)) return false;
           const tableIdNot = tableId?.not;
           if (tableIdNot === null && r.tableId === null) return false;
@@ -340,7 +342,13 @@ function makeMockPrisma(initial: {
             const matchesOr = or.some((condition) => {
               if ('startsAt' in condition) {
                 if (condition.startsAt === null) {
-                  return r.startsAt === null && matchesRange(r.reservedAt, condition.reservedAt);
+                  return (
+                    r.startsAt === null &&
+                    matchesRange(r.reservedAt, condition.reservedAt) &&
+                    (condition.endsAt === null
+                      ? r.endsAt === null
+                      : !condition.endsAt || matchesRange(r.endsAt, condition.endsAt))
+                  );
                 }
                 if (!matchesRange(r.startsAt, condition.startsAt)) return false;
                 if ('endsAt' in condition && condition.endsAt === null) {
@@ -434,6 +442,32 @@ describe('CapacityAwareAvailabilityService', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('expose les créneaux sans table au personnel seulement, en respectant les réservations non attribuées', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [],
+      reservations: [
+        makeReservation({
+          id: 'r1',
+          tableId: null,
+          startsAt: new Date('2026-07-02T17:00:00Z'),
+          endsAt: new Date('2026-07-02T19:00:00Z'),
+        }),
+      ],
+    });
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const staff = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      allowWithoutTables: true,
+    });
+    const web = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+    expect(staff.slots.find((slot) => slot.time === '20:00')?.available).toBe(false);
+    expect(staff.slots.some((slot) => slot.available)).toBe(true);
+    expect(web.slots.every((slot) => !slot.available)).toBe(true);
   });
 
   it('retourne le contrat AvailabilityDto attendu', async () => {
@@ -1125,6 +1159,25 @@ describe('créneaux passés', () => {
 
       expect(marked.slots[0].available).toBe(false);
       expect(dto.slots[0].available).toBe(true);
+    });
+
+    it('indique aussi le passé pour les créneaux déjà complets, sans confondre avec le délai', () => {
+      const dto = {
+        restaurantId: RESTAURANT_ID,
+        date,
+        partySize: 2,
+        slots: [
+          { time: '14:00', available: false },
+          { time: '15:00', available: true },
+          { time: '15:30', available: true },
+        ],
+      };
+      const result = markTooSoonSlotsUnavailable(dto, 'Europe/Paris', parisNow('15:00'), 120, true);
+      expect(result.slots).toEqual([
+        { time: '14:00', available: false, past: true },
+        { time: '15:00', available: false, past: true },
+        { time: '15:30', available: false, past: false },
+      ]);
     });
   });
 

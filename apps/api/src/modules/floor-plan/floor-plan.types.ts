@@ -6,6 +6,7 @@
 export type AvailabilitySlot = {
   time: string;
   available: boolean;
+  past?: boolean;
 };
 
 export type AvailabilityDto = {

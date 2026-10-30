@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { clerkClient } from '@clerk/fastify';
 import type { Prisma } from '@prisma/client';
 import { normalizePhone } from '@sokar/shared';
 import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
@@ -67,11 +68,16 @@ import {
   issueLiveDemoTicket,
   liveDemoUnavailableReason,
 } from '../voice/demo/live-demo';
-import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
+import {
+  listAccessibleRestaurantSites,
+  lockAccountMemberships,
+  RestaurantContextError,
+} from './site-context';
 import {
   assertClerkOrganizationMember,
   ClerkMembershipVerificationError,
 } from './clerk-membership.service';
+import { SOKAR_ROLE_METADATA_KEY } from './team.service';
 
 type RestaurantWithIncludes = Prisma.RestaurantGetPayload<{
   include: { personality: true; exposureSettings: true; images: true };
@@ -745,9 +751,52 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     try {
-      await assertClerkOrganizationMember({
-        organizationId: req.clerkOrganizationId,
-        userId: input.clerkUserId,
+      const { existing, membership } = await app.db.$transaction(
+        async (tx) => {
+          await lockAccountMemberships(tx, req.accountId!);
+          await assertClerkOrganizationMember({
+            organizationId: req.clerkOrganizationId,
+            userId: input.clerkUserId,
+          });
+          const accountMembership = await tx.restaurantAccountMembership.findFirst({
+            where: { accountId: req.accountId, restaurantId: null, clerkUserId: input.clerkUserId },
+            select: { role: true },
+          });
+          if (accountMembership?.role === 'READ_ONLY' && input.role !== 'READ_ONLY') {
+            return { existing: null, membership: null };
+          }
+          const existing = await tx.restaurantAccountMembership.findFirst({
+            where: { accountId: req.accountId, restaurantId, clerkUserId: input.clerkUserId },
+          });
+          const membership = existing
+            ? await tx.restaurantAccountMembership.update({
+                where: { id: existing.id },
+                data: { role: input.role },
+              })
+            : await tx.restaurantAccountMembership.create({
+                data: {
+                  accountId: req.accountId!,
+                  restaurantId,
+                  clerkUserId: input.clerkUserId,
+                  role: input.role,
+                },
+              });
+          return { existing, membership };
+        },
+        { timeout: 30000 },
+      );
+      if (!membership) {
+        return reply.status(409).send({
+          error: 'ACCOUNT_READ_ONLY',
+          message:
+            'Ce membre est en lecture seule sur tout le compte. Modifiez d’abord son rôle de compte.',
+        });
+      }
+      return reply.status(existing ? 200 : 201).send({
+        id: membership.id,
+        restaurantId,
+        clerkUserId: input.clerkUserId,
+        role: membership.role,
       });
     } catch (error) {
       if (error instanceof ClerkMembershipVerificationError) {
@@ -765,29 +814,6 @@ export async function restaurantRoutes(app: FastifyInstance) {
       }
       throw error;
     }
-
-    const existing = await app.db.restaurantAccountMembership.findFirst({
-      where: { accountId: req.accountId, restaurantId, clerkUserId: input.clerkUserId },
-    });
-    const membership = existing
-      ? await app.db.restaurantAccountMembership.update({
-          where: { id: existing.id },
-          data: { role: input.role },
-        })
-      : await app.db.restaurantAccountMembership.create({
-          data: {
-            accountId: req.accountId,
-            restaurantId,
-            clerkUserId: input.clerkUserId,
-            role: input.role,
-          },
-        });
-    return reply.status(existing ? 200 : 201).send({
-      id: membership.id,
-      restaurantId,
-      clerkUserId: input.clerkUserId,
-      role: membership.role,
-    });
   });
 
   app.delete(
@@ -810,11 +836,41 @@ export async function restaurantRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
       }
 
-      const membership = await app.db.restaurantAccountMembership.findFirst({
-        where: { accountId: req.accountId, restaurantId, clerkUserId },
-      });
-      if (!membership) return reply.status(404).send({ error: 'SITE_MEMBER_NOT_FOUND' });
-      await app.db.restaurantAccountMembership.delete({ where: { id: membership.id } });
+      try {
+        const removed = await app.db.$transaction(
+          async (tx) => {
+            await lockAccountMemberships(tx, req.accountId!);
+            const membership = await tx.restaurantAccountMembership.findFirst({
+              where: { accountId: req.accountId, restaurantId, clerkUserId },
+            });
+            if (!membership) return false;
+            const remaining = await tx.restaurantAccountMembership.count({
+              where: { accountId: req.accountId, clerkUserId, id: { not: membership.id } },
+            });
+            if (!remaining) {
+              if (!req.clerkOrganizationId) throw new Error('Missing Clerk organization');
+              try {
+                await clerkClient.organizations.updateOrganizationMembershipMetadata({
+                  organizationId: req.clerkOrganizationId,
+                  userId: clerkUserId,
+                  publicMetadata: { [SOKAR_ROLE_METADATA_KEY]: 'REVOKED' },
+                });
+              } catch (error) {
+                if ((error as { status?: number } | null)?.status !== 404) throw error;
+              }
+            }
+            await tx.restaurantAccountMembership.delete({ where: { id: membership.id } });
+            return true;
+          },
+          { timeout: 30000 },
+        );
+        if (!removed) return reply.status(404).send({ error: 'SITE_MEMBER_NOT_FOUND' });
+      } catch {
+        return reply.status(503).send({
+          error: 'CLERK_MEMBERSHIP_UNAVAILABLE',
+          message: 'Impossible de retirer cet accès pour le moment.',
+        });
+      }
       return reply.status(204).send();
     },
   );

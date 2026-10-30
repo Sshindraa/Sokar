@@ -8,8 +8,31 @@ import {
   CreateReservationSchema,
   ReservationQuerySchema,
 } from './reservation.schema';
-import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES } from '@sokar/shared';
+import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES, normalizePhone } from '@sokar/shared';
 import { db } from '../../shared/db/client';
+import {
+  ReservationService as AgenticReservationService,
+  ReservationModificationNotAllowedError,
+  ReservationNotFoundError,
+  ReservationSlotUnavailableError,
+} from '../agentic-reservations/core/reservation.service';
+import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
+import { HoldService, HoldConflictError } from '../agentic-reservations/core/hold.service';
+import {
+  IdempotencyService,
+  IdempotencyConflictError,
+  IdempotencyPendingError,
+  computeIdempotencyScope,
+  hashPayload,
+} from '../agentic-reservations/core/idempotency.service';
+import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
+import {
+  buildPolicySnapshot,
+  PolicyValidationError,
+} from '../agentic-reservations/core/policies.service';
+import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
+import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import { normalizeCustomerEmail } from '../customers/customer-crm.service';
 import { reservationManagementUrl } from './reservation-management';
 import {
   createWhatsAppReminderConsent,
@@ -32,6 +55,29 @@ const UpdateReservationSchema = z.object({
   customerName: z.string().min(1).max(200).optional(),
   partySize: z.number().int().min(1).max(20).optional(),
 });
+
+const StaffModificationSchema = UpdateReservationSchema.omit({ status: true }).extend({
+  startsAt: z.string().datetime({ offset: true }).optional(),
+  specialRequests: z.string().max(500).nullable().optional(),
+});
+
+const StaffCreationSchema = z
+  .object({
+    startsAt: z.string().datetime({ offset: true }),
+    partySize: z.number().int().min(1).max(20),
+    customerName: z.string().trim().min(1).max(200),
+    customerPhone: z
+      .string()
+      .max(40)
+      .regex(/^[+\d\s.()-]+$/)
+      .transform(normalizePhone)
+      .pipe(z.string().regex(/^\+?[0-9]{10,15}$/)),
+    customerEmail: z.string().trim().email().max(254).optional(),
+    specialRequests: z.string().max(500).optional(),
+    overbook: z.boolean().optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict();
 
 function createSlotNotAvailableError() {
   const error = new Error(ERROR_CODE_MESSAGES.SLOT_NOT_AVAILABLE);
@@ -65,6 +111,101 @@ export async function reservationRoutes(app: FastifyInstance) {
     const query = ReservationQuerySchema.parse(req.query);
     const reservations = await ReservationService.findByRestaurant(req.restaurantId!, query.date);
     return reply.send(reservations);
+  });
+
+  app.get('/reservations/staff-availability', { preHandler: requireOrg() }, async (req, reply) => {
+    const query = AvailabilityQuerySchema.extend({
+      partySize: z.coerce.number().int().min(1).max(20),
+    }).parse(req.query);
+    const result = await new CapacityAwareAvailabilityService(db).getAvailability({
+      restaurantId: req.restaurantId!,
+      date: query.date,
+      partySize: query.partySize,
+      allowWithoutTables: true,
+      includePast: true,
+    });
+    return reply.send({
+      slots: result.slots.map(({ time, available, past }) => ({
+        time,
+        available,
+        past: past === true,
+      })),
+    });
+  });
+
+  app.post('/reservations/staff', { preHandler: requireOrg() }, async (req, reply) => {
+    const body = StaffCreationSchema.parse(req.body);
+    const restaurantId = req.restaurantId!;
+    const settings = await db.restaurantExposureSettings.findUnique({ where: { restaurantId } });
+    if (!settings)
+      return reply
+        .status(409)
+        .send({ error: 'Les règles de réservation de ce restaurant ne sont pas configurées.' });
+    const policy = buildPolicySnapshot({
+      policyVersion: '2026-06-20',
+      maxPartySize: settings.maxPartySize,
+      minLeadTimeMinutes: 0,
+      requireManualValidation: settings.requireManualValidation,
+      quoteTtlSeconds: settings.quoteTtlSeconds,
+      holdTtlSeconds: settings.holdTtlSeconds,
+      noShowPolicy: settings.noShowPolicy,
+      notificationChannels: settings.notificationChannels,
+      capacitySpecials: settings.capacitySpecials as Record<string, unknown> | null,
+    });
+    const startsAt = new Date(body.startsAt);
+    const endsAt = new Date(
+      startsAt.getTime() +
+        resolveServiceDurationMinutes(settings.capacitySpecials as Record<string, unknown> | null) *
+          60_000,
+    );
+    const audit = new AuditLogService(db);
+    const service = new AgenticReservationService(
+      db,
+      audit,
+      new HoldService(db, audit),
+      new IdempotencyService(new PrismaIdempotencyStore(db)),
+    );
+    const { idempotencyKey, overbook, ...fields } = body;
+    try {
+      const result = await service.createReservation(
+        {
+          ...fields,
+          startsAt,
+          endsAt,
+          restaurantId,
+          channel: 'ADMIN',
+          actor: `staff:${req.userId}`,
+          customerEmail: body.customerEmail ? normalizeCustomerEmail(body.customerEmail) : null,
+          policy,
+          allowOverbook: overbook === true,
+        },
+        {
+          scope: computeIdempotencyScope({ restaurantId, channel: 'ADMIN' }),
+          key: idempotencyKey,
+          payloadHash: hashPayload({
+            ...fields,
+            startsAt,
+            customerEmail: body.customerEmail ? normalizeCustomerEmail(body.customerEmail) : null,
+            overbook: overbook === true,
+          }),
+          ttlSeconds: 86400,
+        },
+      );
+      return reply.status(201).send(result);
+    } catch (err) {
+      if (err instanceof ReservationSlotUnavailableError || err instanceof HoldConflictError)
+        return reply.status(409).send({
+          error: `Ce créneau est complet pour ${body.partySize} couverts.`,
+          code: 'SLOT_FULL',
+        });
+      if (err instanceof IdempotencyConflictError || err instanceof IdempotencyPendingError)
+        return reply
+          .status(409)
+          .send({ error: 'Cette demande ne peut pas être rejouée.', code: 'IDEMPOTENCY_CONFLICT' });
+      if (err instanceof PolicyValidationError)
+        return reply.status(400).send({ error: err.message, code: err.code });
+      throw err;
+    }
   });
 
   app.get('/restaurants/:id/availability', async (req, reply) => {
@@ -138,6 +279,46 @@ export async function reservationRoutes(app: FastifyInstance) {
       throw err;
     }
   });
+
+  app.post(
+    '/reservations/:id/staff-modification',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = StaffModificationSchema.parse(req.body);
+      const audit = new AuditLogService(db);
+      const service = new AgenticReservationService(
+        db,
+        audit,
+        new HoldService(db, audit),
+        new IdempotencyService(new PrismaIdempotencyStore(db)),
+      );
+      try {
+        return reply.send(
+          await service.modifyReservation({
+            ...body,
+            startsAt: body.startsAt ? new Date(body.startsAt) : undefined,
+            preserveDuration: true,
+            reservationId: id,
+            restaurantId: req.restaurantId!,
+            actor: `staff:${req.userId}`,
+            publicClient: false,
+            auditMetadata: { source: 'staff' },
+          }),
+        );
+      } catch (err) {
+        if (err instanceof ReservationNotFoundError)
+          return reply.status(404).send({ error: 'Not found' });
+        if (err instanceof ReservationModificationNotAllowedError)
+          return reply.status(409).send({ error: 'Cette réservation ne peut plus être modifiée.' });
+        if (err instanceof ReservationSlotUnavailableError)
+          return reply
+            .status(409)
+            .send({ error: `Ce créneau est complet pour ${err.partySize} couverts.` });
+        throw err;
+      }
+    },
+  );
 
   app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };

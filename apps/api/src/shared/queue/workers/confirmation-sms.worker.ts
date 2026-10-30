@@ -9,6 +9,7 @@ import { queues } from '../queues';
 import { CONFIRMATION_SMS_WORKER_CONCURRENCY } from '../constants';
 import { isConfirmedReservation } from '../../reservations/reservation-state';
 import { utcToZonedParts } from '../../timezone/restaurant-time';
+import { buildReservationNotificationJobId } from '../job-options';
 import {
   acquireNotificationClaim,
   buildNotificationClaimKey,
@@ -43,6 +44,7 @@ export type ConfirmationSmsDependencies = {
   formatDate: typeof formatDate;
   claimStore: NotificationClaimStore;
   reconciliationQueue?: NotificationReconciliationQueue;
+  reminderQueue?: Pick<typeof queues.confirmationSms, 'add'>;
   /** Compatibility mode for injected legacy fakes; production uses sender claims. */
   manageReminderClaims?: boolean;
 };
@@ -54,6 +56,7 @@ function getDefaultDependencies(): ConfirmationSmsDependencies {
     formatDate,
     claimStore: redisQueue,
     reconciliationQueue: queues.reconciliation,
+    reminderQueue: queues.confirmationSms,
     manageReminderClaims: true,
   };
 }
@@ -269,19 +272,19 @@ export async function processConfirmationSmsJob(
     let sent = 0;
     let whatsappCount = 0;
     let smsCount = 0;
+    let retryQueueFailed = false;
     for (const r of reservations) {
       if (!r.customerPhone) continue;
 
-      const latest = await deps.db.reservation.findUnique({
-        where: { id: r.id },
-        include: { restaurant: { select: { name: true, id: true, timezone: true } } },
-      });
-      if (!latest || !isReminderEligible(latest)) {
-        log.info({ reservationId: r.id }, 'reminder skipped: reservation no longer eligible');
-        continue;
-      }
-
       try {
+        const latest = await deps.db.reservation.findUnique({
+          where: { id: r.id },
+          include: { restaurant: { select: { name: true, id: true, timezone: true } } },
+        });
+        if (!latest || !isReminderEligible(latest)) {
+          log.info({ reservationId: r.id }, 'reminder skipped: reservation no longer eligible');
+          continue;
+        }
         const result = await processReminderForReservation(deps, log, latest);
         if (result.skipped) {
           log.info({ reservationId: r.id, reason: result.skipped }, 'reminder skipped');
@@ -311,12 +314,23 @@ export async function processConfirmationSmsJob(
           );
         }
       } catch (err) {
-        if (err instanceof NotificationProviderRefusedError) throw err;
         const message = err instanceof Error ? err.message : String(err);
         log.error({ err: message, reservationId: r.id }, 'failed to send reminder');
+        try {
+          if (!deps.reminderQueue) throw new Error('reminder queue unavailable');
+          await deps.reminderQueue.add(
+            'send-reminder',
+            { kind: 'send', reservationId: r.id },
+            { jobId: buildReservationNotificationJobId('reminder', r.id) },
+          );
+        } catch (queueError) {
+          retryQueueFailed = true;
+          log.error({ err: queueError, reservationId: r.id }, 'failed to queue reminder retry');
+        }
       }
     }
 
+    if (retryQueueFailed) throw new Error('failed to queue one or more reminder retries');
     log.info({ sent, whatsappCount, smsCount, total: reservations.length }, 'rappel scan complete');
     return { sent, whatsappCount, smsCount, total: reservations.length };
   }

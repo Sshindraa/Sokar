@@ -14,11 +14,14 @@ vi.mock('../plugins/clerk', () => ({
       const testRestaurantId = req.headers?.['x-test-restaurant-id'];
       req.restaurantId = typeof testRestaurantId === 'string' ? testRestaurantId : 'test-rest-1';
       req.siteId = 'test-rest-1';
-      req.accountId = 'test-account-1';
+      req.accountId = req.headers?.['x-test-legacy'] ? undefined : 'test-account-1';
       req.clerkOrganizationId = 'test-rest-1';
       const requestedRole = req.headers?.['x-test-site-role'];
       req.siteRole =
-        requestedRole === 'STAFF' || requestedRole === 'MANAGER' || requestedRole === 'READ_ONLY'
+        requestedRole === 'STAFF' ||
+        requestedRole === 'MANAGER' ||
+        requestedRole === 'READ_ONLY' ||
+        requestedRole === 'ORG_MEMBER'
           ? requestedRole
           : 'OWNER';
       req.userId = 'test-user-1';
@@ -687,6 +690,7 @@ vi.mock('../shared/db/client', () => {
       findMany: vi.fn(),
     },
     restaurantAccountMembership: {
+      count: vi.fn().mockResolvedValue(0),
       findUnique: vi.fn(),
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn(),
@@ -733,6 +737,7 @@ vi.mock('../shared/db/client', () => {
     },
     reservationAuditLog: {
       create: vi.fn(),
+      findFirst: vi.fn(),
     },
     reservation: {
       create: vi.fn(),
@@ -942,6 +947,7 @@ vi.mock('../shared/db/client', () => {
     },
     call: {
       create: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       findUnique: vi.fn(),
       upsert: vi.fn(),
@@ -1168,6 +1174,17 @@ vi.mock('../shared/redis/client', () => {
   const expiring = new Set<string>();
   return {
     redisCache: {
+      defineCommand: vi.fn(),
+      rateLimit: vi.fn(
+        (
+          _key: string,
+          _window: number,
+          _max: number,
+          _continue: boolean,
+          _backoff: boolean,
+          cb: (error: null, result: number[]) => void,
+        ) => cb(null, [1, 60000]),
+      ),
       get: vi.fn(async (key: string) => store.get(key) ?? null),
       getBuffer: vi.fn().mockResolvedValue(null),
       set: vi.fn(async (key: string, value: string) => {
@@ -1203,7 +1220,16 @@ vi.mock('../shared/redis/client', () => {
         return expiring.has(key) ? 60 : -1;
       }),
       // Used by OAuth checkOauthRate for atomic INCR + PEXPIRE
-      eval: vi.fn(async (_script: string, _numKeys: number, key: string) => {
+      eval: vi.fn(async (_script: string, _numKeys: number, key: string, ...args: string[]) => {
+        if (_numKeys === 4) {
+          const [accessKey, refreshKey, oldAccessKey, expected, next] = args;
+          if (store.get(key) !== expected) return 0;
+          store.set(accessKey, next);
+          if (refreshKey) store.set(refreshKey, next);
+          store.delete(key);
+          if (oldAccessKey) store.delete(oldAccessKey);
+          return 1;
+        }
         const count = (counters.get(key) ?? 0) + 1;
         counters.set(key, count);
         return count;

@@ -75,10 +75,10 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = payload.text;
 
-    if (!from || !text) {
+    if (!from || !text || !payload.id) {
       req.log.warn(
-        { hasFrom: Boolean(from), hasText: !!text },
-        'whatsapp inbound: missing from or text',
+        { hasFrom: Boolean(from), hasText: !!text, hasId: Boolean(payload.id) },
+        'whatsapp inbound: missing from, text or message ID',
       );
       return reply.send({ result: 'ok' });
     }
@@ -86,7 +86,7 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     req.log.info({ hasFrom: true, textLength: text.length }, 'whatsapp inbound received');
 
     // Même handler que SMS — parse OUI/NON et agit sur la résa
-    await handleReply(from, text, 'whatsapp');
+    await handleReply(from, text, 'whatsapp', payload.id);
 
     return reply.send({ result: 'ok' });
   });

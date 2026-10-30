@@ -296,6 +296,9 @@ async function eligibility(
         restaurantId: args.restaurantId,
         archivedAt: null,
         mergedIntoId: null,
+        ...(args.channel === 'EMAIL'
+          ? { emailNormalized: args.customer.emailNormalized }
+          : { phone: args.customer.phone }),
       },
       select: { id: true },
     }),

@@ -13,6 +13,7 @@ import {
   ReservationSlotUnavailableError,
 } from '../core/reservation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
+import { TableAllocationService } from '../../floor-plan/table-allocation.service';
 import * as confirmationOutbox from '../../../shared/outbox/reservation-confirmation';
 import { CustomerService } from '../../customers/customer.service';
 import * as marketingAttribution from '../../marketing/marketing-attribution.service';
@@ -100,13 +101,15 @@ function makeIdempotencyStore(): IdempotencyStore {
   };
 }
 
-function makeFakes() {
+function makeFakes(hasTables = true) {
   const holds = new Map<string, HoldRow>();
   const reservations = new Map<string, ReservationRow>();
   const audits: Record<string, unknown>[] = [];
   const createdReservationData: Record<string, unknown>[] = [];
 
   const prisma = {
+    restaurantExposureSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    table: { findFirst: vi.fn().mockResolvedValue(hasTables ? { id: 'table-1' } : null) },
     $transaction: async (fn: unknown) =>
       (fn as unknown as (tx: PrismaClient) => Promise<unknown>)(prisma as unknown as PrismaClient),
     $queryRaw: async () => [{ id: 'locked' }],
@@ -350,6 +353,181 @@ const policy = buildPolicySnapshot({
 });
 
 describe('reservation.service', () => {
+  it('creates a staff reservation without a table when no active tables exist', async () => {
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(false);
+    try {
+      const fakes = makeFakes(false);
+      const startsAt = new Date(Date.now() + 3_600_000);
+      await fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 2,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + 3_600_000),
+          customerName: 'Alice',
+          customerPhone: '+33600000000',
+          channel: 'ADMIN',
+          actor: 'staff:user',
+          policy,
+        },
+        {
+          scope: 'staff',
+          key: 'no-table',
+          payloadHash: hashPayload({ startsAt }),
+          ttlSeconds: 300,
+        },
+      );
+      expect(fakes.createdReservationData[0]).toMatchObject({ tableId: null });
+    } finally {
+      intent.mockRestore();
+    }
+  });
+  it('rejects a staff reservation if active tables exist but none is available', async () => {
+    const allocate = vi.spyOn(TableAllocationService.prototype, 'allocate').mockResolvedValue(null);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      await expect(
+        fakes.reservationsService.createReservation(
+          {
+            restaurantId: 'r-1',
+            partySize: 2,
+            startsAt,
+            endsAt: new Date(startsAt.getTime() + 3_600_000),
+            customerName: 'Alice',
+            customerPhone: '+33600000000',
+            channel: 'ADMIN',
+            actor: 'staff:user',
+            policy,
+          },
+          {
+            scope: 'staff',
+            key: 'no-free-table',
+            payloadHash: hashPayload({ startsAt }),
+            ttlSeconds: 300,
+          },
+        ),
+      ).rejects.toBeInstanceOf(ReservationSlotUnavailableError);
+    } finally {
+      allocate.mockRestore();
+    }
+  });
+  it('allocates a table and creates a staff reservation under the capacity lock', async () => {
+    const allocate = vi
+      .spyOn(TableAllocationService.prototype, 'allocate')
+      .mockResolvedValue({ id: 'table-1' } as never);
+    const lock = vi.spyOn(TableAllocationService.prototype, 'lockTable').mockResolvedValue(true);
+    const available = vi
+      .spyOn(TableAllocationService.prototype, 'isTableAvailable')
+      .mockResolvedValue(true);
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(true);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      const input = {
+        restaurantId: 'r-1',
+        partySize: 4,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+        customerName: 'Alice',
+        customerPhone: '+33600000000',
+        customerEmail: 'alice@example.com',
+        specialRequests: 'Terrasse',
+        channel: 'ADMIN' as const,
+        actor: 'staff:user',
+        policy,
+      };
+      const key = {
+        scope: 'staff',
+        key: 'normal',
+        payloadHash: hashPayload({ startsAt }),
+        ttlSeconds: 300,
+      };
+      const first = await fakes.reservationsService.createReservation(input, key);
+      const replay = await fakes.reservationsService.createReservation(input, key);
+      expect(replay.reservationId).toBe(first.reservationId);
+      expect(allocate).toHaveBeenCalledTimes(1);
+      expect(fakes.createdReservationData).toHaveLength(1);
+      expect(fakes.createdReservationData[0]).toMatchObject({
+        channel: 'ADMIN',
+        tableId: 'table-1',
+        customerEmail: 'alice@example.com',
+        specialRequests: 'Terrasse',
+      });
+    } finally {
+      allocate.mockRestore();
+      lock.mockRestore();
+      available.mockRestore();
+      intent.mockRestore();
+    }
+  });
+  it('overbooks a blocked slot without a table or hold, records the override and replays the same reservation', async () => {
+    const intent = vi
+      .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')
+      .mockResolvedValue(true);
+    try {
+      const fakes = makeFakes();
+      const startsAt = new Date(Date.now() + 3_600_000);
+      const input = {
+        restaurantId: 'r-1',
+        partySize: 4,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+        customerName: 'Alice',
+        customerPhone: '+33600000000',
+        customerEmail: 'alice@example.com',
+        specialRequests: 'Terrasse',
+        channel: 'ADMIN' as const,
+        actor: 'staff:user',
+        policy,
+        allowOverbook: true,
+      };
+      fakes.reservations.set('blocking', {
+        id: 'blocking',
+        restaurantId: 'r-1',
+        partySize: 4,
+        reservedAt: startsAt,
+        startsAt,
+        endsAt: input.endsAt,
+        tableId: null,
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+        consumedHoldId: null,
+      });
+      const key = {
+        scope: 'staff',
+        key: 'same-key',
+        payloadHash: hashPayload({ startsAt }),
+        ttlSeconds: 300,
+      };
+      const first = await fakes.reservationsService.createReservation(input, key);
+      const replay = await fakes.reservationsService.createReservation(input, key);
+      expect(replay.reservationId).toBe(first.reservationId);
+      expect(fakes.createdReservationData).toHaveLength(1);
+      expect(fakes.createdReservationData[0]).toMatchObject({
+        channel: 'ADMIN',
+        specialRequests: 'Terrasse',
+        customerEmail: 'alice@example.com',
+        tableId: null,
+        consumedHoldId: null,
+      });
+      expect(fakes.holds.size).toBe(0);
+      expect(fakes.audits).toContainEqual(
+        expect.objectContaining({
+          event: 'reservation_created',
+          actor: 'staff:user',
+          metadata: expect.objectContaining({ overbooked: true }),
+        }),
+      );
+      expect(intent).toHaveBeenCalledTimes(1);
+    } finally {
+      intent.mockRestore();
+    }
+  });
   it('requests a transactional web confirmation only on first creation, not replay', async () => {
     const intent = vi
       .spyOn(confirmationOutbox, 'enqueueReservationConfirmation')

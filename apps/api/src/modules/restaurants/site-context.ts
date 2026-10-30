@@ -6,6 +6,12 @@
  * une preuve d'appartenance.
  */
 
+import type { Prisma } from '@prisma/client';
+
+export async function lockAccountMemberships(tx: Prisma.TransactionClient, accountId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`account-memberships:${accountId}`}, 0))`;
+}
+
 export type RestaurantSiteRole = 'OWNER' | 'MANAGER' | 'STAFF' | 'READ_ONLY' | 'ORG_MEMBER';
 
 export type RestaurantContext = {
@@ -139,6 +145,7 @@ export async function resolveRestaurantContext(
     organizationId: string;
     userId?: string | null;
     requestedSiteId?: string | null;
+    allowUnassigned?: boolean;
   },
 ): Promise<RestaurantContext> {
   const organizationId = input.organizationId.trim();
@@ -204,10 +211,12 @@ export async function resolveRestaurantContext(
   if (account.status !== 'ACTIVE') {
     throw new RestaurantContextError('ACCOUNT_SUSPENDED');
   }
-
   const selectableSites = sortSites(account.restaurants.filter(isSelectableSite));
   if (selectableSites.length === 0) {
     throw new RestaurantContextError('SITE_UNAVAILABLE');
+  }
+  if (!account.memberships.length && !input.allowUnassigned) {
+    throw new RestaurantContextError('SITE_ACCESS_DENIED');
   }
 
   // Load all rows so a user with no assignment cannot be mistaken for an
@@ -248,7 +257,10 @@ export async function resolveRestaurantContext(
     accountId: account.id,
     clerkOrganizationId: organizationId,
     siteId: selectedSite.id,
-    role: mergeRoles(accountMembership?.role, siteMemberships.get(selectedSite.id)?.role),
+    role:
+      accountMembership?.role === 'READ_ONLY'
+        ? 'READ_ONLY'
+        : mergeRoles(accountMembership?.role, siteMemberships.get(selectedSite.id)?.role),
     legacy: false,
   };
 }
@@ -309,6 +321,7 @@ export async function listAccessibleRestaurantSites(
   }
 
   if (account.status !== 'ACTIVE') throw new RestaurantContextError('ACCOUNT_SUSPENDED');
+  if (!account.memberships.length) throw new RestaurantContextError('SITE_ACCESS_DENIED');
 
   const memberships = userId
     ? account.memberships.filter((membership) => membership.clerkUserId === userId)
@@ -334,6 +347,9 @@ export async function listAccessibleRestaurantSites(
     name: site.name ?? site.id,
     siteStatus: site.siteStatus,
     isPrimary: site.isPrimary,
-    role: mergeRoles(accountMembership?.role, siteMemberships.get(site.id)?.role),
+    role:
+      accountMembership?.role === 'READ_ONLY'
+        ? 'READ_ONLY'
+        : mergeRoles(accountMembership?.role, siteMemberships.get(site.id)?.role),
   }));
 }

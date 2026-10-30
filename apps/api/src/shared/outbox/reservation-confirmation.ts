@@ -13,9 +13,9 @@ export async function enqueueReservationConfirmation(
     isTest?: boolean;
   },
 ): Promise<boolean> {
-  // Confirmation e-mail: WEB bookings that kept an address, whatever the SMS setting.
+  const confirmationChannel = reservation.channel === 'WEB' || reservation.channel === 'ADMIN';
   if (
-    reservation.channel === 'WEB' &&
+    confirmationChannel &&
     reservation.state === 'CONFIRMED' &&
     reservation.customerEmail &&
     !reservation.isTest
@@ -31,11 +31,7 @@ export async function enqueueReservationConfirmation(
     });
   }
   // Voice keeps its existing confirmation path; do not open messaging on MCP/other integrations.
-  if (
-    reservation.channel !== 'WEB' ||
-    reservation.state !== 'CONFIRMED' ||
-    !reservation.customerPhone
-  )
+  if (!confirmationChannel || reservation.state !== 'CONFIRMED' || !reservation.customerPhone)
     return false;
   const restaurant = await tx.restaurant.findUnique({
     where: { id: reservation.restaurantId },

@@ -74,6 +74,68 @@ describe('reservation payment foundation', () => {
     expect(reservationPaymentStatusForProviderEvent('customer.created')).toBeNull();
   });
 
+  it('refuse un paiement ou un compte Stripe qui ne correspond pas au paiement local', async () => {
+    vi.mocked(db.reservationPaymentEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.reservationPayment.findFirst).mockResolvedValue(
+      paymentRow({
+        stripeAccountId: 'acct_expected',
+        stripePaymentIntentId: 'pi_expected',
+      }) as never,
+    );
+    const event = {
+      restaurantId: RESTAURANT_ID,
+      paymentId: 'payment-1',
+      providerEventId: 'evt_mismatch',
+      eventType: 'payment_intent.succeeded',
+      occurredAt: NOW,
+      payloadHash: 'a'.repeat(64),
+      amount: 25,
+      currency: 'EUR',
+      stripeAccountId: 'acct_expected',
+      stripePaymentIntentId: 'pi_other',
+    };
+    await expect(applyReservationPaymentProviderEvent(event)).rejects.toMatchObject({
+      code: 'PAYMENT_PROVIDER_MISMATCH',
+    });
+    await expect(
+      applyReservationPaymentProviderEvent({
+        ...event,
+        stripeAccountId: 'acct_other',
+        stripePaymentIntentId: 'pi_expected',
+      }),
+    ).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_MISMATCH' });
+    expect(db.reservationPayment.update).not.toHaveBeenCalled();
+  });
+
+  it('distingue un remboursement partiel du remboursement total', async () => {
+    vi.mocked(db.reservationPaymentEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.reservationPayment.findFirst).mockResolvedValue(
+      paymentRow({
+        status: ReservationPaymentStatus.CAPTURED,
+        stripePaymentIntentId: 'pi_123',
+      }) as never,
+    );
+    vi.mocked(db.reservationPaymentEvent.create).mockResolvedValue({ id: 'event-refund' } as never);
+    const result = await applyReservationPaymentProviderEvent({
+      restaurantId: RESTAURANT_ID,
+      paymentId: 'payment-1',
+      providerEventId: 'evt_partial',
+      eventType: 'charge.refunded',
+      occurredAt: NOW,
+      payloadHash: 'b'.repeat(64),
+      amount: 25,
+      refundedAmount: 10,
+      currency: 'EUR',
+      stripePaymentIntentId: 'pi_123',
+    });
+    expect(result.resultingStatus).toBe(ReservationPaymentStatus.PARTIALLY_REFUNDED);
+    expect(db.reservationPayment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: ReservationPaymentStatus.PARTIALLY_REFUNDED }),
+      }),
+    );
+  });
+
   it('reste en dry-run par défaut et ne crée aucune ligne', async () => {
     vi.mocked(db.reservation.findFirst).mockResolvedValue({
       id: RESERVATION_ID,
@@ -140,6 +202,7 @@ describe('reservation payment foundation', () => {
     const pending = paymentRow({
       status: ReservationPaymentStatus.REQUIRES_PAYMENT_METHOD,
       lastProviderEventAt: null,
+      stripePaymentIntentId: 'pi_123',
     });
     const captured = paymentRow({
       status: ReservationPaymentStatus.CAPTURED,

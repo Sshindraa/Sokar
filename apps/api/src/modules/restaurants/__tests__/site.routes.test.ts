@@ -7,6 +7,7 @@ vi.mock('@clerk/fastify', () => ({
   clerkClient: {
     organizations: {
       getOrganizationMembershipList: vi.fn(),
+      updateOrganizationMembershipMetadata: vi.fn(),
     },
   },
 }));
@@ -287,6 +288,72 @@ describe('restaurant routes — sites accessibles', () => {
         role: 'STAFF',
       },
     });
+  });
+
+  it('refuse un rôle local supérieur à la lecture seule du compte', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'site_two',
+      accountId: 'test-account-1',
+      siteStatus: 'ACTIVE',
+    } as never);
+    vi.mocked(clerkClient.organizations.getOrganizationMembershipList).mockResolvedValue({
+      data: [{}],
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+      role: 'READ_ONLY',
+    } as never);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites/site_two/members',
+      headers: { authorization: 'Bearer test' },
+      payload: { clerkUserId: 'user_2', role: 'MANAGER' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('ACCOUNT_READ_ONLY');
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+  });
+
+  it('désactive le rattachement automatique avant de retirer la dernière attribution', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: 'test-account-1' } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+      id: 'site-grant',
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.count).mockResolvedValue(0);
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/restaurants/sites/site_two/members/user_2',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(clerkClient.organizations.updateOrganizationMembershipMetadata).toHaveBeenCalledWith({
+      organizationId: 'test-rest-1',
+      userId: 'user_2',
+      publicMetadata: { sokarRole: 'REVOKED' },
+    });
+    expect(db.restaurantAccountMembership.delete).toHaveBeenCalledWith({
+      where: { id: 'site-grant' },
+    });
+  });
+
+  it('conserve l’attribution si Clerk ne peut pas empêcher le rattachement', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: 'test-account-1' } as never);
+    vi.mocked(db.restaurantAccountMembership.findFirst).mockResolvedValue({
+      id: 'site-grant',
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.count).mockResolvedValue(0);
+    vi.mocked(clerkClient.organizations.updateOrganizationMembershipMetadata).mockRejectedValueOnce(
+      new Error('Clerk unavailable'),
+    );
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/restaurants/sites/site_two/members/user_2',
+      headers: { authorization: 'Bearer test' },
+    });
+    expect(res.statusCode).toBe(503);
+    expect(db.restaurantAccountMembership.delete).not.toHaveBeenCalled();
   });
 
   it('refuse un utilisateur absent de l’organisation Clerk sans écriture locale', async () => {

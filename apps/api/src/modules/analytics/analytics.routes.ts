@@ -7,7 +7,7 @@ import { computeRoi } from './roi.service';
 const AnalyticsQuerySchema = z.object({
   // restaurantId comes from requireOrg() / Clerk org context. Do not accept
   // tenant scope from query string for protected analytics routes.
-  period: z.string().regex(/^\d{4}-\d{2}$/),
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
 });
 
 export async function analyticsRoutes(app: FastifyInstance) {
@@ -24,34 +24,46 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 0, 23, 59, 59, 999);
 
-    const traces = await db.latencyTrace.findMany({
-      where: {
-        call: {
-          restaurantId: req.restaurantId!,
-          createdAt: { gte: start, lte: end },
+    const [statistics, traces] = await Promise.all([
+      db.$queryRaw<Array<{ total: number; p50: number | null; p95: number | null }>>`
+        WITH base AS MATERIALIZED (
+          SELECT t.total_e2e_ms
+          FROM latency_traces t JOIN calls c ON c.id = t.call_id
+          WHERE c.restaurant_id = ${req.restaurantId!}
+            AND c.created_at >= ${start} AND c.created_at <= ${end}
+        ), ranked AS (
+          SELECT total_e2e_ms, row_number() OVER (ORDER BY total_e2e_ms) AS position,
+            count(*) OVER () AS n
+          FROM base WHERE total_e2e_ms IS NOT NULL
+        )
+        SELECT (SELECT count(*)::int FROM base) AS total,
+          max(total_e2e_ms) FILTER (WHERE position = n / 2 + 1) AS p50,
+          max(total_e2e_ms) FILTER (WHERE position = n * 95 / 100 + 1) AS p95
+        FROM ranked
+      `,
+      db.latencyTrace.findMany({
+        where: {
+          call: {
+            restaurantId: req.restaurantId!,
+            createdAt: { gte: start, lte: end },
+          },
         },
-      },
-      orderBy: { totalE2eMs: 'asc' },
-    });
+        orderBy: { totalE2eMs: { sort: 'desc', nulls: 'first' } },
+        take: 50,
+      }),
+    ]);
+    const { total, p50, p95 } = statistics[0];
 
-    const values = traces
-      .map((t: { totalE2eMs: number | null }) => t.totalE2eMs)
-      .filter((v: number | null): v is number => v !== null);
-
-    if (values.length === 0) {
+    if (p50 === null) {
       return reply.send({ period, totalCalls: 0, p50: null, p95: null, traces: [] });
     }
 
-    const sorted = [...values].sort((a, b) => a - b);
-    const p50 = sorted[Math.floor(sorted.length * 0.5)];
-    const p95 = sorted[Math.floor(sorted.length * 0.95)];
-
     return reply.send({
       period,
-      totalCalls: traces.length,
+      totalCalls: total,
       p50,
       p95,
-      traces: traces.slice(-50),
+      traces: traces.reverse(),
     });
   });
 

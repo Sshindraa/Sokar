@@ -310,11 +310,7 @@ export default function DashboardPage() {
       </header>
       {!isDemo && <ServiceCopilotWidget key={orgId} density="overview" accessFallback={null} />}
 
-      <section
-        aria-label="Synthèse de la période"
-        aria-busy={isLoading}
-        className="space-y-6 md:space-y-8"
-      >
+      <section aria-label="Synthèse de la période" aria-busy={isLoading} className="space-y-6">
         {isLoading && <DashboardSkeleton />}
         {!isLoading && error && (
           <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />

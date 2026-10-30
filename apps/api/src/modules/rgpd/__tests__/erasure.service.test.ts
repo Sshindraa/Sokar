@@ -77,8 +77,7 @@ describe('ErasureService.eraseSubject', () => {
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     // La transaction prend une fonction callback, on l'exécute avec un tx mock.
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) => fn(prisma),
     );
     (prisma.reservation.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 3 });
 
@@ -105,8 +104,7 @@ describe('ErasureService.eraseSubject', () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) => fn(prisma),
     );
     (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
 
@@ -123,8 +121,7 @@ describe('ErasureService.eraseSubject', () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) => fn(prisma),
     );
     (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
     (prisma.call.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 3 });
@@ -142,34 +139,38 @@ describe('ErasureService.eraseSubject', () => {
     expect(result.callsAnonymized).toBe(5);
   });
 
-  it("ne fait pas échouer si la table Message n'a pas de customerPhone (catch silencieux)", async () => {
-    (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
-    (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
-    (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+  it.each(['message', 'call'] as const)("échoue si l'anonymisation de %s échoue", async (table) => {
+    vi.mocked(prisma.reservation.findFirst).mockResolvedValue({ id: 'res-1' } as never);
+    vi.mocked(prisma.customerConsent.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn) =>
+      (fn as (tx: typeof prisma) => unknown)(prisma),
     );
-    (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockImplementation(() => {
-      throw new Error('Unknown field `customerPhone`');
-    });
+    vi.mocked(prisma[table].updateMany).mockRejectedValue(new Error('database unavailable'));
 
-    const result = await service.eraseSubject({
-      subject: '+336****3333',
-      reason: 'r',
-      actor: 'a',
-    });
+    await expect(
+      service.eraseSubject({ subject: '+336****3333', reason: 'r', actor: 'a' }),
+    ).rejects.toThrow('database unavailable');
+    expect(prisma.reservationAuditLog.create).not.toHaveBeenCalled();
+  });
 
-    expect(result.callsAnonymized).toBe(0);
-    // L'erasure a tout de même lieu.
-    expect(result.reservationsAnonymized).toBe(0);
+  it("échoue si la trace d'audit ne peut pas être enregistrée", async () => {
+    vi.mocked(prisma.reservation.findFirst).mockResolvedValue({ id: 'res-1' } as never);
+    vi.mocked(prisma.customerConsent.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn) =>
+      (fn as (tx: typeof prisma) => unknown)(prisma),
+    );
+    vi.mocked(prisma.reservationAuditLog.create).mockRejectedValue(new Error('audit unavailable'));
+
+    await expect(
+      service.eraseSubject({ subject: '+336****3333', reason: 'r', actor: 'a' }),
+    ).rejects.toThrow('audit unavailable');
   });
 
   it('conserve les consents (preuve légale) et les compte', async () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'c-1' });
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) => fn(prisma),
     );
     (prisma.customerConsent.count as ReturnType<typeof vi.fn>).mockResolvedValue(4);
 
@@ -186,8 +187,7 @@ describe('ErasureService.eraseSubject', () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
-        fn({ reservation: prisma.reservation }),
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) => fn(prisma),
     );
 
     const result = await service.eraseSubject({
@@ -231,6 +231,7 @@ describe('ErasureService.eraseSubject', () => {
       eventOrder: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
       eventWaitlistEntry: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      call: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       reservationAuditLog: { create: vi.fn().mockResolvedValue({}) },
       $transaction: vi.fn(),
     } as unknown as PrismaClient;
@@ -265,6 +266,12 @@ describe('ErasureService.eraseSubject', () => {
       where: { id: 'customer-1' },
       data: expect.objectContaining({ name: 'ANON', archivedAt: expect.any(Date) }),
     });
+    expect(
+      vi.mocked(crmPrisma.experienceReservation.updateMany).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(crmPrisma.reservation.updateMany).mock.invocationCallOrder[0]);
+    expect(
+      vi.mocked(crmPrisma.experienceReservation.updateMany).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(crmPrisma.customer.update).mock.invocationCallOrder[0]);
     expect(crmPrisma.experienceReservation.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ OR: expect.any(Array) }),
       data: { customerId: null, reservationId: null },

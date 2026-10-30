@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import rateLimitPlugin from '@fastify/rate-limit';
 import { getAuth } from '@clerk/fastify';
+import { redisCache } from '../shared/redis/client';
 import {
   RATE_LIMIT_GLOBAL_MAX,
   RATE_LIMIT_USER_READ_MAX,
@@ -47,6 +48,7 @@ export function rateLimitBucket(req: FastifyRequest): { key: string; max: number
  */
 export async function registerRateLimit(app: FastifyInstance) {
   await app.register(rateLimitPlugin, {
+    ...(process.env.NODE_ENV === 'test' ? {} : { redis: redisCache }),
     max: (req) => rateLimitBucket(req).max,
     keyGenerator: (req) => rateLimitBucket(req).key,
     timeWindow: RATE_LIMIT_WINDOW,

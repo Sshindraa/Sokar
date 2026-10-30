@@ -62,6 +62,10 @@ function setupPrismaMocks() {
   } as unknown as Awaited<ReturnType<typeof db.reservationAuditLog.create>>);
   vi.mocked(db.$transaction).mockImplementation(async (fn) =>
     (fn as unknown as (tx: unknown) => unknown)({
+      customerConsent: db.customerConsent,
+      call: db.call,
+      reservationAuditLog: db.reservationAuditLog,
+      message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
     }),
   );
@@ -289,6 +293,20 @@ describe('RGPD routes (with identity verification)', () => {
       const body = res.json();
       expect(body.ok).toBe(true);
       expect(body.anonymized.reservations).toBe(3);
+    });
+
+    it("répond par une erreur si l'effacement échoue", async () => {
+      setupPrismaMocks();
+      vi.mocked(db.call.updateMany).mockRejectedValueOnce(new Error('database unavailable'));
+      const app = await getApp();
+      const token = await getVerifiedToken(app, '+33****0001', 'erase');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/rgpd/erase',
+        headers: { 'x-identity-token': token },
+        payload: { subject: '+33****0001' },
+      });
+      expect(res.statusCode).toBe(500);
     });
 
     it('refuse 403 si subject payload ≠ subject token', async () => {

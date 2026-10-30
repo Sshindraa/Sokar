@@ -6,6 +6,8 @@ import {
   IdentityVerificationError,
 } from '../identity-verification.service';
 
+const OLD_LINK = 'old-link';
+
 // Mocks Telnyx et Brevo
 vi.mock('../../../shared/telnyx/client', () => ({
   sendSms: vi.fn().mockResolvedValue(undefined),
@@ -382,11 +384,11 @@ describe('IdentityVerificationService', () => {
   });
 
   it('refuse les anciens liens email', async () => {
-    await expect(service.confirmSignedLinkToken('old-link')).rejects.toMatchObject({
+    await expect(service.confirmSignedLinkToken(OLD_LINK)).rejects.toMatchObject({
       code: 'INVALID_CODE',
     });
     await expect(
-      service.confirmVerification({ subject: 'subject-1', intent: 'export', token: 'old-link' }),
+      service.confirmVerification({ subject: 'subject-1', intent: 'export', token: OLD_LINK }),
     ).rejects.toMatchObject({ code: 'INVALID_CODE' });
   });
 });

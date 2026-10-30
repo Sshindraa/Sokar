@@ -1,17 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-// On teste la logique de parsing des réponses SMS.
-// Le handler complet nécessite Telnyx + DB, on teste juste le parsing ici.
-
-const POSITIVE_PATTERNS = /\b(oui|ok|confirme?|yes|ouais)\b/i;
-const NEGATIVE_PATTERNS = /\b(non|annul\w*|cancel\w*|no\b)\b/i;
-
-function parseReply(text: string): 'CONFIRMED' | 'CANCELLED' | 'UNKNOWN' {
-  const trimmed = text.trim();
-  if (POSITIVE_PATTERNS.test(trimmed)) return 'CONFIRMED';
-  if (NEGATIVE_PATTERNS.test(trimmed)) return 'CANCELLED';
-  return 'UNKNOWN';
-}
+import { parseReply } from '../reply-parser';
 
 describe('SMS reply parser', () => {
   describe('positive replies (CONFIRMED)', () => {
@@ -42,9 +31,8 @@ describe('SMS reply parser', () => {
   });
 
   describe('edge cases', () => {
-    it('handles "oui non" ambiguity — positive wins (first match)', () => {
-      // POSITIVE_PATTERNS is checked first, so "oui" wins
-      expect(parseReply('oui non')).toBe('CONFIRMED');
+    it('does not act on contradictory responses', () => {
+      expect(parseReply('oui non')).toBe('UNKNOWN');
     });
 
     it('handles extra whitespace', () => {
