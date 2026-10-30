@@ -3108,3 +3108,7 @@ Production : routes RGPD bloquées en Nginx, workflow Deploy Production suspendu
 ### 2026-10-29 — RGPD : réouverture partielle
 
 Vérification d’identité et export rouverts après qualification SMS en staging ; effacement et opposition marketing restent en 503 car leurs correctifs ne sont pas encore livrés. Configuration Nginx restrictive, liens non journalisés ; requêtes de contrôle sur les hôtes et le proxy. Les demandes concernées restent traitées manuellement via privacy@sokar.tech.
+
+2026-10-30 — Stripe Connect : qualification sandbox du parcours en deux phases : compte fictif vide, ajout de la configuration marchand par jeton v2, puis session embarquée sans authentification Stripe ; compte fermé. Intégration Sokar et test navigateur restent à réaliser avant activation ; conserver les comptes existants.
+
+2026-10-30 — Stripe Connect : prototype local sandbox avec acceptation explicite et jeton v2, compte en attente conservé par migration additive, verrou PostgreSQL et reprise après erreur. Tests ciblés API/dashboard et deux tests concurrents/reprise PostgreSQL local validés ; création de jeton vérifiée depuis un navigateur sur l’origine staging. Fonction désactivée par défaut, limitée aux clés et établissements de test ; CI, formulaire complet staging, coûts et activation production restent à qualifier.

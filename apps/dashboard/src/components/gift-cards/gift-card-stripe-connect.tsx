@@ -16,6 +16,7 @@ type ConnectStatus = {
   onboardingState?: 'configuration_required' | 'verification_pending' | 'action_required' | 'ready';
   actionItems?: string[];
   deadline?: string | null;
+  managedTestPublishableKey?: string;
 };
 
 export function GiftCardStripeConnect({
@@ -200,7 +201,12 @@ export function GiftCardStripeConnect({
           </div>
         )}
         {opening && orgId && status?.canConfigure && (
-          <GiftCardStripeOnboarding key={orgId} restaurantId={orgId} onClose={closeOnboarding} />
+          <GiftCardStripeOnboarding
+            key={orgId}
+            restaurantId={orgId}
+            onClose={closeOnboarding}
+            managedTestPublishableKey={status.managedTestPublishableKey}
+          />
         )}
       </CardContent>
     </Card>
