@@ -3112,3 +3112,7 @@ Vérification d’identité et export rouverts après qualification SMS en stagi
 ### 2026-10-30 — Rollback staging : dépendances restaurées
 
 Le test de rollback de Sshindraa/Sokar#577 échouait : l'artefact de la release précédente exige `zod-to-json-schema`, retiré par la PR (passage à Zod 4), donc absent de node_modules après le déploiement. Correctif : chaque snapshot garde le lockfile et les package.json de son commit (`deps/`), et le rollback réinstalle via `pnpm install --frozen-lockfile` avant de redémarrer. Une release sans lockfile est refusée avant d'arrêter les services. Non validé sur le VPS : la prochaine exécution de staging le vérifiera (le pré-build utilise `.latest-hash`).
+
+### 2026-10-30 — Déploiement prod : API redémarrée deux fois
+
+Chaque déploiement prod redémarrait l'API deux fois (`pm2 start <ecosystem>` puis `pm2 restart`), confirmé sur 00:57, 09:43 et 13:48 UTC. Correctif : `pm2 start --only` par app remplacée, une seule fois, et API seulement si son code, ses dépendances ou la config PM2 ont changé. Le 502 du smoke test prod (13:48:34 UTC) nest
