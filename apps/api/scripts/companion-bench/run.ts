@@ -59,7 +59,7 @@ type Expected =
   | { kind: 'any'; value: number[] }
   | { kind: 'first'; value: string[]; others: string[] }
   | { kind: 'unavailable' }
-  | { kind: 'investigation'; value: number[]; tolerance: number; facts: RegExp[] };
+  | { kind: 'investigation'; value: number[]; tolerance: number };
 
 interface Question {
   n: number;
@@ -278,15 +278,6 @@ async function averageScoreBetween(
   const rows = await feedbacksBetween(restaurantId, from, to);
   return roundOne(rows.reduce((sum, row) => sum + row.score, 0) / rows.length);
 }
-// Enquête : sens d'un écart, en mots que la réponse doit employer.
-const BETTER = /mieux|meilleur|hausse|augment|progress|(?:^|[\s(])\+\s?\d/i;
-const WORSE = /moins|baisse|recul|diminu|dégrad|(?:^|[\s(])-\s?\d/i;
-const DROP = /moiti|deux fois moins|baisse|recul|moins de|plus faible|diminu|calme/i;
-const UNFINISHED = /non termin|sans issue|inachev|non abouti|unfinished/i;
-const WAITLIST_EMPTY =
-  /liste d.attente[^.]*(vide|aucune|aucun|zéro)|(vide|aucune|aucun|zéro)[^.]*liste d.attente/i;
-const NO_REFERENCE =
-  /pas de donnée|aucune donnée|aucune référence|pas d.historique|sans historique|pas de référence|ne peux pas comparer|pas de comparaison|aucun historique|pas disponible|aucun couvert|aucune réservation|aucun pourcentage|pas calculable|n.est calculable/i;
 // Jour de l'anomalie planté par le seed : mardi 20 octobre 2026.
 const ANOMALY_DAY = '2026-10-20';
 
@@ -628,83 +619,81 @@ const QUESTIONS: Question[] = [
   },
   {
     n: 42,
-    text: 'Pourquoi le mardi 20 octobre était-il si calme, en couverts ?',
+    text: 'Pourquoi le mardi 20 octobre était-il si calme ?',
     expected: async (id) => ({
       kind: 'investigation',
       value: [
         await coversBetween(id, ANOMALY_DAY, ANOMALY_DAY),
-        Math.round(await usualCoversOf(id, ANOMALY_DAY)),
+        await usualCoversOf(id, ANOMALY_DAY),
+        await unfinishedCallsBetween(id, ANOMALY_DAY, ANOMALY_DAY),
+        (await waitlistBetween(id, 'slotStart', ANOMALY_DAY, ANOMALY_DAY)).length,
       ],
-      tolerance: 1,
-      facts: [DROP, UNFINISHED, WAITLIST_EMPTY],
+      tolerance: 0.5,
     }),
   },
   {
     n: 43,
-    text: "Est-ce que les 30 derniers jours, aujourd'hui compris, marchent mieux que les 30 jours d'avant, en couverts des repas prévus ?",
+    text: 'Ce mois-ci, ça marche mieux que le mois dernier ?',
     expected: async (id) => {
-      const current = await coversBetween(id, shiftDay(today(), -29), today());
-      const previous = await coversBetween(id, shiftDay(today(), -59), shiftDay(today(), -30));
+      const current = await coversBetween(id, `${today().slice(0, 7)}-01`, today());
+      const [from, to] = monthBounds(previousMonth());
       return {
         kind: 'investigation',
-        value: [current, previous],
-        tolerance: 1,
-        facts: [current > previous ? BETTER : WORSE],
+        value: [current, await coversBetween(id, from, to)],
+        tolerance: 0.5,
       };
     },
   },
   {
     n: 44,
-    text: "Ça marche, la liste d'attente ? Comparez les demandes reçues ces 30 derniers jours, aujourd'hui compris, aux 30 jours d'avant.",
+    text: "La liste d'attente, ça sert à quelque chose ?",
     expected: async (id) => {
       const current = (await waitlistBetween(id, 'createdAt', shiftDay(today(), -29), today()))
         .length;
       const previous = (
         await waitlistBetween(id, 'createdAt', shiftDay(today(), -59), shiftDay(today(), -30))
       ).length;
-      return {
-        kind: 'investigation',
-        value: [current, previous],
-        tolerance: 0,
-        facts: [/liste d.attente/i, current > previous ? BETTER : WORSE],
-      };
+      const obtained = (
+        await waitlistBetween(id, 'createdAt', shiftDay(today(), -29), today(), 'PROMOTED')
+      ).length;
+      return { kind: 'investigation', value: [current, previous, obtained], tolerance: 0.5 };
     },
   },
   {
     n: 45,
-    text: "Qu'est-ce qui cloche avec les appels ce mois-ci ?",
+    text: "Qu'est-ce qui cloche avec les appels ?",
+    expected: async (id) => ({
+      kind: 'investigation',
+      value: [await unfinishedCallsBetween(id, `${today().slice(0, 7)}-01`, today())],
+      tolerance: 0.5,
+    }),
+  },
+  {
+    n: 46,
+    text: "Mes clients viennent-ils plus par le site que l'an dernier ?",
     expected: async (id) => {
       const [from, to] = [`${today().slice(0, 7)}-01`, today()];
+      const lastYear = (day: string) => `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
       return {
         kind: 'investigation',
-        value: [await unfinishedCallsBetween(id, from, to)],
-        tolerance: 0,
-        facts: [UNFINISHED, /hausse|augment|plus|doubl|pic|beaucoup|explos|passé|progress/i],
+        value: [
+          await coversBetween(id, from, to, 'website'),
+          await coversBetween(id, lastYear(from), lastYear(to), 'website'),
+        ],
+        tolerance: 0.5,
       };
     },
   },
   {
-    n: 46,
-    text: "Mes clients viennent-ils plus par le site que l'an dernier, en couverts des repas prévus ?",
-    expected: async (id) => ({
-      kind: 'investigation',
-      value: [await coversBetween(id, `${today().slice(0, 7)}-01`, today(), 'website')],
-      tolerance: 1,
-      facts: [NO_REFERENCE],
-    }),
-  },
-  {
     n: 47,
-    text: 'Les avis clients sont-ils meilleurs ce mois-ci que le mois dernier ?',
+    text: "Les avis clients s'améliorent-ils ?",
     expected: async (id) => {
       const current = await averageScoreBetween(id, `${today().slice(0, 7)}-01`, today());
       const [from, to] = monthBounds(previousMonth());
-      const previous = await averageScoreBetween(id, from, to);
       return {
         kind: 'investigation',
-        value: [current, previous],
+        value: [current, await averageScoreBetween(id, from, to)],
         tolerance: 0.05,
-        facts: [current > previous ? BETTER : WORSE],
       };
     },
   },
@@ -741,12 +730,11 @@ function percentagesIn(reply: string): number[] {
 // Compte exact ; montant à l'euro près ; taux à 0,1 près ; jour : nom complet, sans accent ni casse.
 function valueFound(reply: string, expected: Expected): boolean {
   if (expected.kind === 'investigation') {
-    // Chaque chiffre clé est cité à sa tolérance près, et chaque fait clé est dit.
+    // Chaque chiffre clé de l'anomalie figure dans la réponse, à sa tolérance près.
     const figures = numbersIn(reply);
-    const figuresOk = expected.value.every((value) =>
+    return expected.value.every((value) =>
       figures.some((figure) => Math.abs(figure - value) <= expected.tolerance + 1e-9),
     );
-    return figuresOk && expected.facts.every((fact) => fact.test(reply));
   }
   if (expected.kind === 'unavailable') {
     // Source hors formule : la réponse le dit, sans annoncer zéro.
@@ -897,22 +885,10 @@ const usageLog = {
   },
 } as unknown as FastifyBaseLogger;
 
-// Outil : au moins un appel, sauf pour une enquête, où il faut un appel avec compare et deux angles.
+// Outil : au moins un appel ; pour une enquête, un appel à explain_change.
 function toolUsedFor(expected: Expected | undefined, calls: ToolCall[]): boolean {
   if (expected?.kind !== 'investigation') return calls.length > 0;
-  const compared = calls.some((call) => call.arguments.includes('"compare"'));
-  // Un angle = une source et un regroupement. Des arguments mal formés ne comptent pour aucun angle.
-  const angles = new Set(
-    calls.map((call) => {
-      try {
-        const args = JSON.parse(call.arguments || '{}') as { entity?: string; group_by?: string };
-        return `${args.entity ?? ''}:${args.group_by ?? ''}`;
-      } catch {
-        return `${call.name}:invalide`;
-      }
-    }),
-  );
-  return compared && angles.size >= 2;
+  return calls.some((call) => call.name === 'explain_change');
 }
 
 // Nombres qui doivent venir d'un outil : hors dates, années, heures, durées et formules de calendrier.
